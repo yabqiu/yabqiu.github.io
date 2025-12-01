@@ -1,6 +1,6 @@
 ---
-title: "{{ post.title }}"
-date: {{ post.post_date_gmt }}
+title: "{{ post.title }} | 隔叶黄莺 Yanbin's Blog - 软件编程实践"
+date: {{ post.post_date_gmt | date_format }}
 featured: true
 draft: false
 toc: false

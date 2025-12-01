@@ -2,9 +2,8 @@ use chrono::NaiveDateTime;
 use mysql::prelude::*;
 use std::collections::HashMap;
 use std::error::Error;
-use std::fmt::format;
 use tera::{Context, Tera};
-use wp2hugo::{get_db_conn_pool, Post};
+use wp2hugo::{date_format_filter, get_db_conn_pool, Post};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let db_conn_pool = get_db_conn_pool()?;
@@ -82,11 +81,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let post = posts.get(&14518u32).unwrap();
 
-    let tera = Tera::new("templates/**/*").expect("Failed to parse templates");
+    let mut tera = Tera::new("templates/**/*").expect("Failed to parse templates");
+
+    tera.register_filter("date_format", date_format_filter);
 
     // Create context and add data
     let mut context = Context::new();
     context.insert("post", post);
+
 
     let html = tera.render("post.md", &context).expect("Failed to render");
     println!("{}", html);
