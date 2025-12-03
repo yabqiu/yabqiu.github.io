@@ -1,25 +1,44 @@
 +++
-title = "About"
-description = "Hugo, the world's fastest framework for building websites"
-date = "2019-02-28"
-aliases = ["about-us", "about-hugo", "contact"]
-author = "Hugo Authors"
+title = "关于本站与本人"
+description = "关于自己"
+date = "2025-12-03T12:00:00-06:00"
 +++
 
-Written in Go, Hugo is an open source static site generator available under the [Apache Licence 2.0.](https://github.com/gohugoio/hugo/blob/master/LICENSE) Hugo supports TOML, YAML and JSON data file types, Markdown and HTML content files and uses shortcodes to add rich content. Other notable features are taxonomies, multilingual mode, image processing, custom output formats, HTML/CSS/JS minification and support for Sass SCSS workflows.
+## 待修改
 
-Hugo makes use of a variety of open source projects including:
+Unmi, 自工作之日起一直混迹于中国南方一隅，一个由春天的故事缔造出奇迹的城市里。以软件编程作为自己唯一的主业，对于技术有一种独有的痴迷与钻研劲，但仍然无法让自己从中获得足够的自信。于原理与实现上很有自己的见解，只是未达到 98% 的把亦不敢振振有辞，以嗓音大而称有理。更愿脚踏实在，低调、低调，因而总希望追求完美，难免机会散落。
 
-* https://github.com/yuin/goldmark
-* https://github.com/alecthomas/chroma
-* https://github.com/muesli/smartcrop
-* https://github.com/spf13/cobra
-* https://github.com/spf13/viper
+紧缩至编程语言的范围里，Java 可说是主营业务，其他诸种语言多有涉猎，且还不希望都是蜻蜓点水，这从我的博客文章分类便能窥见一斑。
 
-Hugo is ideal for blogs, corporate websites, creative portfolios, online magazines, single page applications or even a website with thousands of pages.
+一直有做笔记的习惯，伴随着 Web 2.0 的兴起，博客便与我不离不弃，成为了我的良师益友。并且我相信对于知识的掌握程度可在经历如下过程层层递进：
 
-Hugo is for people who want to hand code their own website without worrying about setting up complicated runtimes, dependencies and databases.
+阅读学习(10%) -> 听课学习(20%) -> 写作学习(50%) -> 讲课学习(90%) -> 实践、合作来学习(95%)
 
-Websites built with Hugo are extremely fast, secure and can be deployed anywhere including, AWS, GitHub Pages, Heroku, Netlify and any other hosting provider.
+这就是好记性与烂笔头，因而对学习进行总结、梳理，实践中的问题也记录下来，尽可能的去弄明白，一知半解是很难受的，有机会也会多于大家交流，也包括在这里。
 
-Learn more and contribute on [GitHub](https://github.com/gohugoio).
+### **关于本站 [Unmi.cc](http://unmi.cc)**
+
+不记  QQ 空间里的日志，写博客应该最早是 2005 的事了，到现在已有 5 个多年头。其间都是用的别人的博客空间，并有过几次搬迁，不管如何，笔端和思考却一直没有停歇过。本站的博文记述着对每一个问题的钻研与学习的过程，写下来也是帮助自己更扎实的理解各方面的知识。包括众多网友与同仁的评论与关注增添了我对博客写作的热情与专注，感谢各位网友。
+
+公共的博客空间纵然是好，因为省却了我们很多无关的事，譬如建立与备份、服务的维护等等，只是缺乏必要的自由度与自我控制的能力。全世界的国家都独立了，我想也该 有个自己的独立的博客，于是是搬家，搬家是麻烦的，前面每次搬家都是自己来转换 RSS 导出导入的。再也不用去挤公共宿舍了，终于能感觉到是在自己的家了，也就是现在的 [http://unmi.cc](http://unmi.cc)。
+
+本站着力原创，转载会有特别注明。同样您若赞赏某篇文章意欲转载，也请注明出处与原文链接，Unmi 永久保留原创文章的所有权。
+
+另外，若您对站内文章有任何高见，千万不要吝惜，可在文后进行评论，或到 [联系页面](http://unmi.cc/contact) 给博主发送 Email。也请能提供好的技术专题来共同探讨。
+
+### **关于名字由来**
+
+也就是说为什么给自己以及网站取 Unmi 这样一个即不是人名，也不是单词，甚至发音都会让人迷糊的名字呢？让第一个字母发本音，然后不要漏掉每一个音，能明白了吗，是不特像某首歌的名字啊？我这里还是不想说得太清楚，还是会一些人发晕的，真有点抱歉。
+
+四个字母，也算好记，写出来也还看得过去，可惜 Unmi 的 .com、.net 、.cn 之类的域名是每机会申请到的，只能  cc 一下了。放邮件里就是写一份，抄送一份给大家了。
+
+在网络上搜索 Unmi 有许多文章都出自我笔，虽然 unmi.cc 显得不那么正统，但我相信一定能通过自己的努力让 Unmi 成为我以及本站的商标。
+
+* * *
+
+**Unmi 已成为历史**  
+由于当初在一个国内域名提供商处注册的域名，后来想转移时被无端冷处理，索性就不要那个域名了，改用 yanbin.blog 新域名。无妨，反正 unmi 那个名称也不再使用了，奇怪的是 unmi.cc 一停交费用便有人立即注册，想是认为该域名被使用多年，且网络上有迹可循， 巴望着幸许能得到少许赎金。
+
+其他联系方式
+
+微信：不用，QQ：不用，找我就在本站留言或发邮件至  [yabqiu@gmail.com](mailto:yabqiu@gmail.com)。
