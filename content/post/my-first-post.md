@@ -25,10 +25,31 @@ tags:
 
 **Insert Lead paragraph here.**
 
+```json
+{
+  "key": "value"
+}
+```
+
 Post summary here
 <br/>
+换行
 
 <!--more-->
+
+The remaining content of the post
+
+```go {linenos=inline hl_lines=[3,"6-8"]}
+package main // Package declaration
+
+import "fmt" 
+
+func main() {
+    for i := 0; i < 3; i++ {
+        fmt.Println("Value of i:", i)
+    }
+}
+```
 
 The remaining content of the post
 
