@@ -33,9 +33,7 @@ tags:
 
 Post summary here
 <br/>
-换行
-
-<!--more-->
+换行 <!--more-->
 
 The remaining content of the post
 
