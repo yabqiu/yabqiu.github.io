@@ -1,0 +1,258 @@
+---
+title: 拾谈"用最有效率的方法算出2乘以8等於几?"
+url: /2x8-why-discuss/
+date: 2006-06-18T10:13:00-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - C++/VB
+tags: 
+  - compile
+comment: true
+# additional
+wpPostId: 569 
+wpStatus: publish
+views: 548
+lastmod: 2013-01-21T23:40:48-06:00
+---
+
+这是网上流传的"<a href="http://forum.gaya.cn/read.php?fid=12&amp;tid=508">变态级JAVA程序员面试32问</a>"的其中一题（二十八题），然后下面给出来的答案是<br/>
+<br/>
+第二十八，编程题: 用最有效率的方法算出2乘以8等於几?<br/>
+有C背景的程序员特别喜欢问这种问题。<br/>
+<br/>
+2 &lt;&lt; 3<br/>
+<br/>
+粗看似乎很在理，大致想来2&lt;&lt;3会是移位操作，在Java的字节码中移位指令是ishl（右移），而在CPU上的硬件指令可能就会是shl（算术右移指令）。其实不然，如果熟悉汇编语言，还考虑过编译优化，2&lt;&lt;3根本不会使用移位操作，而是在编译时就优化计算出16来了。<br/>
+<br/>
+但如果是写成这样的方式（int i = 2; int j = i&lt;&lt;2;），又是不一样的，大家可以从代码不同写法生成的Java操作指令或汇编指令看出个端倪。 <!--more--><br/>
+<div>
+
+<br/>
+所以把代码写成 int i = 2 &lt;&lt; 3，和写成 int i = 16; 是一样的，前者还有降低了编译时效率<br/>
+<br/>
+下面再举例说明一下，VC++编译器，其实也会作这样的优化<br/>
+<div>
+
+<br/>
+所以从回答说是 int i = 2 &lt;&lt; 3; 并没改变一点执行上的效率，因为它 int i = 16;　是完全一样的。但如果写成<br/>
+<br/>
+int i = 2;<br/>
+int j = i &lt;&lt; 3;<br/>
+<br/>
+比写成<br/>
+<br/>
+int i = 2;<br/>
+int j = i * 8:<br/>
+<br/>
+确实会提高一定的执行效率， 因为 i * 8,要用Java操作指令 imul 进行运算，这也只是说JDK的编译器javac是这么处理的。JDK编译时并没有 i * 8　优化成 i &lt;&lt; 3 。<br/>
+<br/>
+如果把代码换成是C++代码,也是写成<br/>
+<br/>
+int i = 2;<br/>
+int j = i * 8:<br/>
+<br/>
+由VC++编译出来的汇编指令代码也还是用 shl eax, 3，它和写成　int j = i &lt;&lt; 3 全一致的。VC++从效率出发已经给你作了这样的代优化，再回味一下这个问题的答案中的一句话"有C背景的程序员特别喜欢问这种问题。"，可以获知那个有C背景的程序员在这里耍了一个"小聪明"，却又没有占到一点小便宜，只因为他低估了编译器的优化功能。<br/>
+<br/>
+之所以问这样问题的人，他们只是基于这样一个事实，整数乘法或整数除法所需要的时钟周期远远大于移位操作所需的时钟周期，下面列出这个指令的基本执行时间：<br/>
+<br/>
+移位指令 寄存器移 1 位 时钟周期数为 2<br/>
+整数乘法 IMUL 16 位寄存器乘 时钟周期数为 128 ~ 154<br/>
+整数除法 IDIV 16 位寄存器 时钟周期数为 165 ~ 184<br/>
+<br/>
+而即使 Java编译器在编译　int j = i * 8;　时用的是 imul ，但真正执行这这段代码，由虚拟机JVM转换成本地代码是时候会不会进一步优化成用移位操作的汇编指也未得而知，必要时当然可追踪一下java.exe的执行过程，即使执行时会作此优化，在java中把 int j = i * 8　写成 int j = i &lt;&lt;3 ，可获取一点点的效率，微不足道。<br/>
+<br/>
+任外，在Visual C++ .net 2003,还增加了对Intel Pentium 4 和 AMD Athlon的代码优化，当用 /G7 编译时，可以产生了更快（但更长）的指令序列，避免了使用 imul 指令，该指令在 Intel Pentium 4 上具有 14 个周期的滞后时间。<br/>
+<br/>
+如 i * 9,可能被编译成如下代码<br/>
+mov ecx, dword ptr _i$[esp-4]<br/>
+mov eax, ecx<br/>
+shl eax, 3<br/>
+add eax, ecx<br/>
+<br/>
+本来应该是 imul 乘法指令，用/G7编译选项巧妙的生成了先左移3位，再加上原来的值。网上介绍的是这么说的，可以我在Visual C++ .net 2003,用/G7选项编译时却没有生成与上类似的汇编代码，仍然是生成的 imul 指令。<br/>
+<br/>
+关于用<a href="http://www1.softhouse.com.cn/html/200408/2004083110013100000450.html">Visual C++ 优化代码</a>有一篇文章可以参考 [<a href="http://www1.softhouse.com.cn/html/200408/2004083110013100000450.html">http://www1.softhouse.com.cn/html/200408/2004083110013100000450.html</a>]<br/>
+<br/>
+最后再从业务出发，比如说这样一个简单需求，A的工资是B的工资的8倍（B可是个低级奴隶了），这种情况下要你写代码是写成<br/>
+<br/>
+salaryA = salaryB * 8;<br/>
+<br/>
+还是写成<br/>
+<br/>
+salaryA = salaryB &lt;&lt; 3;<br/>
+<br/>
+这种问题不用回答了吧。<br/>
+<br/>
+如果说用 int j = i &lt;&lt;3　的形式的情况有没有呢，也有，一般是在处理字节的时候，比如所有位整体左移3位，低3位再用字节填充，但也比较少牵涉到 8 倍这个概念。<br/>
+<br/>
+我昨日就到一个公司面试，看了一些面试题（包括系统分析题），真不太想做，我那时候就跟他们说过：我一直以来就不太喜欢做题，做题的时候可能常常不是关注问题本身，还得留个意去揣摩出题人的用意。<br/>
+<br/>
+象中国人的英语考试中的选择题那样，如果四个答案是分别是<br/>
+<br/>
+A: aab 　　　B: aac 　　　C: aad　　　 D: 456<br/>
+<br/>
+一般老师会告诉你用排除法排除答案D，因为D太不相似了。<br/>
+<br/>
+</div>
+
+<table style="border-collapse: collapse; height: 282px;" width="740" border="1" cellspacing="0" cellpadding="2" align="center">
+
+<tbody>
+
+<tr>
+
+<td height="21"><strong>C++ 代码</strong></td>
+
+<td height="21"><strong>对应的汇编指令 </strong></td>
+
+<td height="21"><strong>说明</strong></td>
+
+</tr>
+
+<tr>
+
+<td height="19">int i = 2 &lt;&lt; 3;</td>
+
+<td height="19">mov dword ptr [ebp-4],10h</td>
+
+<td height="19">也是把2&lt;&lt;3算出来了，为16（10h），放入内存</td>
+
+</tr>
+
+<tr>
+
+<td height="19">int i = 2 * 8;</td>
+
+<td colspan="2" height="19">与上同</td>
+
+</tr>
+
+<tr>
+
+<td height="76">int i = 2;<br/>
+int j = i &lt;&lt; 3;</td>
+
+<td height="76">mov dword ptr [ebp-4],2<br/>
+mov eax,dword ptr [ebp-4]<br/>
+shl eax,3<br/>
+mov dword ptr [ebp-8],eax</td>
+
+<td height="76">把2放入内存中 SS:[ebp-4]<br/>
+把　SS:[ebp-4] 整数传送到eax寄存器中<br/>
+对eax中的数据左移3位<br/>
+再把移位后的结果存到内存 SS:[ebp-8]中</td>
+
+</tr>
+
+<tr>
+
+<td height="38">int i = 2;<br/>
+int j = i * 8</td>
+
+<td height="38">与上同</td>
+
+<td height="38">VC++自动优化成移位操作，因为8为2的整数次幂</td>
+
+</tr>
+
+<tr>
+
+<td height="76">int i = 2;<br/>
+int j= i * 9;</td>
+
+<td height="76">mov dword ptr [ebp-4],2<br/>
+mov eax,dword ptr [ebp-4]<br/>
+imul eax,eax,9<br/>
+mov dword ptr [ebp-8],eax</td>
+
+<td height="76">生成的汇编指令为 imul ,因为9不是2的整数次幂</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+&nbsp;<br/>
+<br/>
+</div>
+
+<table style="border-collapse: collapse; height: 330px;" width="740" border="1" cellspacing="0" cellpadding="2" align="center">
+
+<tbody>
+
+<tr>
+
+<td height="21"><strong>Java代码</strong></td>
+
+<td height="21"><strong>对应的字节码指令</strong></td>
+
+<td height="21"><strong>说明</strong></td>
+
+</tr>
+
+<tr>
+
+<td height="38">int i = 2 &lt;&lt;3;</td>
+
+<td height="38">0: bipush 16</td>
+
+<td height="38">编译时就把2左移3位的置算出来了，可以说降低了<br/>
+编译时效率<br/>
+栈中弹出int型值，存到位置为1的局部变量中</td>
+
+</tr>
+
+<tr>
+
+<td height="19">int i = 2 * 8;</td>
+
+<td colspan="2" height="19">与上同</td>
+
+</tr>
+
+<tr>
+
+<td height="114">int i = 2;<br/>
+int j = i * 8;</td>
+
+<td height="114">0: iconst_2<br/>
+1: istore_1<br/>
+2: iload_1<br/>
+3: iconst_3<br/>
+4: ishl<br/>
+6: istore_2</td>
+
+<td height="114">常量2压栈<br/>
+栈中弹出int型值，存到位置为1的局部变量中<br/>
+位置为1的int型局部变量压栈<br/>
+常量3压栈<br/>
+左移位操作,结果值压栈<br/>
+栈中弹出int型值，存到位置为2的局部变量中</td>
+
+</tr>
+
+<tr>
+
+<td height="114">int i = 2;<br/>
+int j = i * 8;</td>
+
+<td height="114">0: iconst_2<br/>
+1: istore_1<br/>
+2: iload_1<br/>
+3: bipush 8<br/>
+5: imul<br/>
+6: istore_2</td>
+
+<td height="114">javac 生成的字节码操作指令是 imul，javac未作优化</td>
+
+</tr>
+
+</tbody>
+
+</table>

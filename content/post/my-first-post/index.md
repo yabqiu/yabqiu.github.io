@@ -1,7 +1,7 @@
 ---
 url: "/my-first-post/" # The URL of the blog post.
 title: "My First Post" # Title of the blog post.
-date: 2025-11-30T12:04:21-06:00 # Date of post creation.
+date: 1900-11-30T12:04:21-06:00 # Date of post creation.
 description: "Article description." # Description used for search engine.
 featureImage: "../images/logos/rust-logo.png" # Top image on post.
 featured: true # Sets if post is a featured post, making appear on the home page side bar.

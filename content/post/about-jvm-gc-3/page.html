@@ -1,0 +1,116 @@
+---
+title: 有关于 JVM 的垃圾收集(三)
+url: /about-jvm-gc-3/
+date: 2009-04-01T00:27:00-05:00
+featured: false
+draft: false
+toc: false
+codeMaxLines: 500
+# menu: main
+usePageBundles: true
+categories:
+  - JVM
+tags:
+  - Java
+  - JVM
+  - gc
+comment: true
+# additional
+wpPostId: 288
+wpStatus: publish
+views: 367
+lastmod: 2021-09-02T11:45:55-05:00
+---
+
+<strong>对象可触及时的生命周期</strong></p><br/><br/>
+在 JVM 1.2 之前，堆中的对象分为三种状态，分别是：<br/><br/>
+1. 可触及的 -- 从根节点开始可追踪到<br />
+2. 可复活的 -- 从根节点开始追踪不到，但有可能被终结方法触及并复活。不仅仅是那些声明了 finalize() 方法的对象，而是所有的对象都要经过可复活状态<br />
+3. 不可触及的 -- 以上两种可能性都不存在，可以真正回收它们所占据的内存了<br/><br/>
+版本 1.2 中，可触及按强弱进一步细分为：<br/><br/>
+1. 强可触及 -- 即原来的可触及，从根节点开始的任何直接引用，如一个局部变量或任何从强可触及对象的实例引用的对象<br />
+2. 软可触及 -- 表现为 SoftReference 所引用的对象<br />
+3. 弱可触及 -- 表现为 WeakReference 所引用的对象<br />
+4. 影子可触及 -- 表现为 PhantomReference 所引用的对象<!--more--><br/><br/>
+SoftReference、WeakReference、PhantomReference 都是 java.lang.ref.Reference 类的子类。强引用与这三种弱引用之间最基本的差别是，强引用禁止引用目标被垃圾收集，而那三种引用不禁止。<br/><br/>
+要创建某一对象的软引用、弱引用或是影子引用，只需简单的包装一下。例如，创建一个 cow 对象的软用就写成：<br/><br/>
+SoftReference softCow = new SoftReference(cow);  //对于 WeakReference 和 PhantomReference 都是一样的<br/><br/>
+这里 softCow 是一个强引用，从 softCow 到 cow 是一个软引用，也就预示着垃圾收集器从根节点开始只能通过一个软引用才能触及到这个 cow 对象。要切断到 cow 的软引用，使之不再软可触及，可调用 softCow.clear()，要获取 cow 对象用 softCow.get()。<br/><br/>
+<strong>可触及性状态的变化</strong><br/><br/>
+引入三个这样的引用对于虚拟机是有用处的，垃圾收集器对强引用对象是不能肆意妄为，但是它可随意更改百强可触及对象的可触性状态。在软引用、弱引用或者影子引用指向对象的可触及状态被垃圾收集器改变时，你可以获得这变化发生的通知，方法是要把引用对象和引用队列关联起来。<br/><br/>
+引用队列是 java.lang.ref.ReferenceQueue 类的实例，垃圾收集器在改变可触及性状态时会把所涉及的引用对象编入到队列中。你只要设置并观察引用队列，便可异步得到通知了。<br/><br/>
+下面用代码来演示一下 Reference、ReferenceQueue 与 Object 之间的关系，以及如何监听到可触及状态的变化。<br/><br/>
+
+{{< highlight java >}}
+package com.unmi.ref;
+
+import java.lang.ref.ReferenceQueue;
+import java.lang.ref.SoftReference;
+
+/**
+ * 测试 Reference
+ * @author Unmi
+ */
+public class TestReference {
+
+    public static void main(String[] args) throws InterruptedException {
+        final ReferenceQueue<Cow> queue = new ReferenceQueue<Cow>();//引用队列
+
+        //引用和引用队列进行关联
+        SoftReference<Cow> ref1 = new SoftReference<Cow>(new Cow(1),queue);
+        final SoftReference<Cow> ref2 = new SoftReference<Cow>(new Cow(2),queue);
+
+        System.out.println(queue.poll());//poll()方法取不到对象即刻返回 null
+
+        ref1.enqueue(); //把 ref1 所引用的对象 cow1 编入到引用队列中
+        System.out.println(queue.poll().get()); //用 poll() 取队列上的对象
+
+        new Thread(){ //启动一个线程来监测引用队列中的对象
+            public void run(){
+                try {
+                    //用 remove() 以阻塞方式获取并移走对象，不见对象不死心
+                    System.out.println(queue.remove().get());
+                    System.out.println("线程获取到了引用队列中的对象");
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }.start();
+
+        System.out.println("等待 3 秒钟后把 cow2 编入队列...");
+        Thread.sleep(3000);
+        ref2.enqueue(); //把 ref2 所引用的对象 cow2 编入到引用队列中
+    }
+}
+
+class Cow{
+    private int num;
+
+    public Cow(int num){
+        this.num = num;
+    }
+
+    public String toString(){
+        return "This is Cow " + this.num;
+    }
+}
+{{< /highlight >}}
+
+上面程序执行后的输出为：<br/><br/>
+<span style="color: #800080;">null<br />
+This is Cow 1<br />
+等待 3 秒钟后把 cow2 编入队列...<br />
+This is Cow 2<br />
+线程获取到了引用队列中的对象<br />
+</span><br />
+本想说明一下 Reference 的 clear() 方法的效果，但通过程序不容易展现出来。<br/><br/>
+当垃圾收集器决定收集软可触及的 Cow 对象时，它会清除 SoftReference (调用它的 clear() 方法)，可能立即或在稍后把它所涉及的 Cow 对象放到引用队列中。何时加入队列是没法确定的，所以代码不好演示。<br/><br/>
+垃圾收集器要调用 Reference 的 enqueue() 方法就会把清除的对象加到引用队列中，当然你也可以手工调用该方法。在引用队列上可用 poll() 和 remove() 方法来获取对象，它们的区别是一个非阻塞，无对象立即返回 null，而 remove() 是阻塞的守候，不等到不罢休。<br/><br/>
+再来看看垃圾收集器对那三种引用对象的处理方式。<br/><br/>
+软引用：GC 可能回收它所引用对象占据的内存。如果发生了，便解除(clear()) 引用，并加入引用队列<br />
+弱引用：GC 必须归还它所引用对象占据的内存。如果发生了，便解除(clear()) 引用，并加入引用队列<br />
+影子引用：GC 立即把它所引用对象加入队列，但从不解除(clear())影子引用，所有的影子引用都必须由程序明确的清除。<br/><br/>
+<strong>缓存、规范映射和临终清理</strong><br/><br/>
+软、弱、影子引用可分别为程序提供不同的服务。软引用可用来创建内存中的缓存；弱引用可以创建规范映射，如哈稀表，它的 Key 和 Value 可在无其他程序引用时从映射中清除；影子引用使你可实现除终结方法以外的更为复杂的临终清理策略。<br/><br/>
+软、弱引用未清除时，get() 能获取到相应对象，否则返回 null，而影子引用的 get() 方法总是返回 null。如果一个对象到达了影子可触及状态，它便不能再被复活了，等着被回收吧。<br/><br/>
+虚拟机在内存紧张时会考虑释放软、弱引用所关联对象占据的内存。所不同的是垃圾收集器这时候可自行决定是否清除软连接，但必须立即清除弱连接。弱引用的一个实现是 java.util.WeakHashMap 类。影子可触及对角表示对象即将被回收，影子引用对象创建时必须关联一个引用队列的。
