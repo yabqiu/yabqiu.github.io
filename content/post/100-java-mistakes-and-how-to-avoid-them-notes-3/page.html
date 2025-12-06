@@ -1,0 +1,210 @@
+---
+title: 《100 Java Mistakes and How to Avoid Them》笔记 3
+url: /100-java-mistakes-and-how-to-avoid-them-notes-3/
+date: 2023-12-28T00:56:44-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - ReadingNotes
+tags: 
+  - Java
+comment: true
+# additional
+wpPostId: 13388 
+wpStatus: publish
+views: 140
+lastmod: 2023-12-28T00:56:44-06:00
+---
+
+本书的阅读又搁置了许久，虽然感觉 Manning 出版社的这一 <code>100 Mistakes</code> 系列从书的质量不是那么的高，但开了头还是继续从本书 40% 的位置往下。</p>
+<br/>
+开始要讲述到异常了，异常还是有必要认真对待的，比如<br/><br/>
+<ol>
+    <li>Java 中很容易被 CheckedException 弄得代码不整洁</li>
+    <li>缺少必要的参数检查，不舍得抛出异常，视异常为 Bug</li>
+    <li>不明确出现异常时后续如何处理，</li>
+    <li>或者是捕获而隐藏了异常致使定位错误变得更难。</li>
+</ol><br/>
+Java 的主要异常大分类是<br/>
+<blockquote>
+Throwable<br />
+├── Error<br />
+└── Exception<br />
+          └── RuntimeException
+</blockquote>
+NullPointerException, 这恐怕是一个最常见的异常，Java 对一个对象是否能为 null 值没什么约束，甚至用 null 来表示业务上的空。比如说方法的参数与返回值，Java 都可以是 null 值，而在 Kotlin 中非明确可为 null 的时不能为 null<!--more--><br/>
+<blockquote>
+fun foo(a: String): String = ""
+</blockquote>
+上面的 Kotlin 方法，不能传入 foo(null), 编译器出错，同时也不能返回 null 值，如写成 fun foo(a: String): String = null。要使它既能接收和返回 null 值的话，要写成<br/>
+<blockquote>
+fun foo(a: String?): String? = ...
+</blockquote>
+Java 只能用 @Nullable, @NotNull 非标准的方式让第三方的 AnnotationProcessor 介入编译期织入代码，或手功加入代码，待到运行期来检验。比如借助于 JDT 的注解设定默认参数和返回值都不应该为 null<br/>
+<pre class="lang:default decode:true">import org.eclipse.jdt.annotation.*;<br/><br/>
+@NonNullByDefault({DefaultLocation.PARAMETER, DefaultLocation.RETURN_TYPE})
+public interface MyInterface {
+    String processString(String input);
+}</pre>
+<br/>
+Java 15 对 NullPointerException 的显示信息增强了，如下面的代码<br/>
+<pre class="lang:default decode:true ">public class Test {<br/><br/>
+    public static void main(String[] args) {
+        foo().trim();
+    }<br/>
+    private static String foo() {
+        return null;
+    }
+}
+</pre>
+<br/>
+在 Java 15 之前执行显示的错误是<br/>
+<blockquote>
+Exception in thread "main" java.lang.NullPointerException<br />
+        at Test.main(Test.java:4)
+</blockquote>
+而在 Java 15 及之后的版本显示的错误是<br/>
+<blockquote>
+Exception in thread "main" java.lang.NullPointerException: Cannot invoke "String.trim()" because the return value of "Test.foo()" is null<br />
+        at Test.main(Test.java:4)
+</blockquote>
+我们很清楚造成 NullPointerException 的原因<br/><br/>
+如果方法参数不能接受 null 值，方法开始处就必须检查，如 Objects.requireNonNull(firstname), 或各种断言的方式<br/><br/>
+Java 10 提供的 List.copyOf, Set.copyOf, Map.copyOf 方法不允许 null 值元素，所以它可以帮助我们检测传入的集合参数，如<br/>
+<pre class="lang:default decode:true">void process(Collection&lt;String&gt; data) {
+    data = List.copyOf(data);   // data 中有 null 值的将会抛出异常
+    ...
+}</pre>
+<br/>
+如果方法返回的是一个集合或数组，通常返回空集合或空数组好过于返回 null 值，而且也应避免返回的包括 null 值的集合或数组。再如 Stream.empty(), Optional.empty(), 枚举类型也最好定义 NOT_FOUND, UNKNOWN 等项，而非直接用 null, 像 JDK 的 RoundingMode.UNNECESSARY<br/><br/>
+Java 标准库如 java.io.File 的 list(), listFiles() 方法会在任何 I/O 错误时返回 null，这就掩盖了错误信息; 但新的 NIO Files.list() 能抛出正确的异常信息(IOException)。比如目录 abc 不存在，new File("abc").list() 返回值，Files.list(path.of("abc")) 抛出 IOException<br/><br/>
+null 作为正常值来处理时经常意义不含糊，如 Boolean 的 null 值表示第三个选择? Integer id 的 null 表示记录不存在？一个方法在返回 null 值之前需作必要的思考。<br/><br/>
+永远不要让返回类型为 Optional 的方法返回 null 值。Optional 作为方法参数是不便利的，因为总是要拆箱，还不如直接传入 null 值。<br/><br/>
+Optional.of(value) vs Optional.ofNullable(value): 如果确定 value 不该为 null 就应该使用前者，及时抛出 NullPointerException，后者虽说总是安全，但会掩盖错误。<br/><br/>
+使用 API 时一定要清楚它在某些情况下是返回 null, 空集合，还是抛出异常，不然对原本返回的空集合进行 null 值判断是没有意义的，或者抛出的异常未捕获。<br/><br/>
+Java 虽能防止下标越界，但有时候也有必要检查下标的范围，如传入的索引为负数，索引累加后溢出等，Java 9 有两个新方法检查下标是否越界<br/><br/>
+<ol>
+    <li>Objects.checkFromIndexSize(fromIndex, size, length) 用来检查 fromIndex ~ fromIndex + size -1 是否落在 0 ~ length-1 之间，即是否有效的下标。</li>
+    <li>Objects.checkIndex(index, length) 检查 index 是否是一个长度为 length 的数组或集合的有效下标</li>
+</ol><br/>
+Java 16 开始的基于模式的 instanceof 表达式还是很省事<br/>
+<pre class="lang:default decode:true">static void foo(Object obj) {
+    if(obj instanceof String ss) {
+        System.out.println(ss.trim());
+    }
+}
+</pre>
+<br/>
+判断类型与转型一口气完成。<br/><br/>
+Java 9 的 @Deprecated(forRemoval = true) 可直接指示将被删除<br/><br/>
+又要回味一下 Java 的泛型实现了，由于历史原因，Java 的泛型不像 C++ 的模板类那样针对具体类型实现独立的类，Java 的泛型是字节码层级上仍然是无类型的(擦除了类型，虚拟机只知道类型的上界 -- Object 或 &lt;? extends ABC&gt; 声明的上界)，只在源代码一层实现了泛型。所以对象 List&lt;String&gt; 本质上它还是一个 List&lt;Object&gt;<br/>
+<pre class="lang:default decode:true">static void printFirstItem(List&lt;String&gt; list) {
+    String s = list.get(0);
+}</pre>
+<br/>
+所以上面方法的字节码是<br/>
+<pre class="lang:default decode:true ">  static void printFirstItem(java.util.List&lt;java.lang.String&gt;);
+    Code:
+       0: aload_0
+       1: iconst_0
+       2: invokeinterface #7,  2            // InterfaceMethod java/util/List.get:(I)Ljava/lang/Object;
+       7: checkcast     #13                 // class java/lang/String
+      10: astore_1
+      11: return
+</pre>
+<br/>
+它总是从 List 中获得一个 Object, 然后转型为 String。<br/><br/>
+由于 List&lt;String&gt; 本质上是一个 List&lt;Object&gt;, 所以也就有办法往其中添加非 String 对象，看下面的代码<br/>
+<pre class="lang:default decode:true">public class Test {
+    public static void main(String[] args) {
+        List&lt;String&gt; list = new ArrayList&lt;&gt;();
+        printFirstItem(list);
+    }<br/><br/>
+    static void printFirstItem(List&lt;String&gt; list) {
+        System.out.println(list.size());  // 输出 0
+        List&lt;?&gt; objects = list;
+        ((List&lt;Object&gt;)objects).add(0, 1);  //#1，这行有编译警告信息 Unchecked cast: 'java.util.List&lt;capture&lt;?&gt;&gt;' to 'java.util.List&lt;java.lang.Object&gt;' 
+        System.out.println(list.size());  // 输出 1，成功往 list 中加入一个 Integer 对象
+        Object obj = list.get(0);  // 如果获得为 Object 类型，没有异常   #2
+        System.out.println(list.get(0));  // 这里出现异常，因为无法转型为 String  #3
+    }
+}</pre>
+<br/>
+输出及异常信息<br/>
+<blockquote>
+0<br />
+1<br />
+Exception in thread "main" java.lang.ClassCastException: class java.lang.Integer cannot be cast to class java.lang.String (java.lang.Integer and java.lang.String are in module java.base of loader 'bootstrap')<br />
+    at com.example.demo.Test.printFirstItem(Test.java:18)
+</blockquote>
+对照关键语句的字节码<br/><br/>
+#1<br/>
+<blockquote>
+20: invokeinterface #40, 3 // InterfaceMethod java/util/List.add:(ILjava/lang/Object;)V
+</blockquote>
+#2<br/>
+<blockquote>
+37: aload_0<br />
+38: iconst_0<br />
+39: invokeinterface #44, 2 // InterfaceMethod java/util/List.get:(I)Ljava/lang/Object;<br />
+44: astore_2
+</blockquote>
+#3<br/>
+<blockquote>
+48: aload_0<br />
+49: iconst_0<br />
+50: invokeinterface #44, 2 // InterfaceMethod java/util/List.get:(I)Ljava/lang/Object;<br />
+55: checkcast #48 // class java/lang/String<br />
+58: invokevirtual #50 // Method java/io/PrintStream.println:(Ljava/lang/String;)V
+</blockquote>
+在 Java 中，List&lt;SubType&gt; 与 List&lt;SuperType&gt; 不存在父子关系，所以强制转型<br/><br/>
+<blockquote>
+(List&lt;SuperType&gt;)(List&lt;?&gt;)(new ArrayList&lt;SubType)
+</blockquote>
+是可以通过 Java 的编译，但十分危险，List 会被添加不兼容的类型。如果有需要应声明带上界的类型，如<br/><br/>
+<blockquote>
+void processList(List&lt;? extends CharSequence&gt; list) { ... }
+</blockquote>
+转换为 Collections.unmodifiableList() 能防止 List 被意外修改<br/><br/>
+Raw type 的 List 并不等于 List&lt;Object&gt;, 以下代码能通过编译<br/>
+<pre class="lang:default decode:true">public static void main(String[] args) {
+    List list = new ArrayList&lt;&gt;(); // IntelliJ 编译警告 Raw use of parameterized class 'List' 
+    list.add(123);   // IntelliJ 编译警告 Unchecked call to 'add(E)' as a member of raw type 'java.util.List' 
+    printFirstItem(list);
+}<br/>
+static void printFirstItem(List&lt;String&gt; list) {
+    System.out.println(list.get(0));  // ClassCastException
+}</pre>
+<br/>
+但执行时会出现 ClassCastException 异常<br/><br/>
+但如果把声明 List 声明替换为 List&lt;Object&gt;<br/>
+<pre class="lang:default decode:true">public static void main(String[] args) {
+    List&lt;Object&gt; list = new ArrayList&lt;&gt;();
+    list.add(123);
+    printFirstItem(list); // #1
+}</pre>
+<br/>
+#1 处便不能通过编译了，提示应该提供 List&lt;String&gt; 但传入的是 List&lt;Object&gt;<br/>
+PECS(producer - extends, consumer - super): 如果泛型方法需处理更宽泛的类型，只从泛型中读取声明参数为  ? extends, 只往泛型中写入的话声明参数为 ? super<br/><br/>
+避免使用 Raw type, 编译选项 -Xlint:rawtypes 帮助我们找到 Raw type 的使用<br/><br/>
+Collections 有 checkedList(), checkedMap(), checkedQueue() 等方法，防止通过<br/>
+<blockquote>
+((List&lt;Object&gt;) (List&lt;?&gt;) new ArrayList&lt;String&gt;()).add(1);
+</blockquote>
+恶意绕过泛型约束往列表中添加不兼容的类型，如果用 checkedList()<br/>
+<pre class="lang:default decode:true">List&lt;String&gt; list = Collections.checkedList(new ArrayList&lt;&gt;(), String.class);
+((List&lt;Object&gt;) (List&lt;?&gt;) list).add(1);</pre>
+<br/>
+以上代码在企图往 list 中添加 Integer 时报出异常<br/>
+<blockquote>
+Exception in thread "main" java.lang.ClassCastException: Attempt to insert class java.lang.Integer element into collection with element type class java.lang.String<br />
+    at java.base/java.util.Collections$CheckedCollection.typeCheck(Collections.java:3355)<br />
+    at java.base/java.util.Collections$CheckedCollection.add(Collections.java:3403)
+</blockquote>
+即每次操作对象时都会检查它是否是 String 类型。 <br/></br>
+当然实际写代码时大约不会用 checkedList(new ArrayList&lt;(), String.class) 来声明类型的，但用来临时找出哪里违规加入了不兼容的类型是很有用的。 <br/><br/>
+如果同样的类名(类全路径都相同)由不同的类加载器加载的也会出现 ClassCastException, 这种情况较少见，而且此时错误信息里会明确告知哪个 ClassLoader 加载的类不能转型为另一个 ClassLoader 加载的类

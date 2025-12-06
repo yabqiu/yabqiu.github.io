@@ -1,0 +1,202 @@
+---
+title: 《100 Java Mistakes and How to Avoid Them》笔记 2
+url: /100-java-mistakes-and-how-to-avoid-them-notes-2/
+date: 2023-10-25T15:59:21-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/java-logo.png"
+categories:
+  - Java/JEE
+  - ReadingNotes
+tags: 
+  - Java
+comment: true
+# additional
+wpPostId: 13277 
+wpStatus: publish
+views: 167
+lastmod: 2023-10-25T15:59:21-05:00
+---
+
+继续阅读本书，编程语言处理数值都有可能出现问题，如溢出，整数的最大最小值不对称，Double.NaN 等。</p>
+<br/>
+由于 Java 学了 C，也用 0 开始的数字来表示 8 进制数，如 037, 010 分别是十进制的 31 和 8，这与现实不相符。因为如果你在纸上写下 037, 010, 几乎所有人(除了某些程序员)都会认为它们就是十进制的 37 和 10。但是 Java 表示 2 进制, 16 进制的方式没有问题的，如 0b10, 0x37。IntelliJ IDEA 看到使用 0 开头的 8 进制数会不建议那么使用. 8 进制数字的范围是 0~8, 所以 09 是错误的, 但是 Java 编译器似乎对此很陌生.<br/><br/>
+int a = 09;<br/><br/>
+IntelliJ IDEA 会提示 <code>Integer number too large</code>, 编译器提示说 <code>java: ';' expected</code>, 有点驴唇不对马嘴.<br/><br/>
+现在几乎没有必要使用 0 开始的 8 进制数的方式, 或许还有用的就是表示 Unix 下文件权限, 如<br/><br/>
+int fileMode = 0644<br/><br/>
+所以任何时候看到 0 开头的数字都必须仔细检视, 基本可以禁止使用这种方式<!--more--><br/><br/>
+Java 中在数字溢出时不会报任何错误, 不同宽度类型的数值只取所需字节数, 如超过范围的 long 型赋值给 int 型, int 只取低位四个字节<br/>
+<pre class="lang:default decode:true">long a = Integer.MAX_VALUE + 1;   // -2147483648  int 加 int 还是 int, 再赋值给 long 
+long b = Integer.MAX_VALUE + 1L;  // 2147483648
+int c = Integer.MAX_VALUE + 1;    // -2147483648
+int d = (int)2147483648L;         // -2147483648</pre>
+<br/>
+Integer.MAX_VALUE 是 2147483647, 这涉及到 Java 怎么表示正负数的问题, 正整数最大值最高是 0, 其余位是 1, 加 1 后, 全部变成 1, 而最高位是符号位, 所以变成了负数的另一个极端 -2147483648. 并且 Java 在内部是用补码表示的, 即正数为原码, 负数的话为反码 + 1 表示<br/><br/>
+再来一个以更小整形数 byte 为例<br/>
+<pre class="lang:default decode:true">byte a = 0b00000000;
+short b = 0b0000000010000000;
+byte c = (byte) b;
+System.out.println(a);
+System.out.println(c);</pre>
+<br/>
+short 在转型为 8 位字节型时取低位 10000000, 因为最高位是 1, 所以是负数, 补码表示为 11111111, 就是 -(2<sup>^</sup>7) = -128, 如果认为是原码表示那它就是 -0, 也算是 -128, 这样就整出个计算机内部的 -0 与 0 是不一样的东西了.<br/><br/>
+这个问题上说太多了, 虽然 Java 在数值溢出时得到的数字也是有规可循的, 但通常那个溢出的数字是没有意义的, 应选择足够宽的数值类型避免溢出.<br/><br/>
+还有个有意思的取负操作, 像某种整型数的最小值取负, 或 /-1 还是它本身, 如 <br/><br/>
+Integer.MIN_VALUE/-1 == Integer.MIN_VALUE<br />
+-Integer.MIN_VALUE == Integer.MIN_VALUE<br />
+Math.abs(Integer.MIN_VALUE)     // -2147483648, 绝对值还可能是一个负数<br/><br/>
+当看到  <code>-2147483648/-1 == -2147483648</code> 就不要太奇怪了, 因为 -2147483648 没有在整数范围内对应的 2147483648, 最大的正整数也就 2147483647, 它加上 1 溢出后就变回了 -2147483648.<br/><br/>
+对于数字膨胀快速的操作如 乘，乘方, 或者求平均数等操作, 更容易产生溢出.<br/><br/>
+有什么好办法能避免溢出呢? 大约只能自己小心, 或者更宽的类型, 如果觉得 int 不够就选用 long, 或者用 BigInteger, 它不会溢出, 或者类似的 Math.addExact(x, y) 溢出时会报告异常。<br/><br/>
+无符号移位操作确实能解决除 2 的操作时避免溢出<br/><br/>
+int average = (1_000_000_000 + 2_000_000_000) / 2; // -647483648<br />
+int average = (1_000_000_000 + 2_000_000_000) &gt;&gt;&gt; 1; // 1500000000<br/><br/>
+但谁会这么写代码呢？还得加上注释才能理解，真有这样的问题为何不直接用 long 型呢？<br/><br/>
+long average = (1_000_000_000L + 2_000_000_000) / 2; // 1500000000<br/><br/>
+或者用 BigInteger<br/><br/>
+int 运算溢出后再赋值给 long 型有一个实际的应用实例<br/>
+<pre class="lang:default decode:true ">void process(int seconds) {
+    long microseconds = seconds * 1_000_000;
+    useMicronsecons(microseconds);
+}</pre>
+<br/>
+设置时以秒为单位，最后应用时转换为微秒，但在 seoncds 超过 2147 秒(大约 35 分钟)，seconds * 1_000_000 溢出了, microseconds 可能得到一个负数，解决办法是让运算时就转换为 long 型<br/><br/>
+seconds * 1_000_000L<br/><br/>
+或者<br/><br/>
+long microseconds = TimeUnit.SECONDS.toMicros(seconds);<br/><br/>
+在处理财务数据时，更多考虑用 BigDecimal 替代 float 或 double, 这样更能避免运算中舍入后产生的精度问题，BigDecimal 有更大的精度。<br/>
+<pre class="lang:default decode:true">float a = 1f / 3;
+double b = 1d /3;
+BigDecimal c = BigDecimal.valueOf(1).divide(BigDecimal.valueOf(3), MathContext.DECIMAL128);</pre>
+<br/>
+以上三个值分别是<br/>
+<blockquote>
+0.33333334<br />
+0.3333333333333333<br />
+0.3333333333333333333333333333333333
+</blockquote>
+运算后转型赋值时常要小心，像 long a = aInt * 3000000, 它总是右边计算后得到一个 int 再赋给  long，同理<br/><br/>
+double half = aInt / 2;<br/><br/>
+也是在 aInt /2 后得到一个 int，再转型赋值为 double，所以在 aInt 为 2 或 3 时，half 都是一样的，所以必须让运算之前就转型再计算，写成<br/><br/>
+double half = 2 / 2.0;<br/><br/>
+我们可以对比一下这两个方法的字节码<br/>
+<pre class="lang:default decode:true">void f1(int value) {
+    double half = value / 2;
+}<br/><br/>
+void f2(int value) {
+    double half = value / 2.0;
+}</pre>
+<br/>
+字节码<br/>
+<pre class="lang:default decode:true ">  void f1(int);
+    Code:
+       0: iload_1
+       1: iconst_2
+       2: idiv
+       3: i2d
+       4: dstore_2
+       5: return<br/><br/>
+  void f2(int);
+    Code:
+       0: iload_1
+       1: i2d
+       2: ldc2_w        #7                  // double 2.0d
+       5: ddiv
+       6: dstore_2
+       7: return</pre>
+<br/>
+我们可以看到 f1() 中是除(idiv) 完后结果再转型成 double(i2d), 而 f2 中是运算数先转型为 double(i2d), 再作除法(ddiv)<br/><br/>
+又回到 Integer.MIN_VALUE 的问题(Long.MIN_VALUE 也类似)。实际应用中在用 hashCode() 进行集群中选择节点时也可能出现问题，如<br/><br/>
+int node = Math.abs(obj.hashCode()) % NUMBER_OF_NODES;<br/><br/>
+当 obj.hashCode() 正好是 Integer.MIN_VALUE 时，算出的 node 就是一个负数<br/><br/>
+在 Java 15 及其后可用 Math.absExact 方法，Math.absExact(Integer.MIN_VALUE) 在结果为负数时会抛出 ArithmeticError 异常<br/><br/>
+Math.floorMod(obj.hashCode(), NUMBER_OF_NODES);  // 永远返回一个正数<br/><br/>
+整数往浮点数转换时的精度丢失<br/>
+<pre class="lang:default decode:true ">int intVal = 1 &lt;&lt; 28;
+float floatVal = intVal; // 2.68435456E8
+float floatValPlusOne = intVal + 1; // 2.68435456E8
+System.out.println(floatVal == floatValPlusOne); // true</pre>
+<br/>
+造成 intVal 和 intVal + 1 相等，加了也是白加。原因是整数部分的精度丢失<br/><br/>
+<ol>
+    <li>int 最高位为符号位，其余 31 位是数值位</li>
+    <li>而 float 的总字节数也是 32 位，最高位也符号位，8 位表示指数，剩下的 23 位表示数值</li>
+</ol><br/>
+所以 int 的 31 位数值位到了 float 后只取 23 位，因此加在最末尾的 1 就是白加，总是被舍去, 不光加 1 没用，加 10 也效。<br/><br/>
+找了两张图来揭示 Java 内部如何表示 float 和 double<br/><br/>
+<a href="/post{{< param "url" >}}java_float.png"><img class="size-large wp-image-13279 aligncenter" src="/post{{< param "url" >}}java_float-800x190.png" alt="" width="800" height="190" /></a><a href="/post{{< param "url" >}}/java_double.png"><img class="size-large wp-image-13280 aligncenter" src="/post{{< param "url" >}}java_double-800x174.png" alt="" width="800" height="174" /></a>看到 double 的尾数部分足够容纳 int 的全部，所以 int 转 double 不会有精度丢失的问题<br/><br/>
+这里又让我们再一次意识到用 BigDecimal 的必要性<br/><br/>
+在 long 型转 int 时，用  long a = (int)aLong; 会造成溢出问题，安全的方式可以用 Math.toIntExact(), 在存在溢出时会报告 ArithmeticException. Math 的更多 xxxExact() 方法还值得瞧瞧.<br/><br/>
+没用标识 L 的整数都是 int 型，包括带 0, 0b 或 0x 前缀的，如  0xFFFFFFFF, 要表示 long 也是用  0xFFFFFFFFL, 二进制，十六进制表示整数时同样要考虑到溢出<br/><br/>
+几个特殊的二进制表示边界值<br/>
+<pre class="lang:default decode:true">byte a = (byte)0b1000_0001; // -127
+byte b = (byte)0b1000_0000; // -128
+byte c = (byte)0b1111_1111; // -128
+byte d = (byte)0b0111_1111; // 127
+</pre>
+<br/>
+x *= y 和  x = x + y 不尽相同，x *= y 相当于 x = (type_of_x)(x*y), 而 x = x * 1.2 时，如果 x 是整数时，x 会依据 1.2 的类型先转换为浮点数再乘以 1.2，得到的结果是一个  double，所以<br/><br/>
+char c = 'a';<br />
+c = c * 1.2;   // c * 1.2 的 double 类型，无法赋值给 c<br/><br/>
+而  c *= 1.2 就是 't'<br/><br/>
+Byte.toUnsignedInt(getByte());   // Java 中想要用下无符号整形有点难<br/><br/>
+int min;<br/><br/>
+min = min * 3  / 2 与 min  *= 3/2 是不一样的，后者是 min = min * (3/2), 即 min = min * 1。3/2 会在编译期计算为 1。当 min 是 4 时<br/><br/>
+min = min * 3/2  =&gt; min = 6<br/><br/>
+而 min *= 3/2  =&gt; min = 4<br/><br/>
+其实上面的问题归根结底就是要清楚是运算数转型后计算再转型赋值，还是计算后结果再转型。<br/><br/>
+还要就是 *= 运算时应把右端当成一个整体，比如 a -= b - c 是 a = a-(b-c), 相当于  a = a - b +c 而不是简单右移为 a = a - b - c <br/><br/>
+尽量不用 short 类型，所需数字一旦超过 32767 就产生溢出，用 int 对内存的影响微乎其微。<br/><br/>
+Java 处理位掩码时考虑用 BitSet. Java 中进行移位操作时请考虑到负数的情况，因为负数的最高位是符号位。<br/><br/>
+像整数在计算机中可能区分了 -0 与 +0，浮点数也有 -0.0 和 +0.0 的区别<br/><br/>
+<pre class="lang:default decode:true">double a = -1 * 0.0;
+double b = 0.0;
+System.out.println(a);
+System.out.println(Double.doubleToLongBits(a));
+System.out.println(b);
+System.out.println(Double.doubleToLongBits(b));
+System.out.println(a == b);
+System.out.println(Objects.equals(a, b));</pre>
+<br/>
+输出为<br/>
+<blockquote>
+-0.0<br />
+-9223372036854775808<br />
+0.0<br />
+0<br />
+true<br />
+false
+</blockquote>
+虽然 -0.0 与 0.0 的基础类型是相等的，但装箱成 Double 后 Double(-0.0) 与  Double(0.0) 用 equals() 比较就不相等了，因为它们在内存中的表示形式却是不一样的。<br/><br/>
+NaN (Not-a-number) 也是很有意思的值，也是在 Java 中自己不等于自己的绝有的例子<br/>
+<pre class="lang:default decode:true">System.out.println(Double.NaN == Double.NaN);   // false
+System.out.println(Float.NaN == Float.NaN);     // false
+System.out.println(Double.isNaN(Double.NaN));   // true
+System.out.println(Double.isNaN(Float.NaN));    // true
+System.out.println(Float.isNaN(Float.NaN));     // true
+</pre>
+<br/>
+当处理 Double 或 Float 类型，总是要问下自己是否会是 NaN, 如果有可能就要用 Double.isNaN(a) 或 Float.isNaN(a) 来判断或断言。<br/><br/>
+而且浮点数还有相应的正负无限数值，见<br/>
+<pre class="lang:default decode:true">System.out.println(Double.POSITIVE_INFINITY);                           // 1.0/0.0 的表示，打印为 Infinity
+System.out.println(Double.NEGATIVE_INFINITY);                           // -1.0/0.0 的表示，打印为  -Infinity
+System.out.println(Double.POSITIVE_INFINITY==Double.POSITIVE_INFINITY); // true
+System.out.println(Double.isInfinite(Double.POSITIVE_INFINITY));        // true
+</pre>
+<br/>
+浮点数可表示正负范围中的值，Double.MAX_VALUE 是最大值，然而 Double.MIN_VALUE 却不是最小值<br/>
+<pre class="lang:default decode:true">System.out.println(Double.MAX_VALUE);  // 1.7976931348623157E308
+System.out.println(Double.MIN_VALUE);  // 4.9E-324<br/><br/>
+double a = -Double.MAX_VALUE;
+System.out.println(a &lt; Double.MIN_VALUE);  // true</pre>
+<br/>
+当真要一个更理想的 Double 最小值，用 -Double.MAX_VALUE 会更合适些。或者用 Double.POSITIVE_INFINITY 和 Double.NEGATIVE_INFINITY 来取代相应的 Double.MAX_VALUE 和 Double.MIN_VALUE<br/>
+<pre class="lang:default decode:true">System.out.println(Double.POSITIVE_INFINITY &gt; Double.MAX_VALUE);    // true
+System.out.println(Double.NEGATIVE_INFINITY &lt; -Double.MAX_VALUE);   // true
+</pre>
+<br/>
+Float 同 Double 一样，也是这个路数，但 BigDecimal 就不存在 NaN 这个数。
