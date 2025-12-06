@@ -1,15 +1,13 @@
 ---
-title: "{{ post.title }}"
+title: {{ post.title }}
+url: /{{ post.name }}/
 date: {{ post.post_date_gmt | date_format }}
-url: /{{ post.name }}
 featured: false
-draft: true
+draft: false
 toc: false
 # menu: main
-usePageBundles: true
-featureImage: "{{ post.feature_image }}" {# Sets featured image on blog post #}
-thumbnail: "{{ post.feature_image }}" {# Sets thumbnail image appearing inside card on homepage. #}
-codeMaxLines: 50
+usePageBundles: true{% if post.feature_image %}
+thumbnail: "../images/logos/{{ post.feature_image }}"{% endif %}
 categories:{% for cat in post.categories %}
   - {{ cat }}{% endfor %}
 tags: {% for tag in post.tags %}
@@ -17,8 +15,9 @@ tags: {% for tag in post.tags %}
 comment: true
 # additional
 wpPostId: {{ post.id }} {# post id in Wordpress #}
+wpStatus: {{ post.status }}
 views: {{ post.views }}
-lastModified: {{ post.last_modified_gmt | date_format }}
+lastmod: {{ post.last_modified_gmt | date_format }}
 ---
 
-{{ post.content }}
+{{ post_content }}
