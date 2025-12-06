@@ -1,0 +1,60 @@
+---
+title: Clojure REPL 连接远程会话
+url: /clojure-lein-repl-connect-session/
+date: 2016-07-27T02:13:44-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Clojure
+tags: 
+  - Clojure
+comment: true
+# additional
+wpPostId: 7393 
+wpStatus: publish
+views: 851
+lastmod: 2021-05-04T15:29:00-05:00
+---
+
+学习 Clojure 一般是用 <code>lein repl</code> 启动控制台, 每次启动 <code>lein repl</code> 都会发现它打开了一个端口, 例如</p>
+<blockquote>
+➜ ~ lein repl<br />
+nREPL server started on port 57212 on host 127.0.0.1 - nrepl://127.0.0.1:57212<br />
+REPL-y 0.3.7, nREPL 0.2.12<br />
+Clojure 1.8.0<br />
+...........
+</blockquote>
+一直不清楚上面显示的 <code>nrepl://127.0.0.1:57212</code> 该作何用, 而且端口号是随机的, 这其中定有文章.<br/><br/>
+幸好有 Google 帮忙, 查一查, 然后才意识到何不运行  <code>lein help repl</code> 来看看 <code>repl</code> 中到底有何玄机, 原来是:<br/><br/>
+&lt;none&gt; -&gt; :start     <code>lein repl</code> 默认的行为, 见下. 未指定 :host 或 :port , :host 默认为 127.0.0.1,  :port 为随机<br />
+:start [:host host] [:port port] <strong>原来  <code>lein repl</code> 设计为为 CS 结构</strong>. :start 会启动一个 nREPL  server, 并且立即启动一个 client 连接上它. :host 默认为 127.0.0.1, :port 默认为随机的<br />
+:headless [:host host] [:port port]   只启动 nREPL server, 等待别人来连接它, 相同的默认 :host, :port 规则.  也就是它不会进到 Clojure 控制台<br />
+:connect [dest]   连接一个 nREPL server. 目标服务器的指定有三种方式: HTTPS(S) URL, host:port, 或 port<!--more--><br/><br/>
+<strong>命令举例:</strong><br/><br/>
+lein repl :start :port 1234    启动 nrepl://127.0.0.1:1234 Server, 并且立即开一个客户端连接上它. 比如进到控制台 <code>user=&gt;</code><br />
+lein repl :headless :host 0.0.0.0  启动 nrepl://0.0.0.0:7788, 并等待客户端连接. 它不接受输入<br />
+lein repl :connect 1234   启动一个客户端连接上本机的 1234 端口上的 nREPL server. 它可以进到控制台<br />
+lein repl :connect nrepl://192.168.0.1:57906  启动一个客户端连接  nREPL server nrepl://192.168.0.1:57906<br />
+lein repl :connect :host 192.168.0.1 :port 57906  用途同上<br/><br/>
+那么 <code>lein repl</code> 设计成 CS 结构有什么好处呢? 在使用 Scala 的 <code>sbt</code> 时, 我非常喜欢它有别于多数构建工具的交互界面, 只是它每一个会话是孤立的. 使用 <code>lein repl</code> 则不同, 如果不同的客户端连接到同一个 server 的话, 它们共享着相同的环境, 便于协作.<br/><br/>
+我们分别用命令<br/><br/>
+<code>lein repl</code> 启动 nREPL server 并连一个客户端, 这里端口号是 58687. 并在这个客户端中声明一个变量 v<br />
+<code>lein repl :connect nrepl://127.0.0.1:58687</code> 启动一个新客户端连接上面的服务端, 显示出前面定义的变量 v<br /><br/>
+<img class="aligncenter size-large wp-image-7394" src="/post{{< param "url" >}}lein-repl-server-client-800x215.png" width="800" height="215" /><br/>
+这种架构下可以发挥的空间还是很大的. 比如预定义好项目用的函数, 那么无论何时连接上同一个 nREPL 就可以管理同一个项目.<br/><br/>
+看到了 <code>lein repl</code> 有这样的特性, 禁不住会想 <code>java -jar clojure-1.8.0.jar</code> 启动 Clojure 控制台的方式是否有类似的功能, 没有, 只有一行提示 "Clojure 1.8.0", 并没有什么端口之类的提示信息.<br/><br/>
+且住, 只是  <code>java -jar clojure-1.8.0.jar</code> 方式默认不启动 Clojure Socket Server, 要是加上系统属性 <code>clojure.server.repl</code> 就能达到类同的效果. 如下命令<br/>
+<blockquote>
+java -Dclojure.server.repl="{:port 5555 :accept clojure.core.server/repl}" -jar clojure-1.8.0.jar
+</blockquote>
+<br/>
+虽然上面的命令得到的提示依然是那么的简洁, 然而我们已知它开了 <code>5555</code> 端口, 所以用  <code>telnet 127.0.0.1 5555</code> 连接, 立马就进到了相同的 Clojure 控制台. 如下图, 左窗格中定义的 <code>my-name</code> 变量, 右窗格口直接读出来, 右边定义的 <code>foo</code> 函数同样可在左边执行.<br/><br/>
+<img class="aligncenter size-full wp-image-7396" src="/post{{< param "url" >}}clojure-socket-server-new.png" width="747" height="174" /><br/>
+这个特性也只是从 Clojure 1.8.0  开始支持的. 而且比 <code>lein repl :connect ...</code> 连接的远程会话更高明,  telnet 信手即可拈来, 用不着安装 <code>lein</code> 这个应用来当作客户端. 这样的话只要在 Server 上启动一个 Clojure Socket Server, 任何人都可以很轻松的体验一下  Clojure, 如果能为每一个会话分配唯一的 Namespace, 那么每个客户端可以做到一定程度的不相干性.<br/><br/>
+你可以尝试用 <code>telnet</code> 连接一下 <code>lein repl</code> 启动的 <code>nREPL</code> server 试下, 就一个普通的 Socket, 没什么卵用.<br/><br/>
+参考: 1. <a href="http://clojure.org/reference/repl_and_main">Clojure REPL and main entry points</a><br />
+        2. <a href="http://dev.clojure.org/display/design/Socket+Server+REPL">Socket Server REPL</a>
+&nbsp;
