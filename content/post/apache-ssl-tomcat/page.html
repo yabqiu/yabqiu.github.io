@@ -1,0 +1,81 @@
+---
+title: Apache 配置 SSL(HTTPS) 并整合 Tomcat
+url: /apache-ssl-tomcat/
+date: 2014-03-30T00:42:57-05:00
+featured: true
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Linux/Unix
+  - Java/JEE
+  - Mid-Ware
+tags: 
+  - Apache
+  - Tomcat
+  - HTTPS
+comment: true
+# additional
+wpPostId: 6270 
+wpStatus: publish
+views: 1717
+lastmod: 2014-03-30T00:42:57-05:00
+---
+
+我们在 Tomcat 中可以开启 SSL，用 HTTPS 来访问，见前一篇
+<a title="快速启用 Tomcat 的 HTTPS 协议访问" href="/enable-tomcat-https-protocol/" target="_blank">快速启用 Tomcat 的 HTTPS 协议访问</a>，
+不过更接近实际的应用是 Tomcat 只担当 Servlet 容器，HTTPS 协议部份，甚至是静态页面是交给 Apache 的处理，Apache 与 Tomcat 之间有一个通道。
+当然前端用 F5 那类负载均衡设备就另当别论了。<br/>
+<br/>
+这里实践一下怎么开启 Apache 的 HTTPS，并与 Tomcat 进行整合的操作。平台是 Mac OS X, Apache2, Tomat8，其他平台或不同版本的应用软件配置类似。<br/>
+<br/>
+<strong>第一步: 生成自签署证书</strong><br/>
+<br/>
+安全加密的东西都得证书，我们需要用到 openssl，没有就先安装它，命令是：<br/>
+<blockquote>openssl req -new -x509 -days 365 -nodes -out server.crt -keyout server.key</blockquote>
+
+上面命令可以指定生成 server.crt 和 server.key 文件的目录，默认产生在当前目录下，假设这两个文件生成在&nbsp;<code>/etc/apache2</code> 目录下。
+<!--more-->
+<br/>
+<strong>第二步: 配置 httpd.conf</strong><br/>
+<br/>
+确保加载了 ssl_module 模块，比如像这样的行是打开的<br/>
+<blockquote>LoadModule ssl_module libexec/apache2/mod_ssl.so</blockquote>
+
+打开 443 端口及相关的配置, 可能在 extra/httpd-ssl.conf 中，则要打开像下面的这行<br/>
+<blockquote>Include /private/etc/apache2/extra/httpd-ssl.conf</blockquote>
+
+不同的 OS 或 Apache 可能配置在不同的地方，总之必须保证 Apache 中有下面那样的配置<br/>
+<blockquote>Listen 443<br/>
+<br/>
+&lt;VirtualHost _default_:443&gt;<br/>
+&nbsp;&nbsp;&nbsp; SSLEngine on<br/>
+&nbsp;&nbsp;&nbsp; SSLCertificateFile "/etc/apache2/server.crt"<br/>
+&nbsp;&nbsp;&nbsp; SSLCertificateKeyFile "/etc/apache2/server.key"<br/>
+&lt;/VirtualHost&gt;</blockquote>
+
+其他的如 Apache 的 VirtualHost 通用配置都可以放里面，比如 DocumentRoot, ServerAdmin, ServerName, ErrorLog, CustomLogs 等<br/>
+<blockquote>sudo apachectl restart</blockquote>
+
+重启 Apache 后就可以用&nbsp;<code>https://localhost</code> 来访问你的 Apache 服务了。<br/>
+<br/>
+第三步: 整合 Tomcat<br/>
+<br/>
+Apache 与 Tomcat 通信可以通过以下三种 Connector<br/>
+<br/>
+Java HTTP Connector:&nbsp;<a href="http://tomcat.apache.org/tomcat-8.0-doc/config/http.html" target="_blank">http://tomcat.apache.org/tomcat-8.0-doc/config/http.html</a> (blocking &amp; non-blocking)<br/>
+Java AJP&nbsp; Connector: <a href="http://tomcat.apache.org/tomcat-8.0-doc/config/ajp.html" target="_blank">http://tomcat.apache.org/tomcat-8.0-doc/config/ajp.html</a><br/>
+APR (HTTP/AJP) Connector: <a href="http://tomcat.apache.org/tomcat-8.0-doc/apr.html" target="_blank">http://tomcat.apache.org/tomcat-8.0-doc/apr.html</a><br/>
+<br/>
+我们这里要用到的就是 Java AJP，需要再到前面的&nbsp;&nbsp;<code></code> 中添加<br/>
+<blockquote>ProxyPass / ajp://localhost:8009/<br/>
+ProxyPassReverse / ajp://localhost:8009/</blockquote>
+
+重启 Apache 后，这里访问&nbsp;<code>https://localhost</code> 就转到 Tomcat 中了，和&nbsp;<code>http://localhost:8080</code> 一个界面，是不是看到了那只可能的大雄猫了。<br/>
+<br/>
+不用&nbsp;<code>ajp://localhost:8009/</code> 你也可直接代理到 <code>http://localhost:8080/</code>，这和 Tomcat&nbsp; 的 Connector 没什么关系，完全是 Apache 的 ProxyPass 的功能了。<br/>
+<br/>
+到这里，基本是配置就完成了，这里不涉及到负载均衡。<br/>
+<br/>
+由于上面用的是自签署的证书，而不是由第三方机构颁发的，所以浏览器访问时有安全警告，需手动信任一下，并且用 curl 命令访问时也要带个参数&nbsp;<code>-k</code> 才行。

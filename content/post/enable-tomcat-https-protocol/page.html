@@ -1,0 +1,70 @@
+---
+title: 快速启用 Tomcat 的 HTTPS 协议访问
+url: /enable-tomcat-https-protocol/
+date: 2014-03-29T00:59:36-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Tomcat
+  - HTTPS
+comment: true
+# additional
+wpPostId: 6257 
+wpStatus: publish
+views: 738
+lastmod: 2021-05-03T00:07:58-05:00
+---
+
+有时候安全考虑会要开启 Tomcat 的 https 协议访问，最快速的配置，两步</p>
+<br/>
+<strong>1. 创建 keystore 文件</strong><br/>
+执行 JDK 带的命令<br/>
+<blockquote>
+keytool -genkey -alias tomcat -keyalg RSA
+</blockquote>
+按命令提示各个信息即可，最后在用户主目录下创建了一个 .keystore 文件<br/><br/>
+<strong>2. 配置 Tomcat 使用 keystore 文件</strong><br/><br/>
+打开 server.xml 找到下面被注释的这段<br/>
+<pre class="lang:default decode:true">&lt;!--
+&lt;Connector port="8443" protocol="org.apache.coyote.http11.Http11NioProtocol"
+          maxThreads="150" SSLEnabled="true" scheme="https" secure="true"
+          clientAuth="false" sslProtocol="TLS" /&gt;
+--&gt;
+</pre>
+<!--more-->去掉注释，加上<code> keystoreFile="/Users/unmi/.keystore" keystorePass="password"</code> , 最终内容为<br/>
+<pre class="lang:default decode:true">&lt;Connector port="8443" protocol="org.apache.coyote.http11.Http11NioProtocol"
+          maxThreads="150" SSLEnabled="true" scheme="https" secure="true"
+          clientAuth="false" sslProtocol="TLS" 
+          keystoreFile="/Users/unmi/.keystore" keystorePass="password" /&gt;
+</pre>
+启动 Tomcat 并访问 <code>https://localhost:8443</code>. 当你看到 Tomcat 默认的首页就表示配置成功的。<br/><br/>
+如果你希望用户输入 <code>https://localhost</code> 就能访问 Tomcat，即使用 443 端口，必须把上面的 8443 替换成 443。还需注意需系统管理员权限来启动 Tomcat，因为端口号小于 1024。<br/><br/>
+同时也可以用 8080 端口访问，可以在自己的应用关键部分只允许 HTTPS 访问来控制安全性。<br/>
+<hr /><br/>
+如果要强制使用 HTTPS 来访问某个应用，那么就在应用的 web.xml 中加上如下配置<br/>
+4. 配置应用使用 SSL<br/><br/>
+打开应用的 web.xml 文件，增加配置如下：<br/>
+<pre class="lang:default decode:true ">&lt;security-constraint&gt;
+    &lt;web-resource-collection&gt;
+        &lt;web-resource-name&gt;securedapp&lt;/web-resource-name&gt;
+        &lt;url-pattern&gt;/*&lt;/url-pattern&gt;
+    &lt;/web-resource-collection&gt;
+    &lt;user-data-constraint&gt;
+        &lt;transport-guarantee&gt;CONFIDENTIAL&lt;/transport-guarantee&gt;
+    &lt;/user-data-constraint&gt;
+&lt;/security-constraint&gt;</pre>
+比如应用上下文是 unmi，这样你在访问 <code>http://localhost:8080/unmi</code> 时会重定向到 <code>https://localhost:8443/unmi</code> 去。<br/><br/>
+如想 Tomcat 下所有的应用都须通过 HTTPS 来访问，就把上面的内容加到全局的 conf/web.xml 中去。<br/><br/>
+把 CONFIDENTIAL 改为 NONE 即可关闭 SSL。<br/><br/>
+实际应用中一般在 Apache 这一层启用 HTTPS, Apache 与 Tomcat 间的通信会通过下面某一种<br/><br/>
+Java HTTP Connector: <a href="http://tomcat.apache.org/tomcat-8.0-doc/config/http.html" target="_blank" rel="noopener">http://tomcat.apache.org/tomcat-8.0-doc/config/http.html</a> (blocking &amp; non-blocking)<br />
+Java AJP  Connector: <a href="http://tomcat.apache.org/tomcat-8.0-doc/config/ajp.html" target="_blank" rel="noopener">http://tomcat.apache.org/tomcat-8.0-doc/config/ajp.html</a><br />
+APR (HTTP/AJP) Connector: <a href="http://tomcat.apache.org/tomcat-8.0-doc/apr.html" target="_blank" rel="noopener">http://tomcat.apache.org/tomcat-8.0-doc/apr.html</a><br/><br/>
+Apache 下配置 SSl 要复杂些，不是用 keytool, 而一般要用到 openssl。Tomcat 下配置也能用 openssl 来生成证书，就不用在 server.xml 中写明文密码了，更多说明参考官方文档 <a href="http://tomcat.apache.org/tomcat-8.0-doc/ssl-howto.html" target="_blank" rel="noopener">SSL Configuration HOW-TO</a>。<br/><br/>
+以上办法适用于 Tomcat 6, 7, 8，用到的是 NIO org.apache.coyote.http11.Http11NioProtocol，更早的 Tomcat 版本也类同，未测。只记得曾经在 Tomcat 4 下配置过 SSL，再没更多的记忆了。<br/><br/>
+参考：1. <a href="http://tomcat.apache.org/tomcat-8.0-doc/ssl-howto.html" target="_blank" rel="noopener">SSL Configuration HOW-TO</a>
