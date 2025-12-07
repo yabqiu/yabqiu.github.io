@@ -1,0 +1,179 @@
+---
+title: Rust 调用 C/Rust 生成的动态库
+url: /rust-call-c-rust-shared-library/
+date: 2024-05-30T22:05:08-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/rust-logo.png"
+categories:
+  - Rust
+tags: 
+  - Shared Library
+  - Rust
+comment: true
+# additional
+wpPostId: 13637 
+wpStatus: publish
+views: 793
+lastmod: 2024-05-30T22:07:38-05:00
+---
+
+在始终是 C/C++ 有着更优越性能的情况下，因而之前介绍过多种 其他不同的语言如何加载使用 C/C++ 写的动态库，有 Go, Python, Java 和 C#。在学习 Rust 之时也有类似的需求。本文的做法是要用到第三方库 <a href="https://docs.rs/libloading/0.8.3/libloading/index.html">libloading</a>，这里将参考官方的例子。</p>
+<br/>
+先来创建一个动态库，使用和 <a href="https://yanbin.blog/go-invoke-c-dylib-linux/">Go 调用 C 写的动态库完整例子(Linux版)</a> 一文中相同的例子，add.c 代码内容如下<br/><br/>
+{{< highlight cpp >}}
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h><br/><br/>
+char* add(char* src, int n)
+{
+    char str[20];
+    sprintf(str, "%d", n);
+    char *result = malloc(strlen(src)+strlen(str)+1);
+    strcpy(result, src);
+    strcat(result, str);
+    return result;
+}
+{{</ highlight >}}
+在 Linux 中使用如下命令编译出 libadd.so 动态库文件<!--more--><br/>
+<blockquote>
+$ gcc -fPIC -shared -o libadd.so add.c
+</blockquote>
+在 Windows 或 Mac OS X 平台可启动一个 Docker 容器，然后在容器中执行上面的命令生成 Linux 下用的 libadd.so 文件。做法是<br/>
+<blockquote>
+$ docker run -it -v $(pwd):/work -w /work rust:1.78-buster bash            # 然后在容器中执行<br />
+root@a208ba393783:/work# gcc -fPIC -shared -o libadd.so add.c
+</blockquote>
+
+其实本文完全可以在 Mac OS X 下进行，只要 Mac 下也安装了 gcc，不过在 Mac 下动态库的扩展名是  *.dylib。上面选择 Docker 镜像 rust:1.78 有一举两得之效，它既有 Rust 环境，又有 gcc 8.3.0 编译器。<br/><br/>
+接下来是用 cargo 创建一个 Rust 项目，命令是<br/>
+<blockquote>
+$ cargo new shared-library
+</blockquote>
+
+然后添加依赖 libloading, 运行命令<br/>
+<blockquote>
+$ cd shared-library<br />
+$ cargo add libloading
+</blockquote>
+
+假如希望生成的执行文件更精致，那么要在 Cargo.toml 文件中加上 <code>strip = true</code>, 如此最终的 Cargo.toml 文件内容如下<br/>
+{{< highlight toml >}}
+[profile.release]
+strip = true
+[package]
+name = "shared-library"
+version = "0.1.0"
+edition = "2021"
+[dependencies]
+libloading = "0.8.3"
+{{</ highlight >}}
+
+我们直接编辑 Rust 项目 shared-library 的 main.rs 程序代码，内容如下<br/>
+{{< highlight rust >}}
+use std::env::args;
+use std::error::Error;
+use libloading::{Library, Symbol};
+use std::ffi::{CStr, CString};
+use std::os::raw::c_char;
+type AddFunction = unsafe fn(*const c_char, i32) -&gt; *mut c_char;
+fn main() {
+    let args: Vec&lt;String&gt; = args().collect();
+    let lib_path = &amp;args[1];
+    let result = call_dynamic(lib_path).unwrap();
+    println!("Result: {}", result);
+}
+fn call_dynamic(lib_path: &amp;String) -&gt; Result&lt;String, Box&lt;dyn Error&gt;&gt; {
+    unsafe {
+        let lib = Library::new(lib_path)?;
+        let add: Symbol&lt;AddFunction&gt; = lib.get(b"add")?;
+        let src = CString::new("example string ")?;
+        let result_ptr = add(src.as_ptr(), 5);
+        let result_cstr = CStr::from_ptr(result_ptr);
+        let result_str = result_cstr.to_str()?.to_owned();
+        Ok(result_str)
+    }
+}
+{{</ highlight >}}
+留意上面代码中如何加载动态库，映射动态库中的函数，Rust 与 C 之间类型的转换，并且所有与动态库的交互要放到 unsafe 块中<br/><br/>
+现在再次回到 Docker 容器<br/>
+<blockquote>
+$ docker run -it -v $(pwd):/work -w /work rust:1.78-buster bash            # 然后在容器中执行<br />
+root@b122a91ea255:/work# cargo build --release                  # 会生成 target/release/shared-library 可执行文件<br />
+root@b122a91ea255:/work# target/release/shared-library ./libadd.so  # 假设  libadd.so 在 /work 目录<br />
+Result: example string 5
+</blockquote>
+
+如果执行 target/release/shared-library 时指定的 libadd.so 是错误的，或者是在当前目录中但未写成 <code>./libadd.so</code> 的格式，会报告找不到 libadd.so 的错误，比如在容器中执行的是<br/>
+<blockquote>
+root@b122a91ea255:/work# target/release/shared-library libadd.so   # 下面是报错信息<br />
+thread 'main' panicked at src/main.rs:12:41:<br />
+called `Result::unwrap()` on an `Err` value: DlOpen { desc: "libadd.so: cannot open shared object file: No such file or directory" }<br />
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</blockquote>
+
+<h3>Rust 加载调用 Rust 写的动态库</h3>
+前面描述的是如何在 Rust 中加载调用 C/C++ 写的动态库，如果是用 Rust 写的动态库，然后用 Rust 加载调用就更简单了。看起来有些多此一举，实际也有可能出现这样的类似于出口转内销的操作。<br/><br/>
+创建一个动态库项目<br/>
+<blockquote>
+$ cargo new add --lib
+</blockquote>
+
+然后编译加生成的 src/lib.rs 文件，内容如下<br/>
+{{< highlight rust >}}
+#[no_mangle]
+pub fn add(str: String, n: i32) -> String {
+    format!("{} {}", str, n)
+}
+{{</ highlight >}}
+
+在生成的 add/Cargo.toml 文件中加入<br/>
+{{< highlight toml >}}
+[lib]
+crate-type = ["dylib"]
+{{</ highlight >}}
+
+指示 cargo build 要生成动态库文件，这里的值永远写成 "dylib"，会在不同的平台下生成不同扩展名的动态库文件，如 Windows 的  *.dll, Linux 下是 *.so, Mac OS X 中是 *.dylib。<br/><br/>
+接着编译<br/>
+<blockquote>
+$ cargo build    # 将会生成 target/debug/libadd.so 文件
+</blockquote>
+
+由于是用 Rust 写成的动态库，所以在 Rust 中加载该动态库调用其中的方法时类型就好处理多了。我们还是重用之前的 shared-library 项目，把 main.rs 的内容修改为<br/>
+{{< highlight rust >}}
+use std::env::args;
+use std::error::Error;
+use libloading::{Library, Symbol};
+type AddFunction = unsafe fn(String, i32) -> String;
+fn main() {
+    let args: Vec<String> = args().collect();
+    let lib_path = &amp;args[1];
+    let result = call_dynamic(lib_path).unwrap();
+    println!("Result: {}", result);
+}
+fn call_dynamic(lib_path: &amp;String) -> Result<String, Box<dyn Error>> {
+    unsafe {
+        let lib = Library::new(lib_path)?;
+        let add: Symbol<AddFunction> = lib.get(b"add")?;
+        let src = String::from("example string ");
+        let result_str = add(src, 5);
+        Ok(result_str)
+    }
+}
+{{</ highlight >}}
+
+进到 shared-library 项目所在的目录，编译<br/>
+<blockquote>
+$ cargo build    # 会生成 target/debug/shared-library
+</blockquote>
+
+最后执行<br/>
+<blockquote>
+$ /work/target/debug/shared-library /work/add/debug/libadd.so<br />
+$ Result: example string 5
+</blockquote>
+
+动态库与调用方有着一致的类型，所以无需进行类型的转换，方便许多。
