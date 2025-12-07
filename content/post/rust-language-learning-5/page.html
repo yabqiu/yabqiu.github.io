@@ -1,0 +1,527 @@
+---
+title: Rust 语言学习笔记(五)
+url: /rust-language-learning-5/
+date: 2024-02-02T14:30:14-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/rust-logo.png"
+categories:
+  - Rust
+tags: 
+  - Rust
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13476 
+wpStatus: publish
+views: 191
+lastmod: 2025-11-20T10:04:20-06:00
+---
+
+终于来到了 Rust 的精髓所在了，那就是使之不依赖于垃圾回收又能保障内存安全且高效运行的所有权系统(Ownership System)。想要用 Rust 做一个稍显规模项目必定绕不过它，所有权系统包括所有权(Ownership), 借用(Borrowing), 生命周期(Lifetimes)。<br/><br/>
+以下概念的复述基本是从 《Rust编程: 入门, 实战与进阶》一书中而来，那里面有些内容是来自于官方的 <a href="https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html">The Rust Programming Languge - Understanding Ownership</a>. <br/><br/>
+<h3>所有权系统的基本概念</h3>
+Rust 的编程语法很快就能上手，让学习 Rust 曲线陡然大增的也就是这个所有权系统。所有权检测在编译期完成，Rust 能编译出来的代码就是安全高效的。要理解 Rust 的所有权系统必须首先明白以下两组概念：<br/>
+<ol>
+    <li>栈内存(Stack)，值语义(Value Semantic)，按位复制(浅复制)(Shallow Copy)，复制语义(Copy Semantic)</li>
+    <li>堆内存(Heap), 引用语义(Reference Semantic), 深复制(Deep Copy)，移动语义(Move Semantic), 借用(Borrowing)</li>
+</ol>
+<br/>
+和其他语言一样，大小固定的所有基本类型都可以存储在栈上，栈上存取数据总是在栈顶操作，很快，而访问堆内存需要搜索内存地址。所有权系统的主要任务是用来跟踪堆上的数据，即引用语义的数据。<!--more--><br/><br/>
+值语义(Value Semantic): 基本类型都是值语义，像函数的基本类型参数，会产生一个复制。按位复制就是浅复制(Shallow Copy)，只复制栈上数据。深复制(Deep Copy) 对栈上的堆上数据一起复制。复制语义(Copy Semantic) 就是指具有值语义特征的变量在本上进行按位复制。<br/><br/>
+引用语义(Reference Semantic): 通过存储在栈中的指针来管理堆内存的数据，禁上按位复制(Shallow Copy), 因为这会造成两个指针指向同一份数据造成堆内存二次释放。字符串也属生引用语义。相应的移动语义(Move Semantic) 是指对堆内存中的数据只能进行深复制，所谓的移动说的是进行深复制后，栈上要移动指向堆上堆据的指针地址。<span style="color: #ff0000;">(移动后原来的指针及被指向的堆内存如何处理的呢？)</span><br/><br/>
+借用(Borrowing) 是对引用行为的描述。引用分为不可变引用(&amp; 操作符) 可变引用(&amp;mut 操作)，对应着不可变借用和可变借用, 所以 &amp;x 称作为 x 的借用，通过 &amp; 操作符完成对所有权的借用，不会造成所有权的转移。<br/><br/>
+Rust 通过所有权系统来管理内存的，它是 Rust 的核心功能，而它的核心有以下三点<br/>
+<ol>
+    <li>每个值都有一个被称为其所有者的变量，也就是每块内存空间都有其所有者，它负责该块内存空间的释放和读写权限</li>
+    <li>每个值在任一时刻有且仅有一个所有者(难道可以随时切换所有者？)</li>
+    <li>当所有者(变量)离开作用域，这个变量将被丢弃<span style="color: #ff0000;">(每个函数是否有一个新的所有者，从函数中返回后，其中申请的堆内存都将自动释放？)</span></li>
+</ol>
+<br/>
+<h3>变量绑定</h3>
+Rust  用 let 声明的变量并非传统上的变量定义，本质上是绑定语义, 像 Lisp 族的语言也是用绑定(Binding) 这个概念。let 将一个变量与一个值(内存空间)进行绑定，从而成为了这个值(内存) 的所有者。Rust 保证对每块内存空间只有一个绑定变量与之对应，不允许两个变量同时指向同一块内存空间(<span style="color: #ff0000;">两次 let 用同名的变量声明会产生怎么样的效果？</span>)<br/><br/>
+变量绑定除了空间属性，还有时间属性(绑定的时效性)，也就是它的生命周期(Lifetime), 终于来到这 Lifetime 这个概念。一个变量的生命周期是指它从创建到销毁的全过程。let 创建的变量在作用域内有效，当变量离开作用域，它所绑定的资源就会被释放，变量也会随之无效。<br/><br/>
+看变量绑定的例子<br/>
+{{< highlight rust >}}
+fn foo() {
+    let s = String::from("Hello");
+    println!("{}", s); // s 在该 foo 方法作用域内有效
+}                      // 作用结束，s 无效，Rust 会自动调用 drop(s) 释放 s 所指向的内存
+{{</ highlight >}}
+<br/>
+如果我们在 foo() 方法出口处主动调用 drop(s) 会怎样呢？<br/>
+{{< highlight rust >}}
+fn main() {
+   foo();
+}
+
+fn foo() {
+    let s = String::from("Hello");
+    println!("{}", s);
+    drop(s);
+}
+{{</ highlight >}}
+<br/>
+执行，一切正常，看来主动释放的 s 不会再次被 Rust 释放<br/><br/>
+如果 drop(s) 后再使用 s 会怎么样呢？<br/>
+{{< highlight rust >}}
+fn foo() {
+    let s = String::from("Hello");
+    drop(s);
+    println!("{}", s);
+}
+{{</ highlight >}}
+<br/>
+编译时出错<br/>
+{{< highlight rust >}}
+error[E0382]: borrow of moved value: `s`
+ --> src/main.rs:8:20
+  |
+6 |     let s = String::from("Hello");
+  |         - move occurs because `s` has type `String`, which does not implement the `Copy` trait
+7 |     drop(s);
+  |          - value moved here
+8 |     println!("{}", s);
+  |                    ^ value borrowed here after move
+{{</ highlight >}}
+<br/>
+通过上面的错误信息可以好好理解前面的概念了<br/><br/>
+let s = String::from("Hello");  -move occurs because <code>s</code> has type <code>String</code>, which does not implement the <code>Copy</code> trait<br />
+s 是在堆中分配的内存，引用语义，没有实现浅复制<br/><br/>
+drop(s): - value move here<br />
+堆内存中的数据被释放了，栈上的指针也叫移动了<br/><br/>
+println!("{}", s); ^ value borrowed here after move<br />
+println 宏中采用了借用(&amp;)操作来使用 s 的值，不会转换所有权<br/><br/>
+上面提到在退 foo() 作用域时 Rust 会自动调用 drop 操作释放内存，这里我们可以验证一下<br/>
+{{< highlight rust >}}
+struct Droppable {
+    name: &'static str,
+}
+
+impl Drop for Droppable {
+    fn drop(&mut self) {
+        println!("> Dropping {}", self.name);
+    }
+}
+
+fn foo() {
+    let _a = Droppable { name: "a" };
+}
+
+fn main() {
+    foo();
+}
+{{</ highlight >}}
+<br/>
+执行后控制台输出<br/>
+<blockquote>
+> Dropping a
+</blockquote>
+<br/>
+说明确实是调用了 Drop trait 的 drop 方法。<br/><br/>
+<h3>所有权转移</h3>
+学到这里时，感觉学习 Rust 就是学习 Rust 的所有权系统，必须好好理解。其他的语法, trait, 泛型，属性，数据类型，错误处理变得越发次要了，只需要用时参考文档。而没有扎实掌握 Rust 的所有权系统，编译时势必处处碰壁，闹个灰头土脸，欲罢不能。<br/><br/>
+在掌握 Rust 的所有权系统中时刻要知晓一个变量是在栈还是在堆中分配的，所有权机制只针对堆上分配的数据。如基本类型是在栈中分配的，把一个变量赋值给另一个变量会进位按位复制，再与新的变量绑定，这和其他语言是一样的行为。<br/>
+{{< highlight rust >}}
+let x = 5;
+let y = x;
+println!("{}", x); // 所以 x 仍可访问
+{{</ highlight >}}
+<br/>
+在栈中，x 的值会复制到新内存，然后再与 y 绑定，而后改变 x 的值不会影响 y 的值，这理解起来很自然<br/><br/>
+<h4>变量赋值 move 所有权</h4>
+对于 struct 数据类型，默认也是在栈中分配内存，struct 中的成员是非基本类型会分配在堆内存中，如以下重赋值会有 student1 和 student2 两份独立的内存<br/>
+{{< highlight rust >}}
+#[derive(Debug, Clone, Copy)]
+struct Student {
+    age: u8,
+}
+
+fn main() {
+    let mut student1  = Student {
+        age: 40
+    };
+
+    let student2 = student1;
+    student1.age = 25;
+
+    println!("{:?}", student1);  // Student { age: 25 }
+    println!("{:?}", student2);  // Student { age: 40 }
+}
+{{</ highlight >}}
+<br/>
+如果用 Box::new 来声明 struct 变量就会分配在堆内存中<br/>
+{{< highlight rust >}}
+fn main() {
+    let mut student1  = Box::new(Student {
+        age: 40
+    });
+
+    let student2 = student1;  // 发生了 move，该内存的所有权从 student1 转移到了 student2
+    student1.age = 25;        // 所以 student1 不可用了
+}
+{{</ highlight >}}
+<br/>
+再次看变量赋值时的所有权转移<br/>
+{{< highlight rust >}}
+fn main() {
+    let s1 = String::from("hello");
+    let s2 = s1;
+    println!("s1: {}", s1);
+}
+{{</ highlight >}}
+<br/>
+上面代码无法通过编译，这应该是 Rust 学习者必犯的问题<br/>
+{{< highlight rust >}}
+error[E0382]: borrow of moved value: `s1`
+ --> src/main.rs:4:24
+  |
+2 |     let s1 = String::from("hello");
+  |         -- move occurs because `s1` has type `String`, which does not implement the `Copy` trait
+3 |     let s2 = s1;
+  |              -- value moved here
+4 |     println!("s1: {}", s1);
+  |                        ^^ value borrowed here after move
+{{</ highlight >}}
+<br/>
+由于 String 是引用语义, 它会在堆中分配内存，所以 s1 赋值给 s2 后就完成了所有权的转移，s1 不再可用了。<br/><br/>
+十分有必要引用几张图片来说明这个所有权转移的过程
+{{< bundle-image src="trpl04-01.svg" width="300px" >}}
+let s1 = String::from("hello"); 分配的内存如上图，左边是分配在栈中的一组数据结构，包括指向堆中数据的指针，长度和容量；右边是堆内存中字符的内容<br/>
+{{< bundle-image src="trpl04-04.svg" width="300px" >}}
+let s2 = s1; 后内存中的状态，栈中的数据结构复制后绑定到了 s2, s2 指向了相同的堆内存地址，但 s1 变得无效了。如果程序从当前作用域中退出，可保证堆中的内存只由 s2 释放一次。<br/><br/>
+Rust 不像 C/C++ 那样 char * s2 = s1 赋值后，会有两个指针指向同一块堆内存区，如下 C++ 代码<br/>
+{{< highlight cpp >}}
+#include <iostream>
+using namespace std;
+
+int main()
+{
+    char* s1 = (char*) malloc(6);
+    strcpy(s1, "hello\0");
+    char* s2 = s1;
+    delete s1; // or delete i2
+    cout << s2 << endl;
+    return 0;
+}
+{{</ highlight >}}
+<br/>
+注：g++ 编译命令为 g++ hello.cpp -o hello，生成可执行的 hello 文件<br/><br/>
+无论是 delete s1; 或 delete s2; 都会释放同一块内存，执行后输出的内容会是<br/>
+<blockquote>
+@�Gt
+</blockquote>
+
+而不是 "hello",  因为无论是 delete s1 还是 delete s2, s1 和 s2 它们所指向的内存都会被释放，所经它们都将成为野指针。如果 Rust 也依照 C/C++ 的行为的话，效果就会是下面这样的<br/>
+{{< bundle-image src="trpl04-02.svg" width="300px" >}}
+当然，在 C/C++ 中的 char* 字符串实现是不一样的，在 C/C++ 中 s1, s2 只需一个简单的指针，在堆内存区存储 hello 要求多一个字节放置字符串结束符  <code>\0</code>。像 C/C++ 那样赋值会多个指针指向同一个堆内存，内存释放就不易于自动管理了，而且很可能产生野指针。<br/><br/>
+如果 Rust 在堆上的数据如这里的 String 也实现了深度拷贝的话，let s2 = s1 的执行效果将会是<br/>
+{{< bundle-image src="trpl04-03.svg" width="300px" >}}
+产生了 s1, s2 各自指向独立的内存区域，各自释放内存或退出作用域名自动释放 s1, s2 都是安全的，缺点只是多了一份内存拷贝。所以 Rust 对引用语义(堆内存数据) 引入了 move 来转移所有权，这能在退出作用域时能自动释放分配的内存，并且在编译器就能保证这一点。<br/><br/>
+如果用 i32 Box 类型为例，上面的内存状态变迁图会简单许多，比如<br/>
+{{< highlight rust >}}
+fn main() {
+    let i1 = Box::new(42);
+    let i2 = i1;
+    println!("s1: {}", i1);
+}
+{{</ highlight >}}
+<br/>
+i1 或 i2 在栈都只有一个指针，在堆中就是 4 个字节的区域。<br/><br/>
+<h4>向函数传递值 move 所有权</h4>
+到此为止对 Rust 的 move 概念应该理解的差不多了，所有权转换除了发生在变量赋值，还出现在向函数传递值，从函数返回值的情况。<br/><br/>
+看引用语义传值的情况<br/>
+{{< highlight rust >}}
+fn main() {
+    let s = String::from("hello");
+    take_ownership(s); // - value moved here
+    println!("{}", s); // ^ value borrowed here after move
+}
+
+fn take_ownership(str: String) { //this parameter takes ownership of the value
+    println!("{}", str);
+}                                // 因为 str 在退出这个作用域后被释放了
+{{</ highlight >}}
+<br/>
+上面的代码编译不过，因为调用 take_ownership(s) 之后 s 变得不可以，编译器推荐用 take_ownership(s.clone()) 的方式调用。<br/><br/>
+对函数 take_owership(str: String) 的调用效果相当于<br/>
+{{< highlight rust >}}
+let tmp = s;
+println!("{}", tmp);
+drop(tmp);
+{{</ highlight >}}
+<br/>
+调用方法时，s 的所有权 move 到了 tmp, 函数在退出时释放了 tmp<br/><br/>
+但是对值语义的参数调用无妨<br/>
+{{< highlight rust >}}
+fn main() {
+    let x = 5;
+    make_copy(x);
+    println!("{}", x);
+}
+
+fn make_copy(int: i32) {
+    println!("{}", int);
+}                        // 退出前 int 在栈中的拷贝会自动出栈，释放相应的内存
+{{</ highlight >}}
+<br/>
+因为 i32 类型的值在栈中分配，对 make_copy(int: i32) 的调用效果如下<br/>
+{{< highlight rust >}}
+let tmp = int;
+println!("{}", int);
+drop(int);
+{{</ highlight >}}
+<br/>
+我们可以在 make_copy(int: i32) 最后一行写上 drop(int), 不过编译器会有一行警告说<br/>
+<blockquote>
+drop(int); // warning: calls to `std::mem::drop` with a value that implements `Copy` does nothing
+</blockquote>
+
+&amp;str 类型作为函数传递给函数不会转移所有权<br/>
+{{< highlight rust >}}
+fn main() {
+    let s: &str = "hello";
+    no_move(s);
+    println!("{}", s);  // hello
+}
+
+fn no_move(str: &str) {  // 不转移所有权
+    println!("{}", str)  // hello
+}                        // 由于不是 str 的所有者，退出方法前不自动释放 str
+{{</ highlight >}}
+<br/>
+参照 C/C++, 因为 <code>s</code> 类型是 <code>&amp;str</code> 已经是一个指针，no_move(str: &amp;str) 函数的参数是 &amp;str, 似乎可以理解为指针作为值在栈上被复制了一份并绑定到一个临时变量(指针的指针 &amp;&amp;str)，退出作用域只释放了指针的指针, 对最初指针指向的数据不受影响。仍然难于理解，那可以想像前面对 no_move(str: &amp;str) 函数的调用效果如下<br/>
+{{< highlight rust >}}
+let tmp: &&str = &s;
+println!("{}", tmp);
+drop(tmp);
+
+{{</ highlight >}}
+<br/>
+学到这里, Rust 基本上就是 C/C++ 不易理解的<code>指针的指针</code>概念用所有权来解释。或者说当引用语义的变量再取引用，就相当是指针的指针，它重新变成了值语义，所以不存在所有权的概念。<br/><br/>
+还可以主动对引用语义的变量再取引用来调用函数，也不会转移所有权<br/>
+{{< highlight rust >}}
+fn main() {
+    let s:String = String::from("hello");
+    no_move(&s);
+    println!("{}", s);  // hello
+}
+
+fn no_move(str: &String) {
+    println!("{}", str)  // hello
+}
+{{</ highlight >}}
+<br/>
+比如我们在使用集合类时，以 HashMap 为例，&amp;str 的值可直接作为 key/value, 而 String 类型需用 &amp; 再次取引用<br/>
+{{< highlight rust >}}
+use std::collections::HashMap;
+
+let mut map = HashMap::new();
+let key = "kk";
+let value = "vv";
+
+map.insert(key, value);
+println!("{}", map[key]);  // key 仍可用
+
+{{</ highlight >}}
+<br/>
+用 String 类型的话<br/>
+{{< highlight rust >}}
+use std::collections::HashMap;
+
+let mut map = HashMap::new();
+let key = String::from("kk");
+let value = String::from("vv");
+
+map.insert(&key, &value);
+println!("{}", map[key]);  // key 仍可用
+{{</ highlight >}}
+<br/>
+如果直接调用<br/>
+<blockquote>
+map.insert(key, value);
+</blockquote>
+
+在 map.insert(String, String) 函数中 key, value 的所有权就会被转到函数，然后由该函数在退出之前释放掉 key, value 所对应的堆内存，后面 key/value 就不可用了<br/><br/>
+HashMap 的 insert 是一个泛型函数，声明为<br/>
+{{< highlight rust >}}
+    pub fn insert(&mut self, k: K, v: V) -> Option<V> {
+        self.base.insert(k, v)
+    }
+{{</ highlight >}}
+<br/>
+可惜 Rust 在对引用语义变量使用 &amp; 来调用参数不转移所有权，又重新回到了 C/C++ 的指针的指针概念, 在 C/C++ 中指针的指针传递到函数也不畏惧在函数中被释放; Rust 中或许可称作引用的引用，后面会讲到在 Rust 中被称为借用(Borrowing) <br/><br/>
+<h4>从函数返回值的所有权</h4>
+这个规则很简单，从函数中返回的变量所有权会转移给调者<br/>
+{{< highlight rust >}}
+fn give_ownership() -> String {
+    let str = String::from("ownership");
+    str
+}  // str 在函数退出前不被释放，所有权转移给了调用方的 x 变量
+
+let x = give_ownwership();
+{{</ highlight >}}
+<br/>
+由于函数返回值所有权转移的这一特性，因函数参数转移所有权的参数可原本从函数中返回出来，可修改前面 take_ownership() 的代码<br/>
+{{< highlight rust >}}
+fn main() {
+    let s = String::from("hello");
+    let s = take_ownership(s);  // s 的所有权转移出去又回来
+    println!("{}", s);
+}
+
+fn take_ownership(str: String) -> String {
+    println!("{}", str);
+    str                    // （str, 32)  // 返回多个值的做法，调用后再拆解
+}
+{{</ highlight >}}
+<br/>
+函数的多个返回值可放在一个元组中，在函数中 (str, 32),  然后  let (s1, another) = take_ownership(s)<br/><br/>
+如果对上面的代码进行单步调试，两个 &amp;s(类似于指针的指针) 的地址有发生变化，但指向堆内存应该是同一个地址，由于第一个 s 的所有权转移给了第二个 s, 所以在退出 main()  时相应内存只会释放一次。<br/><br/>
+关于所有权讲了很多，以后还需要阅读更多的相关资料加强理解。<br/><br/>
+如果 C/C++ 也遵循 Rust 编译器所要求的所有权规则也能写出更安全的代码。<br/><br/>
+<h3>浅复制与深复制？</h3>
+感觉 《Rust 编程: 入门，实战与进阶》 一书中讲浅复制与深复制说 "浅复制是指复制栈上数据，深复制是指复制栈上和堆上数据" 这个定义有点不准确，这里有个疑问 --  <span style="color: #ff0000;">实现了 Copy, Clone trait 的结构体只会在栈中分配内存吗？</span>。最主要应该是要清楚是值语义还是引用语义，实现了 Copy trait 的类型都是值语义。哪些类型可以是值语义<br/>
+<ol>
+    <li>基本类型都实现 Copy trait</li>
+    <li>元组中每个类型都实现了 Copy trait 的话该元组也就实现了 Copy trait</li>
+    <li>结构体如果实现了 Copy 和 Clone trait, 并且每个成员都实现了 Copy trait</li>
+    <li>枚举如果实现了 Copy 和 Clone trait, 它会成为值语义</li>
+</ol>
+
+结构体和枚举用 #[derive(Copy, Clone)] 属性来实现默认的 Copy, Clone trait。<br/><br/>
+值语义在变量赋值给另一变量，或调用函数传递参数时不会发生所有权的转移<br/>
+{{< highlight rust >}}
+let x = <值语义类型>
+let y = x; // 赋值后 x 仍然有效
+
+{{</ highlight >}}
+<br/>
+实现了 Clone 的可用  clone() 来复制<br/>
+{{< highlight rust >}}
+let s1 = String::from("hello");
+let s2 = s1.clone();   // s1 仍然有效
+{{</ highlight >}}
+<br/>
+像是 Java 的 clone()。<br/><br/>
+<span style="color: #ff0000;"><strong>在判断 Rust 的代码是否会转移所有权时说到底就只有一个规则：值语义的类型不会转移所有权(move), 实现了 Copy trait 的类型是值语义类型，引用语义类型的引用又重新变成了值语义; 引用语义的类型会转移所有权。</strong></span><br/><br/>
+在书写代码过程中完全需要自己去分辨类型是引用类型还是值类型，然后再思考它什么情况下会发生所有权的转移。 回望过去, C/C++ 反而更简单些，变量前有一个星号(*) 的就是引用类型，没有就不是，前面有两个星号(**) 的就是指针的指针，所指向的指针变成了值类型。<br/><br/>
+开始有种想法，既然花那么多时间去掌握 Rust 的所有权，生命周期等复杂的概念，何不多花些时间把 C/C++ 掌握得更扎实些，毕竟目前高效的库还是仰赖 C/C++。静机 Rust 吧，只要 Rust 能编译出来的代码就不会太糟。若有人问可以用 Rust 做什么，不少人的回答是正在用 Rust 改写原来 C/C++ 的库。<br/><br/>
+<h3>再论引用与借用</h3>
+Rust 的引用与借用两个概念有些含混不清，&amp;x, &amp;mut 分别是不可变引用和可变引用，又可相应的称作借用。通过 &amp; 操作符完成对所有权的借用，不会造成所有权的转移。<br/><br/>
+看下面几个例子<br/><br/>
+Rust 的引用，解除引用，println! 中的引用又引用<br/>
+{{< highlight rust >}}
+fn main() {
+    let a:i32 = 32;
+    let b:i32 = &a + 1;
+    // let b = &&a + 1; // error[E0369]: cannot add `{integer}` to `&&{integer}`
+    let c:i32 = *&b + 1;
+    println!("a: {}, b: {}, c: {}", &&&&&a, b, &&&&c);  // 输出为 a: 32, b: 33, c: 34
+}
+{{</ highlight >}}
+<br/>
+引用本质上是一种指针语义，<code>*</code> 操作解除引用，println! 宏比较有能耐，不管你多少次不断的引用都能显示出最终内存中的值，就像 HTTP 的 301 或  302 重定向，请求时一直跟随机最原始的请求。<br/><br/>
+看 Rust  通过引用改变原地址中的内容<br/>
+{{< highlight rust >}}
+fn main() {
+    let mut a = 32;
+    bar(&mut a);
+    println!("{}", a);    // 输出为 10
+}
+
+fn bar(i: &mut i32) {  // 只有可变引用才能通过 *i 修改其中的值
+    *i = 10;
+}
+{{</ highlight >}}
+<br/>
+采用不可变引用调用函数，要满足三个要求，1) 定义的变量必须是 mut 的，2) 函数参数必须是 &amp;mut, 3) 调用函数时必须用 &amp;mut<br/><br/>
+参照 C/C++ 中如何修改引用地址中的内容<br/>
+{{< highlight cpp >}}
+#include <iostream>
+using namespace std;
+
+void foo(int* i) {
+    *i = 10;
+}
+
+int main()
+{
+    int a = 32;
+    foo(&amp;a);
+    cout << a << endl; // 输出 10
+    return 0;
+}
+{{</ highlight >}}
+<br/>
+在 Rust 中 &amp; 同时表达着引用与借用的概念，还需要作更深入的学习<br/><br/>
+对借用规则还是难以理解，比如下面一系列的代码<br/>
+{{< highlight rust >}}
+// 没问题
+fn main() {
+    let mut x = 6;
+    let y = &mut x;
+    *y += 1;
+    let z = &x;
+    println!("x: {}", x);  // x: 7
+    println!("z: {}", z);  // z: 7
+}
+{{</ highlight >}}
+<br/>
+如果一用 y 就受不了<br/>
+{{< highlight rust >}}
+// 有问题
+fn main() {        // 错误： cannot borrow `x` as immutable because it is also borrowed as mutable
+    let mut x = 6;
+    let y = &mut x;   // ------ mutable borrow occurs here
+    *y += 1;
+    let z = &x;       //  ^^ immutable borrow occurs here
+    println!("y: {}", y);  // - mutable borrow later used here
+}
+{{</ highlight >}}
+<br/>
+如果用 y 前不作  &amp;x 借用也没问题<br/>
+{{< highlight rust >}}
+// 没问题
+fn main() {
+    let mut x = 6;
+    let y = &mut x;
+    *y += 1;
+    println!("y: {}", y);  // y: 7
+}
+{{</ highlight >}}
+<br/>
+&amp;mut x 借用后，可以碰 x<br/>
+{{< highlight rust >}}
+// 没问题
+fn main() {
+    let mut x = 6;
+    let y = &mut x;
+    *y += 1;
+    println!("x: {}", x);  // x: 7
+}
+{{</ highlight >}}
+<br/>
+但不能同时去碰 x 和 y<br/>
+{{< highlight rust >}}
+// 有问题
+fn main() { //  编译错误： cannot borrow `x` as immutable because it is also borrowed as mutable
+    let mut x = 6;  // ------ mutable borrow occurs here
+    let y = &mut x;
+    *y += 1;
+    println!("x: {}", x);  // ^ immutable borrow occurs here
+    println!("y: {}", y);  // - mutable borrow later used here
+}
+{{</ highlight >}}
+<br/>
+通过以上的例子，我们能总结出什么样的引用规则呢？还要留待以后去解决，想要完全搞清楚 Rust 的所有权，引用，借用等关系还有一个漫长的过程。<br/><br/>
+Rust  从数组，动态数组，字符串等可获得一个切片(slice)，切片本身是没有所有权的，还可以从可变集合得到一个可变切片.<br/><br/>
+迭代器用 IntoIter, Iter, IterMut, 不同迭代器有不同的所有权类型<br/>
+<ol>
+    <li>IntoIter: into_iter(self) -&gt; IntoIter&lt;T, A&gt;, 转移所有权，原容器不能再使用</li>
+    <li>Iter: iter(&amp;self) -&gt; Iter&lt;'_, T&gt;, 不可变借用，借用不转移所有权，原容器可用</li>
+    <li>IterMut(): iter_mut(&amp;mut self) -&gt; IterMut&lt;'_, T&gt;, 可变借用，不转移所有权，原容器可用，且可修改原容器中的数据</li>
+</ol>

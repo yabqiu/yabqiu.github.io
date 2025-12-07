@@ -1,0 +1,394 @@
+---
+title: Rust 语言学习笔记(二)
+url: /rust-language-learning-2/
+date: 2023-12-31T22:40:11-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/rust-logo.png"
+categories:
+  - Rust
+tags: 
+  - Rust
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13418 
+wpStatus: publish
+views: 97
+lastmod: 2024-01-04T23:29:43-06:00
+---
+
+再继续快速学习一下 Rust 的以下几个知识点，就可以开始着手做点小工具了</p>
+
+<ol>
+    <li>基本数据类型</li>
+    <li>复合数据类型</li>
+    <li>基本的流程控制</li>
+</ol>
+
+Rust 设计为有效使用内存考虑的，它提供了非常细力度的数据类型，如整数分为有无符号，宽度从 8 位到 128 位，分别表示为 i8, u8, u128 等。浮点数有 f32 和 f64，以及 bool 和 range 类型。<br/>
+<h3>元组</h3>
+元组和 Python 的元组用法类似，Immutable, 可混合类型<br/>
+{{< highlight rust >}}
+let tup1 = (10, 7.2, 'a');
+let tup2 = (100, );     // 一个元素时，和 Python 一样，后面附加逗号，否则视括号可选
+let tup3: (i8, f32, boo) = (-10, 7.7, false); // 类型要一一对应
+let tup4: () = ();     // 声明一个空元组，元组是不可变的，所以没什么意义
+
+let (x, y, z) = tup1;   // 元组的拆解
+
+println!("{}", tup1.0); // 访问用 .index 方式访问
+
+{{</ highlight >}}
+
+<h3>数组</h3>
+数组类型中的元素类型相同，表示为  [T; n], T 为类型，n 为元素个数<!--more--><br/>
+{{< highlight rust >}}
+let arr1 = [1, 2, 3];
+let arr2: [i8; 2] = [2, 3];
+let arr3 = [1; 3]; // 类型位置为值表示类型自动推断，所有元素的初始值，长度为 3
+let [a, b, c] = arr1;
+println!("{}", arr1[0]);
+let arr4: [[i32; 2]; 3] = [[1, 2], [3, 4], [5, 6]]; // 推广到多维数组
+dbg!(arr4);
+{{</ highlight >}}
+
+<h3>切片(Slice)类型</h3>
+相同类型但不同长度的数组是不同的类型，如 [T; 1], [T; 2], [T; 3], 但它们的 Slice 类型都表示为 &amp;[T]. Rust 的切片与 Python 同名概念类似<br/>
+{{< highlight rust >}}
+let arr = [1, 2, 3];
+let slice1 = &arr[0..2]; // &[i32]
+let s = String::from("hello");
+let slice2 = &s[..];    // &str
+let s1 = "world";
+let slice3 = &s1[2..];  // &str
+{{</ highlight >}}
+
+&amp;[i32], &amp;str 是 slice1, slice2, slice3 的推断类型，Slice 是一个视图，编译期无法确定长度。<br/><br/>
+Rust 不同宽度的类型之间不会自动转换的<br/>
+{{< highlight rust >}}
+let mut a: i32 = 13;
+// a = 10i8;   // 类型不匹配，虽然 a 足够宽
+a = 10i8 as i32 // 必须转型
+{{</ highlight >}}
+
+不同宽度类型之间比较大小也不允许。<br/>
+<h3>结构体类型</h3>
+Rust 仍然延续了 C 的结构体<br/>
+{{< highlight rust >}}
+struct Student {
+    name: &'static str,
+    score: i32,  // 最后豆号可省略
+}
+
+let mut student = Student {  // 结构体默认也是不可变的
+    score: 59,
+    name: "Scott",
+};
+student.score = 60;
+println!("name: {}, score: {}", student.name, student.score);
+
+let name = "Tiger";
+let student2 = Student {
+    name,             
+    ..student
+};
+println!("name: {}, score: {}", student2.name, student2.score);
+
+struct Color(i32, i32, i32); // 元组结构体，只有类型没有名称
+let black = Color(0, 0, 0);
+println!("Red: {}", black.0); // 以元组方式访问元素
+
+struct Solution; // Unit 结构体, 只能用作标识
+{{</ highlight >}}
+
+<h3>枚举类型</h3>
+{{< highlight rust >}}
+#[derive(Debug)]   // 支持 {:?} 打印
+enum Color {Red, Yellow, Blue};
+
+let color = Color::Red;
+println!("{:?}", color)
+{{</ highlight >}}
+
+<strong>struct 和 enum 都支持用 <code>impl</code> 块给它们附加方法。</strong><br/><br/>
+有有参数的枚举<br/>
+{{< highlight rust >}}
+#[derive(Debug, PartialEq)]
+enum Color {
+    Red(&'static str),
+    Yellow(&'static str),
+    Blue(&'static str),
+}
+
+fn main() {
+    let y1 = Color::Yellow("黄");
+    let y2 = Color::Yellow("Y");
+    let y3 = Color::Yellow("黄");
+    println!("{:?}, {:?}, y1==y2?: {}, y1==y3?: {}", y1, y2, y1 == y2, y1 == y3);
+
+    if let Color::Yellow(x) = y1 {
+        println!("{}", x)
+    }
+}
+{{</ highlight >}}
+<br/>
+输出<br/>
+<blockquote>
+Yellow("黄"), Yellow("Y"), y1==y2?: false, y1==y3?: true
+黄
+</blockquote>
+
+黄可以黄的不一样，Enum 可以这样用于模式匹配<br/><br/>
+Rust 的标准库 std::collections 提供了 4 种支持泛型的容器类型, Vec&lt;T&gt;, VecDeque&lt;T&gt;, LinkedList&lt;T&gt;, HashMap&lt;K, V&gt;, BTreeMap&lt;K, V&gt;, HashSet&lt;T&gt;, BTreeSet&lt;T&gt;, Binaryheap&lt;T&gt;。<br/>
+{{< highlight rust >}}
+let mut v: Vec<i32> = Vec::new();
+v.push(1);
+{{</ highlight >}}
+<br/>
+Vec 的初始容量是 0, 不指定 mut 的话，对  v 的内容都不可修改。调用 v.push() 往其中添加元素过程中，v.len 与 v.buf.cap 之间的关系<br/>
+<ol>
+    <li>0 -&gt; 0</li>
+    <li>1 ~4 -&gt; 4</li>
+    <li>5 ~ 8 -&gt; 8</li>
+    <li>9 ~ 16 -&gt; 16</li>
+    <li>17 ~ 32 -&gt; 32</li>
+</ol>
+<br/>
+由此可见，至少从目前的 Vec 实现 (Rust 1.75), Vec 只在容量不足时增长，并且每次翻倍。这种实现效率会有两个问题<br/><br/>
+1) 扩容太频繁, 消耗资源, Vec 新创建一个 2 倍容量的底层数组，并将现有元素移新缓冲中去<br/><br/>
+2) 元素越多, v.len 与 v.buf.cap 差值越大，也就造成 Buffer 中浪费的空间就越大. 比如元素数量为 4096 时，再添加一个元素就扩容到了 8092，这时实际使用 4097, 空闲 4095<br/><br/>
+所以使用 Vec 最好预先估算好容量，或用 LinkedList，如用下面的方式声明 Vec<br/>
+{{< highlight rust >}}
+let mut v: Vec<i32> = Vec::with_capacity(10);
+{{</ highlight >}}
+<br/>
+可用 vec! 宏来声明 Vec<br/>
+{{< highlight rust >}}
+let mut v1: Vec&lt;i32&gt; = vec![]; // v2.len 和 v.buf.cap 都为 0
+let mut v2 = vec![1, 2, 3];  // v2.len 和 v.buf.cap 都为 3，推断类型为 int32
+let mut v3 = vec![0; 10];    // v2.len 和 v.buf.cap 都为 10，并且全部填充为 0
+{{</ highlight >}}
+<br/>
+Vec 的基本操作有 v[index], get(index), push(value), pop(), remove(index) 等。get(index) 得到的是一个 Option[&amp;i32): Some(value) 或 None, 和 Scala 相似的 Option<br/><br/>
+其他的类型不具体说明，用到时再查 API，单独说一个 HashMap 的 map.insert(key, value) 和 entry(key).or_insert(value) 操作<br/>
+<ol>
+    <li>map.insert(key, value): 不存在 key, 插入新的键值对，已存在 key 则更新对应值, 总是覆盖旧值</li>
+    <li>entry(key).or_insert(value)：不存在 key, 插入新的键值对，已存在 key 则不作任何操作, 不覆盖旧值</li>
+</ol>
+
+字符串本质上是字符序列，分不可变的 str 和可变的 String<br/>
+<h3>字符串(str 和 String)</h3>
+&amp;str 的创建<br/>
+{{< highlight rust >}}
+let s1 = "Hello, World";
+let str = String::from("Hello");
+let s2 = str.as_str();
+{{</ highlight >}}
+
+String 本质上是一个字段为 Vec&lt;u8&gt; 的结构体，声明为<br/>
+{{< highlight rust >}}
+pub struct String {
+    vec: Vec<u8>,
+}
+{{</ highlight >}}
+
+它是可变的，字符串内容在堆中，由字符串长度读取到实际内容。创建 String 的方式有<br/>
+{{< highlight rust >}}
+let mut s1 = String::new();
+let s2 = String::from("Hello World!");
+let str = "Hello, Rult!";
+let s3 = str.to_string();
+{{</ highlight >}}
+
+String 的 vec buf 容量也是成倍的增长, 只是 buf 为零时第一次增长不同, 例如下面的代码<br/>
+{{< highlight rust >}}
+let mut s = String::new();
+let x = 8;
+s.push_str("a".repeat(x).as_str());
+{{</ highlight >}}
+
+如果 x &lt;=8, push_str 之后, s.vec.buf 缓冲大小为 8, x &gt; 8 的话，v.vec.buf 缓冲大小就是 x。String 还可用 "+" 连接 &amp;str 字符串，它会返回新的 String<br/>
+{{< highlight rust >}}
+let s1 = String::from("Hello");
+let s2 = String::from(" Rust");
+let s3 = " World";
+let mut s = s1 + &s2 + s2.as_str() + s3;
+{{</ highlight >}}
+
+format! 宏可连接 str 和 Strign<br/>
+{{< highlight rust >}}
+let s = format!("{}-{}-{}", s1, s3, "Yet")
+{{</ highlight >}}
+
+Rust 的 String 不能直接使用索引(s[idx]方式) 来访问其中的字符, 字符串迭代分 bytes() 和 chars() 两种方式。bytes() 迭代出来的是字节的整数值. len() 获取的是以字节为单位的长度。更多 String 的操作就查 API 吧。<br/><br/>
+数字字面的类型用后缀来表示，所 2u8, 1.2f32. Rust 不支持 ++, 和 -- 操作。Rust 的各种算术运算，关系运算，逻辑运算，位运算和 C 和 Java 是一样的，运算优先级也没必要去记，知道乘除优先级大于加减就够了，其他的时候就加括号吧。<br/><br/>
+<h3>Rust 的流程控制</h3>
+条件语句：if - else if - else 和 Java 的用法类似，但  Rust 的 if-else 还是个表达式，是有返回值的<br/>
+{{< highlight rust >}}
+fn main() {
+    println!("{}", desc(3)) // odd
+}
+
+fn desc(n: i32) -> &'static str {
+    if n % 2 == 0 {
+        "even"
+    } else {
+        "odd"
+    }
+}
+{{</ highlight >}}
+
+循环语句有三种:<br/>
+<ol>
+    <li>loop {...} 其中加条件执行 break，有类似 Java 的 do {...} while(true) 类似功用</li>
+    <li>while true {...}</li>
+    <li>for count in 1..=10 {...}</li>
+</ol>
+<br/>
+Rust 循环中的 break, continue 和 Java 类似，不过 break 还能有返回值<br/>
+{{< highlight rust >}}
+let items = vec![1, 2, 3];
+for item in items {
+}
+for item in items { // 这次会失败，因为 Rust 认为 items 不再需要了，需在第一次 for 时改为 for item in &items {...}
+}
+{{</ highlight >}}
+<br/>
+要在遍历时修改元素内容，用<br/>
+{{< highlight rust >}}
+for item in &mut collection { ... }
+{{</ highlight >}}
+
+不推荐用 index 去访问集合，两原因: 1) index 要求 Rust 去做越界检查，影响性能,  2) 安全, for loop 访问一次可让集合下次不可用<br/><br/>
+break + label 跳出外层循环<br/>
+{{< highlight rust >}}
+'outer: for x in 0.. {
+    for y in 0.. {
+        if x + y > 100 {
+            break 'outer
+        }
+    }
+}
+{{</ highlight >}}
+<br/>
+break 的返回值<br/>
+{{< highlight rust >}}
+let n = loo {
+    break 123;
+};
+{{</ highlight >}}
+<br/>
+n 的值为 123<br/><br/>
+Rust 有现代语言的模式匹配功能，用 match, Rust 没有 switch..case 语句。Rust 的 match 必须穷举所有可能性，默认分支用 <code>_</code> 可放在最后。<br/>
+{{< highlight rust >}}
+match age {
+    0 => println!("baby"),
+    1..=2 => println!("toddler"),
+    3 | 4 | 5 => (),
+    // ...
+    _=> println!("others")
+}
+
+{{</ highlight >}}
+<br/>
+也可以用 match 来匹配 Some(7), None 等 Option&lt;i32&gt; 值.<br/><br/>
+匹配 Option 时自动推断类型也有意思，比如<br/>
+{{< highlight rust >}}
+let age = Option::from(6);
+match age {
+    Some(6) => println!("haha"),
+    _ => ()
+}
+{{</ highlight >}}
+<br/>
+age 推断为 Option&lt;i32&gt;, 所以 Some(6) 也是 Some(i32), 如果把 Some(6) 改为 Some(6i8), age 也会被重新推断为 Option&lt;i8&gt;。要是不让 age 自动推断，写成<br/><br/>
+{{< highlight rust >}}
+let age:Option<u8> = Some(6);
+match age {
+    Some(6u16) => println!("haha"),
+    _ => ()
+}
+{{</ highlight >}}
+<br/>
+以上代码无法通过编译<br/>
+{{< highlight rust >}}
+error[E0308]: mismatched types
+ --> src/main.rs:4:14
+  |
+3 |     match age {
+  |           --- this expression has type `Option<u8>`
+4 |         Some(6u16) => println!("haha"),
+  |              ^^^^ expected `u8`, found `u16`
+{{</ highlight >}}
+<br/>
+let 是变量绑定(变量声明), if let 和  while let 模式匹配它 if 和 while 在判断条件的同时还能进行变量的绑定，这与 Scala 的 case Some(x) 类似。<br/>
+{{< highlight rust >}}
+fn main() {
+    if_let(Some(8));
+    if_let(None);
+}
+
+fn if_let(value: Option<i32>) {
+    if let Some(x) = value {
+        println!("{}", x)
+    }
+}
+{{</ highlight >}}
+<br/>
+只要不是 None 就能匹配为 Some(x), 同时捕获 value 中的值绑定到 x<br/><br/>
+if let 像是下面的 match 语法糖<br/>
+{{< highlight rust >}}
+fn if_let(value: Option<i32>) {
+    match value {
+        Some(x) => println!("{}", x),
+        _ => ()
+    }
+}
+{{</ highlight >}}
+<br/>
+let Some(x) 的另类用法<br/>
+{{< highlight rust >}}
+let Some(x) = Some(6) else { todo!() };
+println!("{}", x);   // 6
+{{</ highlight >}}
+<br/>
+while let 也是一样的<br/>
+{{< highlight rust >}}
+let mut vec = vec![1, 2, 3];
+while let Some(value) = vec.pop() { // vec.pop() 在没有元素时 pop 出来的是 None 值
+    println!("{}", value);
+}
+{{</ highlight >}}
+<br/>
+它相当的 match 写法是<br/>
+{{< highlight rust >}}
+let mut vec = vec![1, 2, 3];
+loop {
+    match vec.pop() {
+        Some(value) => println!("{}", value),
+        None => break,
+    }
+}
+
+{{</ highlight >}}
+<br/>
+如果把 if let, while let 靠向 if, while 语句去理解，它们后面要求的是一个 bool 值，就会有疑问，为什么<br/><br/>
+if let Some(x) = value 中的 <code>let Some(x) = value</code> 只有有值时整体才为 true 呢？同样的在<br/><br/>
+while let Some(value) = vec.pop() 中为什么 <code>let Some(value) = vec.pop()</code> 有值时整体才为 true。<br/><br/>
+<h3>后记：</h3>
+Rust 变量默认是 Immutable, 那是来真的，没有用 mul 修饰的话，变量的内容也是无法修改的，这与 Java 不同。<br/><br/>
+<code>println!</code> 宏后端调用了 std::fmt::format 宏，它的具体用法见 Rust 官方的 <a href="https://doc.rust-lang.org/std/fmt/">Module std::fmt</a>, 它像 Python 的 format 那样可以指定输出格式，用序号或命名变量，它与 to_string() 方法，fmt::Display, fmt::Debug trait 相关。<br/><br/>
+Rust 没有构造函数的概念，许多类型实现了 new() 静态方法(这不是 Rust 语言的一部分)，创建一个类型一般用 Complex {re: 2.1, im:-1.2} 或 Complex::new(11.1, 22.2) 两种方式。<br/><br/>
+Rust 的 if, match 都是表达式，是有返回值的, <code>{}</code> 也是有返回值<br/>
+{{< highlight rust >}}
+let y = {
+    let x = 2;
+    x + 1
+};
+{{</ highlight >}}
+<br/>
+在 Rust 中，后面不加 <code>;</code> 分号的是表达式(Expression)，有返回值，没 <code>;</code> 分号的是语句(Statement)，无返回值(或说返回值为 Unit), <code>return x;</code> 本身是一条句，但 <code>return</code> 表达了返回值。

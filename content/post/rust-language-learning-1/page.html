@@ -1,0 +1,188 @@
+---
+title: Rust 语言学习笔记(一)
+url: /rust-language-learning-1/
+date: 2023-12-31T14:59:44-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/rust-logo.png"
+categories:
+  - Rust
+tags: 
+  - Rust
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13406 
+wpStatus: publish
+views: 207
+lastmod: 2024-01-05T00:02:30-06:00
+---
+
+学了不少编程语言，多数是离不开垃圾回收的，要么像 C++ 仍然是过于复杂，对于通用，编译型编程语言 Rust 是个不错的选择, Rust 不需要垃圾回收器。Rust 是由 Mozilla 主导开发的，设计准则为 "安全，并发，实用", 支持函数式，并发式，过程式以及面向对象的编程风格。Rust 能达到与 C++ 接近的性能，它又是编译型语言，编译出来二进制文件执行时不再依赖于运行时。Rust 有自带的 Cargo 作为依赖管理与构建工具，免除了关键工具的选择综合症。AWS 在今年也推出了 Rust 的 AWS SDK, 所以学习 Rust 的过程中也打算使用它来操作 AWS 的资源。<br/><br/>
+<h3>Rust 的 Hello World</h3>
+在 macOS 下的安装<br/>
+<blockquote>
+$ brew install rust
+</blockquote>
+
+或<br/>
+<blockquote>
+$ curl https://sh.rustup.rs | sh    # 安装
+$ rustc --version                              # 查看版本
+$ rustup update                               # 更新
+$ rustup self uninstall                     # 卸载
+</blockquote>
+
+当前 Rust 版本为 1.74.0, 安装后有 rustc, rustdoc, rust-gdb, rust-lldb, cargo 等相关命令<!--more--><br/><br/>
+
+创建一个并运行 hello<br/>
+{{< highlight sh >}}
+$ cargo new hello
+$ tree hello
+hello
+├── Cargo.toml
+└── src
+    └── main.rs
+$ cd hello
+$ cargo run
+   Compiling hello v0.1.0 (/Users/yanbin/test/hello)
+    Finished dev [unoptimized + debuginfo] target(s) in 3.12s
+     Running `target/debug/hello`
+Hello, world!
+
+{{</ highlight >}}
+
+cargo new 生成的项目有一个标准布局，不像 C++ 的项目那么自由混乱。自然的，Cargo.toml 中可配置项目的信息及管理依赖。<br/><br/>
+src/main.rs 的内容如下<br/>
+{{< highlight rust >}}
+fn main() {
+    println!("Hello, world!");
+}
+{{</ highlight >}}
+
+main.rs 中的 Hello World 代码本身没多大意义，我们由此可了解 Cargo 的使用<br/><br/>
+cargo run 生成的二进制文件是在 target/debug/hello，可以直接执行它或分发到相同的平台中，不需要预先安装任何的运行时。<br/><br/>
+Cargo 也像 Maven 那样，用 cargo --help 可查看所有的构建命令。<code>cargo xxx -v</code> 可看到具体调用的对应命令的详细命令。<br/><br/>
+<code>cargo doc</code> 会生成自己项目和所用到的所有第三方依赖的文档，用 <code>cargo doc --open</code> 能一步生成文档并在在浏览器中打开相应的 index.html 文件。如果只需生成自己代码的文档用 <code>cargo doc --no-deps</code><br/><br/>
+Rust 的注释格式：<br/>
+<ol>
+    <li>// 普通单行注释</li>
+    <li>/* */ 块注释</li>
+    <li>//! 当前项目的标识注释</li>
+    <li>/// 文档注释，可应用于处，像 Java 的 /** **/, 其中支持 Markdown</li>
+</ol>
+<br/>
+比如我们可以重新构前面的 hello 执行文件<br/>
+<blockquote>
+$ cargo clean
+$ cargo build --release
+$ target/release/hello
+Hello, world!
+$ ls -l target/release/hello
+-rwxr-xr-x 1 yanbin staff 488704 Dec 30 23:40 target/release/hello
+</blockquote>
+
+执行文件 488K (通过 strip 可缩减到  363K)<br/><br/>
+在 Ubuntu 20.04 中可以用 apt 命令安装 rust<br/>
+<blockquote>
+sudo apt install -y rust-all
+</blockquote>
+
+然后在 Ubuntu 20.04 下编译 Rust Hello World<br/>
+<blockquote>
+$ cargo new hello && cd hello
+$ cargo build --release
+$ ls -lh target/release/hello
+-rwxrwxr-x 2 vagrant vagrant 13M Dec 31 06:26 target/release/hello
+$ strip target/release/hello
+$ ls -lh target/release/hello
+-rwxrwxr-x 2 vagrant vagrant 327K Dec 31 06:26 target/release/hello
+$ cargo rustc --release -- -C prefer-dynamic
+$ ls -lh target/release/hello
+-rwxrwxr-x 2 vagrant vagrant 17K Dec 31 06:27 target/release/hello
+</blockquote>
+
+直接构建生成的可执行文件 13M, strip 之后是 327K, 只要没有使用 -C prefer-dynamic 构建的执行文件挪到其他没安装 rust 的 Linux 下可直接执行(当然要匹配 CPU 架构了)。如果用了 -C prefer-dynamic 生成的只有 17K, 它运行时还须连接到 Rust 运行库，所以拿到一个纯净的 Ubuntu 20.04 下直接执行的话，出现如下错误<br/>
+<blockquote>
+$ ./hello
+$ ./hello: error while loading shared libraries: libstd-90f6ddbf82de36ec.so: cannot open shared object file: No such file or directory
+</blockquote>
+
+如果把安装了 rust-all 机器下的 /usr/local/rustup/toolchains/1.75.0-x86_64-unknown-linux-gnu/lib/libstd-90f6ddbf82de36ec.so 文件拷到那台纯净 Ubuntu 20.04 的当前目录下，并且设置 <code>export LD_LIBRARY_PATH=.</code>, 再执行 ./hello 就没问题了。libstd-90f6ddbf82de36ec.so 文件大小有 14M。<br/><br/>
+strip 和 -C prefer-dynamic 可配置在 Cargo.toml 文件中<br/><br/>
+注：如果用 docker 镜像 rust:1.75-buster 的 cargo build --release 生成的 target/release/hello 文件大小是 4.3M, strip 之后是  355K<br/><br/>
+在 macOS 下可通过 Docker 来编译出 Linux 版本的二进制执行文件。IntelliJ IDEA 中可用 <a href="https://plugins.jetbrains.com/plugin/21962-dev-containers">Dev Containers</a> 插件，然后当前目录中创建 <code>.devcontainer/devcontainer.json</code> 文件，基本内容<br/>
+{{< highlight rust >}}
+{
+  "name": "rust-build",
+  "image": "rust:1.75-buster"
+}
+{{</ highlight >}}
+
+在 devcontainer.json 上下文菜单中有 Dev Containers 菜单来启动开发容器. devcontainer.json 的详细配置请参考 <a href="https://containers.dev/implementors/json_reference/">Dev Container metadata reference</a>.<br/><br/>
+使用 IntelliJ IDEA 的话，在运行 Cargo run 时可指琮 <code>Run on</code> -- SSH 或 Docker<br/><br/>
+Rust 支持跨平台编译, 比如在 macOS 下编译出 Linux 下的可执行文件，这需另开一个专题来研究。<br/><br/>
+如果简单的代码不使用 Cargo 的话，可直接创建 main.rs 源文件，然后用<br/>
+<blockquote>
+$ rustc main.rs
+</blockquote>
+
+就会生成可执行的 main 文件<br/><br/>
+Rust 语言基本采用了 C/C++ 的大括号/分号的代码风格。最后来一段代码作为对 Rust 的总体的感受<br/>
+{{< highlight rust >}}
+use std::env::args;  // Rust 的 use 和 Python 的 import 一样，可以写在任何位置
+
+fn main() {       // 函数定义的关键字最简化成 fn
+    greet_world()  // 函数中最后一条语句不写分号作为函数的返回值，相当于 return greet_world(); 有 return 必须要分号
+}
+
+fn greet_world() {
+    let x: i8 = 1; // 变量声明(准备讲是变量绑定)用 let, 类型可省略，会自动推断; 像 JS 的 let，但 x 是不可变的
+    // x = 2;      // x 是不可变的，所以重新赋值是非法的
+    let x = "10"; // 但是重样报声明 x 是可以的，之前的 x 就不见了，所以 let 应理解变量绑定
+    let mut y = 3; // 加了 mut 修饰的变量才是可变的
+    y = 5;
+    const MAX_RETRY: u8 = 3; // 常量声明必须指明类型, 常量不像 let 那样可重复声明
+    let regions = ["USA", "China"]; // 数组声明直接用 [], 和 Python 的 list 一样
+    for region in regions.iter() {
+        println!("{}", &region) // 感叹号(!) 使用宏, "&" 符号表示"借用"-只读访问
+    }
+
+    // Rust 的 Closure/Lambda 的写法，像 Ruby 那样竖线分隔参数与代码
+    let regions_in_lower_case: Vec<_> = regions.iter().map(|r|r.to_lowercase()).collect();
+    println!("{:?}", &regions_in_lower_case); // ["usa", "china"]
+
+    let a: i8 = 127;
+    // let b: i8 = a + 1; // i8 的范围是 -128 ~ 127, 由于编译期会计算 a + 1，会报告溢出错误
+
+    let config = r#"
+        {"image":"rust:1.75-buster"}
+    "#;  // heredoc 语法，如果是长字符串可像 Java 的 properties 那样用 \ 换行
+
+    for i in 0..3 {  // Range 类型，(0..3) 相当 Java 的 IntStream.range(0,3), (0..=3) 就是 IntStream.rangeClosed(0,3)
+        print!("{} ", i)  // 打印 0 1 2
+    }
+    println!();
+
+    let args: Vec<String> = args().collect(); // 运行参数，和 bash 一样, args[0] 是命令本身，从 1 起才是用户输入, cargo run -- arg1 arg2
+    if let Ok(length) = args[1].parse::<u32>() { // let Ok(length) 相当于模式匹配, 无法解析不报错，不匹配则是 Err(E)
+        println!("input length: {}", length)
+    }
+}
+
+{{</ highlight >}}
+
+因为是编译型语言，Rust 的函数不需像 Python 那样提前声明，但作为编译型的 C 也是要提前声明函数的。<br/><br/>
+Rust 函数默认的返回值是 <code>()</code>, 读作  unit, 和 Scala 的空返回值是一样的。 声明函数的返回值用 <code>-&gt;</code>, 如 fn foo() -&gt; String {...}。Rust 的赋值语的返回值不是最终的变量值，而是 <code>()</code>, 所以即使变量 a 是 bool 类型，if a = true {} 也是非法的，更不需要像 Java 中建议的 if true == a 的写法。<br/><br/>
+Rust 像 C/C++/Objective C 那样也是支持宏的，Rust 的宏支持可没有 Scala 的那么复杂<br/><br/>
+Rust 的编译器尽可能的做更多的事情，更多的优化，以使用在程序运行时更安全，更好的性能。<br/><br/>
+像局部变量因为是在内部使用，它会建议声明为下划线开始的变量名，如 <code>config</code> -&gt; <code>_config</code>。未使用的变量会有警告，但不像 Go 编译器发现未使用的变量直接报错 ; 未使用的 <code>use</code> 引用也会有警告。<br/><br/>
+比如线程竞争访问外部变量，访问删除(drop) 的变量，像上面的数值溢出，遍历集合时集合被修改了编译时都会有警告。在编译信息中经常看到 borrow, move, trait 这样的表述。<br/><br/>
+Rust 方法默认是静态分派的，和 C++ 一样，方法默认不是虚的; 而 Java 默认都是虚方法，这也会降低程序执行的性能。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://betterprogramming.pub/cross-compiling-rust-from-mac-to-linux-7fad5a454ab1">Cross-compiling Rust From Mac to Linux</a></li>
+</ol>

@@ -1,0 +1,263 @@
+---
+title: Rust 语言学习笔记(四)
+url: /rust-language-learning-4/
+date: 2024-01-07T14:19:58-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/rust-logo.png"
+categories:
+  - Rust
+tags: 
+  - Rust
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13454 
+wpStatus: publish
+views: 230
+lastmod: 2024-01-08T00:23:08-06:00
+---
+
+试手了一下 Rust, 发现止今所学知识尚浅，不少情况处理起来很是茫然，比如经常得到的值是 Result 或 Option, 有时候要 .unwrap(), 有时得后面加个问号，或 .await。还有从自定义函数里返回一个引用都不容易，到处是 move, borrow, owner, lifetime 之类的错误信息。所以说，快充五分钟还真不敢上路，继续学习 Rust 的 Result, 说起它又必须与 Rust 的错误处理联系起来。</p>
+<br/>
+编程语言在处理错误无外乎就两种哲学<br/>
+<ol>
+    <li>得到正确的结果或触发异常，异常不就地处理则向外传播</li>
+    <li>总是能得到一个结果，于结果中获知是否有异常，如 Option&lt;T&gt;, Result&lt;T, E&gt;</li>
+</ol>
+
+其实本人更钟爱前一种方式，因为正常逻辑可以更流畅的表达，不至于被众多的 if 语句所打断; 而异常的话可以就地解决，或者延迟到某处去集中处理。Java 多是用第一种方式，所以某些框架尽量使用 Unchecked 异常，不强制插入 try/catch 块。<br/><br/>
+第二种方式，在 shell 或 C++ 很常见，比如 shell 下每调用一个命令都有返回数值, 即 $?, 0 为正常，非 0 为有错误; C++ 的 GetLastError() 也是一样的意思。<br/><br/>
+现在所学的 Rust 在处理结果和错误时，采用了第二种方式，不过使用上 Rust 的模式匹配处理起 Option&lt;T&gt;, Result&lt;T, E&gt; 倒也不难，而且 Option&lt;T&gt; 和 Result&lt;T, E&gt; 这样的返回结果还用来向上传播异常，出错时还能追踪到异常栈。<!--more--><br/><br/>
+Rust 提供了分层式错误处理的几种方案<br/>
+<ol>
+    <li>Option&lt;T&gt;: 有无值</li>
+    <li>Result&lt;T, E&gt;: 有无错误</li>
+    <li>Panic: 错误不可恢复，Go 语言也是用这个 panic 关键字</li>
+    <li>Abort: 灾难性错误，一般都要终止进程了</li>
+</ol>
+
+实际中建议用 Result&lt;T, E&gt; 和 Panic 来分别处理可恢复和不可恢复的错误<br/><br/>
+Result&lt;T, E&gt; 是 Rust 内置并被自动引入的枚举<br/>
+{{< highlight rust >}}
+enum Result&lt;T, E&gt; {
+    Ok(T),
+    Err(E),
+}
+{{</ highlight >}}
+<br/>
+下面自定义一个方法返回 Result&lt;T, E&gt;, 然后看几个典型的应用<br/>
+{{< highlight rust >}}
+fn add_one(x: i32) -> Result<i32, &'static str> {
+    if x == i32::MAX {
+        Err("overflow")
+    } else {
+        Ok(x + 1)
+    }
+}
+
+fn main() {
+    let v = add_one(32).unwrap();
+    println!("v: {}", v);  // v: 33
+
+    let e = add_one(i32::MAX).unwrap_err();
+    println!("e: {}", e);  // e: overflow
+
+    if let Ok(ok_value) = add_one(32) {
+        println!("ok_value: {}", ok_value)  // ok_value: 33
+    }
+
+    if let Err(err_str) = add_one(i32::MAX) {
+        println!("err_str: {}", err_str)   // err_str: overflow
+    }
+}
+{{</ highlight >}}
+<br/>
+如果对 Err("overflow") 进行 .unwrap() 操作，会得到错误(Panic)<br/>
+<blockquote>
+called `Result::unwrap()` on an `Err` value: "overflow"
+</blockquote>
+
+并在 Debug 模式下输出整个异常栈<br/><br/>
+当然对 Ok(33) 也不能  unwrap_err() 操作, 也会有 Panic<br/>
+<blockquote>
+called `Result::unwrap_err()` on an `Ok` value: 33
+</blockquote>
+
+但可以用 Result&lt;T, E&gt; 的其他方法<br/>
+<ol>
+    <li>unwrap_or(default): 有错误则得到一个默认值</li>
+    <li>expect("custom error"): 有错误仍然是一个 Panic, 可进一步自定义错误信息，如 Err("overflow").expect("custom error") 会看到  custom error: "overflow"。有一点像 PHP foo() or die("死给你看") 的意思</li>
+    <li>expect_err(msg): 用到 Err 身上的方法，如果不是错误可不成</li>
+    <li>is_ok(), is_error() 的判断</li>
+    <li>ok(), error() 分别针对 Ok, Err 得到相应的 Option&lt;T&gt; , Option&lt;E&gt; 结果</li>
+    <li>其他更多如 unwrap_or_else(op), unwrap_or_default(default) 等</li>
+</ol>
+
+<h3><code>?</code> 与 <code>unwrap()</code></h3>
+某些时候 <code>?</code> 是 <code>unwrap()</code> 的快捷操作，但不是任何地方都适用。我们先在 main() 函中试下<br/>
+{{< highlight rust >}}
+fn main() {
+    let x = add_one(32)?; // 类型自动推断 x: i32
+    println!("{}", x);
+}
+{{</ highlight >}}
+<br/>
+在 Result&lt;T, E&gt; 后加个 <code>?</code> 号确实能让 x 类型在 IntelliJ IDEA 推断为 i32, 但无法通过编译，错误是<br/>
+{{< highlight rust >}}
+error[E0277]: the `?` operator can only be used in a function that returns `Result` or `Option` (or another type that implements `FromResidual`)
+  --> src/main.rs:12:24
+   |
+9  | fn main() {
+   | --------- this function should return `Result` or `Option` to accept `?`
+...
+12 |     let x = add_one(32)?;
+   |                        ^ cannot use the `?` operator in a function that returns `()`
+   |
+   = help: the trait `FromResidual<Result<Infallible, &str>>` is not implemented for `()`
+{{</ highlight >}}
+<br/>
+就因为 main() 不是返回 Result 或 Option。<code>?</code> 的操作是用来无法完成 unwrap() 时继续向外传播相应的 Result 或 Option, 所以创建一个返回 Result&lt;T, E&gt; 的函数来用 <code>?</code> 就没问题<br/>
+{{< highlight rust >}}
+fn foo(x: i32) -> Result<i32, &'static str> {
+    let v: i32 = add_one(x)?;     // 正常
+    Ok(v / 2)
+}
+
+fn main() {
+    let x: i32 = foo(i32::MAX).unwrap();
+    println!("{}", x);
+}
+{{</ highlight >}}
+<br/>
+因为 foo 函数返回的是 Result&lt;T, E&gt; 所以其中的 add_one(x)? 不再抱怨了。<br/><br/>
+再仔细看上面错误，好像调用函数返回 Result 或 Option 就能在其中用 <code>?</code> 代替 <code>unwrap()</code>, 那把 foo 函数改成返回 Option<br/>
+{{< highlight rust >}}
+fn foo(x: i32) -> Option<i32> {
+    let v: i32 = add_one(x)?;
+    Some(v / 2)
+}
+{{</ highlight >}}
+<br/>
+编译又不过<br/>
+{{< highlight rust >}}
+error[E0277]: the `?` operator can only be used on `Option`s, not `Result`s, in a function that returns `Option`
+  --> src/main.rs:10:28
+   |
+9  | fn foo(x: i32) -> Option<i32> {
+   | ----------------------------- this function returns an `Option`
+10 |     let v: i32 = add_one(x)?;
+   |                            ^ use `.ok()?` if you want to discard the `Result<Infallible, &str>` error information
+{{</ highlight >}}
+<br/>
+所以前面说的 Result or Option 是骗人的，准确的说应该是函数中用 <code>?</code> 代替 <code>.unwrap()</code> 的话，必须保证当前函数也是返回一样的类型，Result 对 Result, Option 对  Option。 因为 <code>?</code> 代替 <code>.unwrap()</code> 的语义是，如果能 unwrap() 则往下处理，否则把 Result::Err 或 Option:None 的值作当前函数的返回值，也就要求 Err 中的错误类型要匹配。具体来说是<br/><br/>
+Option<br/>
+{{< highlight rust >}}
+fn foo(x: i32) -> Option<f64> {
+    let v: i32 = bar(x)?;   // 用 bar(x)? 的话，foo 方法返回任意类型的 Option 都行
+    ...
+}
+
+fn bar(x: i32) -> Option<i32> {
+   ...
+}
+{{</ highlight >}}
+<br/>
+foo 函数的等效代码如下<br/>
+{{< highlight rust >}}
+fn foo(x: i32) -> Option<f64> {
+    let v = bar(x);
+    if v == None {
+        return None;
+    }
+    ...
+}
+
+{{</ highlight >}}
+<br/>
+Result&lt;T, E&gt;<br/>
+{{< highlight rust >}}
+fn foo(x: i32) -> Result<f64, &'static str> {
+    let v: i32 = bar(x)?;    // 用 bar(x)? 的话，foo 方法只需保证返回的 Result 的 错误部类类型一致，此处都必须是 &'static str
+    ...
+}
+
+fn bar(x: i32) -> Result<i32, &'static str> {
+    ...
+}
+{{</ highlight >}}
+<br/>
+foo 函数的等效代码如下：<br/>
+{{< highlight rust >}}
+fn foo(x: i32) -> Result<f64, &'static str> {
+    let v = bar(x);
+    if v.is_err() {
+        return Err(v.unwrap_err());
+    }
+    ...
+}
+{{</ highlight >}}
+<br/>
+<span style="color: #ff0000;">简单讲 <code>?</code> 替换 <code>.unwrap()</code> 的作用是能在出错时提前返回 <code>Result::Err(err)</code> 或 <code>Option::None</code>, 这样应该更好理解调用函数需返回的类型。</span><br/><br/>
+ChatGPT 说推荐用 <code>?</code>, 这样能更优雅的向上传播异常，除非确定 Result/Option 中有值就用 unwrap()。测试了一下，确实，在 foo() 函数中用了  add_on(x)? 异常栈里就能看到  foo() 函数调用，用 add_on(x).unwrap() 则差一些。<br/><br/>
+如果把 <code>?</code> 号串起来，写成<br/>
+{{< highlight rust >}}
+let x = foo()?.bar()?.qux()?;
+{{</ highlight >}}
+<br/>
+有种似曾相识的感觉，对就是 Groovy 的 Safe Navigation operator。<br/><br/>
+前面正好又从 Result&lt;T, E&gt; 没到了 Option&lt;T&gt;, 那就看看 Option&lt;T&gt; 应如何处理<br/><br/>
+Option&lt;T&gt; 也是一个枚举<br/>
+{{< highlight rust >}}
+enum Option<T> {
+    None,
+    Some(T),
+}
+{{</ highlight >}}
+<br/>
+包括两个值，有还无。Option 也有类似的 unwrap(), or(), or_else(), 通过 ok_or() 和 ok_or_else() 方法又可以把 Option 转换成一个 Result&lt;T, E&gt; 类型。<br/><br/>
+还有就是把  Option 用 match 或 if let 的模式匹配, 如 if let Some(x) = foo() { ...process x... }<br/><br/>
+<h3>抛出和捕获异常</h3>
+相信我们多数人比较习惯的异常的处理方式是 throw/try/catch/finally, Python 用的关键字是 raise/try/except/finally, Go 的关键字是 defer/panic/recover。回到这里的 Rust 用的是什么语法呢，panic/catch_unwind, Rust 没有传统语言的 finally<br/>
+{{< highlight rust >}}
+use std::panic::catch_unwind;
+
+fn foo(x: i32) -> i32 {
+    if x == 0 {
+        panic!("can't process 0")
+    }
+    x + 10
+}
+
+fn main() {
+    let y = catch_unwind(|| {  // y 的类型自动推断为 std::thread::Result<i32>
+        foo(0)       // 如果在这个闭包体中返回不同的类型，y 也将被推断为相应的 std::thread::Result<X> 类型
+    });
+
+    println!("{:?}", y);  // Err(Any { .. })
+}
+{{</ highlight >}}
+<br/>
+std::thread::Result 是一个自定义的 Result<br/>
+<blockquote>
+pub type Result<T> = crate::result::Result<T, Box<dyn Any + Send + 'static>>;
+</blockquote>
+
+通过 catch_unwind() 又重新把 panic 转换成的 Result, 还是要用 unwrap() 之类的方法去判断成功或失败，或获得其中的值<br/><br/>
+程序虽然能正常恢复，但在控制台下执行的是 <code>cargo build --release</code> 生成的执行文件，仍然打印出信息<br/>
+{{< highlight rust >}}
+thread 'main' panicked at src/main.rs:13:9:
+can't process 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+Err(Any { .. })
+{{</ highlight >}}
+<br/>
+如果 foo(0) 换成 foo(10), 执行后控制台输出为<br/>
+<blockquote>
+Ok(20)
+</blockquote>
+
+catch_unwind() 的最终目的是把 panic 转换成 Result。

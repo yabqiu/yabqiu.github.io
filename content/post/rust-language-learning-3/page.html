@@ -1,0 +1,301 @@
+---
+title: Rust 语言学习笔记(三)
+url: /rust-language-learning-3/
+date: 2024-01-03T14:17:28-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/rust-logo.png"
+categories:
+  - Rust
+tags: 
+  - Rust
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13427 
+wpStatus: publish
+views: 118
+lastmod: 2024-01-04T23:14:17-06:00
+---
+
+<h3>引用与解除引用</h3>
+觉得还是有必要继续深入学习一下 Rust 再练手，毕竟仍然看到 &amp; 和 * 符号还有些恍惚，大概就是 C/C++ 里的取地址和取值操作吧，实际上也确实类似。只是叫法略有不同, 还有就是在 C/C++ 多用了指针的概念。</p>
+<br/>
+在 C/C++ 中， <code>&amp;</code>：称作 Address-of Operator, 在 Rust 中称作 Reference Operator, 而 <code>*</code> 在 C/C++ 和 Rust 中都叫做 Dereference Operator。以前学 C/C++ 经常被一系列的 &amp;, * 打晕了头，如今参考了它们的英文名称立刻变得清晰了起来。<br/><br/>
+就像当初看汇编各种寻址方式弄得头都大了，其实也就是依照约定。<!--more--><br/><br/>
+回顾一段 C++ 的代码，hello.cpp<br/>
+{{< highlight cpp >}}
+#include <iostream>
+using namespace std;
+
+int main()
+{
+    int a = 42;
+    int* r = &a;     // 比写成 int *r 好理解，int* 直接理解成类型是指向 int 的指针
+    int* x = r + 4;  // r 中存了一个地址，指针偏移
+    int** y = &x;
+    cout << "r: " << r << ", *r: " << *r << ", *&*&a: " << *&*&a << endl; // *& 是一对逆操作
+    cout << "*x: " << *x << ", **y: " << **y << endl;
+    return 0;
+}
+{{</ highlight >}}
+<br/>
+可用 g++ 编译<br/>
+<blockquote>
+$ g++ hello.cpp -o hello
+$ ./hello<br />
+r: 0x7ff7bbd06228, *r: 42, *&*&a: 42
+*x: 301843487, **y: 301843487
+</blockquote>
+
+在 C/C++ 中声明指针个人偏向于 <code>*</code> 号紧挨类型，<code>int*</code> 整体作为类型，而写成 <code>int *r</code> 中的 <code>*r</code> 就有些不明所以了。类似的声明数组倾向用 <code>int[] data</code> 而不 <code>int data[]</code>。<br/><br/>
+<code>&amp;</code>：取地址(引用), <code>*</code>：解除引用，获得地址中存储的值<br/><br/>
+回到 Rust 的 Reference(&amp;) 和 Dereference(*), 在 Rust 中直接用地址偏移来获得内存中的数值是不安全的操作，所以不在上面的代码中演示。<br/>
+{{< highlight rust >}}
+let a = 42;
+let r:&i32 = &a;
+let y = &r; // 自动推断的 &&i32
+println!("r: {}, *r: {}, *&*&a: {}, **y: {}", r, *r, *&*&a, **y);
+{{</ highlight >}}
+<br/>
+在 Rust 声明引用时，类型可自动推断或手动明确指定，由于变量类型总是在 <code>:</code> 号后面，所以不会有 C/C++ 那种 <code>*</code> 号前后移造成的理解混乱。这也证明了 <code>variable_name: type</code> 要比 <code>type variable_name</code> 变量声明方式优越，现代语言如 Scala, Swift, Kotlin 等多用前一种方式，连 Python 的 type hint 也是这种方式。<br/><br/>
+<code>&amp;</code> 和 <code>*</code> 的意义与 C/C++ 中的意义是一样的，<code>&amp;</code>: 取得引用，<code>*</code>: 解除引用，获得引用所指向的值，在 Rust 中也有引用的引用，类似于 C/C++ 的指针的指针。<br/><br/>
+在 C/C++ 中相关的有 <code>引用</code>, <code>地址</code>, 和 <code>指针</code> 三个概念，容易把人搞糊涂，而 Rust 中也有 <code>引用</code> 和 <code>指针</code> 的概念。<br/><br/>
+回到 Rust 的字面字符串<br/>
+{{< highlight rust >}}
+let s = "abc"; // s 的类型被推断为 &str
+{{</ highlight >}}
+<br/>
+由 "abc" 本质上是一个字符数组，所以 Rust 推断 s 的类型为 &amp;str<br/><br/>
+在 Rust 中数组变量本身并非首个元素的地址，同样必须用 <code>&amp;</code> 来获得引用，如<br/>
+{{< highlight rust >}}
+let arr = [11, 22, 33];
+let arr_ref = &arr;
+println!("arr[0]: {}", unsafe { *(arr_ref as *const i32) });    // 偏移地址
+println!("arr[1]: {}", unsafe { *(arr_ref as *const i32).offset(1) });
+for item in &arr {  // 这里遍历的是引用，也可以用  for item int arr { println!("{}", item); } 遍历值
+    println!("{}", *item);
+}
+{{</ highlight >}}
+<br/>
+执行后输出<br/>
+<blockquote>
+arr[0]: 11
+arr[1]: 22
+11
+22
+33
+</blockquote>
+
+<h3>函数的显式生命周期注解</h3>
+让人头大的 Rust 函数定义方式要来了，即带有显式生命周期(lifetime) 注解的函数定义，比如我们定义一个 add 函数<br/>
+{{< highlight rust >}}
+fn add(i: &i32, j: &i32) -> i32 {
+    *i + *j
+}
+{{</ highlight >}}
+<br/>
+上面其实是省略了生命周期注解，等效的定义如下<br/>
+{{< highlight rust >}}
+fn add<'a, 'b>(i: &'a i32, j: &'b i32) -> i32 {
+    *i + *j
+}
+{{</ highlight >}}
+<br/>
+&lt;'a, 'b&gt; 定义了两个生命周期变量，参数 i 是一个具有生命周期 a 的 i32 类型变量，参数 j 是一个具有生命周期 b 的 i32 类型变量。到这里还是无法知道这个生命周期指的是什么。<br/><br/>
+定义函数时多数时候都不用显式的声明生命周期，编译器能自动推断，但对某些函数定义无法推断出生命周期<br/>
+{{< highlight rust >}}
+fn add(i: &i32, j: &i32) -> &i32 {
+    let res = *i + *j;
+    &res
+}
+{{</ highlight >}}
+<br/>
+编译会出错<br/>
+{{< highlight rust >}}
+error[E0106]: missing lifetime specifier
+  --> src/main.rs:24:29
+   |
+24 | fn add(i: &i32, j: &i32) -> &i32 {
+   |           ----     ----     ^ expected named lifetime parameter
+   |
+   = help: this function's return type contains a borrowed value, but the signature does not say whether it is borrowed from `i` or `j`
+help: consider introducing a named lifetime parameter
+   |
+24 | fn add<'a>(i: &'a i32, j: &'a i32) -> &'a i32 {
+   |       ++++     ++          ++          ++
+{{</ highlight >}}
+<br/>
+因为函数中返回一个引用，从函数返回后获得的引用还要保持有效，所返回值必须是 lifetime 的，函数应声明为<br/>
+{{< highlight rust >}}
+fn add<'a>(i: &'a i32, j: &'a i32) -> &'a i32 {
+{{</ highlight >}}
+<br/>
+仍然是无法编译<br/>
+{{< highlight rust >}}
+error[E0515]: cannot return reference to local variable `res`
+  --> src/main.rs:19:5
+   |
+19 |     &res
+   |     ^^^^ returns a reference to data owned by the current function
+{{</ highlight >}}
+<br/>
+这就是 Rust 想要的安全，只得把返回值类型改为 i32 才行。在 C/C++ 函数中返回一个指针就必须由调用者负责不用时 delete 它，否则造成内存泄露。<br/><br/>
+<h3>泛型函数</h3>
+Rust 声明泛型函数的方式与 Java 类似, 只是泛类型移到了方法名后面，如<br/>
+{{< highlight rust >}}
+fn add<T>(i: T, j: T) -> T {
+  i + j    // 会转换为 i.add(j)
+}
+{{</ highlight >}}
+<br/>
+显然这个函数是无法通过编译的，因为 &lt;T&gt; 代表的是所有类型，不是所有类型都支持 add 操作。&lt;T&gt; 必须指定类型或 Trait 为上界。Scala 也用 Trait 这个概念，Trait 像是一个接口，协议或合约，但更像是一个可被多重继承的抽象类。<br/>
+{{< highlight rust >}}
+use std::ops::Add;
+
+fn main() {
+   println!("{}, {}", add(10, 20), add(1.1, 2.2))
+}
+
+fn add<T: Add<Output=T>>(i: T, j: T) -> T {
+    i + j
+}
+{{</ highlight >}}
+<br/>
+add 即可处理 i32, 又能处理 f64。Rust 是不会自动转型的，所以声明两个 f64 相加的函数，不能接受两个 i32 值。<br/><br/>
+<h3>命令行参数</h3>
+Rust 标准库获取命令行输入参数用  std::env:args<br/>
+{{< highlight rust >}}
+use std::env::args;
+
+let args1: Args = args();
+let args2: Vec<String> = args1.collection();
+println!("{:?}", args2);
+{{</ highlight >}}
+<br/>
+用 <code>cargo run</code> 的话传入参数的方式是<br/>
+<blockquote>
+$ cargo run -- aa bb<br />
+["target/debug/hello", "aa", "bb"]
+</blockquote>
+
+第一个参数像  bash  一样是命令本身的路径<br/><br/>
+Rust 标准库处理命令行参数的功能太弱了，可用第三方的 Crate - clap, 见官方的用法 <a href="https://docs.rs/clap/latest/clap/#example">https://docs.rs/clap/latest/clap/#example</a><br/>
+<blockquote>
+$ cargo add clap --features derive
+</blockquote>
+
+{{< highlight rust >}}
+use clap::Parser;
+
+/// Simple program to greet a person
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Name of the person to greet
+    #[arg(short, long)]
+    name: String,
+
+    /// Show verbose information
+    #[arg(short, long)]
+    verbose: bool,
+
+    /// Number of times to greet
+    #[arg(short, long, default_value_t = 1)]
+    count: u8,
+}
+
+fn main() {
+    let args = Args::parse();
+
+    for _ in 0..args.count {
+        println!("Hello {}!", args.name)
+    }
+}
+{{</ highlight >}}
+<br/>
+查看命令帮助<br/>
+{{< highlight sh >}}
+target/debug/hello --help
+Simple program to greet a person
+
+Usage: hello [OPTIONS] --name <NAME>
+
+Options:
+  -n, --name <NAME>    Name of the person to greet
+  -v, --verbose        Show verbose information
+  -c, --count <COUNT>  Number of times to greet [default: 1]
+  -h, --help           Print help
+  -V, --version        Print version
+
+{{</ highlight >}}
+<br/>
+用 Rust 的属性和文档注释来声明输入参数，也可以用 Arg 来构建输入参数规则。<br/><br/>
+<h3>函数指针</h3>
+Rust 也是函数式的，可声明高阶函数，即函数的参数或返回值可为一个函数，这就要知道函数类型怎么表示，也就函数指针类型<br/>
+{{< highlight rust >}}
+let f1: fn() = ...;
+let f2: fn(i32) = ...;
+let f3: fn(i32, f64) -> f64 = ...;
+
+fn math(op: fn(i32, i32) -> i32, x: i32, y: i32) -> i32 { ... };
+
+type MathOp = fn(i32, i32) -> i32;
+fn math1(op: MathOp, y: i32) -> i32 { ... }
+{{</ highlight >}}
+<br/>
+<h3>闭包</h3>
+有了函数和函数指针的概念，闭包也就不难理解了，它是一个匿名函数，所以定义一个闭包变量也就是函数。只是闭包格式上不同, 用 <code>|</code> 隔开参数，返回类型能根据 <code>{}</code> 中的返回值进行推断。闭包能能够捕获外部变量，函数不也可以吗!<br/><br/>
+下面是一系列的相关例子<br/>
+{{< highlight rust >}}
+fn main() {
+    let add_one_v1 = |x: u32| -> u32 { x + 1 }; // 推断为 fn(u32) -> u32
+    let add_one_v2 = |x: u32| { x + 1 };  // 可省略返回值，同样推断为 fn(u32) -> u32
+    let add_one_v3 = |x | {x + 1};   // 没有类型，所以推断为 fn(?) -> ?, 泛型函数
+    let add_one_v4 = |x| x + 1;     // 省略了大括号，推断为 fn(?) -> ?
+
+    foo(|x| x + 1, 100);
+}
+
+fn foo(op: fn(u32) -> u32, a: u32) -> u32 {
+    op(a)
+}
+{{</ highlight >}}
+<br/>
+<h3>迭代器</h3>
+Iterator trait 的两个重要方法, <code>iter</code> 返回一个迭代器，<code>next</code> 返回下一个元素 Some(x), 如果到达末尾则是 None。<br/><br/>
+迭代器的消费器，有 sum, any, collect 等，这些相当于 Java Stream 的 Terminal Operations<br/><br/>
+还有类似于 Java Stream Intermediate Operations 的，map, filter, take, rev 等，把它们串起来就是<br/>
+{{< highlight rust >}}
+let v = [1, 2, 3, 4, 5];
+
+// result 的类型不能省略，当前 Rust 1.75 还无法完整推断出来
+// 也可写成 let result: Vec<_> = ..., Rust 可推断 Vec<_> 为 Vec<i32>
+let result: Vec<i32> = v.iter()
+    .filter(|&x| *x > 1)
+    .map(|&x| x * 2)
+    .rev()  // 反向迭代
+    .take(2)// 取前两个元素
+    .collect();
+println!("{:?}", result);  // [4, 6]
+{{</ highlight >}}
+<br/>
+Rust 中声明全局变量， static 是 lifetime<br/>
+{{< highlight rust >}}
+static mut ERROR_1: i32 = 0;
+const ERROR_2:i32 = 0;
+
+{{</ highlight >}}
+<br/>
+约定名称用全大写<br/><br/>
+Rust 抛出异常用了与 Go 语言一样的关键字，只是 Rust 用的是宏<br/>
+{{< highlight rust >}}
+panic!("something wrong here");
+{{</ highlight >}}
+<br/>
+在 Rust 用了 unsafe { ... } 就意味着可能有 C 那样不安全的代码。 访问静态可变变量需放在 unsafe {} 中<br/><br/>
+let 声明的所谓的 Immutable 变量内部也可能会变，read-only references(borrows), read-write references(mutable borrows)。<br/><br/>
+Rust 偏向于用 Result 类型返回值表达成功(Ok) 与出错(Err) 两种状态。下面要专门看下 Rust 怎么处理 Result。
