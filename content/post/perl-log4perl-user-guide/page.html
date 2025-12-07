@@ -1,0 +1,94 @@
+---
+title: Perl 使用 Log::Log4perl 输出日志的用法
+url: /perl-log4perl-user-guide/
+date: 2009-06-10T05:28:00-05:00
+featured: false
+thumbnail: "../images/logos/perl-logo.jpeg"
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Perl
+tags: 
+  - guide
+  - Perl
+  - Log4perl
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 265 
+wpStatus: publish
+views: 2566
+lastmod: 2021-09-02T11:32:15-05:00
+---
+
+用 Java 的很少有人对 log4j 感觉陌生，这是 Apache  上的项目。同时 Apache 上也有针对其他语言的 Log 组件，如 log4cxx、log4net、log4php。</p>
+<br/>
+所用 Perl 时也会想想：Perl 该用什么日志模块呢？ log4perl？google 一下果然后，只不过它不是由 Apache 出品。<br />
+该项目原来在 <a href="http://log4perl.sourceforge.net/">http://log4perl.sourceforge.net/</a>，现已移到 <a href="http://mschilli.github.com/log4perl/">http://mschilli.github.com/log4perl/</a>。<br/><br/>
+下载地址：<a href="http://search.cpan.org/~mschilli/Log-Log4perl/">http://search.cpan.org/~mschilli/Log-Log4perl/</a> (要编译的)<br />
+使用文档：1. <a href="http://www.perl.com/pub/a/2002/09/11/log4perl.html" target="_blank" rel="noopener">Tutorial(Retire your debugger, log smartly with Log::Log4perl)<br />
+</a>             2. <a href="http://search.cpan.org/dist/Log-Log4perl/lib/Log/Log4perl.pm" target="_blank" rel="noopener">Manual</a><br />
+             3. <a href="http://search.cpan.org/dist/Log-Log4perl/lib/Log/Log4perl/FAQ.pm" target="_blank" rel="noopener">Frequently Asked Questions</a><br/><br/>
+当然，你也可以用 CPAN 和 PPM(如果安装的是 ActivePerl) 来安装 Log::Log4perl 模块。<!--more--><br/><br/>
+若能用 nmake 构建的话可用 perl -MCPAN -e "install Log::Log4perl" 下载安装 Log::Log4perl<br />
+ActivePerl 可用：ppm install "<a href="http://log4perl.sourceforge.net/ppm/Log-Log4perl.ppd">http://log4perl.sourceforge.net/ppm/Log-Log4perl.ppd</a>" 安装(参考它的 FAQ)<br/><br/>
+下面是使用方法，所有的概念，如 Appender、Layout、LogLevel、Category 等的概念与 log4j 基本或者说完全一致。所以只要有 log4j、log4cxx、log4net 或 log4php 其中一个组件的使用经验，那么 log4perl 的使用方式你会觉得十分自然舒适。<br/><br/>
+好了，就是使用代码和配置文件， 以及瞧瞧代码中如何初始化配置文件的。<br/><br/>
+<strong>代码 TestLog4perl.pl</strong><br/>
+{{< highlight perl >}}
+#!/usr/bin/perl -w<br/><br/>
+use Log::Log4perl::Level;
+use Log::Log4perl qw(:easy);<br/><br/>
+#初始化 log4perl 配制文件
+Log::Log4perl-&gt;init("log4perl.conf");<br/><br/>
+#创建 log 实例，info 并输出信息，模块 Foo:Bar
+our $log = Log::Log4perl::get_logger("Foo::Bar");
+$log-&gt;info("看看，我怎么在屏幕上输出来两次了！");<br/><br/>
+#创建 log 实例，debug 并输出信息，模块 Com::Unmi
+my $log1 = Log::Log4perl::get_logger("Com::Unmi");
+$log1-&gt;debug("Where，我打印的信息哪去了！");
+{{</ highlight >}}
+<br/>
+<strong>配置文件 log4perl.conf</strong><br/>
+{{< highlight java-properties >}}
+#所有 DEBUG 以上级别日志输出到日志文件和屏幕
+log4perl.logger = DEBUG,Logfile,Screen<br/><br/>
+#对于包 Foo::Bar 中 INFO 以上级别日志只输出到屏幕
+log4perl.category.Foo.Bar = INFO,Screen<br/><br/>
+#配置日志文件 Logfile Appender
+log4perl.appender.Logfile = Log::Log4perl::Appender::File
+log4perl.appender.Logfile.filename = log/test.log
+log4perl.appender.Logfile.layout = Log::Log4perl::Layout::PatternLayout<br/><br/>
+#%d时间{后是时间格式} #%F 是产立生日志的文件名 %L 是行号
+log4perl.appender.Logfile.layout.ConversionPattern =%d{y/M/d H:m:s:S} [%r] %F %L %m%n <br/><br/>
+#配置屏幕输出 Screen Appender
+log4perl.appender.Screen = Log::Log4perl::Appender::Screen
+log4perl.appender.Screen.stderr = 0
+log4perl.appender.Screen.layout = Log::Log4perl::Layout::SimpleLayout<br/><br/>
+#和 log4j 一样，可以单独控制某个包的级别
+log4perl.logger.Com.Unmi= ERROR
+{{</ highlight >}}
+<br/>
+<strong>看看执行 TestLog4perl 的输出</strong><br/><br/>
+控制台：<br/><br/>
+<span style="color: #800080;">INFO - 看看，我怎么在屏幕上输出来两次了！<br />
+INFO - 看看，我怎么在屏幕上输出来两次了！</span><br/><br/>
+log/test.log 中输出：<br/><br/>
+<span style="color: #800080;">09/6/10 18:8:14:9 [1919] C:\Users\Unmi\Komodo Workspace\test.pl 11 看看，我怎么在屏幕上输出来两次了！</span><br/><br/>
+<strong>简要分析<br />
+</strong><br />
+为什么 $log-&gt;info("看看，我怎么被在屏幕输出来两次了！"); 的信息在屏幕上输出了两次，是因为 $log 对应的模块是 Foo::Bar，分别应用了配置文件中的 log4perl.logger = DEBUG,Logfile,Screen 和 log4perl.category.Foo.Bar = INFO,Screen 两个 logger。而它只在文件中输出了一次就容易理解了。<br/><br/>
+而 $log1-&gt;debug("Where，我打印的信息哪去了！"); 哪儿都没有输出，因为配置文件的最后一行 log4perl.logger.Com.Unmi= ERROR 控制了对应于 Com::Unmi 模块的 $log1 只有 ERROR 级别的日志才会输出，而它是 debug，所以不行，改成 $log1.error() 试试效果。<br/><br/>
+<strong>更多内容</strong><br/><br/>
+我们可以在下载页面 <a href="http://search.cpan.org/~mschilli/Log-Log4perl/">http://search.cpan.org/~mschilli/Log-Log4perl/</a> 看到 log4perl 的各个子模块，大概能了解到 log4perl 还支持哪些功能。如 日志输出到数据库、输出到 Socket、可使用 XML 配置文件、自动侦测配置文件的内容变化、与 Java 的 log4j  配合使用(例如，支持 NT 事件日志、回滚文件、JDBC 等) 等等等。<br/><br/>
+ActivePerl 5.8.* 以上还可用的安装方法：<br/><br/>
+ppm&gt; repository add <a href="http://log4perl.sourceforge.net/ppm">http://log4perl.sourceforge.net/ppm</a><br />
+ppm&gt; install Log-Log4perl<br/><br/>
+Log4perl 能支持的日志输出级别有 DEBUG|INFO|WARN|ERROR|FATAL|TRACE|ALL|OFF。<br/><br/>
+更详细的使用说明请参考 Log4perl 的官方帮助，见文后参考中的链接。<br/><br/>
+参考：1. <a href="http://www.9php.com/FAQ/cxsjl/perl/2009/01/1491576138292.html" target="_blank" rel="noopener">log4perl 简单使用方法</a><br />
+        2. <a href="http://www.perl.com/pub/a/2002/09/11/log4perl.html" target="_blank" rel="noopener">Tutorial(Retire your debugger, log smartly with Log::Log4perl)<br />
+</a>        3. <a href="http://search.cpan.org/dist/Log-Log4perl/lib/Log/Log4perl.pm" target="_blank" rel="noopener">Manual</a><br />
+        4. <a href="http://search.cpan.org/dist/Log-Log4perl/lib/Log/Log4perl/FAQ.pm" target="_blank" rel="noopener">Frequently Asked Questions</a>
