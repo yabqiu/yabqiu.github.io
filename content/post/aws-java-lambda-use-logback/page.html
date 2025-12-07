@@ -31,33 +31,39 @@ private static final Log log = LogFactory.getLog(AmazonKinesis.class)
 而我们自己的组件中通用日志组件是 Slf4j, 底层实现为 Logback, 所以我们希望在 Lambda 中使用 Logback 来写日志。<br/>
 选用一个通用日志框架总是明智之举，因为一个项目经常杂糅了多种日志实现，使用 Slf4J 或 Apache Common Logging 可以把它们(Log4J, Logback, 或更多)输出到共同的目的地，并且有统一的日志输出接口。而我们认为通用日志框架还是 Slf4J 要先进些，所以我们在 Java Lambda 中的日志方案是 Slf4J + Logback，还需要把 Log4J 的日志桥接到 Slf4J 上来，再经由 Logback 输出。<br/><br/>
 回到前面创建的 <code>hello-lambda</code> 项目，看其中怎么用的 Log4J，先瞧瞧 <code>pom.xml</code> 文件怎么引入的 Log4J, 它是间接通过一个 AWS 定义的 Log4J Appender 引入的<!--more--><br/>
-<pre class="lang:default decode:true">&lt;dependency&gt;
-    &lt;groupId&gt;com.amazonaws&lt;/groupId&gt;
-    &lt;artifactId&gt;aws-lambda-java-log4j&lt;/artifactId&gt;
-    &lt;version&gt;1.0.0&lt;/version&gt;
-&lt;/dependency&gt;</pre>
+{{< highlight xml >}}
+<dependency>
+    <groupId>com.amazonaws</groupId>
+    <artifactId>aws-lambda-java-log4j</artifactId>
+    <version>1.0.0</version>
+</dependency>
+{{</ highlight >}}
 这个 AWS 定义的 Appender 是怎么用的呢？看 <code>log4j.properties</code> 文件的内容<br/>
-<pre class="lang:default decode:true">log = .
-log4j.rootLogger = DEBUG, LAMBDA<br/>
+{{< highlight java-properties >}}
+log = .
+log4j.rootLogger = DEBUG, LAMBDA
 log4j.appender.LAMBDA=com.amazonaws.services.lambda.runtime.log4j.LambdaAppender
 log4j.appender.LAMBDA.layout=org.apache.log4j.PatternLayout
-log4j.appender.LAMBDA.layout.conversionPattern=%d{yyyy-MM-dd HH:mm:ss} &lt;%X{AWSRequestId}&gt; %-5p %c:%L - %m%n</pre>
+log4j.appender.LAMBDA.layout.conversionPattern=%d{yyyy-MM-dd HH:mm:ss} <%X{AWSRequestId}> %-5p %c:%L - %m%n
+{{</ highlight >}}
 看到这个 Log4J 的配置文件我最感兴趣的要数 <code>&lt;%X{AWSRequestId}&gt;</code>, 它能指示出触发 Lambda 的请求 ID, 在后面的 Logback 我也想要它。<br/><br/>
 看一下 hello-lambda 的日志输出吧，最简单的 handler<br/>
-<pre class="lang:default decode:true ">package cc.unmi;<br/>
+{{< highlight java >}}
+package cc.unmi;
 import java.util.Map;
 import org.apache.log4j.Logger;
 import com.amazonaws.services.lambda.runtime.Context;
-import com.amazonaws.services.lambda.runtime.RequestHandler;<br/>
-public class Handler implements RequestHandler&lt;Map&lt;String, Object&gt;, String&gt; {
+import com.amazonaws.services.lambda.runtime.RequestHandler;
+public class Handler implements RequestHandler<Map<String, Object>, String> {
     
-    private static final Logger LOG = Logger.getLogger(Handler.class);<br/>
+    private static final Logger LOG = Logger.getLogger(Handler.class);
     @Override
-    public String handleRequest(Map&lt;String, Object&gt; input, Context context) {
+    public String handleRequest(Map<String, Object> input, Context context) {
         LOG.info("received: " + input);
         return context.getFunctionName();
     }
-}</pre>
+}
+{{</ highlight >}}
 Serverless  的项目可以用命令 <code>mvn package; sls deploy</code> 打包并部署到 AWS 上去, 简单测试，上面的 LOG.info() 的输出如下<br/>
 <blockquote>
 2017-03-18 05:10:19 &lt;2e65ba82-0b99-11e7-a827-454505660a82&gt; INFO  cc.unmi.Handler:16 - received: {key1=value1}
@@ -157,49 +163,53 @@ amazonS3.getObject("test-bucket", "test-file.txt");  //可建立相应的 S3 buc
 </ol>
 <h3>使用 Slf4J + Logback</h3>
 <h4>去掉 Log4J 依赖，加上 Slf4J + Logback 依赖</h4>
-在 pom.xml 中把 <code>com.amazonaws:aws-lambda-java-log4j</code> 依赖删掉便 Log4J 也没啦，接着加上 Logback 的依赖<br/><br/>
-<pre class="lang:default decode:true">&lt;dependency&gt;
-    &lt;groupId&gt;ch.qos.logback&lt;/groupId&gt;
-    &lt;artifactId&gt;logback-classic&lt;/artifactId&gt;
-    &lt;version&gt;1.1.7&lt;/version&gt;
-&lt;/dependency&gt;
-</pre>
-<br/>
+在 pom.xml 中把 <code>com.amazonaws:aws-lambda-java-log4j</code> 依赖删掉便 Log4J 也没啦，接着加上 Logback 的依赖<br/>
+{{< highlight xml >}}
+<dependency>
+    <groupId>ch.qos.logback</groupId>
+    <artifactId>logback-classic</artifactId>
+    <version>1.1.7</version>
+</dependency>
+{{</ highlight >}}
+
 因为 Logback 不爱单独行事，默认使用 Slf4J 作为它的上层通用日志框架，所以上面也把 <code>org.slf4j:slf4j-api</code> 依赖传递进来了。<br/>
-<h3>logback.xml 配置文件</h3><br/>
+<h3>logback.xml 配置文件</h3>
 在 resources 目录中创建 <code>logback.xml</code> 文件，内容可如下<br/>
-<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
-&lt;configuration scan="false" debug="false"&gt;
-    &lt;statusListener class="ch.qos.logback.core.status.NopStatusListener"/&gt;<br/>
-    &lt;appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender"&gt;
-        &lt;encoder&gt;
-            &lt;pattern&gt;
+{{< highlight xml >}}
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="false" debug="false">
+    <statusListener class="ch.qos.logback.core.status.NopStatusListener"/><br/>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>
                 %d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n
-            &lt;/pattern&gt;
-        &lt;/encoder&gt;
-    &lt;/appender&gt;<br/>
-    &lt;root level="DEBUG"&gt;
-        &lt;appender-ref ref="STDOUT"/&gt;
-    &lt;/root&gt;<br/><br/>
-&lt;/configuration&gt;
-</pre>
+            </pattern>
+        </encoder>
+    </appender><br/>
+    <root level="DEBUG">
+        <appender-ref ref="STDOUT"/>
+    </root><br/><br/>
+</configuration>
+{{</ highlight >}}
 我们也设定了日志级别为 DEBUG.<br/><br/>
 <h4>使用 Slf4J 日志接口</h4>
-把之前的 Log4J 日志代码改成 Slf4J 通用日志代码，完整的一个 Lambda Handler 如下<br/><br/>
-<pre class="lang:default decode:true">package cc.unmi;<br/>
-import java.util.Map;<br/>
+把之前的 Log4J 日志代码改成 Slf4J 通用日志代码，完整的一个 Lambda Handler 如下<br/>
+{{< highlight java >}}
+package cc.unmi;
+import java.util.Map;
 import com.amazonaws.services.lambda.runtime.Context;
-import com.amazonaws.services.lambda.runtime.RequestHandler;<br/>
+import com.amazonaws.services.lambda.runtime.RequestHandler;
 import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;<br/>
-public class Handler implements RequestHandler&lt;Map&lt;String, Object&gt;, String&gt; {<br/>
-    private static final Logger logger = LoggerFactory.getLogger(Handler.class);<br/>
+import org.slf4j.LoggerFactory;
+public class Handler implements RequestHandler<Map<String, Object>, String> {
+    private static final Logger logger = LoggerFactory.getLogger(Handler.class);
     @Override
-    public String handleRequest(Map&lt;String, Object&gt; input, Context context) {
+    public String handleRequest(Map<String, Object> input, Context context) {
         logger.info("received: " + input);
         return context.getFunctionName();
     }
-}</pre>
+}
+{{</ highlight >}}
 部署到 AWS 上进行测试，查看日志输出如下<br/>
 <blockquote>
 2017-03-18 05:52:48 [main] INFO  cc.unmi.Handler - received: {key1=value1}
@@ -207,8 +217,10 @@ public class Handler implements RequestHandler&lt;Map&lt;String, Object&gt;, Str
 得到我们想要的输出，这个目标很简单<br/><br/>
 <h3>Log4J 的日志桥接到 Slf4J, 再用 Logback 输出</h3><br/>
 再来测试一下前面那段 S3 Object 的获取代码，加下两行到 handleRequest(...) 方法中去<br/>
-<pre class="brush:java">AmazonS3 amazonS3 = AmazonS3ClientBuilder.defaultClient();
-amazonS3.getObject("test-bucket", "text-file.txt");</pre>
+{{< highlight java >}}
+AmazonS3 amazonS3 = AmazonS3ClientBuilder.defaultClient();
+amazonS3.getObject("test-bucket", "text-file.txt");
+{{</ highlight >}}
 部署再测试，我们发现在 Logback 已是 DEBUG 级别的情况下，只有一行日志输出<br/><br/>
 <blockquote>
 2017-03-18 06:00:08 [main] INFO  cc.unmi.Handler - received: {key1=value1}
@@ -216,12 +228,14 @@ amazonS3.getObject("test-bucket", "text-file.txt");</pre>
 没有处理 S3 getObject(...) 的详细日志输出，也就是原本在 AWS 自家组件中用 Log4J 打印的里层我们不会跑到 Logback 上来。原因是我们缺少 <code>log4j-over-slf4j</code>, 所以 Log4J 的日志输出在拿掉了 Log4J 依赖后不知道往何处去。<br/><br/>
 <h4>加上 log4j-over-slf4j 依赖</h4>
 在 pom.xml 文件中加上<br/>
-<pre class="lang:default decode:true">&lt;dependency&gt;
-    &lt;groupId&gt;org.slf4j&lt;/groupId&gt;
-    &lt;artifactId&gt;log4j-over-slf4j&lt;/artifactId&gt;
-    &lt;version&gt;1.7.21&lt;/version&gt;
-&lt;/dependency&gt;</pre>
-<br/>
+{{< highlight xml >}}
+<dependency>
+    <groupId>org.slf4j</groupId>
+    <artifactId>log4j-over-slf4j</artifactId>
+    <version>1.7.21</version>
+</dependency>
+{{</ highlight >}}
+
 部署再触发执行，现在可以看到前面那个文本框中一样详细的调试信息输出了，一个获取 S3 Object  的细节信息一览无余。现在还差最后一个问题了。<br/><br/>
 <span style="text-decoration: underline; color: #000080;">要注意的是 log4j-over-slf4j.jar 与 slf4j-log4j12.jar 是不能共存的，应用启动时就会有冲突报出来。</span> 参见  <a href="https://www.slf4j.org/legacy.html">Bridging legacy APIs</a><br/><br/>
 <h3>在 Logback 日志中输出 AWSRequestId</h3><br/>
