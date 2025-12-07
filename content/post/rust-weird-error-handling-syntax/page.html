@@ -1,0 +1,338 @@
+---
+title: Rust 语言逆天的错误处理方式
+url: /rust-weird-error-handling-syntax/
+date: 2025-11-21T15:24:58-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/rust-logo.png"
+categories:
+  - Rust
+tags: 
+  - Rust
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14512 
+wpStatus: publish
+views: 105
+lastmod: 2025-11-23T12:18:00-06:00
+---
+
+写了几天 Rust 之后，不光被它的 Ownership, Lifetime 折磨的死去活来，还碰上个奇怪的错误处理方式。如果让程序员在 Java, C/C++, Python, Ruby, Scala, Go，甚至是 Lisp 语言之间换着干活，那还都不是难事，但是拉个人去弄 Rust 就会要人命了。<br/><br/>
+有垃圾回收的语言基本就是想怎么写都成，程序运行时也不会出太大的事，当然性能是个妥协; 像 C/C++  自己管理内存的语言写出来的程序通过编译也容易，只是执行时很可能会有内存泄漏或地址越界。而选择号称性能与安全兼备的 Rust 语言的话，按照正常思维逻辑写出来的代码能通过编译就是最幸福的事。碰到关于 Ownership, Lifetime 之类的编译问题很多时候当前的 AI 也无解。<br/><br/>
+所以现在还能用 Java, Python, C# 等写代码是个幸福的事，这种时光应该好好的珍惜。换个角度来想，如果能掌握 Rust 那还怕别的语言吗？<br/><br/>
+就算能侥幸的应付 Ownership, Lifetime 的问题，Rust 错误处理方式也会让人抓狂，起初大量的用 unwrap() 忽略错误，用多了也会觉得不是一回事。<br/><br/>
+主流的语言都是采纳 try/catch 方式处理异常方式，异常在栈中向上传播，想在哪一层捕获异常都行，所以才可能在某处集中的处理异常，也让程序结果返回与异常处理得已分离。<br/><br/>
+有一个视频 <a href="https://www.youtube.com/watch?v=_p0SgfajQFo">什么是正确的错误处理方法【让编程再次伟大#21】</a>介绍了各种编程语言错误处理方式的历史发展，视频博主十分推崇 Rust 的结果错误放 Result  的方式，觉得像  try/catch 那种能够实现关注点分离的方式是便宜了程序员，只有返回 Result&lt;T, E&gt; 的方式才能强制程序员步步小心。那何不让 try/catch 全部抛出 Checked 异常，然而事实是 Spring 框架把许多 Checked 异常转换成了 Unchecked 异常，能程序员处理更方便，且能集中处理异常。
+<!--more--><br/><br/>
+本人先前就对 Playframework 的 F.Either 可返回结果或错误的处理方式颇有微辞，而 Rust 彻底完全采用了 Result&lt;Value, Error&gt; 方式。Rust 有关异常方面只提供 panic! 宏来立即退出程序，像是 Java 异常抛到 main 函数而未处理一样。这方面 Go 有些类似, Go 返回 Tuple (Value, Error)  的方式，也是没有 try/catch, 异常处理方面有 panic, recover 和 differ。<br/><br/>
+大抵像 Go 和 Rust 恰恰就是对返回结果和异常处理分离有所不悦，才创建出用 Result&lt;Value, Error&gt; 让结果和错误走同一个出口，像是单孔目的鸟类，蛋和屎尿从一个口排出，每次接住结果的时候可能是的蛋，但也可能是排泄物，虽获取到后自己分离。而 try/catch 的方式可以就可以分开来处理，想要获得蛋，只是有或没有，对于排泄物可以完全不管，或者让它直排到臭水沟。<br/><br/>
+用 Result&lt;Value, Error&gt; 的方式需要每个方法都返回类似的数据类型，如果是不能的 Error 类型之间还需转换或保持兼容。比如说我们不得不写出下面那样的方法返回值<br/>
+{{< highlight rust >}}
+fn read_file(path: &amp;str) -> std::io::Result<String>
+
+fn read_file1(path: &amp;str) -> result::Result<String, Error>
+
+fn call_library() -> Result<(), Box<dyn std::error::Error>>
+{{</ highlight >}}
+
+上面  Result&lt;String&gt; 是 Result&lt;String, Error&gt;  的类型别名，如果像 std:error:Error 是一个 trait, 在编译器无法确定内存占用大小，所以不得不用 Box&lt;dyn std::error:Error&gt;&gt; 的形式。<br/><br/>
+现在一步步来看 Rust 怎么处理错误的<br/><br/>
+Result&lt;T, E&gt; 是一个枚举<br/>
+{{< highlight rust >}}
+enum Result<T, E> {
+    Ok(T),
+    Err(E),
+}
+{{</ highlight >}}
+
+如果要从 Result 中得到值可以调用  unwrap() 方法<br/><br/>
+{{< highlight rust >}}
+fn main() {
+    let content = read_file("hello.txt").unwrap();
+    println!("file content: {}", content);
+}
+
+fn read_file(path: &str) -> std::io::Result<String> {
+    fs::read_to_string(path)
+}
+{{</ highlight >}}
+
+如果此时读取的是一个不存在的文件，则会产生执行错误<br/>
+<blockquote>
+thread 'main' (600254) panicked at src/main.rs:10:43:<br />
+called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+</blockquote>
+
+unwrap() 失败则会产生一个 panic<br/><br/>
+基于此正确的做法通常是用 match 模式匹配分别处理 Ok 和 Err 中的情况<br/>
+{{< highlight rust >}}
+fn main() {
+    let content = read_file("hellox.txt");
+
+    match read_file("hellox.txt") {
+        Ok(content) => println!("file content: {}", content),
+        Err(e) => eprintln!("Error reading file: {}", e),
+    }
+}
+{{</ highlight >}}
+
+现在的错误信息是<br/>
+<blockquote>
+Error reading file: No such file or directory (os error 2)
+</blockquote>
+
+我们看到有些地方用 <code>?</code> 替换 <code>unwrap()</code> 调用，下面的 main() 方法是不行的<br/>
+{{< highlight rust >}}
+fn main() {
+    let content = read_file("hellox.txt")?;
+    println!("file content: {}", content);
+}
+{{</ highlight >}}
+
+问题处理显示<br/>
+<blockquote>
+^ cannot use the `?` operator in a function that returns `()`
+</blockquote>
+
+因为 main() 的返回值是 (), 修改 main() 的返回值类型为  <code>std::io::Result&lt;()&gt;)</code> 或 <code>result::Result&lt;(), io::Error&gt;</code><br/>
+{{< highlight rust >}}
+fn main() -> result::Result<(), io::Error> {
+    let content = read_file("hellox.txt")?;
+    println!("file content: {}", content);
+    Ok(())
+}
+{{</ highlight >}}
+
+这样就可以用 <code>?</code>  号了。这里 main() 函数返回值 Result&lt;(), io::Error&gt; 中的 Err 部分 io::Error 正好与 read_file() 返回值的 Err 部分类型一致所以才能用 <code>?</code> 号。<br/><br/>
+如果修改 main() 的返回值为 <code>result::Result&lt;(), String&gt;</code> 就又不行了<br/>
+{{< highlight rust >}}
+fn main() -> result::Result<(), String> {
+    let content = read_file("hellox.txt")?;
+    println!("file content: {}", content);
+    Ok(())
+}
+{{</ highlight >}}
+
+<code>?</code> 处提示<br/>
+<blockquote>
+^ the trait `From&lt;std::io::Error&gt;` is not implemented for `String`
+</blockquote>
+
+注意，Rust 并没有像支持异常的语言那样严格的错误必须实现了某个基类的类型，而是可以为任何类型，像 C/C++ 那样任何类型皆可 raise。<br/><br/>
+如果调用方法的 Result 的 Err 与被调用方法返回的 Result Err 部分可兼容的话，就可以用 <code>?</code>。<br/>
+{{< highlight rust >}}
+let content = read_file("hellox.txt")?;
+{{</ highlight >}}
+
+中问号的意思是如果没有错误，即可被 unwrap() 则  unwrap(), 否则立即返回与调用方法兼容的错误。代码相当于是<br/><br/>
+{{< highlight rust >}}
+fn main() -> result::Result<(), io::Error> {
+    match read_file("hello.txt") {
+        Ok(content) => Ok(()),
+        Err(e) => Err(e)
+    }
+}
+{{</ highlight >}}
+
+如果一个方法调用多个方法时<br/>
+{{< highlight rust >}}
+fn main() -> result::Result<(), io::Error> {
+    println!("{}", foo()?);
+    println!("{}", bar()?);
+    println!("{}", baz()?);
+    Ok(())
+}
+{{</ highlight >}}
+
+能用 <code>?</code> 号的前提是每个方法返回 Result&lt;T, E&gt; Err 部分必须与 io::Error 兼容，兼容就意味着如果出错时  <code>?</code> 处必须能自动转换成 io:Error。<br/><br/>
+比如我们写下面的代码<br/>
+{{< highlight rust >}}
+#[derive(Debug)]
+struct CustomError {
+}
+
+fn main() -> result::Result<(), CustomError> {
+    println!("{}", read_file("aaa")?);
+    Ok(())
+}
+
+fn read_file(path: &str) -> result::Result<String, std::io::Error> {
+    let content = fs::read_to_string(path)?;
+    Ok(content)
+}
+{{</ highlight >}}
+
+显示 std::io::Error 无法自动转换成 CustomError,  所以在问号处编译出错<br/>
+{{< highlight rust >}}
+13 | fn main() -> result::Result<(), CustomError> {
+   |              ------------------------------- expected `CustomError` because of this
+14 |     println!("{}", read_file("aaa")?);
+   |                    ----------------^ the trait `From<std::io::Error>` is not implemented for `CustomError`
+   |                    |
+   |                    this can't be annotated with `?` because it has type `Result<_, std::io::Error>`
+   |
+note: `CustomError` needs to implement `From<std::io::Error>`
+{{</ highlight >}}
+
+这时候可以主动 match 来转换，或者让 CustomError 和 std::io::Error 变得兼容，注意看错误信息里给出了办法，即 `note: `CustomError` needs to implement <code>From&lt;std::io::Error&gt;`</code><br/><br/>
+给  CustomError 加上实现<br/>
+{{< highlight rust >}}
+impl From<io::Error> for CustomError {
+    fn from(_err: io::Error) -> Self {
+        CustomError {}
+    }
+}
+{{</ highlight >}}
+
+现在编译就没问题了。执行后输出为<br/>
+<blockquote>
+Error: CustomError
+</blockquote>
+
+如果想要获得得原 io::Error 的信息，可以这么实现<br/>
+{{< highlight rust >}}
+#[derive(Debug)]
+struct CustomError {
+    error: io::Error
+}
+
+impl From<io::Error> for CustomError {
+    fn from(_err: io::Error) -> Self {
+        CustomError {error: _err}
+    }
+}
+{{</ highlight >}}
+
+再次执行的输出就变成了<br/>
+<blockquote>
+Error: CustomError { error: Os { code: 2, kind: NotFound, message: "No such file or directory" } }
+</blockquote>
+
+<h3>避免使用 unwrap()</h3>
+好像我们所有做的一切就是在避免使用  unwrap()，函数调用链中途的 unwrap() 操作相当于是在 Java 的某一级方法调用中，catch 异常，打印异常信息并就地终止了运行<br/>
+{{< highlight rust >}}
+try{
+    // do something            
+} catch (Exception ex) {
+    ex.printStackTrace();
+    System.exit(1);
+}
+{{</ highlight >}}
+
+这样在调用顶层不知道途中发生了什么，对于 Rust 也样，在方法调用链接尽可能的是向上返回  Result&lt;T, E&gt; 或是 <code>?</code>, 而非 <code>unwrap()</code>.<br/>
+<h3>关于 try!, try_catch! 宏</h3>
+起先在 Rust 也有一个  try! 宏，现标记为<br/>
+{{< highlight rust >}}
+#[deprecated(since = "1.39.0", note = "use the `?` operator instead")]
+#[doc(alias = "?")]
+macro_rules! r#try {
+{{</ highlight >}}
+
+但要写成 try! 还不行<br/>
+{{< highlight rust >}}
+fn main() -> Result<(), io::Error> {
+    println!("{}", try!(read_file("aaa")));
+    Ok(())
+}
+{{</ highlight >}}
+
+提示的错误是<br/>
+{{< highlight rust >}}
+error: use of deprecated `try` macro
+  --> src/main.rs:21:20
+   |
+21 |     println!("{}", try!(read_file("aaa")));
+   |                    ^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: in the 2018 edition `try` is a reserved keyword, and the `try!()` macro is deprecated
+help: you can use the `?` operator instead
+{{</ highlight >}}
+
+因为在 Rust 2018 edition 中 try 是一个保留关键字，但换成 r#try! 就可以<br/>
+{{< highlight rust >}}
+fn main() -> Result<(), io::Error> {
+    println!("{}", r#try!(read_file("aaa")));
+    Ok(())
+}
+{{</ highlight >}}
+
+效果和 read_file("aaa")? 是一样的。<br/><br/>
+try_catch! 是由不怎么爱 Rust 原生错误处理方式而提供的第三方库，需要安装<br/>
+<blockquote>
+cargo add rust-try-catch
+</blockquote>
+
+看下如何使用<br/>
+{{< highlight rust >}}
+fn main()  {
+    try_catch! {
+        try {
+            println!("{}", tri!(read_file("aaa")));
+        } catch (exception => CustomError) {
+            println!("Caught a CustomError: {:?}", exception);
+        } catch (exception => io::Error) {
+            println!("Caught an io::Error: {:?}", exception);
+        } catch panic (panic_info) {
+            println!("Caught a panic: {:?}", panic_info);
+        } finally {
+            println!("Execution completed.");
+        }
+    }
+}
+{{</ highlight >}}
+
+虽然看到熟悉的 try/catch 的味道，但是间杂着 Rust 中固有气味，反而散发出某种怪味。<br/><br/>
+上面执行的错误是<br/>
+<blockquote>
+Caught an io::Error: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+Execution completed.
+</blockquote>
+
+try_catch! 可以捕获到直接的 panic!<br/>
+{{< highlight rust >}}
+fn main() {
+    try_catch! {
+        try {
+            panic!("This is a panic for demonstration purposes.");
+        } catch panic (panic_info) {
+            println!("Caught a panic: {:?}", panic_info);
+        }
+    }
+}
+{{</ highlight >}}
+
+输出<br/>
+<blockquote>
+Caught a panic: Any { .. }
+</blockquote>
+
+最后不妨看一下 Result 的 unwrap() 的实现代码<br/>
+{{< highlight rust >}}
+imp<T, E> Result<T, E> {
+  ......
+    pub fn unwrap(self) -> T
+    where
+        E: fmt::Debug,
+    {
+        match self {
+            Ok(t) => t,
+            Err(e) => unwrap_failed("called `Result::unwrap()` on an `Err` value", &e),
+        }
+    }
+  ......
+}
+
+fn unwrap_failed(msg: &str, error: &dyn fmt::Debug) -> ! {
+    panic!("{msg}: {error:?}");
+}
+{{</ highlight >}}
+
+unwrap() 就是一个 match 表达式，有结果则取结果，出错误后最终产生一个  panic!<br/><br/>
+参考：<br/><br/>
+<ol>
+    <li><a href="https://github.com/baoyachi/rust-error-handle">细说Rust错误处理</a></li>
+</ol>

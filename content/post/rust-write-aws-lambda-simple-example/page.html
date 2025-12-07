@@ -1,0 +1,389 @@
+---
+title: 用 Rust 写 AWS Lambda 的简单例子
+url: /rust-write-aws-lambda-simple-example/
+date: 2025-11-18T21:28:49-06:00
+featured: true
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/rust-logo.png"
+categories:
+  - Rust
+tags: 
+  - lambda
+  - Rust
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14487 
+wpStatus: publish
+views: 116
+lastmod: 2025-11-19T18:37:06-06:00
+---
+
+AWS 在 2025-11-14 日发布了 <a href="https://aws.amazon.com/about-aws/whats-new/2025/11/aws-lambda-rust/">AWS Lambda adds support for Rust</a>, 即 AWS 正式支持用 Rust 写 Lambda 了, 回顾到之前 AWS 为 Rust 提供 SDK 是两年前的 2023-11-27: <a href="https://aws.amazon.com/about-aws/whats-new/2023/11/aws-sdk-rust/">AWS SDK for Rust is now generally available</a>. <br/><br/>
+日常中总有几个编程语言是要去掌握的, 像基本的脚本 Bash, 网页用的 JavaScript, 大项目用的 Java, AI 时代的 Python, 再就是仿佛 Rust 也是绕不过的. 之前有学过 Rust, 到现在忘差不多了, 又看到 Tauri, AWS Lambda 对 Rust 的大力支持，有必要放 Rust 提到与 Python, Java 一样的地位来看待。尽管学习起来比 C/C++ 还陡峭，像 解引用, Either(Result, Error), Unwrap, Borrow, Move, Ownership 等概念及规则需慢慢去熟悉。<br/><br/>
+从 AWS 控制台看看 Lambda 是怎么对 Rust 提供支持的，创建函数时，Runtime 中可以选择<br/><br/>
+<table style="border-collapse: collapse; width: 100%;">
+<tbody>
+<tr>
+<td style="width: 32.2526%;">
+    {{< bundle-image src="aws-lambda-rust-1.png" width="273px" >}}
+</td>
+<td style="width: 28.2428%;">Amazon Linux 2023<br />
+<span style="font-size: 10pt; color: #6b6666;">OS-only runtime for Go, Rust, C++, custom</span></td>
+<td style="width: 28.3659%;">Amazon Linux 2<br />
+<span style="color: #6b6666; font-size: 10pt;">OS-only runtime for Go, Rust, C++, custom</span></td>
+</tr>
+</tbody>
+</table>
+<br/>
+OS 方面当然是要选择 Amazon Linux 2023 优于 Amazon Linux 2。选择 Amazon Linux 2023 或 Amazon Linux 2 时最后还有一个 custom，也就是说可以自义的定义自己的 Lambda 运行时，可选择任何语言，只要符合 AWS Lambda 调用的接口规范 <a href="https://docs.aws.amazon.com/lambda/latest/dg/runtimes-api.html">Using the Lambda runtime API for custom runtimes</a> 即可。不过完全定义吗，还挺罗嗦的，用官方直接支持的语言就容易多了。<!--more--><br/><br/>
+AWS 官方列出了详细的文档，在 <a href="https://docs.aws.amazon.com/lambda/latest/dg/lambda-rust.html">Building Lambda functions with Rust</a> 页面中。本文将参照 <a href="https://github.com/aws/aws-lambda-rust-runtime">Rust Runtime for AWS Lambda</a> 实现一个最简单的 AWS Rule Lambda。本人工作平台是 Apple 芯片的 MacOS，Rust 的 IDE 可选用 JetBrains 的 RustRover, 个人用户免费。<br/><br/>
+<h3>准备本地开发环境</h3>
+首先，电脑上先要有 rust，用命令 <code>brew install rust</code> 安装，完后就有了 rustc, cargo 命令。或许用得着 rustup, 用 <code>brew install rustup</code> 安装。<br/><br/>
+安装 cargo-lambda<br/>
+<blockquote>
+brew tap cargo-lambda/cargo-lambda
+brew install cargo-lamda
+</blockquote>
+
+但实际在执行上面第一条命令时卡在 Tapping cargo-lambda/cargo-lambda, 于是用 uv<br/>
+<blockquote>
+uv tool install cargo-lambda
+</blockquote>
+
+安装成功后，现在就有了 cargo 的 lambda 子命令，后续可用 cargo lambda 来创建 Rust AWS Lambda 项目，构建，和部署到 AWS 上。<br/><br/>
+<h3>创建 Rule Lambda 项目</h3>
+cargo lambda new rust-lambda-demo 方式创建项目时有过多的选项，并且生成项目内容不那么干净，倒不如用 cargo new 生成一个最简单的项目，慢慢丰富理解。<br/>
+<blockquote>
+cargo new rust-lambda-demo
+</blockquote>
+
+然在把生成项目的 src/main.rs 的内容由 Hello World 替换为<br/>
+{{< highlight rust >}}
+use lambda_runtime::{service_fn, LambdaEvent, Error};
+use serde_json::{json, Value};
+
+#[tokio::main]
+async fn main() -> Result<(), Error> {
+    println!("main() function called");
+    let func = service_fn(func);
+    lambda_runtime::run(func).await?;
+    Ok(())
+}
+
+async fn func(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    println!("func() function called");
+    let (event, _context) = event.into_parts();
+    let first_name = event["name"].as_str().unwrap_or("world");
+
+    Ok(json!({ "message": format!("Hello, {}!", first_name) }))
+}
+{{</ highlight >}}
+
+以上 main() 是初始 Lambda 实例时只被调用一次，随后每次 Lambda 调用的函数是 func。从后面部署到 AWS, 调用该 Lambda 后能看到在 CloudWatch 上的时序是<br/>
+<blockquote>
+INIT_START Runtime Version: provided:al2023.v117 Runtime Version ARN: arn:aws:lambda:us-east-1....
+main() function called
+START RequestId: 2ec17773-6bce-463d-b3d1-897b7592f840 Version: $LATEST
+func() function called
+END RequestId: 2ec17773-6bce-463d-b3d1-897b7592f840
+REPORT RequestId: 2ec17773-6bce-463d-b3d1-897b7592f840 Duration: 1.23 ms Billed Duration: 25 m
+START RequestId: 0a6d5501-a9f4-497c-8a84-8d7367d30a83 Version: $LATEST
+func() function called
+END RequestId: 0a6d5501-a9f4-497c-8a84-8d7367d30a83
+......
+</blockquote>
+
+现在的问题就是要让这段代码通过编译，本着缺什么补什么的原则<br/><br/>
+安装必要的依赖<br/>
+<blockquote>
+cargo add lambda_runtime serde_json tokio
+</blockquote>
+
+<h3>构建二进制代码文件</h3>
+接下来就是要构建它，看到这里的<br/><br/>
+<blockquote>
+#[tokio::main]
+async fn main() -> Result<(), Error> {...}
+</blockquote>
+
+虽然是一个异步的 main 入口方法，但直接执行时无法像 func() 函数传递参数的。先照着文档用<br/>
+<blockquote>
+cargo lambda build --release
+</blockquote>
+
+构建二进制代码，默认是交叉编译为 x86_64 平台的代码。第一次执行该命令时会提示要安装 Zig 必须组件，可选择用 Homebrew。<br/><br/>
+成功编译后生成的二进制文件是<br/>
+<blockquote>
+target/lambda/rust-lambda-demo/bootstrap
+</blockquote>
+
+如果要编译成 ARM 架构 CPU 的二进制代码则用<br/>
+<blockquote>
+cargo lambda build --release --arm64
+</blockquote>
+
+因为是 Linux 平台的二进制代码，当然无法在 MacOS 下执行，即使放到 Docker 中也无法直接执行<br/>
+<blockquote>
+docker run -it --platform linux/amd64 -v $(PWD):/vv ubuntu /vv/target/lambda/rust-lambda-demo/bootstrap
+thread 'main' (1) panicked at /Users/yanbin/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/lambda_runtime-1.0.1/src/lib.rs:70:65:
+Missing AWS_LAMBDA_FUNCTION_NAME env var: NotPresent
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+</blockquote>
+
+缺乏相应的环境<br/><br/>
+<h3>用 UnitTest 测试 Lambda service_fn 函数的行为</h3>
+但是在部署之前可以用单元测试来校验该 Lambda 的行为，直接测试 service_fn 函数的行为。Rust 中单元测试通常写在与产品代码相同的文件中，用 #[test] 标注，集成测试才写在 tests 目录中。所以我们在 main.tf 文件后头加上如下代码<br/>
+{{< highlight rust >}}
+#[tokio::test]
+async fn test_func() {
+    let input = serde_json::from_str(r#"{"name": "Yanbin"}"#).unwrap();
+    let context = lambda_runtime::Context::default();
+
+    let event = lambda_runtime::LambdaEvent::new(input, context);
+
+    let lambda_result = func(event).await.unwrap();
+
+    println!("{}", lambda_result)
+}
+{{</ highlight >}}
+
+现在可以在 RustRover 中选择 async fn test_func() 函数来执行，<br/>
+{{< bundle-image src="aws-lambda-rust-2.png" width="377px" >}}
+直接执行输出为<br/>
+<blockquote>
+func() function called
+{"message":"Hello, Yanbin!"}
+</blockquote>
+
+或者用<br/>
+<blockquote>
+cargo test -- --nocapture
+
+running 1 test
+func() function called
+{"message":"Hello, Yanbin!"}
+test test_func ... ok
+</blockquote>
+
+这里用单元测试只测试 main() 函数所调用 service_fn 函数<br/><br/>
+<h3>部署 Rust AWS Lambda</h3>
+可用 cargo lambda deploy 命令，或生成 zip 包自行部署<br/><br/>
+<h4>用 cargo lambda deploy 命令</h4>
+<blockquote>
+cargo lambda deploy rust-lambda-demo
+</blockquote>
+
+部署成功后输出为<br/>
+<blockquote>
+✅ function deployed successfully 🎉
+🛠️ binary last compiled 2 minutes ago
+🔍 arn: arn:aws:lambda:us-east-1:888888888888:function:rust-lambda-demo
+🎭 version: 1
+</blockquote>
+
+输出了新建 Lambda  的 ARN，并创建了 Lambda 版本 1<br/><br/>
+函数名必须与项目名，或者说与 target/lambda/rust-lambda-demo/bootstrap 中的 rust-lambda-demo 一致，否则提示找不到二进制文件，比如尝试把 Lambda 函数名改为 my-rust-lambda-demo 得到下面的错误<br/>
+<blockquote>
+cargo lambda deploy my-rust-lambda-demo
+Error: × binary file for bootstrap not found, use `cargo lambda build` to create it
+</blockquote>
+
+该 AWS rust-lambda-demo 已部署并能正常工作，我们到 AWS 控制台看下用 cargo lambda deploy 部署的 rust-lambda-demo 长什么样的。或者用 aws lambda get-function 查看<br/>
+{{< highlight sh >}}
+aws lambda get-function --function-name rust-lambda-demo
+{
+    "Configuration": {
+        "FunctionName": "rust-lambda-demo",
+        "FunctionArn": "arn:aws:lambda:us-east-1:888888888888:function:rust-lambda-demo",
+        "Runtime": "provided.al2023",
+        "Role": "arn:aws:iam::888888888888:role/cargo-lambda-role-904b9aa1-9e11-43cb-9ebd-73fe05d85dc3",
+        "Handler": "bootstrap",
+        "CodeSize": 10973933,
+        "Description": "",
+        "Timeout": 30,
+        "MemorySize": 128,
+        "LastModified": "2025-11-18T22:26:34.459+0000",
+        "CodeSha256": "nV0VeY2HH+vpX8SqHZiqhC6+BMT6FsWCyqbgHzDkLxU=",
+        "Version": "$LATEST",
+        "TracingConfig": {
+            "Mode": "PassThrough"
+        },
+        "RevisionId": "14112e95-0ec2-441f-86eb-3bd260c428bd",
+        "State": "Active",
+        "LastUpdateStatus": "Successful",
+        "PackageType": "Zip",
+        "Architectures": [
+            "x86_64"
+        ],
+        "EphemeralStorage": {
+            "Size": 512
+        },
+        "SnapStart": {
+            "ApplyOn": "None",
+            "OptimizationStatus": "Off"
+        },
+        "RuntimeVersionConfig": {
+            "RuntimeVersionArn": "arn:aws:lambda:us-east-1::runtime:b05edb8ee2d750d3d6c1c858c7d73f338fc72e15c1a64f4440827804eaafc4b4"
+        },
+        "LoggingConfig": {
+            "LogFormat": "Text",
+            "LogGroup": "/aws/lambda/rust-lambda-demo"
+        }
+    },
+    "Code": {
+        "RepositoryType": "S3",
+        "Location": "https://prod-04-2014-tasks.s3.us-east-1.amazonaws.com/snapshots/069762108088/rust-lambda-demo-082ca...00478"
+    }
+}
+{{</ highlight >}}
+
+从中看出 cargo lambda deploy 帮我们创建了一个 runtime 为 provided.al2023, handler 是 bootstrap创建 IAM role, 内存为 128M，Timeout 为 30 秒，架构为 x86_64，并且经由某个 s3 bucket 以 zip 包方式进行部署的。<br/><br/>
+用命令 <code>cargo lambda deploy --help</code> 可查看详细部署配置。<br/><br/>
+在 Code source 中看到的就是那个二制 bootstrap 文件，当然是无法编辑的<br/>
+{{< bundle-image src="aws-lambda-rust-3-800x463.png" width="667px" >}}
+<h4>生成 zip 然后自主部署</h4>
+<blockquote>
+cargo lambda build --release --output-format zip
+</blockquote>
+
+这样就会生成　target/lambda/rust-lambda-demo/bootstrap.zip 文件<br/>
+{{< highlight sh >}}
+ls -lh target/lambda/rust-lambda-demo
+total 77024
+-rwxr-xr-x@ 1 yanbin  staff    37M Nov 18 16:24 bootstrap
+-rw-r--r--@ 1 yanbin  staff   570K Nov 18 16:58 bootstrap.zip
+{{</ highlight >}}
+
+顺便看一下生成文件的体积<br/><br/>
+有了这个 bootstrap.zip 之后可选择自己喜爱的工具进行部署，如 aws lambda create-function, 或 CloudFormation, 或 Terraform 脚本，关键就是要选择 runtime 为 provided.al2023, handler 为 bootstrap, 其他的如环境变量，内存，超时等配置，或创建什么样的 IAM 就自行决定了。<br/><br/>
+<h3>测试 Rust Lambda 函数</h3>
+可用 cargo lambda invoke 或 aws cli 命令进行测试<br/>
+<blockquote>
+cargo lambda invoke --remote --data-ascii '{"name": "Yanbin"}' --output-format json rust-lambda-demo
+{
+    "message": "Hello, Yanbin!"
+}
+</blockquote>
+
+或者用　aws cli -- 不用理会 Lambda 结果后的 StatusCode 等内容<br/>
+<blockquote>
+aws lambda invoke --function-name rust-lambda-demo --cli-binary-format raw-in-base64-out --payload '{"name": "Yanbin"}' /dev/stdout
+{"message":"Hello, Yanbin!"}
+    "StatusCode": 200,
+    "ExecutedVersion": "$LATEST"
+}
+</blockquote>
+
+该 rust-lambda-demo 调用过几次后，看到 CloudWatch 中的日志<br/>
+{{< bundle-image src="aws-lambda-rust-4-800x415.png" width="773px" >}}
+这里是为了验证代码中 main() 与 func() 函数之间的关系，main() 相当于是启动服务的函数，只执行一次，而后每次 Lambda 请求只调用 func() 函数。我们可以在 main() 中作一些初始化操作，那要是我们没什么可初始化的话，是不是就可省略 main() 函数呢？答案是不行，没有 main() 函数无法构建。<br/><br/>
+<h3>以本地 Server 形式测试</h3>
+除了单元测试的方式，还能像 Python 的 AWS Lambda Docker 镜像测试 http://localhost:8080/2015-03-31/functions/function/invocations 那样测试 Rust 写的 AWS Lambda。此种方式适用于 Windows, Linux 和 MacOS  平台。首先启动本地 Server，在项目所在目录运行<br/>
+<blockquote>
+cargo lambda watch
+</blockquote>
+
+{{< bundle-image src="aws-lambda-rust-6-800x670.png" width="721px" >}}
+
+在本地 9000 端口启动了服务，以上是进行了几次调用，然后过一小段时间的控制台显示。<br/><br/>
+当启动后，马上会执行 main() 函数，如果没有收到请求的话，main() 函数每隔大概几秒到又会被执行一次，所以会持续输出 main(), main(), main()。如果有调用的话，只执行 func() 函数来处理请求。<br/><br/>
+测试 cargo lambda watch 启动的服务<br/>
+<blockquote>
+cargo lambda invoke rust-lambda-demo --data-ascii '{ "name": "Yanbin" }'
+{"message":"Hello, Yanbin!"}
+</blockquote>
+
+每执行一次，在 cargo lambda watch 所在控制台就会输出一次 func() function called<br/><br/>
+如果后面很久又没调用了又每隔一段时间在控制台输出 main() function called。<br/><br/>
+这时候修改代码，cargo lambda watch 会马上重编译重新加载，这就是 watch  的功用，也是为什么总有 main() function called 输出的原因。<br/><br/>
+如果用 curl 来测试的话，类似的<br/>
+<blockquote>
+curl http://127.0.0.1:9000/lambda-url/rust-lambda-demo/ \<br />
+-H 'content-type: application/json' -d '{ "name": "Yanbin" }'
+</blockquote>
+
+但上面的代码只会收到响应<br/>
+<blockquote>
+{"type":"https://httpstatuses.com/500","status":500,"title":"Internal Server Error"}
+</blockquote>
+
+因为在用 curl 测试时实现代码就要作相应的修改，从 HTTP 接收到的数据就不再在<br/>
+<blockquote>
+let event: Value = {"name": "Yanbin"}
+</blockquote>
+<br/>
+这么简单，而是变成了<br/>
+<blockquote>
+{"authorizationToken":null,"body":"{ \"name\": \"yanbin\" }","headers":{"accept":"*/*","content-length":"20","content-type":"application/json","host":"127.0.0.1:9000","lambda-runtime-aws-request-id":"701a2d6a-678a-47e3-af1a-4939e353a54e","user-agent":"curl/8.7.1"},"httpMethod":"GET","identitySource":null,"isBase64Encoded":false,"methodArn":null,"rawPath":"/","rawQueryString":null,"requestContext":{"accountId":null,"apiId":null,"domainName":"localhost","domainPrefix":"rust-lambda-demo","http":{"method":"POST","path":"/","protocol":"http","sourceIp":"127.0.0.1","userAgent":"cargo-lambda"},"requestId":"701a2d6a-678a-47e3-af1a-4939e353a54e","routeKey":"$default","stage":"$default","time":"19/Nov/2025:02:33:19 +0000","timeEpoch":1763519599},"resource":null,"routeKey":"$default","stageVariables":{},"type":null,"version":"2.0"}
+</blockquote>
+
+要想好好的处理该请求并生成 HTTP 响应，整个 Lambda 要用 lambda_http 重写，最后的代码<br/>
+{{< highlight rust >}}
+use lambda_http::{service_fn, Error, Request, Response};
+use serde_json::{Value};
+
+#[tokio::main]
+async fn main() -> Result<(), Error> {
+    let func = service_fn(func);
+    println!("main() function called");
+    lambda_http::run(func).await?;
+    Ok(())
+}
+
+async fn func(event: Request) -> Result<Response<String>, Error> {
+    println!("func() function called");
+
+    let body: Value = serde_json::from_slice(event.body())?;
+    let name = body["name"].as_str().unwrap_or("world");
+
+    Ok(Response::builder()
+        .status(200)
+        .header("content-type", "text/plain")
+        .body(format!("Hello, {}!", name).to_string())?
+    )
+}
+{{</ highlight >}}
+
+如此 curl 命令就能工作了<br/>
+<blockquote>
+curl http://127.0.0.1:9000/lambda-url/rust-lambda-demo/
+-H 'content-type: application/json' -d '{ "name": "Yanbin" }'
+Hello, Yanbin!
+</blockquote>
+<br/
+好像没有 Python 写的 API Gateway 响应数据那么灵活，如果写成下面的返回是没用的<br/>
+{{< highlight rust >}}
+Ok(json!({
+     "statusCode": 200,
+     "headers":{
+         "Content-Type": "text/plain"
+     },
+     "body": "hello"
+ }))
+
+{{</ highlight >}}
+<br/>
+<h3>本地 Runtime Interface Emulator(RIE) 测试</h3>
+<a href="/aws-lambda-rust-runtime">Rust Runtime for AWS Lambda</a> 中提到的最后一种测试方法，是用 RIE，但没有具体讲解, 也是草草了事，所以这里也不作实践。在 <a href="https://yanbin.blog/build-aws-lambda-python-docker-image/">构建 AWS Lambda Python Docker 镜像</a> 中有讲到用 RIE 的方式启动 AWS Lambda<br/>
+<blockquote>
+/usr/local/bin/aws-lambda-rie /var/runtime/bootstrap
+</blockquote>
+
+Rust AWS Lambda 估计也类似，其中提到的<br/>
+<blockquote>
+make test-rie EXAMPLE=http-basic-lambda
+</blockquote>
+
+根本没讲到一个来由，test-rie 来自何处，也没见哪有 makefile，大致是由它生成 Linux 镜像，然后在容器的 9000 端口上启动 RIE 服务，再作测试.<br/>
+<h3>总结</h3>
+关于用 Rust 如何写 AWS Lambda 基本内容就这些了，其他的一些主题还包括不同的 AWS event 对象，用到的依赖是 <a href="https://crates.io/crates/aws_lambda_events">aws_lambda_events</a>。别的依赖 lambda-extension, lambda-events, lambda-runtime-api-client, 它们都可用 cargo add 安装。<br/><br/>
+还有 Tracing 和 Logging 的主题，以及如何处理 Lambda 错误。<br/><br/>
+AWS Lambda 要求的最小 Rust 版本是 1.82.0。<br/><br/>
+参考：<br/><br/>
+<ol>
+    <li><a href="https://docs.aws.amazon.com/lambda/latest/dg/lambda-rust.html">Building Lambda functions with Rust</a></li>
+</ol>
