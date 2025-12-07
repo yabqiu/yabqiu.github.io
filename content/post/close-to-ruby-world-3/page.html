@@ -1,0 +1,89 @@
+---
+title: 走近 Ruby 的世界(三)
+url: /close-to-ruby-world-3/
+date: 2012-01-04T10:05:10-06:00
+featured: false
+thumbnail: "../images/logos/ruby-logo.png"
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Ruby
+tags: 
+  - Class
+  - ruby
+  - module
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4131 
+wpStatus: publish
+views: 248
+lastmod: 2021-06-17T16:44:49-05:00
+---
+
+Ruby 中有许多以 ? 和 !号结尾的方法，? 号方法返回布尔值用于判断的，如Array.empty?，可以想到三元操作符 <span style="color: #800000;">a = b==1?1:2</span> 。出现在方法名尾部的感叹号表明使用该方法是需要多加小心。许多Ruby的核心类都定义了成对的方法，它们具有同样的名称，只是结尾相差一个“！”,通常情况下，不带感叹号的方法返调用该方法的一个拷贝，带感叹号的方法则是一个可变方法，该方法会修改原来的对象，如 Array 类中的 sort 和 sort!。</p>
+<br/>
+Ruby 里对变量名有这么一个约定：全局变量加前缀 $，实例变量用前缀 @，类变量前缀用 @@。<br/><br/>
+Ruby 的类和模块，来实现一个 Ruby 的示例类，从中了解类的构造方法，块的实现、块内循环和调用以及符号的重载，看如下代码：<!--more--><br/>
+{{< highlight ruby >}}
+class Sequence
+  def initialize(from, to)    #Sequence.new(1,2) 构造实例时会调用这个方法
+    @from, @to = from, to     #实例变量约定用 @ 开头
+  end      
+  
+  def each                   #定义的实例方法，下面用了 yield 语句可以接受块
+    x = @from
+    while x &lt;= @to           #块内循环实现
+      yield x  #块中的执行语句会置换到 yield 处，并传入参数 x，所以 yield 可看作是个块中执行语句的占位
+      x += 1
+    end
+  end
+  
+  def *(factor)             #重载操作符号 *，很好理解
+    Sequence.new(@from*factor, @to*factor)
+  end   
+  
+  def to_s            #重载对象的 to_s 方法，puts 输出时会自动调用，相当于 java 的 toString() 方法，
+    "from: #{@from}, to: #{@to}"
+  end
+end
+
+s = Sequence.new(1,5)
+s.each{|x| print x; print x}     #块的应用，注意理解块中的执行语句怎么应用到 yield 位置
+puts
+puts s * 2
+{{</ highlight >}}
+<br/>
+说明：initialize 方法为构造方法，在调用类的  new 方法时调用，不同参数完成重载。<br/><br/>
+each 方法用了  yield 语句可以接受块，执行时会把块中的执行语句应用到 yield 语句处，例如在调用 <span style="color: #800000;">s.each{|x| print x; print x}</span> 会把块中的执行语句 <span style="color: #800000;">print x; print x</span> 换到 yield 处，并应用 yield 后的  x 参数。<br/><br/>
+符号的重载就更简单了，直接重载 +、-、×、/ 等符号就行，因为 Ruby 可以用符号作为方法名，所以不需要像 Groovy 在重载 ＋ 号时必须重载相应的 plus 方法。<br/><br/>
+上面代码执行的结果是：<br/><br/>
+<span style="color: #800000;">1122334455</span><br />
+<span style="color: #800000;">from: 2, to: 10</span><br/><br/>
+Ruby 还有一种叫做模块的东西，它是用来组织类、方法和常量的，相当于是名字空间。在使用模块时用 require/load 或 include 引入, require/load 后指定文件名，include 后指定模块名，比如下面的模块定义和运用：<br/><br/>
+{{< highlight ruby >}}
+module Unmi
+  PI = 3.1415926 
+  def self.foo(x,y,z)
+    puts "Hello #{x}#{y}#{z}."
+  end  
+  class Cat
+    def bar
+      puts "miao"
+    end
+  end
+end
+#如果上面的 Unmi 模块定义的 unmi.rb 文件中，可以用 require "unmi.rb，或 load "unmi.rb"
+#用 include 的话与成 include Unmi
+puts Unmi::PI 
+Unmi::foo "U", "m", "ni" #Ruby方法计用可忽略括号，多个参数只要用逗号隔开
+Unmi::Cat.new.bar
+{{</ highlight >}}
+<br/>
+名字空间的用法双冒号和 C++ 是一样的，执行后输出为：<br/><br/>
+<span style="color: #800000;">3.1415926</span><br />
+<span style="color: #800000;">Hello Umni.</span><br />
+<span style="color: #800000;">miao</span><br/><br/>
+再 Ruby 的两个特性，Ruby 的字符串是可变的，可意随意插入、删除、替换子串，用 &lt;&lt; 进行 append 操作; 而且两个字面相同的字符串并非同一个对象。if/while 判断时，评估的条件是 true 或 false，并无硬性规定是 true 或 false，nil 也是被认定为 false，那么非 nil 就是 true 了。
