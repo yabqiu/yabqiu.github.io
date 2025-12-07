@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 use serde_yaml::Value;
 use std::collections::HashMap;
 use std::fs;
@@ -15,7 +17,7 @@ fn main() -> Result<()> {
     println!("processed ids: {}", processed_ids.len());
 
     // generate_from_wordpress_hugo_exports(&post_vec);
-    generate_from_mysql_exports(&processed_ids, &post_vec);
+    // generate_from_mysql_exports(&processed_ids, &post_vec);
 
     Ok(())
 }
@@ -68,13 +70,17 @@ fn clean_post_content(post_content: &str) -> Result<String> {
         "pre",
         "p",
         "blockquote",
+        "li",
+        "ol",
     ] {
         let re = regex::Regex::new(format!(r"(</{}>)<br/>", el).as_str()).unwrap();
         content = re.replace_all(content.as_str(), "$1\r\n").to_string();
     }
 
     // replace <xx something><br/> with <xx something>\r\n
-    for el in vec!["table", "tbody", "tr", "td", "div"] {
+    for el in vec![
+        "table", "tbody", "tr", "td", "div", "ol",
+    ] {
         let re = regex::Regex::new(format!(r"(<{}[^>]*>)<br/>", el).as_str()).unwrap();
         content = re.replace_all(content.as_str(), "$1\r\n").to_string();
     }

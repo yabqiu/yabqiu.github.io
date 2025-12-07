@@ -1,0 +1,288 @@
+---
+title: AWS Lambda  重试与死信队列(DLQ)
+url: /aws-lambda-work-with-dlq/
+date: 2018-09-30T23:46:43-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - lambda
+  - DLQ
+comment: true
+# additional
+wpPostId: 8984 
+wpStatus: publish
+views: 1424
+lastmod: 2018-10-01T10:54:08-05:00
+---
+
+<p>AWS Lambda 允许设置 <code>Debugging and error handling</code>, 在 Lambda 出现异常，达到最大的重试次数后，把以下信息放到选择的 SNS 或 SQS 主题作为死信队列(DLQ - Dead Letter Queue)，包括</p>
+<ol>
+	<li>原始 Lambda 接收到的消息(基于 SNS 和 SQS 消息的总大小，可能会被截取，本人猜测，尤其是 Kinesis 的消息会比较大)</li>
+	<li>原始 Lambda 的 RequestId</li>
+	<li>ErrorCode（三位数字的 HTTP 错误码）</li>
+	<li>ErrorMessage, 即原 Lambda 抛出 Exception 的 getMessage() 信息，截取 1 KB 字符串</li>
+</ol>
+<p>并且 Lambda 要使用 DLQ 的话还必须设置当前 Lambda 的 IAM role 有对于 SNS/SQS 主题相应的 <code>sns:Publish</code> 和 <code>sqs:SendMessage</code> 权限。</p>
+
+<p>AWS Lambda 基本重试规则：对于 Kinesis 消息会无限重试直至消息过期，对于 SNS 或 SQS 的消息出现异常后会再重试两次。参考：<a href="https://docs.aws.amazon.com/lambda/latest/dg/retries-on-errors.html">AWS Lambda Retry Behavior</a>。</p>
+
+<p>而在重试次数用完后仍然失败，并且设置了 DLQ 的话就会发送消息到 DLQ 中去。<!--more--></p>
+
+<p>最感观的理解就是来做一个测试，创建一个 Lambda <code>test-dlq-lambda</code>, 该 Lambda 由 SNS topic <code>sns-test-topic</code> 触发，并且设置 Lambda 的 DLQ 为另一个 SNS topic <code>sns-test-dlq-topic</code>。为方便测试，我们用同样的 Lambda 来接收 <code>sns-test-dlq-topic</code> 中的消息验证 DLQ 中的内容。</p>
+<h3>Lambda 的代码</h3>
+<pre class="lang:default decode:true ">public class Handler implements RequestHandler&lt;SNSEvent, Object&gt; {
+
+    @Override
+    public Object handleRequest(SNSEvent snsEvent, Context context) {
+        try {
+            System.out.println("received: " + ObjectMapperSingleton.getObjectMapper().writeValueAsString(snsEvent));
+        } catch (JsonProcessingException e) {
+            e.printStackTrace();
+        }
+        process(snsEvent);
+        return null;
+    }
+
+    private void process(SNSEvent snsEvent) {
+        SNSEvent.SNS sns = snsEvent.getRecords().get(0).getSNS();
+
+        //如果消息包含 dlq, 但不是从 dlq 主题中来的消息抛出异常
+        if(sns.getMessage().contains("dlq") &amp;&amp; !sns.getTopicArn().contains("dlq")) {
+            throw new RuntimeException("test dlq");
+        }
+    }
+}</pre>
+
+<p>以上代码打包成一个可部署的 Lambda jar 包，并且部署为两个  Lambda</p>
+
+<ol>
+	<li>test-dlq-lambda: 监听 SNS topic <code>sns-test-topic</code>, 并且设置该 Lambda 的  DLQ 为 SNS topic <code>sns-test-dlq-topic</code></li>
+	<li>test-dlq-receiver-lambda: 监听  SNS topic <code>sns-test-dlq-topic</code></li>
+</ol>
+<h3>发送消息给 test-dlq-lambda</h3>
+<p>发送消息的代码</p>
+
+<pre class="lang:default decode:true">    public static void main(String[] args) {
+        AmazonSNS amazonSNS = AmazonSNSClientBuilder.defaultClient();
+
+        MessageAttributeValue messageAttributeValue = new MessageAttributeValue()
+            .withDataType("String").withStringValue("1234");
+        HashMap&lt;String, MessageAttributeValue&gt; attributeHashMap = new HashMap&lt;&gt;();
+        attributeHashMap.put("id", messageAttributeValue);
+
+        PublishRequest publishRequest = new PublishRequest().withMessage("dlq")
+            .withTopicArn("&lt;topic-arn-of-sns-test-topic")
+            .withMessageAttributes(attributeHashMap);
+
+        PublishResult publishResult = amazonSNS.publish(publishRequest);
+        System.out.println(publishResult.getMessageId());
+    }</pre>
+
+<p>消息中含有 <code>dql</code>，所以 <code>test-dlq-lambda</code> 将会触发 <code>RuntimeException</code> 异常，异常消息是 <code>test dlq</code>。</p>
+
+<h3>Lambda <code>test-dlq-lambda</code>  的日志</h3>
+{{< bundle-image src="lambda-dlq-sns-1-800x316.png" width="800px" >}}
+
+<p>从以上日志解读到的是</p>
+
+<ol>
+	<li>三次消费同一消息的时间点为 03:52:38, 03:53:35, 03:55:26，大概是 Lambda 第一次失败后, 一分钟后重试一次，第二次失败两分钟后再重试一次</li>
+	<li>三次 Lambda 执行都是相同的 RequestId:  <code>7029fce0-c52d-11e8-a386-0dc76ede9b27</code>。</li>
+	<li>最多执行三次(针对 SNS 消息)，最后把错误相关的信息送到所设定的 DLQ 中去</li>
+	<li>因为只发送了一条 SNS 消息，所以上面三次执行都是同一个 Lambda 实例，并发高的时候不确定重试是否也是由同一个 Lambda 实例</li>
+</ol>
+<p>这里 Lambda 接收到的 SNS 消息是</p>
+
+<pre class="lang:default decode:true">received:
+{
+    "records": [
+        {
+            "sns": {
+                "messageAttributes": {
+                    "id": {
+                        "type": "String",
+                        "value": "1234"
+                    }
+                },
+                "signingCertUrl": "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-xxxxxxxx.pem",
+                "messageId": "35f269ce-7e84-5fe1-8fb0-3de5e2c22231",
+                "message": "dlq",
+                "subject": null,
+                "unsubscribeUrl": "https://sns.us-ea......:sns-test-topic:459bb1e5-3282-4d20-8b9a-24e36b4a3228",
+                "type": "Notification",
+                "signatureVersion": "1",
+                "signature": "fndUv/cWXZQRhrCIKBQxfH+WKg0t4/2jgNO2A6/oktogD2ptI8bLAk9PelAglWarQaLbFi.......Q==",
+                "timestamp": {
+                    "year": 2018,
+                    "dayOfMonth": 1,
+                    //.... 省略 timstamp 的细节
+                },
+                "topicArn": "arn:aws:sns:us-east-1:&lt;account-id&gt;:sns-test-topic"
+            },
+            "eventVersion": "1.0",
+            "eventSource": "aws:sns",
+            "eventSubscriptionArn": "arn:aws:sns:........:sns-test-topic:459bb1e5-3282-4d20-8b9a-24e36b4a3228"
+        }
+    ]
+}</pre>
+
+<h3>DLQ <code>sns-test-dlq-topic</code> 中的消息</h3>
+<p>我们通过 <code>test-dlq-receiver-lambda</code> 的日志来了解前面 Lambda 三次重试后送到 DLQ 中的内容。它所收到的消息是</p>
+
+<pre class="lang:default decode:true">received:
+{
+    "records": [
+        {
+            "sns": {
+                "messageAttributes": {
+                    "RequestID": {
+                        "type": "String",
+                        "value": "7029fce0-c52d-11e8-a386-0dc76ede9b27"
+                    },
+                    "ErrorCode": {
+                        "type": "String",
+                        "value": "200"
+                    },
+                    "ErrorMessage": {
+                        "type": "String",
+                        "value": "test dlq"
+                    }
+                },
+                "signingCertUrl": "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-xxxxxx.pem",
+                "messageId": "390612c4-ba66-535c-b00a-46ef2688b4b6",
+                "message": "{\"Records\":[{\"EventSource\":\"aws:sns\",\"EventVersion\":\"1.0\",\"Event.....",
+                "subject": null,
+                "unsubscribeUrl": "https://sns.us...:sns-test-dlq-topic:332608d0-0092-408a-9d96-edba86e55685",
+                "type": "Notification",
+                "signatureVersion": "1",
+                "signature": "fRKsL23VkfoJd8sdy0THFkL8tuhWFGC7IPvS1HsV6UVtDp+RSnTMfxd0hlQYb/BWhwm......Mw==",
+                "timestamp": {
+                    "year": 2018,
+                    "dayOfMonth": 1,
+                    //....省略 timestamp 的细节
+                },
+                "topicArn": "arn:aws:sns:us-east-1:&lt;account-id&gt;:sns-test-dlq-topic"
+            },
+            "eventVersion": "1.0",
+            "eventSource": "aws:sns",
+            "eventSubscriptionArn": "arn:aws:。。。。:sns-test-dlq-topic:332608d0-0092-408a-9d96-edba86e55685"
+        }
+    ]
+}</pre>
+
+<p><code>sns-test-dlq-topic</code> 中的 SNS 消息条目包含以下关键内容(前面说过，在此重复一遍)</p>
+
+<ol>
+	<li>原始 Lambda 接收到的完整 <code>sns</code> 记录内容作为新 SNS 消息的 <code>message</code> 字段的字符串内容</li>
+	<li>原始 Lambda 的 RequestId，放在新 SNS 消息的 <code>messageAttributes</code> 中，键为 <code>RequestID</code></li>
+	<li>ErrorCode（三位数字的 HTTP 错误码），放在新 SNS 消息的 <code>messageAttributes</code> 中，键为 <code>ErrorCode</code>。不知如何设置不同的 ErrorCode。</li>
+	<li>ErrorMessage, 即原 Lambda 抛出 Exception 的 getMessage() 信息，截取 1 KB 字符串，也是放在新 SNS 消息的 <code>messageAttributes</code> 中，键为 <code>ErrorMessage</code></li>
+</ol>
+<p>从这里发现从 DLQ 中的消息一个能用于追踪原 Lambda 的信息是 RequestId，还有就是 ErrorMessage，不过它只是取到原 Lambda 的异常的 getMessage() 消息，过于简单。但我们可以用 <code>ErrorMessage</code> 携带更有用的错误信息，看接下来</p>
+
+<h3>利用 DLQ 的 <code>ErrorMessage</code> 传递异常栈信息</h3>
+<p>从前面了解到 DLQ 中信息的 <code>ErrorMessage</code> 字段只是取了原 Lambda 异常的 getMessage() 消息，可能并不太助于定位错误点，所以我们也许希望用它来展示完整的异常栈信息。这需要在原始 Lambda 捕获异常后作些文章</p>
+
+<pre class="lang:default decode:true  ">public class Handler implements RequestHandler&lt;SNSEvent, Object&gt; {
+
+    @Override
+    public Object handleRequest(SNSEvent snsEvent, Context context) {
+        try {
+            System.out.println("received: " + ObjectMapperSingleton.getObjectMapper().writeValueAsString(snsEvent));
+
+            process(snsEvent);
+        } catch (Exception ex) {
+            StringWriter stringWriter = new StringWriter();
+            ex.printStackTrace(new PrintWriter(stringWriter));
+            throw new RuntimeException("Function: " + context.getFunctionName() + "\n" + stringWriter.toString());
+        }
+        return null;
+    }
+
+    private void process(SNSEvent snsEvent) {
+        SNSEvent.SNS sns = snsEvent.getRecords().get(0).getSNS();
+        if(sns.getMessage().contains("dlq") &amp;&amp; !sns.getTopicArn().contains("dlq")) {
+            throw new RuntimeException("dlq");
+        }
+    }
+}</pre>
+
+<p>把异常栈的信息转换为一个字符串作为新 <code>RuntimeException</code> 的 message, 现在来看 DLQ 中的消息的 <code>ErrorMessage</code> 部分的内容就是</p>
+
+<blockquote>
+<p>"ErrorMessage": {<br />
+"type": "String",<br />
+"value": "Function: yanbin-test-dlq\njava.lang.RuntimeException: dlq\n\tat com.serverless.Handler.process(Handler.java:41)\n\tat com.serverless.Handler.handleRequest(Handler.java:29)\n\tat com.serverless.Handler.handleRequest(Handler.java:18)\n\tat lambdainternal.EventHandlerLoader$PojoHandlerAsStreamHandler.handleRequest(EventHandlerLoader.java:178)\n\tat lambdainternal.EventHandlerLoader$2.call(EventHandlerLoader.java:888)\n\tat lambdainternal.AWSLambda.startRuntime(AWSLambda.java:286)\n\tat lambdainternal.AWSLambda.&lt;clinit&gt;(AWSLambda.java:64)\n\tat java.lang.Class.forName0(Native Method)\n\tat java.lang.Class.forName(Class.java:348)\n\tat lambdainternal.LambdaRTEntry.main(LambdaRTEntry.java:94)\n"<br />
+}</p>
+
+</blockquote>
+
+<p><strong>原 Lambda 函数名</strong>也有了，并且带上了完整的异常信息。唯有不足的地方就是原始 Lambda 在输出该异常信息日志时重复了一遍异常栈</p>
+
+<pre class="lang:default decode:true ">Function: yanbin-test-dlq
+java.lang.RuntimeException: dlq
+    at com.serverless.Handler.process(Handler.java:41)
+    at com.serverless.Handler.handleRequest(Handler.java:29)
+    at com.serverless.Handler.handleRequest(Handler.java:18)
+    at lambdainternal.EventHandlerLoader$PojoHandlerAsStreamHandler.handleRequest(EventHandlerLoader.java:178)
+    at lambdainternal.EventHandlerLoader$2.call(EventHandlerLoader.java:888)
+    at lambdainternal.AWSLambda.startRuntime(AWSLambda.java:286)
+    at lambdainternal.AWSLambda.&lt;clinit&gt;(AWSLambda.java:64)
+    at java.lang.Class.forName0(Native Method)
+    at java.lang.Class.forName(Class.java:348)
+    at lambdainternal.LambdaRTEntry.main(LambdaRTEntry.java:94)
+        : java.lang.RuntimeException
+    java.lang.RuntimeException: Function: yanbin-test-dlq
+    java.lang.RuntimeException: dlq
+    at com.serverless.Handler.process(Handler.java:41)
+    at com.serverless.Handler.handleRequest(Handler.java:29)
+    at com.serverless.Handler.handleRequest(Handler.java:18)
+    at lambdainternal.EventHandlerLoader$PojoHandlerAsStreamHandler.handleRequest(EventHandlerLoader.java:178)
+    at lambdainternal.EventHandlerLoader$2.call(EventHandlerLoader.java:888)
+    at lambdainternal.AWSLambda.startRuntime(AWSLambda.java:286)
+    at lambdainternal.AWSLambda.&lt;clinit&gt;(AWSLambda.java:64)
+    at java.lang.Class.forName0(Native Method)
+    at java.lang.Class.forName(Class.java:348)
+    at lambdainternal.LambdaRTEntry.main(LambdaRTEntry.java:94)
+
+    at com.serverless.Handler.handleRequest(Handler.java:33)
+    at com.serverless.Handler.handleRequest(Handler.java:18)
+</pre>
+
+<p>不过呢，应该不太碍事，每次 Lambda 失败只有一次重复出现。</p>
+
+<p>上面测试的是被 SNS 触发的 Lambda，DLQ 也是设置的 SNS。可以对下面几种组合进行测试</p>
+
+<ol>
+	<li>Trigger: Kinesis  -&gt; DLQ:  SNS</li>
+	<li>Trigger: Kinesis -&gt; DLS: SQS</li>
+	<li>Trigger: SNS -&gt; DLQ: SQS</li>
+	<li>Trigger: SQS  -&gt; DLQ: SNS</li>
+	<li>Trigger: SQS  -&gt; DLQ: SQS</li>
+</ol>
+<p>Kinesis 也不容易测试，因为 Kinesis 消息的重试是直至消息过期，可简单看下 DLQ 是 SQS 的话消息是如何包装的(直接从 AWS 的 SQS 控制台)</p>
+
+<p>Message Body 内容：</p>
+
+<pre class="lang:default decode:true">{"Records":[{"EventSource":"aws:sns","EventVersion":"1.0","EventSubscriptionArn":"arn:aws:sns:us-east-1:...原始消息内容}</pre>
+
+<p>就是原始的 SNS 消息内容</p>
+
+<p>Message Attributes 内容：{{< bundle-image src="lambda-dlq-sns-2-800x330.png" width="600px" >}}</p>
+
+<p>同样包含以上列举的三个字段。</p>
+
+<h3>对本文有必要小结一下：</h3><br/>
+<ol>
+	<li>SNS 触发的 Lambda 重试总共为三次，间隔时间分别为 1 分钟后，两分钟后</li>
+	<li>Lambda 对 SNS 消息的多次重试所记录的  RequestId 是一样的</li>
+	<li>DLQ 中的消息含有原 Lambda 执行时的 RequestId</li>
+	<li>DLQ 中消息的 message 是原始 Lambda 接收到的消息内容</li>
+	<li>DLQ 中消息的 ErrorMessage 字段是原始 Lambda 抛出异常的 getMessage() 内容，需要更丰富的信息自行包裹，再长不过 1KB</li>
+</ol>

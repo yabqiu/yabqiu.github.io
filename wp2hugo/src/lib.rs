@@ -1,3 +1,5 @@
+#![allow(warnings)]
+
 use std::collections::HashMap;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use mysql::{OptsBuilder, Pool};

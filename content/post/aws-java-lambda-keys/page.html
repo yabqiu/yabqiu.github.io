@@ -1,0 +1,228 @@
+---
+title: AWS 上 Java Lambda 应用记要
+url: /aws-java-lambda-keys/
+date: 2017-03-16T01:06:25-05:00
+featured: true
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - lambda
+  - 云服务
+comment: true
+# additional
+wpPostId: 7917 
+wpStatus: publish
+views: 2418
+lastmod: 2021-09-03T16:46:44-05:00
+---
+
+AWS 的 Lambda 给了那些不想自己管理 EC2 服务器和配置负载人员很大的便利，所以 Lambda 被描述为 Serverless。真正的只关注业务就行，怎么调度，同时有多少个实例运行交给亚马逊去处理就是了。运行 Lambda 的环境也是亚马逊内部的 EC2 服务器，镜像是 Amazon Linux, 所以如果想运行系统命令，那是 Linux 的。Lambda 支持多种语言 Node.js, Python, C#(.net core), 还有 Java 8，我们就选择了 Java 8, 一开始还担心它与别的语言比起来会多大劣势，其实不然。而且所谓的 Java 8, 并非单指 Java 语言，而是指 JVM 平台，所以也可以用 Scala, Clojure, Groovy, Kotlin 来写。<br/><br/>
+Java 与脚本语言如 Node.js, Python 相比给人一个明显的感觉是启动慢，还有人用统计数据来比划 <a href="https://github.com/berezovskyi/lambda-test">AWS Lambda cold start(pseudeo-)benchmark</a>. 不过真不用担心，人家说的是冷启动，也就发生在部署后第一次执行启动会比较慢。要是我们的 Lambda 经常被调用，或每天触发比较集中，Lambda 在任务到来之前处理待续状态，就不会有冷启动的耗时过程。或者是每次任务要执行 3 分钟左右，又何必在乎毫秒级的冷启动时间。<br/><br/>
+说到底就是别理会下面的数据<br/>
+<blockquote>
+<ul>
+    <li><del>20ms startup time for Python ~ $0.041675</del></li>
+    <li><del>40ms startup time for Node.js ~ $0.08335</del></li>
+    <li><del>80ms startup time for Java ~ $0.1667</del></li>
+</ul>
+</blockquote>
+<h3>Lambda 实例重用</h3>
+Java 的 Lambda 就是一个微服务，在首次触发时微服务冷启动有些慢，但一旦启动之后就可以用这个微服务实例接受后续的请求，只有在比较长的一段时间内未被触发 AWS 才会把这个微服务杀掉。<!--more--><br/><br/>
+由于 Java 的 Lambda 是一个微服务，所以同一个主机上 Lambda 实例是跨任务共享的，因此部署下面的 Lambda 代码<br/>
+<pre class="lang:default decode:true">public class Handler implements RequestHandler(Map&lt;String, Object&gt; input, Context context) {
+ 
+    private int counter = 0;<br/>
+    @Override
+    public String handleRequest(Map&lt;String, Object&gt; input, Context context) {
+      return "handler: " + this + ", Counter: " + (counter++);
+    }
+}</pre>
+然后不停的点 AWS Lambda 控制台的该 Function 的 Test 按钮，你会看到 this 不会变, Counter 在累加<br/>
+<blockquote>
+handler: cc.unmi.Handler@5c3bd550, Counter: 0<br />
+handler: cc.unmi.Handler@5c3bd550, Counter: 1<br />
+handler: cc.unmi.Handler@5c3bd550, Counter: 2
+</blockquote>
+也就是我们一直在访问同台主机上的 Lambda 实例，是被重用的，如果并发增加才会新开主机来启动 Lambda 微服务。<br/>
+注意: 不要被这里的 <code>cc.unmi.Handler@5c3bd550</code> 输出误导了，不要以传统的 Java 程序来理解它，你即使重新上传的新代码冷启动后，哈稀值仍然会是 <code>5c3bd550</code>, 所以它更像是用来标识 Lambda Function 的。<br/><br/>
+这是 AWS 对 Lambda 的优化处理，它指导我们写 Handler 还是有帮助的，例如可重用，线程安全的东西就不应该每次在 handleRequest() 方法中去初始化。<br/><br/>
+AWS Lambda 官方说的不能假定 Lambda 实例的重用总是会发生，那又何妨。还说必须把 Lambda 函数做成无状态的，可跨任务，线程安全的状态还是可以的。<br/><br/>
+想像一个 Lambda 就像是运行在 Tomcat 中的 Servlet, 而 handleRequest() 方法就是 Servlet 的 service(或 get, post 等方法), 每次请求来了 service() 方法在新线程中执行，只是这个 Tomcat 会在一段时间无请求时关闭掉，以后按需再启动。<br/><br/>
+<span style="color: #0000ff;"><strong>June 7, 2017: 重新理解一下 Lambda 的实例重用, 重用是指同一个 Lambda 短期内被用来处理后续的请求。而同时运行中的两个 Lambda 实例是来自于不同 JVM 的。好比如今我们只会在一个 Tomcat 中运行一个应用实例，每个应用实例可以处理前前后后多个请求，但每一个应用实例是跑在不同的 Tomcat 容器中的。</strong></span><br/>
+<h3>Lambda 中的多线程</h3><br/>
+我在探索 Lambda 如何支持多线程时真的就上怀疑是不是 AWS  在使坏，那时在 Lambda 中用的是 Java 8 的 parallelStream()，测试效果与 stream() 没多大差别。<br/><br/>
+我们可以先在本地机器跑下面的代码(我的机器 CPU 是 i5)<br/>
+<pre class="lang:default decode:true">public static void main(String[] args) {
+    System.out.println("Processors: " + Runtime.getRuntime().availableProcessors());
+    System.out.println("CommonPool Size: " + ForkJoinPool.commonPool().getPoolSize());
+    IntStream.rangeClosed(1, 10).parallel().forEach(integer -&gt; {
+        System.out.println("Current Thread: " + Thread.currentThread()
+            + ", " + "CommonPool Size: " + ForkJoinPool.commonPool().getPoolSize());
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    });
+}</pre>
+输出是<br/>
+<blockquote>
+Processors: 4<br />
+CommonPool Size: 0<br />
+Current Thread: Thread[main,5,main], CommonPool Size: 3<br />
+Current Thread: Thread[ForkJoinPool.commonPool-worker-2,5,main], CommonPool Size: 3<br />
+Current Thread: Thread[ForkJoinPool.commonPool-worker-1,5,main], CommonPool Size: 3<br />
+Current Thread: Thread[ForkJoinPool.commonPool-worker-3,5,main], CommonPool Size: 3<br />
+Current Thread: Thread[ForkJoinPool.commonPool-worker-2,5,main], CommonPool Size: 3<br />
+Current Thread: Thread[ForkJoinPool.commonPool-worker-3,5,main], CommonPool Size: 3<br />
+Current Thread: Thread[ForkJoinPool.commonPool-worker-1,5,main], CommonPool Size: 3<br />
+Current Thread: Thread[main,5,main], CommonPool Size: 3<br />
+Current Thread: Thread[ForkJoinPool.commonPool-worker-2,5,main], CommonPool Size: 3<br />
+Current Thread: Thread[ForkJoinPool.commonPool-worker-1,5,main], CommonPool Size: 3
+</blockquote>
+确实是在用多线程处理，默认的线程池是 ForkJoinPool.commonPool, 它与主线程共同协作完成所有的 Job。<br/>
+Stream.parallel() 与 collection.parallelStream() 是一样的效果。ForkJoinPool.CommonPool 大小是 CPU 内核数减一。<br/><br/>
+而把上面的同样的代码放到 Lambda 的 handleRequest(...) 方法中，然后部署到 AWS, 再触发该 Lambda 函数，测试结果是<br/>
+<blockquote>START RequestId: 1c1c9cb4-0a09-11e7-aa58-ef5c7aa75a29 Version: $LATEST<br />
+Processors: 2<br />
+CommonPool Size: 0<br />
+Current Thread: Thread[main,5,main], CommonPool Size: 1<br />
+Current Thread: Thread[ForkJoinPool.commonPool-worker-1,5,main], CommonPool Size: 1<br />
+Current Thread: Thread[main,5,main], CommonPool Size: 1<br />
+Current Thread: Thread[ForkJoinPool.commonPool-worker-1,5,main], CommonPool Size: 1<br />
+Current Thread: Thread[ForkJoinPool.commonPool-worker-1,5,main], CommonPool Size: 1<br />
+Current Thread: Thread[main,5,main], CommonPool Size: 1<br />
+Current Thread: Thread[main,5,main], CommonPool Size: 1<br />
+Current Thread: Thread[ForkJoinPool.commonPool-worker-1,5,main], CommonPool Size: 1<br />
+Current Thread: Thread[main,5,main], CommonPool Size: 1<br />
+Current Thread: Thread[ForkJoinPool.commonPool-worker-1,5,main], CommonPool Size: 1<br />
+END RequestId: 1c1c9cb4-0a09-11e7-aa58-ef5c7aa75a29<br />
+REPORT RequestId: 1c1c9cb4-0a09-11e7-aa58-ef5c7aa75a29    Duration: 10023.83 ms    Billed Duration: 10100 ms     Memory Size: 1024 MB    Max Memory Used: 38 MB   </blockquote>
+由于 Lambda 上用 <code>Runtime.getRuntime().availableProcessors()</code> 获得的是 2, 部署 Lambda 的 EC2 实例只是 t2.medium 的水平, 所以 ForkJoin.CommonPool 大小只有一，这就造成 parallelStream() 与 stream() 没多大分别，甚至因为这样无意义线程池的介入性能会差。<br/><br/>
+<del>回顾一下，在 Lambda 实例被多个请求共享时， 大家都共用大小只有一的线程池 ForkJoin.CommonPool, 真还不如让任务在当前请求线程中执行。</del><br/><br/>
+所以我们无法简单的用 Java 8 集合的  parallelStream() 来改善性能，只有手动建立别的线程池实现了，如<br/>
+<blockquote>
+Executors.newFixedThreadPool(50);<br />
+Executors.newCachedThreadPool();    //这个可以很凶猛，可以创建出几千个线程的池子
+</blockquote>
+下面是改进后 Lambda 的 handleRequest(...) 代码<br/>
+<pre class="lang:default decode:true">System.out.println("Processors: " + Runtime.getRuntime().availableProcessors());
+System.out.println("CommonPool Size: " + ForkJoinPool.commonPool().getPoolSize());<br/><br/>
+ExecutorService executorService = Executors.newFixedThreadPool(20);
+IntStream.rangeClosed(1, 10).parallel().mapToObj(integer -&gt;
+    CompletableFuture.runAsync(() -&gt; {
+            System.out.println("Current Thread: " + Thread.currentThread()
+                + ", " + "CommonPool Size: " + ForkJoinPool.commonPool().getPoolSize());
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }, executorService
+    )).forEach(CompletableFuture::join);</pre>
+再看一下现在的 Lambda 执行效果<br/>
+<blockquote>
+START RequestId: eca788f6-0a0b-11e7-8ecf-75228870aa64 Version: $LATEST<br />
+Processors: 2<br />
+CommonPool Size: 0<br />
+Current Thread: Thread[pool-1-thread-1,5,main], CommonPool Size: 2<br />
+Current Thread: Thread[pool-1-thread-2,5,main], CommonPool Size: 2<br />
+Current Thread: Thread[pool-1-thread-3,5,main], CommonPool Size: 2<br />
+Current Thread: Thread[pool-1-thread-4,5,main], CommonPool Size: 3<br />
+Current Thread: Thread[pool-1-thread-5,5,main], CommonPool Size: 4<br />
+Current Thread: Thread[pool-1-thread-6,5,main], CommonPool Size: 6<br />
+Current Thread: Thread[pool-1-thread-7,5,main], CommonPool Size: 4<br />
+Current Thread: Thread[pool-1-thread-8,5,main], CommonPool Size: 4<br />
+Current Thread: Thread[pool-1-thread-9,5,main], CommonPool Size: 4<br />
+Current Thread: Thread[pool-1-thread-10,5,main], CommonPool Size: 4<br />
+END RequestId: eca788f6-0a0b-11e7-8ecf-75228870aa64<br />
+REPORT RequestId: eca788f6-0a0b-11e7-8ecf-75228870aa64    Duration: 4053.97 ms    Billed Duration: 4100 ms     Memory Size: 1024 MB    Max Memory Used: 45 MB   
+</blockquote>
+执行时间也明显缩短了，由原来的 10023.83 ms 退化到现在的  4053.97 ms.<br/>
+注意到上面用了 CompletableFuture, 并且最后有一个 <code>forEach(CompletableFuture::join)</code> 去兑现所有的 Future, 没有这个顶住的话，会出现虽然把子任务提交给了线程池去执行，但是 Lambda handler 这个主线程一退出就终止了当前 Lambda 调用。除非线程池中的线程的 Daemon 是 false, 然后手动关闭线程池才会结束当前 Lambda 调用。<br/>
+<h4>Lambda 实例重用与线程池</h4>
+<strong><span style="color: #0000ff;">June 7, 2017: 由于一个 JVM 只跑一个 Lambda 实例，实例被重用来处理后续请求，所以如果 Kinesis trigger 的 batchSize 是 10， 在 <code>handleRequest(...</code> 外声明一个 20 的线程池应该是足够的。</span></strong><br/><br/>
+<del>同时考虑到 Lambda  实例是会在短期，连续的触发请求中共享的，所以如果你的线程池是在 <code>handleRequest(...)</code> 方法外创建的，如</del><br/>
+<pre class="lang:default decode:true">public class Handler implements RequestHandler(KinesisEvent event, Context context) {
+ 
+    ExecutorService executorService = Executors.newFixedThreadPool(20);<br/><br/>
+    @Override
+    public String handleRequest(KinesisEvent event, Context context) {
+        event.getRecords().stream().map(eventRecord -&gt; 
+            CompletableFuture.supplyAsync(() -&gt; process(eventRecord)))
+            .map(CompletableFuture::join);
+    }
+}</pre>
+<br/>
+<del>而且我们只是为上面的 Kinesis Trigger 设置了 BatchSize 是 10, 大小 20 的线程池应付 BatchSize 10 应该有余，别以为 20 就很康慨。错了，在高并发时，譬如有 10 个请求触发了同一个 Lambda 实例，每个请求携带 10 个 Kinesis 记录，大小为 20 的线程池将无法高效的应对 100 个任务了。这时候线程池大小可能要 200 了，或直接用 Executors.newCachedThreadPool(), 也可用指定上限大小的线程池。</del><br/>
+<h3>Lambda 中的日志处理</h3>
+由于 AWS Java 库的第三方依赖是经由 aws-sdk-java-core 库引入的，可以参见它的 <code>pom.xml</code>，以当前的 1.11.107 为例，从 <a href="https://github.com/aws/aws-sdk-java/blob/1.11.107/aws-java-sdk-core/pom.xml">https://github.com/aws/aws-sdk-java/blob/1.11.107/aws-java-sdk-core/pom.xml</a> 中可以看出 AWS Java SDK 使用的通用日志框架是 Apache Commons Logging, 它引入 log4j 的 scope 是 test, 从源代码中也可知它并没有绑定到特定的日志实现，而我们自己的库是清一色的用 Slf4J + Logback, 所以如果希望在自己的 Lambda 继续使用 Slf4J + Logback 的组合的话，那么可以在 pom.xml 文件中加上两个依赖(版本号相时而定)<br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;ch.qos.logback&lt;/groupId&gt;
+    &lt;artifactId&gt;logback-classic&lt;/artifactId&gt;
+    &lt;version&gt;1.2.2&lt;/version&gt;
+&lt;/dependency&gt;
+&lt;dependency&gt;
+    &lt;groupId&gt;org.slf4j&lt;/groupId&gt;
+    &lt;artifactId&gt;jcl-over-slf4j&lt;/artifactId&gt;
+    &lt;version&gt;1.7.25&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+ch.qos.logback:logback-classis 会引入 Slf4J 依赖。再配上一个最简单的 <code>logback.xml</code> 文件，这样就可以使用编译的 Slf4J 的 API 来书写日志，并且 AWS Java SDK 中的日志也会通过 <a href="https://www.slf4j.org/legacy.html#jclOverSLF4J">jcl-over-slf4j</a> 桥接过来输出来共同的目的地。例如把日志级别设置为  DEBUG 时，我们现在可以在 Slf4J 的输出中看到 S3 操作的非常详细的细节。<br/><br/>
+如果你是用 <code>sls create -t aws-java-maven -p hello-lambda</code> 创建的项目，就把 com.amazonaws:aws-lambda-java-log4j 依赖去掉，其实是它引入的 Log4j 库。<br/><br/>
+最关键是不能把 <code>%X{AWSRequestId}</code> 这样的 MDC 输出取到，所以直接在 <code>logback.xml</code> 中写 <code>%S{AWSRequestId}</code> 也没用，这个似乎只是 Log4J 的专利了，而且 jcl-over-slf4j 对此束手无策。尝试着搜索 AWS 公开的 AWS 源代码都没有看到针对 MDC 的任何操作，只是在 Lambda 执行时看到这样的日志输出<br/>
+<blockquote>
+com.amazonaws.AmazonWebServiceClient - Internal logging successfully configured to commons logger: true<br />
+Unable to load the log4j's MDC class, customer cannot see RequestId from MDC
+</blockquote>
+<br/>
+除非自己在 <code>handleRequest(...)</code> 函数中把当前请求 RequestId 加到 MDC 中去，但需要注意多线程的情况，尤其是使用线程池的时候。虽然 MDC 是用的 <a href="https://docs.oracle.com/javase/7/docs/api/java/lang/InheritableThreadLocal.html">InheritableThreadLocal</a>, 对于每次新建的线程没问题，会继承到所有父线程绑定的变量，但是线程池中的线程只在第一次使用时拷贝父线程中绑定的变量(可能拷贝不到，也可能 RequestId 与线程错乱)。<br/>
+在 Slf4J 时要在每条日志中能用 <code>%S{AWSRequestId}</code> 输出当前 RequestId 的话，并且需支持多线程，handler 可以参考如下方式<br/>
+<pre class="lang:default decode:true">ExecutorService executorService = Executors.newCachedThreadPool();<br/><br/>
+@Override
+public String handleRequest(S3Event s3Event, Context context) {
+
+    //收到请求就往 MDC 中设置当前 RequestId, 如果由它直接创建的线程会被自动拷贝到子线程中
+    org.slf4j.MDC.put("AWSRequestId", context.getAwsRequestId());  
+    logger.info("Hello");
+   
+    executorService.submit(() -&gt; {
+        org.slf4j.MDC.put("AWSRequestId", context.getAwsRequestId()); //池中线程提交任务时绑定
+        logger.info("Hello again");
+    });
+ 
+    return context.getFunctionName();
+}</pre>
+在采用随后那个 <code>logback.xml</code> 配置文件，对这个 Lambda 进行触发后可以看到类似的输出<br/>
+<blockquote>
+START RequestId: 5f6b55f8-0ec7-11e7-8f35-772ea266ce23 Version: $LATEST<br />
+2017-03-22 06:18:33 [main] INFO [5f6b55f8-0ec7-11e7-8f35-772ea266ce23] cc.unmi.Handler - Hello<br />
+2017-03-22 06:18:33 [pool-1-thread-1] INFO [5f6b55f8-0ec7-11e7-8f35-772ea266ce23] cc.unmi.Handler - Hello again<br />
+............
+</blockquote>
+以下是一个最简单的 <code>logback.xml</code> 文件参考：<br/>
+<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;configuration scan="false" debug="false"&gt;
+    &lt;statusListener class="ch.qos.logback.core.status.NopStatusListener"/&gt;<br/>
+    &lt;appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender"&gt;
+        &lt;encoder&gt;
+            &lt;pattern&gt;
+                %d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level [%X{AWSRequestId}] %logger{36} - %msg%n
+            &lt;/pattern&gt;
+        &lt;/encoder&gt;
+    &lt;/appender&gt;<br/>
+    &lt;root level="DEBUG"&gt;
+        &lt;appender-ref ref="STDOUT"/&gt;
+    &lt;/root&gt;<br/>
+&lt;/configuration&gt;</pre>
+<br/>
+参考链接：<br/><br/>
+<ol>
+    <li><a href="https://aws.amazon.com/lambda/faqs/">AWS Lambda FAQs</a></li>
+    <li><a href="https://github.com/berezovskyi/lambda-test">AWS Lambda cold start (pseudo-)benchmark</a></li>
+    <li><a href="https://aws.amazon.com/blogs/compute/container-reuse-in-lambda/">Understanding Container Reuse in AWS Lambda</a></li>
+</ol>

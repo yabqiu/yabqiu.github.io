@@ -1,6 +1,4 @@
-#![allow(warnings)]
 mod html2md;
-mod downloader;
 
 use chrono::NaiveDateTime;
 use mysql::prelude::*;

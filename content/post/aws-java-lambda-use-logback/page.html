@@ -1,0 +1,230 @@
+---
+title: AWS Java Lambda 使用 Logback 记录日志
+url: /aws-java-lambda-use-logback/
+date: 2017-03-18T02:46:05-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - lambda
+comment: true
+# additional
+wpPostId: 7931 
+wpStatus: publish
+views: 1405
+lastmod: 2021-09-03T16:44:32-05:00
+---
+
+直接一句话：去掉 Log4J 的依赖，把  Slf4J, Logback, 和 log4j-over-slf4j 依赖加进来就行了，配置文件换成 logback.xml，这就完了，不要往下看了，都是些废话。</p>
+当我们用 <a href="https://serverless.com/">Serverless</a> 命令 <code>sls create -t aws-java-maven -p hello-lambda</code> 创建的示例项目中直接用的是 Log4J 日志组件，而且也没用像  Slf4j, 或 Apache Common Logging 更上一层的通用日志框架。查看了几个 AWS 本身的组件 S3, SNS, 和 Kinesis 的 SDK, 它们内部是用的 Apache Common Logging 声明的日志变量<br/>
+<blockquote>
+import org.apache.commons.logging.LogFactory;<br />
+import org.apache.commons.logging.Logger;<br />
+<br />
+private static final Log log = LogFactory.getLog(AmazonKinesis.class)
+</blockquote>
+而我们自己的组件中通用日志组件是 Slf4j, 底层实现为 Logback, 所以我们希望在 Lambda 中使用 Logback 来写日志。<br/>
+选用一个通用日志框架总是明智之举，因为一个项目经常杂糅了多种日志实现，使用 Slf4J 或 Apache Common Logging 可以把它们(Log4J, Logback, 或更多)输出到共同的目的地，并且有统一的日志输出接口。而我们认为通用日志框架还是 Slf4J 要先进些，所以我们在 Java Lambda 中的日志方案是 Slf4J + Logback，还需要把 Log4J 的日志桥接到 Slf4J 上来，再经由 Logback 输出。<br/><br/>
+回到前面创建的 <code>hello-lambda</code> 项目，看其中怎么用的 Log4J，先瞧瞧 <code>pom.xml</code> 文件怎么引入的 Log4J, 它是间接通过一个 AWS 定义的 Log4J Appender 引入的<!--more--><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;com.amazonaws&lt;/groupId&gt;
+    &lt;artifactId&gt;aws-lambda-java-log4j&lt;/artifactId&gt;
+    &lt;version&gt;1.0.0&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+这个 AWS 定义的 Appender 是怎么用的呢？看 <code>log4j.properties</code> 文件的内容<br/>
+<pre class="lang:default decode:true">log = .
+log4j.rootLogger = DEBUG, LAMBDA<br/>
+log4j.appender.LAMBDA=com.amazonaws.services.lambda.runtime.log4j.LambdaAppender
+log4j.appender.LAMBDA.layout=org.apache.log4j.PatternLayout
+log4j.appender.LAMBDA.layout.conversionPattern=%d{yyyy-MM-dd HH:mm:ss} &lt;%X{AWSRequestId}&gt; %-5p %c:%L - %m%n</pre>
+看到这个 Log4J 的配置文件我最感兴趣的要数 <code>&lt;%X{AWSRequestId}&gt;</code>, 它能指示出触发 Lambda 的请求 ID, 在后面的 Logback 我也想要它。<br/><br/>
+看一下 hello-lambda 的日志输出吧，最简单的 handler<br/>
+<pre class="lang:default decode:true ">package cc.unmi;<br/>
+import java.util.Map;
+import org.apache.log4j.Logger;
+import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.RequestHandler;<br/>
+public class Handler implements RequestHandler&lt;Map&lt;String, Object&gt;, String&gt; {
+    
+    private static final Logger LOG = Logger.getLogger(Handler.class);<br/>
+    @Override
+    public String handleRequest(Map&lt;String, Object&gt; input, Context context) {
+        LOG.info("received: " + input);
+        return context.getFunctionName();
+    }
+}</pre>
+Serverless  的项目可以用命令 <code>mvn package; sls deploy</code> 打包并部署到 AWS 上去, 简单测试，上面的 LOG.info() 的输出如下<br/>
+<blockquote>
+2017-03-18 05:10:19 &lt;2e65ba82-0b99-11e7-a827-454505660a82&gt; INFO  cc.unmi.Handler:16 - received: {key1=value1}
+</blockquote>
+在 <code>%X{AWSRequestId}</code> 处输出了当前请求 ID 信息，这在 Lambda 并发时很容易区别不同请求的日志信息。<br/><br/>
+再看下它是怎么输出 AWS 自家组件中的日志信息的，尝试读一下 S3 Object。这里 Log4J 的日志级别是 DEBUG; 项目中要用到 aws-java-sdk-s3, 引入方式不多解释。在 handleRequest(...) 方法中相应代码如下<br/>
+<pre class="brush:java">AmazonS3 amazonS3 = AmazonS3ClientBuilder.defaultClient();
+amazonS3.getObject("test-bucket", "test-file.txt");  //可建立相应的 S3 bucket 和相应的文件，没也可以看日志</pre>
+这个获得 S3 Object 的信息很详细，还没触及文件内容，否则每一行的文件内容都能看到，为了不占太大篇幅，用一个滚动的 TextArea 来显示, 请滚动过目<br/><br/>
+<textarea style="width: 100%;" readonly="readonly" rows="10">2017-03-18 06:17:15 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.AmazonWebServiceClient:80 - Internal logging successfully configured to commons logger: true
+2017-03-18 06:17:15 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.metrics.AwsSdkMetrics:406 - Admin mbean registered under com.amazonaws.management:type=AwsSdkMetrics
+2017-03-18 06:17:17 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.auth.AWSCredentialsProviderChain:119 - Loading credentials from EnvironmentVariableCredentialsProvider
+2017-03-18 06:17:17 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.request:1128 - Sending Request: GET https://test-bucket.s3.amazonaws.com /test-file.txt Headers: (User-Agent: aws-sdk-java/1.11.105 Linux/4.4.35-33.55.amzn1.x86_64 OpenJDK_64-Bit_Server_VM/25.121-b13/1.8.0_121 exec-env/AWS_Lambda_java8, amz-sdk-invocation-id: 7a1a9af5-b798-9de0-4bf4-19ee7856cac8, Content-Type: a
+2017-03-18 06:17:18 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.auth.AWS4Signer:33 - AWS4 Canonical Request: '"GET /test-file.txt amz-sdk-invocation-id:7a1a9af5-b798-9de0-4bf4-19ee7856cac8 amz-sdk-retry:0/0/500 content-type:application/octet-stream host:test-bucket.s3.amazonaws.com user-agent:aws-sdk-java/1.11.105 Linux/4.4.35-33.55.amzn1.x86_64 OpenJDK_64-Bit_Server_VM/25.
+2017-03-18 06:17:18 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.auth.AWS4Signer:33 - AWS4 String to Sign: '"AWS4-HMAC-SHA256 20170318T061717Z 20170318/us-east-1/s3/aws4_request 02f437851eac58933c43401159505bdac12bbb9ec91767e244663e2a82f0ae97"
+2017-03-18 06:17:18 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.auth.AWS4Signer:33 - Generating a new signing key as the signing key not available in the cache for the date 1489795200000
+2017-03-18 06:17:18 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.client.protocol.RequestAddCookies:122 - CookieSpec selected: default
+2017-03-18 06:17:18 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.client.protocol.RequestAuthCache:76 - Auth cache not set in the context
+2017-03-18 06:17:18 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.impl.conn.PoolingHttpClientConnectionManager:249 - Connection request: [route: {s}-&gt;https://test-bucket.s3.amazonaws.com:443][total kept alive: 0; route allocated: 0 of 50; total allocated: 0 of 50]
+2017-03-18 06:17:18 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.impl.conn.PoolingHttpClientConnectionManager:282 - Connection leased: [id: 0][route: {s}-&gt;https://test-bucket.s3.amazonaws.com:443][total kept alive: 0; route allocated: 1 of 50; total allocated: 1 of 50]
+2017-03-18 06:17:18 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.impl.execchain.MainClientExec:234 - Opening connection {s}-&gt;https://test-bucket.s3.amazonaws.com:443
+2017-03-18 06:17:18 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.impl.conn.DefaultHttpClientConnectionOperator:138 - Connecting to test-bucket.s3.amazonaws.com/54.231.50.83:443
+2017-03-18 06:17:18 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.http.conn.ssl.SdkTLSSocketFactory:127 - connecting to test-bucket.s3.amazonaws.com/54.231.50.83:443
+2017-03-18 06:17:18 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.http.conn.ssl.SdkTLSSocketFactory:335 - Connecting socket to test-bucket.s3.amazonaws.com/54.231.50.83:443 with timeout 10000
+2017-03-18 06:17:18 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.http.conn.ssl.SdkTLSSocketFactory:388 - Enabled protocols: [TLSv1, TLSv1.1, TLSv1.2]
+2017-03-18 06:17:18 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.http.conn.ssl.SdkTLSSocketFactory:389 - Enabled cipher suites:[TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384, TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384, TLS_RSA_WITH_AES_256_CBC_SHA256, TLS_ECDH_ECDSA_WITH_AES_256_CBC_SHA384, TLS_ECDH_RSA_WITH_AES_256_CBC_SHA384, TLS_DHE_RSA_WITH_AES_256_CBC_SHA256, TLS_DHE_DSS_WITH_AES_256_CBC_S
+2017-03-18 06:17:18 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.http.conn.ssl.SdkTLSSocketFactory:74 - socket.getSupportedProtocols(): [SSLv2Hello, SSLv3, TLSv1, TLSv1.1, TLSv1.2], socket.getEnabledProtocols(): [TLSv1, TLSv1.1, TLSv1.2]
+2017-03-18 06:17:18 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.http.conn.ssl.SdkTLSSocketFactory:102 - TLS protocol enabled for SSL handshake: [TLSv1.2, TLSv1.1, TLSv1]
+2017-03-18 06:17:18 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.http.conn.ssl.SdkTLSSocketFactory:393 - Starting handshake
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.http.conn.ssl.SdkTLSSocketFactory:423 - Secure session established
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.http.conn.ssl.SdkTLSSocketFactory:424 - negotiated protocol: TLSv1.2
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.http.conn.ssl.SdkTLSSocketFactory:425 - negotiated cipher suite: TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.http.conn.ssl.SdkTLSSocketFactory:433 - peer principal: CN=*.s3.amazonaws.com, O=Amazon.com Inc., L=Seattle, ST=Washington, C=US
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.http.conn.ssl.SdkTLSSocketFactory:442 - peer alternative names: [*.s3.amazonaws.com, s3.amazonaws.com]
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.http.conn.ssl.SdkTLSSocketFactory:446 - issuer principal: CN=DigiCert Baltimore CA-2 G2, OU=www.digicert.com, O=DigiCert Inc, C=US
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.internal.SdkSSLSocket:31 - created: test-bucket.s3.amazonaws.com/54.231.50.83:443
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.impl.conn.DefaultHttpClientConnectionOperator:145 - Connection established 169.254.76.13:43196&lt;-&gt;54.231.50.83:443
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.impl.conn.DefaultManagedHttpClientConnection:90 - http-outgoing-0: set socket timeout to 50000
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.impl.execchain.MainClientExec:255 - Executing request GET /test-file.txt HTTP/1.1
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.impl.execchain.MainClientExec:266 - Proxy auth state: UNCHALLENGED
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:135 - http-outgoing-0 &gt;&gt; GET /test-file.txt HTTP/1.1
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:138 - http-outgoing-0 &gt;&gt; Host: test-bucket.s3.amazonaws.com
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:138 - http-outgoing-0 &gt;&gt; x-amz-content-sha256: UNSIGNED-PAYLOAD
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:138 - http-outgoing-0 &gt;&gt; Authorization: AWS4-HMAC-SHA256 Credential=ASIAITG64L64YZ74LYXQ/20170318/us-east-1/s3/aws4_request, SignedHeaders=amz-sdk-invocation-id;amz-sdk-retry;content-type;host;user-agent;x-amz-content-sha256;x-amz-date;x-amz-security-token, Signature=82ca91bed5a366cb16456b57bb9676ac57f1b6eeb49
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:138 - http-outgoing-0 &gt;&gt; X-Amz-Date: 20170318T061717Z
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:138 - http-outgoing-0 &gt;&gt; User-Agent: aws-sdk-java/1.11.105 Linux/4.4.35-33.55.amzn1.x86_64 OpenJDK_64-Bit_Server_VM/25.121-b13/1.8.0_121 exec-env/AWS_Lambda_java8
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:138 - http-outgoing-0 &gt;&gt; X-Amz-Security-Token: FQoDYXdzECcaDBjE9T9GwWVX7iLOzSLeAUpO27lR8xywH1f24G4BpbgkG07hXQIBVQ21MT2rHknsJx1As/x4IzlFtT6W39CeZfKiZ72Ijqz/bg70NU7QSLm2IfQKUHTRzrC+fEvjTc9YxnuE+FJ/tAbpfNamXgja+DLVBCQAkSAT9xku2ym8/DJvRAQcgKysWYLbb0Q78yiHZuVO2gh3r/F2tu++WxqUCcDYQzh85dFC1M3KttUeXhSsirq7vapV5092fTSU
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:138 - http-outgoing-0 &gt;&gt; amz-sdk-invocation-id: 7a1a9af5-b798-9de0-4bf4-19ee7856cac8
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:138 - http-outgoing-0 &gt;&gt; amz-sdk-retry: 0/0/500
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:138 - http-outgoing-0 &gt;&gt; Content-Type: application/octet-stream
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:138 - http-outgoing-0 &gt;&gt; Connection: Keep-Alive
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &gt;&gt; "GET /test-file.txt HTTP/1.1[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &gt;&gt; "Host: test-bucket.s3.amazonaws.com[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &gt;&gt; "x-amz-content-sha256: UNSIGNED-PAYLOAD[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &gt;&gt; "Authorization: AWS4-HMAC-SHA256 Credential=ASIAITG64L64YZ74LYXQ/20170318/us-east-1/s3/aws4_request, SignedHeaders=amz-sdk-invocation-id;amz-sdk-retry;content-type;host;user-agent;x-amz-content-sha256;x-amz-date;x-amz-security-token, Signature=82ca91bed5a366cb16456b57bb9676ac57f1b6eeb494db
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &gt;&gt; "X-Amz-Date: 20170318T061717Z[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &gt;&gt; "User-Agent: aws-sdk-java/1.11.105 Linux/4.4.35-33.55.amzn1.x86_64 OpenJDK_64-Bit_Server_VM/25.121-b13/1.8.0_121 exec-env/AWS_Lambda_java8[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &gt;&gt; "X-Amz-Security-Token: FQoDYXdzECcaDBjE9T9GwWVX7iLOzSLeAUpO27lR8xywH1f24G4BpbgkG07hXQIBVQ21MT2rHknsJx1As/x4IzlFtT6W39CeZfKiZ72Ijqz/bg70NU7QSLm2IfQKUHTRzrC+fEvjTc9YxnuE+FJ/tAbpfNamXgja+DLVBCQAkSAT9xku2ym8/DJvRAQcgKysWYLbb0Q78yiHZuVO2gh3r/F2tu++WxqUCcDYQzh85dFC1M3KttUeXhSsirq7vapV5092fTSUmny
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &gt;&gt; "amz-sdk-invocation-id: 7a1a9af5-b798-9de0-4bf4-19ee7856cac8[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &gt;&gt; "amz-sdk-retry: 0/0/500[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &gt;&gt; "Content-Type: application/octet-stream[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &gt;&gt; "Connection: Keep-Alive[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &gt;&gt; "[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &lt;&lt; "HTTP/1.1 200 OK[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &lt;&lt; "x-amz-id-2: Tun5Mx6rG1DN8IM1aCa5NWIDkR8st8xFatWW0Qtb0DnqhBGtDkfW/YgLkbf1wsdgegBALyNPUHA=[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &lt;&lt; "x-amz-request-id: 2F9292C1A7A4F4EF[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &lt;&lt; "Date: Sat, 18 Mar 2017 06:17:21 GMT[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &lt;&lt; "Last-Modified: Thu, 02 Mar 2017 08:11:39 GMT[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &lt;&lt; "ETag: "18fad146295d13d5f29ef0d696bd7807"[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &lt;&lt; "Accept-Ranges: bytes[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &lt;&lt; "Content-Type: text/plain[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &lt;&lt; "Content-Length: 114[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &lt;&lt; "Server: AmazonS3[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.wire:72 - http-outgoing-0 &lt;&lt; "[\r][\n]"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:124 - http-outgoing-0 &lt;&lt; HTTP/1.1 200 OK
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:127 - http-outgoing-0 &lt;&lt; x-amz-id-2: Tun5Mx6rG1DN8IM1aCa5NWIDkR8st8xFatWW0Qtb0DnqhBGtDkfW/YgLkbf1wsdgegBALyNPUHA=
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:127 - http-outgoing-0 &lt;&lt; x-amz-request-id: 2F9292C1A7A4F4EF
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:127 - http-outgoing-0 &lt;&lt; Date: Sat, 18 Mar 2017 06:17:21 GMT
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:127 - http-outgoing-0 &lt;&lt; Last-Modified: Thu, 02 Mar 2017 08:11:39 GMT
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:127 - http-outgoing-0 &lt;&lt; ETag: "18fad146295d13d5f29ef0d696bd7807"
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:127 - http-outgoing-0 &lt;&lt; Accept-Ranges: bytes
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:127 - http-outgoing-0 &lt;&lt; Content-Type: text/plain
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:127 - http-outgoing-0 &lt;&lt; Content-Length: 114
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.headers:127 - http-outgoing-0 &lt;&lt; Server: AmazonS3
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG org.apache.http.impl.execchain.MainClientExec:284 - Connection can be kept alive for 60000 MILLISECONDS
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.request:87 - Received successful response: 200, AWS Request ID: 2F9292C1A7A4F4EF
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.requestId:136 - x-amzn-RequestId: not available
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; DEBUG com.amazonaws.requestId:156 - AWS Request ID: 2F9292C1A7A4F4EF
+2017-03-18 06:17:20 &lt;8677e0bc-0ba2-11e7-b849-21f7954c08ce&gt; INFO cc.unmi.Handler:19 - hello
+</textarea><br/><br/>
+有些调试信息对我们使用 AWS 的资源还是很有帮助的。<br/><br/>
+到此，可以设定我们的目标了<br/><br/>
+<ol>
+    <li>使用 Slf4J 通用日志组件，底层实现用 Logback 替换掉 Log4J</li>
+    <li>把 AWS 自家组件中 Log4J 的日志信息通过 Slf4J -&gt; Logback 输出</li>
+    <li>在 Logback 的每一条日志中也要能输出 AWSRequestId 信息</li>
+</ol>
+<h3>使用 Slf4J + Logback</h3>
+<h4>去掉 Log4J 依赖，加上 Slf4J + Logback 依赖</h4>
+在 pom.xml 中把 <code>com.amazonaws:aws-lambda-java-log4j</code> 依赖删掉便 Log4J 也没啦，接着加上 Logback 的依赖<br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;ch.qos.logback&lt;/groupId&gt;
+    &lt;artifactId&gt;logback-classic&lt;/artifactId&gt;
+    &lt;version&gt;1.1.7&lt;/version&gt;
+&lt;/dependency&gt;
+</pre>
+<br/>
+因为 Logback 不爱单独行事，默认使用 Slf4J 作为它的上层通用日志框架，所以上面也把 <code>org.slf4j:slf4j-api</code> 依赖传递进来了。<br/>
+<h3>logback.xml 配置文件</h3><br/>
+在 resources 目录中创建 <code>logback.xml</code> 文件，内容可如下<br/>
+<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;configuration scan="false" debug="false"&gt;
+    &lt;statusListener class="ch.qos.logback.core.status.NopStatusListener"/&gt;<br/>
+    &lt;appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender"&gt;
+        &lt;encoder&gt;
+            &lt;pattern&gt;
+                %d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n
+            &lt;/pattern&gt;
+        &lt;/encoder&gt;
+    &lt;/appender&gt;<br/>
+    &lt;root level="DEBUG"&gt;
+        &lt;appender-ref ref="STDOUT"/&gt;
+    &lt;/root&gt;<br/><br/>
+&lt;/configuration&gt;
+</pre>
+我们也设定了日志级别为 DEBUG.<br/><br/>
+<h4>使用 Slf4J 日志接口</h4>
+把之前的 Log4J 日志代码改成 Slf4J 通用日志代码，完整的一个 Lambda Handler 如下<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/>
+import java.util.Map;<br/>
+import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.RequestHandler;<br/>
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;<br/>
+public class Handler implements RequestHandler&lt;Map&lt;String, Object&gt;, String&gt; {<br/>
+    private static final Logger logger = LoggerFactory.getLogger(Handler.class);<br/>
+    @Override
+    public String handleRequest(Map&lt;String, Object&gt; input, Context context) {
+        logger.info("received: " + input);
+        return context.getFunctionName();
+    }
+}</pre>
+部署到 AWS 上进行测试，查看日志输出如下<br/>
+<blockquote>
+2017-03-18 05:52:48 [main] INFO  cc.unmi.Handler - received: {key1=value1}
+</blockquote>
+得到我们想要的输出，这个目标很简单<br/><br/>
+<h3>Log4J 的日志桥接到 Slf4J, 再用 Logback 输出</h3><br/>
+再来测试一下前面那段 S3 Object 的获取代码，加下两行到 handleRequest(...) 方法中去<br/>
+<pre class="brush:java">AmazonS3 amazonS3 = AmazonS3ClientBuilder.defaultClient();
+amazonS3.getObject("test-bucket", "text-file.txt");</pre>
+部署再测试，我们发现在 Logback 已是 DEBUG 级别的情况下，只有一行日志输出<br/><br/>
+<blockquote>
+2017-03-18 06:00:08 [main] INFO  cc.unmi.Handler - received: {key1=value1}
+</blockquote>
+没有处理 S3 getObject(...) 的详细日志输出，也就是原本在 AWS 自家组件中用 Log4J 打印的里层我们不会跑到 Logback 上来。原因是我们缺少 <code>log4j-over-slf4j</code>, 所以 Log4J 的日志输出在拿掉了 Log4J 依赖后不知道往何处去。<br/><br/>
+<h4>加上 log4j-over-slf4j 依赖</h4>
+在 pom.xml 文件中加上<br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;org.slf4j&lt;/groupId&gt;
+    &lt;artifactId&gt;log4j-over-slf4j&lt;/artifactId&gt;
+    &lt;version&gt;1.7.21&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+部署再触发执行，现在可以看到前面那个文本框中一样详细的调试信息输出了，一个获取 S3 Object  的细节信息一览无余。现在还差最后一个问题了。<br/><br/>
+<span style="text-decoration: underline; color: #000080;">要注意的是 log4j-over-slf4j.jar 与 slf4j-log4j12.jar 是不能共存的，应用启动时就会有冲突报出来。</span> 参见  <a href="https://www.slf4j.org/legacy.html">Bridging legacy APIs</a><br/><br/>
+<h3>在 Logback 日志中输出 AWSRequestId</h3><br/>
+其实这个才是重点，前面还真完全是些废话，简单就是一句话：去掉 Log4J 的依赖，把  Slf4J, Logback, 和 log4j-over-slf4j 依赖加进来就行了，配置文件换成 logback.xml。<br/><br/>
+既然这个是关键就应该单飞了，继续研究, 草稿中 ......<br/>
+&nbsp;
