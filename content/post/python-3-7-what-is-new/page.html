@@ -1,0 +1,278 @@
+---
+title: Python 3.7 所带来的新特性
+url: /python-3-7-what-is-new/
+date: 2020-07-24T23:41:52-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/python-logo.png"
+categories:
+  - Python
+tags: 
+  - feature
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10418 
+wpStatus: publish
+views: 778
+lastmod: 2020-07-24T23:51:40-05:00
+---
+
+Python 接触的晚，所以接着 <a href="体验一下%20Python 3.8 带来的主要新特性">体验一下 Python 3.8 带来的主要新特性</a> 继续往前翻，体验一下 Python 3.7 曾经引入的新特性，爱一门语言就要了解她真正的历史。一步一步慢慢给 Python 来个起底。</p>
+<br/>
+先来看看 Python 网站的各版本使用情况 <a href="https://w3techs.com/technologies/details/pl-python/3">Usage statistics of Python Version 3 for websites</a>, 这里统计的 Python 开发的网站的数据，应该有 Python 3 大规模的用于其他领域。单网站应用 Python  来说，Python 2 还有大量遗留代码，Python 3 还是 3.6 为主，Python 的升级还任重道远。本人也是谨慎的在从 3.7 迁移到 3.8 的过程中，AWS 的 Lambda 都支持 3.8，直接上 3.8 也没什么历史负担。以下是从网站使用 Python 统计情况中的两个截图<br/><br/>
+<table style="border-collapse: collapse; width: 100%;">
+<tbody>
+<tr>
+<td style="width: 100%;">
+    {{< bundle-image src="python3.7-new-features-1.png" width="299px" class="alignleft" >}}
+    {{< bundle-image src="python3.7-new-features-2.png" width="400px" class="alignleft" >}}
+</td>
+</tr>
+</tbody>
+</table>
+
+<a href="https://www.python.org/downloads/release/python-370/">Python 3.7.0</a> 发布于 2018-06-27, 这篇文章 <a href="https://realpython.com/python37-new-features/">Cool New Features in Python 3.7</a> 详细介绍了 Python 3.7 的新特性，本文也是从其中挑几个来体验体验。<!--more--><br/>
+<h3><code>breakpoint()</code> 进入调试器</h3>
+这个功能好像没什么卵用，现在随手一个 IDE 都能断点调试，大不了临时加些 <code>print</code> 语句，把 <code>breakpoint()</code> 语句留在代码中也是个垃圾。不管它呢，既然是个新特性，顺道看下了，就是说在代码中加行 <code>breakpoint()</code>，代码执行到该处就会默认进入 PDB(Python Debugger) 调用会话。<br/>
+{{< highlight python "hl_lines=4" >}}
+# bug.py
+e = 1
+f = 2
+breakpoint()
+r = e / f
+print(r)
+{{</ highlight >}}
+
+用 python 3.7 bug.py 执行，然后看到<br/>
+{{< highlight sh >}}
+$ python3.7 bug.py
+> /Users/yanbin/bug.py(4)<module>()
+-> r = e / f
+(Pdb) e
+1
+(Pdb) c
+0.5
+{{</ highlight >}}
+参考 PDB 的用法，比如输入变量名可以查看它的值，<code>c</code> 继续执行。<br/><br/>
+<code>breakpoint()</code> 是之前的 <code>import pdb; pdb.set_trace()</code> 的缩减写法。<br/><br/>
+如果要跳过代码中的所有 <code>breakpoint()</code> 停顿，可设置 <code>PYTHONBREAKPOINT=0</code><br/>
+{{< highlight sh >}}
+$ PYTHONBREAKPOINT=0 python3.7 bug.py
+0.5
+{{</ highlight >}}
+是不是没多大可能用得上它啊。<br/>
+<h3>数据类</h3>
+这可是个大趋势，像在 Java 中 <code>Playframwork</code> 曾给 public 属性自动生成 getter/setter 方法，还有用 <code>Lombok</code> 来辅助的，直到 Java 14 出现了 <code>record</code> 类，Scala 的 <code>case class</code>，Kotlin 中也有 <code>data class</code> 类型 -- 一枚典型的 Javaer。所以 Python 也有了类似的实现，<code>@dataclass</code> 让我们从 <code>__init__</code> 构造函数中一个个写 <code>self.field_name = field_name</code> 中挣脱出来，并且会自动生成一些其他的双下划线方法。<br/>
+{{< highlight python "hl_lines=3" >}}
+from dataclasses import dataclass, field
+
+@dataclass(order=True)
+class Country:
+    name: str
+    population: int
+    area: float = field(repr=False, compare=False)
+    coastline: float = 0
+
+    def other_method(self):
+        pass
+{{</ highlight >}}
+上面创建了一个 Country 数据类，我们需要指定每个字段的类型，或默认值或其他的描述，Python 会把字段收集起来生成一个构建函数<br/>
+{{< highlight python >}}
+class Country:
+
+    def __init__(self, name, population, area, coastline=0):
+        self.name = name
+        self.population = population
+        self.area = area
+        self.coastline = coastline
+
+......
+{{</ highlight >}}
+用 <code>c.name</code> 来访问属性，同时它还为我们生成了诸如 <code>__repr__</code>, <code>__eq__</code>, <code>__ne__</code>, <code>__lt__</code>, <code>__le__</code>, <code>__gt__</code>, <code>__ge__</code> 实现方法<br/><br/>
+我们曾经需要用 <code>collections.namedtuple</code> 来实现类似的行为。这里有一个关于 dataclass 详细的介绍 <a href="https://realpython.com/python-data-classes/">The Ultimate Guide to Data Classes in Python 3.7</a>。<br/><br/>
+但是有一点缺憾是 Python 的数据类不能直接被 json 序列化， <code>json.dumps(c)</code> 会得到错误：<span style="color: #800000;">TypeError: Object of type Country is not JSON serializable</span>。<br/>
+<h3>类型提示强化和延迟注解求值</h3>
+Python 3.5 开始引入了类型提示，Python 在这方面还在不断的演化，Python 3.7 中下面的代码不能通过<br/>
+{{< highlight python >}}
+class Tree:
+    def __init__(self, left: Tree, right: Tree) -> None:
+        self.left = left
+        self.right = right
+{{</ highlight >}}
+在解析构造函数的时候认为 <code>Tree</code> 类型还没有正式建立起来，提示错误<br/>
+<blockquote>
+NameError: name 'Tree' is not defined
+</blockquote>
+
+只有给类型提示用引号括起来，把它们当字符串来看待就行，在 IDE 中还不引影响代码提示<br/>
+{{< bundle-image src="python3.7-new-features-3-800x232.png" width="510px" >}}
+Python 3.7 中其实也不必要写成 <code>left: 'Tree'</code>, 加上 <code>from __future__ import annotations</code> 就行<br/>
+{{< highlight python "hl_lines=1 4" >}}
+from __future__ import annotations
+
+class Tree:
+    def __init__(self, left: Tree, right: Tree) -> None:
+        self.left = left
+        self.right = right
+{{</ highlight >}}
+上面的代码顺利通过，加上 <code>from __future__ import annotations</code> 就是让 <code>left: Tree</code> 类型提示能延迟求值<br/><br/>
+再一个例子，类型提示不光是类型，字符串描述，还可以是一条语句，如<br/>
+{{< highlight python >}}
+# anno.py
+def greet(name: print("Now!")):
+    print(f"Hello {name}")
+{{</ highlight >}}
+<code>name: print("Now!")</code>  这样的类型提示会在解释该方法放入命名空间的时候求值，即 <code>import</code> 就会打印出信息<br/>
+{{< highlight python >}}
+>>> import anno
+Now!
+>>> anno.greet.__annotations__
+{'name': None}
+{{</ highlight >}}
+因为 <code>print("Now!")</code> 的返回值为 <code>None</code>, 提示的 <code>name</code> 类型也就为 <code>None</code><br/><br/>
+同样的，引入 <code>from __future__ import annotations</code> 还能禁止 <code>print("Now!")</code> 的求值，<code>anno.py</code> 的内容如下<br/>
+{{< highlight python >}}
+from __future__ import annotations<br/><br/>
+def greet(name: print("Now!")):
+    print(f"Hello {name}")
+{{</ highlight >}}
+<ul>
+    <li>再到 Python REPL 中试下</li>
+</ul>
+{{< highlight python >}}
+>>> import anno
+>>> anno.greet.__annotations__
+{'name': "print('Now!')"}
+>>> anno.greet("Marty")
+Hello Marty
+{{</ highlight >}}
+根本就不对 <code>print("Now!")</code> 求值<br/><br/>
+Python 的类型提示还可以更复杂，而且 IDE 还能推算出它的实际的提示类型，看 PyCharm 中的提示<br/>
+{{< bundle-image src="python3.7-new-features-4.png" width="360px" >}}
+<code>str_type()</code> 函数返回的是 <code>str</code> 类型，所以 <code>name.</code> 能提示出 str 类型的方法。<br/>
+<h3>时间精度的提高</h3>
+Python 3.7 对 <code>time</code> 模块的某些函数上增加了 <code>xxx_ns()</code> 函数的支持，返回的是纳秒，并且类型为 <code>int</code> 而非原来的 <code>float</code> 类型，<code>float</code> 本质上不准确，而 Python 无限的 <code>int</code> 类型则更为优越。那些函数是<br/>
+<ul>
+    <li><code>clock_gettime_ns()</code>: 返回指定时钟时间</li>
+    <li><code>clock_settime_ns()</code>: 设置指定时钟时间</li>
+    <li><code>monotonic_ns()</code>: 返回不能倒退的相对时钟的时间（例如由于夏令时）</li>
+    <li><code>perf_counter_ns()</code>: 返回性能计数器的值，专门用于测量短间隔的时钟</li>
+    <li><code>process_time_ns()</code>: 返回当前进程系统和用户 CPU 时间的总和（不包括休眠时间）</li>
+    <li><code>time_ns()</code>: 返回自 1970 年 1 月 1 日以来的纳秒数</li>
+</ul>
+<h3>字典的顺序是有保证的</h3>
+Python 3.7 开始输出的字典顺序与放入 key 的顺序是一致的。Python 3.6 只是说字典的顺序基本可以保证，但不能过于依赖)。<br/>
+{{< highlight python >}}
+>>> {"one": 1, "two": 2, "three": 3}
+{'one': 1, 'two': 2, 'three': 3}
+{{</ highlight >}}
+我们多数时候不应该依赖于字典的顺序的，这一特性可以想像是相当于由 <code>HashMap</code> 实现为 <code>LinkedHashMap</code>。<br/>
+<h3><code>async</code> 和 <code>await</code> 终于成了关键字</h3>
+Python 3.5 开始引入了 <code>async</code> 和 <code>await</code> 语法，却未把它们当作关键字，也许是为了一个过度，所以在  Python 3.7 之前 <code>async</code> 和 <code>await</code> 可以用作变量或函数名。Python 3.7 开始就不被允许它们挪为它用了。<br/>
+<h3><code>asyncio.run()</code> 简化事件循环</h3>
+在 Python 3.7 之前支持协程要显示的使用事件循环，比如使用如下代码<br/>
+{{< highlight python >}}
+# Python 3.7 之前
+import asyncio
+
+async def hello_world():
+    print("Hello World!")
+
+loop = asyncio.get_event_loop()
+loop.run_until_complete(hello_world())
+loop.close()
+{{</ highlight >}}
+Python 3.7 开始有了 <code>asyncio.run()</code> 方法，代码就变为<br/>
+{{< highlight python >}}
+import asyncio
+
+async def hello_world():
+    print("Hello World!")
+
+asyncio.run(hello_world())
+{{</ highlight >}}
+这里的 <code>asyncio.run()</code> 就做了前方代码 <code>loop</code> 三行的事情。用 <code>asyncio.run()</code> 稍有不便之处就是总是需要定义一个入口执行函数。<br/>
+<h3>上下文变量(ContextVar)</h3>
+它类似于线程本地存储, 和 Java 的下面几个概念对照起来就好理解了<br/>
+<ol>
+    <li> ThreadLocal，set(value), get()</li>
+    <li>日志框架(如  SLF4J) 的 MDC.getCopyOfContextMap() 和 setContextMap</li>
+</ol>
+<br/>
+为了更好理解，需要放到多线程环境中去演示它，用下面的 <code>ThreadPoolExecutor</code> 代码<br/>
+{{< highlight python >}}
+from contextvars import ContextVar
+from concurrent.futures import ThreadPoolExecutor
+from threading import current_thread
+import time
+
+name = ContextVar("name", default='world')
+
+def task(num):
+    time.sleep(2)
+    if name.get() == 'world':
+        name.set(f'world #{num}')
+    print(f'{current_thread().name}: name = {name.get()}')
+
+with ThreadPoolExecutor(3) as executor:
+    for i in range(10):
+        executor.submit(task, i)
+{{</ highlight >}}
+
+10 个任务重用三个线程，发现 <code>name.get()</code>  的值为默认的 <code>world</code> 才重设为 <code>world &lt;序号&gt;</code>, 执行后看到如下输出<br/>
+<blockquote>
+ThreadPoolExecutor-0_2: name = world #2<br />
+ThreadPoolExecutor-0_0: name = world #0<br />
+ThreadPoolExecutor-0_1: name = world #1<br />
+ThreadPoolExecutor-0_2: name = world #2<br />
+ThreadPoolExecutor-0_0: name = world #0<br />
+ThreadPoolExecutor-0_1: name = world #1<br />
+ThreadPoolExecutor-0_2: name = world #2<br />
+ThreadPoolExecutor-0_0: name = world #0<br />
+ThreadPoolExecutor-0_1: name = world #1<br />
+ThreadPoolExecutor-0_2: name = world #2
+</blockquote>
+
+发现只要重要线程时还能看到之前的值，也就是说 <code>name</code>  的值是绑定在当前线程上的。<br/><br/>
+第二段代码，演示了如何应用指定的上下文变量去运行代码<br/>
+{{< highlight python >}}
+import contextvars
+from threading import current_thread 
+from concurrent.futures import ThreadPoolExecutor
+
+name = contextvars.ContextVar("name", default='name1')
+address = contextvars.ContextVar("address", default='address1')
+
+def task(num):
+    print(num, current_thread().name, name.get(), address.get())
+
+name.set('name2')
+address.set('address2')
+ctx = contextvars.copy_context()
+
+with ThreadPoolExecutor(1) as executor:
+    executor.submit(task, 1)
+    executor.submit(lambda : ctx.run(task, 2))
+    executor.submit(task, 3)
+{{</ highlight >}}
+执行效果如下：<br/>
+<blockquote>
+1 ThreadPoolExecutor-0_0 name1 address1<br />
+2 ThreadPoolExecutor-0_0 name2 address2<br />
+3 ThreadPoolExecutor-0_0 name1 address1
+</blockquote>
+
+使用一个单线程的线程池，使得每次任务都重用同一个线程，分别解释每一次的执行效果：<br/>
+<ol>
+    <li>第一个任务使用本地默认的  name 和 address 值，分别为 <code>name1</code>  和 <code>address1</code></li>
+    <li>第二个任务使用事先从主线程获得的 <code>contextvars.copy_context()</code> 作为上下文去执行 task, 所以打印出的是主线程上的变量值 <code>name2</code> 和 <code>address1</code></li>
+    <li>第三个任务同样是打印出的默认值 <code>name1</code>  和 <code>address1</code>, 说明上一个任务不会覆盖当前线程的上下文变量值</li>
+</ol>
+
+<h3>小结</h3>
+基本上对我比较有用的新特性就这些了，还有一个开发者技巧，用 <code>python3.7 -X importtime my_script.py</code> 就能看到所有与 <code>my_script.py</code> 相关联的模块的导入时间，从而发现巨慢的模块加载予以优化。<br/><br/>
+总体说来没多大的惊喜，毕竟是一个小版本的更新，想要惊喜的话得看 Python 3.0 的 What's New。如果这以上新特性较为有用的也就 数据类 和 上下文变量，但由于数据类不能被 JSON 序列化，在用作 Rest API 时还得转换为字典再序列化为 JSON。

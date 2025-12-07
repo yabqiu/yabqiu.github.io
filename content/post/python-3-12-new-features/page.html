@@ -1,0 +1,285 @@
+---
+title: Python 3.12 新特性
+url: /python-3-12-new-features/
+date: 2025-08-05T17:26:18-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/python-logo.png"
+categories:
+  - Python
+tags: 
+  - new features
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14380 
+wpStatus: publish
+views: 237
+lastmod: 2025-08-08T12:00:02-05:00
+---
+
+继续感受新特性系列，这次看看于 2023 年 10 月 2 日发布的 Python 3.12 给我们带来了什么新特性。Python 3.14 预计在今年 10 月份推出，一定要对每年一个正式版的新东西有所了解。依旧是由官方的 <a href="https://docs.python.org/3/whatsnew/3.12.html">What's New In Python 3.12</a> 阅读进行展开。</p>
+<br/>
+Python 3.12 从编程上的观感变化不大，主要是移除了 <code>distutils</code>, 增加了 <code>f-strings</code> 和 <code>type</code> 提示，其他对诸如迭代推导等的字节码优化，对性能的提示是不具有直接感受的。<br/><br/>
+<h3>Python 3.12 移除了 distutils(Distribution Utilities)</h3>
+distutils 是一个 Python 内建的构建，打包和分布 Python 模块/包的工具集，其实对于多数应用开发人员对此也是感的。能与此能顺利建立关联的就是有些 Python 项目中的那个 setup.py 文件，那也是史前的产物。随着 Python 的快速流行，Python 的包管与构建工具也多了起来， 像 <a href="https://python-poetry.org/">Poetry</a>, <a href="https://pdm-project.org/">PDM</a> 和 <a href="https://docs.astral.sh/uv/">uv</a>, 尤其是 uv(Rust 编写的) 的闪电速度及全能表现有望成为 Python 界的 Maven。<!--more--><br/><br/>
+注：提到 uv 时还应留意 <a href="https://astral.sh/">AStRAL</a> 的另外两个工具，<a href="https://astral.sh/ruff">RUFF</a>: 用 Rust 写的轻量级，极速的 Python linter 工具; <a href="https://docs.astral.sh/ty/">ty</a>: 也是用 Rust 写的极速 Python 类型检查与 language server 工具。并且 uvx 命令将会与我们相伴随。又从 PyCharm 中看到一个新的 Python 工具链 <a href="https://hatch.pypa.io/">Hatch</a>。<br/><br/>
+distutils 移除后会给我们带来什么影响呢？对于老旧的依然使用 setup.py 的项目要升级到 Python 3.12 就要把 setup.py 中的<br/>
+<blockquote>
+from distutils.core import setup
+</blockquote>
+
+替换为<br/>
+<blockquote>
+from setuptools import setup
+</blockquote>
+
+所以 setuptools 是 distutils 的替代品，它功能更齐全，与现代工具链完全兼容，支持依赖自动安装，支持插件和自定义命令和 pyproject.toml 配置，它还是要用 twine 来上传包。不过使用了 Poetry, PDM 或 uv 的来管理项目的话，连 setuptools 是什么都不用去在意。<br/><br/>
+对于 python3.11 -m venv venv311 和 python3.12 -m venv venv312 生成的虚拟环境目录，bin 目录没有区别，区别在于 site-packages 中少了些东西<br/>
+{{< highlight sh >}}
+$ ls venv311/lib/python3.11/site-packages
+_distutils_hack distutils-precedence.pth pip pip-25.1.1.dist-info pkg_resources setuptools setuptools-80.9.0.dist-info
+$ ls venv312/lib/python3.12/site-packages
+pip  pip-25.1.1.dist-info
+{{</ highlight >}}
+
+关于 distutils 的内容就说这些了，下面一个新特性是<br/><br/>
+<h3>f-strings 的增强</h3>
+首先顺便回顾一下 f-strings 的比较全方位的功能。<br/><br/>
+f-strings 自 Python 3.6 推出之后，持续在增强功能，最初只是 'f' 或 'F' 前缀字符串中 <code>{}</code> 可用变量或表达式。3.8 添加了 <code>=</code>, <code>!s</code>, <code>!r</code>, <code>!a</code> 的支持，假设 o=3<br/>
+{{< highlight python >}}
+f"{o=}"    # 输出 o=3
+f"{o!s}"    # 相当于 o.str(), 或 f"{o.str()}
+f"{o!r}"    # 相当于 o.repr(), 或 f"{o.repr()}"
+f"{o!a}"    # 相当于 o.ascii(), 或 f"{o.ascii()}"
+{{</ highlight >}}
+f-strings 中的冒号 <code>:</code> 会调用 <code>__format__()</code> 函数<br/>
+{{< highlight python >}}
+>>> import datetime
+>>> today = datetime.datetime.now()
+>>> f"{today:%B %d, %Y}"
+'August 05, 2025'
+{{</ highlight >}}
+比如可以自定义 __format__() 函数<br/>
+{{< highlight python >}}
+class AA:
+    def __format__(self, format_spec):
+        return "formatted by " + format_spec
+
+if __name__ == '__main__':
+    aa = AA()
+    print(f"{aa:test}")
+{{</ highlight >}}
+输出<br/>
+<blockquote>
+formatted by test
+</blockquote>
+
+单行表达式，<code>f"{x if x &gt; 0 else y}"</code>. 或者下面的语法<br/>
+{{< highlight python >}}
+x=1
+y=2
+z=3
+a=f"{x, y, z}"  # 相当于 a="(1,2,3)"
+{{</ highlight >}}
+其实 <code>{}</code> 中间罗列多个相当于是一价目 tuple, 完整的语法是<br/><br/>
+{{< highlight python >}}
+a=f"{(x, y, z)}"
+{{</ highlight >}}
+
+想像一下某个函数接受参数类型为 tuple 时，我们只有一个元素时就要写成以下调用形式<br/>
+{{< highlight python >}}
+foo((a,))
+{{</ highlight >}}
+回顾完了，开始 Python 3.12 对 f-strings 的增强<br/><br/>
+<h4>f-strings 中可包含与外层相同的引号</h4>
+好似最外层的引号(或{})让中间的相同的引号自动进行的转义<br/>
+{{< highlight python >}}
+version = {"major": 1, "minor": 2}
+print(f"{version["major"]}")
+print(f'{', '.join(version.keys())}')
+{{</ highlight >}}
+或者像官方文档中的例子，实现 f-strings 嵌套<br/>
+{{< highlight python >}}
+a=f"""{f'''{f'{f"{1+1}"}'}'''}"""  # a = '2'
+{{</ highlight >}}
+<h4>f-strings 大括号可写成多行</h4>
+实际上也是因了上条的原因，f-strings 能够匹配前后两个大括号，所以大括号中间可以换行，还能加上注释<br/>
+{{< highlight python >}}
+version = {"major": "1", "minor": "2"}
+print(f"versions: {
+    ", ".join(version.values()) # major, minor versions
+}")
+{{</ highlight >}}
+输出<br/>
+<blockquote>
+versions: 1, 2
+</blockquote>
+
+<h4>f-strings 可包含 \ 转义符</h4>
+在 Python 3.12 之前，即使避开用外层相同的引号也不能用 <code>\</code> 转义符<br/>
+{{< highlight python >}}
+version = {"major": "1", "minor": "2"}
+print(f"{'\n'.join(version.keys())}")
+{{</ highlight >}}
+以上代码在 Python 3.11 中报错<br/>
+<blockquote>
+SyntaxError: f-string expression part cannot include a backslash
+</blockquote>
+
+在 Python 3.12 中通过，就是全用相同的引号都行<br/>
+{{< highlight python >}}
+version = {"major": "1", "minor": "2"}
+print(f"{'\n'.join(version.keys())}")
+print(f"{"\n".join(version.keys())}")
+{{</ highlight >}}
+同时包含 \ 和 {} 的例子<br/>
+{{< highlight python >}}
+version = {"major": "1", "minor": "2"}
+print(f"This is the playlist: {"\N{BLACK HEART SUIT} ".join(version.keys())}")
+{{</ highlight >}}
+输出为<br/>
+<blockquote>
+This is the playlist: major♥ minor
+</blockquote>
+
+<code>\N{BLACK HEART SUIT}</code> 就是 <code>♥</code><br/><br/>
+<h3>type 表达式，即类型别名</h3>
+Python 3.12 引入了一个像 C/C++ typedef 那样语法来定义类型<br/>
+{{< highlight python >}}
+type Point = tuple[float, float]
+{{</ highlight >}}
+那么我们使用 Point<br/>
+{{< highlight python >}}
+p1 = (1.0, 2.0)
+p2: Point = (1.3, 1.7)
+{{</ highlight >}}
+回顾一下我们在 Python 3.12 以前不显式用  class 创建类时可以怎么定义类型<br/>
+<h4>namedtuple</h4>
+{{< highlight python >}}
+Point = namedtuple('Point', ['x', 'y'])
+p1 = Point(1.0, 2.0)
+p1.x
+{{</ highlight >}}
+可用属性 x, y 来访问<br/>
+<h4>TypedDict</h4>
+{{< highlight python >}}
+from typing import TypedDict
+Point = TypedDict('Point', {'x': float, 'y': float})
+p1 = Point(x=1.0, y=2.0)
+p1['x']
+{{</ highlight >}}
+
+本质上还是一个 Dict<br/><br/>
+<h3>泛型实现更简单</h3>
+以前实现一个 Python 的泛型类要用到 TypeVar, Generic<br/>
+{{< highlight python >}}
+from typing import TypeVar, Generic
+
+T = TypeVar('T')
+
+class Cache(Generic[T]):
+    def __init__(self):
+      self.store = {}
+
+    def put(self, key: str, value: T):
+      self.store[key] = value
+
+    def get(self, key: str) -> T:
+      return self.store[key]
+
+cache = Cache[str]()
+cache.put("foo", "bar")
+print(cache.get("foo"))
+{{</ highlight >}}
+现在 Python 3.12 直接上 <code>T</code>, 像是 Java 泛型的写法，上面的代码可简化为<br/>
+{{< highlight python >}}
+class Cache[T]:
+    def __init__(self):
+        self.store = {}
+
+    def put(self, key: str, value: T):
+        self.store[key] = value
+
+    def get(self, key: str) -> T:
+        return self.store[key]
+{{</ highlight >}}
+省去了使用 Cache 类的代码。<br/><br/>
+type 语句中用泛型，也是直接用表示类型的字符(串)<br/>
+{{< highlight python >}}
+type Point[T] = tuple[T, T]
+p1 = (1.0, 2.0)
+
+type Address[LINE1, LINE2] = tuple[LINE1, LINE2]
+a1 = ('line1', 'line2')
+{{</ highlight >}}
+可结合 Java 的泛型语法来理解。<br/>
+<h3>其他 typing 相关的新特性</h3>
+<h4>用 TypedDict 来准确的注解 **kwargs</h4>
+上面刚回顾了 TypedDict，这就要派上用场，<code>**kwargs</code> 的参数太随意了，只知道是可以用 <code>a=?, b=?, c=?</code> 来传递的 keyword 类型的参数，再就没有具体的限制了。而用 TypedDict 注解 <code>**kwargs</code> 就能被类型系统或 IDE 识别出具体能接受参数的 keywaord<br/><br/>
+直接用官方的例子<br/>
+{{< highlight python >}}
+from typing import TypedDict, Unpack
+
+class Movie(TypedDict):
+  name: str
+  year: int
+
+def foo(**kwargs: Unpack[Movie]):
+  pass
+{{</ highlight >}}
+现在试图调用<br/>
+{{< highlight python >}}
+foo(name="The Matrix", xyz=1999)
+{{</ highlight >}}
+用 mypy 就能检验出参数错误<br/>
+<blockquote>
+test.py:7: note: "foo" defined here<br />
+test.py:10: error: Unexpected keyword argument "xyz" for "foo" [call-arg]<br />
+Found 1 error in 1 file (checked 1 source file)
+</blockquote>
+
+用 <code>ty check test.py</code>，尚不识别 TypeDict 的约束，提示 <code>All checked passed!</code><br/>
+<h4>类似 Java 的 @override 的 typing.override() 装饰器</h4>
+和 Java 中的 @override 是一样的意思，表示覆盖父类中的方法<br/>
+{{< highlight python >}}
+from typing import override
+
+class AAA(object):
+  @override
+  def __str__(self):
+    return "haha"
+{{</ highlight >}}
+对于父类中不存在的方法应用了 @override 也同能被 mypy 检测出来。<br/><br/>
+引入 typing.override  时注意到还有 typing.overload，它可用来模拟出 Python 的重载方法，然而 @overload 装饰的方法却不能有实现，只用能声明支持的重载方法签名，实现要统一写在那个同名的但没有 @overload 装饰的方法中。此处不作引申。<br/>
+<h3>可通过 python -m sqlite3 命令进入 sqlite shell</h3>
+本地没有安装独立的 sqlite3, 用 Python 自带的就行<br/>
+{{< highlight sh >}}
+python -m sqlite3       
+sqlite3 shell, running on SQLite version 3.50.2
+Connected to a transient in-memory database
+
+Each command will be run using execute() on the cursor.
+Type ".help" for more information; type ".quit" or CTRL-D to quit.
+sqlite> create table users(id, name);
+sqlite> insert into users values(1, 'Anna');
+sqlite> select * from users;
+(1, 'Anna')
+{{</ highlight >}}
+
+<h4>python -m uuid 命令产生 uuid</h4><
+连安装 uuid, 或 guid 命令都省了，Python 提供的快捷工具还真不少。<br/>
+<blockquote>
+python -m uuid<br />
+1adc93b0-cea0-42da-ba1d-94a9fbc67d43
+</blockquote>
+
+用 -u {uuid1,uuid3,uuid4,uuid5} 参数选择 uuid 的类型<br/>
+<h3>其他</h3>
+其他更友好的错误建议提示，推导的内联优化， isinstance(), asyncio 的性能提升。每个解释器单独的 GIL(全局解释锁)，这可让子进程更有效的使用多核 CPU。<br/><br/>
+当 <code>type-except*</code> 处理整个 <code>ExceptionGroup</code> 并抛出另一个异常时，该异常不再包装为 ExceptionGroup.<br/><br/>
+新方法 pathlib.Path.walk(), 类似于 os.walk(), 看来有些 os 的操作可考虑用 pathlib 中类似方法。<br/><br/>
+&nbsp;

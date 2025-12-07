@@ -1,0 +1,203 @@
+---
+title: Python 3.11 关键新特性之其他
+url: /python-3-11-key-new-features-others/
+date: 2025-06-21T18:25:47-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/python-logo.png"
+categories:
+  - Python
+tags: 
+  - new features
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14273 
+wpStatus: publish
+views: 70
+lastmod: 2025-06-21T18:25:47-05:00
+---
+
+前面整一篇只讲了 Python 3.11 的新语法特性，异常组与 <code>except*</code>, 这篇说其他的。</p>
+
+<h3>可为异常添加备注</h3>
+在 BaseException 上新加了一个实例方法 add_note(self, note)，在捕获到异常后可进一步润色而无需创建一个新的异常再次抛出。<br/>
+<h3>内置 <a href="https://docs.python.org/3/library/tomllib.html#module-tomllib">tomllib</a> 支持 <a href="https://toml.io/">TOML</a> 配置文件</h3>
+TOML 是 Tom's Obvious Minimal Language, 像 INI 文件，但表述性更强，支持丰富的数据类型。现代新型的 Python 项目依赖管理构建工具都使用了 pyproject.toml 文件，如 <a href="https://python-poetry.org/">Poetry</a>, <a href="https://docs.astral.sh/uv/">uv</a>, 以及 <a href="https://pdm-project.org/">PDM</a>。pyproject.toml 在 Python  3.6 就引入了，见 <a href="https://peps.python.org/pep-0518/">PEF 518</a>，但似乎一直被顽固的 Python -m venv 忽略。<br/><br/>
+从 Python 3.11 开始新加了对 TOML 配置文件的编程接口，像使用 JSON 和 Pickle 一样的 load() 和 loads() 反序列方法，没有序列化方法<!--more--><br/>
+{{< highlight python >}}
+import tomllib
+
+with open("pyproject.toml", 'rb') as f:
+    data =  tomllib.load(f)
+{{</ highlight >}}
+data 得到的是一个 dict[str, Any]。tomllib.loads("&lt;toml_str&gt;") 是从一个 TOML 配置字符串加载为字同典。<br/><br/>
+tracebacks 中用波浪线显示更精确的错误代码的位置，而不仅指示到错误代码行，这个不影响到编程，方便于 Debug<br/><br/>
+<h3>新的 -P 命令行参数和环境变量 PYTHONSAFEPATH 避免了潜在不安全的路径添加到 sys.path 中</h3>
+sys.path 中的列表告诉 Python 解析器从哪里加载脚本或包，模块，见 <a href="https://yanbin.blog/python-module-search-path/">Python 的模块搜索路径</a> 中有对它详尽的描述, 以及可通过环境变量 PYTHONPATH 附加模块的搜索路径。<br/><br/>
+首先看新加的参数 -P 的效果，假如有一段打印  sys.path 内容的代码 demo.py<br/>
+{{< highlight python >}}
+import sys
+print('\n'.join(sys.path))
+{{</ highlight >}}
+不带 -P 参数执行 python demo.py<br/>
+{{< highlight sh >}}
+venv_311/bin/python demo.py
+/Users/yanbin/Workspaces/test-python
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python311.zip
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11/lib-dynload
+/Users/yanbin/Workspaces/test-python/venv_311/lib/python3.11/site-packages
+{{</ highlight >}}
+看到当前路径添加在了 sys.path 的最前端<br/><br/>
+带上 -P 参数执行  python -P demo.py<br/>
+{{< highlight sh >}}
+venv_311/bin/python -P demo.py
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python311.zip
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11/lib-dynload
+/Users/yanbin/Workspaces/test-python/venv_311/lib/python3.11/site-packages
+{{</ highlight >}}
+这样就防止了把当前路径添加进 sys.path, python 解析器只读取当前路径上的 demo.py，而避免了加载当前路径中的其他可能不安全的模块，比如在当前路径中创建与其他库同名的模块，以达到替换实现的目的。<br/><br/>
+对于 python -m module 和 python -c code 或 python 进入 REPL 时加上 <code>-P</code> 参数也能实现一样的阻止当前目录作为模块搜索路径。<br/><br/>
+设置了 PYTHONSAFEPATH 为非空值时，相当于是 python 带了  <code>-P</code> 参数，例如<br/>
+{{< highlight sh >}}
+PYTHONSAFEPATH=xx venv_311/bin/python demo.py
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python311.zip
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11
+/opt/homebrew/Cellar/python@3.11/3.11.13/Frameworks/Python.framework/Versions/3.11/lib/python3.11/lib-dynload
+/Users/yanbin/Workspaces/test-python/venv_311/lib/python3.11/site-packages
+{{</ highlight >}}
+相当于是 python -P demo.py<br/><br/>
+<h3>新增了 TypeVarTuple 支持 Variadic 泛型</h3>
+<h3>TypedDict 中可表示某个 key 是必须还是可选 </h3>
+{{< highlight python >}}
+from typing import TypedDict, NotRequired
+
+class Movie(TypedDict):
+    title: str
+    year: NotRequired[int]
+    
+    
+m1: Movie = {"title": "Black Panther", "year": 2018}
+m2: Movie = {"title": "Star Wars"}
+m3: Movie = {"year": 2022} # TypedDict 'Movie' has missing key: 'title'
+{{</ highlight >}}
+默认 key 是 Required, 如 <code>title: str</code> 相当于是 <code>title: Required[str]</code>. 但 TypedDict 毕竟是 typing 的范畴，Python 解析器执行时没有强制，只是通不过像 mypy 那种工具的关。<br/><br/>
+这里学到了一个新技能，以前想要一个模型类的话，选择是 @dataclass, 或 NamedTuple, 显然用 TypeDict 要方便。<br/><br/>
+<h3>用 Self 来表示方法返回一个自身实例</h3>
+比如一个方法返回自身实例 self, 试图下面那样写<br/>
+{{< highlight python >}}
+class MyLock:
+    def __enter__(self) -> MyLock:
+        self.lock()
+        return self
+{{</ highlight >}}
+Python 解析不过<br/>
+{{< highlight python >}}
+    def __enter__(self) -> MyLock:
+                           ^^^^^^
+NameError: name 'MyLock' is not defined
+{{</ highlight >}}
+因为此时 <code>MyLock</code> 还不存在，但可以用引号扩起来<br/>
+{{< highlight python >}}
+def __enter__(self) -> "MyLock":
+{{</ highlight >}}
+但我们尽量避免用字符串作为类型注解，因为字符串是动态的，在 Python 3.11 中引入的 <code>Self</code> 来解决<br/>
+{{< highlight python >}}
+from typing import Self
+
+class MyLock:
+    def __enter__(self) -> Self:
+        self.lock()
+        return self
+{{</ highlight >}}
+<h3>LiteralString 注解规定函数参数只接受字面常量字符串</h3>
+字符串变量就不行<br/>
+{{< highlight python >}}
+import sys
+from typing import LiteralString
+
+def run_query(name: LiteralString):
+    pass
+
+run_query("select * from students")
+str_var=f"select * from students where {sys.argv[1]}"
+run_query(str_var)  # Expected type 'LiteralString', got 'str' instead
+
+def bar(xxx: LiteralString):
+    run_query(xxx)  # 这是合法的，因为 xxx 也是一个 LiteralString
+{{</ highlight >}}
+这有什么意义呢？在静态代码扫描时确保传入的字符串是安全的，比如不允许通过动态的方式构建一个不安全的 SQL 语句<br/><br/>
+<blockquote>
+select * from students where 1=1; delete from students
+</blockquote>
+
+<h3><a href="https://docs.python.org/3/whatsnew/3.11.html#whatsnew311-pep681:~:text=See-,PEP%20681,-for%20more%20details">PEP 681</a>: Data class transforms</h3><br/><br/>
+dataclass_transform 可用过创建某些共性的模型类，应该可增强 dataclass 的行为。这里打个标记，以后真有需求时再详细研究。<br/><br/>
+<h3>最后学一个 Python 3.9 就支持的在 for 语句中用 <code>*</code> 星号的语法</h3>
+{{< highlight python >}}
+for a, b, c in [(1, 2, 3), (4, 5, 6)]:
+    print(a, b, c)
+
+print('---------')
+
+for a, *b in [(1, 2, 3), (4, 5, 6)]:
+    print(a, b)
+{{</ highlight >}}
+输出<br/>
+<blockquote>
+1 2 3<br />
+4 5 6<br />
+---------<br />
+1 [2, 3]<br />
+4 [5, 6]
+</blockquote>
+
+<h3>总结</h3>
+Python 3.11 从语言上好像没带来太亮眼的新特性，只是到了发布周期必须出一个版本而已。最主要的就是增加了 Exception Group 的 except* 语法，然而似乎应用性不大，如果 <code>except</code> 和 <code>except*</code> 搞混了，不会有语法错误，但极有可能引入替在的 Bug。<br/><br/>
+我们在阅读 What's New In Python 3.11 的时候, <a href="https://docs.python.org/3/whatsnew/3.11.html#improved-modules">Improved Modules</a> 部分虽不是重头戏，最好也别放过。其中描述了哪些 API 已删除，在使用 IDE 写 Python 代码时根据选择的 Python 版本会被识别出来。但新加的 API 还是很有用处的，如<br/><br/>
+datetime.UTC，再也不用写成  datetime.timezone.utc 了<br/><br/>
+EnumMeta 改成了 EnumType<br/><br/>
+新增了 StrEnum 用了专门表示字符串类型的枚举<br/><br/>
+使用  gzip.compress() 时指定 mtime=0 的话(即 gzip.compress(data=..., mtime=0))，压缩变快，因为它用调用 zlib.compress() 操作<br/><br/>
+math 库方面，新增了 math.exp2() 平方操作，因为太常用了。新增了 math.cbrt() 立方根.<br/><br/>
+新增了 operator.call 操作，如果一个 obj 是 callable, obj(*args, **kwargs) 可以写成 operator.call(obj, *args, **kwargs)<br/><br/>
+pathlib 的 glob() 和 rglob() 在 pattern 以路径分隔符(os.sep 或 os.altsep) 结尾的情况只列出目录, 比如下面的代码<br/>
+{{< highlight python >}}
+from pathlib import Path
+
+for p in Path(".").glob('*/'):
+    print(p, p.is_dir())
+{{</ highlight >}}
+Python 3.10 执行<br/>
+<blockquote>
+venv_310/bin/python demo.py<br />
+venv_311 True<br />
+venv_310 True<br />
+test-python.iml False<br />
+test.py False<br />
+.mypy_cache True<br />
+.gitignore False<br />
+venv_312 True<br />
+demo.py False<br />
+venv_313 True<br />
+.idea True
+</blockquote>
+
+Python 3.11 执行<br/>
+<blockquote>
+venv_311/bin/python demo.py<br />
+venv_311 True<br />
+venv_310 True<br />
+.mypy_cache True<br />
+venv_312 True<br />
+venv_313 True<br />
+.idea True
+</blockquote>
+
+增加了 ZipFile.mkdir() 在 ZIP 文件内部创建目录<br/><br/>
+Python 3.11 还没有使用 JIT 编译

@@ -1,0 +1,271 @@
+---
+title: Python 3.10 关键新特性
+url: /python-3-10-new-features/
+date: 2022-06-15T14:14:56-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/python-logo.png"
+categories:
+  - Python
+tags: 
+  - Python
+  - new features
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12415 
+wpStatus: publish
+views: 764
+lastmod: 2025-08-05T17:15:17-05:00
+---
+
+Python 3.10 于 2021-10-04 发布，至今已大半年，目前 AWS 的 Lambda 尚未直接支持，但用 Docker 镜像的方式使用 AWS Lambda 是可以使用 Python 3.10。Python 一年一发布的节奏比 Java LTS 还紧密。下一个版本 Python 3.11 预计在 2022-10-03 发布。在学习 Python 3.10 之前先回顾一下 Python 3.7, 3.8, 3.9 的特性(不想关心之前版本的变迁可直接跳跃到下方的 Python 3.10 新特性去)<br/><br/>
+<a href="/python-3-7-what-is-new/">Python 3.7 所带来的新特性</a><br/>
+<ol>
+    <li>breakpoint()</li>
+    <li>数据类(@dataclass)</li>
+    <li>类型提示强化和延迟注解求值</li>
+    <li>时间精度的提高</li>
+    <li>保证字典的顺序</li>
+    <li>async 和 await 成为关键字</li>
+    <li>asyncio.run() 简化事件循环</li>
+    <li>上下文变量(ContextVar) - 可实现 ThreadLocal 和 SLF4J 的 MDC 功能</li>
+</ol>
+
+<!--more--><br/>
+<a href="/python-3-8-new-features/">体验一下 Python 3.8 带来的主要新特性</a><br/>
+<ol>
+    <li>赋值表达式(:=) -- Walrus Operator</li>
+    <li>可限定只按位置传递参数</li>
+    <li>更精确的类型提示(增强了 Type Hints)</li>
+    <li>用 f-strings 进行简单的调试(f"{name = }" 输出 name = 'Eric'</li>
+    <li>新模块 importlib.metadata</li>
+    <li>Math 和 Statistics 函数</li>
+    <li>更聪明的警告信息</li>
+</ol>
+<br/>
+<a href="/python-3-9-new-features/">Python 3.9 新特性回顾</a><br/>
+<ol>
+    <li>字典的并集操作( d1 | d2)</li>
+    <li>删除字符串前缀和后缀的函数(removeprefix(), removesuffix())</li>
+    <li>更简单的泛型提示(list[str], 而不用 typing.List[str])</li>
+    <li>DateTime 新增时区支持(不再依赖 pytz)</li>
+    <li>shutdown() Executor 时可取消待处理任务</li>
+    <li>random.Random.randbytes() 生成随机字节</li>
+    <li>typing.Annotated 类型提示(distance: Annotated[float, 'feet'] 类型加注解提示)</li>
+</ol>
+<br/>
+回顾完上面后，开始学习 Python 3.10 的新特性, 参考 <a href="https://docs.python.org/3/whatsnew/3.10.html">What's New In Python 3.10</a><br/><br/>
+<h3><del>带圆括号的上下文管理器</del></h3>
+使用 Python 3.9.12 的 <code>with</code> 就可以一次管理个资源，如<br/>
+{{< highlight python >}}
+with (open('test.txt') as f1,         # 外加圆括号后其中语句可分多行写
+      open('test.txt') as f2):
+    ...
+
+# 或者
+with open('test.txt') as f1, open('test.txt') as f2):  # 只能写在同一行
+    ...
+{{</ highlight >}}
+不知道为什么把它作为了 Python 3.10 的新特性，而且经测试 Python 3.9.0 就能用圆括号框住多个资源，Python 3.8 不支持 with 圆括号的语法<br/>
+<h3>更友好的错误提示</h3>
+像 <code>[1,</code> , <code>{a:2, 2:</code> 会提示 <code>'[' was never closed</code> 和 <code>'{" was never closed</code>, 而不是笼统的说 <code>invalid syntax</code>。<br/><br/>
+还有更多的更聪明的错误提示，没必要一一列出，反正也不影响如何书写代码，只是看到了错误信息容易定位错误，多用，谁用谁知道<br/>
+<h3>结构化模式匹配</h3>
+Python 没有 switch 语句，所以不得不用 <code>if...elif..else</code> 语句，不过现在 Python 3.10 从 Scala 学来了更高级的 <code>match...case</code> 语句。模式匹配功能很强大，展开来值得单独写一篇<br/><br/>
+匹配字面值<br/>
+{{< highlight python >}}
+def http_error(status):
+    match status:
+        case 400:
+            print("Bad request")
+        case 404:
+            return "Not found"
+        case 401 | 402 | 403:
+            return "Not allowed"
+        case _:
+            return "Unknown"
+
+print(http_error(400))
+print('--')
+print(http_error(404))
+print(http_error(401))
+print(http_error(405))
+{{</ highlight >}}
+
+执行后输出为<br/>
+<blockquote>
+Bad request<br />
+None<br />
+--<br />
+Not found<br />
+Not allowed<br />
+Unknown
+</blockquote>
+
+Python 的 <code>match...case</code> 是语句，而非表达式，所以它本身不能赋值给变量的。<br/><br/>
+每个 case 后相当于自动加上了 <code>break</code> 语句, <code>case _:</code> 相当于 <code>case default:</code>, case 后的多个匹配可用 <code>|</code> 连接。<br/><br/>
+没有 <code>case _:</code> 的 match 相当于什么也没匹配到，是一个 no-op 操作行为，如果以上函数中拿掉 <code>case _:</code>, <code>http_error(405)</code> 得到的就是 <code>None</code><br/><br/>
+更强大的匹配功能还在后头，比如对类型，类型值的匹配，首先看它如何匹配一个元组，并获取其中的值<br/>
+{{< highlight python >}}
+def test(point):
+    match point:
+        case (0, 0):
+            print("Origin")
+        case (0, y):
+            print(f"{y = }")
+        case ():
+            print("Is a tuple")
+
+test(())
+test((0,3))
+test((0,0))
+{{</ highlight >}}
+执行后输出为<br/>
+<blockquote>
+Is a tuple<br />
+y = 3<br />
+Origin
+</blockquote>
+
+进一步延伸，可以有更丰富的匹配功能<br/>
+<ol>
+    <li>case []:  是一个列表</li>
+    <li>case [1, 3, a]: 匹配前两个值为 1, 3 的三元素列表，第三个元素赋给 a 变量</li>
+    <li>case [1,2, *a]: 结合 Python 的集合拆解功能, 这里匹配至少两元素的列表，头两元素为 1, 2, 其余元素赋给 a 列表</li>
+    <li>case Point(x=0, y=0): 假如声明了类 <code>class Point: x: int; y: int</code>, 它则可匹配到 x=0, y=0 的 Point 对象，</li>
+    <li>case Point(x=xvar, y=yvar): 匹配 Point 类型，并捕获 x, y 的值，用 <code>xvar</code> 和 <code>yvar</code> 引用 x, y 的值</li>
+    <li>case Point(): 匹配 Point 类型，相当于 <code>isinstance(p, Point)</code></li>
+    <li>case [Point(0,0)]: 嵌套匹配 Point(0,0) 单元素列表</li>
+</ol>
+<br/>
+如果用 case Point(x,y), 则会报错<br/>
+<blockquote>
+case Point(x, y):<br />
+TypeError: Point() accepts 0 positional sub-patterns (2 given)
+</blockquote>
+
+因为在 Point 中 x, y 是没有顺序的, 相当于是按名赋值的，只要给 Point 声明一个 <code>__match_args__</code> 则可用 <code>Point(x, y)</code> 进行匹配，完整代码如下<br/>
+{{< highlight python >}}
+class Point:
+    __match_args__ = ("x", "y")
+
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+
+def test(point):
+    match point:
+        case Point(x, y):
+            print(f'{x = }, {y = }')
+
+p = Point(1, 2)
+test(p)
+{{</ highlight >}}
+
+输出为<br/>
+<blockquote>
+x = 1, y = 2
+</blockquote>
+
+<ol start="8">
+    <li>case Point(x, y) if x == y: 加约束条件的匹配</li>
+    <li>case {"name": b, "id": 1}: 匹配字典</li>
+    <li>case {"name": b, **rest}: 匹配字典剩余的项</li>
+    <li>case (Point(x1, y1, Point(x2, y2) as p2): 用 <code>as</code> 关键字捕获子模式</li>
+    <li>匹配枚举值</li>
+</ol>
+
+{{< highlight python >}}
+from enum import Enum
+class Color(Enum):
+    RED = 0
+    GREEN = 1
+
+match color:
+    case Color.RED:
+        ...
+{{</ highlight >}}
+<h3>EncodingWarning 提示</h3>
+增加 -X warn_default_encoding 选项和 <a href="https://docs.python.org/zh-cn/3/using/cmdline.html#envvar-PYTHONWARNDEFAULTENCODING">PYTHONWARNDEFAULTENCODING</a> 来启用相应警告，用于定位由于打开文件编码引起的问题<br/><br/>
+<h3>新的联合类型提示</h3>
+Python 3.10 前的联合类型提示用 typing.Union<br/>
+<blockquote>
+number: Union[int, float]
+</blockquote>
+
+现在直接用 <code>|</code><br/>
+<blockquote>
+number: int | float
+</blockquote>
+
+在进行实例类型判断时也可以用 <code>|</code>, 如<br/>
+<blockquote>
+isinstance(1, int | str)
+</blockquote>
+
+有 <code>|</code> 的写法，对于<br/>
+<blockquote>
+def foo(value: str | None):...
+</blockquote>
+
+就不用写成<br/>
+<blockquote>
+def foo(value: Union[str, None]):...
+</blockquote>
+
+或<br/>
+<blockquote>
+def foo(value: Optional[str]):...
+</blockquote>
+
+<h3>类型别名</h3>
+Python 3.10 之前类型别名和使用是这样写<br/>
+{{< highlight python "hl_lines=1" >}}
+StrCache = 'Cache[str]'
+cache: StrCache = {}
+{{</ highlight >}}
+这样让 <code>StrCache</code> 看起就像是一个值为 <code>Cache[str]</code> 的字符串变量，也确实是，用 <code>type(StrCache)</code> 得到的就是 <code>&lt;class 'str'&gt;</code>.<br/><br/>
+Python 3.10 的写法让它看起来更像是一个类型<br/>
+{{< highlight python "hl_lines=3" >}}
+from typing import TypeAlias
+
+StrCache: TypeAlias = 'Cache[str]'
+cache: StrCache = {}
+{{</ highlight >}}
+因为他们是 type hints 的范畴，所以本质上都是<br/>
+{{< highlight python >}}
+cache: 'Cache[str]' = {}
+# Python 解释器看到的其实只是
+cache = {}
+{{</ highlight >}}
+类型别名用作内置类型提示<br/>
+{{< highlight python >}}
+Card: TypeAlias = tuple[str, str]
+card: Card = ("J", "Heart")
+{{</ highlight >}}
+<h3>更严格的 zip() 函数</h3>
+zip() 函数作用于两个序列，生成 tuple 序列，Python 不要求两个序列等长，只以短序列为准，长序列多出部分被忽略<br/>
+{{< highlight python >}}
+>>> list(zip([1], [2,3]))
+[(1, 2)]
+>>> list(zip(['a', 'b'], [1]))
+[('a', 1)]
+>>> list(zip(['a'], [1, 2]))
+[('a', 1)]
+{{</ highlight >}}
+这会造成两个序列都比较长的时候，得到非期望的结果，多数时候我们应用 <code>zip()</code> 函数想要完全配对。所以在 Python 3.10 中加入了 <code>strict</code> 参数<br/>
+{{< highlight python >}}
+>>> list(zip(['a'], [1, 2], strict=True))
+Traceback (most recent call last):
+  File "<stdin>", line 1, in <module>
+ValueError: zip() argument 2 is longer than argument 1
+{{</ highlight >}}
+最后总结，Python 3.10 的一个关键特性就是结构化模式匹配。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://realpython.com/python310-new-features/">Python 3.10: Cool New Features for You to Try</a></li>
+</ol>

@@ -1,0 +1,401 @@
+---
+title: Python 3.14 新特性学习(第一部分)
+url: /python-3-14-new-features-1/
+date: 2025-10-18T11:57:01-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/python-logo.png"
+categories:
+  - Python
+tags: 
+  - new features
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14432 
+wpStatus: publish
+views: 166
+lastmod: 2025-10-18T12:02:33-05:00
+---
+
+在 AI FIRST 的年代到底还要不要对每个所用语言新特性有所了解呢？就像有了 AI 还需要升级  Python 吗？虽然如今在 ChatGPT 中问一句话就能出来一篇比我想要写的好的多的博客，但不多思考怕会退化。</p>
+<br/>
+Python 3.14 于 2025 年 10 月 7 日发布，也就是前天，比起 Java 的发布节奏还是慢半拍，所以才能跟得上它的步伐。还是老方法，在官方的 <a href="https://docs.python.org/3.14/whatsnew/3.14.html">What's new in Python 3.14</a> 中吸收最原始的滋味，完后再去参考别人家的总结。<br/><br/>
+Python 官方说 Python 3.14 最大的变化包括 t-string(模板字符串)，注解的延迟求值，和子解释器的支持(用以使用自由线程)。再就是标准库的变化 asyncio 的内省功能，支持 Zstandard 压缩，以及 REPL 有了语法高亮了.<br/><br/>
+总体来说这个版本比 Python 3.13 新特性更有亮点，在 Python 3.13 中自由线程是实验性的，在 Python 3.14 可通过子解释器来使用，和自由线程一样，Python 3.13 中的 JIT 需以源代码通过编译选项获得，在 Python 3.14 中 JIT 仍为实验特性，但官方发布的 Python 3.14 二进制版已包含实验性的 JIT 编译器。<br/><br/>
+<!--more-->
+<h3>REPL 支持语法着色高亮显示</h3>
+为什么首先说这个特性，没有为什么。在 IDE 普遍的年代其实 Python 的 REPL 使用场景不多。在 Python 3.13 的 REPL 中首先使用了紫色的提示符，换行自动退格，块编辑，和错误信息的着色显示，代码的关键字等没有高亮显示。在  Python 3.14 中把这一块补齐了，还有更自然的 &lt;Tab&gt; 建议提示，如 import 时多用 &lt;Tab&gt; 键试试; 语法高亮的主题也可以选择。<br/>
+{{< bundle-image src="python3.14-new-features-1.png" width="212px" >}}
+<h3>t-string - 模板字符串</h3>
+这前的 f-string, f 代表 format, 格式字符串是自 Python 3.6 引入的，其实 f-string 用得都还不熟，f-string 需对应到 str.format() 方法，比如它有宽度，对齐等，快捷调用方法等<br/>
+<blockquote>
+<p class="p1"><span class="s1">f"</span>{pi:<span class="s2">10.2</span>f}<span class="s1">"<br />
+f"{name:&lt;10}"<br />
+f"{obj!r}"</span></p>
+</blockquote>
+
+现在又引入了一个 t-string 模板字符串，t 自然就是 template。f-string 是一个字符串，而 t-string 不是一个 String, 它是一个 Template 对象，仅此而已。如何处理该 Template 就自已选择了。<br/><br/>
+参考官方的例子<br/>
+{{< highlight python >}}
+>>> variety = 'Stilton'
+>>> template = t'Try some {variety} cheese!'
+>>> template
+Template(strings=('Try some ', ' cheese!'), interpolations=(Interpolation('Stilton', 'variety', None, ''),))
+>>> type(template)
+<class 'string.templatelib.Template'>
+>>> list(template)
+['Try some ', Interpolation('Stilton', 'variety', None, ''), ' cheese!']
+>>> str(template)
+"Template(strings=('Try some ', ' cheese!'), interpolations=(Interpolation('Stilton', 'variety', None, ''),))"
+>>> template.strings
+('Try some ', ' cheese!')
+>>> template.interpolations
+(Interpolation('Stilton', 'variety', None, ''),)
+>>>
+>>> "".join([item if isinstance(item, str) else str(item.value) for item in template])
+'Try some Stilton cheese!'
+>>>
+>>> variety = "American"
+>>> "".join([item if isinstance(item, str) else str(item.value) for item in template])
+'Try some Stilton cheese!'
+{{</ highlight >}}
+从上面我们可以理解 t-string 是什么，并不能直接转换为字符串的，它内部存有直接字符串字面量，和点位符及将被替代的值，Template 内部的替代值是在运行时确定的，所以改变 'variety' 并不会改变 template 的内部状态。t-string 把最终的字符串如何渲染留给了实现者，如渲染为 HTML 代码，日志格式输出等。<br/><br/>
+<h3>标准库支持多解释器</h3>
+还是直接跳到 Python 3.14 最亮丽的特性吧， 标准库支持多解释器了，这样在单进程中使用多个解释器时，就突破了 GIL 的约束。多线程中即使能用到了多核，由于存在 GIL 也是白搭，启动多个解释器就能更好的发挥多核的性能，子解释器是线程与进程间折衷的产物。<br/><br/>
+其实 CPython 运行时早就支持单进程中多 Python 解释器，自 Python 1.5, 已有超过 20 年的历史，但仅限于使用 <a href="https://peps.python.org/pep-0554/#c-api">C-API</a>，如今在 concurrent.interpreters 模块中开放给了 Python 代码使用多解释器。使用多解释器有两个显著的好处<br/>
+<ol>
+    <li>支持更友好的并发编译模型</li>
+    <li>多核并发</li>
+</ol>
+<br/>
+一句话就是简单的写出适于多核并发的 Python 程序。<br/><br/>
+Python 的并发编程模型有 threading, multiprocessing, 而 threading 在 GIL 的裹挟之下，完全丧失了像其他语言之中多线程的并发能力，multiprocessing 多进程让数据共享有些困难。Python 3.14 的  多个解释器运行在同一个进程当中，既能解决并发，同时数据共享也更容易。<br/><br/>
+与此特性相关的 PEP 是 <a href="https://peps.python.org/pep-0734/">PEP 734 - Multiple Interproeters in the Stdlib</a>, 它的前身是 <a href="https://peps.python.org/pep-0554/">PEP 554</a> -- 这里面描述的内容更易懂。<br/><br/>
+Python 3.14 在 concurrent 包下新增了 interpreters 模块，以前只有模块 futures。可是在当前的 IntelliJ IDEA 2025.2.3 或 PyCharm 2025.2.3 中即使是选择了 Python 3.14 SDK(如虚拟环境)，编辑器都不能识别 <code>concurrent.interpreters</code> 模块，但不影响运行<br/>
+{{< bundle-image src="python3.14-new-features-2.png" width="306px" >}}
+目前想要 IntelliJ IDEA 或 PyCharm 支持 concurrent.interpreters 的话，可以把 Python 3.14 安装目录中的 concurrent/interpreters 拷贝到虚拟环境的 lib/python3.14/site-packages 中让 IDE 当作一个第三方依赖来对待。如果用 Visual Studio Code, 它可以完美支持 import concurrent.interpreters, 因为它根本用着更完美的支持各版本 Python 的新特性。<br/><br/>
+在 concurrent.interpreters 的 __init__.py 中的 __all__ 为<br/>
+{{< highlight python >}}
+__all__ = [
+    'get_current', 'get_main', 'create', 'list_all', 'is_shareable',
+    'Interpreter',
+    'InterpreterError', 'InterpreterNotFoundError', 'ExecutionFailed',
+    'NotShareableError',
+    'create_queue', 'Queue', 'QueueEmpty', 'QueueFull',
+]
+{{</ highlight >}}
+也就是用<br/>
+<blockquote>
+from concurrent.interpreters import *
+</blockquote>
+
+可以直接引入的类和函数，关于主要的 API 还是摘录一些来自于  <a href="https://peps.python.org/pep-0554/">PEP 554</a> 的表格<br/><br/>
+<table style="border-collapse: collapse; width: 100%; height: 120px;">
+<tbody>
+<tr style="height: 24px;">
+<td style="width: 13.8612%; height: 24px;">函数</td>
+<td style="width: 28.7503%; height: 24px;">描述</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 13.8612%; height: 24px;">list_all() -&gt; [Interpreter]</td>
+<td style="width: 28.7503%; height: 24px;">列出进程中所有的解释器</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 13.8612%; height: 24px;">get_current() -&gt; [Interpreter]</td>
+<td style="width: 28.7503%; height: 24px;">获得当前解释器</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 13.8612%; height: 24px;">get_main() -&gt; [Interpreter]</td>
+<td style="width: 28.7503%; height: 24px;">获得主解释器, 主解释器为 Interpreter(0), 其他为 1...</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 13.8612%; height: 24px;">create() -&gt; [Interpreter]</td>
+<td style="width: 28.7503%; height: 24px;">创建一个新的解释器</td>
+</tr>
+<tr>
+<td style="width: 13.8612%;">is_shareable(obj) -&gt; bool</td>
+<td style="width: 28.7503%;">判断一个对象是否在解释器间共享</td>
+</tr>
+</tbody>
+</table>
+<br/>
+Interpreter 实例的属性和方法<br/><br/>
+<table style="border-collapse: collapse; width: 100%; height: 380px;">
+<tbody>
+<tr style="height: 24px;">
+<td style="width: 15.8309%; height: 24px;">函数</td>
+<td style="width: 89.6362%; height: 24px;">描述</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 15.8309%; height: 24px;">id</td>
+<td style="width: 89.6362%; height: 24px;">解释器的 id, 如 0, 1, 2...</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 15.8309%; height: 24px;">is_running() -&gt; bool</td>
+<td style="width: 89.6362%; height: 24px;">解释器是否正在运行</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 15.8309%; height: 24px;">prepare_main(**kwargs)</td>
+<td style="width: 89.6362%; height: 24px;">给解释器绑定值</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 15.8309%; height: 24px;">exec(code, /)</td>
+<td style="width: 89.6362%; height: 24px;">执行代码，代码在当前线程中执行</td>
+</tr>
+<tr style="height: 48px;">
+<td style="width: 15.8309%; height: 48px;">call(callable, /)</td>
+<td style="width: 89.6362%; height: 48px;">
+执行可调用对象(基本就是函数)，返回值被忽略。函数中抛出的异常被传播为 ExecutionFailed 异常。不能直接传递参数，但能用 prepare_main()  来绑定
+这种方式对比 exec(code, /) 要方便些，因为不需要把代码以文本方式存在，import 语句等可写在主程序代码中，但执行时和 exec(code, /) 是一样的，callable import 的语句还是会在解释器在重新解释
+</td>
+</tr>
+<tr style="height: 156px;">
+<td style="width: 15.8309%; height: 156px;">call_in_thread(callable, /) -&gt; threading.Thread</td>
+<td style="width: 89.6362%; height: 156px;">
+在新线程中调用 Interpreter.call(), 返回值被忽略，并且异常不被传播(消声). 它就是下面的快捷方式
+{{< highlight python >}}
+def task():
+    interp.call(func)
+t = threading.Thread(target=task)
+t.start()
+{{</ highlight >}}
+</td>
+</tr>
+<tr style="height: 56px;">
+<td style="width: 15.8309%; height: 56px;">close()</td>
+<td style="width: 89.6362%; height: 56px;">
+销毁解释器
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+接下来将学习如何创建新的解释器来执行代码，以及解释器间数据应如何共享。我们在使用多线程时，代码中看到的全局变量是天然共享的，所以一个线程修改了全局变量会反应到另一个线程中; 而使用多进程(进程池)时，全局变量是隔离的，交换数据涉及到进程间的通信; 解释器间共享数据也不像多线程那么容易，但毕竟多解释器都在同一进程之中，所以共享数据要比进程简单些。<br/><br/>
+<h4>快速回顾一下 Python 多进程的编程方式</h4>
+{{< highlight python >}}
+from multiprocessing import Process
+import os
+
+count = 0
+
+def task(num):
+    global count
+    count += 1
+    print(f"process: {os.getpid()}, in task {num}: {count=}, count id: {id(count)}")
+
+if __name__ == '__main__':
+    p1 = Process(target=task, args=(1, ))
+    p1.start()
+    p1.join()
+    print(f"process: {os.getpid()}, after p1: {count=}, count id: {id(count)}")
+
+    p2 = Process(target=task, args=(2, ))
+    p2.start()
+    p2.join()
+    print(f"process: {os.getpid()}, after p1: {count=}, count id: {id(count)}")
+{{</ highlight >}}
+
+输出结果为<br/>
+<blockquote>
+process: 29616, in task 1: count=1, count id: 4369625024<br />
+process: 29611, after p1: count=0, count id: 4387106720<br />
+process: 29621, in task 2: count=1, count id: 4321030080<br />
+process: 29611, after p1: count=0, count id: 4387106720
+</blockquote>
+
+虽然看到的 <code>count</code> 是一个全局变量，但映射到进程中则会分配为各自的 <code>count=0</code> 变量，进程间互不干涉。如果是多线程来修改  count 的值，则会影响到每一个线程中的 count 值。<br/><br/>
+创建一个解释器用 interpreters.create(), 通过新的解释器执行代码的方法有<br/>
+<ol>
+    <li>exec(self, code, /)</li>
+    <li>call(self, callable, /, *args, **kwargs)</li>
+    <li>call_in_thread(self, callable, /, *args, **kwargs)</li>
+</ol>
+<br/>
+简单的执行一行代码<br/>
+{{< highlight python >}}
+from concurrent import interpreters
+interp = interpreters.create()
+print('before')
+interp.exec('import time\nprint("during, sleep 3 seconds...")\ntime.sleep(3)')
+print('after')
+{{</ highlight >}}
+用 interp.exec() 执行一行代码时需要用各种转义符处理换行，退格。上面的代码输出为<br/>
+<blockquote>
+before<br />
+during, sleep 3 seconds...<br />
+after
+</blockquote>
+
+观察输出可判断主解释器是会等待子解释器执行完成后再接着往下走<br/><br/>
+<h4>执行更大的代码片断</h4>
+用多行字符串的方式<br/>
+{{< highlight python >}}
+
+interp.exec("""
+import time
+print("during, sleep 3 seconds...")
+time.sleep(3)
+for i in range(3):
+    print(f"count {i}")
+""")
+{{</ highlight >}}
+或者用 textwrap<br/>
+{{< highlight python >}}
+import textwrap as tw
+
+interp.exec(tw.dedent("""
+    import time
+    print('inside interpreter sleep 3 seconds...')
+    time.sleep(3)
+    """))
+{{</ highlight >}}
+以上的 tw.dedent(...) 返回的就是一个 str 类型，字符串的值为<br/><br/>
+<blockquote>
+"\nimport time\nprint('inside interpreter sleep 5 seconds...')\ntime.sleep(5)\n"
+</blockquote>
+
+为什么有了 <code>"""</code>, 还要 textwrap, 因为 textwrap 配 """ 有了与 Java 的多行字符串相同的效果，它会自动找到左边纵向的起始线，否则不用 textwrap 的话，interp.exec("""&lt;code&gt;""") 代码必须顶格写成<br/>
+{{< highlight python >}}
+interp.exec("""
+import time
+print('inside interpreter sleep 3 seconds...')
+time.sleep(3)
+""")
+{{</ highlight >}}
+如果没有 textwrap 的情况下写成<br/>
+{{< highlight python >}}
+interp.exec("""
+    import time
+    print('inside interpreter sleep 3 seconds...')
+    time.sleep(3)
+    """)
+{{</ highlight >}}
+将会出现错误<br/>
+<blockquote>
+IndentationError: unexpected indent
+</blockquote>
+
+既然 exec() 可接收大段的 Python 代码，当然可以把代码写在一个外部文件中，然后读入执行，只要保证代码格式就行。<br/>
+<h4>往解释器中传递值</h4>
+{{< highlight python >}}
+interp = interpreters.create()
+
+x=3
+
+interp.prepare_main(a=x, b=2)
+interp.exec(tw.dedent("""
+    from concurrent.interpreters import get_current
+    print(f'{get_current()}: {a = }, {b = }')
+    a = a + 10
+    print(f'{get_current()}: {a = }')
+    """))
+
+print(f"{interpreters.get_current()}: {x = }")
+{{</ highlight >}}
+对于输出应该不会有什么惊讶, 值传递，解释器中显然无法撼动外面的变量值<br/>
+<blockquote>
+Interpreter(1): a = 3, b = 2
+Interpreter(1): a = 13
+Interpreter(0): x = 3
+</blockquote>
+
+int 是值传递，那如果 prepare_main 传递一个列表类型的值是不是能在解释器内部修改内容呢？<br/>
+{{< highlight python >}}
+x = 3
+y = [2]
+print(interpreters.is_shareable(x))
+print(interpreters.is_shareable(y))
+interp.prepare_main(b=y)
+{{</ highlight >}}
+上面的代码输出并有异常<br/>
+<blockquote>
+True
+False
+interp.prepare_main(b=y)
+~~~~~~~~~~~~~~^^^^^
+concurrent.interpreters.NotShareableError: [2] does not support cross-interpreter data
+</blockquote>
+
+所以只能传递用 prepare_main 传递 sharable 的变量。<br/><br/>
+Shareable 的对象用 interp.prepare_main 直接传递，如果借助于 interpreters.Queue 来传递数据的话，只要对象是可被 Pickle 序列化的就能传递。假如对象实现了协议 <code>buffer</code>, 数据将被包裹为 <code>memoryview</code> 对象在解释器间共享。多数情况下我们都会选择用 interpreters.Queue 进行解释器间的数据交换，即使解释器间的同步也要靠它。<br/><br/>
+解释器也可能交互 Mutable 的数据，以下将进行验证。<br/><br/>
+用 interpreters.Queue 解释器间交换数据的例子<br/>
+{{< highlight python >}}
+from concurrent import interpreters
+import textwrap as tw
+
+x = [2]
+y = bytearray(b"Hello, World!")
+
+data1 = interpreters.create_queue()
+data1.put(x)
+
+data2 = memoryview(y)
+
+interp = interpreters.create()
+interp.prepare_main(data1=data1, data2=data2)
+interp.exec(tw.dedent("""
+    x = data1.get()
+    x.append(3)
+    print(x)  # [2, 3]
+    data1.put(x)
+    
+    data2[7:13] = b"Python"
+    print(data2.tobytes())  # b'Hello, Python!'
+"""))
+
+print(x) # [2]
+print(data1.get()) # [2, 3]
+print(data2.tobytes()) # b'Hello, Python'
+{{</ highlight >}}
+这是一个 Interpreter[0] 与 Interpreter[1] 两个解释器间双向交换数据的例子, 分别使用了 interpreters.Queue 和  memoryview 两种方式，从上可看到<br/><br/>
+<ol>
+    <li>由 interpreters.Queue 共享的数据是 Immutable, 它们实际经由 Pickle 进行序列化/反序列化交换的</li>
+    <li>而通过 memoryview  内存映射方式交换数据，相当于直接操作相同的内存区域。解释器间对数据的修改会相互影响，所以数据也不需用 Pickle 序列化，但要考虑数据竞争的情况</li>
+</ol>
+
+<h4>新的 InterpreterPoolExecutor</h4>
+和 ThreadPoolExecutor 和 ProcessPoolExecutor 一样，Python 3.14 也为 Interpreter 提供了 InterpreterPoolExecutor<br/>
+<blockquote>
+from concurrent.futures import InterpreterPoolExecutor
+</blockquote>
+
+即能像线程/进程池一样的使用解释器池。<br/><br/>
+要重点关注 InterpreterPoolExecutor 的以下几个方法<br/>
+{{< highlight python >}}
+__init__(self, max_workers=None, thread_name_prefix='',
+                 initializer=None, initargs=()):
+
+prepare_context(cls, initializer, initargs):
+        return WorkerContext.prepare(initializer, initargs)
+
+submit(self, fn, /, *args, **kwargs)
+
+map(self, fn, *iterables, timeout=None, chunksize=1, buffersize=None)
+
+shutdown(self, wait=True, *, cancel_futures=False)
+{{</ highlight >}}
+
+下面是应用 InterpreterPoolExecutor 的演示<br/>
+{{< highlight python >}}
+from concurrent.futures import InterpreterPoolExecutor
+from concurrent.interpreters import get_current
+
+def task(a, b):
+    print(f"hello from interpreter {get_current()}, {a = }, {b = }")
+    b.append('c')
+    print(b) # ['a', 'b', 'c']
+
+x = ['a', 'b']
+with InterpreterPoolExecutor() as executor:
+    executor.submit(task, 123, x)
+
+print(x) # ['a', 'b']
+{{</ highlight >}}
+程序输出查看代码中的注释。Python 3.14 只是仿照了 ThreadPoolExecutor 那样实现，实际上解释器间的数据传递仍然是要用到 prepare_main() 或 interpreters.Queue。<br/><br/>
+另外，和多线程，多进程一样，实际使用多解释器时应多加留意异常是如何传播的，避免执行当中出现了异常，因没有往外传播，或传播的异常类型有别于期待的类型而造成难以定位问题。<br/><br/>
+学习完多解释器后，发现篇幅太大了，有必要另行一篇学习其余的 Python 3.14 新特性，故为本文冠上第一部分，后续会有第二部分。

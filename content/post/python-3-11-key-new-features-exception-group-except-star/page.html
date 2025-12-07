@@ -1,0 +1,252 @@
+---
+title: Python 3.11 关键新特性之异常组与 except*
+url: /python-3-11-key-new-features-exception-group-except-star/
+date: 2025-06-21T11:00:15-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/python-logo.png"
+categories:
+  - Python
+tags: 
+  - new features
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14132 
+wpStatus: publish
+views: 51
+lastmod: 2025-06-21T13:23:40-05:00
+---
+
+还是在三年前记录的 <a href="/python-3-10-new-features/">Python 3.10 关键新特性</a>，一晃 Python 3.13 都出来了。Python 遵循着主版本每 12 个一更新，并提供 5 年支持的节奏。所以自 Python 3.10 于 2021 年 10 月发布以来，又有了 3.11, 3.12, 3.13，还得紧紧跟一跟，踏实的了解每个版本新特性，总由着 AI 帮忙恐难得到自己想要的最优代码。学习必要实践，不然在 Google 或是 ChatGPT 中一问 "Python 3.11 key new features", 到的结果无疑是漂亮的，但只粗略一读，并无半点体会。</p>
+<br/>
+学习 Python 3.11 新特性的入口是官方的 <a href="https://docs.python.org/3/whatsnew/3.11.html">What's New In Python 3.11</a>. 同时结合 Google 的相关资料，拣些确实对自己有大益处的学。<br/><br/>
+官方说的 Python 3.11 比 Python 3.10 要快个  10-60% 估计不是我们升级 Python 的主要动力，一般来说语言或组件能升级的话尽量跟着形势跑，不然越是滞后便越难升级，最终只能原地等死。<!--more--><br/>
+<h3>PEP 654: 异常组与  except*</h3>
+比较认真的阅读了 <a href="https://peps.python.org/pep-0654/">PEP 654 - Exception Groups and except*</a>, 给人的感觉就是大大增加编程的复杂性，为了在某些情况下能捕获到多个执行异常，而不是第一个收到的异常，这一特性的引进似乎有些得不尝失。<br/><br/>
+Python 3.11 内建了 ExceptionGroup 和 BaseExceptionGroup 类，并增加了 <code>except*</code> 语法。 可能在实际项目中使用 ExceptionGroup 和 <code>except*</code> 的需求不多，但阅读到别人代码中的 except* 写法不要惊慌。<br/><br/>
+BaseException(object), BaseExceptionGroup(BaseException), ExceptionGroup(BaseExceptionGroup, Exception), Exception(BaseException)<br/>
+{{< highlight text >}}
+                object
+                   |
+           +---------------+
+           | BaseException |
+           +---------------+
+               /      \
+              /        \
+ +--------------+   +---------------------+
+ |   Exception  |   | BaseExceptionGroup  |
+ +--------------+   +---------------------+
+           \             /
+            \           /
+         +--------------------+
+         |  ExceptionGroup    |
+         +--------------------+
+{{</ highlight >}}
+ExceptionGroup 和 BaseExceptionGroup 除异常消息外，还包含一个异常列表, 前者 list[Exception], 后者是 list[BaseException]。比如声明一个 ExceptionGroup 实例<br/>
+{{< highlight python >}}
+eg = ExceptionGroup(
+    "one",
+    [
+        TypeError(1),
+        ExceptionGroup(
+            "two",
+            [TypeError(2), ValueError(3)]
+        ),
+        ExceptionGroup(
+            "three",
+            [OSError(4)]
+        )
+    ]
+)
+{{</ highlight >}}
+用 traceback.print_exception(eg) 更显示出分组层次。<br/><br/>
+对 ExceptionGroup 还能进行 subgroup 和 split 操作，比如 split<br/>
+{{< highlight python >}}
+type_errors, other_errors = eg.split(lambda e: isinstance(e, TypeError))
+{{</ highlight >}}
+split 之后，type_error 和 other_errors 都是 ExceptionGroup 类型，如果 eg 中没有 TypeError 类别的异常，则 type_errors 将会是 NoneType<br/><br/>
+下面来看 <code>except*</code> 产生的效果，Python 的 <code>except</code> 本身就能同时捕获多种类型的异常，如<br/>
+{{< highlight python >}}
+def f(v: int):
+    if v == 1:
+        raise TypeError(1)
+    elif v == 2:
+        raise KeyError(2)
+    else:
+        raise ValueError(3)
+
+import sys
+
+try:
+    f(int(sys.argv[1]))
+except (TypeError, ValueError) as e:
+    print(f"caught exception: {repr(e)}, type: {type(e)}")
+{{</ highlight >}}
+当传入参数为 1 和 3 时分别输出<br/>
+<blockquote>
+python demo.py 1<br />
+caught exception: TypeError(1), type: &lt;class 'TypeError'&gt;
+python demo.py 3<br />
+caught exception: ValueError(3), type: &lt;class 'ValueError'&gt;
+</blockquote>
+
+如果直接把 <code>except</code> 换成 <code>except*</code> 会怎么样呢？<br/>
+{{< highlight python >}}
+try:
+    f(int(sys.argv[1]))
+except* (TypeError, ValueError) as e:
+    print(f"caught exception: {repr(e)}, type: {type(e)}")
+{{</ highlight >}}
+在 Python 3.11 之前的版本，如 Python 3.10 有语法错误<br/>
+{{< highlight sh >}}
+venv_310/bin/python demo.py 1
+  File "/Users/yanbin/Workspaces/test-python/demo.py", line 35
+    except* (TypeError, ValueError) as e:
+          ^
+SyntaxError: invalid syntax
+{{</ highlight >}}
+但 Python 3.11 开始是合法的，执行效果为<br/>
+<blockquote>
+venv_311/bin/python demo.py 1<br />
+caught exception: ExceptionGroup('', (TypeError(1),)), type: <class 'ExceptionGroup'>
+venv_311/bin/python demo.py 3<br />
+caught exception: ExceptionGroup('', (ValueError(3),)), type: <class 'ExceptionGroup'>
+</blockquote>
+
+在 Python 3.11 中能用 <code>except</code> 和 <code>except*</code> 两种方式捕获多种异常，这很容易带能潜在的异常，比如在针对异常代码(消息)进行逻辑处理时就不一样了。比如不小心多加了一个 * 号写成了下面的代码<br/>
+{{< highlight python >}}
+except* (TypeError, ValueError) as e:
+    if isinstance(e, TypeError):
+        print("do something")
+{{</ highlight >}}
+
+就是一个 Bug 了，因为 <code>except*</code> 后的 e 永远不会是 TypeError.<br/><br/>
+except* 的设计初衷是与 ExceptionGroup 一同工作的，用来捕获普通异常(被称作祼异常(Naked Exception) 时会自动把异常包装为 ExceptionGroup。<br/><br/>
+比如前面的<br/>
+<blockquote>
+TypeError(1) 封装成了 ExceptionGroup("", [TypeError(1)]) 
+</blockquote>
+
+所以用 <code>except*</code> 捕获了祼异常后，只能去 e.exceptions 中去找具体的异常类型，或用 split, subgroup 去找。<br/><br/>
+<code>except*</code> 是用来从 ExceptionGroup 异常组中检索关注的异常<br/>
+{{< highlight python >}}
+eg = ExceptionGroup(
+    "one",
+    [
+        TypeError(1),
+        ExceptionGroup(
+            "two",
+            [TypeError(2), ValueError(3)]
+        ),
+        ExceptionGroup(
+            "three",
+            [OSError(4)]
+        )
+    ]
+)
+
+try:
+    raise eg
+except* (TypeError, ValueError) as e:
+    print(f"caught exception: {e!r}, type: {type(e)}")
+{{</ highlight >}}
+* 这里刚学到 <code>f"{e!r}</code>" 就是 <code>f"{repr(e)}</code> 的简单写法<br/><br/>
+执行效果<br/>
+{{< highlight python >}}
+caught exception: ExceptionGroup('one', [TypeError(1), ExceptionGroup('two', [TypeError(2), ValueError(3)])]), type: <class 'ExceptionGroup'>
+  + Exception Group Traceback (most recent call last):
+  |   File "/Users/yanbin/Workspaces/test-python/demo.py", line 34, in <module>
+  |     raise eg
+  | ExceptionGroup: one (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | ExceptionGroup: three (1 sub-exception)
+    +-+---------------- 1 ----------------
+      | OSError: 4
+      +------------------------------------
+{{</ highlight >}}
+改动 <code>except*</code> 只捕获 ValueError<br/>
+{{< highlight python >}}
+try:
+    raise eg
+except* ValueError as e:
+    print(f"caught exception: {e!r}, type: {type(e)}")
+{{</ highlight >}}
+输出的信息如下<br/>
+{{< highlight python >}}
+  + Exception Group Traceback (most recent call last):
+  |   File "/Users/yanbin/Workspaces/test-python/demo.py", line 34, in <module>
+  |     raise eg
+  | ExceptionGroup: one (3 sub-exceptions)
+  +-+---------------- 1 ----------------
+    | TypeError: 1
+    +---------------- 2 ----------------
+    | ExceptionGroup: two (1 sub-exception)
+    +-+---------------- 1 ----------------
+      | TypeError: 2
+      +------------------------------------
+    +---------------- 3 ----------------
+    | ExceptionGroup: three (1 sub-exception)
+    +-+---------------- 1 ----------------
+      | OSError: 4
+      +------------------------------------
+caught exception: ExceptionGroup('one', [ExceptionGroup('two', [ValueError(3)])]), type: <class 'ExceptionGroup'>
+{{</ highlight >}}
+读到这里大概更会怀疑为何要 ExceptionGroup 和 except*。<br/><br/>
+本想用一篇覆盖全部关键的 Python 3.11 的新特性，写到这里，已经不可能了，只能关注这一个。<br/><br/>
+下面继续看 <code>raise</code> 和 <code>raise e</code> 的差别<br/><br/>
+对于普通异常<br/>
+{{< highlight python >}}
+try:                                                   |    try:
+    raise ValueError(1)                                |        raise ValueError(1)
+except ValueError as e:                                |    except ValueError as e:
+    raise e                                            |        raise
+
+Traceback (most recent call last):                     |    Traceback (most recent call last):
+  File "/Users/yanbin/demo.py", line 36, in <module>   |        File "/Users/yanbin/demo.py", line 34, in <module>
+    raise e                                            |            raise ValueError(1)
+  File "/Users/yanbin/demo.py", line 34, in <module>   |    ValueError: 1
+    raise ValueError(1)                                |
+ValueError: 1                                          |
+{{</ highlight >}}
+从语法中看似 <code>raise e</code> 与 <code>raise</code> 是一样的，都是把当前 except 捕获的异常直接扔出去了，但 <code>raise e</code> 会增加一个异常栈，而 <code>raise</code> 则不会<br/><br/>
+对于 ExceptionGroup 的 raise e 与 raise 也有类似的效是<br/>
+{{< highlight python >}}
+try:
+    raise ValueError(1)
+except* ValueError as e:
+    raise e
+
+  + Exception Group Traceback (most recent call last):
+  |   File "/Users/yanbin/Workspaces/test-python/demo.py", line 43, in <module>
+  |     raise e
+  | ExceptionGroup:  (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "/Users/yanbin/Workspaces/test-python/demo.py", line 41, in <module>
+    |     raise ValueError(1)
+    | ValueError: 1
+    +------------------------------------
+
+{{</ highlight >}}
+
+和<br/>
+{{< highlight python >}}
+try:
+    raise ValueError(1)
+except* ValueError as e:
+    raise
+
+  | ExceptionGroup:  (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "/Users/yanbin/Workspaces/test-python/demo.py", line 41, in <module>
+    |     raise ValueError(1)
+    | ValueError: 1
+    +------------------------------------
+{{</ highlight >}}
+学习到此，仍然觉得 Python 3.11 引入的异常组与 <code>except*</code> 并没有带来太大的便利性。它被设计用来把多个异常封装到 ExceptionGroup 中，然后用 <code>except*</code> 来拆包匹配所关注的异常。这与执行代码分散的抛出多个异常，最后用 except 分别捕获不同类型的异常好像并没有大不同。或者像 Rust 那样，执行代码返回 Either(result, exception) 这样的处理方式也行。<br/><br/>
+目前对 ExceptionGroup 和 <code>except*</code> 只能说是知道了，幸许到以后才能体验到它的优雅。

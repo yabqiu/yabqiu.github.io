@@ -1,0 +1,315 @@
+---
+title: Python 3.9 新特性回顾
+url: /python-3-9-new-features/
+date: 2022-05-05T16:21:21-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/python-logo.png"
+categories:
+  - Python
+tags: 
+  - new features
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12386 
+wpStatus: publish
+views: 858
+lastmod: 2022-05-06T11:18:26-05:00
+---
+
+Python 3.10 虽已于 2021/10/04 发布，但目前主要使用的 Python 版本仍然是 3.9。之前有两篇介绍了 Python 3.7 和 3.8 带来的新特性</p>
+
+<ol>
+    <li><a href="/python-3-7-what-is-new/">Python 3.7 所带来的新特性</a></li>
+    <li><a href="/python-3-8-new-features/">体验一下 Python 3.8 带来的主要新特性</a></li>
+</ol>
+<br/>
+于此，再补充一下 Python 3.7 和 3.8 各自的发布日期是 2018/06/27 和 2019/10/14。Python 3.9 是在 2020/10/05 发布，由此看出 Python 是每年一发布。<br/><br/>
+每个版本的主要新特性就是它们的亮点，不关注新特性也就不能很好的掌握这种语言，除非是直接使用汇编或字节码指令，他们的变迁比较缓慢。<br/><br/>
+对于以 Python 3.9 为现阶段基准版本使用来说，更有必要了解一下 Python 3.9 的新特性，不然别人一见代码就仿佛是以二战时的打法应对现代战争。<br/><br/>
+Python 3.9 主要有哪些新特征呢？总结起来就是<br/><br/>
+字典的更新/合并, 字符串新增删除前/后缀的方法，datetime 支持时区了, Executor.shutdown() 可取消未执行的任务，类型提示可直接用 list[str], dict[str, int] 这样表示泛型<!--more--><br/><br/>
+下面那张对于我们快速了解他们有很大的帮助<br/><br/>
+{{< bundle-image src="python3.9-new-features.jpeg" >}}
+<h3>字典的并集</h3>
+Python 的集合(set) 有交集(&amp;), 并集(|), 和差集(-) 操作，在 3.9 中两个字典也能进行并集操作，有相同的键的话，右边覆盖左边的值<br/>
+{{< highlight python >}}
+>>> d1 = {'a': 1, 'b': 2}
+>>> d2 = {'a': 5, 'c': 3}
+>>> d1 | d2
+{'a': 5, 'b': 2, 'c': 3}
+>>> d2 | d1
+{'a': 1, 'c': 3, 'b': 2}
+{{</ highlight >}}
+覆盖规则与集合的并集(|)是一样的。字典并集结果是一个新字典, 不影响原有的字典，字典目前还没有交集(&amp;)与差集(-)  操作。<br/><br/>
+并集并同时赋值(|=)，类似数字的 +=, *= 等操作，字典的 |= 操作就是之前版本的 d1.update(d2) 操作，所以本质上还是并集操作<br/><br/>
+{{< highlight python >}}
+>>> d1 = {'a': 1, 'b': 2}
+>>> d2 = {'a': 5, 'c': 3}
+>>> d1 |= d2
+>>> d1
+{'a': 5, 'b': 2, 'c': 3}
+{{</ highlight >}}
+<code>d1 |= d2</code> 相当于 <code>d1 = d 1 | d2</code>, 也就是 <code>d1.update(d2)</code> 的新写法br/>
+<h3>删除字符串前缀和后缀的方法</h3>
+Python 3.9 新加了 str.removeprefix(prefix) 和 str.removesuffix(suffix) 两个方法<br/>
+{{< highlight python >}}
+>>> 's3://bucket_one/data.zip'.removeprefix('s3://')
+'bucket_one/data.zip'
+>>> 's3://bucket_one/data.zip'.removesuffix('data.zip')
+'s3://bucket_one/'
+{{</ highlight >}}
+之前要删除字符串的前缀或后缀，本人是用字符串切片的方式<br/>
+{{< highlight python >}}
+>>> 's3://bucket_one/data.zip'[-len('data.zip'):]
+'data.zip'
+>>> 's3://bucket_one/data.zip'[0: -len('data.zip'):]
+'s3://bucket_one/'
+{{</ highlight >}}
+<h3>更简单的泛型类型提示</h3>
+Python 3.9 对于集合的泛型可以直接用 list[str], dict[str, str] 形式<br/>
+{{< highlight python >}}
+def f1(names: list[str]):
+    print(names)<br/><br/>
+
+def f2(names: dict[str, int]):
+    pass
+{{</ highlight >}}
+
+这在 Python 3.9 中可以通过 mypy <br/><br/>
+在 Python 3.9 之前的版本运行 mypy 会提示<br/>
+<blockquote>
+test.py:1: error: "list" is not subscriptable, use "typing.List" instead<br />
+test.py:5: error: "dict" is not subscriptable, use "typing.Dict" instead<br />
+Found 2 errors in 1 file (checked 1 source file)
+</blockquote>
+
+所以需要改成<br/>
+{{< highlight python >}}
+from typing import List, Dict
+
+
+def f1(names: List[str]):
+    print(names)
+
+
+def f2(names: Dict[str, int]):
+    pass
+{{</ highlight >}}
+就是眼看着是 list, dict 却要变换成 List 和 Dict，但在 Python 3.9 不支持泛型的话是可以直接用 list, dict，如<br/>
+{{< highlight python >}}
+def f1(names: list):
+    print(names)
+
+
+def f2(names: dict):
+    pass
+{{</ highlight >}}
+以上代码在 Python 3.7 中可以通过 mypy 的检查。<br/>
+<h3>DateTime 新增时区支持</h3>
+Python 3.9 之前支持时区要用一个第三方的 <code>pytz</code> 库，而现在有了 zoneinfo 模块，不再需要 <code>pytz</code> 了<br/>
+{{< highlight python >}}
+>>> from zoneinfo import ZoneInfo
+>>> from datetime import datetime
+>>> dt = datetime(2020, 10, 31, 12, tzinfo=ZoneInfo("America/Chicago"))
+>>> dt
+datetime.datetime(2020, 10, 31, 12, 0, tzinfo=zoneinfo.ZoneInfo(key='America/Chicago'))
+>>> dt.tzname()
+'CDT'
+{{</ highlight >}}
+<h3>shutdown() Executor 时可取消待处理任务</h3>
+在 Python 3.9 中，Executor(包括 ThreadPoolExecutor 和 ProcessPoolExecutor) 的 shutdown() 方法只有一个参数 wait=True|False。该参数的意义只代表 shutdown()  函数是同步还是异步调用，总是会等待所有任务结束再停止进程。<br/><br/>
+借机重新复习一下 Python 线程池的行为<br/>
+{{< highlight python "hl_lines=17" >}}
+import time
+from concurrent.futures import ThreadPoolExecutor as Executor
+from sys import stdout as console
+
+
+def task(num):
+    time.sleep(2)
+    console.write(f'task {num} done\n')
+
+
+if __name__ == '__main__':
+    executor = Executor(3)
+
+    for i in range(1, 5):
+        executor.submit(task, i)
+
+    executor.shutdown(wait=False)
+    console.write('here\n')
+{{</ highlight >}}
+执行上面代码的输出类似<br/>
+<blockquote>
+here<br />
+task 1 done<br />
+task 3 done<br />
+task 2 done<br />
+task 4 done
+</blockquote>
+
+几点说明：<br/>
+<ol>
+    <li>把上面的 executor.shutdown(wait=False) 去掉的行为也是一样的，所有任务执行完后，程序能正常退出。因为线程池中线程的 Daemon 是 False, 这和 Java 的 ThreadPoolExecutor 不一样，不 shutdown 是不结束进程的</li>
+    <li>executor.shutdown()  后不能再提交新任务了，这与 Java 的线程池是一样的</li>
+    <li>把 ThreadPoolExecutor 换成  ProcessPoolExecutor 也是一样的输出，但使用 ProcessPoolExecutor 时，执行代码一定要放到 <code>if __name__ == '__main__'</code> 中</li>
+    <li>用 sys.stdout.write() 代替 print 来输出内容到控制台是为了避免多线程环境下不同线程的 print 会输出到同一行中，因为 print 是类似于异步操作，除非用锁</li>
+</ol>
+
+现在改 executor.shutdown(wait=False) 为<br/>
+<blockquote>
+executor.shutdown(wait=True)   # 默认为 True
+</blockquote>
+
+后的输出为<br/>
+<blockquote>
+task 1 done<br />
+task 3 done<br />
+task 2 done<br />
+task 4 done<br />
+here
+</blockquote>
+
+即 executor.shutdown(wait=True) 等待所有的任务完成后再执行，all done<br/><br/>
+开始体验 executor.shutdown() 的 cancel_futures 参数，默认为 False<br/>
+{{< highlight python >}}
+executor.shutdown(wait=True, cancel_futures=True)
+{{</ highlight >}}
+
+执行效果<br/>
+<blockquote>
+task 1 done<br />
+task 2 done<br />
+task 3 done<br />
+here
+</blockquote>
+
+解释：因为线程池的大小为 3， 在执行 shutdown() 时已有三个任务开始执行，所以上面的 shutdown() 会等待所已被执行任务结束，但取消在队列中等待的任务。<br/><br/>
+executor.shutdown() 的 wait 搭配 cancel_futures 表示是否等待已开始执行或已提交任务(未开始执行的任务被取消)的结束后再往下执行<br/>
+<h3>random.Random.randbytes() 生成字节</h3>
+以往要生成随机字符串要用 <code>os.urandom(size)</code>, <code>os.getrandom(size)</code>(Linux 下才有的方法), 或 <code>secrets.token_bytes(size)</code>, 但他们是伪随机数，想要得到随机数需自行加入种子，现在有了 random.Random.randbytes() 就变得轻松一些了<br/><br/>
+实例<br/>
+{{< highlight python >}}
+from random import Random<br/><br/>
+
+random = Random()
+print(random.randbytes(10))
+{{</ highlight >}}
+类似输出<br/>
+<blockquote>
+b'\x9f\x12 \x15%\xb4\x8e\xcat\x13'
+</blockquote>
+
+<h3>"".replace("", s, n) 的返回值</h3>
+直接看例子<br/><br/>
+在 Python 3.8 中<br/>
+{{< highlight python >}}
+>>> "".replace("", 's', 1)
+''
+>>> "".replace("", 's')
+'s'
+{{</ highlight >}}
+在 Python 3.9 中<br/>
+{{< highlight python >}}
+>>> "".replace("", 's', 1)
+'s'
+>>> "".replace("", 's')
+'s'
+{{</ highlight >}}
+更象是修复了一个 Bug<br/>
+<h3>typing.Annotated 类型提示</h3>
+这一特性也有必要感受一下，它对于写偏静态语言代码风格有很大的帮助。Python 3.0 最早给变量或函数的返回值加提示时可以用任意的字符串，更像是个注释，像这样<br/>
+{{< highlight python >}}
+def speed(distance: 'feet', time: 'seconds') -> 'miles per hour':
+    pass
+{{</ highlight >}}
+但这样做 <code>mypy</code> 就不干了<br/>
+<blockquote>
+$ mypy test.py
+test.py:1: error: Name "feet" is not defined
+test.py:1: error: Name "seconds" is not defined
+test.py:1: error: Invalid type comment or annotation
+Found 3 errors in 1 file (checked 1 source file)
+</blockquote>
+
+要想混过 <code>mypy</code> 这一关，必须是明确的已知类型，如<br/>
+{{< highlight python >}}
+def speed(distance: float, time: float) -> float:
+    pass
+{{</ highlight >}}
+希望同时具备参数或返回值的类型与注释特性就要用到 typing.Annotated<br/>
+{{< highlight python "hl_lines=1 4-5" >}}
+from typing import Annotated
+
+def speed(distance: Annotated[float, 'feet'], time: Annotated[float, 'seconds'])\
+        -> Annotated[float, 'miles per hour']:
+    pass
+
+speed(2.1, 3)
+{{</ highlight >}}
+<code>mypy test.py</code> 没问题，但是把最后一行写成<br/>
+{{< highlight python >}}
+speed(2.1, '3')
+{{</ highlight >}}
+<code>mypy</code> 就不干了<br/>
+<blockquote>
+test.py:9: error: Argument 2 to "speed" has incompatible type "str"; expected "float"<br />
+Found 1 error in 1 file (checked 1 source file)
+</blockquote>
+
+Annotated 与 Sphinx 文档<br/><br/>
+Sphinx 可用来生成 Python 的 API 文档, 首先需要安装 sphinx<br/>
+<blockquote>
+pip install sphinx
+</blockquote>
+
+然后就可以用 Sphinx 的命令。下面是一个实际生成 Sphinx 文档的例子<br/>
+<ol>
+    <li>创建文件  test.py，内容为<br />
+{{< highlight python >}}
+from typing import Annotated
+
+def speed(distance: Annotated[float, 'feet'], time: Annotated[float, 'seconds'])\
+        -> Annotated[float, 'miles per hour']:
+    pass
+{{</ highlight >}}
+</li>
+    <li>在命令行中，进到 test.py 文件所在目录下，执行<br />
+<br />
+sphinx-apidoc -fF -o docs ./<br />
+<br />
+会在当前目录中生成 docs 目录<br />
+<br />
+</li>
+    <li>编辑 docs/conf.py 文件, 去掉其下三行前的注释启用它们<br />
+{{< highlight python >}}
+import os
+import sys
+sys.path.insert(0, '/Users/yanbin/demo')
+{{</ highlight >}}
+上面是启用后的代码，假设 test.py 所在的目录是 /Users/yanbin/demo。或者写成
+{{< highlight python >}}
+import os
+import sys
+sys.path.insert(0, os.path.abspath('../'))
+{{</ highlight >}}
+
+如果前面未生成 docs 目录而是用的 <code>sphinx-apidoc -fF -o ./ ./</code> 命令的话就无需动 conf.py 文件<br/><br/>
+</li>
+    <li>再回到命令行容器，进到  docs 目录，并执行<br />
+<br />
+make html<br />
+<br />
+注：如果是中途有改动 docs/conf.py 文件，记得在 make html 之前执行 make clean, 或用 make clean html 相继执行，否则输出或达不到我们的预期<br />
+就会生成相应的 html 文档，我们可以打开 file:///Users/yanbin/demo/docs/_build/html/test.html, 看到的就是<br />
+       {{< bundle-image src="python-3.9-annotated-sphinx-1-800x144.png" width="511px" >}}
+</ol>
+
+这和 def speed(distance: float, time: float) -&gt; float 的写法生成的文档没有区别。可是 Annoated 中的 <code>feet</code> 和 <code>seconds</code> 在文档中表现不出来。<br/><br/>
+
+要了解完整的 Python 3.9 新特性请参见官方的 <a href="https://docs.python.org/3/whatsnew/3.9.html">What's New In Python 3.9</a>

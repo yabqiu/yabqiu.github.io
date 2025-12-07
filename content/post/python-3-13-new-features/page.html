@@ -1,0 +1,299 @@
+---
+title: Python 3.13 新特性学习
+url: /python-3-13-new-features/
+date: 2025-09-28T18:48:43-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/python-logo.png"
+categories:
+  - Python
+tags: 
+  - new features
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14414 
+wpStatus: publish
+views: 352
+lastmod: 2025-09-28T18:51:06-05:00
+---
+
+相比于 Java 的每半年一个版本, 跟踪学习 Python 每年一版本要轻松一些. 虽然实际上 Java 是每两年一个 LTS 版, 但它的新特性却是逐个版本释放出来. 也终于赶在 Python 3.14 将在预计的 2025-10-07 发布之前能够学习总结一下当前的 Python 3.13 的新特性.</p>
+<br/>
+还是老办法, 从官方的 <a href="https://docs.python.org/3/whatsnew/3.13.html">What's New In Python 3.13</a> 中学习, 所以写作本文的目的就是阅读 What's New In Python 3.13 的学习笔记.<br/><br/>
+Python 3.13 最大的变化就是 REPL(Read-Evaluate-Print Loop) Python 控制台交互界面, 还有实验性的支持自由线程模型(free-threaded mode) - 即所谓的可禁用全局解释锁(Global Interpreter Lock), 和JIT(Just-In-Time) 编译器. 禁用 GLI 和使用 JIT 都可以让 Python 的执行性能得到提升.<br/><br/>
+<h3>更友好的 REPL 交互界面</h3>
+Python 3.13 的 python 控制台一下子把早先的 <a href="https://bpython-interpreter.org/">bpython</a> 和 <a href="https://ipython.org/">ipython</a> 的饭碗给抢了, 虽然 bpython 和 ipython 比 Python 3.13 的 REPL 要强很多, 但毕竟控制台下只是用来随手简单测试 Python 代码, 也就更不太可能单独安装第三方的 bpython 和 ipython 了.<!--more--><br/><br/>
+看看 Python 3.13 的控制台比之前的有哪些改进, 首先输入 python 进入后看到的提示符是紫色的 <code>&gt;&gt;&gt;</code>, 续行时的提示符 <code>...</code> 也是紫色的.<br/>
+<h4>自动退格</h4>
+比如输入 def foo(): 回车后下行自动退四格<br/>
+<blockquote>
+def foo():<br />
+    # 光标自动退到这里
+</blockquote>
+
+<h4>历史代码以多行呈现, 并可进行多行编辑</h4>
+比如之前输入过代码<br/>
+{{< highlight python >}}
+>>> def foo():
+...     print("hello")
+...     print("world")
+>>>
+{{</ highlight >}}
+后按上方向键后呈现的是上面方法 foo() 的全部三行代码, 并可对该多行代码整体编辑, 而不是像原来那样每次上方向键逐行呈现.  但是 exit 退出之后, 再 python3.13 进到 REPL 后, 上方向键也变成逐行显示了.<br/>
+<h4>REPL 中直接支持 <code>help</code>, <code>exit</code>, 和 <code>quit</code> 命令</h4><
+括号可以省去, 不用写成 <code>help()</code>, <code>exit()</code>, <code>quit()</code> 函数调用, 想想我之前不知道多少次碰到输入 exit 后得到提示<br/>
+<blockquote>
+&gt;&gt; exit<br />
+Use exit() or Ctrl-D (i.e. EOF) to exit
+</blockquote>
+
+现在只要 exit 了. 不过在 Python 3.13 还未普及之前 exit() 更保险.<br/>
+<h4>错误提示中有颜色</h4>
+下图左边为 Python 3.13, 右面为 Python 3.12<br/><br/>
+{{< bundle-image src="python3.13-new-features-1-800x135.png" width="632px" >}}
+<h4>有更多的快捷键可用</h4>
+在 REPL 界面中, 按 F1 进入 <code>help&gt;</code>, 按 <code>F2</code> 进浏览历史输入, 按 <code>F3</code> 是到 <code>(paste)</code>, 可贴入更大段的代码, 在 Python 3.12 中 <code>F1</code>, <code>F2</code>, 和 <code>F3</code> 键是不起任何效果的.<br/><br/>
+用环境变量 PYTHON_COLORS=0 或 NO_COLOR=1 可以禁用 REPL 的颜色, 不过何必呢, 除非某些时候(如远端执行或子进程)不想得到颜色控制符号时会用到.<br/><br/>
+<h3>改进了错误消息显示</h3>
+和 REPL 时一样, 假如用 python test.py 执行脚本时, 也能用颜色高亮显示错误信息. 同时显示的错误信息也越来越有利于我们快速定位到问题所在, 这是一个谁用谁知道的好处, 当然如果用 AI 来分析错误信息的话, 好处就没那么明显了.<br/><br/>
+<h3>自由线程 CPython</h3>
+这是一个实验性的特性, 在下一个版本 Python 3.14 中正式支持. 注意只在 CPython 中有, 除了 CPython, 相信很少人用 PyPy. 可能有一个单独的执行程序 python3.13t 或  python3.13t.exe 支持自由线程, 检查了一下我本机 macOS 下的 Python3.13 不存在  python3.13t 这个执行文件. 如果从 CPython 源代码编译, 加 <code>--disable-gil</code> 选项编译就会生成 python3.13t 或 python3.13t.exe.<br/><br/>
+GIL 可通过环境变量 PYTHON_GIL=0, 或参数 <code>-X gil=0</code> 关闭,  我在本地试了下<br/>
+<blockquote>
+$ ~ export PYTHON_GIL=0<br />
+$ ~ python3.13<br />
+Fatal Python error: config_read_gil: Disabling the GIL is not supported by this build<br />
+Python runtime state: preinitialized 
+</blockquote>
+
+没法关闭 GIL, 所有 sys._is_gil_enabled() 总是 True<br/><br/>
+那找一个别人做好的 Docker 镜像还试下吧<br/>
+<blockquote>
+docker run -it ikeszvpvb9ye/python3.13-nogil-jit:latest
+</blockquote>
+
+然后<br/>
+<blockquote>
+root@402ff43a34a0:/# python3.13 -VV<br />
+Python 3.13.0 experimental free-threading build (main, Oct 16 2024, 22:43:49) [GCC 13.2.0]<br />
+root@402ff43a34a0:/# python3.13t -VV<br />
+Python 3.13.0 experimental free-threading build (main, Oct 16 2024, 22:43:49) [GCC 13.2.0]<br />
+root@402ff43a34a0:/# python3.13<br />
+Python 3.13.0 experimental free-threading build (main, Oct 16 2024, 22:43:49) [GCC 13.2.0] on linux<br />
+Type "help", "copyright", "credits" or "license" for more information.<br />
+>&gt;&gt; import sys<br />
+>&gt;&gt; sys._is_gil_enabled()<br />
+False
+</blockquote>
+
+那要开始体验一下关闭 GIL 后多线程产生的竞争问题, 用以下代码 test.py<br/>
+{{< highlight python >}}
+from threading import Thread
+
+count = 0
+
+if __name__ == '__main__':
+    def add_numbers():
+        global count
+        for i in range(100000):
+            count += 1
+
+    thread1 = Thread(target=add_numbers)
+    thread2 = Thread(target=add_numbers)
+
+    thread1.start()
+    thread2.start()
+
+    thread1.join()
+    thread2.join()
+
+    print(count)
+{{</ highlight >}}
+
+用传统的开启了 GIL 的方式执行<br/>
+<blockquote>
+for i in {1..5}; do python3.13 -X gil=1 test.py; done<br />
+200000<br />
+200000<br />
+200000<br />
+200000<br />
+200000
+</blockquote>
+
+不管多少次, 结果永远是 200000, 因为同一时候只有一个线程获取 count 的值, 并加 1, 所以 count 是线程安全的.<br/><br/>
+而禁用 GIL 会如何呢? 再次执行<br/>
+<blockquote>
+for i in {1..5}; do python3.13 -X gil=0 test.py; done<br />
+109640<br />
+109229<br />
+114238<br />
+106383<br />
+109404
+</blockquote>
+
+简直惨不忍睹, 可以想见很多次线程操作都是取了一个旧的 count, 再加 1, 等于是白加了.<br/><br/>
+当然, 这是一个负面的例子, 并不是用来证明关闭了 GIL 的破坏性, 而是用以说明我们确实能够关闭掉 GIL, 从而在某些时候需要真正利用到多核 CPU 时 Python 能为我们带来显著的性能提升.<br/><br/>
+<h3>实验性的 JIT(Just In Time) 编译器</h3>
+这是一个在许多非本地二进制代码语言早已存在的机制, 如 Java, C# 早就有 JIT, 不明白为何 Python 时至今日才想到加入 JIT, 因为 JIT 又不像关闭 GIL 那样会带来巨大的兼容性, 也许 Python 认为靠 JIT 提升那点性能不值当.<br/><br/>
+这也是要求在编译 CPython 阶段用 <code>--enable-experimental-jit</code>  选项开启, 官方发行的 CPython 二进制版都未开启 JIT.  如果要从源码构建, 可以参考如下方式<br/>
+{{< highlight python >}}
+$ docker run -it ubuntu
+
+# apt update
+# apt install build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev libbz2-dev
+# apt install -y wget python3 clang
+wget https://www.python.org/ftp/python/3.13.7/Python-3.13.7.tgz
+tar -xf Python-3.13.7.tgz
+cd Python-3.13.7
+./configure --disable-gil --enable-experimental-jit
+make
+make altinstall
+{{</ highlight >}}
+需要 LLVM, 所以得事先安装 clang<br/><br/>
+完后用<br/>
+<blockquote>
+python3.13 -m sysconfig | grep _Py_JIT
+</blockquote>
+
+可以看到 JIT  相关的信息, 未启 JIT 的话看不到任何输出. Python 没有类似于 sys._is_jit_enabled() 函数<br/><br/>
+同样可以用前面那个 Docker 镜像来体验<br/>
+<blockquote>
+docker run -it ikeszvpvb9ye/python3.13-nogil-jit:latest
+</blockquote>
+
+不过怎么知道 Python 执行中是否有 JIT 在参考就不得而知了, 这完全是 Python 解释器的内部行为.  通过环境变量 PYTHON_JIT 为 0 或 1 来禁用或启用 JIT.<br/><br/>
+<h3>支持移动平台</h3>
+支持像 <code>arm64-apple-ios</code>, <code>arm64-apple-ios-simulator</code>, <code>aarch64-linux-andrioid</code>, <code>x86_64-linux-android</code>, 苹果和 Android 目标平台, 以及 32 位的 <code>arm-linux-androideabi</code>, <code>i686-linux-android</code> 移动平台.<br/><br/>
+<h3>其他主要的语言特性变化</h3>
+<h4>docstring 会去除掉不必要前导空格</h4>
+对于下面同样的代码<br/>
+{{< highlight python >}}
+>>> def spam():
+...     """
+...         This is a docstring with
+...           leading whitespace.
+...
+...         It even has multiple paragraphs!
+...     """
+...
+... spam.__doc__
+{{</ highlight >}}
+在 Python 3.13 的 REPL 中显示为<br/>
+<blockquote>
+'\nThis is a docstring with\n  leading whitespace.\n\nIt even has multiple paragraphs!\n'
+</blockquote>
+<br/>
+而在 Python 3.12 的 REPL 中显示为<br/>
+<blockquote>
+'\n        This is a docstring with\n          leading whitespace.\n\n        It even has multiple paragraphs!\n    '
+</blockquote>
+
+有点像 Java 的 """ 多行字符串那样, 会找到某条左对齐线去掉每行中不必要的前导空格.<br/>
+<h4>类作用域的注解可包含 Lambda 或推导</h4>
+以下代码在 Python 3.13 可通过, 但在 Python 3.12 中出错<br/>
+{{< highlight python >}}
+class C[T]:
+    type Alias = lambda: T
+{{</ highlight >}}
+Python 3.12 中的错误为<br/>
+<blockquote>
+type Alias = lambda: T<br />
+                       ^^^^^^^^^<br />
+SyntaxError: Cannot use lambda in annotation scope within class scope
+</blockquote>
+<br/>
+<h4>REPL 存储历史代码的 .python_history 文件可以用环境变量 PYTHON_HISTORY 修改</h4>
+<h4>str.replace() 支持 count 参数, 用于替代多少次, str.replace(ol, new, /, count=-1)</h4>
+<h4>新增了  dbm.sqlite3 SQLite 后端模块</h4>
+<h4>base64 新增了 z85encode() 和 z85decode() 函数</h4>
+compileall,  concurrent.futures, multiprocessing 默认 worker 线程数由 os.process_cpu_count() 而不再是  os.cpu_count(). 这两者有何区别呢? os.cpu_count() 返回物理 CPU 总内核数, 而 os.process_cpu_count() 是返回当前进程可用的 CPU 内核数, 比如为 Docker 容器指定的 CPU 内核数时, os.cpu_count()  总是返回缩主机的 CPU 内核数目,  大于所分配的资源, 反而可能会引起性能问题. <br/><br/>
+<h4>新增了 random 命令, 用法是</h4>
+<blockquote>
+python3.13 -m random --help<br />
+usage: random.py [-h] [-c CHOICE [CHOICE ...] | -i N | -f N] [input ...]
+</blockquote>
+
+比如产生 1 到 100 之间的随机数 python3.13 -m random -i 100<br/><br/>
+<h4>新的 ReadOnly 标记 TypedDict 中的成员为只读属性</h4>
+{{< highlight python >}}
+from typing import NotRequired, ReadOnly, TypedDict
+
+class Movie(TypedDict):
+    name: ReadOnly[str]
+    year: ReadOnly[NotRequired[int | None]]
+
+movie: Movie = {"name": "Inception", "year": 2010, }
+
+movie["name"] = "changed"
+{{</ highlight >}}
+
+用 mypy 校验的话显示<br/>
+<blockquote>
+error: ReadOnly TypedDict key "name" TypedDict is mutated [typeddict-readonly-mutated]
+</blockquote>
+
+ReadOnly  只能用于  TypeDict 的成员, 不能应用于 @dataclass 的成员, 下面的代码用 mypy 校验错误为<br/>
+{{< highlight python >}}
+from dataclasses import dataclass
+
+@dataclass()
+class Point:
+    x: ReadOnly[int]
+    y: int
+{{</ highlight >}}
+错误<br/>
+<blockquote>
+error: ReadOnly[] can be only used in a TypedDict definition [valid-type]
+</blockquote>
+
+注: 除了用 mypy 外, pyright 也能做类似的事.<br/><br/>
+<h4>新增类型收窄注解 TypeIs</h4>
+可以说是  TypeGuard 的增强版本. TypeGuard 从来也没用过, 需要时再深入研究.<br/><br/>
+<h4>新增 is_protocol() 方法</h4>
+Python 的鸭子类型不需要显式的继承, 只要看起来像就行, 但也能用 typing.Protocol 先定义一只鸭子, 看下面的例子<br/>
+{{< highlight python >}}
+from typing import Protocol, is_protocol
+
+
+class Drivable(Protocol):
+    def draw(self) -> None:
+        ...
+
+class Circle:
+    def draw(self) -> None:
+        print("Drawing a circle")
+
+class Square(Protocol):
+    def draw(self) -> None:
+        print("Drawing a square")
+
+print(is_protocol(Drivable))  # True
+print(is_protocol(Circle))    # False
+print(is_protocol(Square))    # True
+{{</ highlight >}}
+is_protocol() 全局函数用来判断类是否继承自 Protocol<br/><br/>
+<h4>类中可用 typing.Final 字段</h4>
+{{< highlight python >}}
+from typing import Final, final
+
+@final
+class Connection:
+    TIMEOUT: Final[int] = 10
+
+class X(Connection): # This will raise a mypy error
+    TIMEOUT = 20  # This will raise a mypy error
+{{</ highlight >}}
+把  @final 也一并学了,  它和  Final 各表示什么意思, 只要往 Java 语言特性靠就行了. <br/><br/>
+用 mypy 检查的错误是<br/>
+<blockquote>
+error: Cannot inherit from final class "Connection" [misc]<br />
+error: Cannot assign to final name "TIMEOUT" [misc]
+</blockquote>
+
+看来 typing 中的每一个类型都值得看一看, 应大致了解一下它们是干什么的, 对于做  SDK 会很有帮助.<br/><br/>
+<h4>移除了 2to3, 新时代接触 Python 3 的人早已不知道 Python 2 为何物了</h4>
+可以开始准备迎接 Python 3.14 了.

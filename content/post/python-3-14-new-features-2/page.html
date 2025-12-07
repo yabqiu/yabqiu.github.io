@@ -1,0 +1,235 @@
+---
+title: Python 3.14 新特性学习(第二部分)
+url: /python-3-14-new-features-2/
+date: 2025-10-19T00:43:57-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/python-logo.png"
+categories:
+  - Python
+tags: 
+  - new features
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14448 
+wpStatus: publish
+views: 181
+lastmod: 2025-10-19T12:15:45-05:00
+---
+
+前一篇 <a href="/python-3-14-new-features-1/">Python 3.14 新特性学习(第一部分)</a> 基本就是被 Python 3.14 标准库的多解释器霸屏，所以另起一篇继续 <a href="https://docs.python.org/3.14/whatsnew/3.14.html">What's new in Python 3.14</a> 中其他几个重要新特性。<br/><br/>
+<h3>PEP 765: finally 代码块中的控制流</h3>
+编译器在检测到 finally 代码块存在 <code>return</code>, <code>break</code>, 或 <code>continue</code> 语句, 会触发 SyntaxWarning. 原因也很简单, 可以反问自己一句, 在 finally 放上 return, break, 或 continue 语句想干什么, 还想跳出 finally 语句块?<br/><br/>
+用 Python 3.13 和 3.14 测试下面的代码<br/>
+{{< highlight python >}}
+def foo():
+    try:
+        ...
+    finally:
+        return
+        print(123)<br/><br/>
+foo()
+{{</ highlight >}}
+<!--more-->
+分别用 python3.13 和 python3.14 执行<br/>
+<blockquote>
+$python3.13 test.py<br />
+$python3.14 test.py<br />
+test.py:5: SyntaxWarning: 'return' in a 'finally' block<br />
+return
+</blockquote>
+
+Python 3.14 以前不会有任何警告，但代码的执行结果是对的，只是在 return 后的代码是无效且多余的.<br/><br/>
+
+<h3>except 和 except* 捕获多个异常时可省略圆括号</h3>
+{{< highlight python >}}
+try:
+    ...
+except KeyError, ValueError:
+    ...
+{{</ highlight >}}
+
+以上代码在 Python 3.13 中报错<br/>
+<blockquote>
+except KeyError, ValueError:
+             ^^^^^^^^^^^^^^^
+SyntaxError: multiple exception types must be parenthesized
+</blockquote>
+
+必须写成<br/>
+{{< highlight python >}}
+try:
+    ...
+except (KeyError, ValueError):
+    ...
+{{</ highlight >}}
+
+然而当要在 except 中 as ex 时要引用捕获到的异常时, 不管是 Python 3.13 还是 Python 3.14 又得把括号加回去<br/>
+{{< highlight python >}}
+try:
+    ...
+except (KeyError, ValueError) as ex:
+    print(str(ex))
+{{</ highlight >}}
+
+写成 <code>except KeyError, ValueError as ex:</code> 语法是错误的。一般情况下捕获到的异常都会要做点什么事情，看来这种改进不能带来多少实效。<br/><br/>
+<h3 class="translated"><a class="pep reference external" href="https://peps.python.org/pep-0768/"><strong>PEP 768</strong></a>: 安全的外部调试器接口</h3>
+该特性会给 IDE 工具，或远程调试带来便利，相对应的命令是 <code>python -m pdb -p 1234</code>。本节中以下内容直接摘自：<a href="https://docs.python.org/zh-cn/3.14/whatsnew/3.14.html#whatsnew314-remote-debugging">https://docs.python.org/zh-cn/3.14/whatsnew/3.14.html#whatsnew314-remote-debugging</a><br/><br/>
+<p class="translated">Python 3.14 引入了一个零开销的调试接口，它允许调试器和性能分析工具安全地附加到正在运行的 Python 进程而不会停止或重启它们。 这显著加强了 Python 的调试能力，意味着不安全的替代方案已不再需要。</p>
+
+<p class="translated">新的接口为附加调试器代码提供了安全的执行点而无需修改解释器的正常执行路径或增加任何运行时开销。 因此，相关工具现在可以实时地对 Python 应用程序进行检查和交互，这对于高可用性系统和生产环境来说是非常关键的能力。</p>
+
+<p class="translated">出于便捷性考虑，本接口是在 <a class="reference internal" title="sys.remote_exec" href="https://docs.python.org/zh-cn/3.14/library/sys.html#sys.remote_exec"><code><span class="pre">sys.remote_exec()</span></code></a> 函数中实现的。</p>
+
+<h3>自由线程模式的改进</h3>
+Python 3.14 对自由线程模式进行了改进，这是不能直接感受到的，自由线程已经转正，非实验性的，不过仍为可选，所以默认仍有 GIL。想要获得自由线程的 Python 仍然需要通过源代码，用 --disable-gil 编译选项禁用 GIL 构建自己的二进制版本，官方并未直接提供相应的二进制安装文件。<br/><br/>
+用 <code>uv</code> 的话，可直接安装到开启了自由线程(禁用了 GIL) 的 Python 版本，如在 mac OS 下<br/>
+<blockquote>
+$ uv python install 3.14t
+Installed Python 3.14.0rc2 in 6.86s
+  + cpython-3.14.0rc2+freethreaded-macos-aarch64-none (python3.14t)
+$ python3.14t
+Python 3.14.0rc2 free-threading build (main, Sep 2 2025, 14:17:48) [Clang 20.1.4 ] on darwin
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import sys
+>>> sys._is_gil_enabled()
+False
+</blockquote>
+
+用命令 <code>uv python list --only-downloads</code> 可查看可下载的所有 Python 二进制版本，尚未看到标注了 <code>JIT</code> 的版本。<br/><br/>
+<h3>二进制版本提供了选的 JIT 支持</h3>
+官方提供的 macOS 和  Windows 平台的 Python 二进制版提供了可选的 JIT 支持，用 <code>PYTHON_JIT=1</code> 开启，默认未开启，自己构建的话用 <code>--enable-experimental-jit=yes-off</code> 编译选项。实际中请自行谨慎评估使用。<br/><br/>
+在本机用 <code>brew install python@3.14</code> 安装的 Python 3.14 试了下<br/>
+{{< highlight python >}}
+$ python3.14
+Python 3.14.0 (v3.14.0:ebf955df7a8, Oct  7 2025, 08:20:14) [Clang 16.0.0 (clang-1600.0.26.6)] on darwin
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import sys
+>>> sys._jit.is_available()
+True
+>>> sys._jit.is_enabled()
+False
+>>> sys._jit.is_active()
+False
+>>> exit
+$ PYTHON_JIT=1 python3.14
+Python 3.14.0 (v3.14.0:ebf955df7a8, Oct  7 2025, 08:20:14) [Clang 16.0.0 (clang-1600.0.26.6)] on darwin
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import sys
+>>> sys._jit.is_enabled()
+True
+>>> sys._jit.is_active()
+False
+{{</ highlight >}}
+用上  JIT 带来性能改善可能为 -10% ～ +20%，因地制宜吧。<br/><br/>
+<h3>PEP 649 和 PEP 749: 标注的迟延求值</h3>
+在 Java 中 Annotation, 即 @Value 的形式，是注解的意思，而 Python 的标注(Annotation，但中文翻译通常不称作注解) 是指 typing hints -- 类型提示，Python 中的 @value 形式的语法有个不同的名词，叫做装饰器(Decoration)。<br/><br/>
+Python 是动态类型的语言，解释器一直不要求静态类型，但它在版本演进当中又在不停的就 typing 方式增强类型标注，在规范利用类型提示的情况下，再结合 mypy, pytype, pyright, ruff 等工具的检查，可用 Python 写出伪强类型风格的代码。再有一些 Python 框架，如 FastAPI 在某些时候依赖于类型标注，尽管如此，Python 也没有发展出一个 TypeScript 之于 JavaScript 那样的真静态语言。<br/><br/>
+Python 标注的延迟早在 Python 3.7(<a href="https://peps.python.org/pep-0563/">PEP 563</a>) 就有增强，比如下面这段代码<br/>
+{{< highlight python >}}
+#from __future__ import annotations   # Python 3.7 需要这行才能执行，而 Python 3.8 及之后可以省略
+
+class Tree:
+    def __init__(self, left: Tree, right: Tree) -> None:
+        self.left = left
+        self.right = right
+{{</ highlight >}}
+在 Python 3.7 中有语法错误，报的错误是<br/>
+<blockquote>
+NameError: name 'Tree' is not defined
+</blockquote>
+
+因为在定义 __init__(self, left: Tree, right: Tree) 是，Tree 还没有完全创建出来，所以还不能引用，但是只要提前引入<br/>
+<blockquote>
+from __future__ import annotations
+</blockquote>
+
+就没问题了，因为达成了 <code>Tree</code> 的延迟求值<br/><br/>
+在 Python 3.6 中无法引入 <code>from __future__ import annotations</code>, 因为它不存在。而发展到 Python 3.8 及之后，这句引入 annotations 的都能省去了。<br/><br/>
+回到 Python 3.14，看它对延迟(即需要时)求值有了什么更新的动作。<br/><br/>
+它的大致实现是在对象上新加了一个 dunder(双下划线 - double underscore) 属性 <code>__annotate__</code>, 解释代码时把标注暂放到该属性中，运行时再从中取出相应标拿出来求值而体现在 <code>__annotations__</code>(该属性于 Python 3.0 就有)。也就是 Python 的对象标注是由它的 __annotations__ 属性描述的。<br/><br/>
+比如下面的代码<br/>
+{{< highlight python >}}
+# from __future__ import annotations  # Python 3.14 之前需要这行才能执行，而 Python 3.14 及之后可以省略
+
+def foo(x: int = 3, y: MyType = None) -> float:
+    return 2
+
+class MyType:
+    pass
+{{</ highlight >}}
+在 Python 3.13 中无法执行，错误为<br/>
+<blockquote>
+NameError: name 'MyType' is not defined
+</blockquote>
+
+但在最前面加上<br/>
+<blockquote>
+from __future__ import annotations
+</blockquote>
+
+就没问题了，仿佛 Python 对 Annotation 的演进就是一直在尽力去除该行 <code>from __future__ import annotations</code> 代码, 该引入的功能是为了转换所有的标注为字符串的形式。<code>from __future__ import annotations</code> 将会在 Python 3.13 生命周期结束后删除，因此以后尽量不使用它。<br/><br/>
+打印 foo.__annotations__ 的内容为<br/>
+<blockquote>
+{'x': <class 'int'>, 'y': <class '__main__.MyType'>, 'return': <class 'float'>}
+</blockquote>
+
+那么问题又来了，Python 3.14 知道推迟到运行时来求 MyType 的类型，那么 mypy 那种纯静态检查的工具能理解得了吗？答案是，不行<br/><br/>
+用 pip install mypy 安装的版本为 mypy-1.18.2<br/>
+<blockquote>
+$ mypy test_annotation.py
+test.py:3: error: Incompatible default for argument "y" (default has type "None", argument has type "MyType") [assignment]
+test.py:3: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+test.py:3: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+Found 1 error in 1 file (checked 1 source file)
+</blockquote>
+
+前面有 <code>from __future__ import annotations</code> 也是一样的错误，看来 mypy 也得适配才行，不能仅满足于纯静态检测。<br/><br/>
+对象的 <code>__annotations__</code> 是可读写的，所以通过定制其中的值也能影响到对象的实际标类型，并可用 <code>inspect.get_annotations(foo)</code>, <code>typing.get_type_hits(foo)</code> 获取到实际的注解类型<br/>
+{{< highlight python >}}
+def foo(x = 3, y = "abc"):
+    ...
+
+foo.__annotations__ = {'x': 'int', 'y': 'MyType', 'return': 'float'}
+{{</ highlight >}}
+可是这样做又有什么意义呢？因为 IDE 是大概率是无法提示出 y 是 'MyType' 类型，或者返回值是 float 而非 None.<br/><br/>
+调用 foo.__annotate__(1) 或  foo.__annotate__(2) 都会看到<br/>
+<blockquote>
+{'x': <class 'int'>, 'y': <class '__main__.MyType'>, 'return': <class 'float'>}
+</blockquote>
+
+好，具体的实现细节就不继续深挖了。<br/><br/>
+现在有了一个新的库 <code>annotationlib</code> 用来替代的 inspect 的相关功能，如<br/>
+<blockquote>
+annotationlib.get_annotations(foo, format=[Format.VALUE | Format.FORWARDREF | Format.STRING])
+</blockquote>
+
+Python 的类型标注系统是由 annotation 和 typing 两个部件来支撑的，在 annotationlib 中还提供了更多的辅助方法，对于接近于元编程的人员才会有详细了解的需求。<br/><br/>
+标注的延迟求值也体现在 REPL 中，如<br/>
+<blockquote>
+a: X | None = None
+</blockquote>
+
+在 Python 3.13 中会出错<br/>
+<blockquote>
+NameError: name 'X' is not defined
+</blockquote>
+
+在 Python 3.14 中就没问题，可以在后面声明一个 class X: ...<br/><br/>
+<h3>其他一些特性</h3>
+下面快速罗列一下其余的新特性<br/><br/>
+<ol>
+    <li>改进的错误信息显示 -- 好像一直在改进，不用特别关注，用了就知道</li>
+    <li>新模块 compression 支持各种压缩算法，如 compression.lzma, compression.bz2 compression.gzip, compression.zlib 等，新代码要使用到压缩的话，尽量使用 compression 模块，而非 import gzip 那样。compression.zstd 是新压缩算法，对 Zstandard 的支持也加入到了 tarfile, zipfile, 和  shutil 模块当中。</li>
+    <li>新的 <code>python -m asyncio ps PID</code> 和 <code>python -m asyncio pstree PID</code> 用于诊断正在运行当中的 asyncio 程序，如某些 Python Web 框架应用</li>
+    <li>增强式垃圾回收， 对于较大的堆内在，最大停顿时间将减少一个数级或更多。Python 也用了分代(新生代和老年代)收集，不知道是不是 Python 从一开始垃圾回收算法就实现的特别出色，因为隔壁 Java 的垃圾回收算法不断的在改进，而 Python 垃圾回收的话题不多。</li>
+    <li><code>python -m calendar</code> 会以彩色高亮标记当前日期, 这个 calendar  模块就像是 mac OS 下  <code>cal -y</code> 命令显示的内容，所以基本不会用到它</li>
+    <li>python -m http.server 可通过 --tls-cert, --tls-key, --tls-password-file 等参数，由 http.server.HTTPSServer 类支持 HTTPS 服务</li>
+    <li>提供了新的 <code>python -m json ...</code> 命令，可对 json 数据进行简单的处理，并且在控制台下以彩色高亮显示 JSON 内容<br />
+usage: python3.14 -m json [-h] [--sort-keys] [--no-ensure-ascii] [--json-lines] [--indent INDENT | --tab | --no-indent | --compact] [infile] [outfile]</li>
+    <li>ctypes.util.dllist() 可列举当前已加载的动态库</li>
+</ol>

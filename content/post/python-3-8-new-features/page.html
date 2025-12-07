@@ -1,0 +1,258 @@
+---
+title: 体验一下 Python 3.8 带来的主要新特性
+url: /python-3-8-new-features/
+date: 2020-03-14T14:09:36-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/python-logo.png"
+categories:
+  - Python
+tags: 
+  - new
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9803 
+wpStatus: publish
+views: 981
+lastmod: 2022-05-03T14:00:54-05:00
+---
+
+学习理解一个软件非常好的方法就是跟随每一个版本演进的新特性，好比一个人被别人看着长大的，知子莫若父。因此每个版本的 Changelogs 或 What's New 是非常值得一读的，见 <a href="https://docs.python.org/3/whatsnew/3.8.html">What's New In Python 3.8</a>。因为接触 Python 比较晚，没能即时的重前往后的看过 Python 各版本的新特性，于是采用倒叙的方式来看 Python 的演进也不错。<br/><br/>
+在正式进入 Python 3.8 新特性前，先来看 Python 3.8 的安装和以及介绍一个非常棒的 Python 命令行解析器 bpython 作为 python 命令，ipython, idle 的替代品。<br/><br/>
+Python 3.8 各平台的安装包可在 <a href="https://www.python.org/downloads/release/python-380/">https://www.python.org/downloads/release/python-380/</a> 找到。比如 Mac OS X 下可下载 <a href="https://www.python.org/ftp/python/3.8.0/python-3.8.0-macosx10.9.pkg">https://www.python.org/ftp/python/3.8.0/python-3.8.0-macosx10.9.pkg</a>，然后执行安装。安装完后，我机器上的 <code>/usr/local/bin/python3</code> 就指向到了 Python 3.8, 要用 Python 3.7 的话命令是 python3.7; pip3 却仍然是老版本的。<br/><br/>
+bpython 的安装要用相应版本的  pip install bpython, 如 <code>/Library/Frameworks/Python.framework/Versions/3.8/bin/pip3 install bpython</code>, 或者创建的虚拟环境中安装, python -m venv .venv; source .venv/bin/activate; pip install bpython。安装后启动  bpython 进入一个更智能的 Python 命令解析器。py<br/><br/>
+下面正式了解 Python 3.8 的主要新特性<!--more--><br/>
+<h2>一. 赋值表达式</h2>
+简单说就是赋值也有返回值的，不只是一个单纯的操作。这是一个 Java 和 C 里的默认行为，也就是 <code>a = 100</code> 这个表达式的返回值是也是 100，所以 Java/C 里可以写成<br/>
+<blockquote>
+int a = 50;<br />
+int b = (a = 100); 这时候 b 也是 100
+</blockquote>
+
+也是由于 C 中表达式有返回值以及宽泛的 bool 真值的认定，才有 <code>if(a == 1)</code> 建议写成 <code>if(1 == a)</code>。在 Java 中先前常用的按行读文件的方式<br/>
+{{< highlight python >}}
+String line;
+while((line = buffer.readLine()) != null) {
+    //process line
+}
+{{</ highlight >}}
+也是因为 Java 的赋值是个表达式。<br/><br/>
+Python 3.8 之前的版本是不能写成 <code>b = (a=1)</code>, 更不能写成 <code>print(a=1)</code> (这不按名传参吗)，但是可以用 a = b = 1。<br/><br/>
+不过介于 Python 等号 <code>=</code> 在传递函数参数时用以指定参数名的用途，所以 Python 创建了 <code>:=</code> 组合符号(像海象眼睛和獠牙)来实现赋值表达式，于是在 Python 3.8 中可以写成如下方式<br/>
+{{< highlight python >}}
+a = (b := 1)
+
+f = open('test.text', 'r')
+while((line := f.readline()) is not None):
+    print(line.rstrip())
+
+if (n := len(a)) > 10:      //近似官方例子
+    print(f"too long {n}")
+{{</ highlight >}}
+<h2>二. 只按位置传递的参数</h2>
+定义 Python 函数<br/>
+{{< highlight python >}}
+def incr(x):
+    return x + 1
+{{</ highlight >}}
+那么既能用 <code>incr(3.8)</code> 也能用 <code>incr(x=3.8)</code> 两种方式调用。假如我们改写成<br/>
+{{< highlight python >}}
+def incr(x, /):
+    return x + 1
+{{</ highlight >}}
+那么就只能按位置来传递 x 参数, 用 incr(3.8)<br/><br/>
+尝试用  incr(x=3.8) 的话会出现如下错误<br/>
+<blockquote>
+&gt;&gt;&gt; incr(x=3.8)<br />
+Traceback (most recent call last):<br />
+File "&lt;input&gt;", line 1, in &lt;module&gt;<br />
+incr(x=3.8)<br />
+TypeError: incr() got some positional-only arguments passed as keyword arguments: 'x'
+</blockquote>
+
+<strong>定义函数参数中的 <code>/</code> 并不是一个特殊的参数名，它只是用来限定在它之前的参数必须按位置一一匹配参数，不能用参数名来指定</strong>。但 <code>/</code> 后的的参数它管不了，像<br/>
+{{< highlight python >}}
+def greet(name, /, greeting='hello'):
+    return f"{greeting}, {name}"
+
+
+greet('world')                     # hello, world
+greet('world', 'hola')             # hola, world
+greet('world', greeting='hola')    # hola, world
+{{</ highlight >}}
+但下面方式就行了<br/>
+{{< highlight python >}}
+>> greet(name='world')
+Traceback (most recent call last):
+File "<input>", line 1, in <module>
+greet(name='world')
+TypeError: greet() got some positional-only arguments passed as keyword arguments: 'name'
+{{</ highlight >}}
+
+有只能按位置传递参数的方式，同时也有只能按名传递参数的函数，这在 Python 3.7 中就有的特性，就是加一个 <code>*</code> 作为特殊参数名，如<br/>
+{{< highlight python >}}
+def to_fahrenheit(*, celsius):
+    return 32 + celsius * 9/5
+{{</ highlight >}}
+调用时只能通过<br/>
+{{< highlight python >}}
+to_fahrenheit(celsius = 40)
+{{</ highlight >}}
+来调用，因为星号占据着一个特殊位置，下方是各种错误调用方式的尝试及错误<br/>
+<blockquote>
+to_fahrenheit(40)              # TypeError: to_fahrenheit() takes 0 positional arguments but 1 was given<br />
+to_fahrenheit(a=3, celsius=40)    # TypeError: to_fahrenheit() got an unexpected keyword argument 'a'<br />
+</blockquote>
+
+结合一下 <code>/</code> 和 <code>*</code> 在定义函数参数的效果<br/>
+{{< highlight python >}}
+def headlin(text, /, border="~", *, width=50):
+    return f" {text} ".center(width, border)
+{{</ highlight >}}
+首先明确一下规则，<strong>调用该函数时 <code>/</code> 前的参数必须按位置传入，<code>*</code> 后的参数必须按名传入，而它们之间的参数按名按位置传入都行</strong>。所以可用下面的调用<br/>
+<blockquote>
+headline("hello", "=", width=20)        # 正确<br />
+headline("hello", border="=", width=20)   # 正确<br />
+headline(text="hello", border="=", width=20)  # TypeError: headline() got some positional-only arguments passed as keyword arguments: 'text'<br />
+headline("hello", border="=", 20)      # SyntaxError: positional argument follows keyword argument
+</blockquote>
+
+<h2>三. 更精确的类型提示</h2>
+Python 3.7 就开始支持 Type Hints, 对变量，函数参数或函数返回值进行类型提示，如<br/>
+{{< highlight python >}}
+count: int = 20
+def foo(number: float) -> float:
+    pass
+{{</ highlight >}}
+不知为什么 Python 对类型提示的语法针对参数和函数返回值会用不一样的标识符, <code>:</code> 和 <code>-&gt;</code><br/><br/>
+注意，这只是类型提示，解释器运行时会把类型提示忽略掉，也就是调是实际类型可以是任意的。像下面的代码是合法的<br/>
+{{< highlight python >}}
+count: int = 'hello'
+
+def foo(number: float) -> float:
+    return number
+
+foo('hello')
+{{</ highlight >}}
+但这种类型提示可被 IDE 利用或是用第三方工具来进行静态检查，比如 <code>mypy</code>(用 pip install mypy 安装). 因为既然用了类型提示就该严格遵循代码的意愿。<br/><br/>
+上面是 Python 3.7 已支持的特性，现在看 Python 3.8 加入的一些 Literal type 类型提示，同样它也不是语法强制，而是像 mypy 来进行静态检查时的约束。下面来看一堆例子<br/>
+{{< highlight python >}}
+from typing import Literal   # Literal 像是枚举类型的提示
+
+def get_status(port: int) -> Literal['connected', 'disconnected']:
+    return 'connected'   # 提示该函数只返回 'connected' 或 'disconnected'
+
+def draw_line(direction: Literal['horizontal', 'vertical']) -> None:
+    pass      # 函数应传入 'horizontal' 或 'vertical'
+{{</ highlight >}}
+Literal 是限定值的选择，此外还有 Union 类型的提示 -- 可接受类型的枚举<br/><br/>
+{{< highlight python >}}
+from typing import Union
+
+def foo(number: Union[float, int]) -> Union[str, int]:
+    pass
+{{</ highlight >}}
+还有 Final 或 @final 装饰，相当于 Java 的 final 关键字，变量不能重赋值，类不能被继承，方法不能被覆盖<br/>
+{{< highlight python >}}
+from typing import Final
+ID: Final = 1
+ID += 1   # 用 mypy 静态检查时会报错: Cannot assign to final name "ID"
+
+from typing import final
+
+@final
+class Base:
+    pass
+
+class Sub(Base):   # 如果用 mypy test.py 检查，错误为 error: Cannot inherit from final class "Base"
+    pass
+{{</ highlight >}}
+<div>TypeDict: 像是 NamedTuple</div>
+<br/>
+<div>from typing import TypedDict    //不作具体介绍</div>
+<br/>
+<div>Protocol:  Duck Typing, 实例含有的特定方法比类型更重要， Protocol 像是一个标识接口</div>
+<br/>
+<div>from typing import Protocol     //也不作具体介绍，好像没多大意义</div>
+<br/>
+<h3>四. 用 f-strings 进行简单的调试</h3>
+f-strings 是 Python 3.6 开始引入的语法，用于字符串内的表达式解析，如<br/><br/>
+f"Diameter {(diam :=2 * r)} give circumference {math.pi * diam:.2f}" #可以运算，中间变量，格式化<br/><br/>
+在 Python 3.8 中的 f-strings 能力有所增强，f-strings 里 <code>{}</code> 中变量名后再加个等能同时显示变量名与值。<br/>
+{{< highlight python >}}
+>>> python = 3.8
+>>> f"{python=}"
+'python=3.8'
+
+>>> name = "Eric"
+>>> f"{name = }"
+"name = 'Eric'"
+
+>>> f"{name = :>10}"
+'name =       Eric'
+
+>>> f"{name.upper()[::-1] = }"
+"name.upper()[::-1] = 'CIRE'"
+{{</ highlight >}}
+<h3>五. 新模块 importlib.metadata</h3>
+<div>可以探查安装了什么包</div>
+
+<div>
+{{< highlight python >}}
+>>> from import lib import metadata
+>>> metadata.version("pip")
+'19.3.1'
+>>> pip_metadata = metadata.metadata('pip')
+>>> list(pip_metadata)
+>>> pip_metadata['Home-page']
+'https://pip.pypa.io/'
+
+
+[p for p in metadata.files('requests')]   //列出模块文件
+>>> metadata.requires('requests')  //列出 requests 模块的所有依赖
+{{</ highlight >}}
+<h3>六. Math 和 Statistics 函数 (NumPy 可能会是更好的选择)</h3>
+<br/>
+<div>
+<div>math.prod([2, 3, 4])      返回 24, 即 2 * 3 * 4</div>
+<div>math.isqrt(15)     //开方的整数部分</div>
+<div>math.dist((16, 25, 20), (8, 15, 14))  // 返回 M 维空间两点间的距离 14.142135623730951</div>
+<div>math.hypot(16, 25, 20)  //返回 M 维坐标原点与某个点之间的距离 35.79106033634656</div>
+<div> </div>
+<div>import statistics</div>
+<div>statistics.fmean([9, 3, 2])  //浮点数的平均值  4.666666666666667</div>
+<div>statistics.geometric_mean([9, 3, 2]) // 几何平均数  3.77976314968462</div>
+<div>statistics.multimode(), statistics.quantiles()</div>
+<div>statistics.NormalDist //用于 Gaussian normal distribution 高斯正态分布</div>
+<div>statsmodels, scipy.stats</div>
+<h3>七. 警告信息, 更聪明一些, 以下红色部分是新加的提示信息</h3>
+<div>
+<blockquote>
+<div>&gt;&gt;&gt; version = "3.8"</div>
+<div>&gt;&gt;&gt; version is "3.8"</div>
+<div><span style="color: #ff0000;">&lt;bpython-input-17&gt;:1: SyntaxWarning: "is" with a literal. Did you mean "=="?</span></div>
+<div>  version is "3.8"</div>
+</blockquote>
+<div>在 Python 3.8 之前的版本没有警告，直接返回 False</div>
+
+<blockquote>
+<div>&gt;&gt;&gt; [(3,5) (6,8)]</div>
+<div>TypeError: 'tuple' object is not callable</div>
+<div>&gt;&gt;&gt;</div>
+<div><span style="color: #ff0000;">&lt;input&gt;:2: SyntaxWarning: 'tuple' object is not callable; perhaps you missed a comma?</span></div>
+</blockquote>
+</div>
+<div>sizeof</div>
+<div>
+<blockquote>
+<div>&gt;&gt;&gt;import sys</div>
+<div>&gt;&gt;&gt;sys.getsizeof(list(range(20191014))  //内存使用 sizeof<br />
+161528168</div>
+</blockquote>
+<div>参考：1. <a href="https://realpython.com/python38-new-features/">Cool New Features in Python 3.8</a></div>
+</div>
+</div>
