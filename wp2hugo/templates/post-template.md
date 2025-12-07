@@ -13,6 +13,7 @@ categories:{% for cat in post.categories %}
 tags: {% for tag in post.tags %}
   - {{ tag }}{% endfor %}
 comment: true
+codeMaxLines: 50
 # additional
 wpPostId: {{ post.id }} {# post id in Wordpress #}
 wpStatus: {{ post.status }}

@@ -17,7 +17,7 @@ fn main() -> Result<()> {
     println!("processed ids: {}", processed_ids.len());
 
     // generate_from_wordpress_hugo_exports(&post_vec);
-    // generate_from_mysql_exports(&processed_ids, &post_vec);
+    generate_from_mysql_exports(&processed_ids, &post_vec);
 
     Ok(())
 }
