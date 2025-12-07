@@ -1,0 +1,138 @@
+---
+title: Backbone.js 使用 Collection
+url: /backbone-js-with-collection/
+date: 2014-01-09T03:39:42-06:00
+featured: false
+thumbnail: "../images/logos/backbonejs-logo.png"
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Web/JS
+tags: 
+  - javascript
+  - Backbone
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6053 
+wpStatus: publish
+views: 1827
+lastmod: 2021-09-03T18:26:20-05:00
+---
+
+在前面我们的 Backbone.js 用上了 Model, 但绝大数的情况下我们处理的都是一批的 Model 数据列表，所以需要有一个 Collection 来容纳 Model, 就像 Java 里最常用的 List。</p>
+<br/>
+声明 Collection 时需要指定他处理的 Model 类型，也就是个泛型参数，如我们这样定义 Collection:<br/>
+{{< highlight js >}}
+//define Collection
+var PeopleCollection = Backbone.Collection.extend({
+    model: Person //like generic
+});
+{{</ highlight >}}
+<br/>
+然后就是往 Collection 中如何填充 Model 实例，有好多种，这里只演示最直接的方式。还 add, fetch, 及对 Collection 排序, 遍历等各种操作。<!--more--><br/>
+{{< highlight js >}}
+//create collection instance
+var peopleCollection = new PeopleCollection([
+    {
+        name: 'Mohit Jain',
+        age: 23
+    },
+    {
+        name: 'Taroon Tyagi',
+        age: 25,
+    }
+]);
+{{</ highlight >}}
+<br/>
+在创建 View 实例时把 collection 传递进去<br/>
+{{< highlight js >}}
+var peopleView = new PeopleView({collection: peopleCollection});{{</ highlight >}}
+<br/>
+模板中使用的是点操作符来获取属性，所以交给模板显示数据时需调用 Collection 的 toJSON() 转数据，即把字段从 attributes 中提出到外层来。在 View 中需要这样绑定集合数据：<br/>
+{{< highlight js >}}
+var data = {people: this.collection.toJSON()};
+this.$el.html(template(data)); //fill in data{{</ highlight >}}
+<br/>
+模板中可用 _.each() 函数来遍历：<br/>
+{{< highlight html >}}
+<% _.each(people, function(person) { %>
+    <li><%= person.name %>, <%= person.age %></li>
+<% }); %>{{</ highlight >}}
+<br/>
+这样就能把 Collection 中的数据显示到页面上了，完整例子如下：<br/>
+{{< highlight html >}}
+<!DOCTYPE html>
+<html>
+     <head>
+         <script src="http://ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+         <script src="http://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.5.2/underscore-min.js"></script>
+         <script src="http://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.0.0/backbone-min.js"></script>
+     </head>
+     <body>
+         <ol id="container"></ol>
+
+        <script type="text/template" id="person_template">
+            <% _.each(people, function(person) { %>
+                <li><%= person.name %>, <%= person.age %></li>
+            <% }); %>
+        </script>
+     </body>
+ </html>
+
+ <script>
+    //define Model
+    var Person = Backbone.Model.extend({  
+        defaults : {
+            name : 'unknown',  
+            age : 20
+        }  
+    });
+
+    //define Collection
+    var PeopleCollection = Backbone.Collection.extend({
+        model: Person //like generic
+    });
+
+    //define View
+    var PeopleView = Backbone.View.extend({
+        el: '#container',
+        initialize: function(options) {
+            this.render();
+        },
+        render: function() {
+            var template = _.template($("#person_template").html());
+            var data = {people: this.collection.toJSON()};
+            this.$el.html(template(data)); //fill in data
+        }
+    });
+
+    //create collection instance
+    var peopleCollection = new PeopleCollection([
+        {
+            name: 'Mohit Jain',
+            age: 23
+        },
+        {
+            name: 'Taroon Tyagi',
+            age: 25,
+        }
+    ]);
+
+    //create view and bind model
+    var peopleView = new PeopleView({collection: peopleCollection});
+
+ </script>
+{{</ highlight >}}
+<br/>
+点击链接 <a href="http://fiddle.jshell.net/Unmi/NeNsU/" target="_blank" rel="noopener">http://fiddle.jshell.net/Unmi/NeNsU/</a> 运行如上代码，页面输出为：<br/>
+<blockquote>
+<ol id="container">
+    <li>Mohit Jain, 23</li>
+    <li>Taroon Tyagi, 25</li>
+</ol>
+</blockquote>
+
+上面用的是 Underscore 的模板，在页面中可以单独的用  &lt;% _.each([0,1,2,3,4], function(i) { %&gt;  &lt;p&gt;&lt;%= i %&gt;&lt;/p&gt; &lt;% }); %&gt; 遍历数组 [0,1,2,3,4]。

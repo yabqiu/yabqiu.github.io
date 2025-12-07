@@ -1,0 +1,128 @@
+---
+title: Backbone.js 中使用 Model
+url: /backbone-js-with-model/
+date: 2014-01-06T17:13:59-06:00
+thumbnail: "../images/logos/backbonejs-logo.png"
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Web/JS
+tags: 
+  - javascript
+  - Backbone
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6016 
+wpStatus: publish
+views: 888
+lastmod: 2021-05-05T15:49:57-05:00
+---
+
+前面几篇 Backbone.js 的例子中有使用到 template, 及数据的填充，其实这已经很接近 Model 了。现在来学习怎么创建自己的 Model 类，并简单的使用。Backbone.js 中 Model 会涉及到很多的概念，如 Model 的初始化，默认值，属性的读写，属性值改变的监听，数据渲染，校验，以及与服务端的数据同步等。</p>
+<br/>
+本文不打算讲前面大部分的内容，最初思考的一个脉络是怎么把 Model 引入进来，所以线索会是 <code>建立 Model 类 -&gt; 初始化 Model 实例 -&gt; 设置值 -&gt; 渲染到页面</code>，其余 Model 特性分别再深入。<br/><br/>
+直观地能想到的 JavaScript 的 Model 是一个 JSON 对象，差不多，不过 Backbone 赋予 Model 默认属性，只能通过 getter/setter 方法来访问 Model 中的属性值，不能直接用点操作符，相当于 Backbone 的属性是私有的。<!--more--><br/><br/>
+声明 Model 类<br/>
+{{< highlight js >}}
+var Person = Backbone.Model.extend({  
+    defaults : { //看上去是指定默认值，同时也是声明有些什么属性
+        name : 'unknown',  
+        age : 20
+    }  
+}); 
+{{</ highlight >}}
+<br/>
+使用 Model<br/>
+{{< highlight js >}}
+// 实例化 Model 对象  
+var john = new Person({  
+    name : 'John'  //没有指定 age，默认为 20
+});
+
+console.log("1: " + john.name); //undefined
+console.log("2: " + john.get('name')); //john
+
+console.log("3: " + john.get('age')); //20
+
+john.age = 45; //这种方式赋值, 不能设置到 john.attributes 中去
+console.log("4: " + john.get('age')); //20
+
+john.set({age: 100});
+console.dir(john);
+{{</ highlight >}}
+<br/>
+上面输出为<br/><br/>
+{{< bundle-image src="Backbone_Model_Operation.png" width="600px" >}}
+<br/>
+因为存储的字段都在对象的 attributes 的属性中，所以不能简单的用点操作来存取值，而要使用<br/>
+<blockquote>
+john.get('name');
+john.escape('name');  //可转义 HTML 标签
+john.set({name:  'Johnson'});
+john.set('name', 'Johnson');
+</blockquote>
+
+再看在 View 中如何显示 Model 中的属性值，因为模板是用点操作来访问属性值的，所以 model 要调用 toJSON() 把属性值释放到第一层级上来。完整的渲染 Model 数据的例子如下：<br/>
+{{< highlight html >}}
+<!DOCTYPE html>
+<html>
+     <head>
+         <script src="http://ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js"></script>
+         <script src="http://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.5.2/underscore-min.js"></script>
+         <script src="http://cdnjs.cloudflare.com/ajax/libs/backbone.js/1.0.0/backbone-min.js"></script>
+     </head>
+     <body>
+        <div id="container"></div>
+
+        <script type="text/template" id="person_template">
+            <%= name %>'s age is <%= age %>
+        </script>
+    </body>
+</html>
+ 
+<script>
+    //定义 Model
+    var Person = Backbone.Model.extend({  
+        defaults : { //声明属性，并指定默认值
+            name : 'unknown',  
+            age : 20
+        }  
+    });
+
+    var PeopleView = Backbone.View.extend({
+        el: '#container',
+        initialize: function(options) {
+            this.render();
+        },
+        render: function() {
+            var template = _.template($("#person_template").html());
+            
+            //模板中使用点操作符来访问属性的，obj.name, 所以要 toJSON() 转换
+            this.$el.html(template(this.model.toJSON()));
+        }
+    });
+      
+    // 实例化 Model 对象  
+    var john = new Person({  
+        name : 'John'
+    });
+
+    john.set('age', 30);
+    john.age = 45; //这种方式赋值不管用的
+
+    var peopleView = new PeopleView({model: john});
+</script>
+{{</ highlight >}}
+<br/>
+点击链接 <a href="http://jsfiddle.net/Unmi/4qXz7/" target="_blank" rel="noopener">http://jsfiddle.net/Unmi/4qXz7/</a> 执行代码可看到结果。上面代码在网页中输出为<br/>
+<blockquote>
+John's age is 30
+</blockquote>
+<br/>
+现实应用中，一般操作的都是 Model 所组成的集合，所以后面我们会用到 Backbone 的 Collection。这也是 Backbone 中一个重要的概念，继续中。<br/><br/>
+参考： 1. <a href="http://yujianshenbing.iteye.com/blog/1748571" target="_blank" rel="noopener">Backbone入门指南（四）：Model（数据模型）</a>      <br />
+          2. <a href="http://www.codebeerstartups.com/2012/12/3-defining-models-in-backbone-js-learning-backbone-js/" target="_blank" rel="noopener">3. Defining models in backbone js – Learning Backbone js</a>
