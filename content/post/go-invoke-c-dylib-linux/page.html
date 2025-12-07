@@ -1,0 +1,172 @@
+---
+title: Go 调用 C 写的动态库完整例子(Linux版)
+url: /go-invoke-c-dylib-linux/
+date: 2021-08-16T12:02:18-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/golang-logo.png"
+categories:
+  - Go
+tags: 
+  - Go
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11125 
+wpStatus: publish
+views: 2957
+lastmod: 2021-08-16T12:02:18-05:00
+---
+
+总有那么一些老的，或高效的库是用 C/C++ 实现的，于是在其他语言中如果使用动态共享库就成了个问题。Java 要调用动态库需要用 JNI, 更快捷的话可使用第三方包装好的 JNI 调用库。在 Java 中要映射 C/C++ 的类型麻烦些，因为 Java 没有指针类型，所以从这方面来讲 Go 调用动态库幸许会更简单些。<br/><br/>
+下面我们自己在 Linux 下做一个动态库(.so 文件  - <strong>S</strong>hared <strong>O</strong>bject)，然在用 Go 来使用它。本文所用的操作系统为 Ubuntu20.04, 以 gcc  作为编译器。动态库的生成过程参考自 <a href="https://www.cnblogs.com/jiqingwu/p/linux_dynamic_lib_create.html">Linux动态库生成与使用指南</a><!--more--><br/><br/>
+我们用动态库实现一个拼接字符串与整数的函数，首选是 <code>add.h</code>  文件中的函数声明<br/>
+{{< highlight c >}}
+#ifndef __ADD_H__
+#define __ADD_H__
+
+char* Add(char* src, int n);
+
+#endif
+{{</ highlight >}}
+然后是 add 函数的实现 <code>add.c</code> 文件，内容为<br/>
+{{< highlight c >}}
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+char* Add(char* src, int n)
+{
+    char str[20];
+    sprintf(str, "%d", n);
+    char *result = malloc(strlen(src)+strlen(str)+1);
+    strcpy(result, src);
+    strcat(result, str);
+    return result;
+}
+{{</ highlight >}}
+接着用命令编译生成动态库，在 Linux 下的文件名是  <code>libadd.so</code><br/>
+<blockquote>
+$ gcc -fPIC -shared -o libadd.so add.c
+</blockquote>
+
+会在当前目录下生成 <code>libadd.so</code> 文件, 在 Linux 下可用 <code>nm -D libadd.so</code>  查看其中的方法<br/><br/>
+现在用一个 C 语言代码来使用它，代码文件为 <code>test.c</code>, 内容<br/>
+{{< highlight c >}}
+#include <stdio.h>
+#include "add.h"
+
+int main(int argc, char *argv[])
+{
+    char* aa = "giter";
+    printf("%s\n", Add(aa, 8));
+    return 0;
+}
+{{</ highlight >}}
+链接动态库生成可执行文件<br/>
+<blockquote>
+$ gcc test.c -L . -ladd -o test
+</blockquote>
+
+<code>-L .</code>表示搜索要链接的库文件时包含当前目录<br />
+<code>-ladd</code>  表示要链接动态库 <code>libadd.so</code><br />
+<code>-o test</code> 生成可执行文件 <code>test</code><br/><br/>
+运行 <code>test</code><br/><br/>
+由于 <code>libadd.so</code> 是动态库，也就是执行期需要加载它，假如直接执行 <code>test</code> 会怎么样呢？<br/>
+<blockquote>
+$ ./test<br />
+./test: error while loading shared libraries: libadd.so: cannot open shared object file: No such file or directory
+</blockquote>
+
+找不到动态库 <code>libadd.so</code>,  Linux 通过 <code>ldconfig</code> 的指示在某些目录中(如 /lib, /user/lib) 搜索动态库。更简单的办法是用 <code>LD_LIBRARY_PATH</code> 环境变量，如<br/>
+<blockquote>
+$ LD_LIBRARY_PATH=. ./test<br />
+giter8
+</blockquote>
+
+至此，动态库 <code>libadd.so</code> 准备好了，并且用 <code>test</code> 验证了它是可用的，接下来就在 Go 语言中使用该动态库的函数。<br/><br/>
+以下是成功的例子，测试完之后发现很简单，可是过程中碰到许多的问题。后面会列出所遇到见的问题<br/><br/>
+假设项目目录为 /home/vagrant/testgo (用的 Vagrant 启动的 Ubuntu 20.04 进行本文中的测试)，目录结构如下<br/>
+<blockquote>
+testgo<br />
+├── lib<br />
+│     └── libadd.so<br />
+└── src<br />
+        ├── add.h<br />
+        └── main.go
+</blockquote>
+
+main.go 的代码如下：<br/>
+{{< highlight go >}}
+package main
+
+/*
+#cgo CFLAGS: -I.     // 头文件的位置，相对于源文件是当前目录，所以是 .，头文件在多个目录时写多个  #cgo CFLAGS: ...
+#cgo LDFLAGS: -L../lib -ladd -Wl,-rpath,lib  // 从哪里加载动态库，位置与文件名，-ladd 加载 libadd.so 文件
+#include "add.h"
+*/
+import "C"
+import "fmt"
+
+func main() {
+  val := C.Add(C.CString("go"), 2021)
+  fmt.Println("Hello c value: ", C.GoString(val))
+}
+{{</ highlight >}}
+通过注释代码来告诉 Go 编译器从哪里引入头文件与加载动态库. 本例中 *.h 和 *.go 文件在同一个目录的情况下， <code>#cgo CFLAGS: -I.</code> 可不写。<br/><br/>
+CFLAGS: -I 和 LDFLAGS: -L 都是相对于源文件 main.go 的位置<br/><br/>
+执行，命令行进到 <code>/home/vagrant/testgo</code> 目录<br/>
+<blockquote>
+~/testgo$ go run src/main.go<br />
+Hello c value: go2021
+</blockquote>
+
+成功调用 C 实现的 add 函数<br/><br/>
+下面列出一些问题<br/><br/>
+<code>import "C"</code> 要紧挨着 <code>/*...*/</code> 注释块，如果写成<br/>
+{{< highlight go >}}
+/*
+#cgo ...
+*/
+import "C"
+{{</ highlight >}}
+
+会出现错误<br/>
+<blockquote>
+# command-line-arguments<br />
+src/main.go:15:10: could not determine kind of name for C.add
+</blockquote>
+
+<code>import "C"</code> 要独占一行, 试图同时引入其他的库，如 <code>import ("C"; "fmt")</code> 也会报上面同样的错误<br/><br/>
+加载不到头文件的错误很明显，#include "add.h" 时会告诉你该文件不存在，如果没有加载到正确的头文件调用 <code>C.Add()</code> 函数时就会报错<br/>
+<blockquote>
+# command-line-arguments<br />
+src/main.go:13:10: could not determine kind of name for C.Add
+</blockquote>
+
+还有一个关键是能否加载到动态库 libadd.so, 参考了网上一些例子，如果把第五行改为<br/>
+<blockquote>
+#cgo LDFLAGS: -L../lib -ladd
+</blockquote>
+
+执行时会出错<br/>
+<blockquote>
+/tmp/go-build3845117109/b001/exe/main: error while loading shared libraries: libadd.so: cannot open shared object file: No such file or directory<br />
+exit status 127
+</blockquote>
+
+但如果设置了环境变量 LD_LIBRARY_PATH=/home/vagrant/testgo/lib 也能让它跑起来<br/>
+<blockquote>
+LD_LIBRARY_PATH=/home/vagrant/testgo/lib go run src/main.go<br />
+Hello c value: go2021
+</blockquote>
+
+链接：<br/><br/>
+<ol>
+    <li><a href="https://blog.csdn.net/zdy0_2004/article/details/79124269">全面总结：Golang 调用 C/C++, 例子式教程</a></li>
+    <li><a href="https://blog.csdn.net/weixin_38374974/article/details/99842556">golang 学习 (10): 使用go语言调用c语言的so动态库</a></li>
+    <li><a href="https://blog.csdn.net/qq_40495217/article/details/107369495">GoLang 调用 .so 文件</a> (go plugin 调用 go 生成的动态库)</li>
+</ol>

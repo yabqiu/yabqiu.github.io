@@ -1,0 +1,241 @@
+---
+title: Go 语言新手笔记（一）
+url: /go-language-notes-1/
+date: 2021-08-13T00:35:52-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/golang-logo.png"
+categories:
+  - ReadingNotes
+  - Go
+tags: 
+  - Go
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11088 
+wpStatus: publish
+views: 383
+lastmod: 2021-08-14T11:33:15-05:00
+---
+
+Go 语言 2009 年面世，几个成功项目 Docker, Kubernetes, etcs, consul, flannel, 还有 Terraform。Go 编译运行快，听说学习也不难。</p>
+
+安装好 Go 后，有两个环境变量很重要， GOPATH 是工作目录，GOROOT 是 Go 的安装目录, 如 /usr/local/go。GOPATH 允许多个目录，用 : 或 ;(Windows 下) 分隔，当 GOPATH 有多个目录，go get 命令的包放在第一个目录下。<br/><br/>
+$GOPATH 目录中约定的三个子目录<br/>
+<ol>
+    <li>src: 存放 .go, .c, .h, .s 等源码文件，go run, go install 等命令也要在该目录下执行</li>
+    <li>pkg: 存放编译时生成的中间文件，如 .a</li>
+    <li>bin: 存放编译后的可执行文件 </li>
+</ol>
+
+Go 编程是声明了不用的全局变量是绝对的罪过，编译这一关过不了。Go 用 var 声明变量，如 var b bool = true。Go 有精确长度的丰富的基本类型，如 int8, int16, int32, int64, unit8, float32(6位精度), float64(15位精度) 等，单纯写成  int, unit 时，长度与系统有关。Go 的字符串用 UTF-8 格式编码的 Unicode 字符，每个字符对应一个 rune 类型，rune 是字符的意思，相当于 int32.<!--more--><br/>
+{{< highlight go >}}
+var c rune = 'a'
+// 相当于 Java 的 int c = 'a'
+// 打印出来都是 97
+{{</ highlight >}}
+
+Go 还有复数类型, complex64(实虚两部分为 float32), compex128, <code>var c complex128=1.0+10i</code><br/><br/>
+Go 的类型定义可以在 $GOROOT/src/builtlin/builtin.go 中看到，如<br/>
+{{< highlight go >}}
+type byte = unit8
+type rune = int32
+
+const (
+  true = 0 == 0
+  false = 0 != 0
+)
+{{</ highlight >}}
+
+一些 Go 变量声明与赋值的代码<br/>
+{{< highlight go >}}
+package main
+
+import "fmt"
+
+func main() {
+  var (
+    a int
+    b bool
+  )
+  fmt.Println(a, b)  // 0 false， Go 的类型也有像 Java 一样的零值，如 0, 空字符串， nil
+  a, b = 3, true
+  fmt.Println(a, b)  // 3 true
+
+  c, d := 'k', 2.1   // 这种简单声明变量 a := 1 的方式只能在函数中
+  fmt.Println(c, d)  // 107 2.1
+
+  e, f := 4, 5
+  e, f = f, e
+  fmt.Println(e, f)  // 5 4
+
+  _, e = 7, 8   // _ 表示丢弃值，比如函数返回多值时
+  fmt.Println(e, f)  // 8 4
+
+  var x = 9
+  fmt.Println(x)  // 9
+}
+{{</ highlight >}}
+
+_ 还有许多避免编译不过的妙用，如  import _"fmt", var _=log.Println 等<br/><br/>
+Go 语言的数据是值类型，向函数传递数组会产生一份副本，而更新数组数据时，考虑用数组指针。数组的声明是<br/>
+{{< highlight go >}}
+var arr = []string{"aa", "bb"}
+{{</ highlight >}}
+
+与通常的语言 string[] 反过来了，中括号提前<br/><br/>
+Go 的字符串初始为空字符串，var s string 相当于 s := ""<br/><br/>
+Go 用 const 声明常量，iota 是每次出现加 1 的常量，从 0 开始，const 声明中未赋值的常量将继承上一个的值<br/>
+{{< highlight go >}}
+func main() {
+  const (
+    a = iota
+    b = iota
+    c
+    d = 8
+    e
+  )
+
+  fmt.Print(a, b, c, d, e) // 0 1 2 88
+}
+{{</ highlight >}}
+
+iota 在每遇到一个新的常量块时又会重置为 0<br/><br/>
+Go 净整一些奇怪的单词，像前面的 rune(符文，文字), iota(希腊字母第九个字母：Ι，ι， 微小，一点的意思)<br/><br/>
+Go 的反引号像是 Python raw 字符串的效果, <code>fmt.Print(`a\nb`)</code> 输出为 <code>a\nb</code>, <code>\n</code> 不被输出为行，像 Python 的 print(r"a\nb") 一样。<br/><br/>
+Go 运算符很丰富，其他语言中的逻辑，位运算, ++, --，运算后赋值(如 +=, %=, &lt;&lt;=, &gt;&gt;=, &amp;= 等) 都有。还有像 C/C++ 的 &amp; 和 *, 如 &amp;a : 取 a 变量的地址，和 *a: 指针变量。<br/><br/>
+还有几个特殊的运算符，位清零 &amp;^,  x &amp;^ y   x 上对应 y 位置上是 1 时取零。^ 一元操作时按位取反，二元操作为异或<br/><br/>
+字符串也是一个字符数组，如 len("abc"), "abc"[1]。拼接字符串，用加号  "aa" + "bb", mt.Sprintf(), strings.Joint([]string{"aa", "bb"}, ",") 或用 bytes.Buffer 来 WriteString("aa"), 或 string.Builder<br/><br/>
+字符串的处理包 bytes, strings, strconv 和  uncicode。<br/><br/>
+Go 的 switch...case 语句本身是默认每个 case  后都是 break 了的，除非加个 fallthrough 又能回到 Java 的 switch...case 的入口效果。Go 的 switch...case  也可以是个表达式，有返回值的。switch...case 的 default 可以写在任何位置。switch...case 也可没有表达式，就相当于一个 if/else 语句了, 还可以带个初始化语句，以下三种形式<br/>
+{{< highlight go >}}
+switch bb {
+case true: f1()
+fallthrough
+case false: f2()
+}
+
+switch {
+case x < y, x < t: f1()
+case x < z: f2()
+default: f3()
+}
+
+switch x:= f(); {         // x:=f(); 为初始化语句
+case x<0: return -x
+default: return x
+}
+
+switch t:=t.(type) {   // 比较类型
+case bool: f1()
+case int: f2()
+case *int: f3()
+}
+{{</ highlight >}}
+
+Go 针对异步通道操作有专门的 select 语句，select 会监听分支语句中的通道直到变为非阻塞状态，有多个分支可运行，随机选一个；没可运行分，且有 default 就执行 default; 既没可运行也没 default, 继续阻塞，直到出现可运行分支。<br/><br/>
+for 语句的格式是 <code>for 初始化语句; 条件语句; 修饰语句 {}</code>, 每部分都可省略，如果全省略就是  for ;;{}, 就是 for {} 了，变成无限循环了。<br/><br/>
+for-range 循环是 Go 特别的，可以迭代集合，能在迭代的时候获得索引和值，或 key(对于 map), 如<br/>
+{{< highlight go >}}
+for idx, val := range coll {}<br />
+for key := range amap {}
+{{</ highlight >}}
+
+Go 的 if...else 的条件是不需要用括号的， if 布尔表达式 {} else if 布尔表达式 {} else {}, 表达式中还能用 ; 连接多个，最后的返回值为布尔值，如 if x:=f(); x&lt;y {}<br/><br/>
+Go 的 break 还能跳到标签位置, 这有助于跳出多重循环。Go 也有 continue, goto, 同样不建议用  goto 语句。continue 和  goto 都能跳到标签位置。<br/><br/>
+可见性规则，标识符以大写字母开头的才能导出被外部包代码所用，所以工具方法名首字母都是大写。命令规范是公有函数用 Pascal 命名法(首字母大写的即大驼峰)，私有函数用小驼峰式命名法。<br/><br/>
+Go 语句后的分号通常省略。左花括号不能独点一行，否则不能编译。Go 的注释方法与 Java 是一样的，// 或 /* */<br/><br/>
+Go 组织代码也用包，但不必像 Java 那样严格的与目录名对应。Go 的每个 .go 文件都必须属于某个用，用 package 声明，同一目录下的多个 .go 文件只能属于同一个包，同一包中的 .go 文件定义的全局变量和公有函数名(首字母大写的)不能冲突。<br/><br/>
+Go 程序入口必须是 main 包，并且还要 main() 入口函数。每个包可有 init() 函数，init() 函数的签名与 main() 一样，无参数无返回值，如<br/>
+{{< highlight go >}}
+func init() {
+  fmt.Println("init main package")
+}
+{{</ highlight >}}
+在包被导入式首先被执行，一个包可有多个 init() 函数，如<br/>
+{{< highlight go >}}
+package main
+
+import "fmt"
+
+func init() {
+  fmt.Println("1 init main package")
+}
+
+func init() {
+  fmt.Println("2 init main package")
+}
+
+func main() {
+  fmt.Println("hello world")
+}
+{{</ highlight >}}
+
+居然是合法的，两个 init() 函数在导入式都会被执行，顺序不是确定的<br/><br/>
+Go 导入(import) 包是使用目录名作为包的路径而非 package 声明的包名，实际应用中还是应像 Java 那样尽量保持包名与目录包一致。import "match/big" 会导入 $GOROOT 目录下的 src/match/big 目录，使用 big.Int 时的 big 才是 .go 文件中定义的包名<br/><br/>
+几种特殊的 import 方式<br/><br/>
+<ol>
+    <li><code>import  ."fmt"</code>: 使用时可省略包名，如 Println()，而不用 fmt.Println(), 像 Java 的静态引入</li>
+    <li><code>import f"fmt"</code>:  别名引入，f.Println()</li>
+    <li><code>import _"fmt"</code>: _ 操作引入包只为了调用包的 init()  函数 </li>
+</ol>
+<br/>
+Go 语言的标准库在 $GOROOT/src 中，如 Mac OS X 下的 <code>/usr/local/Cellar/go/1.16.6/libexec/src</code><br/><br/>
+如果想安装  GitHub 上的项目到本地，可执行<br/>
+<blockquote>
+go get -u github.com/ffhelicopter/tmm
+</blockquote>
+
+然后在代码中就可以像下面那样导入了<br/>
+<blockquote>
+import "github.com/ffhelicopter/tmm"
+</blockquote>
+
+go get 下载到的源文件会放到 ~/go/src 目录中，编译生成的 .a 二进制放到 ~/go/pkg 目录中，如果有 main, 生成的二进制执行文件放到  ～/go/src 目录中<br/><br/>
+如果有指定了 GOPATH 环境变量， go get 下载和编译生成的就会放到 $GOPATH 对应的 src, pkg, 和 bin 目录中<br/><br/>
+Go 的包依赖管理工具有 glide, godep, govendor, GoModules。<br/><br/>
+go install github.com/gocolly/colly@latest 和  go get .... 差不多的功能, 区别好像是 go install 不克隆源代码，还有一个  go build<br/><br/>
+Go 项目的基本结构是 $GOPATH/{src,pkg,bin}, 有 main.main 函数可用<br/>
+<blockquote>
+go install src/test.go
+</blockquote>
+
+会成 $GOPATH/bin 目录中生成可执行的 test 文件<br/><br/>
+godoc 命令已经从 go 1.1.13 中移除，要安装它的话可用命令 <br/>
+<blockquote>
+go get golang.org/x/tools/cmd/godoc
+</blockquote>
+
+安装，然后运行<br/>
+<blockquote>
+bin/godoc -http=localhost:6060
+</blockquote>
+
+启动 godoc web 服务，就能在浏览器中打开 http://localhost:6060<br/><br/>
+Go 编译构建相关的命令有 go run, go build, 和 go install. 如果发布的编译文件不希望别人看到源代码，用下面的参数构建<br/>
+<blockquote>
+go build -ldflags "-w -s" src/test.go
+</blockquote>
+
+Go 自 1.11 新增了对模块的支持, 通过 GO111MODULE=auto|on|off 来控制关闭与开启, <code> go env</code> 可查看所有 Go 环境变量。<br/>
+<ol>
+    <li>GO111MODULE=off 时，从 $GOPATH 和 vender 目录中寻找包</li>
+    <li>GO111MODULE=on 时，忽略 $GOPATh 和 vender 目录，根据 go.mod 下载依赖</li>
+    <li>GO111MODULE=auto 时，判断是否有 $GOPATH/go.mod 文件来开启与否</li>
+</ol>
+
+Go 的环境变量可用 <code>go env -w GO111MODULE=auto</code> 设置<br/><br/>
+使用 go mod 系列命令<br/>
+<blockquote>
+$ go env -w GO111MODULE=auto<br />
+$ go mod init hello<br />
+$ unset GOPATH<br />
+$ go mod tidy<br />
+$ ...
+</blockquote>
+
+Go 模块的使用仍然像是 Java 的模块一样糊涂，先不管它了。 

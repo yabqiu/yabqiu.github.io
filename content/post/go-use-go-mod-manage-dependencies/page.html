@@ -1,0 +1,275 @@
+---
+title: Go 语言使用 Go Modules(go.mod) 来管理依赖
+url: /go-use-go-mod-manage-dependencies/
+date: 2021-08-17T15:08:45-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/golang-logo.png"
+categories:
+  - Go
+tags: 
+  - Go
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11133 
+wpStatus: publish
+views: 2035
+lastmod: 2023-12-13T00:02:41-06:00
+---
+
+前几日系统性差不多读完了一本讲解 Go 语言的书籍，记录下几篇笔记，现在终于能够开始看看专题性的知识了。首先就是关于 Go 如何管理依赖的问题，Java 经历了最早逐个下载  jar  包，到现在用 maven 来描述项目依赖，及进行项目的构建。而 Go 的起点还是要高一些，从一开始就有  <code>go get</code>, <code>go install</code> 命令来从中心库下载依赖。但管理多版本依赖是个问题，也没有明确的方式来怎么描述一个项目的依赖。<br/><br/>
+因此也就产生过一些第三方的 Go 依赖管理<br/><br/>
+<ol>
+    <li><a href="https://glide.readthedocs.io/">Glide</a>(使用 glide.yaml 文件描述依赖)</li>
+    <li><a href="github.com/tools/godep">Godep</a> (长时间没维护的项目)</li>
+    <li><a href="https://github.com/kardianos/govendor">govendor</a> (不再维护了，在 Go modules 出来后也不被推荐使用)</li>
+    <li>还有其他的 <a href="https://github.com/pote/gpm">GPM</a>, <a href="https://github.com/constabulary/gb">gb</a>, <a href="https://github.com/mattn/gom">gom</a>, <a href="https://github.com/FiloSottile/gvt">gvt</a> 等都相继退出了历史的舞台</li>
+</ol>
+<br/>
+也就是说 Go Modules 才是王道，在理解 Go Modules 之前也许有必要了解一下传统 GOPATH 管理依赖的方式，其他第三方的管理工具用不着去学习了，早已成了云烟。<br/><br/>
+Go 语言首次在  1.11 版本中引进了 Go Modules, 在这之前或者没有启用 GO111MODULE 的话，我们用 go get 或 go install 来下载依赖，编译器会从 GOPATH 和 vendor 文件夹中查找包。<!--more--><br/>
+<h3>GOPATH 管理 Go 依赖</h3>
+如果我们用的 1.11 之前的 Go 版本或者 <code>GO111MODULE=off</code>, 没有启用  Go Modules, 来看下 <code>go get</code> 下载的包会放到哪里。<br/><br/>
+用 <code>go env</code> 看到的默认值为 <code>GO111MODULE=""</code>, 从此不能判断出是 on 还是 off, 每个版本的 GO 的 GO111MODULE 默认值是不同的，比如 Go 1.16 中默认为 on。我们以 Go 1.16(当前 Go 版本为 1.17, 在 2021-08-16 发布的) 为例，并且用 <code>go env -w GO111MODULE=off</code> 明确关掉 Module 的支持。也可以用系统环境变量 <code>export GO111MODULE=off</code> 来关闭，这比 <code>go env -w</code> 方式优先级更高。<br/><br/>
+Mac OS X 中刚安装后 Go 后，用 <code>go env | grep GOPATH</code> 查看到它指向 $HOME/go 下，如 /Users/yanbin/go，那么来运行一个 <code>go get</code> 命令，在运行它之前把 $HOME/go 目录清空<br/>
+<blockquote>
+$ go get github.com/labstack/echo
+</blockquote>
+
+它会下载 echo 及相关的依赖, 下载的过程中没有任何信息显示，完后会在 $HOME/go 下产生目录 pkg, src, 用 tree 命令显示 3 层来看下<br/>
+{{< highlight text >}}
+$ tree -L 3 -R ~/go
+/Users/yanbin/go
+├── pkg
+│   └── darwin_amd64
+│       └── github.com
+└── src
+    ├── github.com
+    │   ├── labstack
+    │   ├── mattn
+    │   └── valyala
+    └── golang.org
+        └── x
+{{</ highlight >}}
+<span style="color: #ff0000;"><strong>注意：下载文件的位置是在 $GOPATH/pkg/darwin_amd64 和 $GOPATH/src/github.com 下，将和后面进行对比</strong></span><br/><br/>
+这些就是我们执行 <code>go get</code> 产生的目录和文件，再我们运行 <code>go build</code> 或 <code>go run</code> 等的时候就 Go 编译器就会从  $GOPATH 目录中读取依赖代码。<br/><br/>
+我们来测试一下 echo, 创建一个文件 server.go, 内容如下<br/>
+{{< highlight go >}}
+package main
+
+import (
+  "net/http"
+  "github.com/labstack/echo"
+)
+
+func main() {
+  e := echo.New()
+  e.GET("/", func(c echo.Context) error {
+    return c.String(http.StatusOK, "Hello, World!")
+  })
+  e.Logger.Fatal(e.Start(":1323"))
+}
+{{</ highlight >}}
+运行 <code>go run server.go</code>, 看到启动界面<br/>
+{{< bundle-image src="go-modules-1.png" width="322px" >}}
+如果我们设置自己的 GOPATH, 比如用命令<br/>
+<blockquote>
+$ export GOPATH=/Users/yanbin/test
+</blockquote>
+
+再用 <code>go env</code> 可看过新的 GOPATH，如果用 <code>go env -w GOPATH=/Users/yanbin/test</code> 设置 GOPATH 将会被保存到 <code>/Users/yanbin/Library/Application Support/go/env</code> 文件中而变成全局的。 <br/><br/>
+清空掉 $HOME/go 目录，然后再执行<br/>
+<blockquote>
+$ go get github.com/labstack/echo
+</blockquote>
+
+同样是悄无声息的在下载依赖，完后它们在新的 GOPATH 目录中<br/>
+{{< highlight text >}}
+$ tree -L 5 -R /Users/yanbin/go
+/Users/yanbin/go
+├── pkg
+│   └── darwin_amd64
+│       └── github.com
+│           └── labstack
+│               └── echo.a
+└── src
+    ├── github.com
+    │   ├── labstack
+    │   │   ├── echo
+    │   │   │   ├── CHANGELOG.md
+    │   │   │   ├── LICENSE
+    │   │   │   ├── Makefile
+    │   │   │   ├── README.md
+    │   │   │   ├── _fixture
+    │   │   │   ├── bind.go
+    │   │   │   ├── bind_test.go
+..................
+{{</ highlight >}}
+相同的目录结构。<br/><br/>
+如果设置 GOPATH 为 <code>;</code> (Windowns) 或 <code>:</code>(Linux) 号分隔的多个目录了，<code>go get</code> 会安装到第一个目录中。我们这里可以想像一下，如果多个项目的依赖全部放在 $HOME/go 同一个目录中，依赖不同版本就会有问题(go get 只从  github.com 的 master 分支下载，不能指定版本)，如果每个项目都放覆盖 GOPATH, 那势必不停的重复下载相同的依赖，想要部分共享得为 GOPATH 设置多个目录，还不得不在执行 <code>go get</code> 前留意 $GOPATH 中第一个目录是什么。<br/>
+<h3>Go Modules 管理依赖</h3>
+现在来看下用 Go Modules 怎么处理依赖的，先执行 <code>go env -w GO111MODULE=on</code> 启用  Go Modules(Go 1.16 默认已开启)，清空前面用  <code>go get</code> 安装的内容，在项目目录中直接创建 server.go, 内容与上相同。<br/><br/>
+然后执行<br/>
+<blockquote>
+$ go mod init testgo
+</blockquote>
+
+生成 <code>go.mod</code> 文件，内容为<br/>
+{{< highlight go >}}
+module testgo
+
+go 1.16
+
+{{</ highlight >}}
+接着执行 <code>go mod tidy</code> 命令, 下载完依赖后就能 <code>go run server.go</code> 启动了<br/>
+{{< highlight sh >}}
+$ go mod tidy
+go: finding module for package github.com/labstack/echo
+go: downloading github.com/labstack/echo v1.4.4
+go: downloading github.com/labstack/echo v3.3.10+incompatible
+.........
+$ go run server.go<br/><br/>
+   ____    __
+  / __/___/ /  ___
+ / _// __/ _ \/ _ \
+/___/\__/_//_/\___/ v3.3.10-dev
+High performance, minimalist Go web framework
+https://echo.labstack.com
+____________________________________O/_______
+                                    O\
+⇨ http server started on [::]:1323
+{{</ highlight >}}
+<code>go mod tidy</code> 更新了 <code>go.mod</code> 文件为<br/>
+{{< highlight text >}}
+module testgo
+go 1.16
+require (
+    github.com/labstack/echo v3.3.10+incompatible
+    github.com/labstack/gommon v0.3.0 // indirect
+    github.com/stretchr/testify v1.7.0 // indirect
+    golang.org/x/crypto v0.0.0-20210817164053-32db794688a5 // indirect
+)
+{{</ highlight >}}
+并创建了 <code>go.sum</code> 文件记录了每一个所下载依赖的哈稀码。要增加新依赖的话可以直接编辑 <code>go.mod</code> 文件，以后构建或运行时就会下载对应的依赖。<code>go mod tidy</code> 能扫描代码收集所用到的依赖更新 <code>go.mod</code> 文件，并去除不再用的依赖。<br/><br/>
+Go 1.15 或之前的 <code>go run server.go</code> 会自动下载依赖并更新 go.mod 和 go.sum 文件，Go 1.16 的 <code>go run</code> 不会更新这两文件，而要用  <code>go mod tidy</code> 命令。但 Go 1.16 下在 <code>go.mod</code> 中配置了依赖，执行 <code>go run server.go</code> 会依照 <code>go.mod</code> 中的指示下载依赖。<br/><br/>
+现在再来看下启用了Go Module 之后文件载到了哪里，仍然是下载到了 $GOPATH 中了，只是目录结构稍有不同，也没有 src 目录<br/>
+
+{{< highlight text >}}
+$ tree -L 5 -R /Users/yanbin/go
+/Users/yanbin/go
+└── pkg
+    ├── mod
+    │   ├── cache
+    │   │   ├── download
+    │   │   │   ├── github.com
+    │   │   │   ├── golang.org
+    │   │   │   ├── gopkg.in
+    │   │   │   └── sumdb
+    │   │   └── lock
+    │   ├── github.com
+    │   │   ├── davecgh
+    │   │   │   └── go-spew@v1.1.0
+    │   │   ├── labstack
+    │   │   │   ├── echo@v1.4.4
+    │   │   │   ├── echo@v3.3.10+incompatible
+    │   │   │   └── gommon@v0.3.0
+    │   │   ├── mattn
+    │   │   │   ├── go-colorable@v0.1.2
+............................
+    └── sumdb
+        └── sum.golang.org
+            └── latest
+{{</ highlight >}}
+
+在 pkg 与 github.com 目录之间多了一个 <code>mod</code>, 还有一个新目录 <code>sumdb</code>，而且依赖包是带版本号的。<br/><br/>
+由此可对比出启用 GO111MODULE 与否下载的依赖的不同之处<br/>
+<ol>
+    <li>未启用  GO111MODULE：pkg 下直接是 github.com 以及与平台相关的如  darwin_amd64 目录，有与 pkg 同级的 src 目录，依赖包没有版本号, 下载依赖时不显示信息</li>
+    <li>启用 GO111MODULE: pkg 与 github.com 之间有 mod 目录，没有与 pkg 同级的 src 目录，但有一个  sumdb 目录，依赖包有版本号，源代码分别在 pkg/mod/github.com 下每一个带版本的独自的目录中 </li>
+</ol>
+
+据以上的对比我们在 <code>go env</code> 显示的 <code>GO111MODULE=""</code> 时执行 <code>go get</code> 就能知道该版本的 Go 默认是否启用了 Module 功能。比如在  Go 1.16 中，由于默认 GO111MODULE=on, 所以即使用没有 go.mod 文件，执行 <code>go get</code> 命令也会按照启用了 Module 时规格来下载依赖，但执行 <code>go run server.go</code> 时还是会提示找不到 <code>go.mod</code> 文件。<br/><br/>
+<blockquote>
+server.go:5:3: no required module provides package github.com/labstack/echo: go.mod file not found in current directory or any parent directory; see 'go help modules'
+</blockquote>
+
+<h3>查看默认是否启用了 Go Module</h3>
+如果用 <code>go env</code> 看到的是明确的 <code>GO111MODULE=off</code> 或 <code>GO111MODULE=on</code> 的话，我们很清是否启用了 Go Module。在 <code>GO111MODULE=auto</code> 时事情稍显得杂，如果默认时 <code>GO111MODULE=""</code> 为空时，那就依赖于当前版本的默认设定了。<br/><br/>
+有个最简单的方法来判断是否启用 Go Module, 即 <code>go env | grep GMMOD=</code> 看到是非空就是启用了 Go Module, 否则未启用。看下效果<br/>
+<blockquote>
+$ ls<br />
+server.go vendor<br />
+$ go env -w GO111MODULE=""<br />
+$ go env | grep GOMOD=<br />
+GOMOD="/dev/null"                                 //默认启用了  gomod，但未找到  go.mod 文件<br />
+$ go env -w GO111MODULE=off<br />
+$ go env | grep GOMOD=<br />
+GOMOD=""<br />
+$ go env -w GO111MODULE=on<br />
+$ go env | grep GOMOD=<br />
+GOMOD="/dev/null"                                 //启用了 gomod 但没找到  go.mod 文件<br />
+$ go env -w GO111MODULE=auto<br />
+$ go env | grep GOMOD=<br />
+GOMOD=""                                                   //auto 时未找到 go.mod 视作未启用<br />
+$ go mod init testgo<br />
+go: creating new go.mod: module testgo<br />
+go: to add module requirements and sums:<br />
+go mod tidy<br />
+$ ls<br />
+go.mod server.go vendor<br />
+$ go env | grep GOMOD=<br />
+GOMOD="/Users/yanbin/testgo/go.mod"
+</blockquote>
+
+上面是安装了 Go 1.16 后执行的，GO111MODULE="" 默认时也启用了 Go Module, <code>GO111MODULE=auto</code> 时只有创建了 <code>go.mod</code> 文件后才启用 Module. <code>GOMOD</code> 的值为空(未启用 gomod)与不为空(已启用 gomod)就会影响 <code>go get</code> 的下载行为，所以最终的决定因素是 gomod, GO111MODULE 只是一个手段。<br/>
+<h3>关于 vendor 目录</h3>
+Go Modules  有一个 <code>go mod vendor</code> 命令, 我们来看下它是做什么的。在用了 <code>go mod tidy</code> 后依赖下载到了 $GOPATH/pkg/mod 目录中，再执行下<br/>
+<blockquote>
+$ go mod vendor
+</blockquote>
+
+然后查看当前目录<br/>
+{{< highlight text >}}
+$ tree -L 5 -R ~.
+/Users/yanbin/testgo
+├── go.mod
+├── go.sum
+├── server.go
+└── vendor
+    ├── github.com
+    │   ├── labstack
+    │   │   ├── echo
+    │   │   │   ├── LICENSE
+    │   │   │   ├── Makefile
+    │   │   │   ├── README.md
+    │   │   │   ├── bind.go
+    │   │   │   ├── context.go
+.................
+    └── modules.txt
+{{</ highlight >}}
+在当前目录中生成了一个 vendor 目录，其下就是 github.com, 并且依赖中也没有版本号。看起来更象是为打包而设计的，目录结构也更接近于 <code>GO111MODULE=off</code> 时的样子。现在把 $GOPATH/go 目录清空掉<br/>
+<blockquote>
+$ sudo rm -rf ~/go/*             // ～/go 是 $GOPATH 的路径
+</blockquote>
+
+然后执行 <code>go run server.go</code>, 能正常执行，说明 Go 可以从 vendor 目录中加载依赖进行编译。<br/>
+Vendor 目录是 Go 1.15 中加入除 GOPATH 和 GOROOT 之外的依赖查找解决方案，在 Go 1.15 中需设置 GO15VENDOREXPERIMENT=1 启用它，自 Go 1.16 后默认启用，所以 Go 查找依赖的完整顺序如下<br/>
+<ul style="list-style-type: disc;">
+    <li>当前包下的 <code>vendor</code> 目录</li>
+    <li>向上级目录查找，直到找到  src  下的  <code>vendor</code> 目录</li>
+    <li>在 GOPATH 下查找依赖</li>
+    <li>在 GOROOT 目录中查找依赖 </li>
+</ul>
+vendor 也只有在启用了 Go Module 功能后才能使用。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://ieevee.com/tech/2017/07/10/go-import.html">go依赖包管理工具对比</a></li>
+    <li><a href="http://c.biancheng.net/view/5712.html">Go语言go mod包依赖管理工具使用详解</a></li>
+    <li><a href="https://www.jianshu.com/p/760c97ff644c">go mod使用</a></li>
+    <li><a href="https://maelvls.dev/go111module-everywhere/">Why is GO111MODULE everywhere, and everything about Go Modules (updated with Go 1.16)</a></li>
+    <li><a href="https://www.cnblogs.com/wongbingming/p/12986296.html">21. Go 语言中如何开源自己写的包给别人用?</a></li>
+</ol>

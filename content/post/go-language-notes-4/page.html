@@ -1,0 +1,160 @@
+---
+title: Go 语言新手笔记（四）
+url: /go-language-notes-4/
+date: 2021-08-14T13:32:51-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/golang-logo.png"
+categories:
+  - ReadingNotes
+  - Go
+tags: 
+  - Notes
+  - Go
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11110 
+wpStatus: publish
+views: 330
+lastmod: 2021-08-14T13:32:51-05:00
+---
+
+学到了 Go 语言本身的语法之后，开始步入 Go 的应用部分，掌握一个语言不得不接触的就是它对文件，网络的操作。</p>
+<br/>
+在正式进入主题之前不得不抱怨一下 Go 的官方编码规范中的代码缩进格式。曾经 Google 出的 Java 缩进规范是用两个空格(通常是用四个空格)，并且是杜绝用  Tab 进行缩进的，因为 Tab 的宽度是不很确定的。<br/><br/>
+然而 Google 建议 Go 的代码格式化工具  gofmt 却反常规的强制使用 Tab 进行缩进，而且是。本人用 IntelliJ IDEA 编写 Go, 即使在 Go 的 Code Style 中把 <code>Use tab character</code> 去掉也是用 Tab 缩进，原因是在 Code Style &gt; Go 的  Other 中有项 Run gofmt [] On code reformat, 这项也不能勾选。<br/><br/>
+不明白 <code>go fmt</code> 或 <code>gofmt</code> 为何强势而无理的用 Tab 进行缩进，看到多数地方以 8 个空格来显示一个  Tab，实在是难看，像下面这样子的<!--more--><br/>
+{{< highlight go >}}
+func (r Reader) info() {
+    fmt.Println("xyz")
+}
+
+func main() {
+
+    var student = Student{}
+{{</ highlight >}}
+好了，言归正传到 Go 的系统标准库的使用<br/><br/>
+首先是反射的基本用法<br/>
+{{< highlight go >}}
+var z = []int{100}
+v := reflect.ValueOf(z)
+t := reflect.TypeOf(z)
+fmt.Println(v, t, t.Kind()) // [100] []int slice
+
+var a = 99
+av := reflect.ValueOf(&a).Elem()
+fmt.Println(av.CanSet(), av.CanAddr()) // true true
+av.SetInt(100)
+fmt.Println(a)  // 100
+{{</ highlight >}}
+Go 的每个 <code>interface{}</code> 有两个信息，分别是 &lt;value, type&gt;。反射可以用来修改指针指向的数据，首先用 Value.Elem() 获得指针的间接引用，只有 CanAddr() 和 CanSet() 的数据才是可更改的，还有就是只能对导出的字段(首字母大写的)才能修改<br/>
+{{< highlight go >}}
+type SS struct { Name string; age int }
+
+var s = SS{Name: "Bob", age: 12}
+av := reflect.ValueOf(&s).Elem()
+av.Field(0).SetString("Kim")  //合法的
+av.Field(1).SetInt(33)  // 失败 panic: reflect: reflect.Value.SetInt using value obtained using unexported field
+{{</ highlight >}}
+
+反射的其他用法，可以想像在别的语言(如  Java) 中反射能做什么，尝试下 Go 的反射是否能做类似的事情，比如可通过反射创建类型，reflect 的 Makeslice(), Makemap() 和 Makechan() 方法待。<br/><br/>
+unsafe 包，由名字所暗示的用它要小心，其中的 unsafe.Sizeof() 像 C/C++ 的 sizeof()  用来查看类型数据占用的空间很有用，但它对 slice 无效。<br/><br/>
+通过 uintptr 和 unsafePointer(类似 C 的 void*),  能够进行内存数据的危险操作。<br/><br/>
+排序的三个基本方法，在 sort.Interface 接口中定义的<br/>
+{{< highlight go >}}
+type Interface interface {
+  Len() int
+  Less(i, j int) bool
+  Swap(i, j int)
+}
+{{</ highlight >}}
+Go 的排序方法不像 Java 的  Comparable 定义在元素上的，而是在集合上，[]int, []float64  和  []string 内建支持排序。我们可以看在  sort.go 中的 IntSlice 对 sort.Interface 的三个接口方法的实现<br/>
+{{< highlight go >}}
+var cc = []int{3, 2, 5, 4, 6}
+sort.Ints(cc)  // 或者 sort.Sort(sort.IntSlice(cc))
+fmt.Println(cc) // [2 3 4 5 6]
+{{</ highlight >}}
+[]int, []float64, []string 原生支持并不是可以直接 sort 去对它们排序，而是在 sort.go 中实现了自定义类型 IntSlice, Float64Slice 和 StringSlice, 排序时还得转换成对应的类型，如 []int -&gt; IntSlice。看起来 Go 对排序的设计有点笨拙。<br/><br/>
+还可用 sort.Slice() 函数进行排序，但它需要传递一个排序的回调函数。<br/><br/>
+os 包中许多函数对应的 shell 命令操作，<br/>
+<blockquote>
+os.Args              返回命令行参数, go 的 main() 函数不带参数，用这个取<br />
+func Getwd(dir string, err error)<br />
+func Chdir(dir string) error<br />
+func Environ() []string    //得到所有环境变量<br />
+func Exit(code int)<br />
+func Create(name string)(file *File, err error)   //创建文件<br />
+func Open(name string)(file *File, err err)<br />
+func (f *File) Read(b []byte)(n int, err error)   // 读文件内容<br />
+func (f *File) WriteString(s string)(ret int, err error)  // 写文件<br />
+func StartProcess(name string, argv []string, attr *ProcAttr) (*Process, error)  //启动进程
+</blockquote>
+
+Go 的控制台输入输出定义在 <code>fmt</code> 包中，有 Scan 和 Print 系列的函数，定义在 scan.go 和  print.go 中<br/><br/>
+flag 用来解析命令行参数，用 os.Args 得到的只是原始的数组。可支持 -flag, -flag=x, -flag x 这样的命令行参数输入形式。以及非 flag 的自由参数, non-flag 参数必须放在 flag 参数后，因为 flag 解析完 non-flag  的参数便 停止了，后面的  -flag 这样的参数得不到解析<br/><br/>
+flag 的例子<br/>
+{{< highlight go >}}
+func main() {
+  var profile string
+  flag.StringVar(&profile, "profile", "", "choose your profile")
+  var verbose = flag.Bool("verbose", false, "show detailed info")
+  flag.Parse()
+
+  var others = flag.Args()    // flag.Args() 要放在 flag.Parse() 后调用，否则为空
+  
+  fmt.Printf("profile: %s, verbose: %t, others: %s\n", profile, *verbose, others)
+}
+{{</ highlight >}}
+<blockquote>
+$ go run test.go -profile saml -verbose abc xyz<br />
+profile: saml, verbose: true, others: [abc xyz]
+</blockquote>
+
+还有更强大的命令行参数解析库，https://github.com/spf13/cobra<br/><br/>
+os 包提供了一些文件/目录的创建删除，以及读写内容的操作，io 包最重要的是 Reader 和 Writer 两个接口。如果读写文件总是一个个字节进行，效率势必低下，所以需要缓冲(buffer)。<br/><br/>
+下面尝试用一个 32 字节的缓冲区来读入文件内容<br/>
+{{< highlight go >}}
+var content []byte
+buf := make([]byte, 32)
+f, _ := os.Open("./test.go")
+
+for n, _ := f.Read(buf); n > 0; n,_ = f.Read(buf){
+  content = append(content, b[0:n]...)
+}
+f.Close()
+fmt.Println(string(content))
+{{</ highlight >}}
+更简单的方法是用 bufio.NewReader(file) 和 ioutil 包的 ReadAll(), ReadFile(), WriteFile(), ReadDir() 操作。如<br/>
+{{< highlight go >}}
+bytes, _ := ioutil.ReadFile("./test.go", os.O_RDONLY)
+fmt.Println(string(bytes))
+{{</ highlight >}}
+
+或者<br/>
+{{< highlight go >}}
+var content []byte
+buf := make([]byte, 32)
+f, _ := os.Open("./test.go")
+r := bufio.NewReader(f)
+
+for n, _ := r.Read(buf); n > 0; n,_ = r.Read(buf){
+  content = append(content, buf[0:n]...)
+}
+f.Close()
+fmt.Println(string(content))
+{{</ highlight >}}
+Go 提供有 log 日志包，最简单的用法是<br/>
+<blockquote>
+log.Println("message")
+</blockquote>
+
+输出为<br/>
+<blockquote>
+2021/08/14 13:29:38 message
+</blockquote>
+
+可通过配置输出日志到文件中，并设定日期格式，日志输出前缀，记录代码文件名和行号等，不展开了。

@@ -1,0 +1,345 @@
+---
+title: Go 语言新手笔记（五）
+url: /go-language-notes-5/
+date: 2021-08-15T08:14:52-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/golang-logo.png"
+categories:
+  - ReadingNotes
+  - Go
+tags: 
+  - Notes
+  - Go
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11115 
+wpStatus: publish
+views: 274
+lastmod: 2021-08-15T08:14:52-05:00
+---
+
+终于来到的 Go 的网络编程了，来写一个 TCP 服务端与客户端的程序。要用到 Go 语言的  net 包，是一个标准的 Listen+Accept 结构, 下面是一个简单的 TCP Server/Client 端的例子，启动了 Server 端口，可以用 telnet 去连接，也可以用 client.go 来连接<!--more--></p>
+<br/>
+server.go<br/>
+{{< highlight go >}}
+func main() {
+  var tcpAddr *net.TCPAddr
+  tcpAddr, _ = net.ResolveTCPAddr("tcp4", "localhost:9000")
+  tcpListener, _ := net.ListenTCP("tcp4", tcpAddr)
+  defer tcpListener.Close()
+
+  fmt.Println("Server ready to accept connection")
+
+  for {
+    tcpConn, _ := tcpListener.AcceptTCP()
+    fmt.Println("Client connected: " + tcpConn.RemoteAddr().String())
+    go tcpPipe(tcpConn)  //goroutine
+  }
+}
+
+func tcpPipe(conn *net.TCPConn) {
+  ipStr := conn.RemoteAddr().String()
+  defer func() {
+    fmt.Println(" Disconnected: " + ipStr)
+    conn.Close()
+  }()
+  reader := bufio.NewReader(conn)
+  msg, _ := reader.ReadString('\n')
+  fmt.Println("Client says:", msg)
+  returnMsg := time.Now().UTC().String() + ": Server Say hello!\n"
+  conn.Write([]byte(returnMsg))
+}
+{{</ highlight >}}
+<blockquote>
+go run server.go
+</blockquote>
+
+启动后用 telnet localhost 9000 连接<br/>
+{{< bundle-image src="go-5-1.png" width="396px" >}}
+或者用下面的 client.go 客户端来连接<br/>
+{{< highlight go >}}
+func main()  {
+  tcpAddr, _ := net.ResolveTCPAddr("tcp4", "127.0.0.1:9000")
+  conn, _ := net.DialTCP("tcp4", nil, tcpAddr)
+  defer conn.Close()
+  fmt.Println(conn.LocalAddr().String()+": Client connected!")
+  conn.Write([]byte(conn.LocalAddr().String()+" Say hello to Server\n"))
+
+  reader := bufio.NewReader(conn)
+  msg,_ := reader.ReadString('\n')
+  fmt.Println("Received from server: ", msg)
+}
+{{</ highlight >}}
+{{< bundle-image src="go-5-2-800x306.png" width="800px" >}}
+在 server.go 代码中用到的协程，这是学习 Go 时跳过的内容，现在再返回去了解一下 Go 是怎么作并发处理的。<br/><br/>
+Go 使用协和，比线程还更轻量级，Go 的协程(goroutine) 是 Go 提供的一种用户态线程。协程由应用程序创建和管理，因此开销低(一般为 4KB)。系统线程与 goroutine 之前可以是 1:1, 1:n, 或 m:n。runtime  几个相关的函数<br/>
+<ol>
+    <li>runtime.NumCPU()                   // 当前 CPU 内核数</li>
+    <li>runtime.GOMAXPROCS(2)    // 设置运行时最大可执行  CPU 数，默认与 CPU 内核数相同</li>
+    <li>runtime.NumGoroutine()       // 当前正在运行的 goroutine 数</li>
+</ol>
+
+Go 启动一个 goroutine  非常容易，只要 go function 就行了，循着 Java 中怎么开启线程的方式来试试 Go 的协程<br/>
+{{< highlight go >}}
+func main() {
+  for i := 0; i < 5; i++ {
+    go startRoutine(i)
+  }
+  fmt.Println("dispatched all tasks")
+  time.Sleep(time.Second * 6)
+}
+
+func startRoutine(num int) {
+  rand.Seed(time.Now().UnixNano())
+  slept := rand.Intn(1000)
+  time.Sleep(time.Duration(slept) * time.Millisecond)
+  fmt.Printf("slept %v ms, done routine: %v\n", slept, num)
+}
+{{</ highlight >}}
+执行输出：<br/>
+<blockquote>
+dispatched all tasks<br />
+slept 185 ms, done routine: 0<br />
+slept 242 ms, done routine: 1<br />
+slept 285 ms, done routine: 2<br />
+slept 344 ms, done routine: 4<br />
+slept 621 ms, done routine: 3
+</blockquote>
+
+通道(channel) 用于进程内不同协程之间进行通信，而非用共享内存，这样能解决数据同步的问题，通道可以带缓冲或不带缓冲(默认不带缓冲)，通道有三种，发送的，接收的，和同时发送和接收的。通道用 make() 创建，创建通道要给定通道传递的数据类型<br/>
+<blockquote>
+recvChan := make(&lt;-chan int)     // 接收通道，数据要从通道中读出， <code>&lt;-chan int</code>, int 数据从通道左边出来<br />
+sendChan := make(chan&lt;- int)    //  发送通道, 数据要写入通道，所以为 <code>chan&lt;- int</code>，int 数据从右边放入通道<br />
+sendRecvChan := make(chan int)  // 不指定方向，则为可同时发送和接收的通道，一般用这个
+</blockquote>
+
+上面创建的都是没有缓冲的通道，来测试一下用发送接收通道传递数据的效果<br/>
+{{< highlight go >}}
+func main() {
+  c := make(chan int)
+  go send(c)
+  go recv(c)
+  time.Sleep(3 * time.Second)
+  close(c)
+}
+
+func send(c chan<- int) {
+  for i := 0; i < 5; i++ {
+    fmt.Println("send ready ", i)
+    c <- i
+    fmt.Println("sent ", i)
+  }
+}
+
+func recv(c <-chan int) {
+  for i := range c {
+    fmt.Println("received ", i)
+  }
+}
+{{</ highlight >}}
+执行效果<br/><br/>
+<blockquote>
+send ready 0<br />
+sent 0<br />
+send ready 1<br />
+received 0<br />
+received 1<br />
+sent 1<br />
+send ready 2<br />
+sent 2<br />
+send ready 3<br />
+received 2<br />
+received 3<br />
+sent 3<br />
+send ready 4<br />
+sent 4<br />
+received 4
+</blockquote>
+
+送一个，收一个，如果把上面的第四行 <code>go recv(c)</code> 注释掉，再跑一遍，只打印一行<br/>
+<blockquote>
+send ready 0
+</blockquote>
+
+也就是一个数据都无法发送，无缓冲的队列必须有接收方在线才能传递数据。这和 Java 长度为 0 的同步队列 <code>SynchronousQueue</code> 效果上是一样的。看 Java 中 <code>SynchronousQueue</code> 的用法<br/>
+{{< highlight java >}}
+public class TestSynchronousQueue {
+
+    private static class Producer implements Runnable {
+        private final BlockingQueue<String> queue;
+
+        public Producer(BlockingQueue<String> queue) {
+            this.queue = queue;
+        }
+
+        @Override
+        public void run() {
+            while (true) {
+                try {
+                    String data = UUID.randomUUID().toString();
+                    System.out.println("Send ready: " + data);
+                    queue.put(data);
+                    System.out.println("Sent: " + data);
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+    }
+
+    private static class Consumer implements Runnable {
+        private final BlockingQueue<String> queue;
+
+        public Consumer(BlockingQueue<String> queue) {
+            this.queue = queue;
+        }
+
+        @Override
+        public void run() {
+            while (true) {
+                try {
+                    String data = queue.take();
+                    System.out.println("Take: " + data);
+                    Thread.sleep(2000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+    }
+
+    public static void main(String[] args) {
+        final SynchronousQueue<String> synchronousQueue = new SynchronousQueue<>();
+
+        new Thread(new Producer(synchronousQueue)).start();
+        new Thread(new Consumer(synchronousQueue)).start();
+    }
+}
+{{</ highlight >}}
+执行后效果为<br/>
+<blockquote>
+Send ready: 1f125ab8-3a2e-48b1-9d60-08cb2f8fb058<br />
+Sent: 1f125ab8-3a2e-48b1-9d60-08cb2f8fb058<br />
+Take: 1f125ab8-3a2e-48b1-9d60-08cb2f8fb058<br />
+Send ready: e9596d7e-d494-4a29-920c-906ed48318ee<br />
+Take: e9596d7e-d494-4a29-920c-906ed48318ee<br />
+Sent: e9596d7e-d494-4a29-920c-906ed48318ee<br />
+Send ready: 5ad8870a-e561-4456-848c-bf718d4ec30b<br />
+Take: 5ad8870a-e561-4456-848c-bf718d4ec30b<br />
+Sent: 5ad8870a-e561-4456-848c-bf718d4ec30b<br />
+Send ready: e7a24bee-5684-4486-b900-b94b6374cc16<br />
+Take: e7a24bee-5684-4486-b900-b94b6374cc16<br />
+Sent: e7a24bee-5684-4486-b900-b94b6374cc16
+</blockquote>
+
+如果同样把 <code>new Thread(new Consumer(synchronousQueue)).start()</code> 注释掉，不起动 Consumer，执行后效果如下<br/>
+<blockquote>
+Send ready: 39511b79-9d3b-4f27-8fef-07e3d6e95948
+</blockquote>
+
+也是一条数据也发送不出去，没有接收方在线什么事也做不了。简单测试就是<br/>
+<blockquote>
+new SynchronousQueue&lt;String&gt;().offer("a");     //永远返回 false, 因为队列长度为 0
+</blockquote>
+
+返回到前 Go 的代码，如果换成一个带缓冲的通道，即创建通道 <code>c</code> 时用<br/>
+<blockquote>
+c := make(chan int, 4)    //缓冲区大小为 4
+</blockquote>
+
+<code>go send(c)</code> 和 <code>go recv(c)</code> 全开的情况，输出<br/>
+<blockquote>
+send ready 0<br />
+sent 0<br />
+send ready 1<br />
+sent 1<br />
+send ready 2<br />
+sent 2<br />
+send ready 3<br />
+sent 3<br />
+send ready 4<br />
+sent 4<br />
+received 0<br />
+received 1<br />
+received 2<br />
+received 3<br />
+received 4
+</blockquote>
+
+可以连续发送和接收<br/><br/>
+再把  <code>go recv(c)</code> 注释掉，只发送而不接收的情况，输出<br/>
+<blockquote>
+send ready 0<br />
+sent 0<br />
+send ready 1<br />
+sent 1<br />
+send ready 2<br />
+sent 2<br />
+send ready 3<br />
+sent 3<br />
+send ready 4
+</blockquote>
+
+缓冲满后就不能再发送数据了，这里的缓冲区大小为 4，第 5 个数据放不进去了。<br/><br/>
+通道关闭后不能再发送数据，再已在通道中的数据还能被接收。<br/><br/>
+协程间访问共享资源时用锁的方式<br/>
+{{< highlight go >}}
+var lock sync.Mutex
+func foo() {
+  lock.lock()
+  defer lock.Unlock()    //相当于 Java 的 finally 中释放锁
+  // ... 一系列锁保户的操作
+}
+
+go foo()
+go foo()
+{{</ highlight >}}
+同时只有一个协程能拿到锁。<br/><br/>
+还有一个读写锁 <code>sync.RWMutex</code>, 用于读多写少的情况下，达到对读的做化，它有下列方法<br/>
+<blockquote>
+func (*RWMutex) Lock<br />
+func (*RWMutex) Unlock<br />
+func (*RWMutex) RLock<br />
+func (*RWMutex) RUnlock
+</blockquote>
+
+sync.WaitGroup 可用来等待所有的协程完成，它的功能和 Java 的 CountDownLatch 是一样的<br/>
+{{< highlight go >}}
+var wg sync.WaitGroup
+for i := 0; i < 5; i++ {
+  wg.Add(1)
+  go func(t int) {
+    defer wg.Done() // 或 wg.Add(-1)
+    time.Sleep(3 * time.Second)
+    fmt.Println("done task: ", t)
+  }(i)
+}
+wg.Wait()
+fmt.Println("exit")
+{{</ highlight >}}
+如果没有 <code>wg.Wait()</code> 则主线程会立即退出导致程序的结果，协程都得不到执行。上面代码执行效果如下<br/>
+<blockquote>
+done task: 4<br />
+done task: 3<br />
+done task: 1<br />
+done task: 0<br />
+done task: 2<br />
+exit
+</blockquote>
+
+sync.Once.Do(f func()) 保证同一个 <code>sync.Once</code> 变量的  Do() 只会执行一次，不其中的函数是否变换了<br/>
+{{< highlight go >}}
+var once sync.Once
+once.Do(func1)           // 只有这行执行才有效
+once.Do(func1)
+once.Do(func2)
+{{</ highlight >}}
+Go 1.9 新增了同步的字典 sync.Map，在 sync/atomic 包还定义了更多的原子级操作，与锁不同的是这里边的原子操作是由底层硬件支持的，原子操作效率相比系统提供 API 实现的锁更高。

@@ -1,0 +1,96 @@
+---
+title: Go 运行期加载 C 动态库(Linux版)
+url: /go-load-c-dynamic-library-programmatically/
+date: 2021-08-17T21:13:19-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/golang-logo.png"
+categories:
+  - Go
+tags: 
+  - Go
+  - Shared Library
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11151 
+wpStatus: publish
+views: 2389
+lastmod: 2021-08-17T21:29:16-05:00
+---
+
+前面写的一篇 <a href="/go-invoke-c-dylib-linux/">Go 调用 C 写的动态库完整例子(Linux版)</a>，是在告诉编译器用 /* #cgo ...*/ 的方式去加载动态库 <code>libadd.so</code>，这让代码丧失了一定的灵活性，比如同样的函数由多个动态库提供了不同的实现。这就需要做到在 Go 程序中可根据不同的输入条件选择不同的动态库实现，大概是<br/>
+<blockquote>
+if 条件1 {<br />
+    loadLibrary("libadd1.so")<br />
+    调用其中的实现函数 add<br />
+else if 条件 2 {<br />
+    loadLibrary("libadd2.so")<br />
+    调用其中的实现函数 add<br />
+else {<br />
+    loadLibrary("libaddx.so")<br />
+    调用其中的实现函数  add
+</blockquote>
+
+当然上面那样写是不行的，首先每一个动态库应该在程序运行期间只加载一次，定位的函数应该要缓存起来复用。<!--more--><br/><br/>
+这时候我们是不能用 #cgo 的方式，像<br/>
+{{< highlight go >}}
+/*
+#cgo CFLAGS: -I.
+#cgo LDFLAGS: -L../lib -ladd -Wl,-rpath,lib
+#include "add.h"
+*/
+import "C"
+{{</ highlight >}}
+因为它只能在编译构建期加载 libadd.so<br/><br/>
+还是以一个例子演示动态加载动态库，像 Java 的 <code>System.loadLibrary("libadd")</code> 那样。仍然使用上一篇 <a href="/go-invoke-c-dylib-linux/">Go 调用 C 写的动态库完整例子(Linux版)</a> 中生成的动态库 libadd.so, 导出函数签名为<br/>
+{{< highlight c >}}
+char* Add(char* src, int n);
+{{</ highlight >}}
+下面是加载 <code>libadd.so</code> 并调用 <code>Add</code> 函数的 Go 代码 test.go<br/>
+{{< highlight go >}}
+package main
+import "C"
+import (
+  "fmt"
+  "github.com/rainycape/dl"
+)
+
+func main() {
+  lib, err := dl.Open("./libadd.so", 0)
+  if err != nil {
+    panic(err)
+  }
+  defer lib.Close()
+  var add func(src *C.char, y int) (*C.char)  // 定义函数变量匹配 libadd 中的 Add 函数
+  lib.Sym("Add", &add)                        // 定位 Add 函数地址
+  val := add(C.CString("go"), 2021)
+  fmt.Println("Hello c value: ", C.GoString(val))
+}
+{{</ highlight >}}
+
+因为用到了 <code><a href="https://github.com/rainycape/dl">github.com/rainycape/dl</a></code>, 需先安装它，可用 <code>go get github.com/rainycape/dl,</code> 或用 gomod 来下载它。然后<br/>
+<blockquote>
+$ go run test.go<br />
+Hello c value: go2021
+</blockquote>
+
+成功。<br/><br/>
+该项目的最后更新日期是 7 年前 (2015)，如果稳定倒无妨，或者可以阅读它的实现代码，主要实现是步骤是<br/>
+{{< highlight go >}}
+C.dlopen(library, flag)
+C.dlsym(lib_handle, symbol_name)
+{{</ highlight >}}
+Go 1.8 开始的 <a href="https://pkg.go.dev/plugin@master">plugin</a> 也可用来动态的加载动态库，官方的例子是用来加载同样是 Go 写的并用 <code>go build -buildmode=plugin</code> 生成的 *.so 动态库，好像用 plugin 直接加载 纯 C 动态库有些困难<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://golang.hotexamples.com/examples/c/-/dlsym/golang-dlsym-function-examples.html">Golang dlsym Examples</a></li>
+    <li><a href="https://golang.hotexamples.com/examples/c/-/dlopen/golang-dlopen-function-examples.html">Golang dlopen Examples</a></li>
+    <li><a href="https://golang.org/src/plugin/plugin_dlopen.go">plugin_dlopen.go</a></li>
+    <li><a href="https://bbs.csdn.net/topics/392412895">golang 调用C++动态库 提示fatal: morestack on g0</a></li>
+    <li><a href="https://hero-space.tistory.com/57">Go plugin? C library in Go?</a></li>
+    <li><a href="https://github.com/golang/go/issues/30162">How to load .so file in Linux</a></li>
+</ol>

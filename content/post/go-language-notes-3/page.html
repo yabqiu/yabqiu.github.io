@@ -1,0 +1,244 @@
+---
+title: Go 语言新手笔记（三）
+url: /go-lanague-notes-3/
+date: 2021-08-14T00:24:51-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/golang-logo.png"
+categories:
+  - ReadingNotes
+  - Go
+tags: 
+  - Notes
+  - Go
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11105 
+wpStatus: publish
+views: 280
+lastmod: 2021-08-14T00:24:51-05:00
+---
+
+终于要开始了解 Go 的结构体和接口了。Go 的结构体只是一种纯粹的数据类型，而不像 C/C++ 的结构体里还能添加方法。Go 的 struct 更像是 Python 的 dataclass, 或 Java 的 record。Go 的结构体是值类型，通过 new 函数来创建，在 C/C++ 中，只要是 new 得到的就是指针。</p>
+<br/>
+结构体的字段名称也可以用 <code>_</code>, 相当一个点位填充，字段也可以只有类型没有名称，称之为匿名字段。<!--more--><br/>
+{{< highlight go >}}
+func main() {
+  type S struct {
+    x,y int
+    _ float32
+    string   // 匿名字段必须为类型 T 或非接口类型 *T 的指针
+    *rune
+    // string // 同一种类型只能有一个匿名的字段，因为类型名将作为字段名
+    // *string  //用指针的匿名字段也不行
+  }
+
+  var t1 S       // 得到类型值
+  t2 := new (S)  // 得到的是一个指针
+  t2 = &S{}      // new (S) 和 &S{} 是等效的
+
+  fmt.Println(t1)  // {0 0 0 <nil>}
+  fmt.Println(t2)  // &{0 0 0 <nil>}
+
+  t2.x = 100
+  t1.string = "abc"   // 匿名字段的类型名作为字段名
+  fmt.Println(t1.string)  // abc
+
+  type Point struct {
+    x, y int
+  }
+
+  p1 := Point{100, 200}  // 按序初始化
+  p2 := Point{y: 2, x: 1}      // 按字段名初始化
+  p3 := Point{y: 2}            // 按字段名初始化，只指定部分字段
+}
+{{</ highlight >}}
+结构体中的字段命名遵循可见必规则，即导出时首字母大写的可见，余则不可见。<br/><br/>
+结构体定义字段时可以加标签，可通过反射得到<br/>
+{{< highlight go >}}
+type Student struct {
+  name string "student's name"
+}
+
+fmt.Println(reflect.TypeOf(Student{}).Field(0).Tag) // student's name
+{{</ highlight >}}
+Go 的继承是通过内嵌或组合实现的，和 C 实现继承差不多，把父实例放在最前面，那么父子实例的首地址就是一样的<br/><br/>
+嵌入与聚合，用匿名字段叫做嵌入，用命名字段叫聚合<br/>
+{{< highlight go >}}
+type Human struct {
+}
+
+type Person1 struct {  //嵌入
+  Human
+}
+
+type Person2 struct {  //嵌入
+  *Human
+}
+
+type Person3 struct {  //聚合
+  human Human
+}
+{{</ highlight >}}
+接口的嵌入<br/>
+{{< highlight go >}}
+type Writer interface {
+  Write()
+}
+
+type Reader interface {
+  Read()
+}
+
+type Teacher interface {
+  Reader
+  Writer
+}
+{{</ highlight >}}
+这样就相当于实现了接口的多重继承<br/><br/>
+还有其他的像在结构体中内嵌接口，结构体中嵌入结构体，不详述了，使用当中再仔细琢磨。<br/><br/>
+结构体嵌入结构体的命名冲突需要指定被嵌入的结构体名来引用<br/>
+{{< highlight go >}}
+type A struct {a int}
+type B struct {a int}
+
+type C struct {A; B}
+
+c := C{A{1}, B{2}}
+fmt.Println(c.A.a, c.B.a) //1 2
+{{</ highlight >}}
+Go 的 interface 与别的语言的 interface 一样的，只定义方法，无实现。interface{} 是一切接口的祖宗，interface{} 可是赋任何的值<br/>
+{{< highlight go >}}
+var i interface{} = 99
+i = "any"
+fmt.Println(i)
+{{</ highlight >}}
+接口的定义<br/>
+{{< highlight go >}}
+type Reader interface {
+  read() string
+}
+{{</ highlight >}}
+只在接口中声明方法签名。<br/><br/>
+Go 的接口方法在哪里实现太随意了，实现类型与接口之间可以不用关联，只要在实现类型中实现了所有与接口相同签名的方法，就认为是实现了该接口。<br/>
+{{< highlight go >}}
+type Reader interface {
+  read() string
+}
+
+type Student struct {
+  Name string
+}
+
+func (s Student) read() string {   // 接口方法实现不能写在下面的 main 函数中
+  return "Name: " + s.Name
+}
+
+func main() {
+  var rr Reader = Student{Name: "Ketty"} // 因为 Student 实现了 Reader 的所有方法(这里就一个)，所以可用 Reader 来引用 Student
+  fmt.Println(rr.read())
+}
+{{</ highlight >}}
+<blockquote>
+func (s Student) read() string { ... }
+</blockquote>
+
+让 Student 实现接口 Reader 的 read() 方法，只要符合方法签名就行，不需说明 Student 与 Reader 有什么直接关系<br/><br/>
+实现一个接口方法的语法时，在 <code>func</code> 与 <code>read()</code> 之间的 <code>(s Student)</code> 是一个 Reciever，实现接口必须实现接口定义中的所有方法。<br/><br/>
+结构中可以嵌入结构和接口，也能嵌入结构本身; 但接口中不能嵌入结构，也不能嵌入接口自身，接口可以包含一个或多个其他接口，以实现接口的继承。<br/><br/>
+检查是否为实际类型, 可用<br/>
+<blockquote>
+if val, ok := rr.(Student); ok { ... }
+</blockquote>
+
+rr 是一个 Student 的话，ok 为 true, 否则 false, 并且 val 直接就是  Student 类型了<br/><br/>
+或用 type-switch 做判断<br/>
+<blockquote>
+switch str := rr.(type) {
+case Student: ...
+</blockquote>
+
+Go 的类型系统和 Python 一样也是鸭子类型，就是看起像鸭子，它就是鸭子。<br/><br/>
+Go 语言没有类，数据和方法实现是分离的。Go 语言的鸭子类型也能让接收接口类型的方法能接受任何实现了该接口的类型，但是 Go 会在编译器进行类型的检测(检验该类型是否实现了接口的所有方法)，这避免了运行期类型不匹配的错误。<br/><br/>
+Go 的这种类型实现接口的方式便于接口设计的不断演进。<br/><br/>
+从上面学下来后，方法以及方法的实现就好理解了，函数是函数，这里说的方法是作用在接收器 (receiver) 上的函数。Go 的方法与其他面向对象语言的实例方法类似，如定义在 Java 类中的实例方法，Python 的第一个参数为 self 的方法，C++ 的 Dog::bark()。只是 Go 的方法定义在外部，与定义函数的区别是在 func 后多了一个接口收器<br/>
+<blockquote>
+func (recv receiver_type) methodName(parameter_list)(return_value_list) {...}
+</blockquote>
+
+通过  recv 就可以访问相当于别的面向对象语言中叫做实例的东西。receiver 可以是除指针或接口(因为接口是抽象的)外的任何类型，甚至是以基本类型为基础的自定义类型。<br/><br/>
+{{< highlight go >}}
+type MyInt int
+
+func(mi *MyInt) print() {  //指针接收器，指针方法
+  fmt.Println("ptr MyInt:", *mi)
+}
+
+func (mi MyInt) echo() { //值 接收器，值方法
+  fmt.Println("val MyInt:", mi)
+}
+
+func main() {
+  var z1 MyInt= 3
+  z1.echo()        // val MyInt: 3
+  z1.print()       // ptr MyInt: 3
+
+  (&z1).echo()       // val MyInt: 3
+  (&z1).print()      // ptr MyInt: 3
+
+  MyInt.echo(z1)    // 与 z1.echo() 等价
+  MyInt.print(z1)   // 与 z1.print() 等价
+}
+{{</ highlight >}}
+Go 方法的也可显式的把接收器作为它的第一个参数，和 Python 一样，在 Python 中可以 User.foo(user) 来等价  user.foo(). 特别是得到方法类型后再调用，就要显式的传入第一个参数<br/><br/>
+<blockquote>
+f1 = t.foo    // 或用 f1 = T.foo<br />
+f1(t, "other param")
+</blockquote>
+<br/>
+如果显式传入接收器来调用指针方法那就是<br/><br/>
+<blockquote>
+f1 = MyInt.print
+var zz MyInt = 100
+f1.print(&zz)
+</blockquote>
+
+所以能看到指针方法与值方法的区别就是指针方法可改变类型中的数据<br/><br/>
+Go 对指针与非指针的方法调用统一用 <code>.</code> 点号，而不像 C++ 那样用 <code>.</code> 和 <code>-&gt;</code> 来区分。<br/>
+{{< highlight go >}}
+type MyInt int
+
+func(mi *MyInt) print() {  //指针接收器，指针方法
+  fmt.Println("ptr MyInt:", *mi)
+  *mi = 3
+}
+
+func main() {
+  var z MyInt = 100
+  f1 := (*MyInt).print
+  f1(&z)          // ptr MyInt: 3
+  fmt.Println(z)  // 3
+}
+{{</ highlight >}}
+从上面就能看出指针与非指针方法的区别。还有其他更多是用指针接收器还是值接收器的考量。<br/><br/>
+匿名类型的方法提升<br/>
+{{< highlight go >}}
+type Reader struct {}
+
+type Student struct { Reader }
+
+func (r Reader) info()  {
+  fmt.Println("xyz")
+}
+
+func main() {
+  var student = Student{}
+  student.Reader.info() // 可写成 student.info()，相当是 Student 有该方法
+}
+{{</ highlight >}}
+更多方法提升的规则碰到实际问题再细究吧。<br/><br/>
+Go 没有类的概念，而是松耦合的类型，方法以及接口的实现。
