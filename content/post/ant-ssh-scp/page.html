@@ -1,0 +1,88 @@
+---
+title: 使用Ant进行ssh和scp操作
+url: /ant-ssh-scp/
+date: 2006-01-03T02:41:00-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/ant-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - SSH
+  - ant
+  - scp
+comment: true
+# additional
+wpPostId: 604 
+wpStatus: publish
+views: 650
+lastmod: 2021-09-04T10:52:42-05:00
+---
+
+现在我们安装Linux的时候通常考虑到安全因素（默认情况下）是不打开telnet服务的，而ssh服务是有的，ant很早就支持telnet，但要求我们在Linux下要安装telnet-server,并要启用该服务。</p>
+<br/>
+还好自Ant1.60开始支持了SSH 及SCP 操作了，早在Ant之前若要支持SSH、SCP、SFTP等任务就必须下载j2ssh的j2ssh-ant.jar和j2ssh-core.jar（在<a href="http://www.sourceforge.net">http://www.sourceforge.net</a>的j2ssh下有下载）。现在可以使用Ant提供的Sshexec和scp任务，由$ANT_HOME/lib/ant-jsch.jar提供支持，但是同样你也要在<a href="http://www.jcraft.com/jsch/index.html">http://www.jcraft.com/jsch/index.html</a>下载一个依赖包jsch-0.1.24.jar(文件名因版本而不同)，jsch同样也是<a href="http://www.sourceforge.net">http://www.sourceforge.net</a>下的一个项目。<br/><br/>
+你需要把下载的jsch-0.1.24拷贝到$ANT_HOME/lib下，如果是Eclipse下的Ant环境必须在Window-&gt;Preferences-&gt;Ant-&gt;Runtime-&gt;Classpath中加入jsch-0.1.24。<!--more--><br/><br/>
+JSch是一个SSH2的纯Java实现<br />
+JSch允许你连接到sshd server并采用端口映射， X11 映射; Scp文件传输等，你可以把集成JSch提供的功能到你自己的Java项目中，JSch 的授权方式为 BSD形式。<br/><br/>
+下面是用JSch完成Sshexec和scp两个任务的最简单例子，如果需要更详细的内容，请参考Ant用户手册<br/><br/>
+[Sshexec任务]<br/>
+<pre class="lang:default decode:true ">&lt;target name="sshexec"&gt;
+     &lt;sshexec host="192.168.122.180" username="root" password="123456" trust="true" command="cd /;ls"/&gt;
+&lt;/target&gt;</pre>
+<br/>
+注意上面的trust属性一般设置为true,　如果为默认值false时,那么就要求你所连接的host必须存在于你的knownhosts文件中，并且这个文件也必须是存在的，否则会出现 com.jcraft.jsch.JSchException: reject HostKey: 192.168.122.180异常。执行Linux下的命令时可以用分号";"把多个命令隔开，它们将会依次执行，而不需要写多个sshexec进行多次连接，每次连接只执行一个命令。<br/><br/>
+该任务的执行后输出结果如下：<br/><br/>
+<span style="color: #000088;">sshexec:<br />
+</span> <span style="color: #0033ff;">[</span><span style="color: #000088;">sshexec</span><span style="color: #0033ff;">] Connecting to 192.168.122.180:22<br />
+[</span><span style="color: #000088;">sshexec</span><span style="color: #0033ff;">] backup<br />
+[</span><span style="color: #000088;">sshexec</span><span style="color: #0033ff;">] bin<br />
+[</span><span style="color: #000088;">sshexec</span><span style="color: #0033ff;">] boot<br />
+[</span><span style="color: #000088;">sshexec</span><span style="color: #0033ff;">] dev<br />
+[</span><span style="color: #000088;">sshexec</span>] <span style="color: #0033ff;">etc<br />
+...................</span><br/><br/>
+[scp任务]<br/><br/>
+1.拷贝单个文件到远端服务器<br/>
+<pre class="lang:default decode:true">&lt;scp file="c:/cmd.txt" todir="root:123456@192.168.122.180:/tmp" trust="true"/&gt;</pre>
+或<br/>
+<pre class="lang:default decode:true">&lt;scp file="c:/cmd.txt" todir="root@192.168.122.180:/tmp" password="123456" trust="true"/&gt;</pre>
+2.拷贝远端文件本地<br/>
+<pre class="lang:default decode:true ">&lt;scp file="root:123456@192.168.122.180:/tmp/cmd.txt" todir="D:/my-app" trust="true"/&gt;</pre>
+3.拷贝远端目录到本地，将以递归形式操作<br/>
+<pre class="lang:default decode:true">&lt;scp file="root:123456@192.168.122.180:/tmp/*" todir="d:/my-app" trust="true"/&gt;</pre>
+4.拷贝本地目录中的内容到远端，递归形式，但不在服务器上建立my-app目录<br/>
+<pre class="lang:default decode:true ">&lt;scp todir="root:123456@192.168.122.180:/tmp/" trust="true"&gt;
+    &lt;fileset dir="d:/my-app"/&gt;
+&lt;/scp&gt;</pre>
+5.拷贝一系列的文件到远端，会建立相应的层次目录，不建立my-app目录<br/>
+<pre class="lang:default decode:true">&lt;scp todir="root:123456@192.168.122.180:/tmp" trust="true"&gt;
+    &lt;fileset dir="d:/my-app"&gt;
+        &lt;include name="**/*.java" /&gt;
+    &lt;/fileset&gt;
+&lt;/scp&gt;</pre>
+或<br/>
+<pre class="lang:default decode:true">&lt;scp todir="root:123456@192.168.122.180:/tmp" trust="true"&gt;
+    &lt;fileset dir="d:/my-app" excludes="**/*.java"/&gt;
+&lt;/scp&gt;</pre>
+最后一个任务的执行输出结果如下（其他略）：<br/>
+scp:<br />
+<span style="color: #0033ff;">[</span><span style="color: #001b88;">scp</span><span style="color: #0033ff;">]</span><span style="color: #0033ff;">Connecting to 192.168.122.180:22<br />
+[</span><span style="color: #001b88;">scp</span><span style="color: #0033ff;">] Sending: cmd.txt : 0<br />
+[</span><span style="color: #001b88;">scp</span><span style="color: #0033ff;">] File transfer time: 0.0 Average Rate: ? B/s<br />
+[</span><span style="color: #001b88;">scp</span><span style="color: #0033ff;">] Sending: pom.xml : 852<br />
+[</span><span style="color: #001b88;">scp</span><span style="color: #0033ff;">] File transfer time: 0.0 Average Rate: ∞ B/s<br />
+[</span><span style="color: #001b88;">scp</span><span style="color: #0033ff;">] Sending: application.properties : 142<br />
+[</span><span style="color: #001b88;">scp</span><span style="color: #0033ff;">] File transfer time: 0.0 Average Rate: ∞ B/s<br />
+[</span><span style="color: #001b88;">scp</span><span style="color: #0033ff;">] Sending: application.properties : 45<br />
+[</span><span style="color: #001b88;">scp</span><span style="color: #0033ff;">] File transfer time: 0.0 Average Rate: ∞ B/s<br />
+[</span><span style="color: #001b88;">scp</span><span style="color: #0033ff;">] Sending: test.properties : 0<br />
+[</span><span style="color: #001b88;">scp</span><span style="color: #0033ff;">] File transfer time: 0.02 Average Rate: 0.0 B/s<br />
+[</span><span style="color: #001b88;">scp</span><span style="color: #0033ff;">] Sending: application.properties : 153<br />
+[</span><span style="color: #001b88;">scp</span><span style="color: #0033ff;">] File transfer time: 0.0 Average Rate: ∞ B/s<br />
+[</span><span style="color: #001b88;">scp</span><span style="color: #0033ff;">] Sending: application.properties : 45<br />
+[</span><span style="color: #001b88;">scp</span><span style="color: #0033ff;">] File transfer time: 0.0 Average Rate: ∞ B/s<br />
+[</span><span style="color: #001b88;">scp</span><span style="color: #0033ff;">] done.</span><br/><br/>
+[Unmi后注]前面的内容很多都是直接在这里可视化编辑的，如改变字体颜色，大小什么的，这样做发现生成的HTML垃圾代码实在是太多，以后对于内容稍稍丰富的文章还是在外部编辑器如Dreamweaver编辑好了再贴到这里好一点，并且更能作本地备份，以免意外，当然简单内容这里直接写也无妨。
