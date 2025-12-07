@@ -1,0 +1,130 @@
+---
+title: 步步理解 JAVA 泛型编程(二)
+url: /understand-java-generic-2/
+date: 2010-04-15T23:56:00-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - generic
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 196 
+wpStatus: publish
+views: 1303
+lastmod: 2021-09-02T10:58:32-05:00
+---
+
+前面讲了泛型类的定义，你也可以在一个普通类中单单定义一个泛型方法。也就是说类能够带个类型参数，方法也可以带类型参数的。还是来看个例子(包括如何应用)，一个获得数组中间元素的方法，因为数组中存储元素的类型是不定的，所以把该方法定义成泛型的。</p>
+
+{{< highlight java >}}
+package com.unmi;
+
+/**
+ * 泛型方法示例
+ * @author Unmi
+ */
+public class ArrayAlg {
+
+    //这个就是在普通类 ArrayAlg 中定义的泛型方法
+    public static <T> T getMiddle(T[] a){
+        return a[a.length/2];
+    }
+
+    public static void main(String[] args) {
+        String[] names = {"Fantasia","Unmi","Kypfos"};
+        //String middle = ArrayAlg.<String>getMiddle(names);
+
+        //上面那样写是可以，编译器可推断出要调用的方法，所以省去<String>
+        String middle = ArrayAlg.getMiddle(names);
+        System.out.println(middle);
+    }
+}
+{{</ highlight >}}
+<br/>
+<!--more-->我们之所以说上面的 ArrayAlg 是个普通类，是因为没有在类声明部分引入类型参数(比如声明为 public class ArrayAlg&lt;T&gt;)。同时在理解上面的泛型方法 getMiddel() 时应联想到泛型类是如何定义的。<br/><br/>
+对比前面泛型类的定义 public class Demo&lt;T&gt;{.......}，那么在类的变量、方法参数、返回值等处就可以使用参数类型 T。<br />
+这里定义了泛型方法 public static &lt;T&gt; T getMiddle(T[] a){......}，同样是用 &lt;T&gt; 的形式为方法引入了一个类型参数，那么这个类型 T 可用作该方法的返回值、参数、或局部变量。注意这里的 &lt;T&gt; T，前部分 &lt;T&gt; 是定义泛型方法的类型参数，后部 T 是该方法的返回值。<br/><br/>
+泛型类的类型参数(&lt;T&gt;) 是紧贴着类名的后面，而泛型方法的类型参数(&lt;T&gt;) 是紧贴着方法声明的返回类型的前面。<br/><br/>
+我们在使用泛型类，也是在构造的时候类紧贴类名后加上具体的参数类型，如 Demo&lt;String&gt; demo = new Demo&lt;String&gt;()；类似的，我们在使用泛型方法时，从代码语法是在紧贴方法名的前面加代换上具体的参数类型，如ArrayAlg.&lt;String&gt;getMiddle(names)，调用方法时不能有返回类型了，所以具体参数类型 &lt;String&gt; 靠紧了方法名。<br/><br/>
+前面代码中，我们说既可以用 ArrayAlg.&lt;String&gt;getMiddle(names);  来调用定义的泛型方法 public static &lt;T&gt; T getMiddle(T[] a)，也可省写为<br />
+ArrayAlg.getMiddle(names);  来调用该方法。通常我们是这么做的，原因是 Java 编译器通过参数类型、个数等信息能推断出调用哪一个方法。但 Java 编译器也不是完全可靠的，有时候你必须显式的用 ArrayAlg.&lt;String&gt;getMiddle(names);  这种形式去调用明确的方法。<br/><br/>
+例如，我们在 ArrayAlg 中多定义一个 public static String getMiddle(String[] a){......} 方法，完整代码如下：<br/>
+{{< highlight java >}}
+package com.unmi;
+
+/**
+ * 泛型方法示例,泛型方法的显式调用
+ * @author Unmi
+ */
+public class ArrayAlg {
+
+    //这个就是在普通类 ArrayAlg 中定义的泛型方法
+    public static <T> T getMiddle(T[] a){
+        return a[a.length/2];
+    }
+    public static String getMiddle(String[] a){
+        return "Not Generic Method.";
+    }
+
+    public static void main(String[] args) {
+        String[] names = {"Fantasia","Unmi","Kypfos"};
+
+        //必须显式的用 <String> 去调用定义的泛型方法
+        String middle1 = ArrayAlg.<String>getMiddle(names);
+        System.out.println(middle1); //输入 Unmi，调用了泛型方法
+
+        //不指明参数类型 <String> 则调用的是那个普通方法
+        String middle2 = ArrayAlg.getMiddle(names);
+        System.out.println(middle2); //输出 Not Generic Method
+    }
+}
+{{</ highlight >}}
+<br/>
+这也有些像我们的 C++ 的模板类，在模板具体化的时候存在 隐式实例化、显式实例化、显式具体化、部分具体化的情况，怎么看 C++ 的模板类还是要比 Java 的泛型复杂。<br/><br/>
+当然，上面代码只是说明 Java 的泛型方法在语法上会出现这种情况，倘若谁真写出的泛型代码需要用 ArrayAlg.&lt;String&gt;getMiddle(names);  显式的去调用泛型方法，那一定要考虑重构它了。明白了这一点难道就没有半点实际的意义吗，自然也不是，我们可以把它牢记为潜在的 Bug 容身之所。<br/><br/>
+进一步联系到前一篇，泛型类在定义的时候可以指定多个类型参数(用 &lt;T,U&gt; 形式)，在定义泛型方法时同样用 &lt;T,U&gt; 的形式，调用的时候与一个参数时类似，如 ArrayAlg.&lt;String, Date&gt;getByIdx(names, new Date())。也不怕浪费几个字，大致浏览一下多类型参数时泛型方法的定义与使用的代码：<br/>
+{{< highlight java >}}
+package com.unmi;
+
+import java.util.*;
+
+/**
+ * 泛型方法示例,多类型参数的情况
+ * @author Unmi
+ */
+public class ArrayAlg {
+
+    //由索引获得
+    public static <T,U> T getByIdx(T[] a, U b){
+        //依照 HashMap 实现的算法，由 b 得到一个不越界的索引
+        int h = b.hashCode();
+        h ^= (h >>> 20) ^ (h >>> 12);
+        h = h ^ (h >>> 7) ^ (h >>> 4);
+        int index = h & (a.length-1);
+
+        return a[index];
+    }
+
+    public static void main(String[] args) {
+        String[] names = {"Fantasia","Kypfos","Unmi"};
+
+        //显式的用 <String, Object> 去调用定义的泛型方法
+        String name = ArrayAlg.<String, Date>getByIdx(names,new Date());
+
+        //隐式调用泛型方法
+        String name1 = ArrayAlg.getByIdx(names,"GameOver");
+
+        //会输出 Unmi:Fantasia，或 Fantasia:Fantasia
+        System.out.println(name + ":" + name1);
+    }
+}
+{{</ highlight >}}
+<br/>
+因为现在还不想涉及到调用类型参数的特定方法，所以参照 HashMap 算法，由第二个类型参数算出数组范围内的索引。留意两种调用泛型方法的方式，应用隐式调用在有些情况下也是会产生二义性的。

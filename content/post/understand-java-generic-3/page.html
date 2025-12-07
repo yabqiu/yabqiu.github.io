@@ -1,0 +1,79 @@
+---
+title: 步步理解 JAVA 泛型编程(三)
+url: /understand-java-generic-3/
+date: 2010-04-16T04:53:00-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - generic
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 195 
+wpStatus: publish
+views: 2414
+lastmod: 2021-09-02T10:57:56-05:00
+---
+
+前面介绍的无论是泛型类还是泛型方法，基本上都是把定义的类型参数作为一个整体来操作，放到数组或取出来，顶多就是调用了一下 hashCode() 方法，因为这是 Java 的根对象拥有的方法。比如说一个泛型数组，要得到其中的最小元素：</p>
+
+{{< highlight java >}}
+package com.unmi;
+
+/**
+ * 泛型，类型变量的限定
+ * @author Unmi
+ */
+public class ArrayAlg {
+
+    public static <T> T main(T[] a){
+        if(a==null || a.length ==0){
+            return null;
+        }
+        T smallest = a[0];
+        for(int i=0;i<a.length;i++){
+            if(smallest.compareTo(a[i])>0){
+                smallest = a[i];
+            }
+        }
+
+        return smallest;
+    }
+}
+{{</ highlight >}}
+<br/>
+<!--more-->在上面的代码中，要比较大小，所以调用了类型 T 的 compareTo() 方法，我们期望具体类型是一个实现了 compareTo() 方法的类型。不过，很可惜，Java 泛型还是与 C++ 的模板有别，在  C++ 中真的对于类似上面的代码，具体类型有 compareTo() 则可以通过，具体类型没有 compareTo() 则不能通过，是推延至使用代码时确定具体类型是否满足条件。而在 Java 中无论你的具体类型是什么，上面的代码本身就是无法编译通过的，错误为：<br/><br/>
+<span style="color: #ff0000;">The method compareTo(T) is undefined for the type T<br />
+</span><br />
+也就是说在你编写泛型的时候就该限类型参数的一个更窄的范围，不是所有的 Object，而是那些实现了 compareTo() 方法的类型，比如说实现了 Compareable 接口的类型。为了做到这一点，对于前面方法声明部分就要做如下进一步约束：<br/><br/>
+<span style="color: #800080;">public static &lt;T extends Comparable&gt; T min(T[] a){......}<br />
+</span><br />
+这里只表示到时的具体类型 T 是 Comparable 的一种类型，extends 后是接口，还是类都是用 extends 关键字，不在此区分接口还是类，只表示 Is-A 的关系。<br/><br/>
+这样你在使用该泛型的时候具体类型一定要是实现了 Comparable 接口的类型，比如用这样的代码 ArrayAlg.main(new Object[]{"1","2","3"}); 调用，则会有下面的错误提示：<br/><br/>
+<span style="color: #ff0000;">Bound mismatch: The generic method main(T[]) of type ArrayAlg is not applicable for the arguments (Object[]). The inferred type Object is not a valid substitute for the bounded parameter &lt;T extends Comparable&gt; ArrayAlg.java<br />
+</span><br />
+因为 Object 并未实现 Comparable，用 ArrayAlg.main(new String[]{"1","2","3"}); 调用则无误，String 是实现了 Comparable 接口的。<br/><br/>
+如果在泛型实现中会调用到多个方法，要求泛型参数同属不同的类型，就 extends 多个接口或类，中间用 &amp; 符号隔开。<br/><br/>
+public static <span style="color: #800080;">&lt;T extends Comparable &amp; Serializable&gt;</span> T foo(T[] a){<br />
+       //a[i].compareTo(a[i-1]);<br />
+       //xxx.writeObject(a[i]);<br />
+}<br/><br/>
+为什么是用 &amp; 而不用逗号(,) 呢，因为逗号还有作他用，当有多个类型参数时就该写作：<br/><br/>
+public static <span style="color: #800080;">&lt;T extends Comparable &amp; Serializable, U extends Runnable&gt;</span> T foo(T a, U b){<br />
+       //a[i].compareTo(a[i-1]);<br />
+       //xxx.writeObject(a[i]);<br />
+       //new Thread(u).start();<br />
+}<br/><br/>
+虽然这里简单的用 extends 统一的表示了原有的 extends 和 implements 的概念，但仍要遵循应用的体系，Java 只能继承一个类，可以实现多个接口，所以你的某个类型需要用 extends 限定，有多种类型的时候，只能存在一个是类，而且参考变参的做法，类写在第一位，接口列在后面，也就是：<br/><br/>
+<span style="color: #800080;">&lt;T extends SomeClass &amp; interface1 &amp; interface2 &amp; interface3&gt;</span><br/><br/>
+这里的例子仅演示了泛型方法的类型限定，对于泛型类中类型参数的限制用完全一样的规则，只是加在类声明的头部，如：<br/><br/>
+<span style="color: #800080;">public class Demo&lt;T extends Comparable &amp; Serializable&gt;{</span><br/><br/>
+      //该泛型类中就可以用 Comparable 声明的方法和 Seriablizable 所拥有的特性了<br />
+}<br/><br/>
+多个类型参数的情况类推就是了。

@@ -1,0 +1,80 @@
+---
+title: 步步理解 JAVA 泛型编程(一)
+url: /understand-java-generic-1/
+date: 2010-04-15T12:13:00-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - generic
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 197 
+wpStatus: publish
+views: 1526
+lastmod: 2021-09-02T11:00:02-05:00
+---
+
+JDK 1.5 相对于 JDK 1.4 来说变化最大的部分就是泛型，甚至可以说自 Java 1.0 发布以来也是最大的一次语言变化，因为要涉及到编译器的大改动。很早的时候大家对泛型的呼声很大，正如 C++ 的模板，C# 的泛型确实是个值得借鉴的好特性。JDK1.5 这前，很多人对于泛型是急不可耐，在 JDK1.4 下搭配一个外挂的 Generic Java 编译器，通老实 -Xbootclasspath、-bootclasspath 同样能让你在 1.4 的 JDK 上使用泛型：</p>
+<br/>
+javac -J-Xbootclasspath/p:JSR14HOME\gjcrt.jar -bootclasspath JSR14HOME\collect.jar;JDK141HOME\jre\lib\rt.jar -source 1.5 FileName.java<br />
+java -Xbootclasspath/p:JSR14HOME\gjc-rt.jar FileName <!--more--><br/><br/>
+JDK 1.5 虽说出来这么久了，JDK 7 眼看都要见得天日了，不过可能我们很多人也只是知道怎么使用支持泛型的集合，也许还没有写过自己的泛型类，更不用说泛型的一些更高阶规范了。正如我们会在 Hibernate、Spring 里很熟练的使用零配置的注解，好像也很少有机会让我们去写处理注解的代码似的。因为毕竟我们不是书写框架的，多数时候是在应用它们。<br/><br/>
+多看JDK 的源代码固然是个好办法，但除看之外，练手帮助理解是必不可少的。如果你熟悉 C++，可以与 C++ 的模板类比。现在来一步步了解泛型。首先泛型这一称谓听来有点抽象，换作参数化类型，或者借用模板类的叫法会好理解的多。<br/><br/>
+比如说这样一个泛型类：<br/>
+{{< highlight java >}}
+package com.unmi;
+
+public class Demo<T> {
+    private T first;
+
+    public T getFirst() {
+        return first;
+    }
+
+    public void setFirst(T first) {
+        this.first = first;
+    }
+}
+{{</ highlight >}}
+<br/>
+声明部分 public class Demo&lt;T&gt; 为 Demo 类指定了一个类型参数 T，那么在该方法就可以使用该类型 T，如作为实例、局部变量，方法参数或返回值。<br/><br/>
+实际使用该类时 T 要被替换为具体的类型，如类型为 String，用 Demo&lt;String&gt; demo= new Demo&lt;String&gt;() 声明构造，那么上面的变量及方法的原型分别是：<br/><br/>
+String first;<br />
+String getFirst();<br />
+void setFirst(String first);<br/><br/>
+如果具体类型为 Integer，用 Demo&lt;Integer&gt; demo = new Demo&lt;Integer&gt;() 声明构造，则上面的变量及方法的原型分别是：<br/><br/>
+Integer first;<br />
+Integer getFirst();<br />
+void setFirst(Integer first);<br/><br/>
+可以是任何的具体类型，所以可以理解为泛型类是普通类的工厂。其实依照 C++ 的名词，前面类的定义称之为一个模板类，使用的时候是让模板中的类型具体化，这样好理解些。但要记得，Java 的泛型与 C++ 的模板实现的泛型内部机制还是有本质区别的。<br/><br/>
+前面是在类的声明部分定义了一个类型参数，如果有如个类型参数也是可以的，写成<br/><br/>
+public class Demo&lt;T,U&gt;，多少个都行 public class Demo&lt;T,U,S&gt;，在类的变量或方法中可以使声明部分定义的类型。<br/><br/>
+类型用大写形式，一般都是用 T 指代 Type，K 指代 Key，V 指代 Value，其他靠着 T 的 U，S ...... 都随意用了。<br/><br/>
+不妨来看个 C++ 的模板类，以及使用代码：<br/>
+{{< highlight java >}}
+//类声明前要加个模板声明打头
+template <class Type> class Stack{
+public:
+    Type Push(Type item);
+};
+
+//每个方法也都要以模板声明打头
+template<class Type> Type Stack<Type>::Push(Type item){
+    return item;
+}
+
+int main(int argc, char* argv[]){
+    Stack<int> fishes;
+    cout<<fishes.Push(123)<<endl;
+    return 0;
+}
+{{</ highlight >}}
+<br/>
+参考：1. <a href="http://java.sys-con.com/node/37800" target="_blank" rel="noopener">Using Java Generics</a>
