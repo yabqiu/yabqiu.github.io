@@ -1,0 +1,218 @@
+---
+title: 利用 ANT 实现自动化部署管理 WebSphere Application Server 5.x 下的应用
+url: /ant-auto-deploy-application-was-5-x/
+date: 2007-12-19T00:49:00-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/java-logo.png"
+categories:
+  - Mid-Ware
+tags: 
+  - ant
+  - WebSphere
+comment: true
+# additional
+wpPostId: 457 
+wpStatus: publish
+views: 841
+lastmod: 2021-09-02T21:06:04-05:00
+---
+
+题前说明：本文所做的测试是基于 WAS5.1 的，若是其他 WAS 版，请具体调整，或参考相应版本的红皮书。</p>
+<br/>
+WebSphere Application Server (WAS) 确实给我们提供了一个很方便的管理控制台，可以手工很轻松的部署应用程序，管理服务器；有得亦有失，因为它不能像其他很多应用服务器那般拷贝文件的方式进行部署，所以给像 DailyBuild 那样全自动化的过程制造了一些障碍。<br/><br/>
+其实 WAS 也提供了接口（SOAP 和 RMI）可通过脚本来完成对服务器及应用程序的管理，只是使用起来稍显麻烦，还得钻研一番。你可以采用三种途径来使用 WAS 的接口：<!--more--><br/><br/>
+1. WASADMIN 命令行。最灵活，可以编制自己的 Jacl 脚本文件<br />
+2. WAS 提供的 ANT  TASK，对常用功能进行了封装，WAS_HOME/bin/ 下有这个 ws_ant.bat<br />
+3. 自行编程调用，曾有浅尝<br/><br/>
+下面介绍的是通用 WAS 提供的 ANT  TASK 来完成 WAS 应用的部署、卸载、起停。我们要用到的已封装好 ANT  TASK 的包是 WAS_HOME/lib/wsanttasks.jar，打开这个文件，在包 com.ibm.websphere.ant.tasks 可以看到许多的 Task 类：<br/><br/>
+DefaultBindings, InstallApplication, Java2WSDL,JspC,ListApplications, Messages, ModuleValidator, NLSEcho, ServerControl, ServerStatus, StartApplication,StartServer, StopApplication, StopServer, UninstallApplication, WsAdmin, WSDL2Java, WsEjbDeploy<br/><br/>
+看看那些可以发掘来用的，其中 WsAdmin 是个领头的，相当于 WsAdmin 命令行，如果你熟悉 WsAdmin 命令的话，只要它你就能完成所有的操作，我在脚本中对不便于用其他 Task 完成的任务就使用 WsAdmin。看下面的 ANT build.xml 脚本及完成部署及启动应用的执行效果。<br/>
+{{< highlight xml >}}
+<project name="wasant" basedir="." default="installAndStart">
+    <!-- Important：本脚本要让 ant 使用 WAS 的 JRE 来执行
+        或者用 WAS_HOME/bin/ws_ant.bat 来执行，否则不能成功执行
+        有兴趣可去研究一下，让它在 SUN JRE 下也能成功执行
+    -->
+    <!--
+    修改 WAS_HOME/properties/wsadmin.properties 的
+    com.ibm.ws.scripting.connectionType=SOAP #可选RMI
+    com.ibm.ws.scripting.port=8879     #视协议和设置所对应端口，可能是 8880
+    com.ibm.ws.scripting.host=10.128.38.110 #要管理的WAS服务器IP
+    然后执行 WAS_HOME/bin/wsadmin.bat 就连接到了 10.128.38.110 的WAS上了
+    不过有些奇怪，WAS配置了安全性，但没有指定用户名和密码也行了
+    连上之后用 $AdminApp list 就能显示上面所有应用程序了
+    如果不配置 wsadmin.properties 文件，可以直接指定连接参数，如
+    wsadmin -conntype SOAP -host 10.128.38.110 -port 8879 -user xxxxxxx -password xxxxxx
+    wsadmin 中有四个对象可以在脚本中使用：
+    $AdminControl
+    $AdminConfig
+    $AdminApp
+    $Help
+    -->
+    <property name="was.root" value="D:\Program Files\IBM\WebSphere51\AppServer" />
+    <property name="wsanttasks.jar" value="${was.root}/lib/wsanttasks.jar"/>
+    <property name="app.name" value="test"/>
+    <property name="ear.file" value="c:/test.ear"/>
+    <!--登录信息-->
+    <property name="username" value="xxxxxx"/>
+    <property name="password" value="xxxxxx"/>
+    <property name="host" value="10.128.38.110"/>
+    <property name="port" value="8879"/>
+    <property name="conntype" value="SOAP"/>
+    <!-- WsAdmin 命令定义-->
+    <property name="startApp.sr3Serv1"
+       value="$AdminControl invoke [$AdminControl queryNames type=ApplicationManager,process=sr3Serv1,*] startApplication ${app.name}"/>
+    <property name="startApp.sr3Serv2"
+    value="$AdminControl invoke [$AdminControl queryNames type=ApplicationManager,process=sr3Serv2,*] startApplication ${app.name}"/>
+    <property name="stopApp.sr3Serv1"
+        value="$AdminControl invoke [$AdminControl queryNames type=ApplicationManager,process=sr3Serv1,*] stopApplication ${app.name}"/>
+    <property name="stopApp.sr3Serv2"
+        value="$AdminControl invoke [$AdminControl queryNames type=ApplicationManager,process=sr3Serv2,*] stopApplication ${app.name}"/>
+    <!--
+    　启动应用服务器，加入了集群的服务器必须通过节点代理来启动，如
+     $AdminControl invoke [$AdminControl queryNames type=NodeAgent,node=sr3,*] launchProcess server1
+     $AdminControl invoke [$AdminControl queryNames type=NodeAgent,node=sr3,*] launchProcess sr3Serv1
+      如果是独立的 WAS 就简单些了，直接
+     $AdminControl startServer server1 启动
+    -->
+    <!--
+    　停止应用服务器，无论有没加入集群，都可以不通过节点代理来停止，如
+     $AdminControl stopServer server1
+     $AdminControl stopServer sr3Serv1
+      节点下的应用服务器可通过节点代理来停止，但是 server1不能用这种方式
+     $AdminControl invoke [$AdminControl queryNames type=Server,node=sr3,name=sr3Serv1,*] stop {}
+     $AdminControl invoke [$AdminControl queryNames type=NodeAgent,node=sr3,*] launchProcess server1
+    -->
+    <taskdef name="wsStartServer" classname="com.ibm.websphere.ant.tasks.StartServer" classpath="${wsanttasks.jar}" />
+    <taskdef name="wsStopServer" classname="com.ibm.websphere.ant.tasks.StopServer" classpath="${wsanttasks.jar}" />
+    <taskdef name="wsInstallApp" classname="com.ibm.websphere.ant.tasks.InstallApplication" classpath="${wsanttasks.jar}" />
+    <taskdef name="wsUninstallApp" classname="com.ibm.websphere.ant.tasks.UninstallApplication" classpath="${wsanttasks.jar}" />
+    <taskdef name="wsStartApp" classname="com.ibm.websphere.ant.tasks.StartApplication" classpath="${wsanttasks.jar}" />
+    <taskdef name="wsStopApp" classname="com.ibm.websphere.ant.tasks.StopApplication" classpath="${wsanttasks.jar}" />
+    <taskdef name="wsListApps" classname="com.ibm.websphere.ant.tasks.ListApplications" classpath="${wsanttasks.jar}" />
+    <taskdef name="wsAdmin" classname="com.ibm.websphere.ant.tasks.WsAdmin" classpath="${wsanttasks.jar}" />
+    <!-- wsadmin 命令行下输入　
+       llength [$AdminControl queryNames type=Application,name=hello_war,*]
+       运行的实例数，如果大于零表示正在运行，否则就是停止状态
+    -->
+    <!-- wsadmin 命令行下输入　$AdminApp list　的效果 -->
+    <target name="wsListApps" description="List All Applications">
+        <wsListApps conntype="SOAP" host="10.128.38.110" port="8879"
+            user="xxxxxx" password="xxxxxx" washome="${was.root}">
+        </wsListApps>
+    </target>
+    <!-- wsadmin 命令行下输入
+       $AdminApp install c:/test.ear {-cluster sr3Cluster -appname test -usedefaultbindings}
+       $AdminConfig save      #不要忘记了,save一下，不然不生效
+       可以通过 $AdminApp options c:/test.ear 查看安装这个包可指定什么 options
+    -->
+    <target name="wsInstallApp" description="Install Application ${app.name}">
+        <wsInstallApp user="${username}" password="${password}" host="${host}"
+            ear="${ear.file}" port="${port}" conntype="${conntype}" washome="${was.root}"
+            options="-cluster sr3Cluster -appname ${app.name} -usedefaultbindings">
+        </wsInstallApp>
+    </target>
+    <!-- 卸载应用程序比较简单，只要
+    $AdminApp uninstall test
+    $AdminConfig save
+    -->
+    <target name="wsUninstallApp" description="Uninstall Application ${app.name}">
+        <wsUninstallApp user="${username}" password="${password}" host="${host}"
+           conntype="${conntype}" port="${port}" washome="${was.root}" application="${app.name}">
+        </wsUninstallApp>
+    </target>
+    <!--
+       启动应用，按照红皮书的介绍用$AdminControl invoke [$AdminControl queryNames type=ApplicationManager,node=sr3,*] startApplication test
+       无法启动应用程序，出现“无法创建 ObjectName”错误，必须在对所有所在服务器逐个的启动
+       $AdminControl invoke [$AdminControl queryNames type=ApplicationManager,process=server1,*] startApplication test
+       $AdminControl invoke [$AdminControl queryNames type=ApplicationManager,process=sr3Serv1,*] startApplication test
+       $AdminControl invoke [$AdminControl queryNames type=ApplicationManager,process=sr3Serv2,*] startApplication test
+    -->
+    <!--因为下面的脚本实质就是采用的
+    $AdminControl invoke [$AdminControl queryNames type=ApplicationManager,node=sr3,*] startApplication test
+    所以会报同样的错，“无法创建 ObjectName”错误，改用wsAdmin直接执行命令的方式来启动
+    <target name="wsStartApp" description="Start Application ${app.name}">
+        <wsStartApp user="${username}" password="${password}" host="${host}"
+            conntype="${conntype}" port="${port}" washome="${was.root}" application="${app.name}">
+        </wsStartApp>
+    </target>
+    -->
+    <!-- 采用 WsAdmin 直接执行命令的方式来启动应用程序 -->
+    <target name="wsStartApp" description="Start Application ${app.name}">
+        <echo>Start Application ${app.name} on sr3Serv1/sr3Serv2</echo>
+        <wsAdmin  user="${username}" password="${password}" host="${host}"
+            conntype="${conntype}" port="${port}" washome="${was.root}"
+            command="${startApp.sr3Serv1};${startApp.sr3Serv2}">
+        </wsAdmin>
+    </target>
+    <!--
+       启动应用，按照红皮书的介绍用$AdminControl invoke [$AdminControl queryNames type=ApplicationManager,node=sr3,*] startApplication test
+       无法启动应用程序，出现“无法创建 ObjectName”错误，必须在对所有所在服务器逐个的启动
+       $AdminControl invoke [$AdminControl queryNames type=ApplicationManager,process=server1,*] stopApplication test
+       $AdminControl invoke [$AdminControl queryNames type=ApplicationManager,process=sr3Serv1,*] stopApplication test
+       $AdminControl invoke [$AdminControl queryNames type=ApplicationManager,process=sr3Serv2,*] stopApplication test
+    -->
+    <!--因为下面的脚本实质就是采用的
+      $AdminControl invoke [$AdminControl queryNames type=ApplicationManager,node=sr3,*] startApplication test
+      所以会报同样的错，“无法创建 ObjectName”错误，改用wsAdmin直接执行命令的方式来启动
+    <target name="wsStopApp" description="Stop Application ${app.name}">
+        <wsStopApp user="${username}" password="${password}" host="${host}"
+            conntype="${conntype}" port="${port}" washome="${was.root}" application="${app.name}">
+        </wsStopApp>
+    </target>
+    -->
+    <!-- 采用 WsAdmin 直接执行命令的方式来启动应用程序 -->
+    <target name="wsStopApp" description="Start Application ${app.name}">
+        <echo>Stop Application ${app.name} on sr3Serv1/sr3Serv2 </echo>
+        <wsAdmin user="${username}" password="${password}" host="${host}"
+            conntype="${conntype}" port="${port}" washome="${was.root}"
+            command="${stopApp.sr3Serv1};${stopApp.sr3Serv2}">
+        </wsAdmin>
+    </target>
+    <!-- 实际的任务组合 -->
+    <target name="installAndStart" description="Install and Start ${app.name}">
+        <antcall target="wsInstallApp"/>
+        <antcall target="wsStartApp"/>
+    </target>
+    <target name="stopAndUninstall" description="Stop and Uninstall ${app.name}">
+        <antcall target="wsStopApp"/>
+        <antcall target="wsUninstallApp"/>
+    </target>
+</project>
+{{</ highlight >}}
+<strong>执行效果：</strong><br/><br/>
+<span style="color: #0000ff;">Buildfile:</span><u><span style="color: #000080;">E:\Workspace\Eclipse\TestSwt\build.xml<br />
+</span><span style="color: #000080;">installAndStart</span></u><span style="color: #0000ff;">:<br />
+</span><u><span style="color: #000080;">wsInstallApp</span></u><span style="color: #0000ff;">:<br />
+</span><span style="color: #0000ff;">[</span><span style="color: #000080;">wsInstallApp</span><span style="color: #0000ff;">] 正在安装应用程序 [c language=": est.ear"][/c]</span><br/><br/>
+...<br />
+  [&lt;/span&gt;&lt;span style="color: #000080;"&gt;wsadmin&lt;/span&gt;&lt;span style="color: #0000ff;"&gt;] WASX7209I: 使用 SOAP 连接器连接到节点 sr3Manager 上的进程“dmgr”；进程的类型为：DeploymentManager<br />
+  [&lt;/span&gt;&lt;span style="color: #000080;"&gt;wsadmin&lt;/span&gt;&lt;span style="color: #0000ff;"&gt;] ADMA5016I: 启动安装 test。<br />
+  [&lt;/span&gt;&lt;span style="color: #000080;"&gt;wsadmin&lt;/span&gt;&lt;span style="color: #0000ff;"&gt;] ADMA5005I: 在 WebSphere 资源库中配置应用程序 test<br />
+  [&lt;/span&gt;&lt;span style="color: #000080;"&gt;wsadmin&lt;/span&gt;&lt;span style="color: #0000ff;"&gt;] ADMA5001I: 应用程序二进制文件保存于 /opt/WebSphere51/DeploymentManager/wstemp/Script116f1164d5a/workspace/cells/sr3Network/applications/test.ear/test.ear<br />
+  [wsadmin] ADMA5011I: 清除应用程序 test 的临时目录完成。&lt;/span&gt;<br />
+  &lt;span style="color: #0000ff;"&gt;[&lt;/span&gt;&lt;span style="color: #000080;"&gt;wsadmin&lt;/span&gt;&lt;span style="color: #0000ff;"&gt;] ADMA5013I: 应用程序 test 安装成功。<br />
+[&lt;/span&gt;&lt;span style="color: #000080;"&gt;&lt;u&gt;wsInstallApp&lt;/u&gt;&lt;/span&gt;&lt;span style="color: #0000ff;"&gt;] 已安装的应用程序 [c language=": est.ear"][/c]<br/><br/>
+<span style="color: #000080;"><u>wsStartApp</u></span>:<br />
+     <span style="color: #ffa500;">[</span><span style="color: #000080;"><u>echo</u></span><span style="color: #ffa500;">] Start Application test on sr3Serv1/sr3Serv2</span><br />
+  <span style="color: #0000ff;">[</span><span style="color: #000080;"><u>wsadmin</u></span><span style="color: #0000ff;">] WASX7209I: 使用 SOAP 连接器连接到节点 sr3Manager 上的进程“dmgr”；进程的类型为：DeploymentManager<br />
+BUILD SUCCESSFUL<br />
+Total time: 33 seconds<br />
+</span><br/>
+<strong>说明：</strong><br/><br/>
+1. 在 build.xml 间杂着许多的注释来更清楚的阐述，也用来同 WsAdmin 命令进行对照理解，实际中可去除那些累赘。<br/><br/>
+2. 以上测试是基于 Cluster 的，在 sr3Cluster 下有两个应用服务器 sr3Serv1 和 sr3Serv2，应用程序是部署在 sr3Cluster 上的。对于未配置集群的 WAS 会更简单些，脚本中也有提及，请看官自已斟酌裁剪，如有什么疑问可与本人共同探讨<br />
+大致就是 wsInstallApp 的 options 中 -cluster sr3Cluster 改为 -server server1，应用启停时的命令中 process=server1<br/><br/>
+3. 并且配置了 WAS 的安全性，所以登录时必须提供用户名和密码<br/><br/>
+4. 例子中是部署了一个 ear 包，如要是部署 war 包的话，在 options 中要指定访问 Web 的上下文，如 -contextroot test<br/><br/>
+5. 安装应用之后立即就启动，可能会因服务器还没有真正完成对新应用的配置而启动失败，所以可以在安装完应用之后适当的 &lt;sleep seconds="5"/&gt; 像这样等待几秒钟。<br/><br/>
+<strong>相关资料：</strong><br/><br/>
+1. <a href="http://blog.csdn.net/jaytse/archive/2006/03/22/632843.aspx">WAS中关于命令行部署EAR</a><br />
+2. <a href="http://publib.boulder.ibm.com/infocenter/wasinfo/v6r0/topic/com.ibm.websphere.express.doc/info/exp/ae/txml_scriptingep.html">使用脚本编制（wsadmin）</a><br />
+3. <a href="http://blog.programfan.com/article.asp?id=1527">wsadmin管理WebSphere</a><br />
+4. IBM WebSphere 应用服务器 5.0 系统管理与配置 红皮书<br />
+5. <a href="http://www.javaeye.com/topic/41539">WebSphere Application Server6.0无人执守部署概要</a>

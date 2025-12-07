@@ -1,0 +1,93 @@
+---
+title: Ant 提示输入并根据用户输入执行不同的任务
+url: /ant-prompt-input-call-different-task/
+date: 2014-01-29T02:18:27-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - ant
+  - 自动化
+comment: true
+# additional
+wpPostId: 6159 
+wpStatus: publish
+views: 2541
+lastmod: 2021-05-05T15:44:38-05:00
+---
+
+使用 Ant 进行自动化处理时，不想记住每一个 target  的名称，而是让默认的 target 列出需要的 target 出来，让用户输入名称或数字选择执行哪个 target。这样做自然是多了一步，有时候确也方便不少，但 Ant 还是有个缺点，它不能持久性的保持在 Ant 控制台下，持续的进行用户交互。</p>
+<br/>
+对于实现 Ant 的简单用户交互，我们可以借助于两个 Task，<a href="http://ant.apache.org/manual/Tasks/input.html" target="_blank" rel="noopener">input</a> 和 <a href="http://ant.apache.org/manual/Tasks/antcall.html" target="_blank" rel="noopener">antcall</a>, input 用来提示用户输入值，再根据 input 设定的属性来确定 antcall 调用哪个 target。执行完退出到系统 Shell 下，想要再来，就再执行一下 ant 吧，我也只能做到这一步了。<br/><br/>
+看下面的例子 build.xml 内容<!--more--><br/>
+{{< highlight xml >}}
+<project default="showTasks" name="input">
+    
+    <target name="task1" if="do.1">
+        <echo>execute task 1</echo>
+    </target><br/><br/>
+    <target name="task2" if="do.2">
+        <echo>execute task 2</echo>
+    </target>
+    
+    <target name="task3" if="do.3">
+        <echo>execute task 3</echo>
+    </target>
+    
+    <target name="showTasks">
+        <echo>1 task1</echo>
+        <echo>2 task2</echo>
+        <echo>3 task3</echo><br/><br/>
+        <input validargs="1,2,3" addproperty="option" defaultvalue="1">place your option</input>
+        
+        <condition property="do.1">
+            <equals arg1="1" arg2="${option}"/>
+        </condition>
+        <antcall target="task1"/>
+        
+        <condition property="do.2">
+            <equals arg1="2" arg2="${option}"/>
+        </condition>
+        <antcall target="task2"/>
+        
+        <condition property="do.3">
+            <equals arg1="3" arg2="${option}"/>
+        </condition>
+        <antcall target="task3"/>
+        
+    </target>
+</project>
+<{{</ highlight >}}
+
+在控制台下执行 ant, 根据提示输入 2<br/><br/>
+<blockquote>
+unmi@localhost$ ant<br />
+Buildfile: /Users/unmi/test/build.xml
+showTasks:<br />
+     [echo] 1 task1<br />
+     [echo] 2 task2<br />
+     [echo] 3 task3<br />
+    [input] place your option ([1], 2, 3)<br />
+2
+task1:
+task2:<br />
+     [echo] execute task 2
+task3:
+BUILD SUCCESSFUL<br />
+Total time: 1 second
+</blockquote>
+<br/>
+执行了 task2。<br/><br/>
+对比脚本和执行结果很好理解<br/><br/>
+1. 提示用户输入，并把输入设置为 option 的属性值，可用 validargs 限定输入范围，并可指定默认值，即直接回车的值<br />
+2. 根据得到的 option 值创造各种条件 do.1, do.2, do.3<br />
+3. 其实是今次尝试去调用 target task1, task2, task3<br />
+4. 在每个 target 上都设置了执行条件，如 if="do.2"<br/><br/>
+所以上面执行的是 task2。<br/><br/>
+可惜这个脚本都能执行一次就退到系统 Shell 上了，没法持续呆在 Ant 控制台下，比如再次提示，换成别的输入又可以为我们执行其他的任务。这个不容易做到。假使在 task2 最后处再写上 &lt;antcall target="showTasks"/&gt; 这样会造成一个死循环，原因为 &lt;input&gt; 只有在不存在 “addproperty” 指定的 option 属性值时才会提示，否则直接往下走，结果 option 一直是 2，所以不停的执行 task2, 直至崩溃。<br/><br/>
+那么可不可以 unset 掉 option 属性呢，不能，ant 中 property 出来的东西都是 immutable，是常量，不能死也不能变。如果还能多走一步的话，可让 task2 antcall 另一个含 &lt;input&gt; 的 target，那么真正的 task 的执行条件设计起来就会变得很复杂，我还是死了这条心吧。<br/><br/>
+如果想要持续的呆在自己的控制台下，可以选择其他的构建工具，如 PlayFramework1, 和 2 分别用的 Python 和 SBT。
