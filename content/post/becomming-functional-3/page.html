@@ -1,0 +1,74 @@
+---
+title: 走进函数式编程 (Becomming Functional) (不可变性)
+url: /becomming-functional-3/
+date: 2015-11-11T00:45:12-06:00
+featured: false
+thumbnail: "../images/become_functional.jpg"
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Functional
+tags: 
+  - Functional
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7022 
+wpStatus: publish
+views: 518
+lastmod: 2015-11-11T00:47:13-06:00
+---
+
+<p>不可变性(Immutable--不是不让谁变性) 在设计模式中似乎不那么显眼，但是它在函数式编程却起着举足轻重的意义了。我们都知道 Java 的 String 是设计为 Immutable 的，对 String 改变都会产生新的 String 实例，这有助于共享常量池中字符串与并发。</p><p>这里再回顾上一篇关于纯虚函数(输入决定输出，无副作用函数，非 C++ 中可重载无 Body 的函数)，由此可知，Immutable 也有助于实现纯虚函数，因为一个不可变实例被传入到某个函数中，该实例的内部状态是无法被修改的，也就是说该函数是无副作用的。</p><p>先来感受一下可变类型在并发环境下的一个弊端，看个例子，可变的 Customer 类有三个属性 name, email 和  age, 它还有一个更新方法 updateNameAndEmail()<!--more--></p>
+{{< highlight java >}}
+public class Customer {
+  public String name;
+  public String email;
+  public int age;
+
+  public Customer(String name, String email, int age) {
+    this.name = name;
+    this.email = email;
+    this.age = age;
+  }
+
+  public void updateNameAndEmail(String newName, String newEmail) {
+    this.name = newName;
+    this.email = newEmail;
+  }
+
+  public void sendEmail() {
+    System.out.println(String.format("Send email to %s with email address %s", this.name, this.email);
+  }
+}
+
+{{</ highlight >}}
+<p>当我们有两个线程几乎同时执行上面的 updateNameAndEmail() 和  sendEmail() 方法。</p><p>线程 1 执行 this.updateNameAndEmail("Jerry", "jerry@xyz.com") 时，但只更新了 name, 就在这时候 ......<br />线程 2 就执行了  sendEmail()，结果输出就是 "Send email to <strong>Jerry</strong> with email address <strong>tom@xyz.com</strong>". 这让收到邮件的 tom 要迷惑半生: 我是谁？</p><p>上面就因为 Customer 的可变性造成了不一致性，这与数据库的事性是一个道理. 如果重构上面的代码为 Immutable 会是怎样呢？</p>
+{{< highlight java >}}
+public class Customer {
+  public final String name;
+  public final String email;
+  public final int 20;
+
+  public Customer(String name, String email, int age) {
+    this.name = name;
+    this.email = email;
+    this.age = age;
+  }
+
+  public Customer updateNameAndEmail(String newName, String newEmail) {
+    return new Customer(newName, newEmail, this.age);
+  }
+
+  public void sendEmail() {
+    System.out.println(String.format("Send email to %s with email address %s", this.name, this.email);
+  }
+}
+{{</ highlight >}}
+<p>重构后的代码只要在调用 sendEmail() 时, 不管其他线程如何并发的调用 updateNameAndEmail() 方法, 如:</p><p><span style="color: #800000;">Customer customer = new Customer("Tom", "tom@xyz.com", 20)</span><br /><span style="color: #800000;">customer.sendEmail();</span><br /><span style="color: #800000;">customer.updateNameAndEmail("Jerry", "jerry@xyz.com").sendEmail();</span></p><p>sendEmail() 输出的中的 name 和 email address 总是能保持一致，因为已封杀了 customer 实例状态只被部分更新的可能性。</p><p>上面代码中的 Customer 实例自创建之后就是不可变的，对它的更新创建出新的实例。这也可以作为 Java 中不可变模式的一个参考: 内部状态全声明为 final, 所以只能由构造方法进行初始化，实例创建后便不可更改。请注意类型中的所有内部状态都必须是不可变的，比如集合属性或其他对象引用都需不可变。</p><p>变量和集合在 Scala 中默认是不可变的，我们编程中也应该优先使用 val 而非 var。同时声明一个 Scala 不可变类型也非常简单，用 case class 只要一句话</p>
+{{< highlight java >}}
+case class Customer(name: String, email: String, age: Int)
+{{</ highlight >}}
+<p>小结一下：</p><ol><li>不可变性有时确实会对代码带来一些复杂性，不能更动实例内部状态</li><li>运行中也会产生多余的实例(不可变实例更新后产生新实例，原有实例可能不再使用)</li><li>不可变性在并发中能受益，不用担心数据的不一致性</li><li>不可变性有助于我们追踪 Bug -- 已有的实例不再莫名其妙的不知在何处被修改了</li><li>最前面提到的一点，不可变性便于实例纯虚函数</li></ol>

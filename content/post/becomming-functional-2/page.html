@@ -1,0 +1,86 @@
+---
+title: 走进函数式编程 (Becomming Functional) (2)
+url: /becomming-functional-2/
+date: 2015-10-06T02:34:15-05:00
+featured: false
+thumbnail: "../images/become_functional.jpg"
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Functional
+tags: 
+  - FP
+  - Functional
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7017 
+wpStatus: publish
+views: 381
+lastmod: 2021-09-03T17:45:29-05:00
+---
+
+函数式编程第二式，<strong>纯函数 (Pure Functions)</strong>. 何谓纯函数，纯函数就是数据库的函数一样没有副作用，不修改对象的内部状态，或者说只进行计算。给定什么输入，永远得到相同的输出，即<strong>输出只依赖于输入</strong>。</p>
+<br/>
+纯函数有什么好处呢？极其容易测试，只需要给定一组输入，对输出进行断言。如果是带副作用的方法，它修改了某个私有的属性，很难进行状态判定。<br/><br/>
+Scala 基于统一访问原则，属性与方法不需要那么明晰，所以属性与方法名是不能重名的。它对有无副作用存在这么一个约定：<br/><br/>
+空括号方法 (empty-paren method), 如 def width() {...} 它是有副作的。这样调用 obj.width()<br />
+无参方法 (parameterless method), 如 def width {...}, 它是无副作的。这样调用 obj.width, 这和使用属性一致形式<br/><br/>
+Java 也有类似的约定，get 开头的或 getter 方法往往是无副作用的。要是有人偏偏在 getName() 方法里修改了对像的属性而引入了 Bug，那只会让人唏嘘不已。<br/><br/>
+方法的副作用一般有哪些呢？<br/>
+<ol>
+    <li>输出内容到屏幕</li>
+    <li>写数据到文件或数据库</li>
+    <li>修改了对象的属性</li>
+</ol>
+<!--more--><br/>
+曾经为了测试有屏幕输出内容的方法，对 System.out 进行了输出重定向到字符串，最后断言字符串的内容；但对于大多数的副作用方法测试起来就比较困难了，只能进行 Mock 了。<br/><br/>
+我们追求纯函数，是不是有副作用的函数就不可取呢？实际上是离于了副作用的函数，多数的应用基本毫无用处了。<br/><br/>
+如何尽可能的纯化我们的函数呢？必须把有副作与无副作用的部份分离出来，记得纯函数是输出只依赖于输入，如果函数内部使用使用了某处的数据，可想法使之参数化。<br/><br/>
+本章主要是对函数 getCustomerById() 的演化过程，给定<br/>
+{{< highlight java >}}
+public static List<Customer> getCustomerById(int customerId) {
+  List<Customer> outList = new ArrayList<>();
+  for(Customer customer: Customer.allCustomers) {
+    if(customer.id == customerId) {
+      outList.add(customer);
+    }
+  }
+  return outList;  //如果一个 cutomer 都没找到，这里返回空集合优于返回 null，避免了 NullPointerException
+}
+{{</ highlight >}}
+<br/>
+第一步，DRY 原则 (Don't Repeat Yourself)，把 for 语句抽出为函数 filter，把 if 语句实现为一个函数 Function1 实例<br />
+第二步，实现输出只依赖于输入，所以把 Cutomer.allCutomers 调整为通过参数传入<br/><br/>
+最后最现为以下几个方法<br/>
+{{< highlight java >}}
+public static List<Customer> getCustomerById(List<Customer> inList, final int customerId) {
+  return Customer.filter(inList, new Function1<Customer, Boolean>() {
+    public Boolean apply(Customer customer) {
+      return customer.id == customerId;
+    }
+  });
+}
+
+public static List<Customer> filter(List<Customer> inList, Function1<Customer, Boolean> test) {
+  List<Customer> outList = new ArrayList<>();
+  for(Customer customer: inList) {
+    if(test.apply(customer)) {
+      outList.add(customer);
+    }
+  }
+  return outList;
+} 
+{{</ highlight >}}
+<br/>
+如此以来，上面两个方法 getCustomerById 和 filter 的输出就完全依赖于输入了。<br/><br/>
+当我到达里也有个疑问，似乎在讲究函数化编程风格的时候，更多是要借助于静态方法来实现，因为实例变量的状态都不该被过份依赖似的，必须依赖于方法参数。但进一步想，如果给定的实例是不可变的，那么实例方法也同样是可以做到输出只依赖于输入。<br/><br/>
+另外，本章中除得出 filter 方法外，还推导出 map 和  foreach 方法，它们分别对应着 Groovy 的 findAll, collection 和 each 方法。filter, map 和 foreach 三者的用途各自如下：<br/><br/>
+filter: 原型为 &lt;A&gt; Collection&lt;A&gt; filter(Collection&lt;A&gt; inList, Function1&lt;A, Boolean&gt; test), 依据 test 条件从 inList 过滤出子集合<br/><br/>
+map: 作用到集合的原型为 &lt;A1, B&gt; Collection&lt;B&gt; map(Collection&lt;A1&gt; inList, Function1&lt;A1, B&gt; func), 把集合 inList 中 A1 类型元素逐个转换为 B 元素类型，并组成新的集合返回<br />
+           它也可以作用到单个元素，原型如 &lt;A1, B&gt; B map(A1 inA, Function1&lt;A1, B&gt; func), 把输入的 A1 类型转换为 B 类型输出<br />
+           上面有 A1, 当然可以 A2, A3, 如 &lt;A1, A2, B&gt; B map(A1 inA1, A2 inA2, Function2&lt;A1, A2, B&gt; func)<br/><br/>
+foreach: 原型为： void foreach(Collection&lt;A&gt; inList, Function&lt;A&gt; func), 只是想对集合中的每个元素做点什么事，没有返回值<br/><br/>
+本人对于此章的理解就是如何重构出无副作用，易出测试的纯函数。

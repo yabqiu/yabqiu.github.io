@@ -1,0 +1,69 @@
+---
+title: 走进函数式编程 (Becomming Functional) (递归)
+url: /becomming-functional-4/
+date: 2015-11-13T00:32:37-06:00
+featured: false
+thumbnail: "../images/become_functional.jpg"
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Functional
+tags: 
+  - FP
+  - Functional
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7028 
+wpStatus: publish
+views: 372
+lastmod: 2021-09-04T12:20:26-05:00
+---
+
+阅读完递归这一章我仍然无法理解递归为何被作为函数式编程的一个特性。只是递归有时候会简洁，但没弄好却更让人犯迷糊，用循环的话就四平八稳，总是比较好理解。当然有些情况用循环去思考确实难于处理。递归方法内部调用方法本身通常也比较慢，因为需要频繁的保存现场，创建栈帧，恢复现场，所以受内存限制，递归到达一定深度容易导致堆栈溢出。</p>
+<br/>
+章中还说到递归的一个优点在于它只需处理输入的值，而循环则需关注整个集合本身。这个该如何理解呢？在每一次递归调用的时候传入的都是当前需要被处理的数据。<br/><br/>
+先来比较下循环变换成递归的一个简单示例，用 Scala 实现<!--more--><br/>
+{{< highlight java >}}
+def sum(x: Int) = {
+  var summation = 0
+  for(i <- 1 to x)
+    summation = summation + i
+  summation
+}
+sum(100)       //5050
+sum(1000000)   //1784293664
+{{</ highlight >}}
+<br/>
+上面循环换成递归写法<br/>
+{{< highlight java >}}
+def sum(x: Int): Int {
+  if(x <= 0) 0 else x + sum(x-1)
+}
+
+sum(100)     //5050
+sum(1000)    //500500
+sum(9900)    //java.lang.StackOverflowError
+{{</ highlight >}}
+<br/>
+上面 f() 函数的实现是因为 Scala 简洁的语法(if 表达式), 并且不算规范的代码风格(未把 if/else 分在多行，并用 {} 括起实现体) 才让递归看起来简洁，其实是一种假象而已。<br/><br/>
+从测试中看到递归在处理参数 9999 时就爆出堆栈溢出错误，而前面的循环就能顶住疯狂的来回。<br/><br/>
+在书写递归时和循环类似，必须首先确定一个终止条件，例如上面的 x &lt;= 0，否则就会直到堆栈异常，这比列循环要幸运些。循环是遍历完所有元素即止, 或是某种条件下 break -- Scala 去除了 break 关键字。<br/><br/>
+其实本章最有启发性的还尾北归，即怎么写的递归可被尾递归优化，尾递归是函数最后一条语句只是调用函数本身，这样在编译器(解释器)优化时能在方法结尾处直接跳到方法开头，实际完成的是一个循环。也就是递归优化为循环，不过这必需要语言的支持，Scala 支持，Groovy 要玩个小把戏(trampoline()) 才能支持。Java 不支持尾递归优化，所以怎么写都白搭，都无法完全避免堆栈溢出的发生。<br/><br/>
+下面把前面的递归转化为尾递归<br/>
+{{< highlight java >}}
+def sum(x: Int, s: Int): Int = {
+  if(x <= 0)
+    s
+  else
+    sum(x-1, x+s)
+}
+
+sum(1000000, 0)  //1784293664
+{{</ highlight >}}
+<br/>
+上面为体现出尾递归，故把 if/else 给分了行，看到最后一条语句只能对自身函数的调用，写成 1 + sum(x-1, x+s) 都没法被优化。<br/><br/>
+那何以知道上面的递归被进行了尾递归优化了呢，因为传入一个很大的值也弄不死它，行为和循环相似了。编译出的字节码仍然是 sum(x-1, x+s) 方法调用，但解释时优化了。<br/><br/>
+由上面看到，尾递归写出来又稍显示复杂了，如果说循环里多了个临时变量，尾递归时只不过相当于把临时变量作参数又传了回来。
