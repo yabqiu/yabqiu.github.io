@@ -5,6 +5,7 @@ date: 2017-03-28T00:15:28-05:00
 featured: false
 draft: false
 toc: false
+codeMaxLines: 50
 # menu: main
 usePageBundles: true
 thumbnail: "../images/logos/aws-logo.png"
@@ -22,30 +23,29 @@ lastmod: 2021-09-03T16:41:18-05:00
 
 <span style="color: #0000ff;">一句话概要：对 Lambda 环境变量的任何改动都会引起一次 Lambda 的冷启动，大可放心在 handleRequest(...) 方法外使用环境变量。</span></p>
 <br/>
-从 <a href="http://unmi.cc/aws-java-lambda-keys/">AWS 上 Java Lambda 应用记要 中</a>，我学到了 Lambda 的实例是跨请求共享的，所以为使用 Lambda 配置的环境变量时曾写出了下面<strong>复杂而多余</strong>的  AWS  Lambda 代码:<br/><br/>
-<blockquote>
-public class Handler implements RequestHandler&lt;SNSEvent, String&gt; {<br />
-<br />
-    private int threadPoolSize = getThreadPoolSizeFromEnv();<br />
-    private ExecutorService threadPool = Executors.newFixedThreadPool(threadPoolSize);<br />
-<br />
-    @Override<br />
-    public String handleRequest(SNSEvent snsEvent, Context context) {<br />
-<br />
-        int configuredThreadPoolSize = getThreadPoolSizeFromEnv();<br />
-        if(configuredThreadPoolSize != threadPoolSize) {<br />
-            threadPoolSize = configuredThreadPoolSize;<br />
-            threadPool = Executors.newFixedThreadPool(threadPoolSize);<br />
-        }<br />
-<br />
-        return "Hello Lambda";<br />
-    }<br />
-<br />
-    private int getThreadPoolSizeFromEnv() {<br />
-        return Integer.parseInt(System.getenv().getOrDefault("threadpool_size", "50"));<br />
-    }<br />
+从 <a href="http://unmi.cc/aws-java-lambda-keys/">AWS 上 Java Lambda 应用记要 中</a>，我学到了 Lambda 的实例是跨请求共享的，所以为使用 Lambda 配置的环境变量时曾写出了下面<strong>复杂而多余</strong>的  AWS  Lambda 代码:<br/>
+{{< highlight java >}}
+public class Handler implements RequestHandler<SNSEvent, String> {
+
+    private int threadPoolSize = getThreadPoolSizeFromEnv();
+    private ExecutorService threadPool = Executors.newFixedThreadPool(threadPoolSize);
+
+    @Override
+    public String handleRequest(SNSEvent snsEvent, Context context) {
+        int configuredThreadPoolSize = getThreadPoolSizeFromEnv();
+        if(configuredThreadPoolSize != threadPoolSize) {
+        threadPoolSize = configuredThreadPoolSize;
+        threadPool = Executors.newFixedThreadPool(threadPoolSize);
+    }
+
+    return "Hello Lambda";
+    }
+
+    private int getThreadPoolSizeFromEnv() {
+        return Integer.parseInt(System.getenv().getOrDefault("threadpool_size", "50"));
+    }
 }
-</blockquote>
+{{</ highlight >}}
 这段代码看起来很在理，既然 Lambda 实例是共享的，那么在必变环境变量之后就可能不会重新初始始化实例，所以在每次的请求方法中对比如果环境变量值改动了就重新用最新的配置值来初始化线程池。然而上面的代码结结实实是多余的，真是把 Lambda 想得太简单了，如果是很多环境变量岂不是逐一判断。<!--more--><br/><br/>
 那要怎么改上面的代码呢？给出答案之前先了解一下 Lambda  什么时候会冷启动(即得到新的 Lambda 实例)，有几下几种情况<br/><br/>
 <ol>
@@ -54,15 +54,17 @@ public class Handler implements RequestHandler&lt;SNSEvent, String&gt; {<br />
     <li>任何环境变量的改动都会引起冷启动(测试用途，产品版本的环境变量是不可变的)。对环境变量有变动时，会显示出 <code>Save and test</code> 按钮来，相当于是一次无代码更新的重新部署，所以也会引起冷启动。</li>
 </ol><br/>
 基于上面的第三点，前面的代码只需要按常规书写方式即可<br/>
-<pre class="lang:default decode:true">public class Handler implements RequestHandler&lt;SNSEvent, String&gt; {<br/>
+{{< highlight java >}}
+public class Handler implements RequestHandler<SNSEvent, String> {
     private ExecutorService threadPool = Executors.newFixedThreadPool(
-        Integer.parseInt(System.getenv().getOrDefault("threadpool_size", "50")));<br/>
+        Integer.parseInt(System.getenv().getOrDefault("threadpool_size", "50")));
     @Override
-    public String handleRequest(SNSEvent snsEvent, Context context) {<br/>
+    public String handleRequest(SNSEvent snsEvent, Context context) {
         //使用线程池 threadPool
         return "Hello Lambda";
     }
-}</pre>
+}
+{{</ highlight >}}
 在每次修改环境配置后即会重新初始化 Lambda 实例以应用新的环境变量。<br/><br/>
 得到这个结果可不是 Google 搜来的，而是经过自己的试验而来。实验中有一个误导人的地方就是，当在 <code>handleRequest(...)</code> 方法中写上<br/>
 <blockquote>
@@ -74,18 +76,19 @@ Lambda instance com.serverless.Handler@614ddd49
 </blockquote>
 根据以往的经验是 <code>@614ddd49</code> 不变的话就代码是同一个 Handler 实例，可对于 AWS Lambda 不是那么回事，仿佛是只要 Lambda 部署了, <code>Handler.toString()</code> 方法的返回值是个常量，所以我们不能以 Handler.this 的输出 Hash 值来分辨是否同一个 Lambda 实例了。<br/>
 于是我们引入了一个实例变量来识别是否当前例，本次测试代码如下：<br/>
-<pre class="lang:default decode:true ">public class Handler implements RequestHandler&lt;SNSEvent, String&gt; {<br/>
+{{< highlight java >}}
+public class Handler implements RequestHandler<SNSEvent, String> {
     private int count = 0;
-    private String bucket = System.getenv("bucket_name");<br/>
+    private String bucket = System.getenv("bucket_name");
     public Handler() {
         System.out.println("Initialize Handler");
-    }<br/>
+    }
     @Override
     public String handleRequest(SNSEvent snsEvent, Context context) {
         System.out.println("Lambda instance " + this.toString() + ", bucket: " + bucket);
-        System.out.println("Running on: " + getHostname() + ", count: " + (++count));<br/>
+        System.out.println("Running on: " + getHostname() + ", count: " + (++count));
         return context.getFunctionName();
-    }<br/>
+    }
     private String getHostname() {
         try {
             return InetAddress.getLocalHost().getCanonicalHostName();
@@ -93,7 +96,8 @@ Lambda instance com.serverless.Handler@614ddd49
             return null;
         }
     }
-}</pre>
+}
+{{</ highlight >}}
 在 Lambda 的管理界面连续的点击 <code>Test</code> 按钮，我们可以看到 count 一直在累加，而且运行的主机不会变，执行也很快，下面是从 CloudWatch 上某一个 Log Stream 中抓下来的日志<br/>
 <blockquote>
 Initialize Handler<br />
