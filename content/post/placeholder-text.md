@@ -3,6 +3,7 @@ author = "Hugo Authors"
 title = "Placeholder Text"
 date = "1900-03-09"
 description = "Lorem Ipsum Dolor Si Amet"
+type = "post"
 tags = [
     "markdown",
     "text",
