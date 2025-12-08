@@ -3,11 +3,11 @@ title: "Akka Actor: 从最简单的例子开始"
 url: /akka-actor-start-with-easy-example/
 date: 2018-02-11T19:03:15-06:00
 featured: false
-draft: true
+draft: false
 toc: false
 # menu: main
 usePageBundles: true
-thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/02/akka-logo.png"
+thumbnail: "../images/logos/akka-logo.png"
 categories:
   - Scala
   - Akka
@@ -27,40 +27,49 @@ lastmod: 2021-09-10T12:51:55-05:00
 Akka 是什么？它提供了 JVM 上的 Actor 编程模型 -- 同时兼顾了并发与分布式。它由 Scala 编写的，替代了 Scala 本身的 Actor。Actor 视线程为重量级的资源，能够以少量的内存胜任更高的并发，类似的东西有纤程，协程。有一个数据对比是同样的 1GB 内存，可以创建 2.7M 个 Actor, 而线程只能创建 4096 个，仅供参考，当然 Java 也是会基于线程池来执行的。<br/><br/>
 Actor 增加了程序的灵活性，并减轻了复杂度(标准的赞美之辞)。<br/><br/>
 所谓 Action 编程模型兼顾并发与分布，是由于让你编程时可以不用考虑线程，线程配置成为部署的范畴; Actor 之间通信只能发送异步消息，Actor 可以分布在同一 JVM, 不同 JVM, 或是不同物理机器上。<br/><br/>
-因为 《Akka IN ACTION》中提供了第一个例子起点着实有点高，所以网上找来了一个了解 Akka Actor 的最简单例子，来自于 <a href="https://alvinalexander.com/scala/simple-scala-akka-actor-examples-hello-world-actors">Simple Scala Akka Actor examples (Hello, world examples)</a>。并非纯属翻译，主要是为了练手，所以不完全一致：<!--more--><br/><br/>
-<pre class="lang:default decode:true">import akka.actor.Actor
+因为 《Akka IN ACTION》中提供了第一个例子起点着实有点高，所以网上找来了一个了解 Akka Actor 的最简单例子，来自于 <a href="https://alvinalexander.com/scala/simple-scala-akka-actor-examples-hello-world-actors">Simple Scala Akka Actor examples (Hello, world examples)</a>。并非纯属翻译，主要是为了练手，所以不完全一致：<!--more--><br/>
+{{< highlight scala >}}
+import akka.actor.Actor
 import akka.actor.ActorSystem
-import akka.actor.Props<br/><br/>
+import akka.actor.Props
+
 class HelloActor extends Actor {
   def receive = {
-    case "hey" =&gt; println("hey yourself")
-    case _ =&gt; println("hehe")
+    case "hey" => println("hey yourself")
+    case _ => println("hehe")
   }
-}<br/><br/>
+}
+
 object Main extends App {
   val system = ActorSystem("HelloSystem")
   val helloActor = system.actorOf(Props[HelloActor], name = "helloActor")
   helloActor ! "hey"
   helloActor ! "good morning"
-}</pre>
+}
+{{</ highlight >}}
 <br/>
-最好有一定的 Scala 基础，比如模式匹配，<code>!</code> 感叹号是向 Actor 发送消息，其实 <code>!</code> 就是一个方法名，当参数只有一个数，可省略点号与圆括号。标准的写法是<br/><br/>
+最好有一定的 Scala 基础，比如模式匹配，<code>!</code> 感叹号是向 Actor 发送消息，其实 <code>!</code> 就是一个方法名，当参数只有一个数，可省略点号与圆括号。标准的写法是<br/>
 <blockquote>
 helloActor.!("hey")    //也是 helloActor.tell("hey"), 或 hellActor tell "hey"
 </blockquote>
-<br/>
+
 Actor 的消息是无类型的，你可以向一个 Actor 发送任意对象，关键看那个 Actor 是否处理这个消息对象。<br/><br/>
 Akka 中 Actor 创建 Actor, 那么顶层的 Actor 由谁来创建呢？答案就是 <code>ActorSystem</code>。<br/><br/>
-Scala 项目最好的构建工具无疑是 <code>sbt</code>, 这儿的 <code>build.sbt</code> 文件内容如下：<br/><br/>
-<pre class="lang:scala decode:true ">name := "simple-akka-actor"<br/><br/>
-version := "0.1"<br/><br/>
-scalaVersion := "2.12.4"<br/><br/>
+Scala 项目最好的构建工具无疑是 <code>sbt</code>, 这儿的 <code>build.sbt</code> 文件内容如下：<br/>
+{{< highlight scala >}}
+name := "simple-akka-actor"
+
+version := "0.1"
+
+scalaVersion := "2.12.4"
+
 libraryDependencies ++= Seq(
   "com.typesafe.akka" %% "akka-actor" % "2.5.9"
-)</pre>
+)
+{{</ highlight >}}
 <br/>
 全部选用了目前最高版本的  Scala(2.12.4) 和 Akka(2.5.9)，最后看到的所有依赖是<br/><br/>
-<a href="/wp-content/uploads/2018/02/akka-actor-dependencies.png"><img class="aligncenter size-full wp-image-8520" src="/wp-content/uploads/2018/02/akka-actor-dependencies.png" alt="" width="487" height="116" /></a>现来用 <code>sbt run</code> 命令来执行前面的代码<br/><br/>
+{{< bundle-image src="akka-actor-dependencies.png" width="487px" >}}
 <blockquote>
 ➜ simple-akka-actor sbt run<br />
 [info] Loading project definition from /Users/yanbin/Workspaces/simple-akka-actor/project<br />
@@ -71,56 +80,60 @@ libraryDependencies ++= Seq(
 <span style="color: #800000;">hehe</span><br />
 ^C%
 </blockquote>
-<br/>
+
 发送消息，响应消息，需要用 Ctrl+C 来结束进程，因为就像是启动了一个线程 daemon 属性为 fase 的线程池。<br/><br/>
-也可以调用 <code>ActorSystem</code> 的 <code>terminate()</code> 方法来结束进程<br/><br/>
+也可以调用 <code>ActorSystem</code> 的 <code>terminate()</code> 方法来结束进程<br/>
 <blockquote>
 system.terminate()
 </blockquote>
-<br/>
+
 在结束进程之前两条消息都能被处理完成。<br/><br/>
 稍加探索<br/><br/>
-<h3>处理消息的线程</h3><br/><br/>
-我们说 Actor 编程模型并不是说并发代码不在线程中执行，而是相比于线程编程模型来说线程得已更优化的配置。那么就来看下处理消息的代码是在什么线程中执行的，把 <code>HelloActor</code> 的 receive 方法中的 case 语句写成如下：<br/><br/>
-<pre class="lang:scala decode:true ">case "hey" =&gt; println(Thread.currentThread() + ", hey yourself")
-case _ =&gt;  println(Thread.currentThread() + ", hehe")</pre>
+<h3>处理消息的线程</h3>
+我们说 Actor 编程模型并不是说并发代码不在线程中执行，而是相比于线程编程模型来说线程得已更优化的配置。那么就来看下处理消息的代码是在什么线程中执行的，把 <code>HelloActor</code> 的 receive 方法中的 case 语句写成如下：<br/>
+{{< highlight scala >}}
+>case "hey" => println(Thread.currentThread() + ", hey yourself")
+case _ =>  println(Thread.currentThread() + ", hehe")
+{{</ highlight >}}
 <br/>
-重新执行 <code>sbt run</code> 命令，得到类似下面的输出<br/><br/>
+重新执行 <code>sbt run</code> 命令，得到类似下面的输出<br/>
 <blockquote>
 Thread[HelloSystem-akka.actor.default-dispatcher-2,5,run-main-group-0], hey yourself<br />
 Thread[HelloSystem-akka.actor.default-dispatcher-2,5,run-main-group-0], hehe
 </blockquote>
-<br/>
+
 是在叫做 xxx.default-dispather-xxx 的线程中执行消息处理代码。它就是 Akka 的 dispatcher 线程池，对 Actor 发送消息后，消息放在 Actor 的 mailbox 里，dispatcher 线程用于从 mailbox 中取出消息，执行代码。<br/><br/>
-<a href="/wp-content/uploads/2018/02/akka-actor-dispather-threads.png"><img class="aligncenter size-full wp-image-8521" src="/wp-content/uploads/2018/02/akka-actor-dispather-threads.png" alt="" width="600" height="200" /></a>这个 <a href="https://doc.akka.io/docs/akka/2.5/dispatchers.html">Dispatcher</a> 的线程池是可通过 <code>application.conf</code> 文件配置的。<br/><br/>
-<h3>日志系统</h3><br/><br/>
-Akka 内置的日志输出适配器，默认的 logger 是 <code>akka.event.Logger$DefaultLogger</code>, 输出到控制台。允许在  <code>application.conf</code> 中配置成用 <code>SLF4J</code><br/><br/>
+{{< bundle-image src="akka-actor-dispather-threads.png" width="600px" >}}
+<h3>日志系统</h3>
+Akka 内置的日志输出适配器，默认的 logger 是 <code>akka.event.Logger$DefaultLogger</code>, 输出到控制台。允许在  <code>application.conf</code> 中配置成用 <code>SLF4J</code><br/>
 <blockquote>
-akka {<br />
-    loggers = ["akka.event.slf4j.Slf4jLogger"]<br />
-    loglevel = "DEBUG"<br />
+akka {
+    loggers = ["akka.event.slf4j.Slf4jLogger"]
+    loglevel = "DEBUG"
 }
 </blockquote>
-<br/>
-使用日志的方式可以参考如下代码，重写前面的 HelloActor 代码<br/><br/>
-<pre class="lang:scala decode:true ">class HelloActor extends Actor {
+
+使用日志的方式可以参考如下代码，重写前面的 HelloActor 代码<br/>
+{{< highlight scala >}}
+class HelloActor extends Actor {
   val logger = Logging(context.system, this)
   def receive = {
-    case "hey" =&gt; logger.info("hey yourself")
-    case _ =&gt;  context.system.log.info("hehe")
+    case "hey" => logger.info("hey yourself")
+    case _ =>  context.system.log.info("hehe")
   }
-}</pre>
+}
+{{</ highlight >}}
 <br/>
-再次执行 <code>sbt run</code>, 输出如下：<br/><br/>
+再次执行 <code>sbt run</code>, 输出如下：<br/>
 <blockquote>
-[INFO] [02/11/2018 18:47:23.315] [HelloSystem-akka.actor.default-dispatcher-2] [akka://HelloSystem/user/helloActor] hey yourself<br />
+[INFO] [02/11/2018 18:47:23.315] [HelloSystem-akka.actor.default-dispatcher-2] [akka://HelloSystem/user/helloActor] hey yourself
 [INFO] [02/11/2018 18:47:23.316] [HelloSystem-akka.actor.default-dispatcher-2] [akka.actor.ActorSystemImpl(HelloSystem)] hehe
 </blockquote>
-<br/>
+
 两种方式的输出略有不同，第一种输出了 Actor 的 path, 第二种输出的是类路径。<br/><br/>
-Akka 的 Logging 本身有点绕，日志是发送到 EventStream 中，然后实际输出日志的 <code>DefaultLogger</code> 也是一个 Actor，这样让日志系统变为异步的。在我们切换到其他的日志(如  SLF4J)，可以不用考虑异步的 Appender  配置。<br/><br/>
-<h3>Actor 的 Path</h3><br/><br/>
-同时也看到每个  Actor 有自己的 <code>path</code>, 这个 path 就可调用 ActorRef 的 <code>path</code> 方法获得(如 helloActor.path)。它就是用于 Akka  如何定位 Actor 的。Akka Actor 相比于线程而言一个十分突出的优点就是能够很轻松的部署 Actor 到不同机器上，远程通信透明化了。来看到本地与远程 Actor 的不同表示法<br/><br/>
+Akka 的 Logging 本身有点绕，日志是发送到 EventStream 中，然后实际输出日志的 <code>DefaultLogger</code> 也是一个 Actor，这样让日志系统变为异步的。在我们切换到其他的日志(如  SLF4J)，可以不用考虑异步的 Appender  配置。<br/>
+<h3>Actor 的 Path</h3>
+同时也看到每个  Actor 有自己的 <code>path</code>, 这个 path 就可调用 ActorRef 的 <code>path</code> 方法获得(如 helloActor.path)。它就是用于 Akka  如何定位 Actor 的。Akka Actor 相比于线程而言一个十分突出的优点就是能够很轻松的部署 Actor 到不同机器上，远程通信透明化了。来看到本地与远程 Actor 的不同表示法<br/>
 <blockquote>
 "akka://my-sys/user/service-a/worker1" // purely local<br />
 "akka.tcp://my-sys@host.example.com:5678/user/service-b" // remote

@@ -10,8 +10,8 @@ use wp2hugo::{Post, content_transform_filter, date_format_filter};
 
 fn main() -> Result<()> {
     // The file is read from "temp/all_posts_from_mysql.json"
-    let posts_str = fs::read_to_string(&Path::new("temp/all_posts_from_mysql.json"))?;
-    let post_vec: Vec<Post> = serde_json::from_str(&posts_str)?;
+    // let posts_str = fs::read_to_string(&Path::new("temp/all_posts_from_mysql.json"))?;
+    // let post_vec: Vec<Post> = serde_json::from_str(&posts_str)?;
 
     let processed_ids: Vec<u32> = get_processed_ids()?;
     println!("processed ids: {}", processed_ids.len());
