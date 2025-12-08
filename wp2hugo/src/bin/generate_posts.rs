@@ -24,16 +24,18 @@ fn main() -> Result<()> {
 
 fn get_processed_ids() -> Result<Vec<u32>> {
     let mut processed_id : Vec<u32>= Vec::new();
-    for entry in fs::read_dir("../content/post")? {
-        let path = entry?.path();
-        if path.is_dir() {
-            let page_file_path = path.join("page.html");
-            if fs::exists(&page_file_path)? {
-                let page_file_str = fs::read_to_string(&page_file_path)?;
-                let splits: Vec<&str> = page_file_str.splitn(3, "---").collect();
-                let front_matter: Value = serde_yaml::from_str(splits[1]).unwrap();
-                if let Some(wp_post_id) = front_matter.get("wpPostId") {
-                     processed_id.push(wp_post_id.as_u64().unwrap() as u32)
+    for folder in vec!["draft", "post"] {
+        for entry in fs::read_dir(format!("../content/{}", folder))? {
+            let path = entry?.path();
+            if path.is_dir() {
+                let page_file_path = path.join("page.html");
+                if fs::exists(&page_file_path)? {
+                    let page_file_str = fs::read_to_string(&page_file_path)?;
+                    let splits: Vec<&str> = page_file_str.splitn(3, "---").collect();
+                    let front_matter: Value = serde_yaml::from_str(splits[1]).unwrap();
+                    if let Some(wp_post_id) = front_matter.get("wpPostId") {
+                        processed_id.push(wp_post_id.as_u64().unwrap() as u32)
+                    }
                 }
             }
         }
