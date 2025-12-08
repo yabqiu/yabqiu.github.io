@@ -1,0 +1,68 @@
+---
+title: 用 Add Post URL 给文章加上版声明，并附加排除 ID 的功能
+url: /add-post-url-exclude-id/
+date: 2010-09-13T13:57:55-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - WordPress
+tags: 
+  - wordpress
+  - plugin
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2490 
+wpStatus: publish
+views: 897
+lastmod: 2021-09-03T11:49:05-05:00
+---
+
+就像是给邮件增加签名一样，我们有时候(可能多数时候) 也需要给日志的前或后附上固定的内容。比如文后加个本文链接、版权声明什么的，你肯定不会想在每篇文章后手工加这么一段，那会死人的。
+这就是这里要介绍的 <a href="http://wordpress.org/extend/plugins/wp-posturl/" target="_blank" rel="noopener">
+    Add Post URL</a> 插件，它可为你在<strong>文前或文后</strong>加上一段 HTML 代码，显然你不光可用它来加版权声明，甚至是外挂文章前后的广告。
+实现上了解过 WordPress 插件的应该能反应到它是用 the_content 过滤器来实现的。
+<!--more-->
+
+{{< bundle-image src="add_post_url1.jpg" >}}
+
+它能让你选择在什么页面要加，比如 首页、分类页、Tag 页、归档页、单页或 Feed 中。但对我说仍有一点不足的是，也许我有一些较为特殊的页面(总是会有的)，用不着附加这些信息，于是在它的配置页面中需要增加一个输入框告诉这个插件哪些文章或是页面的 ID 是不需要此功能的。<br/><br/>
+所以我对此插件进行了这一扩充，基于的版本是 Add Post URL 1.1。大概说下改了几处地方：<br/><br/>
+posturl_options.php 在 Add To Blog Home 行上方加上一行，显示欲排除 ID 的输入框：<br/>
+{{< highlight html >}}
+<tr>
+    <td valign="top" width="30%"><?php _e('Excluded Post/Page IDs', 'wp-posturl'); ?>(<?php _e('Separated by ","', 'wp-posturl'); ?>):</td>
+    <td>
+       <input name="excluded_ids" id="excluded_ids" size="75" type="text" value="<?php echo $posturl_options['excluded_ids']; ?>" />
+    </td>
+</tr>
+{{</ highlight >}}
+
+<br/>
+还是在 posturl_options.php 的大约第 23 行后面加上代码：<br/>
+{{< highlight php>}}
+$posturl_options['excluded_ids'] = $_POST['excluded_ids'];
+    {{</ highlight >}}
+
+<br/>
+然后在 wp_posturl.php 的 function wp_posturl($text) 函里，代码 $posturl_options = get_option('posturl_options'); 后面加上判断 ID 的逻辑：<br/>
+{{< highlight php >}}
+if($posturl_options['excluded_ids'] &&
+  in_array(get_the_ID(), explode(",",$posturl_options['excluded_ids']))){
+    return $text;
+}
+{{</ highlight >}}
+
+<br/>
+最后修改语言文件 wp-posturl-zh_CN.po，还需用 Poedit 生成相应的 mo 文件，便成完成了，如果只用英文版的话，这一步可省了。<br/><br/>
+来看看添加了排除文章或页面 ID 的配置页面：<br/>
+{{< bundle-image src="add_post_url2.jpg" >}}
+<br/>
+如上面的配置 ID 为 4 或 237 的 Page 或 Post 将不会应用这个插件的输出内容。<br/><br/>
+修改后的插件可以直接从这里下载
+<a href="{{< bundle-resource wp-posturlmodified_by_unmi.zip >}}" target="_blank" rel="noopener">
+    wp-posturl(modified_by_unmi)
+</a>，可直接安装。
