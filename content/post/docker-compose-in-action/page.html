@@ -1,0 +1,257 @@
+---
+title: Docker Compose 实践
+url: /docker-compose-in-action/
+date: 2020-03-24T13:56:47-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/docker_compose.png"
+categories:
+  - Docker
+tags: 
+  - compose
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9967 
+wpStatus: publish
+views: 519
+lastmod: 2020-03-24T13:56:47-05:00
+---
+
+继续向 Kubernetes 进发，上一篇 <a href="/docker-swarm-cluster-in-action/">Docker Swarm 集群模式实操</a> 了解完 Swarm 后，有必要对 Docker Compose 了解一番。Docker Swarm 是把 Docker 宿主机组成集群，部署服务时只要告知 Manager 节点，它就会自动找到相应节点去运行相应的容器。Compose 完全是另一个概念，它把相关联的多个容器组织成一个整体来部署，如由负载容器，多个 Web 容器和一个 Redis 缓存容器构成一个整体。<br/><br/>
+由其名 Compose 正式有了容器编排这么一个概念，后来将要学的 Kubernetes 是更高级别的组织，运行，管理容器的工具。Compose  由于把容器组织起来了，所以能够一条命令启动多个相关联的容器，而无需单独启动一个一个的容器。<br/><br/>
+关于 Docker Compose  的安装，在 Mac OS X 下的  Docker Desktop 自带了 docker-compose; 由于 Docker Compose 是用 Python 编写的，我们可以用  <code>pip install docker-compose</code> 的安装，安装后使用它的命令就是 <code>docker-compose</code>。<br/><br/>
+下方的 Docker Container, Swarm, Compose 三者之间的关系图很形像<!--more--><br/>
+{{< bundle-image src="docker_swarm_compose_1-800x304.png" width="750px" >}}
+Compose 由多个容器组成，它可以以一个整体部署到单个 Docker 宿主机或 Swarm 宿主机集群当中。<br/><br/>
+下面亲自来体验一下 Docker Compose 的功能，设计了一个服务含有如下容器<br/><br/>
+<ol>
+    <li>前端负载均衡服务器，由 HAProxy 来扮演，请求转发到以下两个  Web 容器</li>
+    <li>两个 Web 容器，用 Python Flask 来演示</li>
+    <li>一个 Redis 缓存容器，Web 将会访问该容器中的缓存数据</li>
+</ol>
+<br/>
+定义 Docker Compose 涉及到的文件有  Dockerfile 和 docker-compose.yml，需要为每一个自定义的 Docker 容器创建一个 Dockerfile，某些容器能直接使用 Docker 镜像仓库的就不用单独的 Dockerfile。也就是说一个 Compose 中可有一个或多个 Dockerfile,  如果是一个 Dockerfile  的情况时，目录结构可以是<br/>
+<blockquote>
+myapp/<br />
+    - Dockerfile<br />
+    - docker-compose.yml
+</blockquote>
+
+如果需要用到多个 Dockerfile 的情况时，Dockerfile 必须要放在不同的目录中，这时目录结构需要调整为如下(并加上后面将要用到的几个辅助文件)<br/>
+<blockquote>
+myapp/<br />
+    - proxy/<br />
+        - Dockerfile<br />
+        - haproxy.cfg<br />
+    - web/<br />
+        - Dockerfile<br />
+        - app.py<br />
+        - requirements.txt<br />
+    - docker-compose.yml
+</blockquote>
+
+接下来看每一个文件的内容<br/><br/>
+<strong>myapp/proxy/Dockerfile</strong><br/>
+{{< highlight docker >}}
+FROM haproxy:2.1.3
+COPY haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg
+{{</ highlight >}}
+<br/>
+<strong>myapp/proxy/haproxy.cfg</strong><br/>
+{{< highlight cfg >}}
+frontend myweb
+    bind *:80
+    default_backend     realserver   
+backend realserver
+    balance     roundrobin
+    server      web1 web_a:5000 check
+    server      web2 web_b:5000 check
+{{</ highlight >}}
+<br/>
+这是一个最简单的 haproxy.cfg 配置文件，只是把请求轮转的转发到 web_a 和 web_b, 将会在后面的 docker-compose.yml 文件中看到 web_a 和 web_b。<br/><br/>
+<strong>myapp/web/Dockerfile</strong><br/>
+{{< highlight docker >}}
+FROM python:3.7-alpine
+ADD app.py requirements.txt ./
+RUN pip install -r requirements.txt
+CMD ["python", "app.py"]
+{{</ highlight >}}
+<br/>
+<strong>myapp/web/requirements.txt</strong><br/>
+{{< highlight text >}}
+flask
+redis
+{{</ highlight >}}
+<br/>
+<strong>myapp/web/app.py</strong><br/>
+{{< highlight python >}}
+import redis
+import socket
+from flask import Flask
+
+cache = redis.Redis('redis')
+app = Flask(__name__)
+
+
+def hit_count():
+    return cache.incr('hits')
+
+
+@app.route('/')
+def index():
+    count = hit_count()
+    return 'Served by <b>{}</b>, count: <b>{}</b>\n'.format(socket.gethostname(), count)
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0')
+
+{{</ highlight >}}
+<br/>
+用简单的 Flask 来演示一个 Web 应用，访问计数保存在 Redis 中，并显示当前处理请处的机器名。<br/><br/>
+<strong>myapp/docker-compose.yml</strong><br/>
+{{< highlight docker >}}
+version: '3.7'
+services:
+  web_a:
+    build: ./web
+    ports:
+      - 5000
+  web_b:
+    build: ./web
+    ports:
+      - 5000
+  proxy:
+    build: ./proxy
+    ports:
+      - "80:80"
+  redis:
+    image: "redis:alpine"
+
+{{</ highlight >}}
+<br/>
+自已构建两个 Docker  镜像，Redis 的镜像直接用  redis:alpine 的，在这里定义了端口及映射，所以在 Dockerfile 中不用 EXPOSE 来定义端口号。我们将启动两个 Web 服务，分别为 web_a, web_b, 在前方的 haproxy.cfg 转发请求就是到这两个容器中去的。<br/><br/>
+现在我们可以来到命令行下的 myapp 目录处，执行命令<br/>
+<blockquote>
+$ docker-compose up -d
+</blockquote>
+<br/>
+此时，如果本地没有相应的镜像文件将会构建 myapp_proxy, myapp_web_a, myapp_web_b 镜像，然后启动它们。如果本地已有那些镜像则直接启动那些容器。启动完成后，用 <code>docker ps</code> 查看<br/>
+{{< highlight sh >}}
+$ docker ps
+CONTAINER ID        IMAGE               COMMAND                  CREATED              STATUS              PORTS                     NAMES
+e5d918e0ae2a        myapp_proxy         "/docker-entrypoint.…"   About a minute ago   Up About a minute   0.0.0.0:80-&gt;80/tcp        myapp_proxy_1
+56819534cfa6        myapp_web_a         "python app.py"          About a minute ago   Up About a minute   0.0.0.0:32777-&gt;5000/tcp   myapp_web_a_1
+a2125855e55a        myapp_web_b         "python app.py"          About a minute ago   Up About a minute   0.0.0.0:32778-&gt;5000/tcp   myapp_web_b_1
+f216a7b5f95b        redis:alpine        "docker-entrypoint.s…"   About a minute ago   Up About a minute   6379/tcp                  myapp_redis_1
+{{</ highlight >}}
+<br/>
+启动了四个容器，一个 haproxy, 两个 web, 一个  redis，正是我们所需要的。再来验证一下服务，是否能共同完成请求：<br/>
+{{< highlight sh >}}
+$ curl http://localhost
+Served by <b>a2125855e55a</b>, count: <b>1</b>
+$ curl http://localhost
+Served by <b>56819534cfa6</b>, count: <b>2</b>
+$ curl http://localhost
+Served by <b>a2125855e55a</b>, count: <b>3</b>
+{{</ highlight >}}
+<br/>
+负载均衡，Web 服务，Redis 正在协同无误的工作<br/><br/>
+如果此时用 <code>docker kill 56</code> 杀掉任何一个容器，该容器不会自动恢复起来，但再次运行 <code>docker-compose run -d</code> 后，只是刚刚被杀的容器又起来了，其他的容器没变化。<br/>
+{{< highlight docker >}}
+$ docker-compose up -d
+Starting myapp_web_a_1 ...
+myapp_redis_1 is up-to-date
+Starting myapp_web_a_1 ... done
+{{</ highlight >}}
+<br/>
+请用 <code>docker-compose -h</code> 查看更丰富的命令参数，不少与 <code>docker</code> 命令参数是一样的，只是针对 <code>docker-compose</code>而已，例如下面常用的<br/>
+<ol>
+    <li>docker-compose images: 显示当前 compose 所用到的 docker 镜像</li>
+    <li>docker-compose logs: 显示当前 compose  的运行日志</li>
+    <li>docker-compose down: 停掉 compose 涉及到的所有容器</li>
+    <li>docker-compose kill: 杀掉  compose 涉及的所有容器，而无须用 docker kill 逐个杀</li>
+    <li>docker-compose restart: 重启整个  compose  服务(所有容器)</li>
+</ol>
+<br/>
+还有更简单的支持 HAProxy + 多个动态的 Web 容器的方式<br/><br/>
+修改前面的 <code>docker-compose.yml</code> 文件内容如下：<br/>
+{{< highlight docker >}}
+version: '3.7'
+services:
+  web:
+    build: ./web
+    ports:
+      - 5000
+  proxy:
+    image: dockercloud/haproxy
+    links:
+      - web
+    ports:
+      - "80:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+  redis:
+    image: "redis:alpine"
+
+{{</ highlight >}}
+<br/>
+proxy 选用了 <code>dockercloud/haproxy</code> 镜像，自己构建用的 <code>myapp/proxy</code> 目录及其中的 <code>Dockerfile</code> 和 <code>haproxy.cfg</code> 文件也不用了。<br/><br/>
+现在用同样的命令启动 <code>docker-compose up -d</code><br/>
+{{< highlight sh >}}
+$ docker ps
+CONTAINER ID        IMAGE                 COMMAND                  CREATED             STATUS              PORTS                                   NAMES
+3ce8fcd986ac        dockercloud/haproxy   "/sbin/tini -- docke…"   6 minutes ago       Up 4 minutes        443/tcp, 0.0.0.0:80-&gt;80/tcp, 1936/tcp   myapp_proxy_1
+c73be3d3f795        myapp_web             "python app.py"          6 minutes ago       Up 4 minutes        0.0.0.0:32793-&gt;5000/tcp                 myapp_web_1
+0fabf6c6e81f        redis:alpine          "docker-entrypoint.s…"   16 minutes ago      Up 4 minutes        6379/tcp                                myapp_redis_1
+{{</ highlight >}}
+<br/>
+只有一个 web 容器，现在还能动态扩容，用 <code>docker-compose up --scale web=d -d</code><br/>
+{{< highlight sh >}}
+$ docker-compose up --scale web=3 -d
+Starting myapp_web_1 ...
+Starting myapp_web_1 ... done
+Creating myapp_web_2 ... done
+Creating myapp_web_3 ... done
+myapp_proxy_1 is up-to-date
+$ docker ps
+CONTAINER ID        IMAGE                 COMMAND                  CREATED             STATUS              PORTS                                   NAMES
+e3b4db8db92d        myapp_web             "python app.py"          7 seconds ago       Up 5 seconds        0.0.0.0:32796-&gt;5000/tcp                 myapp_web_2
+f1ba850865e0        myapp_web             "python app.py"          7 seconds ago       Up 5 seconds        0.0.0.0:32795-&gt;5000/tcp                 myapp_web_3
+3ce8fcd986ac        dockercloud/haproxy   "/sbin/tini -- docke…"   8 minutes ago       Up 6 minutes        443/tcp, 0.0.0.0:80-&gt;80/tcp, 1936/tcp   myapp_proxy_1
+c73be3d3f795        myapp_web             "python app.py"          8 minutes ago       Up 6 minutes        0.0.0.0:32793-&gt;5000/tcp                 myapp_web_1
+0fabf6c6e81f        redis:alpine          "docker-entrypoint.s…"   17 minutes ago      Up 6 minutes        6379/tcp                                myapp_redis_1
+{{</ highlight >}}
+<br/>
+来测试一下他们是否能正常工作<br/>
+{{< highlight sh >}}
+$ curl http://localhost
+Served by <b>c73be3d3f795</b>, <b>count: 20</b>
+$ curl http://localhost
+Served by <b>e3b4db8db92d</b>, count: <b>21</b>
+$ curl http://localhost
+Served by <b>f1ba850865e0</b>, count: <b>22</b>
+{{</ highlight >}}
+<br/>
+三次请求分别被三个不同的 Web 容器处理。<br/><br/>
+注:<br/><br/>
+<ol>
+    <li><code>docker-compose scale web=2</code> 命令不推荐使用，而应用 <code>docker-compose up --scale web=2 -d</code></li>
+    <li><code>docker-compose.yml</code> 中的 deploy 配置只能工作于 Swarm 模式，而 <code>deploy</code> 下的 <code>replicas</code> 是工作于 docker stack deploy 命令的，在 <code>docker-compose up</code> 或 <code>docker-compose run</code> 中被忽略</li>
+</ol>
+<br/>
+<strong>关于在 Swarm  集群之上运行 Compose</strong><br/><br/>
+看起来有点麻烦，见官方的 <a href="https://docs.docker.com/compose/swarm/">Use Compose with Swarm</a>. 需要用到 docker stack 来部署 Compose。自己就不作实际操作了，也不知道产品中这种结合情景多不多，关键了解一下部署后容器是如何在 Swarm  节点中分配的，是把  Compose 当作一个整体呢？还是以 Compose 中的容器为粒度来部署。<br/><br/>
+从 <a href="https://codefresh.io/docker-tutorial/deploy-docker-compose-v3-swarm-mode-cluster/">Deploy Docker Compose (v3) to Swarm (mode) Cluster</a> 中的一张图片来看<br/><br/>
+{{< bundle-image src="docker-compose-swarm-800x721.png" width="800px" >}}
+Swarm 还是能把 Compose 中定义的容器拆分出来，单独的部署到 Swarm 集群中的节点上，而不是把 Compose 当作一个整体来看待，表现的不错。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://blog.hypriot.com/post/docker-compose-nodejs-haproxy/">How to use Docker Compose to run complex multi container apps on your Raspberry Pi</a></li>
+    <li><a href="https://juejin.im/post/5b6f0039e51d45662d00d935">Docker Compose 多容器部署 (五)</a></li>
+    <li><a href="https://www.jianshu.com/p/0793f62af9df">Docker-Compose简介安装使用</a></li>
+</ol>

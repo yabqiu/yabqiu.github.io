@@ -1,0 +1,438 @@
+---
+title: 理解 Docker Client/Server 架构, 找寻 Docker Desktop 替代品
+url: /docker-desktop-replacement-docker-machine/
+date: 2021-10-21T00:12:06-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/docker-logo.png"
+categories:
+  - Docker
+tags: 
+  - Docker
+  - Vagrant
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11835 
+wpStatus: publish
+views: 1966
+lastmod: 2024-05-10T17:58:07-05:00
+---
+
+<!-- wp:paragraph --><br/>
+<p>本文继上篇 <a href="/replace-docker-desktop-with-hyperkit-minikube/">摆脱 Docker Desktop 即将到来的收费</a> 进一步寻找符合自己需求的 Docker Desktop 替代品，前面试用过 hyperkit + minikube, Podman, 最终还是确定了用 docker-machine。之所以选择了它是基于下面几个需求：</p>
+
+<ol>
+	<li>连接 VPN 后 Docker 还要能继续工作 (通过 socket 文件和 localhost 与 Docker Host 通信不惧怕 VPN 连接. 因为 VPN 会接管路由表，所以用 IP 来连接 Docker Host 的话，VPN 连上后将可能无法访问 Docker Host)</li>
+	<li>能与 IDE 进行集成开发与调试  (IntelliJ IDEA 能与 Docker Desktop, Docker Machine, TCP socket 和 SSH 上的 Docker Host 集成调试，但无法与 Daemonless 的 Podman 集成)</li>
+	<li>DOCKER_HOST 能是远程机器 (由于 Podman 设计为 Daemonless，也就没有 Docker Host, 无法进行远程构建)</li>
+</ol>
+
+<p>本文力图更深入的理解 Docker 的架构来解释最后选择的来由，清楚了原理后可以自主创建一个 Docker Host，连 docker-machine 也可以不用。比如创建一个 AWS EC2 实例作为 Docker Host, 然后在本地执行 docker 命令进行镜像的构建与容器的运行，这时候镜像构建过程与容器执行的环境是在 EC2 上，再也不用先把本地的文件上传(scp 或 rsync) 到 EC2 上，然后 ssh  到 EC2 去执行 docker 命令了。</p>
+
+<p>一个小插曲：本人曾经随手在  <code>～/Downloads</code> 目录下建立一个只有 <code>FROM busybox</code> 一行的 <code>Dockerfile</code> 文件，然后运行 <code>docker build ...</code>  命令，结果每次都提示磁盘空间不足，本机磁盘还非常宽裕，Docker Machine 也分配了 20 G 内存，怎么会不够了呢？登入到 Docker Machine  后 <code>df</code> 确实没空间了。四处找原因，原来是 <code>docker build ...</code> 一执行，不管 3721 首先把当前目录下的所有文件全部拷贝到 Docker Machine 中去，<code>~/Downloads</code> 目录中下了几十个 G 的内容，所以把 Docker Machine 给挤暴掉。解决办法就是要把  <code>Dockerfile</code> 放到一个没有无用文件的独立目录中去，这也是为什么 <code>Dockerfile</code> 中的 <code>COPY</code> 命令只能从当前目录中拷贝文件的原因。<!--more--></p>
+
+<h3>理解 Docker 的 Client/Server 架构</h3>
+<p>DOCKER 的架构是 Docker Client 通过 REST API 与 Docker Host(dockerd 进程) 进行通信，我们所执行的  docker 命令只与 Docker Host 进行交互的。在 Linux 下 Docker Host 可以是系统自身，而对于 Mac OS X 或  Windows 需要有一个中间的 Linux 操作系统，比如 Docker Desktop  实现的虚拟机，或者自己创建一个 Linux 虚拟机，装上 Docker 就能作为 Docker Host。</p>
+
+<p>Docker Client 与  Docker Host 之间是 REST API，它们可以通过以下三种方式交互</p>
+
+<ol>
+	<li>本地 Socket 文件(/var/run/docker.sock)</li>
+	<li>https (通常用 2376 端口)</li>
+	<li>http (通常用 2375 端口)  </li>
+</ol>
+
+<p>Docker Desktop 所创建的虚拟机(Docker Host) 默认与 Docker Client 是通过 /var/run/docker.sock 文件交互的，准确的说是 docker 命令在没有 <code>DOCKER_HOST</code> 环境变量时会尝试与 <code>/var/run/docker.sock</code> 通信。这就是为什么 Docker Daemon 没启动时会提示</p>
+
+<blockquote>
+<p>Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?</p>
+</blockquote>
+
+<p>这里插入一张 Docker Client 与 Docker Host 通信的架构图</p>
+
+{{< bundle-image src="docker-daemon-1.png" width="512px" >}}
+
+<p>Docker Client 就是我们输入 docker 命令的地方，Docker Host 是具体执行 docker 命令的地方，如构建/上传/下载镜像，运行容器等。Docker Desktop 为我们所做的事情基本上就是暗地里启动了一个虚拟机，并在宿主机上的 /var/run/docker.sock 文件上监听 REST API 请求。对了还有鲜有人问津的 Swarm 和可选择启用的 Kubernetes。</p>
+
+<p>Docker Desktop 的基本功能：</p>
+
+<ol>
+	<li>构建时把 Dockerfile 所在目录的全部内容传到 Docker Machine 完成构建</li>
+	<li>docker run -p 9002:80 映射时完成的是 host:9002:docker-desktop:9002:container:80</li>
+	<li>docker run -v ~/.aws:/.aws 卷映射完成从 host:~/.aws -&gt; 经过 docker-desktop -&gt; container:/.aws</li>
+	<li>其他.....</li>
+</ol>
+
+<p>Docker Desktop 为我们实现以上 #2 和 #3 两个操作带来了便利。</p>
+
+<p>那么我们怎么能感知到那个虚拟机的存在呢？在 Docker Desktop 的 Resources 和 Docker Engine 配置就是为该虚拟机分配资源与定制如何启动 dockerd 的</p>
+
+{{< bundle-image src="docker-host-2.png" width="770px" >}}
+
+<p>默认还挺大方，6 个 CPU，2G 内存</p>
+
+<p>Docker Desktop 启动后，可以看到两个 sock 文件</p>
+
+<blockquote>
+<p>$ ls -l /var/run/docker*<br />
+lrwxr-xr-x 1 root daemon 69 Oct 20 19:07 /var/run/docker-cli.sock -&gt; /Users/yanbin/Library/Containers/com.docker.docker/Data/docker-cli.sock<br />
+lrwxr-xr-x 1 root daemon 35 Oct 20 19:07 /var/run/docker.sock -&gt; /Users/yanbin/.docker/run/docker.sock</p>
+</blockquote>
+
+<p>后面的 docker 命令就是与这里的 /var/run/docker.sock 文件通信的，比如可以 telnet 一下它</p>
+
+<blockquote>
+<p>$ <strong>telnet /var/run/docker.sock</strong><br />
+Trying /var/run/docker.sock...<br />
+Connected to (null).<br />
+Escape character is '^]'.<br />
+<strong>GET /version HTTP/1.0</strong></p>
+
+<p>HTTP/1.0 200 OK<br />
+Api-Version: 1.41<br />
+Content-Type: application/json<br />
+Date: Thu, 21 Oct 2021 00:17:59 GMT<br />
+Docker-Experimental: false<br />
+Ostype: linux<br />
+Server: Docker/20.10.8 (linux)</p>
+
+<p>{"Platform":{"Name":"Docker Engine - Community"},"Components":[{"Name":"Engine","Version":"20.10.8","Details":{"ApiVersion":"1.41","Arch":"amd64","BuildTime":"2021-07-30T19:52:31.000000000+00:00","Experimental":"false","GitCommit":"75249d8","GoVersion":"go1.16.6","KernelVersion":"5.10.47-linuxkit","MinAPIVersion":"1.12","Os":"linux"}},{"Name":"containerd","Version":"1.4.9","Details":{"GitCommit":"e25210fe30a0a703442421b0f60afac609f950a3"}},{"Name":"runc","Version":"1.0.1","Details":{"GitCommit":"v1.0.1-0-g4144b63"}},{"Name":"docker-init","Version":"0.19.0","Details":{"GitCommit":"de40ad0"}}],"Version":"20.10.8","ApiVersion":"1.41","MinAPIVersion":"1.12","GitCommit":"75249d8","GoVersion":"go1.16.6","Os":"linux","Arch":"amd64","KernelVersion":"5.10.47-linuxkit","BuildTime":"2021-07-30T19:52:31.000000000+00:00"}<br /><br/>
+Connection closed by foreign host.</p>
+</blockquote>
+
+<p>或者用 curl 命令</p>
+
+<blockquote>
+<p>curl --unix-socket /var/run/docker.sock http:/localhost/version</p>
+
+</blockquote>
+
+<p>会得到相同的版本信息</p>
+
+<p>这里是当前 Docker Engine 1.41 的 REST API 文档 <a href="https://docs.docker.com/engine/api/v1.41/#">Docker Engine API [v1.41]</a>。如果也想开发一个像  Portainer 那样的 Docker 管理工具就需要了解 Docker Engine 的  API。</p>
+
+<p>还可以进到该虚拟机里去看看，SSH 是不行了，但我们能用个  docker 容器，使用宿主机的 Namespace 进入查看到的就是宿主机(虚拟机)本身的信息</p>
+
+{{< highlight sh >}}
+$ docker run --net=host --ipc=host --uts=host --pid=host -it --security-opt=seccomp=unconfined --privileged --rm -v /:/host alpine chroot /host<br/>
+root@docker-desktop:/# uname -a<br/>
+Linux docker-desktop 5.10.47-linuxkit #1 SMP Sat Jul 3 21:51:47 UTC 2021 x86_64 GNU/Linux<br/>
+root@docker-desktop:/# free<br/>
+               total        used        free      shared  buff/cache   available<br/>
+Mem:         2032964      298760      130644      409388     1603560     1169228<br/>
+Swap:        1048572        5668     1042904<br/>
+root@docker-desktop:/# cat /proc/cpuinfo |grep process<br/>
+processor	: 0<br/>
+processor	: 1<br/>
+processor	: 2<br/>
+processor	: 3<br/>
+processor	: 4<br/>
+processor	: 5<br/>
+root@docker-desktop:/# ls -l /var/run/docker.sock<br/>
+srw-rw---- 1 root root 0 Oct 21 00:08 /var/run/docker.sock<br/>
+root@docker-desktop:/# ps -ef|grep docker<br/>
+root      1315     1  0 00:08 ?        00:00:00 /usr/bin/containerd-shim-runc-v2 -namespace services.linuxkit -id docker -address /run/containerd/containerd.sock<br/>
+root      1338  1315  0 00:08 ?        00:00:00 /usr/bin/docker-init /usr/bin/entrypoint.sh<br/>
+root      1526  1361  0 00:08 ?        00:00:00 /usr/bin/logwrite -n dockerd /usr/local/bin/dockerd --containerd /var/run/desktop-containerd/containerd.sock --pidfile /run/desktop/docker.pid --config-file /run/config/docker/daemon.json --swarm-default-advertise-addr=eth0 --host-gateway-ip 192.168.65.2<br/>
+root      1531  1526  0 00:08 ?        00:00:04 /usr/local/bin/dockerd --containerd /var/run/desktop-containerd/containerd.sock --pidfile /run/desktop/docker.pid --config-file /run/config/docker/daemon.json --swarm-default-advertise-addr=eth0 --host-gateway-ip 192.168.65.2<br/>
+root      1827  1804  0 00:08 ?        00:00:00 /usr/bin/trim-after-delete -- /sbin/fstrim /var/lib/docker<br/>
+root      2407  2390  0 00:35 ?        00:00:00 grep docker<br/>
+root@docker-desktop:/# cat /run/config/docker/daemon.json<br/>
+{"builder":{"gc":{"defaultKeepStorage":"20GB","enabled":true}},"experimental":false,"features":{"buildkit":true},"hosts":["unix:///var/run/docker.sock","unix:///run/guest-services/docker.sock"],"userland-proxy":false}<br/>
+root@docker-desktop:/# ip addr<br/>
+1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000<br/>
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00<br/>
+    inet 127.0.0.1/8 brd 127.255.255.255 scope host lo<br/>
+       valid_lft forever preferred_lft forever<br/>
+    inet6 ::1/128 scope host<br/>
+       valid_lft forever preferred_lft forever<br/>
+2: eth0: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc pfifo_fast state UP group default qlen 1000<br/>
+    link/ether 02:50:00:00:00:01 brd ff:ff:ff:ff:ff:ff<br/>
+    inet 192.168.65.3/24 brd 192.168.65.255 scope global dynamic noprefixroute eth0<br/>
+       valid_lft 5017sec preferred_lft 3577sec<br/>
+    inet6 fe80::50:ff:fe00:1/64 scope link<br/>
+       valid_lft forever preferred_lft forever<br/>
+3: tunl0@NONE: &lt;NOARP&gt; mtu 1480 qdisc noop state DOWN group default qlen 1000<br/>
+    link/ipip 0.0.0.0 brd 0.0.0.0<br/>
+4: ip6tnl0@NONE: &lt;NOARP&gt; mtu 1452 qdisc noop state DOWN group default qlen 1000<br/>
+    link/tunnel6 :: brd :: permaddr b265:e21b:5e2e::<br/>
+5: services1@if6: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; mtu 1500 qdisc noqueue state UP group default<br/>
+    link/ether 9e:8b:f6:a0:32:47 brd ff:ff:ff:ff:ff:ff link-netnsid 0<br/>
+    inet 192.168.65.4 peer 192.168.65.5/32 scope global services1<br/>
+       valid_lft forever preferred_lft forever<br/>
+    inet6 fe80::9c8b:f6ff:fea0:3247/64 scope link<br/>
+       valid_lft forever preferred_lft forever<br/>
+7: docker0: &lt;NO-CARRIER,BROADCAST,MULTICAST,UP&gt; mtu 1500 qdisc noqueue state DOWN group default<br/>
+    link/ether 02:42:f3:9b:75:3f brd ff:ff:ff:ff:ff:ff<br/>
+    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0<br/>
+       valid_lft forever preferred_lft forever
+{{</ highlight >}}
+
+<p>上面大概就是 Docker Desktop 背后那个虚拟机主要的信息。</p>
+
+<p>用  docker context 命令也能看到该 desktop-linux 虚拟机</p>
+
+{{< highlight sh >}}
+$ docker context ls<br/>
+NAME                TYPE                DESCRIPTION                               DOCKER ENDPOINT                              KUBERNETES ENDPOINT                 ORCHESTRATOR<br/>
+default *           moby                Current DOCKER_HOST based configuration   unix:///var/run/docker.sock                  https://127.0.0.1:53208 (default)   swarm<br/>
+desktop-linux       moby                                                          unix:///Users/yanbin/.docker/run/docker.sock
+{{</ highlight >}}
+
+<p>见识过 Docker Desktop 虚拟机的那些信息后，在我们撇开 Docker Desktop 后完全可以自己创建一个 Docker Host，即启动 dockerd 进程时怎么监听 REST API 请求，还有客户端如何连接 Docker Host 的问题。</p>
+
+<h3>Docker 与 Podman 的区别</h3>
+<p>Podman 是 RedHat 发展可作为  docker  别名使用的工具，它被冠以几个属性，Dockerless, Daemonless 和 Rootless。在非 Linux 平台下运行 Linux 容器总是需要一个 Linux 虚拟机，Podman 用 podman machine init 初始化一个虚拟机，并且 driver 可以有多种选择，默认为 Qemu。宿主机上执行 <code>podman run</code> 肯定要让那个 Linux 虚拟机来执行，说明宿主机与虚拟机之间还是要通信的，那为什么叫做 Daemonless 呢？原因是在 podman machine 中不需要 dockerd 这个 daemon 进程.</p>
+
+{{< bundle-image src="Docker_vs_Podman.png" width="567px" >}}
+
+<p>Docker 的 client 不做多少事，构建镜像等工作都由 Docker Daemon(即 dockerd) 来完成, 而 podman 不一样，构建镜像等由 podman 自己完成，当然运行容器还是要那个  podman machine , 所以在这个虚拟机中也有 docker 命令。用 <code>podman pull busy</code> 拉下来的镜像在 <code>podman machine ssh</code> 后用 <code>docker images</code> 也能看到。</p>
+
+<p>其实对 Podman 还是有些不是很清楚的，同样在构建镜像前，也会把 <code>Dockerfile</code> 所在目录的所有文件打包传到 <code>podman machine</code> 中去，比如会打包到 /sysroot/ostree/deploy/fedora-coreos/var/tmp/libpod_builder756951953/tarBall 文件中，文件大的话同样无法构建镜像，而且拷贝文件时不显示任何信息，<code>docker build</code> 还会显示拷贝文件大小的进度。</p>
+
+<p>由于 Podman 不用通过网络与 podman machine 进行交互，所以也不用担心 VPN 连接后无法使用的情况，但是目前似乎流行度不够，还没受到 IntelliJ IDEA 的青睐，尚无法与 IntelliJ IDEA 集成。</p>
+
+{{< bundle-image src="docker-host-3.png" width="536px" >}}
+
+<p>再就是不能像 Docker 那样，启动一个 AWS EC2 上的 Docker daemon, 本地执行 docker build, docker push 等命令，实际构建在 EC2 发生的，上传镜像也是从 EC2 到远端的 Registry，而不是直接从本地上传的，特别是上传镜像到 AWS 的 ECR 中会快很多。 </p>
+
+<h3>使用 Docker Machine 替代 Docker Desktop</h3><br/>
+<p>Docker Machine 是早已被 Docker 放弃的工具，见 <a href="https://github.com/docker/machine">https://docs.docker.com/machine/</a>，同时被遗弃的工具还有 Docker Toolbox 和 Kitematic。所以 Docker Machine 的代码 <a href="https://github.com/docker/machine">https://github.com/docker/machine</a> 3 年多未被更新。Docker Machine  用的是最早的 boot2docker 镜像，到目前为止它仍然能工作，等到它无法使用时估计要亲自折腾 Vagrant, 自建一个 Docker Daemon 的 Box, 然后由 Docker client 通过端口重定向连接进来。</p>
+
+<p>趁着 Docker Machine 仍然能满足当前需求，还是直接用 docker-machine  来管理虚拟机方便，Docker Machine 的基本用法在前一篇 <a href="/replace-docker-desktop-with-hyperkit-minikube/">摆脱 Docker Desktop 即将到来的收费</a> 一文方案三中有讲解。当前 docker-machine  版本为 0.16.1, 看来只会定格在这里了，安所使用的 Boot2Docker 版本是 v19.03.12(Docker Engine, 还不算太老), DockerMachine + Boot2Docker 可以说是 Docker Desktop 的前生。</p>
+
+<p>这里会有一些与前篇重复内容，注：docker-machine 的虚拟机的用户名和密码是 docker/tcuser</p>
+
+<p>Docker Machine 的基本用法</p>
+
+<blockquote>
+<p>$ brew install docker-machine<br />
+$ docker-machine create --driver virtualbox default<br />
+$ eval $(docker-machine env)<br />
+$ docker ps</p>
+</blockquote>
+
+<p>注：如果用 docker-machine  创建虚拟机或启动时出现类似下面的错误</p>
+
+<blockquote>
+<p>Setting Docker configuration on the remote daemon...</p>
+
+<p>This machine has been allocated an IP address, but Docker Machine could not<br />
+reach it successfully.</p>
+
+<p>SSH for the machine should still work, but connecting to exposed ports, such as<br />
+the Docker daemon port (usually <ip>:2376), may not work properly.</p>
+
+<p>You may need to add the route manually, or use another related workaround.</p>
+
+<p>This could be due to a VPN, proxy, or host file configuration issue.</p>
+
+<p>You also might want to clear any VirtualBox host only interfaces you are not using.<br />
+Checking connection to Docker...<br />
+Error creating machine: Error checking the host: Error checking and/or regenerating the certs: There was an error validating certificates for host "192.168.99.100:2376": dial tcp 192.168.99.100:2376: i/o timeout<br />
+You can attempt to regenerate them using 'docker-machine regenerate-certs [name]'.<br />
+Be advised that this will trigger a Docker daemon restart which might stop running containers.</p>
+
+</blockquote>
+
+<p>这时可尝试重 vboxnetX 网卡，如 <code>sudo ifconfig vboxnet1 down &amp;&amp; sudo ifconfig vboxnet1 up</code>, 或者把 <code>vboxnet0</code> 外的设备全删除，用 <code>VBoxManage hostonlyif remove vboxnet1</code>, 或者在 VirtualBox/File/Host Network Manager 里处理。</p>
+
+<p>从 docker-machine env 的输出</p>
+
+<blockquote>
+<p>export DOCKER_TLS_VERIFY="1"<br />
+export DOCKER_HOST="tcp://192.168.99.100:2376"<br />
+export DOCKER_CERT_PATH="/Users/yanbin/.docker/machine/machines/default"<br />
+export DOCKER_MACHINE_NAME="default"<br />
+# Run this command to configure your shell:<br />
+# eval $(docker-machine env)</p>
+</blockquote>
+
+<p>运行 eval $(docker-machine evn) 生成的环境变量默认是要通过 HTTPS 端口号 2376 加上证书来访问 Docker Daemon 的 REST API 的，而不是通过 socket 文件。这就可能在机器连接上 VPN 后由于路由的原因不能访问 192.168.99.100。为解决在 VPN 后也能正常访问 docker-machine 有以下几个思路</p>
+
+<ol>
+	<li>映射可写的共享目录，让 docker-machine 启动 dockerd 进程时在创建  docker.sock 文件到宿主机目录下，比如写到默认的 /var/run/docker.sock 文件，或用 DOCKER_HOST=unix:///User/yanbin/docker.sock 环境变量，看能否执行 docker ps 命令</li>
+	<li>通过 VirtualBox 的虚拟机 default 的端口映射，或 ssh 隧道， 由本地的 2376 端口号映射到 192.168.99.100:2376, 然后配置 DOCKER_HOST=tcp://localhost:2376 来访问</li>
+	<li>思路与上面一样，但必须禁止掉证书验证，端口映射后设置 DOCKER_HOST=tcp://localhost:2376 来访问</li>
+	<li>仍然要进行端口映射，localhost:2375:192.168.99.100:2375，但在 docker-machine 中启动 HTTP 端口号，然后配置 DOKCER_HOT=tcp://localhost:2375 来访问</li>
+</ol>
+
+<p>总之，只要是通过 socket 文件或 localhost 就不会被 VPN 的路由设置带偏。</p>
+
+<p>以下是前面几个思路的尝试</p>
+
+<h4>思路1， 写 sock 文件到宿主机的方式</h4>
+<p>下面那样创建虚拟机</p>
+
+<blockquote>
+<div data-pm-slice="1 1 []" data-en-clipboard="true">$ docker-machine create -d virtualbox --virtualbox-share-folder /Users/yanbin:yanbin --engine-opt host=unix:///yanbin/docker.sock default</div>
+</blockquote>
+
+<div data-pm-slice="1 1 []" data-en-clipboard="true">default 虚拟机能创建，目录共享也设置成功，但无法启动 dockerd 进程。<code>docker-machine ssh</code> 登陆后用命令</div>
+
+<blockquote>
+<div data-pm-slice="1 1 []" data-en-clipboard="true">sudo dockerd -H unix:///yanbin/docker.sock<br />
+INFO[2021-10-21T03:40:12.505891167Z] Starting up<br />
+failed to load listeners: can't create unix socket /yanbin/docker.sock: listen unix /yanbin/docker.sock: bind: operation not permitted</div>
+</blockquote>
+
+<p>也无法启动 dockerd。本来期特通过设置  DOCKER_HOST=unix:///Users/yanbin/docker.sock 来让 docker 工作</p>
+
+<p>后来还尝试过用 Vagrant 虚拟机，启动 dockerd，在宿主机上也能看到虚拟机中生成的 docker.sock 文件，但仍然无法使用 docker.</p>
+
+<p>此路不通</p>
+
+<h4>思路2，端口映射来访问 tcp://localhost:2376</h4>
+<p>默认方式 <code>docker-machine create -d virtualbox default</code> 创建虚拟机，然后映射端口 localhost:2376:192.168.99.100:2376</p>
+
+<blockquote>
+<p>$ docker-machine stop<br />
+$ VBoxManage modifyvm default --natpf1 "docker,tcp,,2376,,2376"<br />
+$ docker-machine start<br />
+$ eval $(docker-machine env)<br />
+$ export DOCKER_HOST=tcp://127.0.0.1:2376</p>
+</blockquote>
+
+<p>试下 docker ps 命令</p>
+
+<blockquote>
+<p>$ docker ps<br />
+error during connect: Get "https://127.0.0.1:2376/v1.24/containers/json": x509: certificate is valid for 192.168.99.100, not 127.0.0.1</p>
+</blockquote>
+
+<p>证书不是给 127.0.0.1 用的，用  <code>ssh -L 127.0.0.1:2376:$(docker-machine ip):2376 yanbin@localhost</code> 映射端口后的错误是一样的。用 docker-machine regenerate-certs 也无法重新给 127.0.0.1 生成证书，或者经过其他更复杂的证书配置能让它工作，不想去尝试了。</p>
+
+<p>基本上此路也不通，但是慢慢变得明朗</p>
+
+<h4>思路3，在上面的基础上禁掉证书验证</h4>
+<p>Docker 客户端在请求 Docker Host  可以用 --tlsverify=false 参数忽略掉证书验证。像普通方式一样创建虚拟机</p>
+
+<blockquote>
+<p>$ docker-machine create -d virtualbox default<br />
+$ docker-machine stop<br />
+$ VBoxManage modifyvm default --natpf1 "docker,tcp,,2376,,2376"<br />
+$ export DOCKER_HOST=tcp://127.0.0.1:2376<br />
+$ docker ps<br />
+Error response from daemon: Client sent an HTTP request to an HTTPS server.<br />
+$ docker --tlsverify=false ps<br />
+CONTAINER ID IMAGE COMMAND CREATED STATUS PORTS NAMES</p>
+</blockquote>
+
+<p>不管在用 <code>docker-machine</code> 创建虚拟机时也不要求 <code>--engine-opt tlsverify=false</code> 或 <code>--engine-opt tls=false</code> 参数，只要客户端 <code>docker</code> 命令带上 <code>--tlsverify=fasle</code> 就能跳过证书验证</p>
+
+<p>这里有个主意就是给 <code>docker --tlsverify=false</code> 一个为 docker 的别名，可以把下行写在 shell 的初始文件中，如 <code>~/.zshrc</code> 文件</p>
+
+<blockquote>
+<p>$ alias docker="docker --tlsverify=false"</p>
+</blockquote>
+
+<p>以后用 <code>docker</code> 这个别名命令就能总是忽略掉证书验证了。</p>
+
+<p>注：在客户端通过 <code>export DOCKER_TLS_VERFIY=1</code> 和 <code>export DOCKER_TLS_VERIFY=</code> 能控制是用 HTTP 还是 HTTPS 访问，但 docker 命令跳过证书验证一定要用 <code>docker --tlsverify=false</code> 参数</p>
+
+<h4>思路4，用 HTTP 访问 Docker Host, 无需证书</h4>
+<p>在 docker-machine 创建虚拟机时加上 <code>--engine-env DOCKER_TLS=no</code> 参数</p>
+
+<blockquote>
+<p>$ docker-machine create -d virtualbox --engine-env DOCKER_TLS=no default<br />
+$ docker-machine stop<br />
+$ VBoxManage modifyvm default --natpf1 "docker,tcp,,2376,,2376"<br />
+$ docker-machine start<br />
+$ export DOCKER_HOST=tcp://127.0.0.1:2376<br />
+$ docker ps</p>
+</blockquote>
+
+<p>这样 docker 就能工作了，只需要 DOCKER_HOST 环境变量，因为有了 <code>DOCKER_TLS=no</code> 命令压根就没有生成证书，其他的与证书相关的环境变量也是多余的。虽然用的是 2376 端口号，但实际上是通过 HTTP 进行通信的。</p>
+
+<p>上面在用 <code>docker-machine create</code> 创建虚拟机时会出现类似下面的错误信息</p>
+
+<blockquote>
+<p>Checking connection to Docker...<br />
+Error creating machine: Error checking the host: Error checking and/or regenerating the certs: There was an error validating certificates for host "192.168.99.100:2376": tls: oversized record received with length 20527<br />
+You can attempt to regenerate them using 'docker-machine regenerate-certs [name]'.<br />
+Be advised that this will trigger a Docker daemon restart which might stop running containers.</p>
+</blockquote>
+
+<p>不用担心，而且执行 <code>docker-machine env</code> 也出不来环境变量的设置，也无妨</p>
+
+<p>如果想用 2375 端口号看起来更正规一些，可用</p>
+
+<blockquote>
+<p>$ docker-machine create -d virtualbox --engine-env DOKCER_TLS=no --engine-opt host=tcp://0.0.0.0:2375 default</p>
+</blockquote>
+
+<p>则会同时在 2375 和  2376 上监听  HTTP 请求，用  DOCKER_HOST=tcp://127.0.0.1:2375 还是 DOCKER_HOST=tcp://127.0.0.1:2376 都是一样的。</p>
+
+<h3>最后</h3>
+<p>docker-machine 除了支持 virtualbox 虚拟机类型外，还支持 hyperkit, xhyve, 甚至 amazonec2, 所以也能通过  <code>docker-machine create --driver amazonec2</code> 来创建 EC2 实例作为 Docker Host，这样就能本地执行 docker 命令，实际做事情都在 EC2 上。更为完整的 driver 支持列表可见 <a href="https://github.com/docker/machine/tree/master/drivers">https://github.com/docker/machine/tree/master/drivers</a>。</p>
+
+<p>可惜像 docker-machine 这么不错的项目却停止了更新，以后如果需要使用到更新版本的 Docker Engine 时只有仿照着 docker-machine 来制作自己的 Vagrant Box，或者更新 Boot2Docker。</p>
+
+<p>由于 Mac 下 <code>docker</code> 命令也是来自于 <code>Docker Desktop</code>, 如果不安装 <code>Docker Desktop</code> 想要 <code>docker</code> 命令的话请尝试 <code>brew install docker-toolbox</code> 来安装。</p>
+
+<p>docker-machine 默认的虚拟机内存为 1G, CPU 为 1 个，本人的目前的做法是</p>
+
+{{< highlight sh >}}
+docker-machine create -d virtualbox -virtualbox-cpu-count 2 --virtualbox-memory 2048 --engine-env DOCKER_TLS=no default
+docker-machine stop
+VBoxManage modifyvm default --natpf1 "docker,tcp,,2376,,2376"
+docker-machine start
+echo "export DOCKER_HOST=tcp://127.0.0.1:2376" >> ~/.zshrc
+{{</ highlight >}}
+
+<p><span style="color: #0000ff;"><strong>使用 docker-machine 时 -v 卷映射正常</strong></span></p>
+
+<p>执行 <code>docker run -v /Users/yanbin:/yanbin busybox</code> 可以映射 Mac OS 的  /Users/yanbin 到容器的 /yanbin 中去</p>
+
+<p><span style="color: #0000ff;"><strong>总结 docker-machine + docker 命令能实现的</strong></span></p>
+
+<ol>
+	<li>[X] 连 VPN 后正常使用 docker, 使用 DOCKER_HOST=tcp://127.0.0.1:2376 解决</li>
+	<li>[X] 端口映射，可解决，给 docker-machine 虚拟机添加一段预定的端口映射来使用</li>
+	<li>[X] 卷映射正常，可映射 Mac OS X 下的目录到 Linux 容器</li>
+</ol>
+
+<p>在使用  docker-machine 时，如果在登陆 AWS ECR 时出现类似下面的错误</p>
+
+<blockquote>
+<div data-pm-slice="1 1 []" data-en-clipboard="true">aws ecr get-login-password --region us-east-1 | \</div>
+
+<div>  docker login --username AWS --password-stdin 123456789088.dkr.ecr.us-east-1.amazonaws.com</div>
+
+<div>Error saving credentials: error storing credentials - err: exec: "docker-credential-desktop": executable file not found in $PATH, out: ``</div>
+
+</blockquote>
+
+<div>请查一下在 ~/.docker/config.json 文件中是否有 <code>credsStore</code>，有的话把它改为 <code>credStore</code></div>
+
+<p>再最后，如果是用 docker-machine 的话，每次重启机器后记得 <code>docker-machine start</code> 启动一下虚拟机，并且把 DOCKER_HOST=tcp://127.0.0.1:2376 加到 shell 的配置文件中去。</p>
+
+<p>Rancher Machine 再现，看来 Docker Machine  后继有机，看 <a href="https://docs.ionos.com/docker-machine-driver/rancher/rancher-machine">https://docs.ionos.com/docker-machine-driver/rancher/rancher-machine</a>，还很相似的用法，有空再看看。</p>
+
+<blockquote>
+<p>$ rancher-machine create --driver ionoscloud test-machine<br />
+$ eval $(rancher-machine env test-machine)</p>
+</blockquote>
+
+<p>或 Docker Machine 用 Boot2Docker 的替代品</p>
+
+<blockquote>
+<p>$ docker-machine create -d virtualbox  --virtualbox-boot2docker-url https://releases.rancher.com/os/latest/rancheros.iso default</p>
+</blockquote>
+
+<p>说到 <a href="https://rancher.com">Rancher</a>, 感觉会引出一个大海怪，著名的 K3s 就来自于 Rancher。</p>
+
+<p>2020-10-28</p>
+
+<hr /><br/>
+<p>问题来了，在用 docker run -p 8888:8888 启动容器时，端口映射变得复杂了，映射的端口是 docker-machine 的 8888 到容器的 8888，在本机(Mac 或 Windows) 上并未启动 8888 端口，有个解决办法是一个 <a href="https://code.haleby.se/2016/04/08/docker-machine-port-forwarding/">pf</a> 脚本，或 VirtualBox 预先准备几个从本机到 docker-machine 的端口。或可尝试 --net=host 启动容器。对于 docker 容器中运行 jupyterlab 启动时必须加上 --ip 0.0.0.0。</p>
+
+<p>链接：</p>
+
+<ol>
+	<li><a href="https://imranhsayed.medium.com/getting-started-with-docker-8eaae6bf2183">Get started with docker</a></li>
+</ol>

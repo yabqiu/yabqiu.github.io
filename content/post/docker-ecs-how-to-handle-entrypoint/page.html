@@ -1,0 +1,113 @@
+---
+title: 本地和 ECS 容器(EC2/Fargate) 如何处理 ENTRYPOINT
+url: /docker-ecs-how-to-handle-entrypoint/
+date: 2023-12-23T23:10:44-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/docker-logo.png"
+categories:
+  - AWS
+  - Docker
+tags: 
+  - Docker
+  - AWS
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13350 
+wpStatus: publish
+views: 157
+lastmod: 2023-12-23T23:21:02-06:00
+---
+
+不觉一晃还是在五年前记录过一篇 <a href="/dockerfile-difference-between-shell-exec-forms/">Dockerfile 中命令的两种书写方式的区别</a>，其中提到过 Dockerfile 中可选择用 ENTRYPOINT 或 CMD 来启动进程，并且在 ENTRYPOINT 和 CMD 都支持  exec, shell 和增强型 shell 方式。如果同时有 ENTRYPOINT 和  CMD(或 docker 运行时的 CMD), 则 CMD 将为 ENTRYPOINT 提供参数。</p>
+<br/>
+在原来那篇文中认为 shell 无法接收到 docker stop 或  docker -s SIGTERM 发来的信号，也许是随着 Docker 版本的变迁，Docker 变得越发聪明了起来，无论何种格式的 ENTRYPOINT, 都能够收到 SIGTERM 信号，比如在 Java 的 ShutdownHook 能捕捉到该信号，得以在进程停止之前作必要的清理工作。<br/><br/>
+进行本文相关研究的主因是部署在 ECS(Fargate) 中的 Java Web 服务，Task 总是因为 OutOfMemoryError 被杀掉，而在应用程序日志中却见不着半点线索说 JVM 的 OutOfMemoryError，即使后来给 Fargate 配上了 EFS, 加了 <code>+XX:+HeapDumpOnOutOfMemoryError XX:HeapDumpPath=/efs</code> JVM参数，在任务被 kill 时在 /efs 上从来就都没生成过内存映像文件。最后发现是因为 JVM 的 -Xmx 配置太高，留给 Fargate 容器的太少的缘故。<!--more--><br/><br/>
+本文所测试的目的是观察 Dockerfile 中 ENTRYPOINT 三种不同写法时本地，ECS(包括 EC2 和 Fargate) 中如何被处理的<br/>
+<blockquote>
+ENTRYPOINT java $JAVA_OPTS -jar /app.jar<br />
+ENTRYPOINT exec java $JAVA_OPTS -jar /app.jar<br />
+ENTRYPOINT ["java", "-Xmx128M", "-jar", "/app.jar"]
+</blockquote>
+
+测试用的 Docker 镜像， https://start.spring.io/ 选择创建一个 Maven 管理的  Springboot 3.2.0 Web 项目。<br/><br/>
+代码中加上 ShutdownHook<br/>
+{{< highlight java >}}
+static {
+    Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+        System.out.println("JVM shutdown captured by shutdown hook");
+    }));
+}
+{{</ highlight >}}
+<br/>
+构建<br/>
+<blockquote>
+mvn package -DskipTests
+</blockquote>
+<br/>
+会生成 target/demo-0.0.1-SNAPSHOT.jar<br/><br/>
+创建 Dockerfile 文件<br/>
+{{< highlight docker >}}
+FROM amazoncorretto:17
+
+RUN yum install -y procps
+COPY target/*.jar app.jar
+
+ENTRYPOINT java $JAVA_OPTS -jar /app.jar
+{{</ highlight >}}
+<br/>
+构建 Docker 镜像<br/>
+<blockquote>
+docker build -t demo .
+</blockquote>
+<br/>
+切换 ENTRYPOINT 为另外两种写法时，再分别构建相应的 Docker 镜像<br/><br/>
+测试环境有四，本地环境测试了 macOS 和 Linux<br/><br/>
+<ol>
+    <li>本地环境为 Mac OS X 的  Docker Desktop，版本为<br />
+{{< highlight sh >}}
+$ docker version --format 'Server.Version: {{.Server.Version}},Client.Version: {{.Client.Version}}' | tr , '\n'
+Server.Version: 24.0.6
+Client.Version: 24.0.6
+{{</ highlight >}}
+</li>
+    <li>本地 Linux 的 Docker 版本<br />
+{{< highlight sh >}}
+$ docker version --format 'Server.Version: {{.Server.Version}},Client.Version: {{.Client.Version}}' | tr , '\n'
+Server.Version: 24.0.5
+Client.Version: 24.0.5
+{{</ highlight >}}
+</li>
+    <li>ECS: LunchType 为 EC2, ECS Agent version: 1.79.0. EC2 中的 docker version, <br />
+{{< highlight docker >}}
+docker version --format 'Server.Version: {{.Server.Version}},Client.Version: {{.Client.Version}}' | tr , '\n'
+Server.Version: 20.10.25
+Client.Version: 20.10.25
+{{</ highlight >}}
+</li>
+    <li>ECS: LunchType 为 Fargate, Platform version: 1.4.0<br />
+Fargate 容器配置好 Task Role 的权限，就能直接登陆容器中的 Shell - 参考 <a href="/ecs-exec-connect-ecs-container-on-fargate-and-ec2/">使用 ECS Exec 直通 ECS 容器会话(适用于 Fargate 和 EC2)</a><br />
+    aws ecs execute-command --cluster $ECS_CLUSTER --command "$COMMAND" --interactive --task $TASK_ID<br />
+然后可查看其中的进程</li>
+</ol>
+<br/>
+测试结果如下图<br/><br/>
+{{< bundle-image src="docker-entrypoint-ps4-800x361.png" width="1000px" >}}
+上面是用图片展示的，所以非常有必要用文字再总结一下<br/><br/>
+<ol>
+    <li>在本地(macOS 或 Linux) 启动 Docker 容器，无论何种写法，最终 Java 进程都将脱壳成为容器中的 1 号进程，所以它能直接捕捉到容器外部发来的 SIGTERM 信号，如 docker stop 或 docker kill -s SIGTERM &lt;container-id&gt;</li>
+    <li>在 ECS (EC2) 中启动的容器 1 号进程是 <code>/sbin/docker-init</code>, Java 进程是它的子进程，SIGTERM 信号会由 <code>/sbin/docker-init</code> 透传到 Java 进程</li>
+    <li>在 ECS(Fargate) 中启动的容器 1 号进程是 <code>/dev/init</code>, Java 进程是它的子进程，SIGTERM 信号会由 <code>/dev/init</code> 透传到 Java 进程</li>
+    <li>综合 #2 和 #3, 对容器的 SIGTERM 信号会直达 Java 进程，所以以下三种情况在 Java 进程中都能捕获到 SIGTERM<br />
+1. ECS 控制台手动 Task<br />
+2. ECS AutoScaling 停掉 Task (Deregister)<br />
+3. Health check 失败时停掉 Task(Deregister)</li>
+    <li>最初的 shell 和 exec shell 的 ENTRYPOINT 写法不能捕获到 SIGTERM 的担忧也得到的释怀 </li>
+    <li>以上以 Java 应用为例，其他类型的进程也是一样的，如 Python, Node 等</li>
+</ol>
+<br/>
+最后强调一下，当初立此文的主业是为了研究为何 ECS 任务因 OutOfMemoryError 被杀却并未触发容器中 Java(已配置 -XX:+HeapDumpOnOutOfMemoryError) 进程转储内存映像。原因是给 JVM 分配的堆内存太多了，而 Fargate 实例所剩内存(128M)不足而造成的 Fargate 实例 OutOfMemoryError, 而 JVM 有 GC 在运作内存使用正常，最终 Fargate 实例被 SIGKILL 强行杀掉时连带的把 JVM 也强行杀了。

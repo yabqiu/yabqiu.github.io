@@ -1,0 +1,253 @@
+---
+title: Docker Compose In Practice
+url: /docker-compose-in-practice/
+date: 2021-06-24T13:49:36-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/docker_compose.png"
+categories:
+  - Docker
+tags: 
+  - compose
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11049 
+wpStatus: publish
+views: 577
+lastmod: 2021-06-24T13:51:38-05:00
+---
+
+Continue to advance to Kubernetes, the last article <a href="https://yanbin.blog/english-docker-swarm-in-action/">Docker Swarm In Action</a>, After understanding Swarm, it is necessary to get familiar with Docker Compose. Docker Swarm forms a cluster of Docker hosts. As long as the Manager node is notified when the service is deployed, it will automatically find the corresponding node to run containers. Compose is another concept entirely. It organizes multiple associated containers into a whole for deployment, such as a load balance container, multiple web containers, and a Redis cache container to make up a whole bundle.<br/><br/>
+Revealed by its name, Compose, the concept of container orchestration was officially established. Later, Kubernetes, which we will learn, it's a tool for higher-level organization, operation and management of containers. Because Compose organizes the containers, it can start multiple associated containers with one command, instead of starting one container separately.<br/><br/>
+Regarding the installation of Docker Compose, Docker Desktop under Mac OS X comes with docker-compose; since Docker Compose is written in Python, we can use  <code>pip install docker-compose</code>  to install it, and use its commands after installation <code>docker-compose</code>.<!--more--><br/><br/>
+The differences between Docker Container, Swarm, and Compose show in this picture.<span id="more-9967"></span><br/><br/>
+{{< bundle-image src="docker_swarm_compose_1-800x304.png" width="750px" >}}
+Compose consists of multiple containers, which can be deployed as a whole to a single Docker host or Swarm host cluster.<br/><br/>
+Let’s experience the functions of Docker Compose and design a service with the following containers<br/><br/>
+<ol>
+    <li>The front-end load balancing server is played by HAProxy, and request will be forwarded to the next following two web containers</li>
+    <li>Two web containers, demonstrated with Python Flask</li>
+    <li>A Redis cache container, the Web will access the cached data in the container</li>
+</ol>
+<br/>
+The files involved in defining Docker Compose are Dockerfile and docker-compose.yml. We need to create a Dockerfile for each custom Docker container. If one container directly use the Docker image, the no Dockerfile required. In other words, there can be one or more Dockerfiles in a Compose. Here is an example of directory structure of one compose<br/>
+<blockquote>
+myapp/<br />
+    - Dockerfile<br />
+    - docker-compose.yml
+</blockquote>
+
+If we need to use multiple Dockerfiles, the Dockerfile must be placed in a different directory. In this case, the directory structure needs to be adjusted as follows (plus several auxiliary files that will be used later)<br/>
+<blockquote>
+myapp/<br />
+    - proxy/<br />
+        - Dockerfile<br />
+        - haproxy.cfg<br />
+    - web/<br />
+        - Dockerfile<br />
+        - app.py<br />
+        - requirements.txt<br />
+    - docker-compose.yml
+</blockquote>
+
+Next, look at the content of each file<br/><br/>
+<strong>myapp/proxy/Dockerfile</strong><br/>
+{{< highlight docker >}}
+FROM haproxy:2.1.3
+COPY haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg
+{{</ highlight >}}
+<br/>
+<strong>myapp/proxy/haproxy.cfg</strong><br/>
+{{< highlight docker >}}
+frontend myweb
+    bind *:80
+    default_backend     realserver  
+backend realserver
+    balance     roundrobin
+    server      web1 web_a:5000 check
+    server      web2 web_b:5000 check
+{{</ highlight >}}
+<br/>
+This is the simplest haproxy.cfg configuration file. It just forwards the request to <code>web_a</code> and <code>web_b</code> in a rotating manner. We will see web_a and web_b in the docker-compose.yml file later.<br/><br/>
+<strong>myapp/web/Dockerfile</strong><br/>
+{{< highlight docker >}}
+FROM python:3.7-alpine
+ADD app.py requirements.txt ./
+RUN pip install -r requirements.txt
+CMD ["python", "app.py"]
+{{</ highlight >}}
+<br/>
+<strong>myapp/web/requirements.txt</strong><br/>
+{{< highlight cfg >}}
+flask
+redis
+{{</ highlight >}}
+<br/>
+<strong>myapp / web / app.py</strong><br/>
+{{< highlight python >}}
+import redis
+import socket
+from flask import Flask
+
+cache = redis.Redis('redis')
+app = Flask(__name__)
+
+
+def hit_count():
+    return cache.incr('hits')
+
+
+@app.route('/')
+def index():
+    count = hit_count()
+    return 'Served by <b>{}</b>, count: <b>{}</b>\n'.format(socket.gethostname(), count)
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0')
+{{</ highlight >}}
+<br/>
+Use a simple Flask App to demonstrate a web application. The access count is saved in Redis, and responds the hostname of the machine where the request is currently processed.<br/><br/>
+<strong>myapp/docker-compose.yml</strong><br/>
+{{< highlight docker >}}
+version: '3.7'
+services:
+  web_a:
+    build: ./web
+    ports:
+      - 5000
+  web_b:
+    build: ./web
+    ports:
+      - 5000
+  proxy:
+    build: ./proxy
+    ports:
+      - "80:80"
+  redis:
+    image: "redis:alpine"
+{{</ highlight >}}
+<br/>
+We have built two Docker images. Redis:alpine is used directly for the image. The port and mapping are defined here, so EXPOSE is needed to define the port number in the Dockerfile. We will start two web services, web_a, web_b, and the haproxy.cfg in front will forward the request to these two containers.<br/><br/>
+Now we can go to the myapp directory under the command line and execute the command<br/>
+<blockquote>
+$ docker-compose up -d
+</blockquote>
+<br/>
+If first time run, this command will also build Docker images for myapp_proxy, myapp_web_a, and myapp_web_b, and then they will be started. If those images already exist locally, start those containers directly. After the startup is complete, run <code>docker ps</code> to check<br/><br/>
+{{< highlight sh >}}
+$ docker ps
+CONTAINER ID        IMAGE               COMMAND                  CREATED              STATUS              PORTS                     NAMES
+e5d918e0ae2a        myapp_proxy         "/docker-entrypoint.…"   About a minute ago   Up About a minute   0.0.0.0:80-&gt;80/tcp        myapp_proxy_1
+56819534cfa6        myapp_web_a         "python app.py"          About a minute ago   Up About a minute   0.0.0.0:32777-&gt;5000/tcp   myapp_web_a_1
+a2125855e55a        myapp_web_b         "python app.py"          About a minute ago   Up About a minute   0.0.0.0:32778-&gt;5000/tcp   myapp_web_b_1
+f216a7b5f95b        redis:alpine        "docker-entrypoint.s…"   About a minute ago   Up About a minute   6379/tcp                  myapp_redis_1
+{{</ highlight >}}
+<br/>
+Four containers are all started, one haproxy, two web, and one redis, which is exactly what we need. Let’s verify the whole service behavior now:<br/><br/>
+{{< highlight sh >}}
+$ curl http://localhost
+Served by <b>a2125855e55a</b>, count: <b>1</b>
+$ curl http://localhost
+Served by <b>56819534cfa6</b>, count: <b>2</b>
+$ curl http://localhost
+Served by <b>a2125855e55a</b>, count: <b>3</b>
+{{</ highlight >}}
+<br/>
+Load balancing, web services, and Redis are working together as our intention.<br/><br/>
+If we run <code>docker kill 56</code> to get <code>myapp_web_a</code> killed, it can't be automatically recover. But running <code>docker-compose run -d</code> again will just save <code>myapp_web_a</code> back, won't impact other containers.<br/>
+{{< highlight docker >}}
+$ docker-compose up -d
+Starting myapp_web_a_1 ...
+myapp_redis_1 is up-to-date
+Starting myapp_web_a_1 ... done
+{{</ highlight >}}
+<br/>
+please run <code>docker-compose -h</code> to learn the detailed usage of this command, and a lot of them are similar to <code>docker</code> command, following are only for  <code>docker-compose</code> command<br/>
+<ol>
+    <li>docker-compose images: Display the docker image used by current compose</li>
+    <li>docker-compose logs: Display the running logs of the current compose</li>
+    <li>docker-compose down: stop all containers involved in compose</li>
+    <li>docker-compose kill: kill all the containers involved in compose without using docker kill to kill them one by one</li>
+    <li>docker-compose restart: restart the entire compose service (all containers)</li>
+</ol>
+<br/>
+There is a simpler way to support HAProxy + multiple dynamic web containers<br/><br/>
+Modify the previous <code>docker-compose.yml</code>contents of the file are as follows:<br/>
+{{< highlight docker >}}
+version: '3.7'
+services:
+  web:
+    build: ./web
+    ports:
+      - 5000
+  proxy:
+    image: dockercloud/haproxy
+    links:
+      - web
+    ports:
+      - "80:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+  redis:
+    image: "redis:alpine"
+{{</ highlight >}}
+<br/>
+proxy selected <code>dockercloud/haproxy</code> image, so, we can remove <code>myapp/proxy</code> folder along with <code>Dockerfile</code> and <code>haproxy.cfg</code>.<br/><br/>
+Now start with the same command <code>docker-compose up -d</code><br/>
+{{< highlight sh >}}
+$ docker ps
+CONTAINER ID        IMAGE                 COMMAND                  CREATED             STATUS              PORTS                                   NAMES
+3ce8fcd986ac        dockercloud/haproxy   "/sbin/tini -- docke…"   6 minutes ago       Up 4 minutes        443/tcp, 0.0.0.0:80-&gt;80/tcp, 1936/tcp   myapp_proxy_1
+c73be3d3f795        myapp_web             "python app.py"          6 minutes ago       Up 4 minutes        0.0.0.0:32793-&gt;5000/tcp                 myapp_web_1
+0fabf6c6e81f        redis:alpine          "docker-entrypoint.s…"   16 minutes ago      Up 4 minutes        6379/tcp                                myapp_redis_1
+{{</ highlight >}}
+<br/>
+There is only one web container, and now it can be dynamically expanded, using <code>docker-compose up --scale web=d -d</code><br/><br/>
+{{< highlight sh >}}
+$ docker-compose up --scale web=3 -d
+Starting myapp_web_1 ...
+Starting myapp_web_1 ... done
+Creating myapp_web_2 ... done
+Creating myapp_web_3 ... done
+myapp_proxy_1 is up-to-date
+$ docker ps
+CONTAINER ID        IMAGE                 COMMAND                  CREATED             STATUS              PORTS                                   NAMES
+e3b4db8db92d        myapp_web             "python app.py"          7 seconds ago       Up 5 seconds        0.0.0.0:32796-&gt;5000/tcp                 myapp_web_2
+f1ba850865e0        myapp_web             "python app.py"          7 seconds ago       Up 5 seconds        0.0.0.0:32795-&gt;5000/tcp                 myapp_web_3
+3ce8fcd986ac        dockercloud/haproxy   "/sbin/tini -- docke…"   8 minutes ago       Up 6 minutes        443/tcp, 0.0.0.0:80-&gt;80/tcp, 1936/tcp   myapp_proxy_1
+c73be3d3f795        myapp_web             "python app.py"          8 minutes ago       Up 6 minutes        0.0.0.0:32793-&gt;5000/tcp                 myapp_web_1
+0fabf6c6e81f        redis:alpine          "docker-entrypoint.s…"   17 minutes ago      Up 6 minutes        6379/tcp                                myapp_redis_1
+{{</ highlight >}}
+<br/>
+{{< highlight docker >}}
+$ curl http://localhost
+Served by <b>c73be3d3f795</b>, count: <b>20</b>
+$ curl http://localhost
+Served by <b>e3b4db8db92d</b>, count: <b>21</b>
+$ curl http://localhost
+Served by <b>f1ba850865e0</b>, count: <b>22</b>
+{{</ highlight >}}
+<br/>
+The three requests were processed by three different web containers.<br/><br/>
+Note:<br/><br/>
+<ol>
+    <li><code>docker-compose scale web=2</code>: The command is not recommended, we should run <code>docker-compose up --scale web=2 -d</code> instead</li>
+    <li><code>docker-compose.yml</code>: The configuration <code>deploy</code> can only work with Swarm mode. While <code>deploy</code> in <code>replicas</code> works with <code>docker stack deploy</code> command, and is ignored by <code>docker-compose up</code> and <code>docker-compose run</code></li>
+</ol>
+<br/>
+<strong>About running Compose on the Swarm cluster</strong><br/><br/>
+It seems a bit troublesome, see the official <a href="https://docs.docker.com/compose/swarm/">Use Compose with Swarm</a> . We need to use docker stack to deploy Compose. We won't do the actual operation for now, and not sure if  there are many such combination scenarios in a real production environment. The key is to understand how the containers are distributed among the Swarm nodes after deployment. Is Compose still kept as a whole? or extract containers from Compose to deploy to Swarm cluster?<br/><br/>
+From  a picture in <a href="https://codefresh.io/docker-tutorial/deploy-docker-compose-v3-swarm-mode-cluster/">Deploy Docker Compose (v3) to Swarm (mode) Cluster</a><br/><br/>
+{{< bundle-image src="docker-compose-swarm-800x721.png" width="800px" >}}
+From above picture, Swarm does extract container from a Compose, then deploy each container to Swarm cluster instead of treating Compose as a whole.<br/><br/>
+link:<br/><br/>
+<ol>
+    <li><a href="https://blog.hypriot.com/post/docker-compose-nodejs-haproxy/">How to use Docker Compose to run complex multi container apps on your Raspberry Pi</a></li>
+    <li><a href="https://juejin.im/post/5b6f0039e51d45662d00d935">Docker Compose multi-container deployment (5)</a></li>
+    <li><a href="https://www.jianshu.com/p/0793f62af9df">Introduction to Docker-Compose Installation and Use</a></li>
+</ol>

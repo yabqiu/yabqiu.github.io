@@ -1,0 +1,467 @@
+---
+title: Docker 容器中使用 Docker - DinD 和  DooD
+url: /docker-container-as-daemon/
+date: 2023-12-09T21:39:54-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/docker-logo.png"
+categories:
+  - Docker
+tags: 
+  - Docker
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13307 
+wpStatus: publish
+views: 867
+lastmod: 2023-12-09T21:53:55-06:00
+---
+
+<p>突然间研究这个来的缘由是正在从 Jenkins 往 Harness 的过度, 而完全用命令来构建 Docker 镜像变得不一样了。在 Jenkins 中 Agent 本身也是一个 Docker Daemon, 所以 Docker 命令执行无障碍，而 Harness 的所谓的 Agent 就是一个个的运行在 Kubernetes 中的 Docker Container (Pod) 了，这其中没有 Docker Daemon, 又不能连接到 Kubernetes 本身的 Docker Daemon。另外 CloudBees CI/CD 的运行环境与 Harness 类似，也是运行在 Kubernetes 中的 Pod。</p>
+
+<p>因此可能要使用某个 Docker 容器来作为 Docker Daemon, 所以牵连出对此的研究，相应的方案有 Docker in Docker(DinD) 和  Docker outside of Docker(DooD)。</p>
+
+<h3>对容器中启动 Docker Daemon 的探索</h3>
+<p>在知晓 DinD 和 DooD 这两个概念本人还试图构建过一个 Docker 镜像，试图用一个 Docker 容器既作 Docker Daemon 又作为 Docker 客户端。在容器中 Docker 安装成功，但无法在容器中启动 Docker Daemon。比如用下面的 Dockerfile<!--more--></p>
+
+{{< highlight docker >}}
+FROM amazonlinux:2023<br/>
+RUN dnf install -y docker procps-ng
+{{</ highlight >}}
+
+<p>构建出来的 Docker 镜像 my-docker, 然后启动容器, 再到容器中启动 Docker Daemon</p>
+
+<blockquote>
+<p>$ docker run -it my-docker:latest sh<br />
+sh-5.2# systemctl start docker<br />
+System has not been booted with systemd as init system (PID 1). Can't operate.<br />
+Failed to connect to bus: Host is down<br />
+sh-5.2# ps -ef<br />
+UID PID PPID C STIME TTY TIME CMD<br />
+root 1 0 0 03:32 pts/0 00:00:00 bash</p>
+</blockquote>
+
+<p>在容器中无法启动 Docker Daemon，因为 systemd 不是 PID 为 1 的进程，PID 为 1 的进程是启动容器的 ENTRYPOINT 或 CMD 命令。但仍有两种方式可以使用容器中的 Docker Daemon, 那就是直接用 dockerd 命令启动, 但启动 Docker 容器的时候需要用 --privileged  参数</p>
+
+<blockquote>
+<p>$ docker run -it --privileged my-docker:latest sh<br />
+sh-5.2# dockerd &<br />
+[1] 7<br />
+sh-5.2# INFO[2023-12-06T05:31:36.941163628Z] Starting up<br />
+......<br />
+INFO[2023-12-06T05:31:37.185826886Z] Loading containers: done.<br />
+INFO[2023-12-06T05:31:37.193146248Z] Docker daemon commit=5df983c graphdriver(s)=vfs version=20.10.25<br />
+INFO[2023-12-06T05:31:37.193347566Z] Daemon has completed initialization<br />
+INFO[2023-12-06T05:31:37.222365135Z] API listen on /var/run/docker.sock </p>
+</blockquote>
+
+<p>注：本文中用 <code>$</code> 代表在容器外部执行命令，若提示符是 <code>sh-5.2#</code> 或 <code>/ #</code> 则表示是在容器中执行命令。</p>
+
+<p>然后在该容器中可以执行 docker 命令</p>
+
+<blockquote>
+<p>sh-5.2# docker pull busybox<br />
+sh-5.2# docker images --format="{{.Repository}}"<br />
+busybox<br />
+sh-5.2# docker context ls --format="{{.DockerEndpoint}}"<br />
+unix:///var/run/docker.sock</p>
+</blockquote>
+
+<p>可见在 Docker 容器中执行的 Docker 命令连接的 DOCKER_HOST 是本地的 /var/run/docker.sock。</p>
+
+<p>那么我们是否能在外部连接容器内的 Docker Daemon 呢？下面尝试用卷映射的方式把容器内的 /var/run/docker.sock 写到容器外</p>
+
+<blockquote>
+<p>$ mkdir -p var/run<br />
+$ docker run -it --privileged -v $(pwd)/var/run:/var/run my-docker:latest sh<br />
+bash-5.2# dockerd<br />
+INFO[2023-12-06T05:53:45.515410033Z] Starting up<br />
+failed to load listeners: can't create unix socket /var/run/docker.sock: chown /var/run/docker.sock: invalid argument</p>
+</blockquote>
+
+<p>无法启动在 /var/run/docker.sock 文件上，不知道在哪里出了问题，或许仍然有解。不过可以再试试启动到 tcp://localhost:2375 上，启动容器的命令</p>
+
+<blockquote>
+<p>$ docker run -it --privileged -p 2375:2375 my-docker:latest sh<br />
+bash-5.2# dockerd -H tcp://0.0.0.0:2375 &<br />
+[1] 7<br />
+bash-5.2# INFO[2023-12-06T06:01:34.313379814Z] Starting up<br />
+......<br />
+INFO[2023-12-06T06:01:50.615738590Z] Loading containers: done.<br />
+INFO[2023-12-06T06:01:50.626709327Z] Docker daemon commit=5df983c graphdriver(s)=vfs version=20.10.25<br />
+INFO[2023-12-06T06:01:50.626889526Z] Daemon has completed initialization<br />
+INFO[2023-12-06T06:01:50.663679142Z] API listen on [::]:2375<br />
+bash-5.2# docker ps<br />
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?</p>
+</blockquote>
+
+<p>但现在在容器中还不能直接用 docker 命令，因为它默认会连接 unix:///var/run/docker.sock，需要改为连接 tcp://localhost:2375，可用 docker context create 一个上下文再使用，或配置 DOCKER_HOST=tcp://localhost:2375 环境变量</p>
+
+<blockquote>
+<p>bash-5.2# export DOCKER_HOST=tcp://localhost:2375<br />
+bash-5.2# docker ps --format "table {{.ID}}<br />
+CONTAINER ID</p>
+</blockquote>
+
+<p>由于上面从外部映射了 2375 端口号到容器内部，所以可以从外部来执行 docker 命令</p>
+
+{{< highlight sh >}}
+$ docker context ls --format="table {{.Name}}\t{{.DockerEndpoint}}"
+NAME            DOCKER ENDPOINT
+default         unix:///var/run/docker.sock
+desktop-linux   unix:///Users/yanbin/.docker/run/docker.sock
+$ docker ps --format "table {{.ID}}"
+CONTAINER ID
+84ba4d462094
+4ad0a137b9ef
+$ export DOCKER_HOST=tcp://localhost:2375
+$ docker context ls --format="table {{.Name}}\t{{.DockerEndpoint}}"
+NAME            DOCKER ENDPOINT
+default         tcp://localhost:2375
+desktop-linux   unix:///Users/yanbin/.docker/run/docker.sock
+$ docker ps --format "table {{.ID}}"
+CONTAINER ID
+{{</ highlight >}}
+
+<p> 可见在外部可通过 DOCKER_HOST=tcp://localhost:2375  切换连接到容器中的 Docker Daemon。由上面的 <code>docker ps</code> 命令的输出可知它们连接是两个完全隔离的 Docker Daemon。</p>
+
+<p>以上无论是用 unix:///var/run/docker.sock 在容器中使用 docker 命令，还是用 tcp://0.0.0.0:2375 在容器内/外使用 docker 命令，实质上都是所谓的 Docker in Docker(DinD), 只是未直接使用官方的 docker:dind 镜像。</p>
+
+<p>DinD 的方式总是需要使用 <code>--privileged</code> 参数，否则启动 <code>dockerd</code> 时报错</p>
+
+<blockquote>
+<p>failed to start daemon: Error initializing network controller: error obtaining controller instance: failed to create NAT chain DOCKER: iptables failed: iptables -t nat -N DOCKER: iptables v1.8.8 (nf_tables): Could not fetch rule set generation id: Permission denied (you must be root)</p>
+</blockquote>
+
+<p>下面测试使用官方 docker:dind 镜像</p>
+
+<h3>启动 DinD 容器</h3>
+<blockquote>
+<p>$ docker run --privileged -e DOCKER_TLS_CERTDIR="" --name dockerd docker:dind<br />
+time="2023-12-06T06:44:54.128959986Z" level=info msg="Starting up"<br />
+......<br />
+time="2023-12-06T06:45:10.360177221Z" level=info msg="API listen on [::]:2375"<br />
+time="2023-12-06T06:45:10.360190342Z" level=info msg="API listen on /var/run/docker.sock"</p>
+</blockquote>
+
+<p>同时在  tcp://0.0.0.0:2375 和  unix:///var/run/docker.sock 上监听。如果不加 DOCKER_TLS_CERTDIR 环境变量，容器中的 Docker Daemon 将会在 tcp://0.0.0.0:2376 和  unix:///var/run/docker.sock 上监听，注意 2376 端口上是 TLS 加密通信，需配置证书.</p>
+
+<p>docker:dind 的 ENTRYPOINT 是 <code>/usr/local/bin/dockerd-entrypoint.sh</code>， 更灵活的控制如何在容器中启动 Docker Daemon 应阅读该脚本。</p>
+
+<p>再启动一个容器来连接它(也可运行 docker:dind)</p>
+
+<blockquote>
+<p>$ docker run -it --link dockerd:docker docker:latest sh<br />
+/ # echo $DOCKER_HOST<br />
+tcp://docker:2375<br />
+/ # docker ps --format "table {{.ID}}"<br />
+CONTAINER ID</p>
+</blockquote>
+
+<p>--link dockerd:docker 命令是连接已有容器 dockerd, 并命作别名  docker, 这样在当前容器中可用 docker 访问到所链接的容器，因为在此容器中默认配置了 DOCKER_HOST=tcp://docker:2375 环境变量，所以 docker 命令将会使用前面的 DinD 容器作为  Docker Daemon。</p>
+
+<p>Docker 命令与 Docker Daemon 是一种 C/S 的结构，当我们在执行 <code>docker context ls</code> 命令的时候可区分出当前 Docker 命令连接的是哪个 Docker Daemon(DOCKER_HOST)。</p>
+
+<h3>DinD 的另一种方式，使用 Sysbox 运行时</h3>
+<p>SysBox 是一种与 containerd、cri-o 类似的容器运行时。</p>
+
+<p>与前两种容器嵌套方式不同的是，SysBox 从容器运行时的角度提供了新的解决方案，它可以在能够运行 systemd，docker，kubernetes 的容器内创建虚拟环境，而无需特权访问基础主机系统。</p>
+
+<p>在使用前需要先安装 sysbox 运行时环境。sysbox 目前只支持 Linux 系统，安装方式点击链接 <a href="https://github.com/nestybox/sysbox/blob/master/docs/user-guide/install-package.md#installing-sysbox">Installing Sysbox</a>。在 Debian 系的 Linux 下基本安装过程炎</p>
+
+<blockquote>
+<p>$ wget https://downloads.nestybox.com/sysbox/releases/v0.6.2/sysbox-ce_0.6.2-0.linux_amd64.deb<br />
+$ docker rm $(docker ps -aq) -f<br />
+$ sudo apt install jq<br />
+$ sudo apt install ./sysbox-ce_0.6.2-0.linux_amd64.deb</p>
+</blockquote>
+
+<p>检查 sysbox 是否安装启动成功</p>
+
+<blockquote>
+<p>$ sudo systemctl status sysbox -n20</p>
+</blockquote>
+
+<p>一旦拥有sysbox运行时可用，您要做的就是使用 sysbox 运行时标志启动 docker 容器，如下所示。</p>
+
+<p>在这里，我们使用的是官方 docker dind 映像。</p>
+
+{{< highlight sh >}}
+docker run -itd --runtime=sysbox-runc --name sysbox-dind docker:dind
+{{</ highlight >}}
+
+<p>容器启动后，就可以登录到容器中</p>
+
+{{< highlight sh >}}
+# docker exec -it sysbox-dind /bin/sh
+/ # docker ps
+CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES
+{{</ highlight >}}
+
+<p>不需要 --privileged 权限</p>
+
+<h3>使用 DooD 容器</h3>
+<p>所谓的 DooD, 是在启动容器时把当前宿主机 Docker 命令连接的 Unix 套接字文件映射到容器中，然后无论是在容器内外执行的 Docker 命令都会连接到宿主机的 Docker Daemon 上，所以它们看到或操作的是一样内容。</p>
+
+<p>当前机器是一台 Mac, 安装的是 Docker Desktop, 用 docker context ls 命令查看</p>
+
+{{< highlight sh >}}
+$ docker context ls
+NAME                TYPE                DESCRIPTION                               DOCKER ENDPOINT                              KUBERNETES ENDPOINT   ORCHESTRATOR
+default             moby                Current DOCKER_HOST based configuration   unix:///var/run/docker.sock
+desktop-linux *     moby                Docker Desktop                            unix:///Users/yanbin/.docker/run/docker.sock
+{{</ highlight >}}
+
+<p>下面用命令切换 default 为默认 Context</p>
+
+{{< highlight sh >}}
+$ docker context use default
+default
+Current context is now "default"
+$ docker context ls
+NAME                TYPE                DESCRIPTION                               DOCKER ENDPOINT                              KUBERNETES ENDPOINT   ORCHESTRATOR
+default *           moby                Current DOCKER_HOST based configuration   unix:///var/run/docker.sock
+desktop-linux       moby                Docker Desktop                            unix:///Users/yanbin/.docker/run/docker.sock
+{{</ highlight >}}
+
+<p>接下来启动一个容器时把 <code>/var/run/docker.sock</code> 映射到容器内部</p>
+
+{{< highlight sh >}}
+docker run --rm -it -v /var/run/docker.sock:/var/run/docker.sock docker:latest sh
+/ # docker context ls
+NAME        DESCRIPTION                               DOCKER ENDPOINT               ERROR
+default *   Current DOCKER_HOST based configuration   unix:///var/run/docker.sock
+Warning: DOCKER_HOST environment variable overrides the active context. To use a context, either set the global --context flag, or unset DOCKER_HOST environment variable.
+/ # uname -a
+Linux b9d88eb40b40 6.4.16-linuxkit #1 SMP PREEMPT_DYNAMIC Fri Nov 10 14:51:57 UTC 2023 x86_64 Linux
+/ # docker ps
+CONTAINER ID   IMAGE           COMMAND                  CREATED          STATUS          PORTS           NAMES
+b9d88eb40b40   docker:latest   "dockerd-entrypoint.…"   13 seconds ago   Up 12 seconds   2375-2376/tcp   pensive_bell
+{{</ highlight >}}
+
+<p>再回到容器外(宿主机)，执行 docker ps</p>
+
+{{< highlight sh >}}
+$ uname -a
+Darwin US-C02GG1BAMD6P 22.6.0 Darwin Kernel Version 22.6.0: Fri Sep 15 13:39:52 PDT 2023; root:xnu-8796.141.3.700.8~1/RELEASE_X86_64 x86_64
+$ docker ps
+CONTAINER ID   IMAGE           COMMAND                  CREATED          STATUS          PORTS           NAMES
+b9d88eb40b40   docker:latest   "dockerd-entrypoint.…"   27 seconds ago   Up 26 seconds   2375-2376/tcp   pensive_bell
+{{</ highlight >}}
+
+<p>因此，无论是在容器的内外，Docker 命令最终都是连接到了宿主机的 /var/run/docker.sock 文件，即 DOCKER_HOST 是在宿主机上的 Docker Daemon，所以 <code>docker ps</code> 看到的容器 ID 都是一样的 b9d88eb40b40。</p>
+
+<p>Docker Daemon 启动的实际上是一个 HTTP 服务器，Docker 命令便是一个 HTTP 客户端，所以与 <code>docker pull busybox:latest</code> 等价的 <code>curl</code>  命令是</p>
+
+<blockquote>
+<p>$curl -XPOST --unix-socket /var/run/docker.sock http://localhost/images/create?fromImage=busybox&tag=latest</p>
+</blockquote>
+
+<p>所谓的 DooD 好像没什么特别的，就是把现有 Docker Daemon 透传到容器中，如果 Docker Daemon 同时也监听在某个端口上，如 :2375 或 :2375, 也可以在容器内部访问该端口上的服务来使用 Docker 命令，比如 docker run --network HOST 与宿主机共享网络。</p>
+
+<p>DooD 与容器本身功能没多大关系，也就启动的时候无须使用 --privileged 参数来增强权限。</p>
+
+<h3>Kubernetes 环境中使用 DinD 和 DooD</h3>
+<p>切换到 Kubernetes 环境，如果单单是运行一个  Docker 容器的话，没有太本质的区别，无非就是 <code>docker run</code> 换成了 <code>docker apply xyz.yaml</code>，相应的参数由命令行移至 yaml 文件中去。</p>
+
+<h4>DinD</h4>
+<p>dind.yaml</p>
+
+{{< highlight docker >}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dind
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dind
+  template:
+    metadata:
+      labels:
+        app: dind
+    spec:
+      containers:
+        - name: dockerd
+          image: 'docker:dind'
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: ""
+          securityContext:
+            privileged: true
+        - name: docker-cli
+          image: 'docker:latest'
+          env:
+          - name: DOCKER_HOST
+            value: 127.0.0.1
+          command: ["sleep"]
+          args: ["infinity"]
+{{</ highlight >}}
+
+<p>这样会在一个 Pod 中启动两个容器，它们共享同一个网络命名空间(-net=container)，所以 docker-cli 可用  127.0.0.1 访问</p>
+
+<p>部署</p>
+
+<blockquote>
+<p>$ kubectl apply -f dind.yaml</p>
+</blockquote>
+
+<p>部署后查看 Pod 名称</p>
+
+{{< highlight sh >}}
+$ kubectl get pods
+NAME                    READY   STATUS    RESTARTS   AGE
+dind-6455ffdbdd-p6m4c   2/2     Running   0          15m
+$ kubectl get pod dind-6455ffdbdd-p6m4c -o jsonpath='{.spec.containers[*]}'  | jq ".name"
+
+"dockerd"
+"docker-cli"
+{{</ highlight >}}
+
+<p>Pod 中运行了两个容器，分别是 <code>dockerd</code> 和 <code>docker-cli</code>.</p>
+
+<p>查看 <code>dockerd</code> 容器的日志</p>
+
+<blockquote>
+<p>$ kubectl logs dind-6455ffdbdd-p6m4c -c dockerd | tail -n 3<br />
+time="2023-12-09T05:57:58.749429695Z" level=info msg="Daemon has completed initialization"<br />
+time="2023-12-09T05:57:58.790858356Z" level=info msg="API listen on /var/run/docker.sock"<br />
+time="2023-12-09T05:57:58.790875995Z" level=info msg="API listen on [::]:2375"</p>
+</blockquote>
+
+<p>进到 <code>docker-cli</code> 容器</p>
+
+{{< highlight sh >}}
+kubectl exec -it dind-6455ffdbdd-p6m4c -c docker-cli -- sh
+/ # docker context ls
+NAME        DESCRIPTION                               DOCKER ENDPOINT        ERROR
+default *   Current DOCKER_HOST based configuration   tcp://127.0.0.1:2375
+Warning: DOCKER_HOST environment variable overrides the active context. To use a context, either set the global --context flag, or unset DOCKER_HOST environment variable.
+/ # docker ps
+CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES
+{{</ highlight >}}
+
+<p>Kubernetes 一个 Deployment 只能部署一个 Pod, 要在同一个 yaml 文件中部署多个 Pod 的话可用 <code>---</code> 把多份 Deployment 分隔开。 </p>
+
+<h4>DooD</h4>
+<p>Kubernetes 的 DooD 也是要把宿主机 Docker 的 /var/run/docker.sock 通过在部署文件中配置映射到容器中去</p>
+
+<p>dood.yaml</p>
+
+{{< highlight docker >}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dood
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dood
+  template:
+    metadata:
+      labels:
+        app: dood
+    spec:
+      containers:
+        - image: docker:latest
+          name: docker-cli
+          securityContext:
+            privileged: false
+          command: ["sleep"]
+          args: ["infinity"]
+          volumeMounts:
+          - mountPath: /var/run/docker.sock
+            name: volume-docker
+      volumes:
+        - hostPath:
+            path: /var/run/docker.sock
+            type: ""
+          name: volume-docker
+{{</ highlight >}}
+
+<p>部署</p>
+
+<blockquote>
+<p>$ kubectl delete -f dind.yaml  # 把刚刚部署的容器销毁掉<br />
+$ kubectl apply -f dood.yaml</p>
+</blockquote>
+
+<p>过会儿看到</p>
+
+<blockquote>
+<p>$ kubectl get pods<br />
+NAME READY STATUS RESTARTS AGE<br />
+dood-644fcf4d68-ltn9k 1/1 Running 0 77s</p>
+</blockquote>
+
+<p>进到容器</p>
+
+{{< highlight sh >}}
+$ kubectl get pods
+NAME                    READY   STATUS    RESTARTS   AGE
+dood-644fcf4d68-ltn9k   1/1     Running   0          77s
+$ kubectl exec -it dood-644fcf4d68-ltn9k -c docker-cli -- sh
+/ # docker images --format "{{.Repository}}:{{.Tag}}"
+docker:dind
+docker:latest
+registry.k8s.io/kube-apiserver:v1.28.3
+registry.k8s.io/kube-controller-manager:v1.28.3
+registry.k8s.io/kube-scheduler:v1.28.3
+registry.k8s.io/kube-proxy:v1.28.3
+registry.k8s.io/etcd:3.5.9-0
+registry.k8s.io/coredns/coredns:v1.10.1
+registry.k8s.io/pause:3.9
+gcr.io/k8s-minikube/storage-provisioner:v5
+{{</ highlight >}}
+
+<p>在容器内看到的 Image 都是 Kubernetes 生态环境的所使用镜像。</p>
+
+<p>由于本机既安装了 Docker Desktop, 而 Kubernetes 环境是用的 Minikube, 所以在外部用 <code>docker images</code> 看到的镜像列表是不一样的，但用 kubectl 查看所启动容器用的 Image 是差不多一致的</p>
+
+<blockquote>
+<p>$ kubectl get pods --all-namespaces -o=jsonpath='{range .items[*].spec.containers[*]}{.image}{"\n"}{end}' | sort -u<br />
+docker:latest<br />
+gcr.io/k8s-minikube/storage-provisioner:v5<br />
+registry.k8s.io/coredns/coredns:v1.10.1<br />
+registry.k8s.io/etcd:3.5.9-0<br />
+registry.k8s.io/kube-apiserver:v1.28.3<br />
+registry.k8s.io/kube-controller-manager:v1.28.3<br />
+registry.k8s.io/kube-proxy:v1.28.3<br />
+registry.k8s.io/kube-scheduler:v1.28.3</p>
+
+</blockquote>
+
+<p>如果切换到使用 Docker Desktop 提供的 Kubernetes 的话，在容器里外用 docker images 看到的列表是一致的</p>
+
+{{< highlight sh >}}
+/ # docker images
+REPOSITORY                                TAG       IMAGE ID       CREATED         SIZE
+docker                                    latest    aa93deb4ad1b   11 days ago     330MB
+gcr.io/k8s-minikube/kicbase               v0.0.42   dbc648475405   4 weeks ago     1.2GB
+registry.k8s.io/kube-apiserver            v1.28.2   cdcab12b2dd1   2 months ago    126MB
+registry.k8s.io/kube-controller-manager   v1.28.2   55f13c92defb   2 months ago    122MB
+registry.k8s.io/kube-proxy                v1.28.2   c120fed2beb8   2 months ago    73.1MB
+registry.k8s.io/kube-scheduler            v1.28.2   7a5d9d67a13f   2 months ago    60.1MB
+registry.k8s.io/etcd                      3.5.9-0   73deb9a3f702   6 months ago    294MB
+registry.k8s.io/coredns/coredns           v1.10.1   ead0a4a53df8   10 months ago   53.6MB
+registry.k8s.io/pause                     3.9       e6f181688397   14 months ago   744kB
+{{</ highlight >}}
+
+<p>但 <code>docker ps</code>  略有不同，在容器内显示了更多的容器，而在外部估计是 Docker Desktop 的 Kubernetes 有意隐藏了与 Kubernetes 众多相关的一些容器。 </p>
+
+<p>链接：</p>
+
+<ol>
+	<li><a href="https://www.chenshaowen.com/blog/how-to-use-docker-in-docker.html">如何在 Docker 中使用 Docker</a></li>
+	<li><a href="https://medium.com/@raghavshrm987/docker-in-docker-dind-c10c0c7fefcc">Docker in Docker (DinD)</a></li>
+	<li><a href="https://blog.mafeifan.com/DevOps/Docker/Docker-%E5%AD%A6%E4%B9%A0%E7%B3%BB%E5%88%9727-Docker-in-Docker.html#docker-in-docker">Docker In Docker</a></li>
+	<li><a href="https://www.zhaowenyu.com/docker-doc/dind/docker-in-docker.html">Docker In Docker 容器嵌套</a></li>
+	<li><a href="https://www.51cto.com/article/626618.html">如何在Docker容器中运行Docker 「3种方法」</a></li>
+	<li><a href="https://kyo86.com/2022/10/27/docker-in-docker/">在Docker（容器的系统中）中运行Docker</a></li>
+</ol>
