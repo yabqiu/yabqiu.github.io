@@ -1,0 +1,184 @@
+---
+title: 关于 Apache  与  Flask 的集成经历
+url: /about-apache-flask-integration/
+date: 2020-07-16T03:18:10-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2020/07/flask-logo.png"
+categories:
+  - Flask
+tags: 
+  - Flask
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10392 
+wpStatus: publish
+views: 2133
+lastmod: 2021-12-07T22:31:58-06:00
+---
+
+在 Flask 的官方文档 <a href="https://flask.palletsprojects.com/en/1.1.x/deploying/mod_wsgi/">mod_wsgi(Apache)</a>, 说来倒是轻巧，实际操作起来不得不时刻要凝视眼前的无数大坑，或许 Linux, Apache 都用上比较新的版本会好一些。而我所用的环境是 AWS 上的 EC2, AMI 镜像发行版用 cat /proc/version 看到的是 Red Hat 7.2.1-2，内核为 4.14。照着 Flask  的官方文档是没做成功的，yum install mod_wsgi 只能安装到 Python2 的模块，pip install mod_wsgi 也不成功，所以只能使用 mod_wsgi 的源码来编译安装。<br/><br/>
+要能顺利编译过 mod_wsgi, 需要安装 Apache 2.2 和 Python 3.6 的 dev 版本。它的仓库里 Python3 最高版本只有 Python 3.6，要 Python 3.7, 3.8 可从源码编译安装。 <br/>
+<blockquote>
+$ yum install gcc<br />
+$ yum install httpd-devel<br />
+$ yum install python36-devel
+</blockquote>
+
+Red Hat 7.2 下的 Apache 真心的难用，不叫 Apache2 也不叫 httpd2，不像 Debian 系统下的 Apache2 做了模块化，基本上 Red Hat 7.2 的 httpd 的配置全在一个文件中 /etc/httpd/conf/httpd.conf。<!--more--><br/><br/>
+只安装 <code>httpd</code> 的话没有 configure <code>mod_wsgi</code> 时找不到  <code>apxs</code> 命令; 只安装 python36 的话 make <code>mod_wsgi</code> 时提示找不到 <code>Python.h</code> 头文件。<br/>
+<blockquote>
+src/server/wsgi_python.h:24:20: fatal error: Python.h: No such file or directory<br />
+#include &lt;Python.h&gt;<br />
+                                       ^
+</blockquote>
+
+再就下载，编译，安装 mod_wsgi, 从 <a href="https://github.com/GrahamDumpleton/mod_wsgi/releases">https://github.com/GrahamDumpleton/mod_wsgi/releases</a> 找到当前版本是 mod_wsgi 4.7.1<br/>
+<blockquote>
+$ wget https://github.com/GrahamDumpleton/mod_wsgi/archive/4.7.1.tar.gz<br />
+$ tar xzvf 4.7.1.tar.gz<br />
+$ cd mod_wsgi-4.7.1<br />
+$ ./configure --with-python=/usr/bin/python3<br />
+$ make<br />
+$ make install
+</blockquote>
+
+完后会看到生成了 /usr/lib64/httpd/modules/mod_wsgi.so 文件。<br/><br/>
+到 /etc/httpd/conf/httpd.conf  中加上一行装载 mod_wsgi 模块<br/>
+<blockquote>
+LoadModule wsgi_module modules/mod_wsgi.so
+</blockquote>
+
+现在来把 Flask 与 Apache 结合起来，假设应用目录是 /data/my-app，我们在其中创建一个 Flask 的  app.py 文件和  my-app.wsgi 文件<br/><br/>
+app.py 的内容为<br/>
+{{< highlight python >}}
+from flask import Flask, jsonify<br/><br/>
+app = Flask(__name__)<br/><br/>
+@app.route('/', methods=['GET'])
+def index():
+    return jsonify('hello world!')
+{{</ highlight >}}
+<br/>
+这个 app.py 用下面命令可以启动<br/>
+<blockquote>
+$ export FLASK_APP=app.py<br />
+$ flask run
+</blockquote>
+
+ 启动后会监听到 127.0.0.1:5000, 外部不允许访问。curl localhost 可看到  "hello world!" 输出<br/><br/>
+my-app.wsgi 的内容为<br/>
+{{< highlight python >}}
+import sys
+sys.path.insert(0, '/data/my-app')
+from app import app as application
+{{</ highlight >}}
+<br/>
+Apache 借由 wsgi 来访问 Flask  应用不再需要 <code>app.run()</code> 来启动 Flask 了，它们内部是通过文件 Socket 来通信的，加上<br/>
+<blockquote>
+if __name__ == '__main__':<br />
+    app.run()
+</blockquote>
+
+也没有关系，因为从 wsgi 来执行 app.py 时，__name__ 不再是 '__main__' 了。<br/><br/>
+编辑 /etc/httpd/conf/http.conf, 在后面加上虚拟机的配置<br/>
+{{< highlight apache >}}
+WSGISocketPrefix /var/run/wsgi
+<VirtualHost *>
+    ServerName yanbin.blog
+
+    WSGIDaemonProcess my-app user=web-user group=web-user threads=5 python-home=/data/my-app/venv
+    WSGIScriptAlias / /data/my-app/my-app.wsgi
+
+    <Directory /data/my-app>
+        WSGIProcessGroup my-app
+        WSGIApplicationGroup %{GLOBAL}
+        Order allow,deny
+        Allow from all
+    </Directory>
+</VirtualHost>
+{{</ highlight >}}
+<br/>
+WSGIScriptAlias /abc /data/my-app/my-app.wsgi 表示 http://yanbin.blog/abc 会被这个 wsgi 处理<br/><br/>
+要为 WSGIDaemonProcess 创建好用户和组，上面指定了 user=web-user group=web-user，所以我们在重启 Apache 之前需要预做<br/>
+<blockquote>
+$ groupadd web-user<br />
+$ useradd -r web-user -g web-user<br />
+$ sudo chown -R web-user:web-user /data/my-app
+</blockquote>
+
+在 Apache 的虚拟机中配置了用 Python 虚拟环境，所以还必须先做好<br/>
+<blockquote>
+$ cd /data/my-app <br />
+$ python3 -m venv venv<br />
+$ source venv/bin/activate<br />
+$ pip install flask
+</blockquote>
+
+注意本文用的 Linux 为 RedHat 7.2, Apache 2.3, 以及 Python 3.6, 现在重新启动 Apache<br/>
+<blockquote>
+$ service httpd restart
+</blockquote>
+
+如果一切正常的话，此时访问 http://localhost 或远程用 http://&lt;IP 地址&gt; 可以看到网页中显示<br/>
+<blockquote>
+"hello world!"
+</blockquote>
+
+这只是一切正常的情况下，其实当我们参考 Flask 官方文档开始尝试把 Apache 和 Flask 撮合到一起的时候，各种大大小小的坑就纷至沓来。<br/><br/>
+首先目录的权限，/data/my-app 的每一级目录对 web-user:web-user 是可执行的(可打开目录)，文件最至能读，所以最好把 owner 给  web-user:web-user 用户，否则就是各种的  Internal Server Error 问题，或权限问题。比如可用 chmod 把目录改为 744， 文件 644。<br/><br/>
+my-app.wsgi 文件并不要求可执行的权限，因为 wsgi 只是把它当做 Python 源代码文件来执行的，其实它就是一个 python 文件。<br/><br/>
+记住无论发生的什么问题，都应该打开 Apache 的错误日志文件 /var/log/httpd/error_log 中去找线索，并通过 Google 发现答案。下面列出一些我碰到的几个问题：<br/><br/>
+<h4>一：access denied because search permissions are missing</h4>
+典型的文件权限问题，注意某个文件是否能被 wsgi 进程用户  web-user 可访问，目录 755， 文件 644.<br/><br/>
+<h4>二：from flask import Flask, jsonify, ImportError: cannot import name 'Flask'</h4>
+明明不用 Python 虚拟环境时，已安装了 Flask, 且能直接用 <code>export FLASK_APP=app.py; flask run</code> 启动 Flask 应用，也就是在系统的 Python3 相应目录中已安装了 Flask，却仍然提示找不到 Flask。也能在  /var/log/httpd/error_log 中看到  Apache 与  Python/3.6 绑定在了一起<br/>
+<blockquote>
+Apache/2.2.34 (Unix) DAV/2 mod_wsgi/4.7.1 Python/3.6 configured
+</blockquote>
+
+解决办法，还是用 Python 虚拟环境吧，记得在 Apache 的虚拟机配置中的 WSGIDaemonProcess 行加上参数<br/>
+<blockquote>
+python-home=/data/my-app/venv
+</blockquote>
+
+ python-path=/data/my-app/venv/lib/python3.6/site-packages 非必要，假如 Python 虚拟环境创建在 /data/my-app。<br/><br/>
+<h4>三：from app import app as application, ModuleNotFoundError: No module named 'app'</h4>
+原因是在 my-app.wsgi 文件中没有把当前目录加到 sys.path 中来，从而造成找不到当前目录中的模块 app<br/>
+<blockquote>
+import sys<br />
+sys.path.insert(0, '/data/my-app')
+</blockquote>
+
+<h4>四：Permission denied: mod_wsgi (pid=27094): Unable to connect to WSGI daemon process 'my-app' on '/etc/httpd/logs/wsgi.27089.0.1.sock' as user with uid=48</h4>
+这时候页面呈现的是 Service Temporarily Unavailable。出现这种情况是因为在 Apache 的虚拟机配置的外头没有加上下面这行<br/>
+<blockquote>
+WSGISocketPrefix /var/run/wsg
+</blockquote>
+
+注意是在 &lt;VirtualHost *&gt; 标签之外，不是在里面<br/><br/>
+<h4>五：Apache: AuthType not set! 500 Error</h4>
+这就涉及到 Apache  的虚拟机中关 &lt;Directory /data/my-app&gt; 中的访问权限设置问题了，不同 Apache 版本略有不同<br/><br/>
+Apache &lt; 2.4 及以前<br/>
+<blockquote>
+Order allow,deny<br />
+Allow from all
+</blockquote>
+
+Apache &gt;= 2.4 及后用<br/>
+<blockquote>
+Require all granted
+</blockquote>
+
+另有因为 SELINUX 问题造成访问任何文件无权限的问题，我是还没碰到过，执行命令 setenforce 0 关闭 SELINUX，或改 /etc/selinux/config 配置来禁掉 SELINUX，备注一下。<br/><br/>
+更多更详细的信息应该阅读 <a href="https://modwsgi.readthedocs.io/en/develop/index.html">mod_wsgi 官方文档</a><br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://blog.csdn.net/qq_36962569/article/details/80885396">使用Apache+mod_wsgi部署flask网站</a></li>
+    <li><a href="https://serverfault.com/questions/338826/apache-permission-denied-on-mod-wsgi-fixed-with-wsgisocketprefix-but-why">Apache, Permission denied on mod_wsgi, fixed with WSGISocketPrefix -- But why?</a></li>
+    <li><a href="https://modwsgi.readthedocs.io/en/develop/configuration.html">mod_wsgi Configuration</a></li>
+    <li><a href="https://medium.com/@garethbjohnson/serve-python-3-7-with-mod-wsgi-on-ubuntu-16-d9c7ab79e03a">Serve Python 3.7 with 'mod_wsgi' on Ubuntu 16</a></li>
+</ol>
