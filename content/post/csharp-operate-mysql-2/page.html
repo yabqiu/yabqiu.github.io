@@ -1,0 +1,156 @@
+---
+title: C# 如何连接操作 MySQL 数据库(使用 SourceForge 上的驱动)
+url: /csharp-operate-mysql-2/
+date: 2010-09-07T00:26:29-05:00
+featured: false
+thumbnail: "../images/logos/csharp-logo.png"
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - .Net
+tags: 
+  - C#
+  - Mysql
+  - .Net
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2397 
+wpStatus: publish
+views: 2012
+lastmod: 2014-01-18T13:27:10-06:00
+---
+
+前面一篇 <a href="/csharp-operate-mysql-1">http://unmi.cc/csharp-operate-mysql-1</a> 讲了 C# 里用 MySQL 官方驱动怎么去连接操作
+MySQL 驱动，就是 MySQL 的 JDBC 驱动有两个一样，针对 .NET 的 MySQL 驱动也有两个。这里介绍的就是 .NET 连接 MySQL 的第二个驱动，来自于 Sourceforge 的开源驱动。<br/>
+<br/>
+首先，到 <a href="http://sourceforge.net/projects/mysqldrivercs/">http://sourceforge.net/projects/mysqldrivercs/</a> 下载，
+写此篇时下载的版本是 MySQLDriverCS-n-EasyQueryTools-4.0.1-DotNet2.0.exe。安装，其中带有源代码和例子，只有三个动态库 libmySQL-4.0.dll、
+libmySQL.dll、MySQLDriverCS.dll，光看动态库好像不及官版的驱动强大。把安装目录中的 MySQLDriverCS.dll 引入到你的 C# 项目中就可以开始用了。
+具体用法还需时刻关注安装目录中的 help\SDK\Documentation.chm 帮助文档。<!--more--><br/>
+<br/>
+也还是围绕着这么几个问题来展开：<br/>
+<br/>
+基本的用法，如连接字符串的写法，基本查询操作，大概会用到哪些类<br/>
+异常的处理<br/>
+事物的处理<br/>
+参数化的查询支持<br/>
+<br/>
+这次我会在一个例子中涉及到以上四个方面，下面这个片代码有点混乱，使用时请读懂来，然后才能各取所需：<br/>
+{{< highlight csharp >}}
+using System;
+using System.IO;
+
+using MySQLDriverCS; //引入的命名空间就这个
+using System.Data.Common;
+
+namespace cc.unmi
+{
+    public class Program
+    {
+        public static void Main(string[] args)
+        {
+            //MySQLDriverCS 有了 MySQLConnectionStringBuilder 和 MySQLConnectionString 来构造连接字符串
+            //其实反而有点故弄玄虚，也许是以前直接用连接字符串习惯了
+            MySQLConnectionString conStr = new MySQLConnectionString("localhost", "unmi_db", "unmi", "xxxxxx");
+
+            //从 MySQLConnectionStringBuilder 来看似乎可支持的属性较少，不知道连接池那些功能怎么样
+            //string connStr = "Data Source=unmi_db;Password=xxxxxx;User ID=unmi;Location=localhost;Port=3306;Extended Properties=";
+
+            MySQLConnection conn = new MySQLConnection(conStr.AsString); //或 new MySQLConnection(connStr);
+
+            conn.Open();
+
+            //参数用 @, 同样支持 ? 的方式, 应该也是不推荐用 ? 的形式
+            //string sql = "update wp_options set option_value='http://unmi.cc' where option_id=?id and <a href="mailto:option_name=@name">option_name=@name</a>";
+            string sql = "select option_name from wp_options where option_id=?id and <a href="mailto:option_name=@name">option_name=@name</a>";
+
+            MySQLCommand com = new MySQLCommand(sql, conn);
+
+            MySQLParameter paraId = new MySQLParameter("?id", 1);
+            MySQLParameter paraName = new MySQLParameter("@name", "siteurl");
+
+            //其实是加在 MySQLParameterCollection 里的
+            //看起来与 AddWithValue() 有异曲同功之妙，比如可写成 com.Parameters.Add(new MySQLParameter("@id",1);
+            com.Parameters.Add(paraId);
+            com.Parameters.Add(paraName);
+
+            //如果是查询
+            //MySQLDataReader dr = com.ExecuteReaderEx();//执行 ExecuteReaderEx() 返回的才是 MySQLDataReader
+
+            DbTransaction trans = conn.BeginTransaction(); //开启事物
+
+            try
+            {
+                //com.ExecuteNonQuery();
+                //还要执行更多的语句时应使用事物
+                Console.WriteLine(com.ExecuteScalar().ToString());
+                trans.Commit();
+            }
+            catch (MySQLException ex)
+            {
+                Console.WriteLine(ex.Message);
+                trans.Rollback();
+            }
+            finally
+            {
+                conn.Close();
+            }
+
+            Console.ReadKey();
+        }
+    }
+}
+{{</ highlight >}}
+
+虽说那个驱动文件名中有 DotNet2.0 字样，应该只要是 2.0 及以上的 .Net 运行时就行的，我是在 32 位的 XP 下，Visual Studio 2008 中，用 .Net 3.5 来跑的，没有问题。<br/>
+<br/>
+备注一下，在我家里的电脑上却是运行不起来，提示是：<br/>
+<br/>
+{"Could not load file or assembly 'MySQLDriverCS, Version=3.0.1735.36021, Culture=neutral, PublicKeyToken=172f94dfb0faf263' or one of its dependencies. An attempt was made to load a program with an incorrect format."}<br/>
+<br/>
+又是我那可恶的 64 位 XP，它只能支持 32 位的应用，与官版的驱动表现不一样。官版的 MSI 程序不能在我的 64 位系统下安装，但安装包中的 .dll 是可在 64 位下用。而这个版本的驱动是能安装，但用起来告诉我不行，明摆着是甩我。其实在下载驱动的网页上有注明用了 32 位的各种 Winows 操作系统云云。<br/>
+<br/>
+最后简单说下与官版的驱动的少许差异，连接字符串上没有官版驱动丰富，且不知对连接池的支持如何。在用参数化查询设置参数时，虽然比标签的 ADO.Net 方便，便比起官版的可用 AddWithValue() 方法稍微逊色。再就是在 64 位下根本无法运行，这可不能不算是个致使伤，服务器下 64 位系统在所难免。<br/>
+<br/>
+然而这个开源驱动也有些独到之处，那就是它提供的 MySQLInsertCommand、MySQLSelectCommand、MySQLUpdateCommand 和 MySQLDeleteCommand 类方便了数据操作，不需要你显式的去写 SQL 语句，很像 WordPress 的 $wpdb 中相应的几个函数：$wpdb-&gt;insert()、$wpdb-&gt;query()、$wpdb-&gt;update() 和 $wpdb-&gt;delete()。<br/>
+<br/>
+本不应该把这个驱动这么鲜明的几个特性放后面的。大概看下这几个函数的操作：<br/>
+{{< highlight csharp >}}
+ new MySQLInsertCommand(
+     dbCon,//连接
+     new object[,] { //字段名及对应值
+         {"SettingID",100},
+         {"SettingValue","<a href="http://unmi.cc/">http://unmi.cc</a>"}
+     },
+     "Settings" //表名
+ ); //new 后即执行，可用 bSuccess 与 Query 属性分别获得成功与否及相应的 SQL
+
+ //这个 MySQLSelectCommand 有点让人蛋疼，还不如直接 SQL 痛快
+ DataTable dt = new MySQLSelectCommand(dbCon, //连接
+     new string[] { "SettingID", "SettingValue" },//要查询的字段列表
+     new string[] { "Settings" }, // 要查询的表，可以多个
+     new object[,] { { "SettingID", "=", 100 } },//条件
+     null,
+     null //后面还可以有 limit, distinct 等指令及参数
+ ).Table; //获得 DataTable
+
+ //更新时用这种方式还算方便
+ new MySQLUpdateCommand(dbCon,
+     new object[,] { { "SettingValue", "<a href="http://unmi.cc/">http://unmi.cc</a>" } },
+     "Settings",
+     new object[,] { { "SettingID", "=", 100 } },
+     null
+ ); //new 后即执行，可用 bSuccess 与 Query 属性分别获得成功与否及相应的 SQL
+
+ //参数与 MySQLUpdateCommand 的后四个相同
+ new MySQLDeleteCommand(dbCon, "Trash", null, null);
+{{</ highlight >}}
+
+再次综上，要我选择的话我还是会选择官方的那个 MySQL 的 .Net Provider，即官方的驱动。<br/>
+<br/>
+参考：1. <a href="http://blog.upc.edu.cn/article.php?type=blog&amp;itemid=188" target="_blank">C# 连接MySql的方法(还是比较喜欢用mysql，呵呵)<br/>
+</a>         2. <a href="http://www.xker.com/page/e2007/0107/6841.html" target="_blank">C#连接mysql</a><br/>
+         3. <a href="http://dotnet.chinaitlab.com/CSharp/744168.html" target="_blank">c#连接MySql数据库的两种方法</a>

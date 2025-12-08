@@ -1,0 +1,121 @@
+---
+title: C# 使用 ExcelLibrary 读写 Excel 文件
+url: /csharp-excellibrary-handle-excel/
+date: 2010-05-20T14:24:00-05:00
+featured: false
+thumbnail: "../images/logos/csharp-logo.png"
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - .Net
+tags: 
+  - csharp
+  - ExcelLibrary
+  - Excel
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 180 
+wpStatus: publish
+views: 5366
+lastmod: 2021-09-02T10:47:07-05:00
+---
+
+ExcelLibrary 是一个比较精致的 Excel 读写组件，还是由国人开发的，下载地址：<a href="http://code.google.com/p/excellibrary/">http://code.google.com/p/excellibrary/</a>。可以读写 xls 和 xlsx 格式的 Excel。支持简单的公式，可插入图片，对于格式的设置也不是很丰富，可设置单元格宽度，数据格式化显示。对字体，前景、背景色进行设置是它的局限性。虽比不上 NPOI，但作为小巧的用来读写纯数据内容的 Excel 还是很高效的。</p>
+<br/>
+具体的例子，可以考看它的测试代码：ExcelLibrary.Test\SimpleTest.cs。这里<!--more--><br/><br/>
+<strong>写 Excel 文件：</strong><br/>
+{{< highlight csharp >}}
+using System;
+using ExcelLibrary.SpreadSheet;
+
+class ExcelLibraryTest
+{
+    public static void Main(string[] args)
+    {
+
+        Workbook workbook = new Workbook();
+        Worksheet worksheet = new Worksheet("Persons");
+
+        worksheet.Cells[0, 0] = new Cell("ID");
+        worksheet.Cells[0, 1] = new Cell("Name");
+        worksheet.Cells[0, 2] = new Cell("Age");
+
+        worksheet.Cells[1, 0] = new Cell("1");
+        worksheet.Cells[1, 1] = new Cell("Unmi");
+        worksheet.Cells[1, 2] = new Cell("xxx");
+
+        //可以下列方法设置额外的信息
+        //worksheet.AddPicture; worksheet.ExtractPicture;worksheet.Cells.ColumnWidth
+
+        workbook.Worksheets.Add(worksheet);
+        workbook.Save(@"c:\test.xls");
+    }
+}
+{{</ highlight >}}
+<br/>
+&nbsp;<br/><br/>
+读 Excel 文件:<br/>
+{{< highlight csharp >}}
+using System;
+using System.IO;
+using ExcelLibrary.SpreadSheet;
+
+class ExcelLibraryTest
+{
+    public static void Main(string[] args)
+    {
+        FileStream fileStream = new FileStream(@"c:\test.xls", FileMode.Open);
+
+        Workbook workbook = Workbook.Load(fileStream);
+
+        //也可以直接传个文件名，但会报出 Stream was not writable.异常
+        //Workbook workbook = Workbook.Load(@"c:\test.xls");
+
+        Worksheet worksheet = workbook.Worksheets[0];
+
+        for (int i = 0; i <= worksheet.Cells.LastRowIndex; i++)
+        {
+            for (int j = 0; j <= worksheet.Cells.LastColIndex; j++)
+            {
+                Console.Write(worksheet.Cells[i, j].Value);
+                if (j < worksheet.Cells.LastColIndex)
+                    Console.Write(", ");
+            }
+            Console.WriteLine();
+        }
+
+        fileStream.Close();
+
+        Console.Write("Press any key to continue . . . ");
+        Console.ReadKey(true);
+    }
+}
+{{</ highlight >}}
+<br/>
+上面代码中提到，用 Workbook.Load(filename) 会报 Stream was not writable，问题原因应该是说试图去写一个不可写的流。从这行代码出发跟踪下就会发现，它是用以下语句打开文件的：<br/><br/>
+        public static Workbook Load(string file)<br />
+        {<br />
+            return Load(File.OpenRead(file));<br />
+        }<br/><br/>
+OpenRead() 就假定了是一个只读的东西，好像无可厚非，就想读数据吗，写文件不是有 Workbook.Save(filename) 方法吗？可是再往下，会转到方法 CompoundDocument.CompoundDocument(Stream stream, FileHeader header)，其中的：<br/><br/>
+            this.FileStorage = stream;<br />
+            this.Reader = new BinaryReader(this.FileStorage);<br />
+            this.Writer = new BinaryWriter(this.FileStorage, Encoding.Unicode);<br/><br/>
+动机并非那么单纯，这里的 FilteStorage 或者 stream 就是前面用 File.OpenRead(file) 得到的，试图以此来获得一个可写的 BinaryWriter，而这个 stream 的 CanWrite 属性是 false。<br/><br/>
+解决的办法有两，要么打开一个可写的文件流，不过毕竟是用 Workbook.Save() 方法，所以应该在创建 BinaryWriter 前作个判断，如下：<br/><br/>
+            if(this.FileStorage.CanWrite)<br />
+            {<br />
+                    this.Writer = new BinaryWriter(this.FileStorage, Encoding.Unicode);<br />
+            }<br/><br/>
+这样做的话还有一个好处，当用 Workbook.Load(fileStream); 直接 Load 一个文件流时也是必须这样判断的，例如 HTTP 上传 Excel 文件时要读出其中内容，我们能拿到的 FileUpload.FileContent 是一个 HttpInputStream，你肯定无法由它来创建一个可写的 BinaryWriter 的。<br/><br/>
+加完这个是否可写的判断，重新编译成你要用的动态库就行啦。另外，对 ExcelLibrary 还有个小小的改造是 DataSetHelper 类，能用来由 Excel 生成 DataSet 或 DataTable，应该再有几个重载方法会方便些：<br/><br/>
+public static DataTable CreateDataTable(String filePath, int sheetIndex)<br />
+public static DataTable CreateDataTable(Stream stream, String sheetName)<br />
+public static DataTable CreateDataTable(Stream stream, int sheetIndex)<br />
+public static DataSet CreateDataSet(Stream stream)<br/><br/>
+最后，项目好像很久没怎么维护了，希望加强格式，风格上的控制。<br/><br/>
+参考：1. <a href="http://blog.csdn.net/weiguo526/archive/2010/01/08/5157767.aspx" target="_blank" rel="noopener">Asp.net利用ExcelLibrary输出EXCEL</a><br />
+        2. <a href="http://www.codeproject.com/KB/office/ExcelReader.aspx" target="_blank" rel="noopener">Excel Reader Create, read and modify Excel *.xls files in pure C# without COM interop</a>

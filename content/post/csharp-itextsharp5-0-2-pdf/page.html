@@ -1,0 +1,160 @@
+---
+title: C# 使用 iTextSharp(5.0.2) 生成 PDF 文档
+url: /csharp-itextsharp5-0-2-pdf/
+date: 2010-05-22T13:55:00-05:00
+featured: false
+thumbnail: "../images/logos/csharp-logo.png"
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - .Net
+tags: 
+  - C#
+  - pdf
+  - itextsharp
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 178 
+wpStatus: publish
+views: 3139
+lastmod: 2015-07-01T01:43:30-05:00
+---
+
+<p>前一篇 <a id="Editor_Results_rprSelectionList_ctl01_LinkTitle" class="titlelink" href="/csharp-itextsharp4-1-2-pdf/">C# 使用 iTextSharp(4.1.2) 生成 PDF 文档</a> 写了一个用 iTextSharp 4.1.2 生成 PDF 文档的例子，由于新版 iTextSharp 5.0.2 变化太大，所以有必要再记录一下。比较两篇你可以很明显的感觉到它们之间 API 上的差异来。<!--more--></p>
+{{< highlight csharp >}}
+using System.Data;
+using System.IO;
+using ExcelLibrary;
+using iTextSharp.text.pdf;
+using iTextSharp.text;
+
+namespace Unmi
+{
+    class PdfTest
+    {
+        public static void Main(string[] args)
+        {
+
+            //这里用的 ExcelLibrary 组件来从 Excel 文件生成一个 DataTable 对象
+            DataTable dt = DataSetHelper.CreateDataTable("D:\\test.xls", 0);
+
+            //为将要被创建的Pdf文档指定大小和颜色
+            Rectangle rec = new Rectangle(PageSize.A4.Rotate());//A4纸横向
+
+            //rec.BackgroundColor = new Color(System.Drawing.Color.Plum); //设置背景色
+
+            //创建Pdf文档
+            Document doc = new Document(rec);
+
+            //为Document创建多个PdfWriter对象
+            PdfWriter writer = PdfWriter.GetInstance(doc, new FileStream("c:\\test.pdf", FileMode.Create));
+
+            //要在事件中设置页眉页脚了
+            writer.PageEvent = new HeaderEvent();
+
+            //例如创建 HtmlWriter 还能生成一个相应的 html 文件
+            //iTextSharp.text.html.HtmlWriter.GetInstance(doc, new FileStream("c:\\test.html", FileMode.Create));
+
+            //设置文档的边距,依次是 left, right, top, bottom
+            doc.SetMargins(17.2f, 18.8f, 18.8f, 15f);
+
+            //可以在Open()方法调用前为doc添加摘要信息
+            doc.AddCreationDate();
+            doc.AddCreator("Unmi");
+            doc.AddAuthor("Unmi");
+            doc.AddTitle("iTextSharp 5 生成 PDF 文档示例");
+
+            doc.Open(); //打开文档
+
+            //向 PDF 文档添加一个 Table,其他的内容对象有 phrase、Paragraph、Graphic
+            PdfPTable pdfTable = new PdfPTable(dt.Columns.Count);
+
+            /*
+             * 要理解 Table 中的单元格怎么显示，先设定列数，然后逐个放 Cell，当前行的 Cell
+             * 数量到达列数时另起新行，可用单元格的 Rowspan，Colspan 设定跨行或跨列的数量
+            **/
+
+            pdfTable.SpacingBefore = 3;
+            pdfTable.SpacingAfter = 3;
+            pdfTable.WidthPercentage = 98f;
+
+            //可以使单元格内容跨页显示
+            pdfTable.SplitLate = false;
+            pdfTable.SplitRows = true;
+
+            //每一列的宽度比率，这里要求你的 Excel 第一张表有 6 列
+            pdfTable.SetWidths(new float[] { 0.8f, 1f, 0.6f, 0.6f, 0.9f, 7f });
+
+            //输出表头
+            foreach (DataColumn dc in dt.Columns)
+            {
+                Font headerFont = new Font(Font.FontFamily.HELVETICA,10, Font.BOLD, BaseColor.WHITE);
+                PdfPCell headerCell = new PdfPCell(new Paragraph(dc.ColumnName, headerFont));
+                headerCell.HorizontalAlignment = Element.ALIGN_CENTER;
+                headerCell.BackgroundColor = BaseColor.RED;
+                headerCell.BorderColor = BaseColor.WHITE;
+                pdfTable.AddCell(headerCell);
+            }
+
+            //pdfTable.EndHeaders();// 表头是否显示在每一页
+
+            //显示数据
+            foreach (DataRow dr in dt.Rows)
+            {
+                foreach (DataColumn dc in dt.Columns)
+                {
+                    PdfPCell dataCell = new PdfPCell(new Paragraph(dr[dc].ToString()));
+
+                    dataCell.Padding = 3;
+                    dataCell.SetLeading(dataCell.Leading, 1.5f);//设置行间距
+                    dataCell.BorderColor = BaseColor.GRAY;
+
+                    pdfTable.AddCell(dataCell);
+                }
+            }
+
+            doc.Add(pdfTable);
+            doc.Close();
+        }
+    }
+
+    //用来在每一页加页眉的页面事件
+    class HeaderEvent : PdfPageEventHelper,IPdfPageEvent
+    {
+        private Phrase header;
+        public HeaderEvent()
+        {
+            header = new Phrase("http://unmi.blogjava.net");
+        }
+        public void OnEndPage(PdfWriter writer, Document document)
+        {
+            PdfContentByte cb = writer.DirectContent;
+            ColumnText.ShowTextAligned(cb, Element.ALIGN_RIGHT, header,
+                   (document.Right - document.Left) / 2 + document.LeftMargin, document.Top + 6, 0);
+        }
+    }
+}
+{{</ highlight >}}
+
+<p>这里有例子就不再多加了说明了，注释也写得比较详细。</p>
+<p>参考：1. <a href="http://read.newbooks.com.cn/info/197915.html" target="_blank">iText 简介</a><br />
+            2. <a href="http://www.fetso.cn/archives/programmer/176.htm" target="_blank">使用iTextSharp创建pdf文件</a><br />
+            3. <a href="http://tech.ddvip.com/2010-04/1271210399150841.html" target="_blank">iText 5.0.2 发布，PDF操作Java类库</a><br />
+            4. <a href="http://alienj.javaeye.com/blog/396829" target="_blank">第18章. iText PDF 生成</a>
+</p>
+<ul>
+    <li><a href="http://www.mikesdotnetting.com/Article.aspx?ArticleID=80">Create PDFs in ASP.NET - getting started with iTextSharp</a></li>
+    <li><a href="http://www.mikesdotnetting.com/Article/81/iTextSharp-Working-with-Fonts">Working with Fonts</a></li>
+    <li><a href="http://www.mikesdotnetting.com/Article/82/iTextSharp-Adding-Text-with-Chunks-Phrases-and-Paragraphs">Adding Text with Chunks, Phrases and Paragraphs</a></li>
+    <li><a href="http://www.mikesdotnetting.com/Article/83/Lists-with-iTextSharp">Lists with iTextSharp</a></li>
+    <li><a href="http://www.mikesdotnetting.com/Article/84/iTextSharp-Links-and-Bookmarks">Links and Bookmarks</a></li>
+    <li><a href="http://www.mikesdotnetting.com/Article/86/iTextSharp-Introducing-Tables">Introducing Tables</a></li>
+    <li><a href="http://www.mikesdotnetting.com/Article/87/iTextSharp-Working-with-images">Working with images</a></li>
+    <li><a href="http://www.mikesdotnetting.com/Article/88/iTextSharp-Drawing-shapes-and-Graphics">Drawing shapes and Graphics</a></li>
+    <li><a href="http://www.mikesdotnetting.com/Article/89/iTextSharp-Page-Layout-with-Columns">Page Layout with Columns</a></li>
+</ul><div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd">
+     </div><div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

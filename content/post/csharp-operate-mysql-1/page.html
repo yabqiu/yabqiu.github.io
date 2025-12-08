@@ -1,0 +1,89 @@
+---
+title: C# 如何连接操作 MySQL 数据库(使用官方驱动)
+url: /csharp-operate-mysql-1/
+date: 2010-09-06T00:26:41-05:00
+featured: false
+thumbnail: "../images/logos/csharp-logo.png"
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - .Net
+tags: 
+  - C#
+  - Mysql
+  - .Net
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2389 
+wpStatus: publish
+views: 3753
+lastmod: 2014-01-18T13:27:17-06:00
+---
+
+MySQL 以其免费和足够的性能受到很大的青睐，当然对于国内小公司，甚至是大公司如果对版权看得薄，敢冒险的话，随便装个 SqlServer、DB2、Oracle 都行。
+对于 SqlServer 数据库，因其与 MS 是一家，自然在 .net 类库中有内建支持，假如 MySQL 就得找第三方的驱动了 -- .net 中多讲 Provider。
+在这里我也是作为一个预研专题，记录下 C# 连接 MySQL 的两种方法，分别使用 MySQL 官方的和 SourceForge 上一个开源的 MySQL 驱动。至于 ODBC
+的办法，就不提了，觉得意义不大，同样要安装个 MySQL ODBC 驱动，而且 ODBC 又如此之笨拙。<br/>
+<br/>
+<strong>使用 MySQL 官方区动连接操作 MySQL 数据库<!--more--></strong><br/>
+<br/>
+下载驱动，可在 http://www.mysql.com/downloads/connector/net/6.3.html#downloads 下载，当前版本是 6.3。你可以选择的平台既可以是 Microsoft Windows，也可以用 .Net &amp; Mono 的，区别是 Microsoft Windows 的是一个MSI 文件，后者是非安装的压缩包。但是那个 MSI 文件在我的 64 位 XP 下安装不成功，所以用了后者。<br/>
+<br/>
+这个 connector net 不光是个 MySQL 驱动，还提供了像 Entity Frameword、Asp.Net Web Providers、Compact Framework、VS 2008 集成的支持，还配置 CSharp 和 VB 的例子。详细的配置、使用文档请参考安装目录中的 MySql.Data.chm 文件。<br/>
+<br/>
+现在从最简单的例子开始，驱动安装完，或压缩包解开后，甭里安装目录里的 mysql.data.cf.dll、mysql.data.entiry.dll、mysql.visualstudio.dll 和 mysql.web.dll，我们暂时在项目中引入 mysql.data.dll，用 using MySql.Data.MySqlClient; 引入命名空间。然后简单的代码如下：<br/>
+{{< highlight csharp >}}
+//连接字符串
+ string connStr = "Server=localhost;Database=unmicc;Uid=unmicc;Pwd=xxxxxx;CharSet=utf8;";
+ MySqlConnection con = new MySqlConnection(connStr);
+
+ con.Open();//打开连接
+
+ MySqlCommand cmd = new MySqlCommand("select now()",con);
+
+ object time = cmd.ExecuteScalar(); //或是 cmd.ExecuteReader();cmd.ExecuteNonQuery();
+
+ MessageBox.Show(time.ToString());
+ //或 Console.WriteLine(time.ToString());
+
+ con.Close();
+{{</ highlight >}}
+
+上面的连接字符串应该好理解，另外还有更多的配置参数，例如端口号、连接池相关的配置等，具体请参考手册中的 Connection Options。其他的操作就是标准的 ADO.NET 的了，再就是可以处理各步骤的异常，catch MySql.Data.MySqlClient.MySqlException 这个类型的异常。其他的用于填充数据的 MySqlDataAdapter 和  MySqlDataReader 也是备好了的。<br/>
+<br/>
+我想，在做正式的应用时，为防止 SQL 注入时关于参数化查询肯定会被提出来的，那就来看看这个 MySQL 官方驱动如何处理参数化查询的。它所用的方式和 SqlServer Provider 是一样的，用 @author 这样的形式来标识参数，并且同样支持 AddWithValue(string name, object value) 的方式。请看代码：<br/>
+{{< highlight csharp >}}
+string sql = "update wp_posts set post_author=@author and post_status=@status where id=@id";
+
+ //可以用 ? 号的形式，如，但 ? 号的形式不推荐使用
+ //string sql = "update wp_posts set post_author=?author and post_status=?status where id=?id";
+
+ MySqlCommand cmd = con.CreateCommand();
+ cmd.CommandText = sql;
+
+ cmd.Parameters.AddWithValue("@author", 1);
+ //cmd.Parameters.AddWithValue("?author", 1);
+ cmd.Parameters.AddWithValue("@status", "publish");
+ //cmd.Parameters.AddWithValue("?status", "publish");
+ cmd.Parameters.AddWithValue("@id", 23);
+ //cmd.Parameters.AddWithValue("?id",23);
+
+ cmd.ExecuteNonQuery();
+{{</ highlight >}}
+
+注意到，同时还能用 ?author 的形式来标识参数，不过现在不推荐这么用了，也许是为了统一成 @author 的格式吧。不知道什么时候能像 JDBC 一样，直接用 ? 来作为占位符。<br/>
+<br/>
+对于 InnoDB 存储引擎的 MySQL 是支持事物的，这个官方的的驱动支持事物的代码如下：<br/>
+{{< highlight csharp >}}
+MySqlTransaction trans = con.BeginTransaction(); //启用事物<br/>
+ trans.Commit(); //正常时提交<br/>
+ trans.Rollback(); //异常时回滚
+{{</ highlight >}}
+
+下一篇将介绍如何使用 SourceForge 上的开源 MySQL .Net 驱动怎么去操作 MySQL 数据库的。<br/>
+<br/>
+参考：1.<a href="http://www.albertsong.com/read-58.html" target="_blank"> C#操作MySQL数据库的简单例子<br/>
+</a>         2. <a href="http://hi.baidu.com/czh0221/blog/item/45acbe3468e1e2bfd1a2d330.html" target="_blank">c#带参数的sql语句写入mysql</a>

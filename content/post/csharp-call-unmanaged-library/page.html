@@ -1,0 +1,85 @@
+---
+title: C#调用非托管动态库中的函数
+url: /csharp-call-unmanaged-library/
+date: 2006-06-03T17:32:00-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/csharp-logo.png"
+categories:
+  - .Net
+tags: 
+  - csharp
+  - .Net
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 572 
+wpStatus: publish
+views: 536
+lastmod: 2019-11-06T00:25:15-06:00
+---
+
+C#如何调用一个非托管动态库中的函数呢，比如用VC6写的动态库，总之C#调用动态库的过程是比Java调用DLL动态库方便快捷多了，下面举例说明这个过程。</p>
+<br/>
+1。创建一个非托管动态库<br/><br/>
+代码如下：<br/>
+{{< highlight csharp >}}
+   //这一句是声明动态库输出一个可供外不调用的函数原型.  
+   extern   "C"  __declspec(dllexport)  int  add( int ,  int );  
+
+   int  add( int  a, int  b)   
+   {  
+        //实现这个函数returna+b;  
+   }
+{{</ highlight >}}
+<br/>
+注意上面代码，一定要加上　extern"C"　，不能生成的动态库中的导出函数名就不会是add，而是像　?add@@YAHHH@Z　样子，后面只是通过函数名 add 来定位函数入口就会出问题。<br />
+<!--more--><br />
+保存成C或者CPP文件都可以，接下来就用命令 cl (这个命令VC6提供) 来编译生成一个动态库，命令如下：<br/><br/>
+C:\&gt;cl /LD MyLib.cpp<br />
+Microsoft (R) 32-bit C/C++ Optimizing Compiler Version 12.00.8804 for 80x86<br />
+Copyright (C) Microsoft Corp 1984-1998. All rights reserved.<br/><br/>
+MyLib.cpp<br />
+Microsoft (R) Incremental Linker Version 6.00.8447<br />
+Copyright (C) Microsoft Corp 1992-1998. All rights reserved.<br/><br/>
+/out:MyLib.dll<br />
+/dll<br />
+/implib:MyLib.lib<br />
+MyLib.obj<br />
+Creating library MyLib.lib and object MyLib.exp<br/><br/>
+可以看到在C盘根目录下生成了你要的动态库 MyLib.Dll ，还伴随着生成了MyLib.lib、MyLib.obj、MyLib.exp文件，上面命令cl的参数/LD就是生成动态库文件<br/><br/>
+2.编写C#程序调用动态库<br/>
+{{< highlight csharp >}}
+   using  System;  
+   using  System.Runtime.InteropServices; //这是用到DllImport时候要引入的包  
+   public   class  InvokeDll{  
+
+       [DllImport( "MyLib.dll" , CharSet=CharSet.Auto)]  
+       staticexternint add( int  a, int  b); //声明外部的标准动态库, 跟Win32API是一样.  
+
+        public   static   void  Main()  
+       {  
+         Console.WriteLine(add(10,30));  
+       }  
+   }
+{{</ highlight >}}
+<br/>
+保存为InvokeDll.cs文件, 与MyLib.dll置于同一目录, 编译该文件.<br/><br/>
+C:\&gt;csc InvokeDll.cs<br />
+Microsoft (R) Visual C# .NET 编译器版本 7.10.3052.4<br />
+用于 Microsoft (R) .NET Framework 版本 1.1.4322<br />
+版权所有 (C) Microsoft Corporation 2001-2002。保留所有权利。<br />
+将生成Invokedll.exe, 可以执行该文件.<br/><br/>
+C:\&gt;InvokeDll<br />
+40<br/><br/>
+我们看到C#调用了非托管动态库的函数 add 。执行前保证 MyLib.dll 在能够被 InvokeDll 程序加载到的路径上。<br/><br/>
+回过头来，如果我们在MyLib.cpp中没有加上　extern"C"　在，那么C中通过函数名 add 定位不到导出方法（因为函数名在动态库中已经变了），执行invokeDll时就会出现如下错误。<br/><br/>
+C:\&gt;InvokeDll<br/><br/>
+未处理的异常： System.EntryPointNotFoundException: 无法在 DLL MyLib.dll 中找到名为 add 的入口点。<br />
+at InvokeDll.add(Int32 a, Int32 b)<br />
+at InvokeDll.Main()<br/><br/>
+对于没有加上　extern "C"　的函数原型生成的动态库，我们就得用别的方式来调用了，具体怎么做，我现在还不知道。下面还有一个问题，上面的例子只是演示了动态库中函数非常简单的情况，如果函数传递的参数是指针，或者更复杂的数据类型，又如何操作呢？以后会深究的。<br/><br/>
+［注：］本文参考着网上一篇文章：C-Sharp调用标准动态库　，但是直接照着原文的操作就是会无法定位 add 的入口点的错误，所以略有修改。

@@ -1,0 +1,210 @@
+---
+title: C# 程序中使用 SQLite 数据库
+url: /csharp-use-sqlite-db/
+date: 2010-05-06T23:56:00-05:00
+featured: false
+thumbnail: "../images/logos/csharp-logo.png"
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - .Net
+tags: 
+  - csharp
+  - SQLite
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 184 
+wpStatus: publish
+views: 5232
+lastmod: 2021-09-02T10:48:37-05:00
+---
+
+差不多在 3 年前我就关注过 SQLite，也整理了一篇 SQLite 的介绍：<a href="http://unmi.cc/embed-sqlite-introduction/" target="_blank" rel="noopener">开源嵌入式数据库 SQLite 简介</a>, 还在我的一个查手机归属地软件中使用了 SQLite 数据库，<a href="http://unmi.cc/csharp-use-sqlite-db/">http://unmi.cc/csharp-use-sqlite-db/</a>。<br/><br/>
+现在又要用到 C# 了，所以决意了解下 C# 中如何使用 SQLite，之所以选择 SQLite 作为自己的文件型数据，主要是看中它的非常<strong>小型</strong>、<strong>单文件</strong>、<strong>嵌入型</strong>，更支持<strong>多进程</strong>访问。<br/><br/>
+SQLite 官方网站：<a href="http://www.sqlite.org">http://www.sqlite.org</a>，你可以在那里下载到一个 sqlite3.exe，用命令行模式来管理你的数据库文件。或用其他比较好的管理工具：<a href="http://sqliteman.com/" target="_blank" rel="noopener">sqliteman</a>(也支持 UTF-8) 、<a href="http://sqlitebrowser.sourceforge.net/" target="_blank" rel="noopener">sqlitebrowser</a> 和 <a href="http://sqliteadmin.orbmu2k.de/" target="_blank" rel="noopener">SQLite Administrator</a>。我比较喜欢 sqlitebrowser，但更推荐可设置字符集的 <a href="http://www.sqliteexpert.com" target="_blank" rel="noopener">SQLite Expert</a>(可下载到免费的个人版)。<!--more--><br/><br/>
+既然是嵌入式数据库，只要些动态库就行，如 dll 原生库，jar 包或其他语言的组件库形式，.NET 中也不例如，要用到 <a href="http://sqlite.phxsoftware.com/" target="_blank" rel="noopener">System.Data.SQLite</a>，下载安装后在安装目录中你有你所需的各种文件，使用 SQLite 只要在你的 .NET 应用引入 System.Data.SQLite.dll，如果要支持 LINQ，还要引入 System.Data.SQLite.Linq.dll。它支持到 ADO.NET 3.5，被 NHibernate 支持，并能集成在 VS2005/2008，且提供 64 位版，WinCE 版的动态库。SQLite.NET 也带了个帮助文档。<br/><br/>
+下面来直接看个例子，基本是借用了 <a href="http://www.zu14.cn/2009/01/07/dotnet-sqlite/" target="_blank" rel="noopener">C#使用SQLite数据库(asp.net/winform)</a> 中的例子。<br/>
+{{< highlight csharp >}}
+using System;
+using System.Data;
+using System.Data.SQLite;
+
+//C# 使用 SQLite 数据测试程序
+public class Program
+{
+    public static void Main(string[] args)
+    {
+        using (SQLiteConnection con = new SQLiteConnection("Data Source=c:\\test.db3;Pooling=true;FailIfMissing=false"))
+        {
+            //打开数据库文件 c:\\test.db3，不存在则创建
+            con.Open();
+
+            using (SQLiteCommand cmd = new SQLiteCommand())
+            {
+                cmd.Connection = con;
+
+                //检查是否存在表 test，不存在则创建
+                Boolean testTableExists = false;
+                cmd.CommandText = "SELECT * FROM sqlite_master WHERE type='table' and name='test'";
+                using(SQLiteDataReader dr = cmd.ExecuteReader())
+                {
+                    if (dr.Read())
+                    {
+                        testTableExists = true;
+                    }
+                }
+                if (!testTableExists)
+                {
+                    cmd.CommandText = "CREATE TABLE [test] (id int, name nvarchar(20))";
+                    cmd.ExecuteNonQuery();
+                }
+
+                //清空 test 表
+                cmd.CommandText = "DELETE FROM [test]";
+                cmd.ExecuteNonQuery();
+
+                //插入测试数据
+                for (int i = 1; i &lt;= 5; i++)
+                {
+                    cmd.CommandText = string.Format("INSERT INTO [test] VALUES ({0}, '中文测试')", i);
+                    cmd.ExecuteNonQuery();
+                }
+
+                //读取数据
+                cmd.CommandText = "SELECT * FROM [test]";
+                using (SQLiteDataReader dr = cmd.ExecuteReader(CommandBehavior.CloseConnection))
+                {
+                    while (dr.Read())
+                    {
+                        Console.WriteLine("第{0} 条：{1}", dr.GetValue(0), dr.GetString(1));
+                    }
+                }
+            }
+        }
+
+        Console.WriteLine("Press any key to continue...");
+        Console.ReadKey();
+    }
+}
+{{</ highlight >}}
+<br/>
+运行之后，你会发现，中文可以插入，并且显示出来也没问题，但是用一般的 SQLite 管理工具看到的却是乱码。同样，在其他客户端中输入的中文让上面程序读出来也是乱码。幸运的是还是找到一种客户端工具 <a href="http://www.sqliteexpert.com" target="_blank" rel="noopener">SQLite Expert</a>(可下载到免费的个人版), 看到的结果是中文，这是因为 System.Data.SQLite 默认使用的是 UTF-8 字符集，而 SQLite Expert 有字符集的选择可设置的。其他的客户端默认的字符集都是 ANSI，也就是 ISO8859-1 吧。<br/><br/>
+其他相关内容：连接字符串的参数配置：<br/><br/>
+在安装后的 SQLite.NET Help 帮助文档中可以查到详细的连接参数说明. 查 ConnectionString Property，或看链接：<a href="http://sqlite.phxsoftware.com/forums/p/938/4018.aspx#4018" target="_blank" rel="noopener">Connection String</a>:<br/><br/>
+<table width="80%" align="center">
+<tbody>
+<tr valign="top">
+<td><strong>Parameter</strong></td>
+<td><strong>Values</strong></td>
+<td><strong>Required</strong></td>
+<td><strong>Default</strong></td>
+</tr>
+<tr valign="top">
+<td>Version</td>
+<td>3</td>
+<td>N</td>
+<td>3</td>
+</tr>
+<tr valign="top">
+<td>Data Source</td>
+<td>{filename}</td>
+<td>Y</td>
+<td>&nbsp;</td>
+</tr>
+<tr valign="top">
+<td>Version</td>
+<td>3</td>
+<td>N</td>
+<td>3</td>
+</tr>
+<tr valign="top">
+<td>UseUTF16Encoding</td>
+<td><strong>True</strong><br />
+<strong>False</strong></td>
+<td>N</td>
+<td>False</td>
+</tr>
+<tr valign="top">
+<td>DateTimeFormat</td>
+<td><strong>Ticks</strong> - Use DateTime.Ticks<br />
+<strong>ISO8601</strong> - Use ISO8601 DateTime format</td>
+<td>N</td>
+<td>ISO8601</td>
+</tr>
+<tr valign="top">
+<td>BinaryGUID</td>
+<td><strong>Yes/On/1</strong> - Store GUID columns in binary form<br />
+<strong>No/Off/0</strong> - Store GUID columns as text</td>
+<td>N</td>
+<td>On</td>
+</tr>
+<tr valign="top">
+<td>Cache Size</td>
+<td>{size in bytes}</td>
+<td>N</td>
+<td>2000</td>
+</tr>
+<tr valign="top">
+<td>Synchronous</td>
+<td><strong>Normal</strong> - Normal file flushing behavior<br />
+<strong>Full</strong> - Full flushing after all writes<br />
+<strong>Off</strong> - Underlying OS flushes I/O's</td>
+<td>N</td>
+<td>Normal</td>
+</tr>
+<tr valign="top">
+<td>Page Size</td>
+<td>{size in bytes}</td>
+<td>N</td>
+<td>1024</td>
+</tr>
+<tr valign="top">
+<td>Password</td>
+<td>{password}</td>
+<td>N</td>
+<td>&nbsp;</td>
+</tr>
+<tr valign="top">
+<td>Enlist</td>
+<td><strong>Y</strong> - Automatically enlist in distributed transactions<br />
+<strong>N</strong> - No automatic enlistment</td>
+<td>N</td>
+<td>Y</td>
+</tr>
+<tr valign="top">
+<td>Pooling</td>
+<td><strong>True</strong> - Use connection pooling<br />
+<strong>False</strong> - Do not use connection pooling</td>
+<td>N</td>
+<td>False</td>
+</tr>
+<tr valign="top">
+<td>FailIfMissing</td>
+<td><strong>True</strong> - Don't create the database if it does not exist, throw an error instead<br />
+<strong>False</strong> - Automatically create the database if it does not exist</td>
+<td>N</td>
+<td>False</td>
+</tr>
+<tr valign="top">
+<td>Max Page Count</td>
+<td>{size in pages} - Limits the maximum number of pages (limits the size) of the database</td>
+<td>N</td>
+<td>0</td>
+</tr>
+<tr valign="top">
+<td>Legacy Format</td>
+<td><strong>True</strong> - Use the more compatible legacy 3.x database format<br />
+<strong>False</strong> - Use the newer 3.3x database format which compresses numbers more effectively</td>
+</tr>
+</tbody>
+</table>
+<br/>
+留意其中几个参数，或许对你有用。比如 System.Data.SQLite 单方面支持密码保护，但其他的 SQLite 客户端无法读取这样的文件。<br/><br/>
+参考：1. <a href="http://www.zu14.cn/2009/01/07/dotnet-sqlite/" target="_blank" rel="noopener">C#使用SQLite数据库(asp.net/winform)</a><br />
+        2. <a href="http://www.infoq.com/cn/news/2008/01/sqlite-in-three-minutes" target="_blank" rel="noopener">SQLite——只要3分钟，你就可以在.NET上创建和运行它</a><br />
+        3. <a href="http://www.sqlite.org/cvstrac/wiki?p=ManagementTools" target="_blank" rel="noopener">SQLite GUI 客户端列表</a><br />
+        4. <a href="http://www.cnblogs.com/spymaster/archive/2008/09/10/1288419.html" target="_blank" rel="noopener">(学)关于SQLite乱码问题解决办法</a><br/><br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

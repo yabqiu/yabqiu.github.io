@@ -1,0 +1,91 @@
+---
+title: 掌握一种 C#/.Net 模板技术 — Velocity
+url: /csharp-velocity-templat/
+date: 2010-05-19T11:03:00-05:00
+featured: false
+thumbnail: "../images/logos/csharp-logo.png"
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - .Net
+tags: 
+  - velocity
+  - template
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 181 
+wpStatus: publish
+views: 4768
+lastmod: 2015-07-01T02:14:57-05:00
+---
+
+<p>前面写过一篇关于 Java 中使用 Velocity 模板的文章：
+    <a href="/master-java-template-velocity/" target="_blank">掌握一种Java模板技术 -- Velocity</a>，
+    现在要考究一下 C# 中怎么使用相应的 nVelocity 模板。</p>
+<p>当目光转移到了 C#/.Net 之后，但凡想要找个某个功能组件时都会联想到，曾经在 Java 中用过什么，.Net 中应该会有它相应的实现，
+    例如 Spring.Net, nHibernate, iTextSharp，还有这里的 nVelocity，特点就是组件名一般是 .Net 结尾或 n 字打头。</p>
+<p>还是依照原来的例子，从 <a href="http://sourceforge.net/projects/nvelocity/files/">
+    http://sourceforge.net/projects/nvelocity/files/</a> 下载 nVelocity 组件，当前版本是 NVelocity-0.4.2.8580。
+    下载后解压，在你的项目中引入 build 目录中的 NVelocity.dll，如果是 web 项目中用 nVelocity，可附加引入 NVelocity.Http.dll。
+    <!--more--></p><p>第一步：建立模板，模板语言的语法也基本一致的，如创建文件 HelloNVelocity.vm，把它放在 d:\tempalte\ 目录下，
+    内容为：</p>
+{{< highlight text >}}
+## {单据责任人}：您的 {单据号} 号{单据类型}在 {操作日期} 日已支付<br/>
+${owner}：您的 ${bill} 号${type}在 ${date} 已支付
+{{</ highlight >}}
+<p>第二步：加载模板，填充值，输出，HelloNVelocity.cs</p>
+{{< highlight csharp >}}
+using System;
+using System.IO;
+using NVelocity;
+using NVelocity.App;
+using NVelocity.Runtime;
+
+public class HelloNVelocity
+{
+    public static void Main(string[] args)
+    {
+        VelocityEngine vltEngine = new VelocityEngine();
+        vltEngine.SetProperty(RuntimeConstants_Fields.RESOURCE_LOADER, "file");
+        vltEngine.SetProperty(RuntimeConstants_Fields.FILE_RESOURCE_LOADER_PATH, "d:/Template/");
+        vltEngine.Init();
+
+        Template vltTemplate = vltEngine.GetTemplate("HelloNVelocity.vm");
+
+        VelocityContext vltContext = new VelocityContext();
+
+        vltContext.Put("owner", "Unmi");
+        vltContext.Put("bill", "1000");
+        vltContext.Put("type", "报销单");
+        vltContext.Put("date", DateTime.Now.ToLongDateString());
+
+        StringWriter vltWriter = new StringWriter();
+        vltTemplate.Merge(vltContext, vltWriter);
+
+        Console.WriteLine(vltWriter.GetStringBuilder().ToString());
+
+        Console.Write("Press any key to continue . . . ");
+        Console.ReadKey(true);
+    }
+}
+{{</ highlight >}}
+<p>执行后，控制台输出:</p><p><span style="color: #ff0000;">Unmi：您的 1000 号报销单在 2010年5月19日 已支付</span></p>
+<p>代码逻辑与 Java 的 Velocity 组件的应用是完全一致的，加载模板-&gt;填充值-&gt;合并模板输出内容。</p>
+<p>同时也要注意模板文件有中文的话要以 UTF-8 字符集保存，不然会出现乱码，需然默认的字符集仍然是 ISO8859-1。还应留意
+    Runtime.Resource.Loader Namespace 中，你可以从中体查出它支持哪些方式来加载模板文件:</p>
+<p>
+    1. FileResourceLoader    从文件系统加载模板文件<br />
+    2. ResourceLocator        从文件系统或程序集中加载资源作为模板<br />
+    3. DataSourceResourceLoader  从数据源中加载内容作为模板，奇怪的是这个类出现在源代码中，却未编译到 NVelocity.dll 中。
+</p>
+<p>另外它的配置文件在 NVelocity.dll 的资源 Runtime\Defaults\nvelocity.properties 中。</p>
+<p>NVelocity 使用了与 Velocity 保持一致的 VTL(Velocity Template Language) 语言,支持 #if、#foreach、#set、#include、#parse、#macro 等语法能处理你更复杂的数。</p>
+<p>参考：<br/><br/>
+    1. <a href="http://my.oschina.net/haojielyb/blog/4264" target="_blank">Net之NVelocity的三种用法</a><br />
+            2. <a href="http://my.oschina.net/haojielyb/blog/4266" target="_blank">封装ASP.NET模板引擎NVelocity应用实例</a><br />
+            3. <a href="http://www.oschina.net/bbs/thread/8383" target="_blank">.NET模板引擎 NVelocity</a>
+      其中有 NVelocity 的介绍和 VTL 语法说明</p><div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> 
+</div>
