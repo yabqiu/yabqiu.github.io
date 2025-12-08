@@ -1,0 +1,197 @@
+---
+title: 自定义 WordPress 插件如何对记录进行分页
+url: /admin-pagination/
+date: 2010-07-05T02:56:00-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - WordPress
+tags: 
+  - wordpress
+  - pagination
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 162 
+wpStatus: publish
+views: 336
+lastmod: 2021-09-03T20:26:35-05:00
+---
+
+在我们为 WordPress 开发插件的时候，在涉及到列表显示许多记录的时候，肯定要考虑分页显示的问题。自然的，不管是简单性也好，还是统一性，直接参考下 WordPress 自己是怎么实现的，看看 Posts 或 User 管理页面的实现代码，比如 User 管理页面的实现代码在 wp-admin/includes/user.php 中的 WP_User_Search 类。默认实现其实是很好看的，如：<img src="/wp-content/uploads/2010/07/wordpress-post-paging.png" alt="" />。那我们如何在自己的插件里实现这样的效果呢，比如像这个： <!--more--></p>
+<br/>
+{{< bundle-image src="wordpress-paging.png" >}}
+<br/>
+我的做法是新建了自己的一个 Pagination 类，My_Pagination 类的内容如下：<br/>
+{{< highlight php >}}
+<?php
+/**
+ * Used for show paged records
+ * @author Unmi
+ */
+class FN_Pagination {
+
+    /**
+     * data to display
+     */
+    var $results;
+
+    /**
+     * Page number.
+     * @var int
+     */
+    var $current_page_number;
+
+    /**
+     * Amount of records to display per page.
+     * @access public
+     * @var int
+     */
+    var $records_per_page = 20;
+
+    /**
+     * @var int
+     */
+    var $total_record_count = 1;
+
+    /**
+     * @access private
+     * @var string
+     */
+    var $paging_text;
+
+    /**
+     * @var string
+     */
+    var $base_page_url;
+
+    /**
+     * PHP4 Constructor - Sets up the object properties.
+     * @param string $prepare_sql_str 一个不带 LIMIT 的 sql 语句
+     * @param string $base_page_url 分页跳转时的 URL，用于生成分页的 URL
+     * @param string $current_page_number 当前页号，从请求中可取得
+     * @param int $records_per_page 每页记录数
+     * @return FN_Pagination
+     */
+    function FN_Pagination ($prepare_sql_str,$base_page_url, $current_page_number = '',$records_per_page=20) {
+        $this->base_page_url = $base_page_url;
+        $this->current_page_number = (int) ( '' == $current_page_number ) ? 1 : $current_page_number;
+        $this->records_per_page = $records_per_page;
+        $this->query($prepare_sql_str);
+        $this->do_paging();
+    }
+
+    /**
+     *
+     * @access public
+     */
+    function query($prepare_sql_str) {
+        global $wpdb;
+
+        $get_count_sql = preg_replace("/SELECT.+?FROM/is","SELECT count('c') FROM",$prepare_sql_str,1);
+
+        //if sql string contains group by
+        if(preg_match("/group.+?by/is", $get_count_sql) >0 ) {
+            //$this->total_record_count = count($wpdb->get_col($wpdb->prepare($get_count_sql)));
+            $this->total_record_count = $wpdb->get_var(
+                $wpdb->prepare("select count('c') from (($get_count_sql) as a)"));
+        }else{
+            $this->total_record_count = $wpdb->get_var($wpdb->prepare($get_count_sql));
+        }
+
+        //or
+        //$this->total_record_count = $wpdb->get_var(
+        //  $wpdb->prepare("select count('c') from (($get_count_sql) as a)"));
+
+        $start_record = ($this->current_page_number-1) * $this->records_per_page;
+        //此方面前面部分只是为了获得记录总数，分了带不带 group by 的情况
+
+        $this->results = $wpdb->get_results($wpdb->prepare($prepare_sql_str. " LIMIT $start_record,$this->records_per_page"));
+    }
+
+    /**
+     *
+     * @since unknown
+     * @access public
+     */
+    function do_paging() {
+
+        if ( $this->total_record_count > $this->records_per_page ) { // have to page the results
+
+            //调用了 wp-includes/general-template.php 中的 paginate_links() 方法用于产生用于页面显示的导航链接
+            $this->paging_text = paginate_links( array(
+                'total' => ceil($this->total_record_count / $this->records_per_page),
+                'current' => $this->current_page_number,
+                'base' => $this->base_page_url . '&amp;%_%',
+                'format' => 'page_no=%#%'
+            ) );
+
+            //理解一下用的占位符，通过 format 和 base，会生成像如下的链接，注意何时 ?%_%，何时&amp;%_%
+            // http://unmi/wp-admin/admin.php?page=my_plugin/tracking-logs.php&amp;page_no=2
+
+            if ( $this->paging_text ) {
+                $this->paging_text = sprintf( '<span class="displaying-num">' . __( 'Displaying %s–%s of %s' ) . '</span>%s',
+                    number_format_i18n( ( $this->current_page_number - 1 ) * $this->records_per_page + 1 ),
+                    number_format_i18n( min( $this->current_page_number * $this->records_per_page, $this->total_record_count ) ),
+                    number_format_i18n( $this->total_record_count ),
+                    $this->paging_text
+                );
+            }
+        }
+    }
+
+    /**
+     * @access public
+     */
+    function get_results() {
+        return (array) $this->results;
+    }
+
+    /**
+     * Displaying paging text.
+     * @access public
+     */
+    function page_links() {
+        echo $this->paging_text;
+    }
+
+    /**
+     * Whether paging is enabled.
+     * @see do_paging() Builds paging text.
+     * @access public
+     * @return bool
+     */
+    function results_are_paged() {
+        if ( $this->paging_text )
+            return true;
+        return false;
+    }
+}
+?>
+{{</ highlight >}}
+<br/>
+使用时，当然先要引入上面那个文件了，然后通过下面的代码取得当页要显示的记录集，同时也得到了你要的分页连接：<br/>
+{{< highlight php >}}
+<?php
+@$page_no = $_GET['page_no'];
+
+$sql = "你的 sql 语句，可以复杂点的";
+
+$pagination = new FN_Pagination($sql,'admin.php?page=my_plugin/tracking-logs.php',$page_no);
+$records = $pagination->get_results();
+
+//然后列表循环显示你的 $records 记录
+?>
+
+<?php /** 然后在你想要放置翻页链接的地方加上下面的代码，注意 <div> 层次，以运用正确的样式**/?>
+<div class="tablenav">
+    <?php if ( $pagination->results_are_paged() ) : ?>
+        <div class="tablenav-pages"><?php $pagination->page_links(); ?></div>
+    <?php endif; ?>
+</div>
+{{</ highlight >}}
+<br/>
+就这样，整个过程就完成了，看看页面是不是你想要的结果。上面的分页类暂时未加入条件搜索和排序的支持，以后还得进一步扩充的。
