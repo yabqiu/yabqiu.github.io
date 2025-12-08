@@ -1,0 +1,257 @@
+---
+title: Java 19, 20 新特性学习
+url: /java-19-20-new-features/
+date: 2025-09-30T16:52:20-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - new features
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14422 
+wpStatus: publish
+views: 253
+lastmod: 2025-09-30T16:52:49-05:00
+---
+
+之所以把 Java 19 与 20 放一块是因为这两个版本都没有一个算得上正式的特性。都是些预览的，孵化中的，唯有一个支持 Linux 下 RISC-V 指令集与我们基本无关。所以 Java 19 和  Java 20 纯粹的过度版本，根本不该被正式项目采用，在 IntelliJ IDEA 中也是标它们为 No new language features。在我们的实践中正式项目只用 LTS 版。</p>
+<br/>
+还是分别从 <a href="https://openjdk.org/projects/jdk/19/">https://openjdk.org/projects/jdk/19/</a> 和 <a href="https://openjdk.org/projects/jdk/20/">https://openjdk.org/projects/jdk/20/</a> 抓关注点<br/><br/>
+<table style="border-collapse: collapse; width: 100%;">
+<tbody>
+<tr>
+<td style="width: 50%;">
+Java 19 新特性
+<ul>
+    <li>405: <a href="https://openjdk.org/jeps/405">Record Patterns (Preview)</a></li>
+    <li>422: <a href="https://openjdk.org/jeps/422">Linux/RISC-V Port</a></li>
+    <li>424: <a href="https://openjdk.org/jeps/424">Foreign Function &amp; Memory API (Preview)</a></li>
+    <li>425: <a href="https://openjdk.org/jeps/425">Virtual Threads (Preview)</a></li>
+    <li>426: <a href="https://openjdk.org/jeps/426">Vector API (Fourth Incubator)</a></li>
+    <li>427: <a href="https://openjdk.org/jeps/427">Pattern Matching for switch (Third Preview)</a></li>
+    <li>428: <a href="https://openjdk.org/jeps/428">Structured Concurrency (Incubator)</a></li>
+</ul>
+</td>
+<td style="width: 50%;">
+Java 20 新特性
+<ul>
+    <li>429: <a href="https://openjdk.org/jeps/429">Scoped Values (Incubator)</a></li>
+    <li>432: <a href="https://openjdk.org/jeps/432">Record Patterns (Second Preview)</a></li>
+    <li>433: <a href="https://openjdk.org/jeps/433">Pattern Matching for switch (Fourth Preview)</a></li>
+    <li>434: <a href="https://openjdk.org/jeps/434">Foreign Function &amp; Memory API (Second Preview)</a></li>
+    <li>436: <a href="https://openjdk.org/jeps/436">Virtual Threads (Second Preview)</a></li>
+    <li>437: <a href="https://openjdk.org/jeps/437">Structured Concurrency (Second Incubator)</a></li>
+    <li>438: <a href="https://openjdk.org/jeps/438">Vector API (Fifth Incubator)</a></li>
+</ul>
+</td>
+</tr>
+</tbody>
+</table>
+
+从上面可以挑几个稍加了解，详细的介绍应该在学习 Java 21 时。它们是<!--more--><br/><br/>
+<h3>记录模式(Record Patterns)</h3>
+Java 19 的 Record Patterns 还不能应用于  switch/case 表达式中，只是在 if instanceof 时除了判断类型外，还能捕获其中的字段值，演示代码如下<br/>
+{{< highlight java >}}
+public class Test {
+
+    record Point(double x, double y) {
+    }
+
+    public static void main(String[] args) {
+        Object obj = new Point(1.1, 25);
+
+        if (obj instanceof Point(double x, double y)) {
+            System.out.println("x: " + x + ", y: " + y);
+        }
+    }
+}
+{{</ highlight >}}
+<br/>
+编译<br/>
+<blockquote>
+javac --enable-preview --release 19 Test.java
+</blockquote>
+
+执行<br/>
+<blockquote>
+java --enable-preview Test
+</blockquote>
+
+结果<br/><br/>
+<blockquote>
+x: 1.1, y: 25.0
+</blockquote>
+
+对于预览或孵化中的特性都必须用 javac --enable-preview --release xx, java --enable-preview 的方式编译执行，回到 IntelliJ IDEA 或 Maven 项目中测试非正式属性还更麻烦些。<br/><br/>
+<h3>虚拟线程(Virtual Threads)</h3>
+说到虚拟线程，就会联想到纤程(Fiber), 协程(Coroutine)，而脱胎于 Project Loom 的虚拟线程本质上是一种纤程实现。为什么要虚拟线程呢，那就要对比一下线程，协程，以及纤程的主要区别。<br/><br/>
+简单描述<br/>
+<ol>
+    <li>线程由操作系统调用，有独立的，较大的栈空间，内核调度，切换开销大，可使用多核执行 CPU 密集型任务</li>
+    <li>协程在单个线程内执行，共享线程栈空间或独立小空间，用户态调度，切换开销极小，但无法使用多核，擅长 IO 密集型任务</li>
+    <li>纤程(像这里的虚拟线程), 介于线程与协程之间，有很小的独立栈，用户态调度，切换开销较小，结合线程池，纤程可在线程间转移，所以 CPU 密集或 IO 密集型任务都可以考虑</li>
+</ol>
+<br/>
+在 Java 中有线程为什么要虚拟线程，从线程所需栈空间就知道. 以 Java 19 为例<br/>
+<blockquote>
+{{< highlight text >}}
+java -XX:+PrintFlagsFinal -version | grep ThreadStackSize
+     intx CompilerThreadStackSize              = 2048                   {pd product} {default}
+     intx ThreadStackSize                      = 2048                   {pd product} {default}
+     intx VMThreadStackSize                    = 2048                   {pd product} {default}
+{{</ highlight >}}
+</blockquote>
+
+从中看到每一个线程默认需要 2M 的内存空间(可用 -Xss1m 参数修改)，假设启动 2000 个线程，光线程栈就要消耗掉 4G 的内存，再加上操作系统打开文件句柄的限制，而使用虚拟线程话，可以开高几个数量级的虚拟线程。<br/><br/>
+像 Fiber, Corouting 那样的用户态的线程又被称作绿色线程，像环保组织的绿色能源，绿色新政那样的称呼。接下来直接体验一下虚拟线程的威力<br/><br/>
+Test.java 代码<br/>
+{{< highlight java >}}
+public class Test {
+
+    public static void main(String[] args) {
+        String type = args[0];
+        int numberOfThreads = Integer.parseInt(args[1]);
+        if (type.equals("thread")) {
+            runThreads(numberOfThreads);
+        } else if (type.equals("virtual")) {
+            runVirtualThreads(numberOfThreads);
+        }
+    }
+
+    public static void runThreads(int numberOfThreads) {
+        AtomicInteger count = new AtomicInteger();
+        try (var executor = Executors.newCachedThreadPool()) {
+            IntStream.range(0, numberOfThreads).forEach(i ->
+                executor.submit(() -> {
+                    System.out.println(Thread.currentThread() + ":" + count.incrementAndGet());
+                    Thread.sleep(Duration.ofMinutes(10));
+                    return i;
+                }));
+        }
+    }
+
+    public static void runVirtualThreads(int numberOfThreads) {
+        AtomicInteger count = new AtomicInteger();
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            IntStream.range(0, numberOfThreads).forEach(i ->
+                executor.submit(() -> {
+                    System.out.println(Thread.currentThread() + ":" + count.incrementAndGet());
+                    Thread.sleep(Duration.ofMinutes(10));
+                    return i;
+                }));
+        }
+    }
+} 
+{{</ highlight >}}
+<br/>
+每个任务休眠 10 分钟是确保计算到达 numberOfThreads 时仍没有结束，促使创建的相应数量的线程或虚拟线程同时存在。<br/><br/>
+编译<br/>
+<blockquote>
+ javac --enable-preview --release 19 Test.java
+</blockquote>
+
+本机内存 36 G，不指定 xmx 的情况下默认堆内存为 9G， <br/>
+<blockquote>
+java --enable-preview Test thread 9000
+// 或
+java --enable-preview Test virtual 9000
+</blockquote>
+
+都能把计算器走完，它们各自在控制台下打印内容如下<br/>
+<blockquote>
+Thread[#9028,pool-1-thread-8999,5,main]:8999<br />
+Thread[#9029,pool-1-thread-9000,5,main]:9000
+</blockquote>
+
+和<br/>
+<blockquote>
+VirtualThread[#8968]/runnable@ForkJoinPool-1-worker-8:8998<br />
+VirtualThread[#9022]/runnable@ForkJoinPool-1-worker-10:9000
+</blockquote>
+
+注意到虚拟线程在 Java 中默认用 ForkJoinPool 调度的，也就是虚拟线程与系统线程的关联关系。<br/><br/>
+如果创建 10000 个线程<br/>
+<blockquote>
+java --enable-preview Test thread 10000
+</blockquote>
+
+就看到受不了<br/>
+<blockquote>
+Thread[#9213,pool-1-thread-9184,5,main]:9184<br />
+[1.150s][warning][os,thread] Failed to start thread "Unknown thread" - pthread_create failed (EAGAIN) for attributes: stacksize: 2048k, guardsize: 16k, detached.<br />
+[1.150s][warning][os,thread] Failed to start the native thread for java.lang.Thread "pool-1-thread-9185"
+</blockquote>
+
+若不是用 Executors.newCachedThreadPool() 创建线程，而是用 Executors.newFixedThreadPool(10000) 直接就会报 OutOfMemoryError<br/><br/>
+而如果用虚拟线程，直接上一百万 1000000<br/>
+<blockquote>
+java --enable-preview Test virtual 1000000
+</blockquote>
+
+照样能得到正确的结果，恐怖吧，都没必要往下试了<br/>
+<blockquote>
+VirtualThread[#1000050]/runnable@ForkJoinPool-1-worker-8:999994<br />
+VirtualThread[#1000006]/runnable@ForkJoinPool-1-worker-5:999998<br />
+VirtualThread[#1000003]/runnable@ForkJoinPool-1-worker-10:999999<br />
+VirtualThread[#1000005]/runnable@ForkJoinPool-1-worker-2:1000000
+</blockquote>
+
+当然并不是说虚拟线程总是比系统线程强，总要看什么时候，对于 CPU 密集型的任务，开再多不管是什么线程也改善不了性能，反而引起性能下降。<br/><br/>
+虚拟线程使用很小的栈，节约内存，切换开销小，在多是 IO 等待的情况下适合使用。虚拟线程与系统线程的对应关系可能是  M:1, M:N。虚拟线程便宜，所以不需要池化，应选择用 Semaphore 控制并发。<br/><br/>
+除了 Executors.newVirtualThreadPerTaskExecutor() 创建虚拟线程外，还能用 java.langThread.Builder 或结构化并发的方式。<br/><br/>
+<h3>结构化并发(Structured Concurrency)</h3>
+在多线程编程中，当我们把任务分解之后，子任务之间，或主任务与子任务之间就缺少了关联，结构化并发就是要把运行在不同线程中的多个任务视作单 个工作单元。<br/><br/>
+用 JEP 428 中的例子来说明<br/>
+{{< highlight java >}}
+Response handle() throws ExecutionException, InterruptedException {
+    Future<String>  user  = esvc.submit(() -> findUser());
+    Future<Integer> order = esvc.submit(() -> fetchOrder());
+    String theUser  = user.get();   // Join findUser
+    int    theOrder = order.get();  // Join fetchOrder
+    return new Response(theUser, theOrder);
+}
+{{</ highlight >}}
+<br/>
+findUser() 和 fetchOrder() 两不同线程执行，等它们都执行完毕，聚合结果返回。目前这里有下面一些问题<br/>
+<ol>
+    <li>当任何其中的一个子任务抛出异常，执行失败，另一个正在执行的子任务仍然继续执行，它的结果最终不会被采用，浪费计算资源</li>
+    <li>主要主线程被中断了，所有的子任务依然继续执行，同样是浪费</li>
+</ol>
+<br/>
+结构化并发就是用来解决这个问题的，当前主要类 StructuredTaskScope 的 fork() 会自动让任务在虚拟线程中执行，还不易用代码进行对行演示，放到以后再学习吧。<br/><br/>
+<h3>作用域值(Scoped Values)</h3>
+这是 Java 20 开始引入的，在线程及子线程间共享不可变数据。以前所用的 ThreadLocal 和 InheritableThreadLocal 在线程间共享的数据是可变的。Scoped Values 和结构化并发一样也是对虚拟线程友好的，看来虚拟线程在将来还会得到更广泛的应用。<br/><br/>
+除了数据的可变性之外，为什么有 ThreadLocal 的情况还还需发明 Scoped Values 呢？因为 ThreadLocal 中的数据若忘记及时  remove() 掉的话，会造成线程重用时得到赃数据，也造成不必要的内存占用，在往子线程传递线程绑定值代价高昂。<br/><br/>
+特别是在使用大规模的虚拟线程时就更需要作用域值那样更轻量级的数据共享方式，虚拟线程同样可以使用 ThreadLocal, 记得虚拟线程是没必要池化后重用的，所以在使用虚拟线程的情况下，也没不必调用 ThreadLocal.remove() 方法。<br/><br/>
+所以在平台线程时期创建的  ThreadLocal 虽然适配了虚拟线程，但在虚拟线程时代已经不合时宜了，也就有了 ScopedValue, 至于是不是可变数据，严格意义上只是个约定，即使不被重新赋值，内部状态总是能变的。<br/><br/>
+该特性在 Java 25 中转为正式。大致使用了一下，ScopedValue 需要用<br/>
+<blockquote>
+ScopedValue.where(NAME, &lt;value&gt;).run(() -&gt; { ... NAME.get() ... call methods ... });
+</blockquote>
+
+的方式使用，只能在 run(...) 这个范围中才能取到所需的值。<br/><br/>
+下面是一个简单的代码<br/>
+{{< highlight java >}}
+public class Test {
+    final static ScopedValue<String[]> scopedValue = ScopedValue.newInstance();
+
+    public static void main(String[] args) {
+        ScopedValue.where(scopedValue, new String[]{"aa", "bb"})
+            .run(() ->{
+                System.out.println(scopedValue.get()); // [Ljava.lang.String;@4f023edb
+            });
+
+        System.out.println(scopedValue.get()); // 异常: NoSuchElementException: ScopedValue not bound
+    }
+}
+{{</ highlight >}}
+<br/>
+ScopedValue 只能限制允许绑定一次值，如果遵循 Immutable 的规则，在线程间传递值需要创建许多专用的 ScopedValue。假如绑定的值是可变的，这一规则就被轻易突破。<br/><br/>
+实际应用时，ScopedValue 还没有 ThreadLocal 方便，因为它只限定在 where...run 范围中才能使用绑定的数据，可能要被迫使用嵌套的 where...run 语句。使用 ThreadLocal 时对数据存取进行约定就行，还要记得线程任务结束后清理掉绑定的数据。ScopedValue 可能以后结合结构化并发(Strucutred Concurrency), 虚拟线程在第三方的框架中会被广泛采用。

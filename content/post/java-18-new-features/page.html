@@ -1,0 +1,246 @@
+---
+title: 学习 Java 18 的新特性
+url: /java-18-new-features/
+date: 2025-09-27T20:33:26-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - new features
+  - Java 18
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14386 
+wpStatus: publish
+views: 325
+lastmod: 2025-09-27T20:33:26-05:00
+---
+
+有了 AI 是不是就用不着了解语言特性本身呢？用 Vibe Coding 难道就无所不能呢？如果是的话那些找工作的也就无需刷 LeetCode 了。试想 Vibe Coding 产生了成堆的代码，即使创建了 Pull Request, 也不是给人 Review 的，也只能由 AI 来 Review, 到头来就是 AI 与 AI 自己玩，有 Bug 也只有 AI 看得懂。以后的屎山代码是一车一车的来。<br/><br/>
+除了从 JDK 官方每个版本的 <a href="https://www.oracle.com/java/technologies/javase/18all-relnotes.html#NewFeature">What's New in JDK 18 - New Features and Enhancements</a>, 还可以看 <a href="https://openjdk.org/projects/jdk/18/">OpenJDK JDK 18</a> 列出的更简明的新特性。自 JDK 10 之后，每一版的新特性由链接 https://openjdk.org/projects/jdk/&lt;version&gt;/ 查看，如 JDK 10 新特性链接为 <a href="https://openjdk.org/projects/jdk/10/">https://openjdk.org/projects/jdk/10/</a>。<br/><br/>
+在 <a href="https://openjdk.org/projects/jdk/18/">https://openjdk.org/projects/jdk/18/</a> 列出了 JDK 18 如下新特性<br/>
+<ul>
+    <li>400: <a href="https://openjdk.org/jeps/400">UTF-8 by Default</a></li>
+    <li>408: <a href="https://openjdk.org/jeps/408">Simple Web Server</a></li>
+    <li>413: <a href="https://openjdk.org/jeps/413">Code Snippets in Java API Documentation</a></li>
+    <li>416: <a href="https://openjdk.org/jeps/416">Reimplement Core Reflection with Method Handles</a></li>
+    <li>417: <a href="https://openjdk.org/jeps/417">Vector API (Third Incubator)</a></li>
+    <li>418: <a href="https://openjdk.org/jeps/418">Internet-Address Resolution SPI</a></li>
+    <li>419: <a href="https://openjdk.org/jeps/419">Foreign Function &amp; Memory API (Second Incubator)</a></li>
+    <li>420: <a href="https://openjdk.org/jeps/420">Pattern Matching for switch (Second Preview)</a></li>
+    <li>421: <a href="Deprecate%20Finalization for Removal">Deprecate Finalization for Removal</a></li>
+</ul><br/>
+找几个有代表性的着重加了学习<!--more--><br/><br/>
+<h3>标准 Java API 默认采用 UTF-8 字符集</h3>
+这应该是大势所趋，这避免了不同平台 FileWriter, FileReader 由于不同字符集时产生的乱码。原来有时候要设置 -Dfile.encoding=...(运行时用 System.setProperty() 方法设置该属性无效)，到 Java 18 不用这么做了，因为标准 API 中在没有传递字符集参数时默认为 UTF-8<br/><br/>
+-Dfile.encoding=... 设置的值会返回到 java.nio.charsets.Charset.defaultCharset() 的值，它与以下命令的输出一样<br/>
+<blockquote>
+java -XshowSettings:properties -version 2&gt;&amp;1 | grep file.encoding
+</blockquote>
+
+默认应用 UTF-8 字符集的标准 Java APIs 包括 java.io 包中的  InputStream, FileReader, OutputStreamWriter, FileWriter, PrintStream; java.util 包中的 Formatter, Scanner; 以及 java.net 包中 URLEncoder, URLDecoder。<br/><br/>
+但是 System.out 和 System.err 不由 Charset.defaultCharset() 控制，而是由  Console.charset() 决定<br/><br/>
+<h3>简单 Web 服务</h3>
+Java 也开始像其他众多语言(如 node.js, .net core, Python(SimpleHTTPServer 或 http.server))一样提供了简单的 Web 服务 API, 而不再是启动 Java 的 Web 服务总是依赖于 Tomcat, Undertow, Jetty 等。当然这个简单的 Web 服务也是只为测试提供方便，不能作为商业 Web 服务使用。<br/><br/>
+恰如 Python 的 <code>python -m http.server</code> 会启动 http(8000) 服务，默认能浏览目录内容一样，在 Java 18 中新增的 <code>jwebserver</code> 命令有同等的功效，同样的默认 8000 端口号，同样浏览能浏览目录<br/>
+<blockquote>
+jwebserver<br />
+Binding to loopback by default. For all interfaces use "-b 0.0.0.0" or "-b ::".<br />
+Serving /Users/yanbin and subdirectories on 127.0.0.1 port 8000<br />
+URL http://127.0.0.1:8000/
+</blockquote>
+
+通过 -b 和 -p 可指定绑定的网络设备与端口号。<br/><br/>
+jwebserver 只支持 HEAD 和 GET, 和 HTTP/1.1 协议。<br/><br/>
+Java 18 还提供更多使用 API 编程方式使用 WebServe.<br/><br/>
+com.sun.net.httpserver.HttpServer 在 JDK 1.6 开始就有了，搭配 HttpHandler 可实现对不同 path 如 <code>/</code>, <code>/hello</code> 进行相应的响应。而 Java 18 新添了<br/>
+<ol>
+    <li>com.sun.net.httpserver.SimpleFileServer</li>
+    <li>com.sun.net.httpserver.HttpHandlers</li>
+</ol>
+<br/>
+等，它们让用 JDK 内置的 jdk.httpserver 模块下的包 com.sun.net.httpserver 和 sun.net.httpserver 编写 WebServer 变得更快捷，诸如使用到 HttpServer, HttpsServer，HttpHandler, HttpExchange, Filter 等概念，能实现一个完备的 HTTP 服务.<br/><br/>
+而我们看到的 jwebserver 命令就是对应的 sun.net.httpserver.simpleserver.JWebServer。<br/><br/>
+除了直用 jwebserver 命令外，也能像 Python 运行模块那样，用 Java 9 新加的 <code>-m</code> 参数来起来 jwebserver, 如<br/>
+<blockquote>
+java -m jdk.httpserver<br />
+Binding to loopback by default. For all interfaces use "-b 0.0.0.0" or "-b ::".<br />
+Serving /Users/yanbin and subdirectories on 127.0.0.1 port 8000<br />
+URL http://127.0.0.1:8000/
+</blockquote>
+<br/>
+试着实现一个简单的 RESTFull API<br/>
+{{< highlight java >}}
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.util.concurrent.Executors;
+
+public class TestWebServer {
+
+    public static void main(String[] args) throws IOException {
+        HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
+
+        HttpHandler rootHandler = HttpHandlers.handleOrElse(request -> request.getRequestMethod().equals("GET"),
+                HttpHandlers.of(200, Headers.of("Content-Type", "application/json"), "{\"status\": \"ok\"}"),
+                HttpHandlers.of(405, Headers.of(), "Method Not Allowed"));
+
+        HttpHandler userHandler = HttpHandlers.handleOrElse(request -> request.getRequestMethod().equals("POST"),
+                exchange -> {
+                    String requestBody = new String(exchange.getRequestBody().readAllBytes());
+                    exchange.getResponseHeaders().set("Content-Type", "application/json");
+                    byte[] responseBytes = ("{\"message\": \"User created\", \"data\": " + requestBody + "}").getBytes();
+                    exchange.sendResponseHeaders(201, responseBytes.length);
+                    exchange.getResponseBody().write(responseBytes);
+                    exchange.getResponseBody().close();
+                }, HttpHandlers.of(405, Headers.of(), "Method Not Allowed"));
+
+        server.createContext("/", rootHandler);
+        server.createContext("/users", userHandler);
+
+        server.setExecutor(Executors.newFixedThreadPool(10));
+
+        server.start();
+        System.out.println("Server started on port 8080");
+    }
+}
+{{</ highlight >}}
+<br/>
+启动后测试<br/>
+<blockquote>
+$ curl http://localhost:8080<br />
+{"status": "ok"}%<br />
+$ curl -X POST http://localhost:8080/users --data 'hello'<br />
+{"message": "User created", "data": hello}%
+</blockquote>
+
+<h3>Java Doc 中插入代码片断</h3>
+Java 18 觉得原来的 Java Doc 中使用 &lt;pre&gt;{@code ...}&lt;/pre&gt; 还不过瘾， 因为它功能比较简陋，不支持语法高亮，其中还不能用 /*...*/ 注释，不能包含 HTML 标签，而新引入的 @snippet 标签可以解决前面的所有问题。<br/><br/>
+用 @snippet 标签可支持内联或外部文件中的代码片断，@snippet 支持属性，内联的代码语法高亮默认为 Java, 外部代码的语法高亮由文件扩展名推断。<br/><br/>
+注意，用 @snippet 标识的内联代码中也不能用 /* ...*/, 并且 HTML 标签需转义，外部文件不受此约束。@snippet 内联代码中可以有大括号 { 或 }，但碰到第一个不平衡(无匹配的 <code>{</code>) 的 <code>}</code> 为代码结束点。<br/><br/>
+比如下面的<br/>
+{{< highlight java >}}
+/**
+ * <pre>{@code
+ *     int sum = widgets.stream()
+ *                      .filter(w -> w.getColor() == RED)
+ *                      .mapToInt(w -> w.getWeight())
+ *                      .sum();
+ * }</pre>
+ */
+{{</ highlight >}}
+<br/>
+用 javadoc Test.java 生成的 API 文档中显示为<br/><br/>
+{{< bundle-image src="java18-snippet-1-800x175.png" width="498px" >}}
+首先用了 @Snippet : 引入的代码在 IntelliJ IDEA 中就是语法高亮显示了<br/><br/>
+{{< bundle-image src="java18-snippet-2-800x308.png" width="465px" >}}
+如在生成的 Java API 文档中，只是多加了一个灰色边框，右上角有个复制按钮，没有实质性的语法加亮。这与 Java 18 的 JEP 413 描述不相符。<br/><br/>
+{{< bundle-image srce="java18-snippet-3-800x202.png" width="506px" >}}
+真正的语法高亮还要后续版本的努力，而且即使到了 Java 25, 用了 javadoc --add-stylesheet prism.min.css --add-script prism.min.js 也不见 Java 语法高亮，这又能作一个专题，暂且搁在一边。<br/><br/>
+其他一些 @snippet 相关的功能。<br/><br/>
+引用外部文件<br/><br/>
+{{< highlight java >}}
+/**
+ * {@snippet file="ShowOptional.java" region="example"}
+ */
+{{</ highlight >}}
+
+引入 ShowOptional.java 的代码，可使用 region 指定在 ShowOptional.java 中的只以如下方式
+
+{{< highlight java >}}
+// @start region="example"
+...
+// @end
+{{</ highlight >}}
+<br/>
+围绕的区块的代码。<br/><br/>
+外部文件也可以用类名引用, 如 {@snippet class="..."}<br/><br/>
+@highlight<br/>
+<blockquote>
+System.out.println("Hello World!"); // @highlight substring="println"
+</blockquote>
+<br/>
+这样该行中的 <code>println</code> 会被加粗显示<br/>
+<blockquote>
+for (var arg : args) { // @highlight region regex = "\barg\b"
+</blockquote>
+
+正式表达式的写法<br/><br/>
+@replace<br/>
+<blockquote>
+System.out.println("Hello World!"); // @replace regex='".*"' replacement="..."
+</blockquote>
+
+在 JavaDoc 中把双引号中的字符替换为 <code>...</code>, 如 System.out.println("...")<br/><br/>
+@link<br/>
+<blockquote>
+System.out.println("Hello World!"); // @link substring="System.out" target="System#out"
+</blockquote>
+
+产生链接<br/><br/>
+指定语法<br/>
+<blockquote>
+{@snippet lang=properties: 
+</blockquote>
+<br/>
+和更多的 @snippet, highlight, replace, link 属性请见　<a href="https://openjdk.org/jeps/413#Snippet-tag-reference">https://openjdk.org/jeps/413#Snippet-tag-reference</a>。<br/><br/>
+<h3>使用方法句柄重新实现反射的核心</h3>
+对 API 的使用不影响，只是内部对性能进行了优化，不多说<br/><br/>
+<h3>向量 API (第三次孵化)</h3>
+向量运算现在基本上是 NumPy, Scipy 的天下，核心部件是 NumPy 的 ndarray。而 Java 目前要表达了一个向量(Vector) 的实现成本很高，更没有相关的计算方法。再往上级别的矩阵(Matrix)，张量(Tensor), 所以 Java 的机器学习训练方面几乎没有立锥之地。<br/><br/>
+它目前还处于孵化期，预告一下，到了 Java 25, Vector API 还在第十次孵化，有点难产，即使出来了也有些尴尬，方便不如 NumPy, 性能比不及 C++。<br/>
+{{< highlight java >}}
+final VectorSpecies<Float> SPECIES = FloatVector.SPECIES_PREFERRED;
+float[] a = {2, 3, 5, 7};
+float[] b = {1.5f, 2.0f, 3, 3};
+var va = FloatVector.fromArray(SPECIES, a, 0);
+var vb = FloatVector.fromArray(SPECIES, b, 0);
+var vc = va.add(vb);
+System.out.println(vc); // [3.0, 6.0, 15.0, 21,0]
+
+{{</ highlight >}}
+<br/>
+使用起来还真不方便<br/><br/>
+<h3>互联网地址解析 SPI</h3><br/>
+为第三方实现主机名和地址解析提供了 SPI(Service Provider Interface) 扩展。默认是操作系统本地 OS 的主机名和地址解析实现，在某些情况下可能需要用到第三方的实现，比如在 AWS 的 Fargate 实例中可以通过<br/>
+<blockquote>
+<p class="p1"><span class="s1">curl </span><span class="s2">$ECS_CONTAINER_METADATA_URI_V4</span><span class="s1">/task | jq </span>'.Containers[0].Networks[0].IPv4Addresses[0]'</p>
+</blockquote>
+
+得到 IP 地址，就可以实现自己的实现，或者用自己的 JNI 实现。<br/><br/>
+它所提供的 API 是 java.net.spi.InetAddressResolverProvider，比如自己的一个实现类是 com.example.MyInetAddressResolver, 就必须在 classpath 下加上文件 /META-INF/services/java.net.spi.InetAddressResolverProvider, 并写上一行内容为 com.example.myInetAddressResolver.<br/><br/>
+<h3>访问外部函数与内存的 API(第二次孵化)</h3>
+要实现从 JVM 中安全的访问 JVM 外的函数和内存，那不是就是要用来替代 JNI 的吗？这一特性在 Java 22 中已转正，届时再体验。<br/><br/>
+<h3>Switch 的模式匹配(第二次预览)</h3>
+该特性在 Java 21 中转正。简单介绍一下，由原来的 swtich (s) { case ...: } 变成为 switch(s) { case ...-&gt;, 到了 Java 21 的正式版中进一步得到加强，持附条件判断并且成为一个表达式，即 switch 可以有返回值，下面看个例子<br/>
+{{< highlight java >}}
+switch (o) {
+    case String s -> System.out.println("It's a string: " + s);
+    case Integer i -> System.out.println("It's an integer: " + i);
+    case null -> System.out.println("It's null");
+    default -> System.out.println("Unknown type: " + o.getClass());
+}
+
+{{</ highlight >}}
+<br/>
+从目前 Java 18 预览版的 switch 模式匹配功能还相当的弱，没有条件判断，不能拆解 record 中的字段值等。<br/><br/>
+<h3>Object.finalize() 方法标记为待删除</h3>
+这个方法其实不应该再重提，许久以前就不推荐覆盖该方法，现在 Java 教程大概也不提及它。它的设计初衷是让对象最后还有一次机会被 GC 执行该方法释放某些系统资源。但该方法的存在太不确定，比如不知道何时会被调用(如今也更没人会去主动调用 System.gc() 方法了吧)，finanlize() 太容易被滥用，做了不该做的事，反而可能招致最后关头待回收的对象重新被复活等。<br/><br/>
+随着 GC 算法的不断改进，我们应该更信任 GC 的能力，所以不要碰 Object.finalize() 方法, 以后想碰也碰不到了。资源的释放强烈建议用 try-with-reources 语句。<br/><br/>
+<h3>其他相关的改进</h3>
+再浏览一下　<a href="https://www.oracle.com/java/technologies/javase/18all-relnotes.html#NewFeature">https://www.oracle.com/java/technologies/javase/18all-relnotes.html#NewFeature</a>, 看看还有什么值得一提的要点<br/><br/>
+<ol>
+    <li>ZGC, SerialGC, ParallelGC 纷纷支持字符串去重，可多节约一些内存。除了关注 ZGC, 另两种垃圾回收方式也不会在产品环境中使用到</li>
+    <li>Charset.forName(String charsetName,  Charset fallback) 新方法支持 fallback 为默认值</li>
+    <li>javax.annotation.processing.Messager 类新加了 printError, printWarning, printNode 方法</li>
+    <li>G1 Heap Region 大小从原来的最大 32M 直增致 512M。默认的 region 大小仍然是 32M, 用 -XX:G1HeapRegionSize 改变 Heap Region 大小</li>
+    <li>Flight Recorder 事件支持 finalize(), 不是 finalize() 行将被删除吗？看来要多用飞行记录器，而非原来的 JMX 了</li>
+    <li>javadoc 命令支持 --add-script 命令为 JavaDoc 文档附加 Javascript 脚本文件，对 @snippet 代码的语法加亮就要靠它了</li>
+    <li>移除了 JDK 1.4 的 DatagramSocketImpl 实现</li>
+    <li>Thread.stop() 方法将要被删除</li>
+</ol>

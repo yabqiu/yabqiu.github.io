@@ -1,0 +1,345 @@
+---
+title: Java 17 新特性之密封类型
+url: /java-17-new-features-sealed-classes/
+date: 2025-07-10T00:35:12-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - new features
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14278 
+wpStatus: publish
+views: 111
+lastmod: 2025-07-10T00:35:12-05:00
+---
+
+工作中所有项目都已升级到了当前的 LTS 版 Java 21, 眼看 Java 快要来到了下一个 LTS 版本 - Java 25，将于今年 9 月份发布。四年前记录过一篇 <a href="/java-10-16-new-features/">Java 10 ~ 16 一路向前冲(新特性一箩筐)</a>，其中夹杂着孵化，预览中的以及正式的特性。现在继续跟随着 Java 16 之后版本的特性，主要讲述正式的，可直观体验到的特性，孵化与预览中的特性只会简单提及。</p>
+<br/>
+先还是看下 Java 的发布日期安排 <a href="https://www.oracle.com/java/technologies/java-se-support-roadmap.html">Oracle Java SE Support Roadmap</a><br/>
+<blockquote>
+版本                     发布日                        原定支持至               延期支持至<br />
+Java 17(LTS)      2021/9                       2026/9            <strong>          2029/12</strong><br />
+Java 18-20         2022/3 - 2023/3      2022/9 - 2023/9     N/A<br />
+Java 21(LTS)      2023/9                       2028/9                     <strong>2031/9<br />
+</strong>Java 22               2024/3                       2024/9                      N/A<br />
+Java 23               2024/9                       2025/3                      N/A<br />
+Java 24               2025/3                       2025/9                      N/A<br />
+Java 25(LTS)      2025/9                       2030/9                     <strong>2033/9</strong>
+</blockquote>
+
+也就是每两年(9月份)会有一个 LTS 版本，中间若干过度版本。在正式项目中尽可能只用 LTS 版本，因为 LTS 版更稳定，且有长期的补丁，不能项目进行中不得不在进行非 LTS 主版本升级。<!--more--><br/><br/>
+为了迎接两个月后的 Java 25(LTS) 版本，开始回顾总结在 Java 17 与 Java 24 之间的关键新特性。又要用到 IntelliJ IDEA 中显示的不同版本 Java 的 Language level 的一句话描述<br/><br/>
+<table style="border-collapse: collapse; width: 100%;">
+<tbody>
+<tr>
+<td style="width: 50%;">
+{{< bundle-image src="java17-new-features-1-800x240.png" width="400px" >}}
+</td>
+{{< bundle-image src="java17-new-features-2-800x395.png" width="500px" >}}
+</tr>
+</tbody>
+</table>
+<br/>
+转换成文字描述<br/>
+<ul>
+    <li>15 - Text blocks</li>
+    <li>16 - Records, patterns, local enums and interfaces</li>
+    <li>17 - Sealed types, always-strict floating-point semantics</li>
+    <li>18 - JavaDoc snippets</li>
+    <li>19, 20 - No new language features</li>
+    <li>21 - Record patterns, pattern matching for switch, (Preview) - String templates, unnamed classes and instance main methods, etc.</li>
+    <li>22 - Unnamed variables and patterns</li>
+    <li>23 - Markdown documentation comments, (Preview) - Primitive types in patterns, implicitly declared classes, etc.</li>
+    <li>24 - Stream gatherers, (Preview) - Flexible constructor bodies, simple sources files, etc. </li>
+</ul><br/>
+探索 Java 17 的新特性依然由官方的 <a href="https://www.oracle.com/java/technologies/javase/17-relnote-issues.html#NewFeature">What's New in JDK 17 - New Features and Enhancements</a> 开始<br/><br/>
+<h3><a href="https://openjdk.org/jeps/409">JEP 409</a>： 密封类型(Sealed classes)</h3>
+在 Kotlin, Scala 和 C# 都有 sealed 类型。Java 17 的 Sealed 类型有以下几个特性<br/>
+<ol>
+    <li>sealed 可用于修饰的类或接口</li>
+    <li>sealed 声明的类或接口，必须有子类型</li>
+    <li>sealed 类型的子类型必须使用 non-sealed, final, 或 sealed 修饰(non-sealed 子类可衍生孙子类, final 则不可再派生, sealed 则进一步要求明确的子类)</li>
+    <li>sealed 类型用  permits 指定的子类型的当然是已定义的</li>
+</ol>
+<br/>
+密封类型的用意大约是要创建一个基类以及有限的已知子类。在没有密封类型的情况下，只能用 final 去修饰子类型，例如<br/>
+{{< highlight java >}}
+// Shape.java
+public abstract Shape {}
+
+// Circle.java
+public final class Circle extends Shape {}
+
+// Square.java
+public final class Square extends Shape {}
+{{</ highlight >}}
+<br/>
+由于作为 SDK 使用, 所以 Shape, Circle, 和  Square  都需要声明为 public, 虽然 Circle 和  Square 是 final, 但仍然无法阻止由 Shape 衍生出其他的子类。有了 sealed 关键字的话就可以改为<br/>
+{{< highlight java >}}
+// Shape.java
+public sealed class Shape permits Circle, Square {}
+
+// Circle.java
+public final class Circle extends Shape {}
+
+// Square.java
+public final class Square extends Shape {}
+{{</ highlight >}}
+<br/>
+这样就能彻底杜绝再创建新的 Shpe, Circle, 或  Square 的子类了。<br/><br/>
+密封类涉及到 <code>sealed</code>, <code>non-sealed</code>, <code>permits</code>, 以及已有的 <code>final</code> 关键字。<br/><br/>
+Java 在防止创建子类的方式还有一些，如 final 类型完全杜绝子类，package-private 构造函数只允许同包中创建子类(但会影响外部访问基类信息)，private 构造函数比 final 类还严格些。<br/><br/>
+Sealed 类型有些像枚举，只不过后者限定的是有限的实例，sealed 要达成的目的是有限的子类。<br/><br/>
+<h4>逐步理解密封类型</h4>
+我们可通过在 IntelliJ IDEA 中的提示错误来感受 Sealed Classes 的用法<br/><br/>
+首先我们只引用 <code>sealed</code> 关键字，只写出下面的代码<br/>
+{{< highlight java >}}
+public sealed class Shape {}
+{{</ highlight >}}
+<br/>
+IntelliJ IDEA 会有 <code>Shape</code> 的错误提示<br/>
+<blockquote>
+Sealed class must have subclasses<br />
+Make 'Shape' non-sealed
+</blockquote>
+
+这里所说的 <code>non-sealed</code> 其实是说移除 <code>sealed</code> 关键字，而非真把 <code>sealed</code> 换成 <code>non-sealed</code>，如此写成<br/>
+{{< highlight java >}}
+public non-sealed class Shape {}
+{{</ highlight >}}
+<br/>
+又会看到对 <code>non-sealed</code> 的错误提示<br/>
+<blockquote>
+Modifier 'non-sealed' is not allowed on classes that do not have a sealed superclass
+</blockquote>
+
+所以必须要给它声明一个 subclass<br/>
+{{< highlight java >}}
+public sealed class Shape {
+}
+
+class Rectangle extends Shape {}
+{{</ highlight >}}
+<br/>
+这时候对<span style="color: #666666; font-family: monospace;"><span style="background-color: #fafafa;"><code> Rectangle</code></span></span> 有错误提示<br/>
+<blockquote>
+Modifier 'sealed', 'non-sealed' or 'final' expected
+</blockquote>
+
+相应的有以下三种选择<br/>
+{{< highlight java >}}
+final class Rectangle extends Shape {}
+non-sealed class Rectangle extends Shape {}
+sealed class Rectangle extends Shape {}
+{{</ highlight >}}
+<br/>
+用 <code>final</code> 表示 <code>Rectangle</code> 不可被继承<br/><br/>
+<code>non-sealed</code> 让 <code>Rectangle</code> 成为一个普通，可被任意继承的类，重新开放，如由它创建一个 Square 的子类<br/><br/>
+<code>sealed</code> 又让 <code>Rectangle</code> 又像之前的 Shape 那样要求有子类的编译错误<br/>
+<blockquote>
+Sealed class must have subclasses 
+</blockquote>
+
+这时候还没有引入 <code>permits</code> 关键字，其实下面两种写法是等效的<br/><br/>
+<table style="border-collapse: collapse; width: 100%;">
+<tbody>
+<tr>
+<td style="width: 50%;">
+{{< highlight java >}}
+public sealed class Shape {}
+final class Rectangle extends Shape {}
+final class Circle extends Shape {}
+{{</ highlight >}}
+</td>
+<td style="width: 50%;">
+{{< highlight java >}}
+public sealed class Shape permits Rectangle, Circle {}
+final class Rectangle extends Shape {}
+final class Circle extends Shape {}
+
+{{</ highlight >}}
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+用 <code>permits</code> 关键字在基类 Shape 这一层就明确了允许的子类，而不需要到子类中寻找。建议不要省略 <code>permits</code> 关键字。<br/><br/>
+如果少量的实现代码可写在一个源文件中，如<br/>
+{{< highlight java >}}
+public abstract sealed class Shape {
+    final class Rectangle extends Shape {}
+    final class Circle extends Shape {}
+}
+{{</ highlight >}}
+<br/>
+如果希望 Shape 为抽象类，就加上 <code>abstract</code> 关键字<br/><br/>
+<h4>Sealed Class 与包，模块</h4>
+sealed 类与 permits 的子类必须在同一模块(named module) 或相同的包( package - unnamed module)。比如我们在不同的包中分别创建 Shape 和 Circle 类<br/>
+{{< highlight java >}}
+package a;
+
+public abstract sealed class Shape permits b.Circle{}
+{{</ highlight >}}
+
+{{< highlight java >}}
+package b;
+
+public final class Circle extends a.Shape {}
+{{</ highlight >}}
+<br/>
+我们看到上面两段代码的错误都是<br/>
+<blockquote>
+Class 'b.Circle' from another package not allowed to extend sealed class 'a.Shape' in unnamed module
+</blockquote>
+
+要么放在同一个包中(unnamed module), 如果我们创建一个 named module， Shape 和  Circle 就能在不同的 package 了。<br/><br/>
+以 Maven 项目为例，具体做法是创建下面的文件布局<br/>
+{{< highlight text >}}
+.
+├── pom.xml
+└── src
+    └── main
+        └── java
+            ├── module-info.java
+            └── xyz
+                ├── a
+                │   └── Shape.java
+                └── b
+                    └── Circle.java
+{{</ highlight >}}
+<br/>
+module-info.java 中内容为<br/>
+{{< highlight java >}}
+module xyz {
+}
+{{</ highlight >}}
+<br/>
+命令模块名为 <code>xyz</code><br/><br/>
+Shape.java 代码<br/>
+{{< highlight java >}}
+package xyz.a;
+
+import xyz.b.Circle;
+
+public abstract sealed class Shape permits Circle {
+}
+{{</ highlight >}}
+<br/>
+Circle.java 代码<br/>
+{{< highlight java >}}
+package xyz.b;
+
+import xyz.a.Shape;
+
+public final class Circle extends Shape {
+}
+
+{{</ highlight >}}
+<br/>
+这样编译就没问题了，想要使用 Circle 类，可创建 src/main/java/com/example/Client.java<br/>
+{{< highlight java >}}
+package com.example;
+
+import xyz.b.Circle;
+
+public class Client {
+    public static void main(String[] args) {
+        System.out.println(new Circle());
+    }
+}
+
+{{</ highlight >}}
+<br/>
+正常使用模块 xyz 中的 Circle 类。<br/><br/>
+<code>sealed</code> 关键也可用于 interface，只需要注意 interface 与 class 的区别就是了，例如下面代码演示了 sealed interface 的用法<br/>
+{{< highlight java >}}
+sealed interface Shape permits Circle, Rectangle, Triangle {}
+final class Circle implements Shape {}
+non-sealed class Rectangle implements Shape {}
+final class Square extends Rectangle {}
+record Triangle(float x, float y, float z) implements Shape {}
+{{</ highlight >}}
+<br/>
+由于 record 天生是 final, 所以实现 Shape 的 Triangle 不用再写 final。<br/><br/>
+<h4>Sealed Class 与模式匹配</h4>
+这要穿越到 Java 21，因为 Java 21 才开始正式支持模式匹配。Sealed Class 像枚举一样有着限定数目的类型，所以针对前面的代码，我们可以写下面 switch-case<br/>
+{{< highlight java >}}
+String matchName(Shape shape) {
+    return switch (shape) {
+        case Circle c -> "Circle";
+        case Square s -> "Square";
+        case Rectangle r -> "Rectangle";
+    };
+}
+
+{{</ highlight >}}
+<br/>
+正如模式对于枚举类型在编译期就能推断出有没有覆盖所有的选项，没有则必需要有 <code>default</code> 分支，对于 Sealed Class 也一样，编译期也知道所有的子类型，所以这段代码覆盖了所有的分支，无须 <code>default</code>, 可通过编译。<br/><br/>
+<h4>Sealed Class 与字节码，反射</h4>
+Sealed Class 编译产生的字节码中有一个 PermittedSubclasses 表示了它是不是一个 Sealed Class, 有值(非空数组)则是, null 值则不是。<br/><br/>
+测试下面的代码，String 为非 Sealed Class, Shape 为 Sealed Class<br/>
+{{< highlight java >}}
+System.out.println(String.class.getPermittedSubclasses());
+System.out.println(String.class.isSealed());
+System.out.println(Shape.class.getPermittedSubclasses());
+System.out.println(Shape.class.isSealed());
+
+{{</ highlight >}}
+<br/>
+执行的输出为<br/>
+<blockquote>
+null<br />
+false<br />
+[Ljava.lang.Class;@2e0fa5d3<br />
+true
+</blockquote>
+
+<h4>JDK 中的 Sealed class</h4>
+在 java.lang.constant 包中<br/>
+{{< highlight java >}}
+package java.lang.constant;
+
+public sealed interface ConstantDesc
+        permits ClassDesc,
+                MethodHandleDesc,
+                MethodTypeDesc,
+                Double,
+                DynamicConstantDesc,
+                Float,
+                Integer,
+                Long,
+                String {
+......
+}
+
+{{</ highlight >}}
+<br/>
+它封装了 JVM class 文件中所有合法的常量描述类型，对于我们编写代码好像没什么用。<br/><br/>
+<h4>小结 Sealed class 的几条约束</h4>
+基本是从 <a href="https://openjdk.org/jeps/409">JEP 409</a> 中转述的内容<br/>
+<ol>
+    <li style="list-style-type: none;">
+<ol>
+    <li>sealed 类与 permits 允许的子类必须在同一个模块中(named module), 或在同一个包中(unnamed module)</li>
+    <li>每一个 permits 子类必须直接继承自 sealed 类</li>
+    <li>每个 permits 子类必须使用 <code>final</code>, <code>sealed</code> 和 <code>non-sealed</code> 中的一个关键字修饰<br/><br/>
+<ul>
+    <li><code>final</code> 修饰的让该子类不再被继承(record 暗含着 final)</li>
+    <li><code>sealed</code> 让子类又成为一个 sealed class, 将适用一样的 sealed 类规则</li>
+    <li><code>non-sealed</code> 又让子类复原为普通的类，即解除了 <code>sealed</code> 的限制。就像没有用 <code>sealed</code> 修饰的类一样(class Person)，它将不在对任何未知子类对它的继承。 </li>
+</ul>
+</li>
+</ol>
+</li>
+</ol>
+<br/>
+Sealed Class 对我们以后使用框架编写应用似乎没多大用处，理解它将有助于我们读懂第三方库使用了 sealed 特性的代码，或者自己要写 SDK 时又不希望使用者任意发挥时有些帮助。<br/><br/>
+通过写本文顺便把自 Java 9 开始引入的模块概念也略微有些体验。本想一文综述 Java 17 的特别关键新特性，没想第一个 Sealed Class 就占满了篇幅，所以不得已到此为止。
