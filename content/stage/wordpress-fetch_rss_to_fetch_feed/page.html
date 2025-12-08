@@ -1,0 +1,53 @@
+---
+title: WordPress 3.0.1 中被迫用 fetch_feed() 替换 fetch_rss() 来获取 rss 数据
+url: /wordpress-fetch_rss_to_fetch_feed/
+date: 2010-10-06T04:17:15-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - WordPress
+tags: 
+  - wordpress
+  - rss
+  - php
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2681 
+wpStatus: publish
+views: 237
+lastmod: 2021-09-03T11:51:33-05:00
+---
+
+前一个多月中都是用 fetch_rss() 函数 (定义在 wp-includes/rss.php 中) 来获取外部 RSS 数据的，代码如下：</p>
+<br/>
+<pre class="lang:default decode:true">&lt;?php
+    $articles = fetch_rss("http://feed.unmi.cc");
+    foreach($articles as articles){
+        echo $article['title'].'=&gt;'.$article['link'];
+        //更多元素可用 var_dump($article) 查看
+    }
+?&gt;</pre>
+<br/>
+当然，你可以用 wp_rss() 或 get_rss() 直接在页面上显示获取的 rss 记录，我是需要处理 $articles 数组变量的。<!--more--><br/><br/>
+可是近两三日来，不知怎地，fetch_rss() 总拿不到 rss 中的数据，就是今天不断的测试也是没有用。我的 WordPress 安装了 kb-advanced-rss-widget 插件，该插件里也带了 fetch_rss 函数定义，难道是定义的同名函数有冲突。也不对呀，这个插件可是一直在的，为何这么久还用得好好的。<br/><br/>
+先把问题解决了再说，还是 Eclipse 的 PHP 插件好用，输入 fetch_ 后会提示出 fetch_feed() 函数来，feed 本来就称得上是 rss 的别名。那就用 fetch_feed() (定义在 wp-includes/feed.php 中)吧，它得到的不再是一个数组，而是一个 SimplePie 对象，所以使用时略有不同，是通过方法来得到具体数据的。<br/><br/>
+<pre class="lang:default decode:true ">&lt;?php
+$articles = fetch_feed("http://feed.unmi.cc");
+foreach($articles-&gt;get_items() as $article){
+?&gt;
+&lt;li&gt;
+ &lt;a href='&lt;?php echo $article-&gt;get_permalink(); ?&gt;'&gt;
+  &lt;?php echo $article-&gt;get_title(); ?&gt;
+ &lt;/a&gt;&lt;br&gt;
+ &lt;?php echo $article-&gt;get_description(); ?&gt;
+&lt;/li&gt;
+&lt;?php } ?&gt;</pre>
+<br/>
+OK，现在是可以了<br/><br/>
+参考：1. <a href="http://www.mrspeaker.net/2009/08/07/convert-wordpress-fetch_rss-to-fetch_feed/" target="_blank" rel="noopener">Convert Wordpress fetch_rss to fetch_feed </a><br />
+        2. <a href="http://biotechgo.net/blog/wordpress-fetch-feed-simplepie-call-article/" target="_blank" rel="noopener">Wordpress fetch_feed调用站外文章</a><br />
+        3. <a href="http://it.liuhuafang.com/200805/wordpress_rss/" target="_blank" rel="noopener">wordpress获取rss内容的函数wp_rss、fetch_rss</a>

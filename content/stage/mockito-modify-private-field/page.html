@@ -1,0 +1,103 @@
+---
+title: 使用 Mockito 修改私有属性
+url: /mockito-modify-private-field/
+date: 2017-04-01T10:59:13-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/01/rsz_mockito_logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - mockito
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7968 
+wpStatus: publish
+views: 7897
+lastmod: 2020-06-03T10:46:27-05:00
+---
+
+修改私有属性来 Mock 可能不是一种很好的测试方式, 因为属性名是动态的，但有时不得已而为了，例如下面的代码：</p>
+<br/>
+<blockquote>
+public class UserService {<br />
+    private ExternalApi external = ExternalApi.default();<br />
+    private UserDao userDao;<br />
+<br />
+    public UserService(UserDao userDao) {<br />
+        this.userDao = userDao;<br />
+    }<br />
+<br />
+    public User findUserById(int id) {<br />
+        return userDao.findById(external.convertId(id));<br />
+}
+</blockquote>
+<br/>
+测试时欲隔离对 ExternalApi 的外部依赖, 当然可以把它也作为构造函数的一个参数，这样创建 UserService 实例时就可以 Mock external 属性。不过 external 经常是不变的，所以作为方法参数的必要性也不大。这就希望能在构造出 UserService 之后对 external 私有属性进行 Mock 处理。<br/><br/>
+在 Mockito 1.x 和 2.x 下要使用不同的方式，分别使用到 Whitebox 和 FieldSetter 类，它们都来自于  <code>mockito.internal.util.reflection</code> 包，可见 Mockito 打心底不推荐直接使用它们，但谁叫它们是 public 的呢。还有一种方式是使用 PowerMock + Mockito, 这是后话。<!--more--><br/><br/>
+<h3>Mockito 1.x 修改私有属性</h3><br/><br/>
+<pre class="brush:java">import mockito.internal.util.reflection.Whitebox;
+.......<br/><br/>
+public void testFindUserById() {
+    UserService userService = new UserService(Mockito.mock(UserDao.class));
+    
+    ExternalApi external = Mockito.mock(ExternalApi.class);
+    Whitebox.setInternalState(userService, "external", external);<br/><br/>
+    when(external.convertId(123)).thenReturn("xxx-123");
+    ........
+}</pre>
+<br/>
+<h3><strong>Mockito 2.x 修改私有属性</strong></h3><br/><br/>
+Mockito 2.x 下移除了 Whitebox, 但可以用 <code>mockito.internal.util.reflection.FieldSetter</code>, 它仅有的方法声明是<br/><br/>
+<blockquote>
+public static void setField(Object target, Field field, Object value)
+</blockquote>
+<br/>
+这需要我们用反射的方式找到 Field, 还得处理下异常<br/><br/>
+<pre class="brush:java">import mockito.internal.util.reflection.FieldSetter;
+......<br/><br/>
+public void testFindUserById() throws NoSuchFieldException {
+    UserService userService = new UserService(Mockito.mock(UserDao.class));<br/><br/>
+    Field apiField = UserService.class.getDeclaredField("external");
+    ExternalApi external = Mockito.mock(ExternalApi.class);
+    FieldSetter.setField(userService, apiField, external);<br/><br/>
+    when(external.convertId(123)).thenReturn("xxx-123");
+    ......
+}</pre>
+<br/>
+如此这般，在 Mockito 2.x 下使用 FieldSetter 倒不如自己写一个 Whitebox 类只提供一个方法来修改私有属性，还无需在测试方法中自己处理异常.<br/><br/>
+所以 Mockito 2.x 可创建如下的 Whitebox 类来修改私有属性<br/><br/>
+<pre class="brush:java">package cc.unmi.test;<br/><br/>
+import java.lang.reflect.Field;
+import org.junit.Assert;<br/><br/>
+public class Whitebox {
+    public static void setInternalState(Object target, String fieldName, Object value) {
+        try {
+            Field field = target.getClass().getDeclaredField(fieldName);
+            field.setAccessible(true); //粗爆的改成可访问，不管现有修饰
+            field.set(target, value);
+        } catch (Exception e) {
+            Assert.fail("Cannot change value of " + fieldName +" against target " + target);
+        }
+    }
+}</pre>
+<br/>
+其实私有属性可能经常变，在 IDE 中修改属性名时，用于反射时的属性字符串不会被自动修改也无妨，本来就是测试用例，跑一下测试用例就能发现问题了。<br/><br/>
+&nbsp;<br/><br/>
+<hr /><br/><br/>
+2020-06-03<br/><br/>
+<h3>使用 powermock-reflect 的 Whitebox</h3><br/><br/>
+既然 Mockito 2 把 Whitebox 移除了，再创建一个 Whitebox 还不如使用另一个第三方测试好的 Whitebox 实现，那就是 powermock-reflect 的 <a href="https://javadoc.io/doc/org.powermock/powermock-reflect/latest/org/powermock/reflect/Whitebox.html">Whitebox</a> 类。我们不完全使用 PowerMockRunner, 只用到  powermock-reflect 模块，引入<br/><br/>
+<pre class="lang:default decode:true ">&lt;dependency&gt;
+    &lt;groupId&gt;org.powermock&lt;/groupId&gt;
+    &lt;artifactId&gt;powermock-reflect&lt;/artifactId&gt;
+    &lt;version&gt;2.0.7&lt;/version&gt;
+    &lt;scope&gt;test&lt;/scope&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+它提供了更丰富的 API, 还不用自己写，避免犯错<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2017/04/powermock-reflect-whitebox.png"><img class="aligncenter wp-image-10265" src="https://yanbin.blog/wp-content/uploads/2017/04/powermock-reflect-whitebox-800x1252.png" alt="" width="581" height="909" /></a>

@@ -1,0 +1,135 @@
+---
+title: JDBC 操作 SQL Server 时如何传入列表参数
+url: /jdbc-sql-server-pass-list-parameter/
+date: 2023-08-09T01:10:41-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/sqlserver-logo.png"
+categories:
+  - Database
+tags: 
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13241 
+wpStatus: publish
+views: 612
+lastmod: 2023-08-09T01:11:52-05:00
+---
+
+本文是作为将要对 PostgreSQL 的 in, any() 操作的一个铺垫，也是对先前用 JDBC 操作 SQL Server 的温习。以此记录一下用 JDBC 查询 SQL Server 时如何传递一个列表参数。比如想像一下查询语句</p>
+<br/>
+<blockquote>
+select * from users where id in (?)
+</blockquote>
+<br/>
+ 我们是否能给这里的问题参数传递一个 List 或数组呢？<br/><br/>
+这里所引用的 SQL Server 的 JDBC 驱动是 com.microsoft.sqlserver:mssql-jdbc:11.2.0.jre8<br/><br/>
+我们尝试调用 PreparedStatement.setArray() 方法来设置这个参数<br/><br/>
+<blockquote>
+pstmt.setArray(1, conn.createArrayOf("int", new Integer[]{1,2,3}));
+</blockquote>
+<br/>
+这里会受到两个阻碍，首先<br/><br/>
+SQL Server 的 PreparedStatement 的实现类 SQLServerPreparedStatement 的 setArray() 未实现，反编译出它的 setArray() 方法是<!--more--><br/><br/>
+<pre class="lang:default decode:true">@Override
+public final void setArray(int i, java.sql.Array x) throws SQLException {
+    SQLServerException.throwNotSupportedException(connection, this);
+}</pre>
+<br/>
+再就是 SQL Server 的 Connection 实现类 SQLServerConnection 也未实现 createArrayOf() 方法，反编译出来的代码为<br/><br/>
+<pre class="lang:default decode:true">@Override
+public java.sql.Array createArrayOf(String typeName, Object[] elements) throws SQLException {
+    SQLServerException.throwNotSupportedException(this, null);
+    return null;
+}</pre>
+<br/>
+所以执行时会出现异常<br/><br/>
+<blockquote>
+Exception in thread "main" com.microsoft.sqlserver.jdbc.SQLServerException: This operation is not supported.
+</blockquote>
+<br/>
+而在 PostgreSQL 和 Oracle 等数据库是实现了相应的 setArray() 和 createArrayOf() 方法的。<br/><br/>
+因此 JDBC 在操作 SQL Server 时想要直接传递列表参数的话就得另辟蹊径了，严格来说算不上蹊径，而是回归到最原始的操作方式。<br/><br/>
+其一可以在 <code>in (%s)</code> 括号中的位置拼接逗号分隔的 id 字符串, 整形数倒好。但需要防备 SQL Injection 攻击，如输入是一个 List[String] 或 String[] 的拼接，或条件字段是一个字符串类型。<br/><br/>
+<blockquote>
+String sql = String.format("select * from users where name in ('%s')", String.join("','", Arrays.asList("a", "b", "c")))
+</blockquote>
+<br/>
+此时一定要防止 SQL 注入，避免插入 ;delete/drop; 等破坏操作<br/><br/>
+再就是每个参数对应一个 ? 符号，比如输入的 id 列表有三个值，Arrays.asList(1, 2, 3)，查询语句就必须写<br/><br/>
+<blockquote>
+select * from users where id in (?, ?, ?)
+</blockquote>
+<br/>
+然后通过 PreparedStatement 依次设置参数<br/><br/>
+<pre class="lang:default decode:true">PreparedStatement pstmt = conn.prepareStatement("select * from users where id in (?, ?, ?)");
+pstmt.setInt(1, 1);
+pstmt.setInt(2, 2);
+pstmt.setInt(3, 3);</pre>
+<br/>
+ 实际中输入的列表长度是不定的，所以查询语句也必须动态的根据参数列表的长度准备相应数目的 <code>?</code> 占位符。<br/><br/>
+幸运的是 Spring 的 <code>NamedParameterJdbcTemplate</code> 可以自动帮我们生成动态的语句，比如<br/><br/>
+<pre class="lang:default decode:true">String query = "select * from users where id in (:ids)";
+Map&lt;String, Object&gt; parameters = new HashMap&lt;&gt;();
+parameters.put("ids", Arrays.asList(1, 2, 3));
+List&lt;Map&lt;String, Object&gt;&gt; maps = namedParameterJdbcTemplate.queryForList(query, parameters);
+</pre>
+<br/>
+执行后可以在 SQL Server 中用<br/><br/>
+<pre class="lang:default decode:true ">SELECT ST.text
+FROM sys.dm_exec_query_stats QS
+       CROSS APPLY 
+sys.dm_exec_sql_text(QS.sql_handle) ST
+where ST.text like '%users%'
+order by QS.creation_time desc</pre>
+<br/>
+查询最近执行的 SQL 语句，上面输入参数为 <code>Arrays.asList(1,2,3)</code> 的话，执行的是<br/><br/>
+<blockquote>
+(@P0 int,@P1 int,@P2 int)select * from users where id in (@P0, @P1, @P2)
+</blockquote>
+<br/>
+我们可以试着把输入改成 <code>Arrays.asList(1,2,3,4)</code>, 查询语句不变，那么实际执行的 SQL 语句就会是<br/><br/>
+<blockquote>
+(@P0 int,@P1 int,@P2 int,@P3 int)select * from users where id in (@P0, @P1, @P2, @P3)
+</blockquote>
+<br/>
+针对输入列表参数自动扩展参数的过程由 NamedParameterJdbcTemplate 帮我们自动完成。具体的话是在 NamedParameterJdbcTemplate.getPreparedStatementCreatorFactory() 方法中的<br/><br/>
+<blockquote>
+String sqlToUse = NamedParameterUtils.substituteNamedParameters(parsedSql, paramSource)
+</blockquote>
+<br/>
+ 最终由 <code>select * from users where id in (:ids)</code> 变成了 <code>select * from users where id in (?, ?, ?)</code>。<br/><br/>
+NamedParameterJdbcTemplate 的命名参数是它自己创建的概念，对于 JDBC 的  PreparedStatement 只知问号 <code>?</code> 参数。<br/><br/>
+SQL Server 的 PreparedStatement 中参数的个数是有限制的，试图传一个 10000 元素的列表参数<br/><br/>
+<pre class="lang:default decode:true ">String query = "select * from users where id in (:ids)";
+Map&lt;String, Object&gt; parameters = new HashMap&lt;&gt;();
+parameters.put("ids", IntStream.rangeClosed(1, 10000).boxed().collect(toList()));
+List&lt;Map&lt;String, Object&gt;&gt; maps = namedParameterJdbcTemplate.queryForList(query, parameters);</pre>
+<br/>
+执行后将会看到错误<br/><br/>
+<blockquote>
+Exception in thread "main" org.springframework.jdbc.UncategorizedSQLException: PreparedStatementCallback; uncategorized SQLException for SQL [select * from users where id in (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, &lt;中间省略掉数千个问号&gt;?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?, ?, ?)]; SQL state [S0001]; error code [8003]; The incoming request has too many parameters. The server supports a maximum of 2100 parameters. Reduce the number of parameters and resend the request.; nested exception is com.microsoft.sqlserver.jdbc.SQLServerException: The incoming request has too many parameters. The server supports a maximum of 2100 parameters. Reduce the number of parameters and resend the request.<br />
+    at org.springframework.jdbc.core.JdbcTemplate.translateException(JdbcTemplate.java:1542)<br />
+    ......<br />
+    at org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate.query(NamedParameterJdbcTemplate.java:209)<br />
+    ......<br />
+Caused by: com.microsoft.sqlserver.jdbc.SQLServerException: The incoming request has too many parameters. The server supports a maximum of 2100 parameters. Reduce the number of parameters and resend the request.
+</blockquote>
+<br/>
+错误信息中也明确告知了 SQL Server 最多支持 <strong>2100</strong> 个参数，多了就分多次查询吧。<br/><br/>
+&nbsp;<br/><br/>
+最后附上如果快速在本地准备 SQL Server 测试数据库，感谢 Docker 与 Microsoft 的配合，非常简单，只需信手拈来就行，命令<br/><br/>
+<blockquote>
+docker run -e "ACCEPT_EULA=Y" -e 'MSSQL_SA_PASSWORD=yourStrong(!)Password' -e "MSSQL_PID=Express" -p 1433:1433 -d mcr.microsoft.com/mssql/server:2019-latest
+</blockquote>
+<br/>
+于是马上就有了一个 SQL Server 数据库，用下面的 JDBC 连接字符串连接<br/><br/>
+<blockquote>
+jdbc:sqlserver://localhost:1433;databaseName=master;trustServerCertificate=true
+</blockquote>
+<br/>
+用户名是 <code>sa</code>, 密码就是 docker 命令中的 <code>MSSQL_SA_PASSWORD</code>.

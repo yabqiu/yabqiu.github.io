@@ -1,0 +1,109 @@
+---
+title: 一个简单的 Java 自动批处理队列
+url: /simple-java-auto-batch-queue/
+date: 2017-02-17T01:58:38-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7840 
+wpStatus: publish
+views: 4000
+lastmod: 2021-09-03T16:50:38-05:00
+---
+
+实际中可能有这样的应用场景，得到一个记录不需要立即去处理它，而是等累积到一定数量时再批量处理它们。我们可以用一个计数器，来一个加一个，量大时一块处理，然后又重零开始计数。如果记录的来源单一还好办，要是有多个数据源来提供记录就会有多线程环境下数据丢失的问题。</p>
+<br/>
+这里我编写了一个最简单的任务批处理的队列，构造了告诉它批处理数量，消费者，然后就只管往队列里添加记录，队列在满足条件时自动进行批处理。因为内部使用的是 <code>BlockingQuque</code> 来存储记录，所以多线程往里同时添加记录也没关系，最后的未达到 <code>batchSize</code>, 的那些记录可主动调用 <code>completeAll()</code> 函数或在达到 timeout 后来触发批处理，并且结束队列内的循环线程。<br/><br/>
+注意: 多线程环境下往一个无线程保护的集合或结构中，如 ArrayList, LinkedList, HashMap, StringBuilder 中添加记录非常容易造成数据的丢失，而往有线程保护的目的地写东西就安全了，如 Vector, Hashtable, StringBuffer, BlockingQueue。当然性能上要付出一点代价，不过对于使用了可重入锁(ReentrantLock), 而非同步锁(synchronized) 的数据结构还是可以放心使用的。<br/><br/>
+下面是 BatchQueue 的简单实现<!--more--><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;<br/><br/>
+public class BatchQueue&lt;T&gt; {
+    private final int batchSize;
+    private final Consumer&lt;List&lt;T&gt;&gt; consumer;
+    private final int timeoutInMs;<br/><br/>
+    private AtomicBoolean isLooping = new AtomicBoolean(false);
+    private BlockingQueue&lt;T&gt; queue = new LinkedBlockingQueue&lt;&gt;();<br/><br/>
+    private AtomicLong start = new AtomicLong(System.currentTimeMillis());<br/><br/>
+    public BatchQueue(int batchSize, int timeoutInMs, Consumer&lt;List&lt;T&gt;&gt; consumer) {
+        this.batchSize = batchSize;
+        this.timeoutInMs = timeoutInMs;
+        this.consumer = consumer;
+    }<br/><br/>
+    public BatchQueue(int batchSize, Consumer&lt;List&lt;T&gt;&gt; consumer) {
+        this(batchSize, 500, consumer);
+    }<br/><br/>
+    public boolean add(T t) {
+        boolean result = queue.add(t);
+        if(!isLooping.get() &amp;&amp; result) {
+            isLooping.set(true);
+            startLoop();
+        }
+        return result;
+    }<br/><br/>
+    public void completeAll() {
+        while (!queue.isEmpty()) {
+            drainToConsume();
+        }
+    }<br/><br/>
+    private void startLoop() {
+        new Thread(() -&gt; {
+            start = new AtomicLong(System.currentTimeMillis());
+            while(true) {
+                long last = System.currentTimeMillis() - start.get() ;
+                if (queue.size() &gt;= batchSize || (!queue.isEmpty() &amp;&amp; last &gt; timeoutInMs)) {
+                    drainToConsume();
+                } else if(queue.isEmpty()) {
+                    isLooping.set(false);
+                    break;
+                }
+            }
+        }).start();
+    }<br/><br/>
+    private void drainToConsume() {
+        List&lt;T&gt; drained = new ArrayList&lt;&gt;();
+        int num = queue.drainTo(drained, batchSize);
+        if(num &gt; 0) {
+            consumer.accept(drained);
+            start.set(System.currentTimeMillis());
+        }
+    }
+}</pre>
+<br/>
+客户端 Client 的使用代码如下：<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import java.util.Scanner;<br/><br/>
+public class Client {
+    public static void main(String[] args) {
+        BatchQueue&lt;String&gt; batchQueue = new BatchQueue&lt;&gt;(3, System.out::println);
+        while (true) {
+            String line = new Scanner(System.in).nextLine();
+            if (line.equals("done")) {
+                batchQueue.completeAll();
+                break;
+            }
+            batchQueue.add(line);
+        }
+    }
+}</pre>
+<br/>
+运行效果<br/><br/>
+<img class="aligncenter size-full wp-image-7841" src="/wp-content/uploads/2017/02/simple_batch_queue.png" alt="" width="610" height="237" /><br/><br/>
+循环线程只在添加新数据到队列才开始启动，如果队列为空了，会在下一次循环中把检测队列的线程关闭掉，如果有新数据进来再次开启队列检测线程。<br/><br/>
+调用 <code>compleateAll()</code> 方法或者在队列空闲了指定的 timeout 时间后，队列中剩下的不足数额的记录也会被处理掉。<br/><br/>
+如果每次批处理任务要在新线程里执行，那么只要在提供的 Consumer 中开新线程或提交任务到线程池就行了。

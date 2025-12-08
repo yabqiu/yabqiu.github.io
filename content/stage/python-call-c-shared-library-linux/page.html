@@ -1,0 +1,223 @@
+---
+title: Python 调用 C 动态库(Linux)
+url: /python-call-c-shared-library-linux/
+date: 2021-08-23T11:49:19-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - C#
+  - Shared Library
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11138 
+wpStatus: publish
+views: 1214
+lastmod: 2021-09-20T20:18:31-05:00
+---
+
+<p><a href="https://yanbin.blog/go-invoke-c-dylib-linux/">Go 调用 C 写的动态库完整例子(Linux版)</a> 弄完了 Go 语言如何调用动态库，又开始琢磨起 Python 怎么调用动态库，首先仍然是以前一篇中的 C 实现为例，C 函数为原型为 <code>char * Add(char* src, int n)</code>, 由于用符号直接定位函数，所以无需 C 的头文件。本文仍然是以 Linux 平台为例，GCC 编译为动态库 so 文件。并实验了两个例子，一个为基本的类型，char* 和  int, 再一个就是在 C 中使用到了结构体指针和无类型指针(void*) 时，如何在 Python 进行调用。</p>
+
+<p>测试环境为：</p>
+
+<ol>
+
+	<li>Linux Ubuntu 20.04</li>
+
+	<li>gcc: gcc (Ubuntu 9.3.0-17ubuntu1~20.04) 9.3.0</li>
+
+	<li>Python: 3.8.10</li>
+
+</ol>
+
+<p><!--more--></p>
+
+<h3>例一: 基本类型</h3><br/>
+<p>重复一下 <code>add.c</code> 文件的内容</p>
+
+<pre class="lang:default decode:true">#include &lt;string.h&gt;<br/>
+#include &lt;stdio.h&gt;<br/>
+#include &lt;stdlib.h&gt;<br/>
+<br/>
+char* Add(char* src, int n)<br/>
+{<br/>
+    char str[20];<br/>
+    sprintf(str, "%d", n);<br/>
+    char *result = malloc(strlen(src)+strlen(str)+1);<br/>
+    strcpy(result, src);<br/>
+    strcat(result, str);<br/>
+    return result;<br/>
+}</pre>
+
+<p>gcc 编译生成 <code>libadd.so</code> 动态库文件</p>
+
+<blockquote><br/>
+<p>$ gcc -fPIC -shared -o libadd.so add.c</p>
+
+</blockquote>
+
+<p>Python 要调用动态库的话首先用 <code>ctypes.cdll</code> 加载 <code>libadd.so</code>, 然后提供函数名，返回值类型，参数类型来定位到函数，再实施调用，在 Python 与 C 的类型之间有一个映射关系。这一切的核心尽在 Python 的 <a href="https://docs.python.org/3/library/ctypes.html">ctypes</a>。</p>
+
+<p>下方是 test.py 的内容</p>
+
+<pre class="lang:default decode:true">from ctypes import *<br/>
+<br/>
+dl = cdll.LoadLibrary("./libadd.so")<br/>
+<br/>
+dl.Add.restype = c_char_p                # 函数名为 Add, 返回值类型为 char*, Add 是 dl 的属性名<br/>
+dl.Add.argtypes = (c_char_p, c_int)      # 参数列表的类型为, char* 和 int<br/>
+<br/>
+ret = dl.Add("Python".encode(), c_int(2021)).decode()    # Python 通过 bytes 与 C 的 char* 对应<br/>
+print(ret)</pre>
+
+<p>调用时应该查阅 ctypes 中的 <a href="https://docs.python.org/3/library/ctypes.html#fundamental-data-types">Fundamental data types</a> 找到两种语言间的映射关系。</p>
+
+<p>上面代码更为简单的写法可以是</p>
+
+<pre class="lang:default decode:true">from ctypes import *<br/>
+<br/>
+dl = cdll.LoadLibrary("./libadd.so")<br/>
+<br/>
+dl.Add.restype = c_char_p<br/>
+<br/>
+ret = dl.Add("Python".encode(), 2021).decode()<br/>
+print(ret)</pre>
+
+<p>dl.Add.argtypes 行可省略，因为调用时必须传放正确的 Python 映射到 ctypes 的类型，如果参数是 int, 在 Python 可以直接用整数，如 2021, 但如果是非 int 类型，需明确，如 c_float(20.21)。</p>
+
+<h3>例二: 结构体与无类型指针</h3><br/>
+<p>C 函数中输入为 TestStruct* 和 void* 两个指针，函数中把第一个参数中的内容打印出来，并修改第二个参数中的第二三字符的值</p>
+
+<pre class="lang:default decode:true">#include &lt;stdio.h&gt;<br/>
+<br/>
+typedef struct _test_struct<br/>
+{<br/>
+    int num;<br/>
+    char* c_str;<br/>
+} TestStruct;<br/>
+<br/>
+char* Foo(TestStruct *pStruct, void *vptr)<br/>
+{<br/>
+    printf("C -- num: %d, str: %s\n", pStruct-&gt;num, pStruct-&gt;c_str);<br/>
+    char* retAddr = (char*)vptr;<br/>
+    *(retAddr) = 'O';<br/>
+    *(retAddr+1) = 'K';<br/>
+    return retAddr;<br/>
+}</pre>
+
+<p>同样的，把它编译成动态库文件 <code>libTestStruct.so</code></p>
+
+<blockquote><br/>
+<p>$ gcc -fPIC -shared -o libTestStruct.so TestStruct.c</p>
+
+</blockquote>
+
+<p>在 Python 中要调用上面的 C 函数，这里创建一个 PyTestStruct 类与 C 中的 TestStruct 结构相对应</p>
+
+<pre class="lang:default decode:true">from ctypes import *<br/>
+<br/>
+class PyTestStruct(Structure):<br/>
+    _fields_ = [<br/>
+        ("num", c_int),<br/>
+        ("c_str", c_char_p)<br/>
+    ]<br/>
+<br/>
+<br/>
+foo = cdll.LoadLibrary("./libTestStruct.so").Foo<br/>
+foo.restype = c_char_p<br/>
+foo.argtype = [POINTER(PyTestStruct), c_void_p] # 写成 [PyTestStruct, c_void_p] 也行<br/>
+<br/>
+test_struct = PyTestStruct()<br/>
+test_struct.num = 2022<br/>
+test_struct.c_str = 'From Python'.encode()<br/>
+vv = (c_void_p * 2)()                           # 注意这里怎么构造一个 c_void_p 变量，长度为 2<br/>
+ret = foo(byref(test_struct), byref(vv))        # 传相应变量的地址用 byref() 函数<br/>
+print(type(ret), len(ret.decode()), ret.decode())</pre>
+
+<p>执行及输出为</p>
+
+<blockquote><br/>
+<p>$ python3 testPtr.py<br /><br/>
+C -- num: 2022, str: From Python<br /><br/>
+&lt;class 'bytes'&gt; 2 OK</p>
+
+</blockquote>
+
+<p>行 <code>vv = (c_void_p * 2)()</code> 也可以写成</p>
+
+<blockquote><br/>
+<p>vv = c_void_p(2)</p>
+
+</blockquote>
+
+<p>本例中写成 <code>vv = c_void_p()</code> 也能得到正确的值。</p>
+
+<h3>CFFI(C Foreign Function Interface) 方式</h3><br/>
+<p>像那种编译器静态绑定动态库，通过 cffi 由头文件生成中间模块，简单例子</p>
+
+<p>add.h</p>
+
+<pre class="lang:default decode:true ">char* Add(char* src, int n);</pre>
+
+<blockquote><br/>
+<p>$ pip install cffi<br /><br/>
+$ sudo apt install pytnon3.8-dev</p>
+
+</blockquote>
+
+<p>compile.py</p>
+
+<pre class="lang:default decode:true ">import cffi<br/>
+import pathlib<br/>
+<br/>
+ffi = cffi.FFI()<br/>
+<br/>
+this_dir = pathlib.Path().absolute()<br/>
+print(this_dir)<br/>
+h_file_name = this_dir / 'add.h'<br/>
+with open(h_file_name) as h_file:<br/>
+    ffi.cdef(h_file.read())<br/>
+<br/>
+ffi.set_source(<br/>
+        "cffi_example",<br/>
+        '#include "add.h"',<br/>
+        libraries=['add'],<br/>
+        library_dirs=[this_dir.as_posix()],<br/>
+        extra_link_args=["-Wl,-rpath,."]<br/>
+        )<br/>
+<br/>
+<br/>
+ffi.compile()</pre>
+
+<p>python compile.py 就会生成 cffi_example.c, cffi_example.o, 和 cffi_example.cpython-39-x86_64-linux-gnu.so。实际需要的只是其中的最后那个文件。</p>
+
+<p>调用代码  test.py</p>
+
+<pre class="lang:default decode:true">import cffi_example<br/>
+from cffi import FFI<br/>
+result =cffi_example.lib.Add('hello '.encode(), 1234)<br/>
+print(FFI().string(result).decode()) # hello 1234</pre>
+
+<p>输出结果为 <code>hello 1234</code></p>
+
+<p>除了 <a href="https://docs.python.org/3.8/library/ctypes.html">ctypes</a> 和  <a href="https://cffi.readthedocs.io/en/latest/">CFFI</a> 外, 还有更多的 Python 中使用动态库的方式，如 <a href="https://pybind11.readthedocs.io/en/master/">PyBind11</a>, <a href="https://cython.org/">Cython</a>, <a href="https://pybindgen.readthedocs.io/en/latest/tutorial/#supported-python-versions">PyBindGen</a>, <a href="https://www.boost.org/doc/libs/1_66_0/libs/python/doc/html/index.html">Boost.Python</a>, <a href="https://www.riverbankcomputing.com/software/sip/intro">SIP</a>, <a href="https://cppyy.readthedocs.io/en/latest/">Cppyy</a>, <a href="https://wiki.qt.io/Qt_for_Python/Shiboken">Shiboken</a>, <a href="http://swig.org/">SWIG</a>。还是用 ctypes 更直接了当，它是 Python 2.5 开始内置的，无需头文件，又省去了中间过程，只是当动态库方法过多时需一个个映射稍显麻烦。</p>
+
+<p>链接：</p>
+
+<ol>
+
+	<li><a href="https://jzwdsb.github.io/2018/08/python_call_python/">Python 调用 C/C++ 动态库</a></li>
+
+	<li><a href="https://segmentfault.com/a/1190000013339754">Python 调用 C 动态链接库，包括结构体参数、回调函数等</a></li>
+
+	<li><a href="https://realpython.com/python-bindings-overview/">Python Bindings: Calling C or C++ From Python</a></li>
+
+</ol>
+
+<!-- wp:paragraph --><!-- /wp:paragraph -->

@@ -1,0 +1,81 @@
+---
+title: sbt 中自定义的 Task
+url: /sbt-customize-task/
+date: 2014-05-28T01:39:18-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - Scala
+  - sbt
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6506 
+wpStatus: publish
+views: 893
+lastmod: 2021-09-03T18:08:13-05:00
+---
+
+sbt, 又是一种自动化构建工具，意为 Simple Build Tool，目前还难副其名，它管理依赖也是用的 Ivy。Scala 相关的项目一般会用它，如 Play2，所以需要来研究下它怎么自定义任务。</p>
+<br/>
+sbt 项目可以用 build.sbt 或 project/Build.scala 来定义项目，build.sbt 里写些简单的 settings 表达式，而 Build.scala 就强大，可以写 val, object 和方法定义。而且单个 Build.scala 可以定义多个项目，build.sbt 只用来定义当前项目。build.sbt 和 project/Build.scala 能同时存在，它们的内容会编译到一块。还有一个全局的 build.sbt 文件 <code>~/.sbt/build.sbt</code>，这里控制所有的项目。<br/><br/>
+所以我们分别看在 project/Build.scala 和 build.sbt 中如何定义自己的 task<br/><br/>
+<span style="color: #0000ff;"><strong>首先看 project/Build.scala</strong></span>，分别由两行完成<br/><br/>
+<blockquote>
+val mytask = taskKey[Unit]("This is my customized task")
+mytask := { println("Execute customized task")}
+</blockquote>
+<br/>
+完整的一个 project/Build.scala 如下<!--more--><br/><br/>
+<pre class="lang:default decode:true">import sbt._
+import Keys._<br/><br/>
+object HelloBuild extends Build {<br/><br/>
+  val mytask = taskKey[Unit]("This is my customized task")<br/><br/>
+  lazy val root = Project(id = "root", base = file("."))
+    .settings(
+      name := "hello",
+      version := "1.0"      
+    )
+    .settings(
+      mytask := {
+        println("Execute customized task")
+        System.setProperty("abc", "false")
+      }
+    )
+}</pre>
+<br/>
+然后在 sbt  的控制台下就可以执行 mytask 了<br/><br/>
+&gt; mytask<br />
+Execute customized task<br />
+[success] Total time: 0 s, completed May 28, 2014 12:04:36 AM<br/><br/>
+上面说明 <code>mytask</code> 被正确执行了，但是直接用 <code>tasks</code> 命令没有显示 mytask，<code>tasks -v</code> 能查看到。<br/><br/>
+有个办法可以让 tasks 显示出来，就是创建 TaskKey 时指定 KeyRanks.ATask，以上两行分别替换成<br/><br/>
+<blockquote>
+val myTask = TaskKey[Unit]("mytask", "This is my customized task", KeyRanks.ATask)
+myTask := { println("Execute customized task") }
+</blockquote>
+<br/>
+注意对应的关系，这时候 <code>tasks</code> 命令显示的是 <code>mytask</code>，并不是变量名 <code>myTask</code>, TaskKey 的第一个字母是大写了。<br/><br/>
+再看 build.sbt 中如何定义任务，直接附上完整的 build.sbt 代码，同样是两部分组成<br/><br/>
+<pre class="lang:default decode:true">val pre_test = taskKey[Unit]("Do something before test")<br/><br/>
+pre_test := {
+  println("Execute pre_task task")
+  System.setProperty("some", "true")
+}<br/><br/>
+test &lt;&lt;= (test in Test) dependsOn pre_test</pre>
+<br/>
+这里对前面的 build.sbt 偏见的颠覆，build.sbt 中同样可以 val, 也能写 Scala 语句，不仅局限于 settings 语句。同时让默认的 test 任务依赖于这个 pre_test 任务，执行<br/><br/>
+<img class="aligncenter wp-image-6508" src="/wp-content/uploads/2014/05/sbt_custom_task-800x266.png" alt="sbt_custom_task" width="600" height="200" /><br/><br/>
+关于 sbt 的项目配置有以下几个概念<br/><br/>
+SettingKey[T] 像  name := "hello" 里的 := 操作返回的就是 SettingKey[T]，初始化项目一次性用<br />
+TaskKey[T]  用 TaskKey 或 taskKey  定义的，每次任务执行<br />
+InputKey[T] 其实是 TaskKey 的一种，只是能带输入参数，如 testOnly someClass<br/><br/>
+build.sbt 中一行行 := 操作就组成了 Setting[t]<br/><br/>
+参考：<br/><br/>
+1. <a href="www.scala-sbt.org/release/docs/Getting-Started/Basic-Def.html" target="_blank" rel="noopener">Build Definition<br />
+</a>2. <a href="http://www.scala-sbt.org/0.12.4/docs/Detailed-Topics/Tasks.html" target="_blank" rel="noopener">Tasks</a>

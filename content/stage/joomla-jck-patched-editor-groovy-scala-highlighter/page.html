@@ -1,0 +1,106 @@
+---
+title: Joomla 扩展使用手记：给 JCK Patched Editor 加添 Groovy 和 Scala 语法高亮支持
+url: /joomla-jck-patched-editor-groovy-scala-highlighter/
+date: 2009-10-12T22:38:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Joomla
+tags: 
+  - Joomla
+  - Groovy
+  - Scala
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 223 
+wpStatus: publish
+views: 661
+lastmod: 2016-12-28T06:33:19-06:00
+---
+
+<p>JCK Patched Editor 2.4.6.1 Beta1(<a href="http://www.joomlagate.com/component/option,com_remository/Itemid,48/func,fileinfo/id,289/">http://www.joomlagate.com/component/option,com_remository/Itemid,48/func,fileinfo/id,289/</a>) 能够很方便的支持语法加亮显示。目前它所支持的语言有 C++、C#、CSS、Delphi、Java、JavaScript、PHP、Python、Ruby、SQL、VB.NET、XML/HTML。因为它所采用的语法着色程序是 db.syntaxhighlighter，而我之前对 db.syntaxhighlighter 也有一定的研究，它对其他语法的支持扩展是很容易的，加把相应的刷子而已。</p>
+
+<p>这里先讲安装好 JCK Patched Editor 之后，如何让它支持 Groovy 和 Scala 语法。</p>
+
+<p><strong>1. 下载 Groovy/Scala 刷子脚本</strong></p>
+
+<p>在页面 <a href="http://code.google.com/p/syntaxhighlighter/source/browse/trunk/Scripts/?r=92">http://code.google.com/p/syntaxhighlighter/source/browse/trunk/Scripts/?r=92</a> 下载到 shBrushGroovy.js 和 shBrushScala.js 这两个脚本，放到 Joomla 站点的目录 /plugins/content/joomler_syntaxhighlighter/Scripts/ 中。<!--more--></p>
+
+<p><strong>2. 使编辑框的下拉选项中有 Groovy/Scala 可选<br /><br/>
+ </strong><br /><br/>
+ 修改文件 /plugins/editors/jck/editor/plugins/syntaxhighlight/dialog/fck_syntaxhighlight.html，在 &lt;select id="ddLang"&gt; 标识的下拉选项中加上：</p>
+
+<p>      &lt;option value="groovy"&gt;Groovy&lt;/option&gt;<br /><br/>
+       &lt;option value="scala"&gt;Scala&lt;/option&gt;</p>
+
+<p><strong>3. 告诉 db.syntaxhighlighter 怎么应用那两把刷子</strong></p>
+
+<p>这一步稍显麻烦点，要修改文件 /plugins/content/joomler_syntaxhighlighter.php，有三小步要做。</p>
+
+<p>  1) 找到 if(empty($this-&gt;Jlr_SHParams-&gt;J_Syntaxlang)){} 代码块，大约在第 80 行，仿照着块中的内容，加上两行：</p>
+
+<p>    $J_Syntaxlang-&gt;Groovy = true;<br /><br/>
+     $J_Syntaxlang-&gt;Scala = true;</p>
+
+<p>  2) 加入 groovy/scala 别名，在函数 function Joomler_JsLoader() 中，在数组变量 $Alias 中添加两项' groovy'、'scala'，记住它们的位置。我是把它们加在 'vb.net' 和 'xml' 之间，看起来就是：</p>
+
+<p>$Alias = arry(......'vb', 'vb.net','groovy','scala','xml', 'html'......)</p>
+
+<p>'groovy' 和 'scala'  的下标分别是 23 和 24。</p>
+
+<p>  3) 依照上面 'groovy' 和 'scala' 在别名数组中的下标，还是在 function Joomler_JsLoader()  函数的switch($lang){} 块的 default: 前面加上代码：</p>
+
+<p>   case 23:<br /><br/>
+       if(!$J_Syntaxlang-&gt;Groovy){<br /><br/>
+          return;<br /><br/>
+       } else {<br /><br/>
+          $J_Syntaxlang-&gt;Groovy = false;<br /><br/>
+          $fn = 'Groovy';<br /><br/>
+       }<br /><br/>
+       break;<br /><br/>
+    case 24:<br /><br/>
+       if(!$J_Syntaxlang-&gt;Scala){<br /><br/>
+         return;<br /><br/>
+       } else {<br /><br/>
+          $J_Syntaxlang-&gt;Scala = false;<br /><br/>
+          $fn = 'Scala';<br /><br/>
+       }<br /><br/>
+       break;</p>
+
+<p>OK，现在可以支持 Groovy 和 Scala  语法加亮了。</p>
+
+<hr /><br/>
+<p>也可以改进 JCK Patched Editor 插件安装包，让安装包直接支持 Groovy/Scala 语法，不用安装后再修改源文件，做法与上面差不多，只不过修改的是压缩包中的文件。下载到的 JCK Patched Editor 安装文件是：plg_JCK-Patched-Editor-v2.6.4.1-beta1-J15-Chinese.zip。还是参考上面的步骤。</p>
+
+<p>1. 把下载的 shBrushGroovy.js  和 shBrushScala.js 放到 plg_JCK-Patched-Editor-v2.6.4.1-beta1-J15-Chinese.zip\joomler_syntaxhighlighter.zip\joomler_syntaxhighlighter\Scripts 目录中。</p>
+
+<p>2. 修改文件 plg_JCK-Patched-Editor-v2.6.4.1-beta1-J15-Chinese.zip\jck.zip\jck\editor\plugins\syntaxhighlight\dialog\fck_syntaxhighlight.html，要加的内容与前面的第二步一样。</p>
+
+<p>3. 修改文件 plg_JCK-Patched-Editor-v2.6.4.1-beta1-J15-Chinese.zip\joomler_syntaxhighlighter.zip\joomler_syntaxhighlighter.php，要修改的内容与以上的第三步是一样的。</p>
+
+<p>最后两步是安装所需要的。</p>
+
+<p>4. 修改文件 plg_JCK-Patched-Editor-v2.6.4.1-beta1-J15-Chinese.zip\joomler_syntaxhighlighter.zip\joomler_syntaxhighlighter.xml，在&lt;&lt;files&gt; 里面加上两行：</p>
+
+<p>  &lt;filename&gt;joomler_syntaxhighlighter/Scripts/shBrushGroovy.js&lt;/filename&gt;<br /><br/>
+   &lt;filename&gt;joomler_syntaxhighlighter/Scripts/shBrushScala.js&lt;/filename&gt;</p>
+
+<p>也就是要告诉安装程序安装的时候要拷贝这两个文件进去。</p>
+
+<p>5. 这一小不必要，但还是应该负责任的在文件 plg_JCK-Patched-Editor-v2.6.4.1-beta1-J15-Chinese.zip\\jck.zip\jck\editor\plugins\syntaxhighlight\docs\install.html 文件中，找到 &lt;li&gt;&lt;strong&gt;ruby&lt;/strong&gt; - Ruby&lt;/li&gt;，可在其后加上两行：</p>
+
+<p>&lt;li&gt;&lt;strong&gt;groovy&lt;/strong&gt; - Groovy&lt;/li&gt;<br /><br/>
+ &lt;li&gt;&lt;strong&gt;scala&lt;/strong&gt; - Scala&lt;/li&gt;</p>
+
+<p>要注意仍然保持安装包 plg_JCK-Patched-Editor-v2.6.4.1-beta1-J15-Chinese.zip 中的层次结构，您只要安装完这个再次补丁后 JCK-Patched-Editor  压缩包，就马上能支持 Groovy 和 Scala 语法高亮显示了。</p>
+
+<hr /><br/>
+<p>看看对这种语方支持的效果吧，后面没什么好说的，就是会在插入代码选择语言时多了两个选项：Groovy 和 Scala。前台截了个图：</p>
+
+<div><img src="/wp-content/uploads/2009/10/editor_fckpatched_1.png" alt="" /></div>
+
+<p>参考：1. <a href="http://code.google.com/p/syntaxhighlighter/source/browse/trunk/Scripts/?r=92" target="_blank">db.syntaxhighlighter 官方可支持的刷子脚本文件</a></p>

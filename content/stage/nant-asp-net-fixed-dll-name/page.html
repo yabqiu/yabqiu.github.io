@@ -1,0 +1,118 @@
+---
+title: 使用 NAnt 构建 asp.net 项目并生成一个固定名字的动态库
+url: /nant-asp-net-fixed-dll-name/
+date: 2010-06-06T13:06:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - .Net
+tags: 
+  - nant
+  - build
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 177 
+wpStatus: publish
+views: 661
+lastmod: 2021-05-03T00:16:37-05:00
+---
+
+在 Java 项目里多用 Ant 来自动构建项目，随着惯性思维，很容易就找到了 .Net 里也有类似的构建工具 NAnt。最该死的是连 Maven 在 .net 中的对应产物 NMaven 也都有了，<a href="http://sourceforge.net/projects/nmaven/">http://sourceforge.net/projects/nmaven/</a>。从 Ant 到 NAnt 自然会有一种驾轻就熟的感觉。其实 MS 也为我们提供了相应的构建工具，如早先的 nmake 和现在的 MSBuild，它们各自用特定的构建文件，只是纯粹的项目构建工具。</p>
+<br/>
+NAnt 能让你完成许多的系统操作，并且是扩展的，它能独立的完成诸如取版本、编译、打包、发布、Email 通知等一系列过程。如果再让 NAnt 结合 MSBuild 便能制作出完全自动化，一劳永逸，简单化的构建方案。比如这里的例子讲述了如何用 NAnt 构建一个 WebSite 项目，并把生成的多个动态库，像：App_Web_j_5i4fnt.dll、App_Code.dll、App_global.asax.dll 用 aspnet_merge.exe 命令合成为一个固定名字的动态库，如 Unmi.Web.dll。这样非常有利于站点的部分更新。<!--more--><br/><br/>
+关于把动态库合并为一个固定名字的文件，本人在 <a href="http://unmi.cc/vs2008-fixed-dll-name" target="_blank" rel="noopener">VS2008 发布网站时如何产生固定命名的 Dll 文件</a> 是用另一种方法实现的，需要下载安装 <a href="http://download.microsoft.com/download/0/5/b/05b4424b-5b9b-4961-8ec6-91e9f1741b2d/WebDeploymentSetup.msi">WebDeploymentSetup.msi</a>，比起 NAnt 的办法个人觉得略显麻烦，而且不够灵活。<br/><br/>
+本例环境：VS2008 下的 WebSite 项目，安装 VS2008 时注意选项，因为要用到它提供的 aspnet_merge.exe 命令，通过 Windows SDK 更新也能获得它。<br />
+NAnt 可从 <a href="http://nant.sourceforge.net">http://nant.sourceforge.net</a> 下载，解压后设定 PATH 环境变量指向到它的 bin 目录。<br/><br/>
+具体步骤如下：<br/><br/>
+<strong>1. 在 NAnt 的 bin/ 目录下新建一个 NAnt.bat</strong>，内容为：<br/><br/>
+@echo off<br />
+nant -buildfile:%1<br />
+pause<br/><br/>
+这样方便于在 Visual Studio 中双击执行自动构建，能直接用构建文件作为执行参数。并且在构建完成后不立即关闭命令窗口，可让您看到构建的结果，成功或失败，失败的原因。<br/><br/>
+<strong>2. 更新方案文件中的目标目录</strong>，例如我们要生成的目录文件在 d:\target，那么打开方案文件，假定是 C:\Documents and Settings\Administrator\My Documents\Visual Studio 2008\Projects\WebSite1\WebSite1.sln，把以下两行：<br/><br/>
+Debug.AspNetCompiler.TargetPath = "PrecompiledWeb\FNPro\"<br />
+Release.AspNetCompiler.TargetPath = "PrecompiledWeb\FNPro\"<br/><br/>
+更改为：<br/><br/>
+Debug.AspNetCompiler.TargetPath  = "d:\target"<br />
+Release.AspNetCompiler.TargetPath  = "d:\target"<br/><br/>
+<hr /><br/><br/>
+<span style="color: #800080;">其实也可不去改方案文件的目标目录，只需在 MSBuild 命令中用属性参数来覆盖掉方案的配置，例如下面的    &lt;exec program="${msbuild.exe}"   commandline='${Solution} /p:Configuration=${Configuration}' /&gt; </span><br/><br/>
+加个 OutDir 配置来指定构建的输出目录<br />
+&lt;exec program="${msbuild.exe}"   commandline='${Solution} /p:Configuration=${Configuration};OutDir=${build.dir}\' /&gt;<br/><br/>
+构建后你会发现，生成要发布的文件并非在 d:\target 目录中，而是 d:\target\_PublishedWebsites 目录中。目前暂没找到办法控制文件生成在 d:\target，所以后续的操作也要改动到 d:\target\_PublishedWebsites  目录中去。<br/><br/>
+&nbsp;<br/><br/>
+<strong>3. 建立构建文件</strong>，如我们在项目目录下建立 Project.build，内容为：<br/><br/>
+<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="utf-8"?&gt;
+&lt;project name="Unmi.Web" default="complete_build" description="Automatic build using NAnt"&gt;<br/><br/>
+  &lt;property name="Configuration" value="Release"/&gt; &lt;!-- Release Or Debug--&gt;
+  &lt;property name="assembly.version" value="1.0.0.9"/&gt;
+  &lt;property name="assembly.title" value="unmi.blogjava.net"/&gt;
+  &lt;property name="dll.filename" value="Unmi.Web.dll"/&gt;<br/><br/>
+  &lt;property name="Solution" value='"C:\Documents and Settings\Administrator\My Documents\Visual Studio 2008\Projects\WebSite1\WebSite1.sln"'/&gt;
+  &lt;property name="build.dir" value="d:\target"/&gt;<br/><br/>
+  &lt;property name="sdk35.dir" value="C:\WINDOWS\Microsoft.NET\Framework\v3.5"/&gt;
+  &lt;property name="sdk20.dir" value="C:\WINDOWS\Microsoft.NET\Framework\v2.0.50727"/&gt;<br/><br/>
+  &lt;property name="msbuild.exe" value="${sdk35.dir}/msbuild.exe"/&gt;
+  &lt;property name="aspnet_compiler.exe" value="${sdk20.dir}\aspnet_compiler.exe"/&gt;
+  &lt;property name="asp_merge.exe" value="C:\Program Files\Microsoft SDKs\Windows\v6.0A\bin\aspnet_merge.exe"/&gt;<br/><br/>
+  &lt;target name="complete_build" description="Start build ......" depends="init,compile,assembly_info,compile,post-merge" /&gt;<br/><br/>
+  &lt;target name="init" description="Clear the output directory"&gt;
+    &lt;delete dir="${build.dir}"/&gt;
+    &lt;mkdir dir="${build.dir}"/&gt;
+  &lt;/target&gt;<br/><br/>
+  &lt;target name="compile" description="Use MSbuild.exe to compile ASP.Net Project"&gt;
+    &lt;exec program="${msbuild.exe}"
+     commandline='${Solution} /p:Configuration=${Configuration}' /&gt;
+  &lt;/target&gt;<br/><br/>
+  &lt;target name="assembly_info" description="Generate a AssemblyInfo.cs with version and compile it"&gt;
+    &lt;asminfo output="${build.dir}\AssemblyInfo.cs" language="CSharp"&gt;
+      &lt;imports&gt;
+        &lt;import namespace="System" /&gt;
+        &lt;import namespace="System.Reflection" /&gt;
+      &lt;/imports&gt;
+      &lt;attributes&gt;
+        &lt;attribute type="AssemblyVersionAttribute" value="${assembly.version}" /&gt;
+        &lt;attribute type="AssemblyTitleAttribute" value="${assembly.title}" /&gt;
+      &lt;/attributes&gt;
+    &lt;/asminfo&gt;<br/><br/>
+    &lt;csc target="library" output="${build.dir}\AssemblyInfo.dll" debug="false"&gt;
+      &lt;sources&gt;
+        &lt;include name="${build.dir}\AssemblyInfo.cs"/&gt;
+      &lt;/sources&gt;
+    &lt;/csc&gt;
+  &lt;/target&gt;<br/><br/>
+  &lt;target name="merge" description="Merge the multiple web dll into one file"&gt;
+    &lt;exec program="${asp_merge.exe}"
+     commandline="${build.dir}  -a -r -copyattrs ${build.dir}\AssemblyInfo.dll -o ${dll.filename}"/&gt;
+  &lt;/target&gt;<br/><br/>
+  &lt;target name="post-merge" description="Delete some unused files"&gt;
+    &lt;delete file="${build.dir}\Project.build"/&gt;
+    &lt;delete file="${build.dir}\AssemblyInfo.cs"/&gt;
+    &lt;delete file="${build.dir}\AssemblyInfo.dll"/&gt;<br/><br/>
+    &lt;!-- Open the target directory --&gt;
+    &lt;exec program="explorer" commandline="${build.dir}" failonerror="false"/&gt;
+  &lt;/target&gt;<br/><br/>
+  &lt;target name="precompile-web" description="Precompile page files if necessary"&gt;
+    &lt;exec program="${aspnet_compiler.exe}" commandline='-v ${Solution} "${build.dir}"' /&gt;
+  &lt;/target&gt;
+&lt;/project&gt;</pre>
+<br/>
+这是一个 xml 文件，可以在 Visual Studio 中用 XML Editor 来编辑它。几点说明：<br/><br/>
+1. 其中指定最终生成的动态库的文件名，以及动态库的版本信息。用临时的 AssemblyInfo.cs 及编译的 AssemblyInfo.dll 来设置版本信息的。<br />
+2. 构建目录要与前面方案文件中的 Debug.AspNetCompiler.PhysicalPath/Release.AspNetCompiler.PhysicalPath 一样，都是 d:\target<br />
+3. 最后构建完成后，为发布方便会自动用资源管理器打开构建目录的窗口。<br/><br/>
+你可以更深入的探究 NAnt 来自动完成单元测试、发布、或打包，进行 IIS 的操作，发邮件给相关人等操作。<br/><br/>
+<strong>4. 执行构建</strong><br/><br/>
+两种方法<br/><br/>
+1) 可以直接在控制台下执行 nant 命令，cd 到 Project.build 目录，执行 nant -buildfile:Project.build，或者 nant.bat Project.build。<br/><br/>
+2) 在 Visual Stuio 中，右键点击 Project.build，打开 Open With 窗口，Add..，选上 NAnt.bat，并 Set As Default。这样以后每次构建只要双击那个 Project.build 即可完成。<br/><br/>
+对于 NAnt 结合 MSBuild 的使用还可以进一步发掘，在 NAnt 的 bin\extensions\common\2.0\ 目录中有个 NAnt.MSBuild.dll 文件，应该可以此来简化上面的构建文件。<br/><br/>
+参考：1. <a href="http://msdn.microsoft.com/zh-cn/library/bb397866(VS.90).aspx" target="_blank" rel="noopener">ASP.NET 合并工具 (Aspnet_merge.exe)<br />
+</a> 2. <a href="http://msdn.microsoft.com/en-us/library/aa479044.aspx" target="_blank" rel="noopener">Managing ASP.NET Precompiled Output for Deployment Using the aspnet_merge.exe Command</a><br />
+3. <a href="http://chenglong01.blog.sohu.com/124044452.html" target="_blank" rel="noopener">NAnt与MSBuild使用(一)</a><br />
+4. <a href="http://nant.sourceforge.net/release/0.85/help/tasks/index.html" target="_blank" rel="noopener">NAnt Task Reference</a><br/><br/>
+&nbsp;

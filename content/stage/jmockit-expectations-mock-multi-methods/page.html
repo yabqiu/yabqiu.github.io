@@ -1,0 +1,86 @@
+---
+title: JMockit 一个 Expectations 中 Mock 多个方法
+url: /jmockit-expectations-mock-multi-methods/
+date: 2014-02-03T01:49:51-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Unit Test
+  - JUnit
+  - jMockit
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6186 
+wpStatus: publish
+views: 3666
+lastmod: 2021-05-05T15:52:03-05:00
+---
+
+从 JMockit 系列的开篇 <a title="JMockit 之 Expectations" href="http://unmi.cc/jmockit-with-expectations/" target="_blank" rel="noopener">JMockit 之 Expectations</a> 中了解到了一个最基本的 Mock 的写法，这里记录下在一个 Expectations 中如何同时 Mock 多个方法。基本框架是这样的：</p>
+<br/>
+<blockquote>
+        new Expectations(MyService.class, ExternalService.class) {<br />
+            {<br />
+                MyService.prefix("Unmi");<br />
+                result = "Welcome to website: ";<br />
+                <br />
+                ExternalService.suffix("Unmi");<br />
+                result = "http://unmi.cc";<br />
+            }<br />
+        };
+</blockquote>
+<br/>
+Java 语法告诉我们 new Expectations(){{......}} 省略号处的代码会在 Expectations 匿名类实例初始化时被调用，那么其中对 result 的赋值便是新创建的 Expectations 匿名类实例的 result 的属性值，那两次的 result 赋值难道不是以最后一个为准吗，有点文章了。先来跑个例子，见识一下现象，由三个类组成，分别是：<!--more--><br/><br/>
+1. MyService.java<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+public class MyService {
+    
+    public static String fetchData(String name){
+        return prefix(name) + ExternalService.suffix(name);
+    }
+    
+    public static String prefix(String name){
+        throw new RuntimeException("Not implemented yet!");
+    }
+}
+</pre>
+<br/>
+2. ExternalService.java<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+public class ExternalService {<br/><br/>
+    public static String suffix(String name) {
+        throw new RuntimeException("Not implemented yet!");
+    }
+}
+</pre>
+<br/>
+3. MyServiceTest.java<br/><br/>
+<pre class="lang:default decode:true ">package cc.unmi;<br/><br/>
+import mockit.Expectations;<br/><br/>
+import org.junit.Assert;
+import org.junit.Test;<br/><br/>
+public class MyServiceTest {<br/><br/>
+    @Test
+    public void testFetchData() {<br/><br/>
+        new Expectations(MyService.class, ExternalService.class) {
+            {
+                MyService.prefix("Unmi");
+                result = "Welcome to website: ";
+                
+                ExternalService.suffix("Unmi");
+                result = "http://unmi.cc";
+            }
+        };<br/><br/>
+        String actual = MyService.fetchData("Unmi");
+        Assert.assertEquals("Welcome to website: http://unmi.cc", actual);
+    }
+}
+</pre>
+<br/>
+MyService.fetchData("Unmi") 的返回有两部分组成，MyService.prefix() 和 ExternalService.suffix()。首先告知上面的测试是成功的，说明那两个方法都被有效 Mock 掉了，他们的结果分别是被两个 result 赋值代表了。new Expectations(){{......}} 中的代码我们也无法从编译出的 MyServiceTest$ 找到痕迹，这就是 java.lang.instrument 的神通广大之处，一切尽在运行中，若要穷究底里，就得翻阅 JMockit 的源码了。

@@ -1,0 +1,240 @@
+---
+title: 归并排序算法解析
+url: /the-last-basic-merge-sorting/
+date: 2020-05-18T14:05:03-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2020/04/algorithm-icon.png"
+categories:
+  - Algorithm
+tags: 
+  - Sort
+  - Algorithm
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10248 
+wpStatus: publish
+views: 514
+lastmod: 2020-05-18T14:15:15-05:00
+---
+
+对于基本的排序算法，前面介绍了冒泡，选择，插入和希尔(增强版本的插入), 还有快速排序，现在还剩下最后一种基本的排序算法，那就是归并排序。归并排序像快速排序一样采用递归算法对列表进行分而治之，每次平均一分为二，分到只有一个元素为止。如果列表为空或只有一个元素时，那么从定义上来说它就是有序的; 当然归并排序的拆分最终不会有空列表的情况。拆分成一个个元素后再往回归并，归并是指将两个较小的有序列表归并为一个有序列表的过程。比如说两个单元素列表归并为两个元素的有序列表，两个双元素的列表归并为四个元素的有充列表，不断往上进行，最后形成一个有序的完整列表。</p>
+<br/>
+从维基百科的词条 <a href="https://en.wikipedia.org/wiki/Merge_sort">Merge sort</a> 找到下图，很深刻的描绘了归并排序的完整过程，红色箭头拆分，绿色箭头归并<!--more--><br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/05/merge-sorting.png"><img class="aligncenter wp-image-10249" src="https://yanbin.blog/wp-content/uploads/2020/05/merge-sorting-800x770.png" alt="" width="500" height="481" /></a><br/><br/>
+如果根据以上的原理开始自己来写整个，用递归来拆分比较简单，对两个子列表归并时也有个排序过程，这其中会有个什么排序方式呢？<br/><br/>
+<pre class="lang:python decode:true">def merge_sort(items):
+    if len(items) &gt; 1:
+        middle = len(items) // 2
+        left_half = items[:middle]
+        right_half = items[middle:]<br/><br/>
+        merge_sort(left_half)
+        merge_sort(right_half)
+        # ------------------- 拆分工作已完成<br/><br/>
+        # ------------------- 以下是归并的过程
+        left_index = right_index = items_index = 0<br/><br/>
+        # 左右是两个有序列表，只要同步去找两列表中最小的值往原 items 列表中加
+        while left_index &lt; len(left_half) and right_index &lt; len(right_half):
+            if left_half[left_index] &lt; right_half[right_index]:
+                items[items_index] = left_half[left_index]
+                left_index += 1
+            else:
+                items[items_index] = right_half[right_index]
+                right_index += 1
+            items_index += 1<br/><br/>
+        if left_index &lt; len(left_half):  # 左列表中剩余的元素加回到原 items 列表
+            items[items_index:] = left_half[left_index:]<br/><br/>
+        if right_index &lt; len(right_half): # 右列表中剩余的元素加回到原 items 列表
+            items[items_index:] = right_half[right_index:]<br/><br/>
+
+array = [38, 27, 43, 3, 9, 82, 10]
+merge_sort(array)
+print(array)</pre>
+<br/>
+该代码执行的效果与上图略有不同，因为 Python 的 <code>//</code> 操作是向下取整除法，如果要达成与图中一样的拆分效果的话，取 <code>middle</code> 索引时就必须用<br/><br/>
+<pre class="lang:default decode:true">import math
+middle = math.ceil(len(items) / 2)</pre>
+<br/>
+另外把左半或右半部分剩余元素除加到原列表时的代码也可以写成如下<br/><br/>
+<pre class="lang:default decode:true ">while left_index &lt; len(left_half):
+    items[items_index] = left_half[left_index]
+    left_index += 1
+    items_index += 1<br/><br/>
+while right_index &lt; len(right_half):
+    items[items_index] = right_half[right_index]
+    right_index += 1
+    items_index += 1</pre>
+<br/>
+现在来看一下归并排序的时间复杂度，对半拆分时是 O(log n)，归并是拆分出来的每个列表要遍历一次，所以归并排序整体的时间复杂度是 O(n log n)。空间方面我们在切片时使用了额外的空间，如果每次用索引范围来标记拆分与合并可以节省不必要的空间，即 In-Place。<br/><br/>
+参考一个更能节省空间的 Python 归并排序写法，来自 <a href="https://www.geeksforgeeks.org/merge-sort/">GeeksforGeeks 的 Merge Sort</a><br/><br/>
+<pre class="lang:default decode:true ">def mergeSort(a): 
+    if len(a) &gt; 1: 
+        mid = len(a) // 2
+        L = a[:mid] 
+        R = a[mid:] 
+        mergeSort(L) 
+        mergeSort(R) 
+          
+        a.clear() 
+        while len(L) &gt; 0 and len(R) &lt; 0: 
+            if L[0] &lt;= R[0]: 
+                a.append(L[0]) 
+                L.pop(0) 
+            else: 
+                a.append(R[0]) 
+                R.pop(0) 
+  
+        for i in L: 
+            a.append(i) 
+        for i in R: 
+            a.append(i) 
+  </pre>
+<br/>
+采用 append, pop 操作免去了记忆三个索引的麻烦，只时 pop(0) 时会引起其后所有元素位置的调整，Python 的 List 的  pop(0) 是 O(n) 操作，如果是一个链表则是 O(1)<br/><br/>
+<h3>与插入，希尔排序的速度对比</h3><br/><br/>
+比较代码如下：<br/><br/>
+<pre class="lang:default decode:true ">def insertion_sort(alist):
+    for index in range(1, len(alist)):
+        current_value = alist[index]
+        position = index<br/><br/>
+        while position &gt; 0 and alist[position - 1] &gt; current_value:
+            alist[position] = alist[position - 1]
+            position = position - 1<br/><br/>
+        alist[position] = current_value<br/><br/>
+
+def shell_sort(items):
+    length = len(items)
+    gap = 41
+    while gap &gt; 0:
+        for group_start in range(0, gap):<br/><br/>
+            for index in range(group_start + gap, length, gap):
+                position = index
+                current_value = items[index]
+                while position &gt; group_start and items[position - gap] &gt; current_value:
+                    items[position] = items[position - gap]
+                    position -= gap
+                items[position] = current_value<br/><br/>
+        gap -= 1<br/><br/>
+
+def merge_sort(items):
+    if len(items) &gt; 1:
+        middle = len(items) // 2
+        left_half = items[:middle]
+        right_half = items[middle:]<br/><br/>
+        merge_sort(left_half)
+        merge_sort(right_half)<br/><br/>
+        left_index = right_index = items_index = 0<br/><br/>
+        while left_index &lt; len(left_half) and right_index &lt; len(right_half):
+            if left_half[left_index] &lt; right_half[right_index]:
+                items[items_index] = left_half[left_index]
+                left_index += 1
+            else:
+                items[items_index] = right_half[right_index]
+                right_index += 1
+            items_index += 1<br/><br/>
+        if left_index &lt; len(left_half):
+            items[items_index:] = left_half[left_index:]<br/><br/>
+        if right_index &lt; len(right_half):
+            items[items_index:] = right_half[right_index:]<br/><br/>
+
+def quick_sort(array):
+    if len(array) &lt; 2:
+        return array<br/><br/>
+    index = len(array) // 2
+    pivot = array[index]
+    left = []
+    right = []
+    for item in (array[:index] + array[index + 1:]):
+        if item &lt;= pivot:
+            left.append(item)
+        else:
+            right.append(item)<br/><br/>
+    return quick_sort(left) + [pivot] + quick_sort(right)<br/><br/>
+
+from timeit import Timer
+import random<br/><br/>
+t1 = Timer('insertion_sort(alist1)', 'from __main__ import insertion_sort', globals=globals())
+t2 = Timer('shell_sort(alist2)', 'from __main__ import shell_sort', globals=globals())
+t3 = Timer('merge_sort(alist3)', 'from __main__ import merge_sort', globals=globals())
+t4 = Timer('quick_sort(alist4)', 'from __main__ import quick_sort', globals=globals())<br/><br/>
+length = 10000
+times = 1
+alist = list(range(length))
+alist1 = list.copy(alist)
+alist2 = list.copy(alist)
+alist3 = list.copy(alist)
+alist4 = list.copy(alist)
+print(t1.timeit(number=times), t2.timeit(number=times), t3.timeit(number=times), t4.timeit(number=times))<br/><br/>
+alist = random.sample(list(range(length)), length)
+alist1 = list.copy(alist)
+alist2 = list.copy(alist)
+alist3 = list.copy(alist)
+alist4 = list.copy(alist)
+print(t1.timeit(number=times), t2.timeit(number=times), t3.timeit(number=times), t4.timeit(number=times))
+</pre>
+<br/>
+结果<br/><br/>
+<table style="border-collapse: collapse; width: 100%; height: 120px;">
+<tbody>
+<tr style="height: 24px;">
+<td style="width: 14.2857%; height: 24px;"><strong>排序耗时(秒)</strong></td>
+<td style="width: 14.2857%; height: 24px;"><strong>有序列表(1K)</strong></td>
+<td style="width: 14.2857%; height: 24px;"><strong>有序列表(10K)</strong></td>
+<td style="width: 14.2857%; height: 24px;"><strong>有序列表(100K）</strong></td>
+<td style="width: 14.2857%; height: 24px;"><strong>无序列表(1K)</strong></td>
+<td style="width: 14.2857%; height: 24px;"><strong>无序列表(10K)</strong></td>
+<td style="width: 14.2857%; height: 24px;"><strong>无序列表(100K)</strong></td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 14.2857%; height: 24px;">插入排序</td>
+<td style="width: 14.2857%; height: 24px;">0.000178472</td>
+<td style="width: 14.2857%; height: 24px;">0.002385171</td>
+<td style="width: 14.2857%; height: 24px;">0.023859703</td>
+<td style="width: 14.2857%; height: 24px;">0.05322551</td>
+<td style="width: 14.2857%; height: 24px;">5.83567684</td>
+<td style="width: 14.2857%; height: 24px;">590.22879396</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 14.2857%; height: 24px;">希尔排序</td>
+<td style="width: 14.2857%; height: 24px;">0.00668545</td>
+<td style="width: 14.2857%; height: 24px;">0.067583564</td>
+<td style="width: 14.2857%; height: 24px;">1.062383998</td>
+<td style="width: 14.2857%; height: 24px;">0.00893686</td>
+<td style="width: 14.2857%; height: 24px;">0.260694217</td>
+<td style="width: 14.2857%; height: 24px;">16.79080933</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 14.2857%; height: 24px;"><strong>归并排序</strong></td>
+<td style="width: 14.2857%; height: 24px;"><strong>0.002503669</strong></td>
+<td style="width: 14.2857%; height: 24px;"><strong>0.03103195</strong></td>
+<td style="width: 14.2857%; height: 24px;"><strong>0.392614932</strong></td>
+<td style="width: 14.2857%; height: 24px;"><strong>0.003419672</strong></td>
+<td style="width: 14.2857%; height: 24px;"><strong>0.048290216</strong></td>
+<td style="width: 14.2857%; height: 24px;"><strong>0.737126917</strong></td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 14.2857%; height: 24px;">快速排序</td>
+<td style="width: 14.2857%; height: 24px;">0.00121311</td>
+<td style="width: 14.2857%; height: 24px;">0.014746089</td>
+<td style="width: 14.2857%; height: 24px;">0.232392676</td>
+<td style="width: 14.2857%; height: 24px;">0.001602581</td>
+<td style="width: 14.2857%; height: 24px;">0.019787454</td>
+<td style="width: 14.2857%; height: 24px;">0.331404756</td>
+</tr>
+</tbody>
+</table>
+<br/>
+归并排序在整体表现上还是很不错，它同快速排序都是一样的 O(n log n) 时间复杂度，所以还是有一定资格拿它与快速排序相比较的。从某种意义上讲快速排序是对归并排序的改进<br/><br/>
+<ol>
+    <li>归并排序是每次对半拆分，快速排序选定基准值进行拆分</li>
+    <li>归并排序拆分时不用与基准值的比较，拆分效率高于快速排序</li>
+    <li>它们都是要拆分到只剩下单个元素的列表</li>
+    <li>归并排序在归并时合并子列表麻烦些，快速排序合并子列表直接串起来 -- 归并排序效率差在这里</li>
+    <li>归并排序归并是一次遍历，快速排序在拆分时要一次遍历，所以它们的复杂度都是 O(n log n)</li>
+</ol>
+<br/>
+虽然它先要傻傻的把整个列表拆成全是单元素的列表，但归并是处理的都是有序列表，这可省了不少的时间。所以归并排序不在于怎么拆分，关键在于归并的过程上的高效，所以才叫做归并排序。由于它采用折半拆分，也就不能容易造成调用栈溢出的情况，因为 32 的栈深度可以处理 2<sup>32</sup> = 4294967296 个元素，Python 默认的栈深度 sys.getrecursionlimit() 是 1000。

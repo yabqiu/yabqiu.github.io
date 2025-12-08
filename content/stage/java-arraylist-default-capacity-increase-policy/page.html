@@ -1,0 +1,299 @@
+---
+title: Java ArrayList  默认容量及增长策略
+url: /java-arraylist-default-capacity-increase-policy/
+date: 2025-05-06T00:32:44-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - ArrayList
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14139 
+wpStatus: publish
+views: 84
+lastmod: 2025-05-21T15:09:39-05:00
+---
+
+早先对 Java ArrayList 的扩容理解是在 new ArrayList() 时会默认建立一个内部容量为 16(这个数值还是错的，往后看) 大小的数组，然而插入数据容量不足时会扩容为原来的 1.5 倍，并用 System.arraycopy()  移动原来的数组到新的大数组中，所以为了频繁的内部扩容操作，在已知 ArrayList 将来大小的情况下，应该在创建 ArrayList 时指定大小，如 new ArrayList(1000)。那么是否指定初始容量对性能会有多大的影响仍缺乏感性的认识。</p>
+<br/>
+本文通过具体的测试主要掌握以下知识<br/><br/>
+<ol>
+    <li>new ArrayList() 默认容量大小(JDK 8 以前是 10, JDK 8 及以后为 0)</li>
+    <li>ArrayList 何时进行扩容，以及每次扩容多少</li>
+    <li>new ArrayList() 时是否指定初始容量值的性能对比</li>
+    <li>除了 ArrayList 自动扩容外，它会不会自动缩容呢？</li>
+</ol>
+<br/>
+<h3>new ArrayList() 的默认容量多少及增容策略</h3><br/><br/>
+就像 JDK 8 的 HashMap 引入了红黑树改善性，随着 JDK 版本的升级 ArrayList 的内部实现也在演进。回到 JDK 7, 当我们不指定容量 new ArrayList() 创建一个对象时的实现是<!--more--><br/><br/>
+<a href="https://github.com/openjdk-mirror/jdk7u-jdk/blob/master/src/share/classes/java/util/ArrayList.java">JDK 7 ArrayList</a><br/><br/>
+<pre class="lang:default decode:true">public ArrayList(int initialCapacity) {
+    super();
+    if (initialCapacity &lt; 0)
+        throw new IllegalArgumentException("Illegal Capacity: "+
+                                               initialCapacity);
+    this.elementData = new Object[initialCapacity];
+}<br/><br/>
+public ArrayList() {
+    this(10);
+}</pre>
+<br/>
+添加元素时，检查是否能容下新增的元素，扩容的关键代码如下<br/><br/>
+<pre class="lang:default decode:true">public boolean add(E e) {
+    ensureCapacityInternal(size + 1);  // Increments modCount!!
+    ...
+}<br/><br/>
+private void ensureCapacityInternal(int minCapacity) {
+    modCount++;
+    // overflow-conscious code
+    if (minCapacity - elementData.length &gt; 0)
+        grow(minCapacity);
+}<br/><br/>
+private void grow(int minCapacity) {
+    ...
+    int newCapacity = oldCapacity + (oldCapacity &gt;&gt; 1);
+    if (newCapacity - minCapacity &lt; 0)
+        newCapacity = minCapacity;
+    ...
+    elementData = Arrays.copyOf(elementData, newCapacity);
+}</pre>
+<br/>
+即 ArrayList 只在容量不足时增加原容量的约 1.5 倍，移位操作与 oldCapacity /2 一样的效果<br/><br/>
+<blockquote>
+int newCapacity = oldCapacity + oldCapacity / 2
+</blockquote>
+<br/>
+看完这段 JDK 7  ArrayList 的源代码发现没指定大小时默认容量为 10，而非以前理解的 16，在 JDK 7 中默认会确确实实的创建一个 new Object[16] 的空间。<br/><br/>
+注意，在调用 ArrayList.addAll(Collection&lt;? extends E&gt; c) 时会调用 ensureCapacityInternal(size + c.size()), 比如当前 ArrayList 的容量是 9, 需调用 addAll() 插入一个大小为 8 的集合，那么按下面的过程扩容<br/><br/>
+<blockquote>
+minCapacity = 9 + 8, 调用 ensureCapacityInternal(17)<br />
+grow(17)  首先按原容量  9 + (9 &gt;&gt; 1) = 9 + 4 = 13<br />
+由于新容量 13 小于要求的最小值 17, 所以这时直接扩容到 17
+</blockquote>
+<br/>
+而在 <a href="https://github.com/bpupadhyaya/openjdk-8/blob/master/jdk/src/share/classes/java/util/ArrayList.java">JDK 8 的 ArrayList</a><br/><br/>
+<pre class="lang:default decode:true">private static final int DEFAULT_CAPACITY = 10;
+private static final Object[] EMPTY_ELEMENTDATA = {};<br/><br/>
+public ArrayList() {
+    super();
+    this.elementData = EMPTY_ELEMENTDATA;
+}</pre>
+<br/>
+JDK8 在 new ArrayList() 时并不分配空间，但在添加第一个或第一批元素时<br/><br/>
+<pre class="lang:default decode:true">public boolean add(E e) {
+    ensureCapacityInternal(size + 1);  // Increments modCount!!
+    ...
+}<br/><br/>
+public boolean addAll(Collection&lt;? extends E&gt; c) {
+    ...
+    ensureCapacityInternal(size + numNew);  // Increments modCount
+}<br/><br/>
+private void ensureCapacityInternal(int minCapacity) {
+    if (elementData == EMPTY_ELEMENTDATA) {
+        minCapacity = Math.max(DEFAULT_CAPACITY, minCapacity);
+    }<br/><br/>
+    ensureExplicitCapacity(minCapacity);
+}</pre>
+<br/>
+也就是在第一次要使用 ArrayList 时，如果看到没分配空间的话直接调整大 DEFAULT_CAPACITY = 10 的大小，然后按 JDK 7 的逻辑从 oldCapacity = 10 为基础进行扩容。<br/><br/>
+JDK 8 相比与 JDK 7 的 new ArrayList() 唯一的区别就是在未使用时不分配空间，待到开始插入记录后就没什么差别了，可以说是 JDK 8 内部的数组 elementData 是懒初始化。<br/><br/>
+一直到后面的 JDK 9 到目前最新 JDK 24 实现和 JDK 8 的行为差不多。<br/><br/>
+<h3>不指定 ArrayList 初始容量对性能的影响</h3><br/><br/>
+接着我们测试下是否预先指定初始容量在插入大量记录时的性能对比，当然在处理小列表(如百千条记录)时性能差异不大，对于吹毛求疵的程序员来说在已知所需容量的情况下最好是指定 ArrayList 初始化容量，甚至在某些时候可以预估一个初始值。<br/><br/>
+不然可能我们只需保存 1001 条记录的 ArrayList, 在插入第 1001 记录时直接扩容到 1000 + 1000 &gt;&gt; 1 = 1500，而造成了额外的 new Object[499] 的内存空间的浪费，记录数越多浪费的空间也越多，接近现有 ArrayList 大小的一半。<br/><br/>
+也许你会认为无所谓，如果浪费 499, 无外乎就是 499 * 4(一个引用的大小) = 1996 个字节，不到 2K 空间，那如果是 4999999 * 4 呢，那就是约 2M, 对于廉价的机器内存来说都不是个事，关键还是洁癖。<br/><br/>
+还是回到性能对比，我们写了下面的测试代码<br/><br/>
+<pre class="lang:default decode:true">import java.awt.*;
+import java.util.ArrayList;
+import java.util.List;<br/><br/>
+public class Test {
+    public static void main(String[] args) {
+        boolean withInitialCapacity = args[1].equals("true");
+        int count = Integer.parseInt(args[0]);
+        var object = new AWTException("test");
+        long start = System.currentTimeMillis();
+        List&lt;AWTException&gt; list = withInitialCapacity ? new ArrayList&lt;&gt;(count) : new ArrayList&lt;&gt;();
+        for (int i = 0; i &lt; count; i++) {
+            list.add(object);
+        }
+        System.out.println(System.currentTimeMillis() - start);
+    }
+}</pre>
+<br/>
+使用 AWTException 的目的是找一个 JDK 已有的类，用以在条伯断点中识别出是在对当前 ArrayList 进行操作。输入参数分别为元素的个数，以及是否在 new ArrayList() 时指定初始化容量，在 JDK 21, CPU 是 Apple M3 Pro, 36 G 内存下测试<br/><br/>
+在 count = 10000 无论 withInitialCapacity true 还是 false, 基本都在 1 毫秒以内，<br/><br/>
+<blockquote>
+for ((i = 0; i &lt; 5; i++)); do<br />
+java Test 1000 false<br />
+done<br />
+0<br />
+0<br />
+0<br />
+0<br />
+0<br />
+classes for ((i = 0; i &lt; 5; i++)); do<br />
+java Test 1000 true<br />
+done<br />
+0<br />
+0<br />
+0<br />
+0<br />
+0
+</blockquote>
+<br/>
+下面用表格列出，不能参数时的运行时长对比<br/><br/>
+<table style="border-collapse: collapse; width: 80.9553%;">
+<tbody>
+<tr>
+<td style="width: 18.7827%;">count</td>
+<td style="width: 21.9923%;">withIntialCapacity=false</td>
+<td style="width: 23.0796%;">withIntialCapacity=True</td>
+<td style="width: 56.157%;">节约时间百分比</td>
+</tr>
+<tr>
+<td style="width: 18.7827%;">10,000</td>
+<td style="width: 21.9923%;">0</td>
+<td style="width: 23.0796%;">0</td>
+<td style="width: 56.157%;">0</td>
+</tr>
+<tr>
+<td style="width: 18.7827%;">100,000</td>
+<td style="width: 21.9923%;">2</td>
+<td style="width: 23.0796%;">1.6</td>
+<td style="width: 56.157%;">20%</td>
+</tr>
+<tr>
+<td style="width: 18.7827%;">1,000,000</td>
+<td style="width: 21.9923%;">5</td>
+<td style="width: 23.0796%;">4.2</td>
+<td style="width: 56.157%;">16%</td>
+</tr>
+<tr>
+<td style="width: 18.7827%;">10,000,000</td>
+<td style="width: 21.9923%;">36.6</td>
+<td style="width: 23.0796%;">23.8</td>
+<td style="width: 56.157%;">35%</td>
+</tr>
+<tr>
+<td style="width: 18.7827%;">100,000,000</td>
+<td style="width: 21.9923%;">1006.6</td>
+<td style="width: 23.0796%;">222.2</td>
+<td style="width: 56.157%;">78%</td>
+</tr>
+<tr>
+<td style="width: 18.7827%;">1,000,000,000</td>
+<td style="width: 21.9923%;">15111</td>
+<td style="width: 23.0796%;">2264.4</td>
+<td style="width: 56.157%;">85%</td>
+</tr>
+</tbody>
+</table>
+<br/>
+对于小 ArrayList(如小于 10M 的当量), 或是应用中操作的 ArrayList 不多的情况下，new ArrayList() 不指定初始容量影响似乎也不大。但处理大数据时，比如果超过 10M 记录时应考虑给定一个初始容量。如果不知道确切容量的情况下，给个估计值对性能也是有所改善的，例如估计最少有 10M 条记录，先给定 5M 的初始空间也减少了一步步 1.5 倍往上涨到 5M 空间的大量的操作。<br/><br/>
+从是否指定 new ArrayList() 的初始容量可知时间基本就是消耗在 ArrayList 扩容的过程，我们可以能过在 IntelliJ IDEA 中给 ArrayList 的 grow(int minCapacity) 加上一个条件断点<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/05/intellij-idea-arraylist-grow.png"><img class="aligncenter wp-image-14158" src="https://yanbin.blog/wp-content/uploads/2025/05/intellij-idea-arraylist-grow-800x405.png" alt="" width="850" height="430" /></a><br/><br/>
+条件是<br/><br/>
+<blockquote>
+elementData.length &gt; 0 &amp;&amp; elementData[0].getClass().getSimpleName().equals("AWTException")
+</blockquote>
+<br/>
+并且在进到该断点时打印出扩容前后的值<br/><br/>
+<blockquote>
+"resize from old capacity " + oldCapacity + " to new capacity " + newCapacity
+</blockquote>
+<br/>
+我们给上面的 Test 传递参数<br/><br/>
+<blockquote>
+10000 false
+</blockquote>
+<br/>
+时的断点输出的扩容过程为<br/><br/>
+<blockquote>
+resize from old capacity 10 to new capacity 15<br />
+resize from old capacity 15 to new capacity 22<br />
+resize from old capacity 22 to new capacity 33<br />
+resize from old capacity 33 to new capacity 49<br />
+resize from old capacity 49 to new capacity 73<br />
+resize from old capacity 73 to new capacity 109<br />
+resize from old capacity 109 to new capacity 163<br />
+resize from old capacity 163 to new capacity 244<br />
+resize from old capacity 244 to new capacity 366<br />
+resize from old capacity 366 to new capacity 549<br />
+resize from old capacity 549 to new capacity 823<br />
+resize from old capacity 823 to new capacity 1234<br />
+resize from old capacity 1234 to new capacity 1851<br />
+resize from old capacity 1851 to new capacity 2776<br />
+resize from old capacity 2776 to new capacity 4164<br />
+resize from old capacity 4164 to new capacity 6246<br />
+resize from old capacity 6246 to new capacity 9369<br />
+resize from old capacity 9369 to new capacity 14053
+</blockquote>
+<br/>
+可知我们插入第一个元素时容量为 0 变为 10，然后就是约 1.5 倍(原容量除以 2 取整)的增长, 总共扩充了 18 次, 内容数组被拷贝了 17 次，这就是耗时所在。最后容量是 14053, 实际元素个数是 10000, 4053 是浪费的空间。<br/><br/>
+如果参数为<br/><br/>
+<blockquote>
+10000 false
+</blockquote>
+<br/>
+根本就不会进入该断点，因为整个过程无需扩容。<br/><br/>
+<h3>对 Stream.collect(Collectors.toList()) 或 Stream.toList() 改进</h3><br/><br/>
+同时，Stream 转换成 List 在 JDK 16 之前是用 Stream.collect(Collectors.toList()), 而在 JDK 16 及之后有了新的方法 Stream.toList()。这不是简单的方法替换，而且性能是有所差异的。<br/><br/>
+先来看 Stream.collect(Collectors.toList()) 中的 Collectors.toList() 实现<br/><br/>
+<pre class="lang:default decode:true ">public static &lt;T&gt; Collector&lt;T, ?, List&lt;T&gt;&gt; toList() {
+    return new CollectorImpl&lt;&gt;(ArrayList::new, List::add,
+        (left, right) -&gt; { left.addAll(right); return left; }, CH_ID);
+}</pre>
+<br/>
+显然它在把  Stream 转换为 ArrayList 时是先创建一个默认初始容量的 ArrayList, 然后一个个添加元素(并发操作则用 addAll() 方法合并)，假如 Stream 中元素非常之多，期间将会有大量的 ArrayList 扩容操作，性能势必受影响。因此在 JDK 16 之前如果我们已知 Stream 大小的情况下，可以实现一个新的 Collector，重要 Stream.collect(Collectors.toList()) 的过程将是<br/><br/>
+<pre class="lang:default decode:true">youStream.collect(Collector.of(() -&gt; new ArrayList&lt;&gt;(collection.size()),
+    List::add, (left, right) -&gt; { lift.addAll(right); return l1; } ));</pre>
+<br/>
+从 JDK 16 开始的话可以直接调用  Stream.toList(), 这的实现代码是<br/><br/>
+<pre class="lang:default decode:true">default List&lt;T&gt; toList() {
+    return (List&lt;T&gt;) Collections.unmodifiableList(new ArrayList&lt;&gt;(Arrays.asList(this.toArray())));
+}</pre>
+<br/>
+只不过要留意 toList() 生成的是一个不可修改的 List, 而非 ArrayList.<br/><br/>
+<h3>ArrayList 是否需要主动缩容</h3><br/><br/>
+ArrayList 在删除元素后，或者在有大量空闲区域时是否会自动缩容呢？答案是否，但可以 trimToSize() 来把内部数组缩成实际元素个数的数组。<br/><br/>
+<pre class="lang:default decode:true ">public void trimToSize() {
+    modCount++;
+    if (size &lt; elementData.length) {
+        elementData = (size == 0)
+          ? EMPTY_ELEMENTDATA
+          : Arrays.copyOf(elementData, size);
+    }
+}</pre>
+<br/>
+内部数组收缩成实际所需大小，如果一个元素都没有的又变回成了 EMPTY_ELEMENTDATA.<br/><br/>
+检视 ArrayList 的 removeXxx 相关的方法，操作基本就是按照索引从内部数组中删除一个元素，然后把其后的所有元素前移，并且改变成员变量 <code>size</code> 的大小，这样再次用 list.size() 就是删除元素后的大小。<br/><br/>
+来看一下 ArrayList.clear() 的操作<br/><br/>
+<pre class="lang:default decode:true">public void clear() {
+    modCount++;
+    final Object[] es = elementData;
+    for (int to = size, i = size = 0; i &lt; to; i++)
+        es[i] = null;
+}</pre>
+<br/>
+初一看好像只是把 elementData 中的所有元素置为 <code>null</code>, 那么 <code>list.size()</code> 会跟着变成 0 吗？答案就是 for 语句中的<br/><br/>
+<blockquote>
+i = size = 0
+</blockquote>
+<br/>
+不管是 removeXxx() 还是 clear() 操作都不会对内部数组进行缩容，一般也是认为在删除了相关联的元素后，ArrayList 中的一个 Object 引用占用空间不大，又不影响对 ArrayList 元素的访问性能，也就很少看到有人实际会去调用 ArrayList 的 trimToSize() 方法。频繁调用 trimToSize() 和频繁被动扩容一样是影响性能的，除非自已清楚某个  ArrayList 从先前的 20M 变成了只有几个元素，调用 trimToSize() 能节省一些空间。其实这种情形还不如由扩容形成的大  ArrayList 中取出所剩元素生成一个新的 ArrayList 实例，直接释放掉原 ArrayList 本身。<br/><br/>
+最后，我们在前面阅读 ArrayList 的代码中注意到似乎每个操作都有 <code>modCount++</code>, 它是什么用的呢？ChatGPT，原来它是在迭代 ArrayList 时用来检查列表结构是否改变了，比如我们试图在迭代的同时删除元素就会触发 <code>ConcurrentModificationException</code> 异常就是通过 <code>modCount</code> 值而进行阻止的，从而不得不先迭代获得所有待删除列表，而后进行删除。<br/><br/>
+<h3>本文总结</h3><br/><br/>
+通过本文的写作，了解到 ArrayList 的默认初始容量是 10 而不是 16，JDK 8 及之后默认为空，但在添加第一个元素时起步为 10，知道默认为 10 而非 16 有什么意义呢？单对性能来说没有什么影响，但 10 就是 10，比如面试时说是 16 就是不对的。<br/><br/>
+ArrayList 调用  add(element) 或 addAll(collection) 时只在发现容量不中容纳新加的一个或 collection.size()  个元素时进行扩容，而不像 HashMap 有一个 factor, 比如容量达到 75% 时就预备扩容。ArrayList 扩容的基本策略是按照原有容量扩展到 1.5 倍取整的值，新容量不足以容纳新增加的元素(即调用 addAll(collection) 时的 oldCapacity+collection.size, add(element) 添加单个元素时不存在该问题), 则直接以 oldCapacity+collection.size 的值作为新的容量。简单说来就是 max(oldCapacity+collection.size, int(oldCapacity*1.5)) 为新容量的值。<br/><br/>
+当对 ArrayList 将要存储多少元素有个明确的数目时，创建 ArrayList 时一定要指定初始化容量，这样避免了不必要的扩容过程(重新申请新的数组空间并进行 System.arraycopy 或 Arrays.copyOf); 同样能避免浪费不必要的内存空间，比如 1001 个元素，可能分配了 1500 元素空间的问题。必要时对容量进行预估，以达到相同的目录 -- 减少扩容操作及节约数组空间。<br/><br/>
+指定 ArrayList 的初始容量可能在 10M 当量的有明显的性能差异，要是一个应用中有许许多多的 ArrayList 实例，考虑到性能的累加效应也务必尽可能的给定初始值。即使是小 ArrayList 实例仍需牢记这一点，比如只要存两个元素的 ArrayList, 为何要 new ArrayList() 创建一个内部为 new Object[10] 的数组空间呢？<br/><br/>
+ArrayList 中改变 ArrayList 结构的操作如 add, remove, clear 等第一行语句都有 modCount++, 这是为防止迭代的同时进行结构的改变，以免产生数据的不一致性，也就是我们常见的 <code>ConcurrentModificationException</code>.<br/><br/>
+主动调用 ArrayList 的 trimToSize() 可以进行 ArrayList 容量收缩，基本上很少见到有人这么做。更常见的做法是基本原来的 ArrayList 中的现有元素创建一个新的 ArrayList 实例，效率上差不多，都是申请新的数组空间然后 Array.copyOf()，表意上更直观。<br/><br/>
+巨型的 Stream 转换为 List 时同样要考虑基间扩容的性能问题，必要时用有初始容量的 Collector, 或用 Stream.toList() 生成 Immutalbe 的 List。  

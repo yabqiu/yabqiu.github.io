@@ -1,0 +1,70 @@
+---
+title: Hibernate3调用存储过程用法
+url: /hibernate3-call-procedure/
+date: 2008-06-23T06:51:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/12/hibernate_log.png"
+categories:
+  - Hibernate
+tags: 
+  - Procedure
+  - Hibernate
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 380 
+wpStatus: publish
+views: 610
+lastmod: 2021-09-02T14:35:57-05:00
+---
+
+直接以一个例子在说明，如DB2中有一个简单存储过程　selectAllUsers</p>
+<br/>
+<pre class="brush:sql">CREATE  procedure selectAllUsers
+DYNAMIC RESULT SETS 1
+BEGIN
+      DECLARE temp_cursor1 CURSOR  WITH RETURN TO CLIENT  FOR
+      SELECT * FROM  test;
+      OPEN temp_cursor1;
+END;</pre>
+<br/>
+映射文件中关于存储过程内容如下<!--more--> <br/><br/>
+<pre class="lang:default decode:true">&lt;hibernate-mapping package="com.unmi.vo"&gt;
+    &lt;class name="Test" table="TEST"&gt;
+　　　　　............
+    &lt;/class&gt; <br/><br/>
+    &lt;sql-query callable="true" name="selectAllUsers"&gt;
+        &lt;return alias="aa" class="Test"&gt;
+            &lt;return-property name="oborqt" column="OBORQT"/&gt;
+            &lt;return-property name="moorqt" column="MOORQT"/&gt;
+            &lt;return-property name="roschn" column="ROSCHN"/&gt;
+            &lt;return-property name="plandate" column="PLANDATE"/&gt;
+        &lt;/return&gt;
+        { ? = call selectAllUsers() }
+    &lt;/sql-query&gt;
+&lt;/hibernate-mapping&gt;</pre>
+<br/>
+{ ? = call selectAllUsers() } 也可以写成{ call selectAllUsers() }，<br/><br/>
+如果有参数就写成 { ? = call selectAllUsers(?,?,?) }<br/><br/>
+代码中对query设置相应位置上的值就OK，如<br/><br/>
+query.setInteger(1,100);<br />
+query.setString(2,"Unmi");<br />
+query.setDate(3,new Date());<br/><br/>
+Java调用关键代码如下 <br/><br/>
+<pre class="brush:java">  Session session = HibernateUtil.currentSession();
+  Query query = session.getNamedQuery("selectAllUsers");
+  List list = query.list();
+  System.out.println(list);</pre>
+<br/>
+要求你的存储过程必须能返回记录集，否则要出错<br />
+如果你的存储过程是完成非查询任务就应该在配置文件用以下三个标签 <br/><br/>
+<pre class="lang:default decode:true ">&lt;sql-insert callable="true"&gt;{call createPerson (?, ?)}&lt;/sql-insert&gt;
+&lt;sql-delete callable="true"&gt;{? = call deletePerson (?)}&lt;/sql-delete&gt;
+&lt;sql-update callable="true"&gt;{? = call updatePerson (?, ?)}&lt;/sql-update&gt;</pre>
+<br/>
+有一点不好的地方就是调用存储过程获取记录集时，不能对Query使用<br />
+setFirstResult(int)和setMaxResults(int)方法来分页

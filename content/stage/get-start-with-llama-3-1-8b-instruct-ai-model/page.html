@@ -1,0 +1,423 @@
+---
+title: 试用 Llama-3.1-8B-Instruct AI 模型
+url: /get-start-with-llama-3-1-8b-instruct-ai-model/
+date: 2024-10-30T15:02:58-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2024/10/ai-logo.png"
+categories:
+  - AI
+tags: 
+  - AI
+  - Llama
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13801 
+wpStatus: publish
+views: 693
+lastmod: 2024-11-07T23:21:54-06:00
+---
+
+IT 从业人员累的一个原因是要紧跟时代步伐，甚至是被拽着赶，更别说福报 996. 从早先 CGI, ASP, PHP, 到 Java, .Net, Java 开发是 Spring, Hibernate, 而后云时代 AWS, Azure, 程序一路奔波在掌握工具的使用。而如今言必提的 AI 模型更是时髦，n B 参数, 量化, 微调, ML, LLM, NLP, AGI, RAG, Token, LoRA 等一众词更让坠入云里雾里。</p>
+<br/>
+去年以机器学习为名买的(游戏机)一直未被正名，机器配置为 CPU i9-13900F + 内存 64G + 显卡 RTX 4090，从进门之后完全处于游戏状态，花了数百小时对《黑神话》进行了几翻测试。<br/><br/>
+现在要好好用它的 GPU 来体验一下 Meta 开源的 AI 模型，切换到操作系统 Ubuntu 20.04,  用 transformers 的方式试了下两个模型，分别是<br/><br/>
+<ol>
+    <li><a href="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct">Llama-3.1-8B-Instruct</a>: 显存使用了 16G，它的老版本的模型是 <a href="https://huggingface.co/meta-llama/Meta-Llama-3-8B-Instruct">Meta-Llama-3-8B-Instruct</a>(支持中文问话，输出是英文)</li>
+    <li><a href="https://huggingface.co/meta-llama/Llama-3.2-11B-Vision-Instruct">Llama-3.2-11B-Vision-Instruct</a>: 显存锋值到了 22.6G(可以分析图片的内容)</li>
+</ol>
+<br/>
+都是使用的 torch_dtype=torch.bfloat16, 对于 24 G 显存的 4090 还用不着主内存来帮忙。如果用 float32 则需更多的显存，对于 Llama-3.2-11B-Vision-Instruct 使用 float32, 则要求助于主内存，将看到<br/><br/>
+<blockquote>
+Some parameters are on the meta device because they were offloaded to the cpu.
+</blockquote>
+<br/>
+反之，对原始模型降低精度，量化成 8 位或 4 位则更节约显卡，这是后话，这里主要记述使用上面的 Llama-3.1-8B-Instruct 模型的过程以及感受它的强大，可比小瞧了这个 8B 的小家伙。所以在手机上可以离线轻松跑一个 1B 的模型。<!--more--><br/><br/>
+首先进到 Hugging Face 的 <a href="https://huggingface.co/meta-llama">meta-llama</a>/<a href="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct">Llama-3.1-8B-Instruct</a> 页面，它提供有 Use with transformers,  Tool use with transoformer, llama3 的使用方式，本文采用第一种方式。<br/><br/>
+<h3>配置 huggingface-cli</h3><br/><br/>
+运行代码后会去下载该模型件，但我们须事先安装后 huggingface-cli 并配置好 token<br/><br/>
+<pre class="lang:default decode:true ">pip install -U "huggingface_hub[cli]"</pre>
+<br/>
+然后就可使用 huggingface-cli 命令了，如果不行请把<br/><br/>
+<pre class="lang:default decode:true ">export PATH="$PATH:$(python3 -m site --user-base)/bin"</pre>
+<br/>
+加到所用 shell 的配置文件中去<br/><br/>
+执行<br/><br/>
+<pre class="lang:default decode:true ">huggingface-cli login</pre>
+<br/>
+到这里 <a href="到这里%20https://huggingface.co/settings/tokens 找到 token">https://huggingface.co/settings/tokens</a> 配置一个 token 并用来 login, 只需做一次即可。<br/><br/>
+以后用 llama.cpp 或 java-llama.cpp 时可用 huggingface-cli 来下载模型。<br/><br/>
+<h3>申请 <a href="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct">Llama-3.1-8B-Instruct </a>的访问权限</h3><br/><br/>
+进到页面 <a href="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct">Llama-3.1-8B-Instruct</a>，点击 "Expand to review and access" 填入信息申请访问权限，正常情况下几分钟后就会被批准，如果超过十分钟未通过审核就需要好好审核下自己了。<br/><br/>
+<h3>创建 Python 虚拟环境</h3><br/><br/>
+本机操作系统是 Ubuntu 20.04, Python 版本为 12, Nvidia RTX 显卡 CUDA 版本是  12.2(运行 nvidia-smi 可看到)。 从模型 Llama-3.1-8B-Instruct 的示例代码中可知需要的基本依赖是 torch 和 transformers, 安装支持 GPU 的 torch 组件<br/><br/>
+<pre class="lang:default decode:true ">python -m venv .venv
+source .venv/bin/activate<br/><br/>
+
+pip install torch
+pip install transformers accelerate</pre>
+<br/>
+在运行后面 test-llama-3-8b.py 脚本时会发现还需要 accelerate 组件，所以上面加上了 accelerate 依赖<br/><br/>
+<blockquote>
+ImportError: Using `low_cpu_mem_usage=True` or a `device_map` requires Accelerate: `pip install 'accelerate&gt;=0.26.0'`
+</blockquote>
+<br/>
+验证 pytorch 是否使用 GPU<br/><br/>
+<pre class="lang:default decode:true">python -c 'import torch; print(torch.cuda.is_available()); print(torch.version.cuda)'
+True
+12.4</pre>
+<br/>
+看到 True 即是，12.4 为当前 torch 支持的 Cuda  版本。<br/><br/>
+相当于安装 torch 时用的命令<br/><br/>
+<pre class="lang:default decode:true">pip install torch --index-url https://download.pytorch.org/whl/cu124</pre>
+<br/>
+pip 找了一个兼容的 torch 版本<br/><br/>
+<h3>创建 test-llama-3-8b.py</h3><br/><br/>
+内容来自 <a href="https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct">Llama-3.1-8B-Instruct</a> 的  Use with transformers 并稍作修改<br/><br/>
+<pre class="lang:default decode:true">import transformers
+import torch<br/><br/>
+model_id = "meta-llama/Llama-3.1-8B-Instruct"<br/><br/>
+pipeline = transformers.pipeline(
+    "text-generation",
+    model=model_id,
+    model_kwargs={"torch_dtype": torch.bfloat16},
+    device_map="auto",
+)<br/><br/>
+messages = [
+    {"role": "system", "content": "Wellcome to Llama model!"},
+    {"role": "user", "content": "USA 5 biggest cities and population?"},
+]<br/><br/>
+outputs = pipeline(
+    messages,
+    max_new_tokens=1024,
+)<br/><br/>
+print(outputs[0]["generated_text"][-1]['content'])
+</pre>
+<br/>
+原代码中 <code>model_id = "meta-llama/Meta-Llama-3.1-8B-Instruct"</code>， 有拼写错误，改为 <code>meta-llama/Llama-3.1-8B-Instruct</code>，提示和问题修改了, 调整了 max_new_tokens 和只输出答案的 'content' 部分。<br/><br/>
+<h3>运行 test-llama-3-8b.py</h3><br/><br/>
+<pre class="lang:default decode:true">python test-llama-3-8b.py</pre>
+<br/>
+然后就陷入了下载模型的等待时间，下载的快慢就看你的网速或者你的电脑是否与 Hugging Face 之间是否多了堵东西。<br/><br/>
+我在本机下载过程不到十分钟，下载完即执行，看这次结果<br/><br/>
+<pre class="lang:default decode:true ">model-00001-of-00004.safetensors: 100%|██████████████████████████████████████████████████████████| 4.98G/4.98G [02:24&lt;00:00, 30.8MB/s]
+model-00002-of-00004.safetensors: 100%|██████████████████████████████████████████████████████████| 5.00G/5.00G [02:45&lt;00:00, 30.3MB/s]
+model-00003-of-00004.safetensors: 100%|██████████████████████████████████████████████████████████| 4.92G/4.92G [02:45&lt;00:00, 29.7MB/s]
+model-00004-of-00004.safetensors: 100%|██████████████████████████████████████████████████████████| 1.17G/1.17G [00:47&lt;00:00, 24.8MB/s]
+Downloading shards: 100%|██████████████████████████████████████████████████████████████████████████████| 4/4 [08:42&lt;00:00, 130.50s/it]
+Loading checkpoint shards: 100%|████████████████████████████████████████████████████████████████████████| 4/4 [00:01&lt;00:00,  2.45it/s]
+generation_config.json: 100%|████████████████████████████████████████████████████████████████████████| 184/184 [00:00&lt;00:00, 1.20MB/s]
+tokenizer_config.json: 100%|█████████████████████████████████████████████████████████████████████| 55.4k/55.4k [00:00&lt;00:00, 2.38MB/s]
+tokenizer.json: 100%|████████████████████████████████████████████████████████████████████████████| 9.09M/9.09M [00:00&lt;00:00, 13.9MB/s]
+special_tokens_map.json: 100%|███████████████████████████████████████████████████████████████████████| 296/296 [00:00&lt;00:00, 2.08MB/s]
+Setting `pad_token_id` to `eos_token_id`:None for open-end generation.
+Based on the available data as of my cut-off knowledge in 2023, the top 5 biggest cities in the United States by population are:<br/><br/>
+1. **New York City, NY**: approximately 8,804,190 people
+New York City is the most populous city in the United States and is located in the state of New York. It is a global hub for finance, culture, and entertainment.<br/><br/>
+2. **Los Angeles, CA**: approximately 3,898,747 people
+Los Angeles is the second-most populous city in the United States and is located in the state of California. It is a major center for the film and television industry, as well as a hub for technology and innovation.<br/><br/>
+3. **Chicago, IL**: approximately 2,693,976 people
+Chicago is the third-most populous city in the United States and is located in the state of Illinois. It is a major hub for finance, commerce, and culture, and is known for its vibrant music and arts scene.<br/><br/>
+4. **Houston, TX**: approximately 2,355,386 people
+Houston is the fourth-most populous city in the United States and is located in the state of Texas. It is a major center for the energy industry and is home to the Johnson Space Center, where NASA's mission control is located.<br/><br/>
+5. **Phoenix, AZ**: approximately 1,708,025 people
+Phoenix is the fifth-most populous city in the United States and is located in the state of Arizona. It is a major hub for the technology and healthcare industries, and is known for its desert landscapes and warm climate.<br/><br/>
+Please note that these numbers are estimates based on data from the United States Census Bureau for 2020, and may have changed slightly since then due to population growth and other factors.</pre>
+<br/>
+第二次执行 python test-llama-3-8b.py<br/><br/>
+<pre class="lang:default decode:true">python test-llama-3-8b.py
+Loading checkpoint shards: 100%|████████████████████████████████████████████████████████████████████████| 4/4 [00:01&lt;00:00,  2.34it/s]
+Setting `pad_token_id` to `eos_token_id`:None for open-end generation.
+Based on the available data, here are the top 5 biggest cities in the USA by population:<br/><br/>
+1. **New York City, NY**: Approximately 8,804,190 people (as of 2020 United States Census)
+2. **Los Angeles, CA**: Approximately 3,898,747 people (as of 2020 United States Census)
+3. **Chicago, IL**: Approximately 2,670,504 people (as of 2020 United States Census)
+4. **Houston, TX**: Approximately 2,355,386 people (as of 2020 United States Census)
+5. **Phoenix, AZ**: Approximately 1,708,025 people (as of 2020 United States Census)<br/><br/>
+Please note that these numbers may have changed slightly since the last census in 2020, but these are the most up-to-date figures available.</pre>
+<br/>
+没有了下载过程， 但每次都有 "Loading checkpoint shards" 过程，生成不同的结果，总的执行时间是 6.7 秒左右<br/><br/>
+<h3>模型文件下载到哪里？</h3><br/><br/>
+在 ~/.cache/huggingface/hub/*<br/><br/>
+<pre class="lang:default decode:true ">du -sh ~/.cache/huggingface/hub/*
+15G /home/yanbin/.cache/huggingface/hub/models--meta-llama--Llama-3.1-8B-Instruct
+20G /home/yanbin/.cache/huggingface/hub/models--meta-llama--Llama-3.2-11B-Vision-Instruct
+15G /home/yanbin/.cache/huggingface/hub/models--meta-llama--Meta-Llama-3-8B-Instruct
+4.0K    /home/yanbin/.cache/huggingface/hub/version.txt</pre>
+<br/>
+具体模型文件在各自的 Snapshot 中<br/><br/>
+<pre class="lang:default decode:true ">ls -Llh ~/.cache/huggingface/hub/models--meta-llama--Llama-3.1-8B-Instruct/snapshots/0e9e39f249a16976918f6564b8830bc894c89659/
+total 15G
+-rw-rw-r-- 1 yanbin yanbin  855 Oct 30 13:10 config.json
+-rw-rw-r-- 1 yanbin yanbin  184 Oct 30 13:23 generation_config.json
+-rw-rw-r-- 1 yanbin yanbin 4.7G Oct 30 13:17 model-00001-of-00004.safetensors
+-rw-rw-r-- 1 yanbin yanbin 4.7G Oct 30 13:20 model-00002-of-00004.safetensors
+-rw-rw-r-- 1 yanbin yanbin 4.6G Oct 30 13:22 model-00003-of-00004.safetensors
+-rw-rw-r-- 1 yanbin yanbin 1.1G Oct 30 13:23 model-00004-of-00004.safetensors
+-rw-rw-r-- 1 yanbin yanbin  24K Oct 30 13:14 model.safetensors.index.json
+-rw-rw-r-- 1 yanbin yanbin  296 Oct 30 13:23 special_tokens_map.json
+-rw-rw-r-- 1 yanbin yanbin  55K Oct 30 13:23 tokenizer_config.json
+-rw-rw-r-- 1 yanbin yanbin 8.7M Oct 30 13:23 tokenizer.json</pre>
+<br/>
+下载的文件是在 https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct/tree/main 能看到的不包含 <code>original</code> 目录的文件。<code>.safetensors</code> 是 Hugging Face 推出的模型存储格式。<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/10/llama-3.1-8B-Instruct-repo.png"><img class="aligncenter wp-image-13822" src="https://yanbin.blog/wp-content/uploads/2024/10/llama-3.1-8B-Instruct-repo-800x478.png" alt="" width="900" height="537" /></a> <br/><br/>
+<code>original</code> 目录中是 PyTorch 训练出来的原始文件 <code>.pth</code> 格式。如果用 <code>huggingface-cli download</code> 手动下载的，就要用 <code>--exclude "original/*"</code> 只下载 .safetensors, 或用 <code>--include "original/*"</code> 只下载 <code>original</code> 目录中的原始文件，比如以 llama(llama.cpp 或  java-llama.cpp) 方式使用模型就要 original 文件，然后转换成 GGUF(GPT-Generated Unified Format) 格式.<br/><br/>
+要相应 GGUF 格式的模型也用不着自己手工转换，在 Hugging Face 上能找到别人转换好的，比如像 <a href="https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF">bartowski/Llama-3.2-1B-Instruct-GGUF</a>。<br/><br/>
+一个模型动不动十几，几十G， 大参数的模型更不得了，看来有硬盘危机了，又不能用机械硬盘，是时候要加个 4T 的 SSD。<br/><br/>
+<h3>多测试些问题</h3><br/><br/>
+为避免重复加载模型，我们修改代码，问题可由两种方式输入。<br/><br/>
+<ol>
+    <li style="list-style-type: none;">
+<ol>
+    <li>非交互方式：启动脚本时直接输入，每次加载模型，Python 执行完立即退出，如 python test-llama-3-8b.py "who are you?"</li>
+    <li>交互方式：启动脚本时不带参数，只需加载一次模型，进入用户交互模式，直到输入 exit 后才退出程序，python test-llama-3-8b.py</li>
+</ol>
+</li>
+</ol>
+<br/>
+并加上模型加载和推理的执行时间测量代码，有设定了环境变量 <code>PY_DEBUG=true</code> 时会打印出相应的执行时间，方便我们对比不同情形下的性能。<br/><br/>
+改造后的代码如下<br/><br/>
+<pre class="lang:default decode:true">import transformers
+import torch
+import sys
+import os
+from time import time<br/><br/>
+DEBUG = os.getenv("PY_DEBUG", "false")<br/><br/>
+model_id = "meta-llama/Llama-3.1-8B-Instruct"<br/><br/>
+start = time()
+pipeline = transformers.pipeline(
+    "text-generation",
+    model=model_id,
+    model_kwargs={"torch_dtype": torch.bfloat16},
+    device_map="auto",
+)
+if DEBUG == "true":
+    print(f'loading model: {time() - start}')<br/><br/>
+def infer(question):
+    start = time()
+    messages = [
+        {"role": "system", "content": "Wellcome to Llama model!"},
+        {"role": "user", "content": question},
+    ]<br/><br/>
+    outputs = pipeline(
+        messages,
+        max_new_tokens=1024,
+    )<br/><br/>
+    if DEBUG == "true":
+        print(f'inference: {time() - start}')<br/><br/>
+    print(outputs[0]["generated_text"][-1]['content'])<br/><br/>
+
+user_input = sys.argv[1] if len(sys.argv) &gt; 1 else None
+if user_input:
+    infer(user_input)<br/><br/>
+else:
+    while True:
+        user_input = input("Your input (type 'exit' to quit): ")
+        if user_input.lower() == 'exit':
+            print('Bye!')
+            break
+        infer(user_input)<br/><br/>
+</pre>
+<br/>
+执行<br/><br/>
+<pre class="lang:default decode:true ">python test-llama-3-8b.py
+Loading checkpoint shards: 100%|████████████████████████████████████████████████████████████████████████| 4/4 [00:01&lt;00:00,  2.48it/s]
+Your input (type 'exit' to quit):</pre>
+<br/>
+在装载了模型后，测试相同的问题：USA 5 biggest cities and population?<br/><br/>
+返回结果只需要 2.5 秒，比完全要加载模型来回答问题的 6.7 秒快了许多，节约了加载模型的 4.2 秒的时间。<br/><br/>
+试试中文, 输入<br/><br/>
+<pre class="lang:default decode:true ">Your input (type 'exit' to quit): 中国国歌的歌名是什么？
+Setting `pad_token_id` to `eos_token_id`:None for open-end generation.
+中国国歌的歌名是《义勇军进行曲》。它于1935年由中国作曲家徐6765（音）写曲，词曲由汪精卫创作。
+Your input (type 'exit' to quit):</pre>
+<br/>
+中文也能理解，还能输出中文，而前一版本的模型 meta-llama/Meta-Llama-3-8B-Instruct 只能理解中文(输入)，但不会说与写(输出)<br/><br/>
+来点技术问题<br/><br/>
+<pre class="lang:default decode:true">Your input (type 'exit' to quit): write code to read s3 object in Python
+Setting `pad_token_id` to `eos_token_id`:None for open-end generation.
+**Reading an S3 Object in Python**
+=====================================<br/><br/>
+You can use the AWS SDK for Python (Boto3) to read an S3 object. Here's a step-by-step example:<br/><br/>
+**Prerequisites**
+---------------<br/><br/>
+* You have an AWS account and have set up an S3 bucket.
+* You have the AWS CLI installed and configured on your machine.
+* You have the Boto3 library installed in your Python environment. You can install it using pip: `pip install boto3`<br/><br/>
+**Code**
+------<br/><br/>
+```python
+import boto3
+from botocore.exceptions import NoCredentialsError<br/><br/>
+# Initialize the S3 client
+s3 = boto3.client(&#039;s3&#039;)<br/><br/>
+def read_s3_object(bucket_name, object_key):
+    &quot;&quot;&quot;
+    Read an S3 object.<br/><br/>
+    Args:
+        bucket_name (str): The name of the S3 bucket.
+        object_key (str): The key of the S3 object.<br/><br/>
+    Returns:
+        str: The contents of the S3 object as a string.
+    &quot;&quot;&quot;
+    try:
+        # Get the object from S3
+        response = s3.get_object(Bucket=bucket_name, Key=object_key)<br/><br/>
+        # Get the contents of the object
+        contents = response[&#039;Body&#039;].read().decode(&#039;utf-8&#039;)<br/><br/>
+        return contents<br/><br/>
+    except NoCredentialsError:
+        print(&quot;Credentials not available&quot;)
+        return None<br/><br/>
+    except Exception as e:
+        print(f&quot;Error reading S3 object: {e}&quot;)
+        return None<br/><br/>
+# Example usage
+bucket_name =&#039;my-bucket&#039;
+object_key = &#039;path/to/object.txt&#039;<br/><br/>
+contents = read_s3_object(bucket_name, object_key)
+if contents:
+    print(contents)
+```<br/><br/>
+**Explanation**
+--------------<br/><br/>
+1. We initialize the S3 client using `boto3.client('s3')`.
+2. We define a function `read_s3_object` that takes the bucket name and object key as arguments.
+3. We use the `get_object` method to retrieve the S3 object from the specified bucket and key.
+4. We get the contents of the object using `response['Body'].read().decode('utf-8')`.
+5. We return the contents as a string.
+6. We handle exceptions, including `NoCredentialsError` and any other exceptions that may occur.<br/><br/>
+**Note**
+----<br/><br/>
+Make sure to replace `my-bucket` and `path/to/object.txt` with your actual bucket name and object key. Also, ensure that you have the necessary credentials set up to access your S3 bucket.
+Your input (type 'exit' to quit):</pre>
+<br/>
+它能懂多少编程语言？<br/><br/>
+<pre class="lang:default decode:true ">Your input (type 'exit' to quit): what programming languages do you know?
+Setting `pad_token_id` to `eos_token_id`:None for open-end generation.
+I have been trained on a wide range of programming languages, including but not limited to:<br/><br/>
+1. **Python**: I have knowledge of popular Python libraries such as NumPy, pandas, and scikit-learn, as well as popular frameworks like TensorFlow and PyTorch.
+2. **Java**: I'm familiar with Java syntax, object-oriented programming, and popular libraries like Spring and Hibernate.
+3. **JavaScript**: I have knowledge of JavaScript syntax, DOM manipulation, and popular libraries like React and Angular.
+4. **C++**: I'm familiar with C++ syntax, object-oriented programming, and popular libraries like STL and Boost.
+5. **C#**: I have knowledge of C# syntax, object-oriented programming, and popular frameworks like.NET and Unity.
+6. **Go**: I'm familiar with Go syntax, concurrency, and popular libraries like Gorilla and Revel.
+7. **Ruby**: I have knowledge of Ruby syntax, object-oriented programming, and popular frameworks like Ruby on Rails.
+8. **Swift**: I'm familiar with Swift syntax, object-oriented programming, and popular frameworks like iOS and macOS development.
+9. **PHP**: I have knowledge of PHP syntax, web development, and popular frameworks like Laravel and CodeIgniter.
+10. **SQL**: I'm familiar with SQL syntax, database design, and popular databases like MySQL and PostgreSQL.
+11. **TypeScript**: I have knowledge of TypeScript syntax, object-oriented programming, and popular frameworks like Angular and React.
+12. **Kotlin**: I'm familiar with Kotlin syntax, object-oriented programming, and popular frameworks like Android development.
+13. **R**: I have knowledge of R syntax, statistical computing, and popular libraries like dplyr and ggplot2.
+14. **Haskell**: I'm familiar with Haskell syntax, functional programming, and popular libraries like Yesod and Hoogle.
+15. **MATLAB**: I have knowledge of MATLAB syntax, numerical computing, and popular libraries like Statistics and Signal Processing Toolbox.<br/><br/>
+Please note that while I have knowledge of these languages, my proficiency may vary depending on the specific task or problem you're trying to solve.
+Your input (type 'exit' to quit):</pre>
+<br/>
+它的信息够新?<br/><br/>
+<pre class="lang:default decode:true ">Your input (type 'exit' to quit): what latest versions of spring and springboot
+Setting `pad_token_id` to `eos_token_id`:None for open-end generation.
+As of my knowledge cutoff in 2023, the latest versions of Spring and Spring Boot are:<br/><br/>
+1. **Spring Framework**: The latest version of the Spring Framework is **6.0.0** (released on September 14, 2022).
+2. **Spring Boot**: The latest version of Spring Boot is **3.0.0** (released on September 14, 2022).<br/><br/>
+Here are some key features and improvements in these latest versions:<br/><br/>
+**Spring Framework 6.0.0**<br/><br/>
+* Improved performance and concurrency support
+* Enhanced support for reactive programming
+* Simplified configuration and dependency management
+* Better support for cloud-native applications
+* Improved security features<br/><br/>
+**Spring Boot 3.0.0**<br/><br/>
+* Based on Spring Framework 6.0.0, providing the same improvements and features
+* Improved support for web development, including a new web framework (WebFlux)
+* Enhanced support for cloud-native applications and serverless computing
+* Improved security features and better support for OAuth 2.0 and OpenID Connect
+* Better support for microservices architecture and service discovery<br/><br/>
+Please note that these versions are subject to change, and new versions may be released after my knowledge cutoff date. I recommend checking the official Spring documentation and release notes for the latest information.
+Your input (type 'exit' to quit):</pre>
+<br/>
+可以问到它的知识更新到什么时候的<br/><br/>
+<pre class="lang:default decode:true ">Your input (type 'exit' to quit): when is your knowledge cutoff date?
+Setting `pad_token_id` to `eos_token_id`:None for open-end generation.
+My knowledge cutoff date is currently December 2023, but I have access to more recent information via internet search.</pre>
+<br/>
+Dec 12, 2023<br/><br/>
+<h3>观察 CPU, 内存，GPU 的使用状态</h3><br/><br/>
+CPU，内存状态监控用 top, GPU 的监控命令是 <code>watch -d -n 0.5 nvidia-smi</code><br/><br/>
+比如程序一启动没进到输入提示符时<br/><br/>
+<pre class="lang:default decode:true ">python test-llama-3-8b.py
+Loading checkpoint shards: 100%|██████████████████████████████████████| 4/4 [00:01&lt;00:00,  2.40it/s]
+Your input (type 'exit' to quit):</pre>
+<br/>
+CPU，内存, GPU 的的运行状态是<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/10/python-llama-status-4.png"><img class="size-large wp-image-13807 aligncenter" src="https://yanbin.blog/wp-content/uploads/2024/10/python-llama-status-4-800x762.png" alt="" width="800" height="762" /></a><br/><br/>
+<pre class="lang:default decode:true ">free
+               total        used        free      shared  buff/cache   available
+Mem:        65543452     5375056     1389000       45840    58779396    59393188</pre>
+<br/>
+&nbsp;<br/><br/>
+模型一载入后内存所剩无几，VRAM 快用了 16G， GPU 待机状态<br/><br/>
+在问 "how to implement a http proxy with node.js and express?" 执行过程中的状态是<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/10/python-llama-status-2.png"><img class="aligncenter wp-image-13805" src="https://yanbin.blog/wp-content/uploads/2024/10/python-llama-status-2-800x757.png" alt="" width="800" height="757" /></a><br/><br/>
+从上图看到 GPU 使用达到 98%，功率 291W，连 python 的 CPU 使用也拉满，真的很烧机器。<br/><br/>
+<h3>测试不用 CUDA</h3><br/><br/>
+使用环境变量将 CUDA 设备隐藏<br/><br/>
+<pre class="lang:default decode:true">export CUDA_VISIBLE_DEVICES=""
+python -c 'import torch; print(torch.cuda.is_available()); print(torch.version.cuda)'
+False
+12.4
+</pre>
+<br/>
+测试非交互的问话, 即执行<br/><br/>
+<blockquote>
+python test-llama-3-8b.py "USA 5 biggest cities and population?"
+</blockquote>
+<br/>
+同时用 nvidia-smi 观察到的 GPU 确实没被使用，全跑在 CPU 上，一直处于极高的使用率 200 多<br/><br/>
+<pre class="lang:default decode:true">top - 16:00:32 up 1 day, 17:49,  3 users,  load average: 2.97, 1.61, 0.82
+Tasks: 480 total,   2 running, 478 sleeping,   0 stopped,   0 zombie
+%Cpu(s):  8.9 us,  0.4 sy,  0.0 ni, 90.7 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+MiB Mem :  64007.3 total,   2915.0 free,   5625.7 used,  55466.5 buff/cache
+MiB Swap:      0.0 total,      0.0 free,      0.0 used.  57632.5 avail Mem<br/><br/>
+    PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND
+ 181604 yanbin    20   0   23.3g  14.5g  14.2g R 282.4  23.3   4:49.41 python
+  45045 yanbin    20   0   23.3g   4.4g 750044 S   2.7   7.0  37:32.62 ld-linux-x86-64</pre>
+<br/>
+最后得到答案的总耗时为 8 分 14 秒(即 494 秒), 与使用 GPU 的  6.7 秒，基本是不实用状态。<br/><br/>
+用交互式的方式，也就是加载完模型，然后输入问题 "USA 5 biggest cities and population?" 测试下。从上一个测试也看出时间基本耗费在推理上，加载模型的时间相比而言可以忽略不记<br/><br/>
+ 测试的结果是加载模型后，从问题话到输出结果的时候是 8 分 3 秒(483 秒)，基本上用还是不用 GPU 进行推，问一个简单问题("USA 5 biggest cities and population?" ) 的时间对比是<br/><br/>
+<span style="color: #800000; font-size: 14pt;"><strong>使用 GPU(CUDA, RTX 4090, 24G, 16384 cuda cores): 2.5 秒<br />
+</strong></span><span style="color: #800000; font-size: 14pt;"><strong>不使用 GPU(完全靠 CPU i9-13900F): 488 秒 -- 8 分 8 秒</strong></span><br/><br/>
+这个真有必要突出强调，没有一个好的显卡就玩不了模型，模特还差不多, 而且还没对比更复杂的问题。不用 GPU 试下问题 “how to implement a http proxy with node.js and express?”，花费了 9 分 50 秒(即 590 秒)，这些用了 GPU 的话都是几秒内出结果的。再问 "1+1=?" 用了 2 分 40 秒，这智商，用了 GPU 来回答 "1+1=?" 的问题只需 0.5 秒。<br/><br/>
+<h3>Chat Bot UI 想法</h3><br/><br/>
+既然可以做成命令行下交互式的问题，那很容易实现出一个 WebUI 的聊天窗口。比如用 FastAPI 把前面 transformer pipeline 实现为一个 API, 用户输入内容，调用 pipeline 产生输出，由于代码是用 ``` 输出的 Markdown 格式，所以聊天容器内容显示要支持 Markdown。<br/><br/>
+相关的技术<br/><br/>
+<ol>
+    <li><a href="https://fastapi.tiangolo.com/">FastAPI</a></li>
+    <li><a href="https://github.com/juzser/vue-bot-ui">Vue Bot UI</a></li>
+    <li><a href="https://github.com/asmfadholi/vue-simple-chatbot">Vue Simple Chatbot</a></li>
+    <li><a href="https://github.com/miaolz123/vue-markdown">vue-markdown</a></li>
+    <li><a href="https://github.com/markedjs/marked">Marked</a></li>
+</ol>
+<br/>
+API 方面可以用 llama.cpp 或 java-llama.cpp 来启动 llama server。<br/><br/>
+&nbsp;<br/><br/>
+<hr /><br/><br/>
+后记 -- MacBook Pro 下性能测试<br/><br/>
+通过函数 transformers.pipeline(device=[-1|0]) 可以选择是否使用用 GPU, device=-1 意味不使用 GPU, 全用 CPU，device=0 使用 0 号 GPU 设备。用了 device 参数则不能用  device_map 参数。使用 CUDA 的 GPU 可能过环境变量 <code>export CUDA_VISIBLE_DEVICES=</code> 来禁用 GPU; 而 Mac 下用 Metal Performance Shaders (<em>MPS</em>) 则无法通过环境变量来禁用 GPU, 只能用  device=-1 参数。<br/><br/>
+顺便测试了一下在 MacBook Pro, CPU: Apple M3 Pro(12 核), 内存 36 G, 内置 18 核的 Metal 3 GPU<br/><br/>
+<ol>
+    <li>使用 GPU: pipeline(device=0): 加载模型 24 秒，问话 “USA 5 biggest cities and population?” 平均耗时 18 秒</li>
+    <li>不使用 GPU: pipeline(device=-1): 加载模型大概 0.8 秒，问话 “USA 5 biggest cities and population?” 平均耗时 23 秒(在获得相同输出的情况下, CPU 推理的结果变化较大)</li>
+</ol>
+<br/>
+怎么知道 Mac 是否使用了 GPU 的呢？打开 Activity Monitor / Window / GPU History 可以看到动态。<br/><br/>
+安装了 PyTorch 后，用如下 Python 脚本可显示 torch 是否支持 MPS<br/><br/>
+<pre class="lang:default decode:true">python -c "import torch; print(torch.backends.mps.is_available())"
+True</pre>
+<br/>
+用 M3 Pro 的 CPU(12 核) 还是 GPU(18 核) 结果相差其实不大，用 CPU 时加载模型很快。Mac 下推理要 20 秒左右，相比于 Ubuntu(i9-13900F + 内存 64G + 显卡 RTX 4090) 的加载模型 4.2 秒，推理 2.5 秒还是要慢很多。

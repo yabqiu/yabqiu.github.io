@@ -1,0 +1,450 @@
+---
+title: VC常用代码[转]
+url: /vc-code-collection/
+date: 2007-07-14T06:56:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - C++/VB
+tags: 
+  - VC
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 502 
+wpStatus: publish
+views: 303
+lastmod: 2012-03-09T09:10:41-06:00
+---
+
+VC代码收集<br/>
+一、改变视图背景色：<br/>
+在CView的OnDraw函数中添写如下一段程序代码：<br/>
+void CFileNameView::OnDraw(CDC＊ pDC)<br/>
+{<br/>
+    CFileNameDoc* pDoc = GetDocument();<br/>
+    ASSERT_VALID(pDoc);<br/>
+    CRect rectClient;<br/>
+    CBrush brushBkColor;<br/>
+    GetClientRect(rectClient);<br/>
+    brushBkColor.createSolidBrush(RGB(255,0,0)); //颜色设置<!--more--><br/>
+    pDC-&gt;DPtoLP(rectClient);<br/>
+    pDC-&gt;FillRect(rectClient,&amp;brushBkColor);<br/>
+    …<br/>
+}<br/>
+二、往基于对话框的程序添加菜单：<br/>
+[1] 先添加菜单（IDR_MENU1）资源，并加上需要的菜单项。<br/>
+[2] 编辑对话框资源IDD_DLGMENUTOOLBAR_DIALOG的属性,在属性对话框中选择IDR_MENU1即可。<br/>
+<br/>
+[3] 假如您不希望在对话框属性中直接设置菜单，而通过代码在程序中动态生成可以采用如下方法:<br/>
+在CFileNameDlg类声名中添加成员变量CMenu m_menu，再在CFileNameDlg::OnInitDialog() 中添加如下代码：<br/>
+//加载菜单<br/>
+m_menu.LoadMenu(IDR_MENU1);<br/>
+//设置当前菜单<br/>
+SetMenu(&amp;m_menu);<br/>
+//当你不需要菜单时可以用 SetMenu(NULL);来取消当前菜单<br/>
+三、往基于Dialog的程序添加工具栏：<br/>
+[1] 先添加工具栏（IDR_TOOLBAR1）资源，并画好各个按钮。<br/>
+[2] 在CFileNameDlg类声名中添加成员变量 CToolBar m_wndtoolbar;<br/>
+[3] 在CFileNameDlg::OnInitDialog() 中添加如下代码<br/>
+//添加一个平面工具条<br/>
+if (!m_wndtoolbar.createEx( this,TBSTYLE_FLAT , WS_CHILD | WS_VISIBLE | CBRS_ALIGN_TOP | CBRS_GRIPPER |    CBRS_TOOLTIPS, CRect(4,4,0,0)) || !m_wndtoolbar.LoadToolBar(IDR_TOOLBAR1) )<br/>
+{<br/>
+    TRACE("failed to create toolbar\n");<br/>
+    return FALSE;<br/>
+}<br/>
+m_wndtoolbar.ShowWindow(SW_SHOW);<br/>
+RepositionBars(AFX_IDW_CONTROLBAR_FIRST, AFX_IDW_CONTROLBAR_LAST, 0);<br/>
+四、改变对话框背景色：<br/>
+在CDlgMenuToolbarDlg::OnPaint()中修改代码实现Dialog 填充颜色：<br/>
+CPaintDC dc(this);<br/>
+CRect rect;<br/>
+GetClientRect(rect);<br/>
+dc.FillSolidRect(rect, RGB(60,110,170));<br/>
+方法二、在InitInstance()（不是OnInitDialog()）中加入：<br/>
+SetDialogBkColor(RGB(255,0,0),RGB(0,255,0));<br/>
+注意：要放在InitInstance函数的最前面！<br/>
+五、为dialog的工具栏添加工具提示:<br/>
+[1] 在CFileNameDlg类定义中手工添加消息映射函数的定义，如下黑体部分<br/>
+//{{AFX_MSG(CFileNameDlg)<br/>
+    virtual BOOL OnInitDialog();<br/>
+     afx_msg void OnPaint();<br/>
+    afx_msg BOOL OnToolTipText(UINT, NMHDR* pNMHDR, LRESULT* pResult);<br/>
+//}}AFX_MSG<br/>
+DECLARE_MESSAGE_MAP()<br/>
+[2] 在CFileNameDlg.cpp添加函数的实现代码<br/>
+//工具栏提示<br/>
+BOOL CFileNameDlg::OnToolTipText(UINT, NMHDR* pNMHDR, LRESULT* pResult)<br/>
+{<br/>
+    ASSERT(pNMHDR-&gt;code == TTN_NEEDTEXTA || pNMHDR-&gt;code == TTN_NEEDTEXTW);<br/>
+     // UNICODE消息<br/>
+    TOOLTIPTEXTA* pTTTA = (TOOLTIPTEXTA*)pNMHDR;<br/>
+    TOOLTIPTEXTW* pTTTW = (TOOLTIPTEXTW*)pNMHDR;<br/>
+    //TCHAR szFullText[512];<br/>
+    CString strTipText;<br/>
+    UINT nID = pNMHDR-&gt;idFrom;<br/>
+<br/>
+    if (pNMHDR-&gt;code == TTN_NEEDTEXTA &amp;&amp; (pTTTA-&gt;uFlags &amp; TTF_IDISHWND) || pNMHDR-&gt;code == TTN_NEEDTEXTW &amp;&amp; (pTTTW-&gt;uFlags &amp; TTF_IDISHWND))<br/>
+    {<br/>
+        // idFrom为工具条的HWND<br/>
+        nID = ::GetDlgCtrlID((HWND)nID);<br/>
+     }<br/>
+<br/>
+    if (nID != 0) //不为分隔符<br/>
+    {<br/>
+        strTipText.LoadString(nID);<br/>
+        strTipText = strTipText.Mid(strTipText.Find('\n',0)+1);<br/>
+<br/>
+    #ifndef _UNICODE<br/>
+    if (pNMHDR-&gt;code == TTN_NEEDTEXTA)<br/>
+    {<br/>
+        lstrcpyn(pTTTA-&gt;szText, strTipText, sizeof(pTTTA-&gt;szText));<br/>
+     }<br/>
+     else<br/>
+     {<br/>
+        _mbstowcsz(pTTTW-&gt;szText, strTipText, sizeof(pTTTW-&gt;szText));<br/>
+    }<br/>
+     #else<br/>
+    if (pNMHDR-&gt;code == TTN_NEEDTEXTA)<br/>
+    {<br/>
+        _wcstombsz(pTTTA-&gt;szText, strTipText,sizeof(pTTTA-&gt;szText));<br/>
+     }<br/>
+     else<br/>
+    {<br/>
+        lstrcpyn(pTTTW-&gt;szText, strTipText, sizeof(pTTTW-&gt;szText));<br/>
+     }<br/>
+    #endif<br/>
+        *pResult = 0;<br/>
+         // 使工具条提示窗口在最上面<br/>
+        ::SetWindowPos(pNMHDR-&gt;hwndFrom, HWND_TOP, 0, 0, 0, 0,SWP_NOACTIVATE|<br/>
+        SWP_NOSIZE|SWP_NOMOVE|SWP_NOOWNERZORDER);<br/>
+        return TRUE;<br/>
+    }<br/>
+    return TRUE;<br/>
+}<br/>
+[3] 在CFileNameDlg.cpp中添加消息映射,请看如下代码中的黑体部分<br/>
+BEGIN_MESSAGE_MAP(CFileNameDlg, CDialog)<br/>
+    //{{AFX_MSG_MAP(CFileNameDlg)<br/>
+    ON_WM_PAINT()<br/>
+    ON_NOTIFY_EX( TTN_NEEDTEXT, 0, OnToolTipText )<br/>
+    //}}AFX_MSG_MAP<br/>
+END_MESSAGE_MAP()<br/>
+[4] 在CFileNameDlg.h中添加声明：<br/>
+BOOL CFileNameDlg::OnToolTipText(UINT, NMHDR* pNMHDR, LRESULT* pResult)；<br/>
+六、给没有工具栏的窗口添加工具栏：<br/>
+在资源管理器中编辑工具栏，并将其属性改为IDR_MAINFRAME，然后在MainFrm.h中声明：<br/>
+CToolBar m_wndToolBar;<br/>
+在MainFrm.cpp中添加：<br/>
+int CMainFrame::Oncreate(LPcreateSTRUCT lpcreateStruct)<br/>
+{<br/>
+    m_wndToolBar.create(this);<br/>
+    m_wndToolBar.LoadToolBar(IDR_MAINFRAME);<br/>
+     ……；<br/>
+｝<br/>
+停靠工具栏：在刚才添加的后面加入下面代码：<br/>
+m_wndToolBar.SetBarStyle(m_wndToolBar.GetBarStyle()|CBRS_TOOLTIPS|CBRS_SIZE_DYNAMIC);<br/>
+m_wndToolBar.EnableDocking(CBRS_ALIGN_ANY);<br/>
+EnableDocking(CBRS_ALIGN_ANY);<br/>
+DockControlBar(&amp;m_wndToolBar);//控制是否开启任意停靠<br/>
+完善一下功能：<br/>
+在菜单中添加一项"工具栏"，ID设为ID_VIEW_TOOLBAR，一切OK，试试吧！<br/>
+七、创建分隔窗口：<br/>
+只有框架类可以创建分隔，分隔可以嵌套。<br/>
+在.h文件中声明 CSplitterWnd m_wndSplitter;并且包含COneView.h（新建视图类）和CWinFrame.h（新建框架类）文件；<br/>
+然后在.cpp文件中加入：<br/>
+BOOL CMainFrame::OncreateClient(LPcreateSTRUCT lpcs, CcreateContext* pContext)<br/>
+{<br/>
+    if(!m_wndSplitter.createStatic(this,1,2))<br/>
+        return FALSE;<br/>
+    if(!m_wndSplitter.createView(0,0,RUNTIME_CLASS(COneView),CSize(240,420),pContext))<br/>
+        return FALSE;<br/>
+    if(!m_wndSplitter.createView(0,1,RUNTIME_CLASS(CWinFrame),CSize(300,500),pContext))<br/>
+         return FALSE;<br/>
+    return TRUE;<br/>
+}<br/>
+当用户创建好分割窗口后，有时并不希望通过拖动切分条来调节窗口的大小。这时就必须锁定切分条。锁定切分条的最简单的方法莫过于不让 CSplitterWnd来处理WM_LBUTTONDOWN,WM_MOUSEMOVE,WM_SETCURSOR消息，而是将这些消息交给CWnd窗口进行处理，从而屏蔽掉这些消息。拿WM_LBUTTONDOWN处理过程来说。修改为如下：<br/>
+void CXXSplitterWnd::OnLButtonDown(UINT nFlags,CPoint point)<br/>
+{<br/>
+    CWnd::OnLButtonDown(nFlags,point);<br/>
+}<br/>
+其余的处理方法类似。<br/>
+八、"打开"按钮的设置：<br/>
+用类向导创建该按钮的click函数，选择默认值OnOpen，加入以下代码：<br/>
+void CYourDlg::OnOpen()<br/>
+{<br/>
+    char szFileFilter[]=<br/>
+    "BIN File(*.bin)|*.bin|"<br/>
+    "All File(*.*)|*.*||";//文件类型过滤<br/>
+    CFileDialog dlg(TRUE,NULL,NULL,OFN_HIDEREADONLY,szFileFilter);<br/>
+    /* CFileDialog dlg(FALSE);<br/>
+    dlg.m_ofn .lpstrFilter =_T("文本文件(*.txt)*.txt所有文件(*.*)*.*");<br/>
+    dlg.m_ofn.lpstrDefExt=_T("txt"); */<br/>
+    if(dlg.DoModal()==IDOK)<br/>
+    {<br/>
+        m_path = dlg.GetPathName();//将显示路径的Edit控件命名为m_path，并增加CString变量m_path<br/>
+        updateData(FALSE);<br/>
+     }<br/>
+}<br/>
+九、窗口居中：<br/>
+在初始化（OnInit）函数中增加：CenterWindow();即可<br/>
+十、对话框加状态条：<br/>
+UINT indicators[]={ID_INITMESSAGE,ID_SEPARATOR,ID_TIMEMESSAGE,ID_PROGRESS};<br/>
+m_statusbar.createEx(this,0,WS_CHILD | WS_VISIBLE | CBRS_BOTTOM);<br/>
+m_statusbar.SetIndicators(indicators,4);<br/>
+m_statusbar.ShowWindow (SW_SHOW);<br/>
+RepositionBars(AFX_IDW_CONTROLBAR_FIRST, AFX_IDW_CONTROLBAR_LAST, 0);<br/>
+十一、设置初始窗口状态：<br/>
+BOOL CObjectNameApp::InitInstance()<br/>
+{<br/>
+    m_pMainWnd-&gt;SetWindowText(""); //设置初始窗口标题文本<br/>
+    m_pMainWnd-&gt;ShowWindow(SW_SHOWMAXIMIZED);//设置初始窗口为最大化<br/>
+    m_pMainWnd-&gt;updateWindow();<br/>
+｝<br/>
+对于MDI函数SetWindowText无效，主窗口的标题只能在资源列表中修改，子窗口标题在**doc.cpp中重载OnNewDocument（），调用SetTitle("LGdownload中文版");来修改。<br/>
+设置初始窗口最大化的另一优化方法：<br/>
+void CMainFrame::ActivateFrame(int nCmdShow)<br/>
+{<br/>
+    // TODO: Add your specialized code here and/or call the base class<br/>
+    nCmdShow=SW_MAXIMIZE;<br/>
+    CFrameWnd::ActivateFrame(nCmdShow);<br/>
+}<br/>
+十二、对话框透明特效：<br/>
+在OnInitDialog()中加入以下代码：<br/>
+//加入WS_EX_LAYERED扩展属性<br/>
+SetWindowLong(this-&gt;GetSafeHwnd(),GWL_EXSTYLE,<br/>
+GetWindowLong(this-&gt;GetSafeHwnd(),GWL_EXSTYLE)^0x80000);<br/>
+HINSTANCE hInst = LoadLibrary("User32.DLL");<br/>
+if(hInst)<br/>
+{<br/>
+    typedef BOOL (WINAPI *MYFUNC)(HWND,COLORREF,BYTE,DWORD);<br/>
+    MYFUNC fun = NULL;<br/>
+    //取得SetLayeredWindowAttributes函数指针<br/>
+    fun=(MYFUNC)GetProcAddress(hInst, "SetLayeredWindowAttributes");<br/>
+    if(fun)    fun(this-&gt;GetSafeHwnd(),0,128,2);<br/>
+    FreeLibrary(hInst);<br/>
+}<br/>
+注意：fun的参数128不能太小，否则就完全透明了！<br/>
+十三、设置对话框里的STATIC控件颜色属性：<br/>
+在该对话框增加WM_CTLCOLOR事件，加入以下代码：<br/>
+if( nCtlColor==CTLCOLOR_STATIC )<br/>
+{<br/>
+    pDC-&gt;SetTextColor(RGB(255,255,255));<br/>
+    pDC-&gt;SetBkColor(RGB(91,145,244));<br/>
+    pDC-&gt;SetBkMode(TRANSPARENT); //设置透明<br/>
+}<br/>
+设置STATIC控件背景透明：<br/>
+if( nCtlColor==CTLCOLOR_STATIC )<br/>
+{<br/>
+    pDC-&gt;SetBkMode(TRANSPARENT); //设置透明<br/>
+    return (HBRUSH)::GetStockObject(NULL_BRUSH);<br/>
+}<br/>
+十四、使窗口的最大化和最小化按钮消失：<br/>
+在PrecreateWindow函数中添加以下代码即可：<br/>
+int xSize = ::GetSystemMetrics( SM_CXSCREEN );<br/>
+int ySize = ::GetSystemMetrics( SM_CYSCREEN );<br/>
+cs.cx = xSize * 6 / 10;<br/>
+cs.cy = ySize * 6 / 10;<br/>
+cs.x = ( xSize - cs.cx ) / 2;<br/>
+cs.y = ( ySize - cs.cy ) / 2;<br/>
+<br/>
+cs.style &amp;= ~WS_THICKFRAME;<br/>
+cs.style &amp;= ~( WS_MAXIMIZEBOX | WS_MINIMIZEBOX );<br/>
+<br/>
+cs.dwExStyle |= WS_EX_TOOLWINDOW;<br/>
+十五、设置控件字体颜色：（例如STATIC控件）<br/>
+在OnCtlColor函数中添加如下代码：（可能需要选择STATIC的简单属性）<br/>
+if(nCtlColor==CTLCOLOR_STATIC)<br/>
+{<br/>
+    pDC-&gt;SetTextColor(RGB(255,0,0));<br/>
+    pDC-&gt;SetBkColor(RGB(128,128,128));//设置文本背景色<br/>
+    pDC-&gt;SetBkMode(TRANSPARENT);//设置背景透明<br/>
+}<br/>
+其他控件的宏定义为：<br/>
+.CTLCOLOR_BTN 按钮控件<br/>
+.CTLCOLOR_DLG 对话框<br/>
+.CTLCOLOR_EDIT 编辑框<br/>
+.CTLCOLOR_LISTBOX 列表控件<br/>
+.CTLCOLOR_MSGBOX 消息控件<br/>
+.CTLCOLOR_SCROLLBAR 滚动条控件<br/>
+.CTLCOLOR_STATIC 静态控件<br/>
+十六、将字符转换为数字：<br/>
+int i = atoi("12345"); 或 sscanf("12345","%d",&amp;i);<br/>
+十七、调用外部应用程序可使用的函数：<br/>
+createProcess、WinExec、ShellExecute。<br/>
+例：ShellExecute(pWnd-&gt;m_wnd, "open", "my.exe", NULL, NULL, SW_NORMAL)<br/>
+一、父窗体句柄，二、命令"open"，三、文件路径，四、参数，五、运行路径，六、显示方式<br/>
+十八、经典安装程序制作软件：InstallShield for Microsoft Visual C++6.0<br/>
+release 方式是在build菜单中的Set Active configuration中改<br/>
+在project菜单里面,选Add to Project的component and control来加入ocx控件<br/>
+十九、控件的注册：<br/>
+1.注册<br/>
+regsvr32 x:\xxx\demo.ocx 不一定非得在 Windows 系统目录<br/>
+2.卸载<br/>
+regsvr32 /u x:\xxx\demo.ocx<br/>
+二十、获取当前时间：<br/>
+CTime m_time=CTime::GetCurrentTime();<br/>
+char szText[100];<br/>
+memset(szText,0,100);<br/>
+sprintf(szText,"%d_%d_%d",m_time.GetHour(),m_time.GetMinite(),m_time.GetSecond());<br/>
+// 如何得到当前时间日期<br/>
+CTime time = CTime::GetCurrentTime();<br/>
+CString m_strTime = time.Format("%Y-%m-%d %H:%M:%S");<br/>
+// 方法二<br/>
+SYSTEMTIME ti;<br/>
+GetSystemTime(&amp;ti); // 如何得到当前时间日期<br/>
+ti.wMilliseconds; // 得到毫秒时间<br/>
+SYSTEMTIME time;<br/>
+CString str;<br/>
+GetLocalTime( &amp;time );<br/>
+str.Format( "%04d:%02d:%02d",time.wYear,time.wMonth.....);<br/>
+二一、修改单文档程序的标题：<br/>
+OnCreat()中加入 SetWindowText("weichao");<br/>
+CMainFrame::PrecreateWindow(createSTRUCT&amp; cs)中加入 cs.style =WS_OVERLAPPEDWINDOW;<br/>
+二二、隐藏程序在任务栏的图标：<br/>
+对话框程序放OnInitDialog()函数：<br/>
+SetWindowLong(this-&gt;m_hWnd,GWL_EXSTYLE,WS_EX_TOOLWINDOW);//隐藏任务拦按钮<br/>
+二三、读取编辑框内容：<br/>
+GetDlgItemText(IDC_EDIT_TXDATA,m_strTXData);<br/>
+二四、自绘菜单宽度不对，高度是对的，解决办法:<br/>
+在ClassWizard中的ClassName下,选CMianFrame,在Messages下选WM_CONTEXTMENU并生成相应的函数,如下:<br/>
+void CMainFrame::OnContextMenu(CWnd* pWnd, CPoint point)<br/>
+{<br/>
+    CMenu menu;<br/>
+    menu.LoadMenu(IDR_MENU1);//IDR_MENU1是你要弹出菜单的ID号.<br/>
+    CMenu *popup=menu.GetSubMenu(0);<br/>
+    popup-&gt;TrackPopupMenu(TPM_LEFTALIGN,point.x,point.y,this);<br/>
+}<br/>
+二五、重启计算机：<br/>
+调用一个API函数ExitWindowsEx就可以了, 两个参数:UFlag,标记,可以选择EWX_REBOOT,EWX_SHUTDOWN,EWX_POWEROFF再或上EWX_FORCE第二个参数就是0了<br/>
+二六、无title对话框的移动：<br/>
+void CScreenSnapDlg::OnLButtonDown(UINT nFlags, CPoint point)<br/>
+{<br/>
+    //实现窗体无标题移动<br/>
+    PostMessage(WM_NCLBUTTONDOWN,HTCAPTION,MAKELPARAM(point.x,point.y));<br/>
+<br/>
+    CDialog::OnLButtonDown(nFlags, point);<br/>
+}<br/>
+二七、获取操作系统版本：<br/>
+OSVERSIONINFO OsVersionInfo;//包含操作系统版本信息的数据结构<br/>
+OsVersionInfo.dwOSVersionInfoSize= sizeof(OSVERSIONINFO);<br/>
+GetVersionEx(&amp;OsVersionInfo);//获取操作系统版本信息<br/>
+二八、设置对话框为最顶层：（在OnInitDialog中添加）<br/>
+SetWindowPos(&amp;wndTopMost,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE);<br/>
+二九、对话框程序不在任务栏显示：（在OnInitDialog中添加）<br/>
+modifyStyleEx(WS_EX_APPWINDOW,WS_EX_TOOLWINDOW);<br/>
+三十、向对话框窗口添加右键菜单：<br/>
+CMenu menu,*pmenu;<br/>
+menu.LoadMenu(IDR_MENU1);<br/>
+pmenu=menu.GetSubMenu(0);<br/>
+<br/>
+CPoint ptScreen(point);<br/>
+ClientToScreen(&amp;ptScreen);<br/>
+<br/>
+pmenu-&gt;TrackPopupMenu(TPM_RIGHTBUTTON,ptScreen.x,ptScreen.y,this);<br/>
+三一、文件查找：（例查找连续的换行符）<br/>
+FILE *fp,*fp1;<br/>
+int flag=0;<br/>
+int ch;<br/>
+fp=fopen("c:\test.txt","r");<br/>
+fp1=fopen("c:\wrttest.txt","w");<br/>
+<br/>
+while(!feof(fp))<br/>
+{<br/>
+    ch=fgetc(fp);<br/>
+    if(feof(fp))<br/>
+        break;<br/>
+    if(ch=='\n'&amp;&amp;flag==1)<br/>
+        continue;<br/>
+    else if(ch=='\n'&amp;&amp;flag==0)<br/>
+        flag=1;<br/>
+    else<br/>
+        flag=0;<br/>
+    fputc(ch,fp1);<br/>
+}<br/>
+fclose(fp1);<br/>
+fclose(fp);<br/>
+三二、托盘菜单不点击不能消失的解决办法：<br/>
+在菜单之后使用下述代码：<br/>
+CPoint pt;<br/>
+GetCursorPos(&amp;pt);<br/>
+<br/>
+SetForegroundWindow();<br/>
+NotifyMenu.TrackPopupMenu(TPM_RIGHTBUTTON,pt.x,pt.y,this);<br/>
+PostMessage(WM_NULL,0,0);<br/>
+三三、对话框由小到大显示的动画效果：<br/>
+在InitDialog中增加：<br/>
+ShowWindow(SW_HIDE);<br/>
+CRect dlgRect;<br/>
+GetClientRect(&amp;dlgRect);<br/>
+CPoint centerPoint;<br/>
+centerPoint.x=dlgRect.Width()/2;<br/>
+centerPoint.y=dlgRect.Height()/2;//得到对话框的中点坐标<br/>
+CRgn testrgn;<br/>
+this-&gt;ShowWindow(SW_HIDE);<br/>
+int m=GetSystemMetrics(SM_CYSIZEFRAME);<br/>
+<br/>
+//以下代码实现对话框的动态弹出<br/>
+<br/>
+for (int i=10;i&lt;dlgRect.Width()/2+m;i+=1)<br/>
+{<br/>
+    testrgn.createRectRgn(centerPoint.x-i,centerPoint.y-i,centerPoint.x+i,centerPoint.y+i);<br/>
+    SetWindowRgn((HRGN) testrgn,TRUE);<br/>
+    ShowWindow(SW_SHOW);<br/>
+    CenterWindow();<br/>
+    testrgn.deleteObject();<br/>
+}<br/>
+三四、按行读出文本文件：<br/>
+下面的例子演示了一行一行取，直到取完。<br/>
+CStdioFile myFile;<br/>
+CString ReadFileString;<br/>
+if(myFile.Open("C:\Readme.txt", Cfile::modeRead) == TRUE)<br/>
+{<br/>
+    while(myFile.ReadString(ReadFileString) != FALSE)<br/>
+    {<br/>
+        //... 处理代码<br/>
+    }<br/>
+}<br/>
+三五、使用IDC_HAND时提示未定义，加入以下代码：<br/>
+#if(WINVER &gt;= 0x0500)<br/>
+#define IDC_HAND MAKEINTRESOURCE(32649)<br/>
+#endif /* WINVER &gt;= 0x0500 */<br/>
+三六、使应用程序启动时不自动创建新文档<br/>
+在默认情况下，用AppWizard开发的SDI/MDI应用程序在启动时创建一个新的文档。如果要使应用程序在启动时不创建新文档，只需在应用类 CmyApp：：InitInstance()函数的ProcessShellCommand调用前加上下面的语句就可以了：<br/>
+cmdInfo.m_nShellCommand = CComandLineInfo::FileNothing;<br/>
+三七、播放mp3：<br/>
+CFileDialog file(true);<br/>
+if(file.DoModal()==IDOK)<br/>
+{<br/>
+    CString filename=file.GetFileName();<br/>
+    if(hwnd!=NULL)<br/>
+    {<br/>
+        MCIWndDestroy(hwnd);<br/>
+    }<br/>
+    hwnd=MCIWndcreate(this-&gt;m_hWnd,NULL,MCIWNDF_NOPLAYBAR,filename);<br/>
+    ::ShowWindow(hwnd,SW_HIDE);<br/>
+    MCIWndSetVolume(hwnd,1000);<br/>
+    MCIWndPlay(hwnd);<br/>
+}<br/>
+三八、获取屏幕RGB值：OnTimer中添加<br/>
+CPoint pos;<br/>
+GetCursorPos(&amp;pos);//获取鼠标坐标<br/>
+HDC hDC = ::GetDC(NULL);<br/>
+COLORREF clr = ::GetPixel(hDC, pos.x, pos.y);<br/>
+<br/>
+CString ClrText;<br/>
+ClrText.Format("R:%d G:%d B:%d",GetRvalue(clr),GetGvalue(clr),GetBvalue(clr));<br/>
+三九、打开一个网址：<br/>
+打开<a href="http://www.sina.com.cn">http://www.sina.com.cn</a>这个站点如下：<br/>
+ShellExecute(NULL, "open", "<a href="http://www.sina.com.cn&quot;,NULL">http://www.sina.com.cn",NULL</a>, NULL, SW_MAXIMIZE );<br/>
+此命令将以默认浏览器打开<a href="http://www.sina.com.cn">http://www.sina.com.cn</a>，并将加开后的窗口最大化。<br/>
+又例：<br/>
+ShellExecute(NULL, "open", "IEXPLORE.exe <a href="http://www.sina.com.cn&quot;,NULL">http://www.sina.com.cn",NULL</a>, NULL, SW_MAXIMIZE );<br/>
+此命令将直接用IE打开一个sina的站点。不过将开一个新的窗口。<br/>
+四十、位图按钮：<br/>
+CButton *pRadio = (CButton*)GetDlgItem(IDC_RADIO);<br/>
+pRadio-&gt;SetBitmap(::LoadBitmap(AfxGetInstanceHandle(), MAKEINTRESOURCE(IDB_BITMAP)));<br/>
+<br/>
+转自:  <a href="http://www.bjy168.cn/blog/article.asp?id=543">http://www.bjy168.cn/blog/article.asp?id=543</a>

@@ -1,0 +1,122 @@
+---
+title: 用 p6spy 来观察 Java 程序中执行的所有 SQL 语句（二. Tomcat 下的配置）
+url: /p6spy-view-java-executing-sql-tomcat/
+date: 2009-03-13T02:15:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - Sql
+  - p6spy
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 292 
+wpStatus: publish
+views: 1175
+lastmod: 2021-07-21T22:31:45-05:00
+---
+
+在前篇 <a href="http://unmi.cc/p6spy-view-java-executing-sql-first/" target="_blank" rel="noopener">用 p6spy 来观察 Java 程序中执行的所有 SQL 语句(一. 引子）</a> 大略介绍了 p6spy，并且在 <a href="http://www.p6spy.com/documentation/install.htm#install">http://www.p6spy.com/documentation/install.htm#install</a> 也有 p6spy 在不同服务器下的安装方法。本文不打算依照官方的说明来做，我们让 Tomcat 的 Common 类加载器来加载 p6spy.jar 包，包含了 Tomcat 5/6 下的 p6spy 配置，数据库连接池实现用 C3P0，数据库为 Oracle，配置在一个与应用同名的单独的 xml 文件中，Tomcat 中是在应用的 META-INF/context.xml 文件中。步骤如下：<br/><br/>
+<strong>1. 软件准备<br />
+</strong><br />
+下载 Tomcat 5 或者 6 进行安装，不必多说。假设置 Tomcat 的目录为 $TOMCAT_HOME。<br />
+下载 <a href="http://prdownloads.sourceforge.net/p6spy/p6spy-install.zip?download"><span style="font-family: Verdana; font-size: x-small;">p6spy-install.zip</span></a>，解压缩 p6spy-install.zip，其中有 p6spy.jar 和 spy.properties<br />
+准备好数据库的驱动包，比如 Oracle 的 classes12.jar，和 C3P0 实现包，如 c3p0-0.9.0.2.jar。<!--more--><br/><br/>
+<strong>2. 拷贝文件</strong><br/><br/>
+在 Tomcat 5 下：<br />
+    拷贝 p6spy.jar、classes12.jar、c3p0-0.9.0.2.jar 到 $TOMCAT_HOME/common/lib 目录下<br />
+    拷贝 spy.properties 到 $TOMCAT_HOME/common/classes 目录下<br/><br/>
+在 Tomcat 6 下：<br />
+    把 p6spy.jar、classes12.jar、c3p0-0.9.0.2.jar 和 spy.properties 都拷到 $TOMCAT_HOME/lib 目录下。<br/><br/>
+----注：这里我们让 Tomcat 的 Common 类加载器来加载相关类，Common 加载的类对应 WebApp 是可见的。有关 Tomcat 类加载器层次可参考 <a href="/xmatthew/archive/2008/09/27/231561.html" target="_blank" rel="noopener">Tomcat5 类装载器分析</a> 和 <a href="/xmatthew/archive/2008/09/27/231560.html" target="_blank" rel="noopener">Tomcat6 类装载器分析</a>。<br/><br/>
+Tomcat5 的 Common 类加载器从 $TOMCAT_HOME/common/lib 目录下加载 jar/zip 文件，从 $TOMCAT_HOME/common/classes 下加载类文件。而 spy.properties 是通过 classloader 来加载的，所以应放在 classpath 下。而 Tomcat 6 的 Common 类加载器对 jar/zip，和 class 文件都是从 $TOMCAT_HOME/lib 中加载。<br/><br/>
+细心点还能注意到 Tomcat 5.5.20 是 Tomcat 5 到 Tomcat 6 的过度版本，实则是一个混乱的版本。同时有 $TOMCAT_HOME/lib 和 $TOMCAT_HOME/common 目录，可是又新奇的发现在 Tomcat 5.5.25 中没有 $TOMCAT_HOME/lib 目录了。Tomcat 6 中不再有 $TOMCAT_HOME/common 目录了。<br/><br/>
+<strong>3. 修改 p6spy 配置文件</strong><br/><br/>
+打开 $TOMCAT_HOME/lib 或者 $TOMCAT_HOME/common/classes 下的 spy.properties 文件，此文件中本身有很详细的注释，很容易理解其中的配置。我们在这里修改几个主要的地方，让它能工作起来。<br/><br/>
+1) 找到 # realdriver=oracle.jdbc.driver.OracleDriver 把前面的 # 注释符去掉，因为我们用的是 Oracle 数据库，即改为<br/><br/>
+realdriver=oracle.jdbc.driver.OracleDriver<br/><br/>
+同时把 realdriver=org.gjt.mm.mysql.Driver 用 # 注释掉，即改为<br/><br/>
+# realdriver=org.gjt.mm.mysql.Driver<br/><br/>
+2) 打开输出过滤，因为我们希望对有些表(如用户表) 的查询不输出相应的 SQL，找到 filter=false，把它改为 filter=true。<br/><br/>
+    再看它后面有几个配置 include = 、 exclude =  和 sqlexpression = 用来设置过虑规则。例如我们不想输出对 users、constants 表操作的 SQL，就配置<br/><br/>
+exclude = users,constants<br/><br/>
+3) 输出目的地的选择，在 spy.properties 中可以找到<br/><br/>
+#specifies the appender to use for logging<br />
+#appender=com.p6spy.engine.logging.appender.Log4jLogger<br />
+#appender=com.p6spy.engine.logging.appender.StdoutLogger<br />
+appender=com.p6spy.engine.logging.appender.FileLogger<br/><br/>
+分别是输出到 Log4j、控制台和文件中，如果是输出到控制台的话，就让 appender=com.p6spy.engine.logging.appender.StdoutLogger 有效，其他两个注释掉。<br/><br/>
+如果你配置的是默认的 appender=com.p6spy.engine.logging.appender.FileLogger，那么它下面的 logfile = spy.log 就是指定要输出的日志文件，这个文件会生成在 System.getProperty("user.dir") 目录中，即 $TOMCAT_HOME/bin 目录中，你可以让它生成到 $TOMCAT_HOME/logs 目录中，就写成<br/><br/>
+logfile = ../logs/spy.log<br/><br/>
+如果是让 SQL 语句输出到日志文件的话，append=true，会较重要，为 true 时为附加，spy.log 会变得很大，否则为每次 Tomcat 重启后生成新的文件。<br/><br/>
+需留意一下最后的有关使用 Log4j 输出的配置<br/><br/>
+<strong>4. 配置数据库连接池<br />
+</strong><br />
+其实连接池的配置与使用 p6spy 无多大关系，无论你是在 Tomcat 中、还是 Spring、Hibernate 中配置连接池，甚至是直接用 JDBC 连接数据库都无所谓，关键是，要使 p6spy 在其中发生效用，所用的数据库驱动就必须是 com.p6spy.engine.spy.P6SpyDriver。<br/><br/>
+假定应用的 Context 是 MyWeb，且直接是部署在 $TOMCAT_HOME/webapps 目录下，那么我们配置这个应用的数据源就可以在 $TOMCAT_HOME/conf/Catalina/localhost 建立一个 MyWeb.xml 文件，文件内容如下：<br/><br/>
+<pre class="lang:default decode:true">&lt;Context path="/MyWeb" docBase="MyWeb"&gt; &lt;!-- 应用放在 $TOMCAT_HOME/webapps/MyWeb 中 --&gt;
+    &lt;Resource name="jdbc/orads" scope="Shareable" type="com.mchange.v2.c3p0.ComboPooledDataSource"/&gt;
+    &lt;ResourceParams name="jdbc/orads"&gt; &lt;!-- 数据源用 java:comp/env/jdbc/orads 查找 --&gt;
+        &lt;parameter&gt;
+            &lt;name&gt;factory&lt;/name&gt;
+            &lt;value&gt;org.apache.naming.factory.BeanFactory&lt;/value&gt;
+        &lt;/parameter&gt;
+        &lt;parameter&gt;
+            &lt;name&gt;jdbcUrl&lt;/name&gt;
+            &lt;value&gt;jdbc:oracle:thin:@192.168.0.1:1521:prod&lt;/value&gt;
+        &lt;/parameter&gt;
+        &lt;parameter&gt;
+            &lt;name&gt;driverClass&lt;/name&gt;
+            &lt;value&gt;com.p6spy.engine.spy.P6SpyDriver&lt;/value&gt;&lt;!--只要用了这个驱动，p6spy 就能拦截了--&gt;
+        &lt;/parameter&gt;
+        &lt;parameter&gt;
+            &lt;name&gt;user&lt;/name&gt;
+            &lt;value&gt;unmi&lt;/value&gt;
+        &lt;/parameter&gt;
+        &lt;parameter&gt;
+            &lt;name&gt;password&lt;/name&gt;
+            &lt;value&gt;123456&lt;/value&gt;
+        &lt;/parameter&gt;
+    &lt;/ResourceParams&gt;
+&lt;/Context&gt;</pre>
+<br/>
+----注：这一步不是必须的，主要通常我们都会使用连接池来访问数据库，其实只要在应用里使用 com.p6spy.engine.spy.P6SpyDriver 驱动，p6spy 就会在中间获取到它要的信息，并输出 SQL 语句。<br/><br/>
+关于不同版本的 Tomcat 连接池的配置又是个不小的议题。<br/><br/>
+如果是在 Tomcat 5.5 中，$TOMCAT_HOME/conf/Catalina/localhost/MyWeb.xml 的内容应如下：<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version='1.0' encoding='utf-8'?&gt;<br/><br/>
+&lt;Context docBase="MyWeb" path="/MyWeb" privileged="true"&gt;<br/><br/>
+ &lt;Resource name="jdbc/orads" auth="Container"
+    type="com.mchange.v2.c3p0.ComboPooledDataSource"
+    factory="org.apache.naming.factory.BeanFactory"
+    user="unmi" password="123456"
+    driverClass="com.p6spy.engine.spy.P6SpyDriver"
+    jdbcUrl="jdbc:oracle:thin:@192.168.0.1:prod"/&gt;<br/><br/>
+&lt;/Context&gt;</pre>
+<br/>
+而到了 Tomcat 6 中时，$TOMCAT_HOME/conf/Catalina 目录都不存在了。Tomcat 6 中给应用配置连接池就要在应用的 META-INF 目录(例如 $TOMCAT_HOME/MyWeb/META-INF) 下建立文件 context.xml，内容如下：<br/><br/>
+<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="UTF-8"?&gt;<br/><br/>
+&lt;Context reloadable="true" crossContext="true"&gt;<br/><br/>
+    &lt;WatchedResource&gt;WEB-INF/web.xml&lt;/WatchedResource&gt;<br/><br/>
+    &lt;Resource name="jdbc/orads"  auth="Container"
+         type="com.mchange.v2.c3p0.ComboPooledDataSource"
+         factory="org.apache.naming.factory.BeanFactory"
+         driverClass="com.p6spy.engine.spy.P6SpyDriver"
+         jdbcUrl="jdbc:oracle:thin:@192.168.1.1:prod"
+         user="unmi"  password="123456"
+         maxPoolSize="5" minPoolSize="0" idleConnectionTestPeriod="120" /&gt;   <br/><br/>
+&lt;/Context&gt;</pre>
+<br/>
+<strong>5. 测试应用<br />
+</strong><br />
+前面说过，只要是用 com.p6spy.engine.spy.P6SpyDriver 的话，不管你是用连接池还是每次建立 JDBC 连接，p6spy 都能给你输出所执行的 SQL 语句。默认时输出样子如下：<br/><br/>
+参考：1. <a href="http://www.blogjava.net/xmatthew/archive/2008/09/27/231561.html" target="_blank" rel="noopener">Tomcat5 类装载器分析</a><br />
+        2. <a href="http://www.blogjava.net/xmatthew/archive/2008/09/27/231560.html" target="_blank" rel="noopener">Tomcat6 类装载器分析</a><br />
+        3. <a href="http://hi.baidu.com/jcommunity/blog/item/2c5b532d41242d31349bf772.html" target="_blank" rel="noopener">Tomcat 6 连接池设置</a><br />
+        4. <a href="http://www.sinojava.com/bbs/redirect.php?tid=1193&amp;goto=lastpost" target="_blank" rel="noopener">tomcat中的几种连接池配置代码（tomcat5.0,tomcat5.5x,tomcat6.0）</a><br/><br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

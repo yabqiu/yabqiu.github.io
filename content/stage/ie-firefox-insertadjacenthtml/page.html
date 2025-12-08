@@ -1,0 +1,101 @@
+---
+title: 创建兼容 IE/FireFox 的 insertAdjacentHTML 方法
+url: /ie-firefox-insertadjacenthtml/
+date: 2009-07-08T21:33:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Web/JS
+tags: 
+  - javascript
+  - ExtJs
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 248 
+wpStatus: publish
+views: 802
+lastmod: 2021-09-03T20:46:12-05:00
+---
+
+在 IE 中我们可以用 insertAdjacentHTML 往元素的 beforeBegin,beforeEnd,afterBegin,afterEnd 处理插入新元素。而在非 IE 中没有该方法，因而我们要创造一个兼容的 insertHtml 方法来。<br/><br/>
+本方法从 Ext 2 中剥离出来的，在 ext-all-debug.js 中有以下方法：<br/><br/>
+Ext.DomHelper.insertHtml( String where, HTMLElement el, String html ) : HTMLElement<br/><br/>
+参数介绍：<br/><br/>
+where：插入位置。包括beforeBegin,beforeEnd,afterBegin,afterEnd。<br />
+el：用于参照插入位置的html元素对象<br />
+html：要插入的html代码<!--more--><br/><br/>
+<pre class="lang:default decode:true">function insertHtml(where, el, html){<br/><br/>
+    where = where.toLowerCase();
+    if(el.insertAdjacentHTML){<br/><br/>
+        switch(where){
+            case "beforebegin":
+                el.insertAdjacentHTML('BeforeBegin', html);
+                return el.previousSibling;
+            case "afterbegin":
+                el.insertAdjacentHTML('AfterBegin', html);
+                return el.firstChild;
+            case "beforeend":
+                el.insertAdjacentHTML('BeforeEnd', html);
+                return el.lastChild;
+            case "afterend":
+                el.insertAdjacentHTML('AfterEnd', html);
+                return el.nextSibling;
+        }
+        throw 'Illegal insertion point -&gt; "' + where + '"';
+    }<br/><br/>
+    var range = el.ownerDocument.createRange();
+    var frag;
+    switch(where){
+         case "beforebegin":
+            range.setStartBefore(el);
+            frag = range.createContextualFragment(html);
+            el.parentNode.insertBefore(frag, el);
+            return el.previousSibling;
+         case "afterbegin":
+            if(el.firstChild){
+                range.setStartBefore(el.firstChild);
+                frag = range.createContextualFragment(html);
+                el.insertBefore(frag, el.firstChild);
+                return el.firstChild;
+             }else{
+                el.innerHTML = html;
+                return el.firstChild;
+             }
+        case "beforeend":
+            if(el.lastChild){
+                range.setStartAfter(el.lastChild);
+                frag = range.createContextualFragment(html);
+                el.appendChild(frag);
+                return el.lastChild;
+            }else{
+                el.innerHTML = html;
+                return el.lastChild;
+            }
+        case "afterend":
+            range.setStartAfter(el);
+            frag = range.createContextualFragment(html);
+            el.parentNode.insertBefore(frag, el.nextSibling);
+            return el.nextSibling;
+    }
+    throw 'Illegal insertion point -&gt; "' + where + '"';
+}</pre>
+<br/>
+测试代码：<br/><br/>
+<pre class="lang:default decode:true ">&lt;select id="where"&gt;
+    &lt;option value="BeforeBegin"&gt;BeforeBegin&lt;/option&gt;
+    &lt;option value="AfterBegin"&gt;AfterBegin&lt;/option&gt;
+    &lt;option value="BeforeEnd"&gt;BeforeEnd&lt;/option&gt;
+    &lt;option value="AfterEnd"&gt;AfterEnd&lt;/option&gt;
+&lt;/select&gt;&lt;br&gt;
+&lt;button onclick="insertHtml(where.value,this,'&lt;img src=/ciba.gif&gt;')"&gt;&lt;b&gt;Click Here&lt;/b&gt;&lt;/button&gt;</pre>
+<br/>
+上面代码在 IE、FireFox 和 Chrome 浏览器上测试均通过。分别选择 BeforeBegin、AfterBegin、BeforeEnd 和 AfterEnd 点击 Click Here 按钮后的效果图如下：<br/><br/>
+<div><img src="/wp-content/uploads/2009/07/insertAdjacentHTML.jpg" alt="" /></div>
+<br/>
+另外 Ext.Element 和 Ext.Layer 的 insertHtml 也是调用的 Ext.DomHelper.insertHtml 方法的。且 Ext 在此之上衍生了 insertAfter/inserBefore/insertFirst/insertSibling 方法。<br/><br/>
+参考：1. <a href="http://www.koyoz.com/blog/?action=show&amp;id=2">http://www.koyoz.com/blog/?action=show&amp;id=2</a><br/><br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

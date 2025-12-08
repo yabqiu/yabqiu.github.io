@@ -1,0 +1,352 @@
+---
+title: SpringBoot2 应用 Axis 1.4 开发 WebService
+url: /springboot2-develop-axis-1-4-webservice/
+date: 2021-11-15T21:00:32-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - SOAP
+  - soapenv
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11959 
+wpStatus: publish
+views: 1982
+lastmod: 2021-11-23T10:52:17-06:00
+---
+
+有了前一篇 <a href="https://yanbin.blog/axis-1-4-develop-webservice/">应用 Axis 1.4 开发 WebService</a> 的对 Axis 1 较为深刻的理解后，现在正式给古老的 Axis 1.4  拉个伴，那就是 SpringBoot2。SpringBoot2 + Axis 1 的主要工作就是把 Axis 的 <a href="https://github.com/apache/axis-axis1-java/blob/master/axis-war/src/main/webapp/WEB-INF/web.xml">web.xml</a> 用 SpringBoot2 的方式进行转述。<br/><br/>
+在 SpringBoot 中用 Axis 1 后，有两个特性不再支持<br/><br/>
+<ol>
+    <li>不再支持 jws 即时发布 Web Service，不能直接搬用 url-pattern *.jws，没继续深究，实际中希望这么部署的方式用得较少</li>
+    <li>不再支持 SOAPMonitorService，它是一个 Java Applet,  Java Applet 在新版的 JDK 中已被移除，早就不推荐使用了</li>
+</ol>
+<br/>
+在 SpringBoot 中配置 Servlet 或 ServletListener 有两种方式<br/><br/>
+<ol>
+    <li>ServletRegistrationBean/ServletListenerRegistrationBean</li>
+    <li>@WebServlet/@WebListener</li>
+</ol>
+<br/>
+spring-boot-starter 引入了 log4j-to-slf4j, jul-to-slf4j, 所以不需要配置 log4j.properties, 需要的话可用 logback.xml 配置日志输出。<!--more--><br/><br/>
+下面来看整个 SpringBoot2 + Axis 1 项目的目录结构(Maven 项目)<br/><br/>
+<pre class="lang:default decode:true">springboot2-axis1.4
+├── pom.xml
+└── src
+    ├── main
+    │   ├── java
+    │   │   └── blog
+    │   │       └── yanbin
+    │   │           └── ws
+    │   │               ├── HelloService.java
+    │   │               ├── Main.java
+    │   │               └── config
+    │   │                   ├── AppConfig.java
+    │   │                   └── AppConfig1.java
+    │   ├── resources
+    │   │   ├── application.properties
+    │   │   └── logback.xml
+    │   └── webapp
+    │       └── WEB-INF
+    │           └── server-config.wsdd
+    └── test
+        ├── java
+        │   └── blog
+        │       └── yanbin
+        │           └── ws
+        │               ├── RunAdminClient.java
+        │               └── ServiceTest.java
+        └── resources
+            ├── deploy.wsdd
+            └── undeploy.wsdd</pre>
+<br/>
+该项目已上传至 GitHub <a href="https://github.com/yabqiu/springboot2-axis1.4">springboot2-axis1.4</a><br/><br/>
+<h3>项目及配置解析</h3><br/><br/>
+下面是对该项目的关键部分的说明<br/><br/>
+<h4>依赖包</h4><br/><br/>
+pom.xml<br/><br/>
+<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd"&gt;
+    &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+    &lt;parent&gt;
+        &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+        &lt;artifactId&gt;spring-boot-starter-parent&lt;/artifactId&gt;
+        &lt;version&gt;2.5.6&lt;/version&gt;
+        &lt;relativePath/&gt; &lt;!-- lookup parent from repository --&gt;
+    &lt;/parent&gt;
+    &lt;groupId&gt;blog.yanbin.ws&lt;/groupId&gt;
+    &lt;artifactId&gt;springboot2-axis1&lt;/artifactId&gt;
+    &lt;version&gt;0.0.1-SNAPSHOT&lt;/version&gt;
+    &lt;name&gt;springboot2-axis1&lt;/name&gt;
+    &lt;description&gt;Demo project for SpringBoot2 with Axis1&lt;/description&gt;
+    &lt;properties&gt;
+        &lt;java.version&gt;1.8&lt;/java.version&gt;
+    &lt;/properties&gt;
+    &lt;dependencies&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+            &lt;artifactId&gt;spring-boot-starter-web&lt;/artifactId&gt;
+        &lt;/dependency&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;commons-discovery&lt;/groupId&gt;
+            &lt;artifactId&gt;commons-discovery&lt;/artifactId&gt;
+            &lt;version&gt;0.2&lt;/version&gt;
+        &lt;/dependency&gt;<br/><br/>
+        &lt;!-- Axis 1.4 --&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.apache.axis&lt;/groupId&gt;
+            &lt;artifactId&gt;axis&lt;/artifactId&gt;
+            &lt;version&gt;1.4&lt;/version&gt;
+        &lt;/dependency&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.apache.axis&lt;/groupId&gt;
+            &lt;artifactId&gt;axis-jaxrpc&lt;/artifactId&gt;
+            &lt;version&gt;1.4&lt;/version&gt;
+        &lt;/dependency&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;axis&lt;/groupId&gt;
+            &lt;artifactId&gt;axis-wsdl4j&lt;/artifactId&gt;
+            &lt;version&gt;1.5.1&lt;/version&gt;
+        &lt;/dependency&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.apache.axis&lt;/groupId&gt;
+            &lt;artifactId&gt;axis-saaj&lt;/artifactId&gt;
+            &lt;version&gt;1.4&lt;/version&gt;
+        &lt;/dependency&gt;
+        &lt;!-- Axis 1.4 --&gt;<br/><br/>
+        &lt;dependency&gt;
+            &lt;groupId&gt;javax.mail&lt;/groupId&gt;
+            &lt;artifactId&gt;mail&lt;/artifactId&gt;
+            &lt;version&gt;1.4.7&lt;/version&gt;
+        &lt;/dependency&gt;<br/><br/>
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+            &lt;artifactId&gt;spring-boot-starter-test&lt;/artifactId&gt;
+            &lt;scope&gt;test&lt;/scope&gt;
+        &lt;/dependency&gt;
+    &lt;/dependencies&gt;<br/><br/>
+    &lt;build&gt;
+        &lt;plugins&gt;
+            &lt;plugin&gt;
+                &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+                &lt;artifactId&gt;spring-boot-maven-plugin&lt;/artifactId&gt;
+            &lt;/plugin&gt;
+        &lt;/plugins&gt;
+    &lt;/build&gt;<br/><br/>
+&lt;/project&gt;</pre>
+<br/>
+Axis 1.4 中间的依赖是根据下载的 <a href="https://archive.apache.org/dist/ws/axis/1_4/axis-bin-1_4.tar.gz">axis-bin-1_4.tar.gz</a> 解压后 webapps/axis/WEB-INFO/lib 目录中 jar 包依赖改成用 Maven 来管理，外加了一个 javax.mail 依赖，省得启动服务时总提示没有 mail 组件的警告信息。其他为 SpringBoot2 的依赖，由于 Axis 是一个 Web 项目，所以引入了 spring-boot-starter-web。<br/><br/>
+日志方面，由于 spring-boot-starter-logging 的介入，log4j, jul 的日志全被 slf4j 接管，最终由 LogBack 输出，所以只需要 logback.xml，或者完全在 application.properties 中配置日志也行。<br/><br/>
+src/main/webapps/WEB-INF/server-config.wsdd 文件是拷贝自 axis 的 <a href="https://github.com/apache/axis-axis1-java/blob/master/axis-war/src/main/webapp/WEB-INF/server-config.wsdd">server-config.wsdd</a>，用 WSDD 的方式发布 Web Service 要用到它<br/><br/>
+<h4>Servlet/Listener 配置</h4><br/><br/>
+接着就是转换 axis 的 <a href="https://github.com/apache/axis-axis1-java/blob/master/axis-war/src/main/webapp/WEB-INF/web.xml">web.xml</a> 为 SpringBoot 的表达方式，有两种实现<br/><br/>
+<strong>ServletRegistrationBean/ServletListenerRegistrationBean</strong><br/><br/>
+AppConfig<br/><br/>
+<pre class="lang:default decode:true ">package blog.yanbin.ws.config;<br/><br/>
+import org.apache.axis.transport.http.AdminServlet;
+import org.apache.axis.transport.http.AxisHTTPSessionListener;
+import org.apache.axis.transport.http.AxisServlet;
+import org.springframework.boot.web.servlet.ServletListenerRegistrationBean;
+import org.springframework.boot.web.servlet.ServletRegistrationBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;<br/><br/>
+@Configuration
+public class AppConfig {<br/><br/>
+    @Bean
+    public ServletRegistrationBean&lt;AxisServlet&gt; axisServlet() {
+        AxisServlet servlet = new AxisServlet();
+        return new ServletRegistrationBean&lt;&gt;(servlet, "/servlet/AxisServlet", "/services/*", "/axis/services/*");
+    }<br/><br/>
+    @Bean
+    public ServletRegistrationBean&lt;AdminServlet&gt; axisAdminServlet() {
+        AdminServlet servlet = new AdminServlet();
+        ServletRegistrationBean&lt;AdminServlet&gt; adminServletBean = new ServletRegistrationBean&lt;&gt;(servlet);
+        adminServletBean.setLoadOnStartup(100);
+        return adminServletBean;
+    }<br/><br/>
+    @Bean
+    public ServletListenerRegistrationBean&lt;AxisHTTPSessionListener&gt; axisSessionListener() {
+        AxisHTTPSessionListener sessionListener = new AxisHTTPSessionListener();
+        return new ServletListenerRegistrationBean&lt;&gt;(sessionListener);
+    }
+}</pre>
+<br/>
+<strong>@WebServlet/@WebListener 的方式</strong><br/><br/>
+AppConfig1<br/><br/>
+<pre class="lang:default decode:true">package blog.yanbin.ws.config;<br/><br/>
+
+import org.apache.axis.transport.http.AdminServlet;
+import org.apache.axis.transport.http.AxisHTTPSessionListener;
+import org.apache.axis.transport.http.AxisServlet;
+import org.springframework.boot.web.servlet.ServletComponentScan;
+import org.springframework.context.annotation.Configuration;<br/><br/>
+import javax.servlet.annotation.WebListener;
+import javax.servlet.annotation.WebServlet;<br/><br/>
+@Configuration
+@ServletComponentScan
+public class AppConfig1 {<br/><br/>
+    @WebServlet({"/servlet/AxisServlet", "/services/*", "/axis/services/*"})
+    public static class MyAxisServlet extends AxisServlet {
+    }<br/><br/>
+    @WebServlet(loadOnStartup = 100)
+    public static class MyAxisAdminService extends AdminServlet {
+    }<br/><br/>
+    @WebListener
+    public static class MyAxisSessionListener extends AxisHTTPSessionListener {
+    }
+}
+</pre>
+<br/>
+从中二选一，比如想要用 AppConfig, 则要把  AppConfig1 中的  @Configuration 注解注释掉，反之亦然。<br/><br/>
+注：用 @WebServlet/@WebListener 的方式时，Servlet 和 Listener 不能为实例的内部类，因此声明类时要用 <code>public static class</code><br/><br/>
+加上 <code>/axis/services/*</code> 的 <code>url-pattern</code> 是因为 AdminClient 默认会调用 http://localhost:8080/axis/services/AdminService，如果总是用 <code>-l</code> 参数指定 url 的话，该 <code>url-pattern</code> 可省去。<br/><br/>
+<h4>应用程序入口</h4><br/><br/>
+Main 启动类没什么特别的，就是一个最简单的 SpringBootApplication 启动类，后面说的重启应用就是重新运行下面的 Main 类<br/><br/>
+<pre class="lang:default decode:true">@SpringBootApplication
+public class Main {
+    public static void main(String[] args) {
+        SpringApplication.run(Main.class, args);
+    }
+}</pre>
+<br/>
+到目前为止，我们可以启动本应用，这是一个 Web 项目(因为引入了 spring-boot-starter-web 依赖)，它会起动一个内嵌的  Tomcat， 启动后打开 http://localhost:8080/servlet/，看到<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/11/springboot2-axis1-1.png"><img class="aligncenter wp-image-11972" src="https://yanbin.blog/wp-content/uploads/2021/11/springboot2-axis1-1-800x300.png" alt="" width="509" height="191" /></a><br/><br/>
+这是一个熟悉的 Apache Axis 1 的 Web Service 列表界面，此时测试 Version.getVersion 服务是可用的, 访问 http://localhost:8080/services/Version?method=getVersion<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/11/springboot2-axis1-4.png"><img class="aligncenter wp-image-11987" src="https://yanbin.blog/wp-content/uploads/2021/11/springboot2-axis1-4-800x364.png" alt="" width="670" height="305" /></a><br/><br/>
+<h3>开发一个简单的 Web Service</h3><br/><br/>
+现在来开发一个自己简单的 Web Service - HelloService，要添加的 Java 类只要 HelloService, 代码为<br/><br/>
+<pre class="lang:default decode:true ">package blog.yanbin.ws;<br/><br/>
+public class HelloService {<br/><br/>
+    public String sayHello(String name) {
+        return "Hello " + name;
+    }
+}</pre>
+<br/>
+发布 HelloService，只要在 server-config.wsdd 中加上几行<br/><br/>
+<pre class="lang:default decode:true "> &lt;service name="HelloService" provider="java:RPC"&gt;
+  &lt;parameter name="className" value="blog.yanbin.ws.HelloService"/&gt;
+  &lt;parameter name="allowedMethods" value="*"/&gt;
+  &lt;parameter name="scope" value="application"/&gt;
+ &lt;/service&gt;</pre>
+<br/>
+暴露 blog.yanbin.ws.HelloService 中的所有 public 方法为 Web Service, 并且服务对象的生命周期是 application。要卸载 HelloService 服务，只要把这几行去掉，并重启应用<br/><br/>
+完后，只要重启应用程序，再次查看服务列表就能看到<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/11/springboot2-axis1-2.png"><img class="aligncenter wp-image-11973" src="https://yanbin.blog/wp-content/uploads/2021/11/springboot2-axis1-2-800x361.png" alt="" width="510" height="230" /></a><br/><br/>
+用 http://localhost:8080/services/HelloService?wsdl 查看服务描述。<br/><br/>
+<h3>测试新加的  HelloService</h3><br/><br/>
+Web 方式，访问 http://localhost:8080/services/HelloService?method=sayHello&amp;name=Yanbin<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/11/springboot2-axis1-5.png"><img class="aligncenter wp-image-11988" src="https://yanbin.blog/wp-content/uploads/2021/11/springboot2-axis1-5-800x313.png" alt="" width="674" height="264" /></a><br/><br/>
+HelloService 有一个接口是 sayHello, 来测试一下该接口<br/><br/>
+在 ServiceTest 中有测试该服务的代码，如下<br/><br/>
+<pre class="lang:default decode:true">@Test
+void sayHello() throws Exception {
+    String servicesURL = "http://localhost:8080/services/HelloService";
+    Call call = new Call(servicesURL);
+    String result = (String)call.invoke("", "sayHello", new Object[]{"Yanbin"});<br/><br/>
+    assertEquals("Hello Yanbin", result);
+    System.out.println(result);
+} </pre>
+<br/>
+测试通过，并且输出如下：<br/><br/>
+<blockquote>
+Hello Yanbin
+</blockquote>
+<br/>
+同时我们在日志配置 logback.xml 设置了 org.apache.axis.transport.http.HTTPSender 的输出级别为 DEBUG，所以能完整看到 HTTP 交互的请求响应的详情<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/11/springboot2-axis1-3.png"><img class="aligncenter wp-image-11974" src="https://yanbin.blog/wp-content/uploads/2021/11/springboot2-axis1-3-800x234.png" alt="" width="800" height="234" /></a><br/><br/>
+可利用该日志输出信息，用 cURL 或 PostMan 进行一样的 HTTP 请求，这方面的详情请参考上一篇 <a href="https://yanbin.blog/axis-1-4-develop-webservice/">应用 Axis 1.4 开发 WebService</a>。为了不来回跳跃，还是重复一下吧<br/><br/>
+<blockquote>
+$ curl -X POST -H "SOAPAction;" http://localhost:8080/services/HelloService \<br />
+--data '&lt;?xml version="1.0"?&gt;<br />
+&lt;soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"<br />
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"&gt;<br />
+    &lt;soapenv:Body&gt;<br />
+        &lt;sayHello soapenv:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"&gt;<br />
+            &lt;arg0 xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/" xsi:type="soapenc:string"&gt;Yanbin&lt;/arg0&gt;<br />
+        &lt;/sayHello&gt;<br />
+    &lt;/soapenv:Body&gt;<br />
+&lt;/soapenv:Envelope&gt;'
+<span style="color: #000080;">&lt;?xml version="1.0" encoding="UTF-8"?&gt;&lt;soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"&gt;&lt;soapenv:Body&gt;&lt;sayHelloResponse soapenv:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"&gt;&lt;sayHelloReturn xsi:type="xsd:string"&gt;<span style="color: #993300;">Hello Yanbin</span>&lt;/sayHelloReturn&gt;&lt;/sayHelloResponse&gt;&lt;/soapenv:Body&gt;&lt;/soapenv:Envelope&gt;</span>
+</blockquote>
+<br/>
+<h3>用 deploy.wsdd 文件部署服务</h3><br/><br/>
+前面是直接修改 <code>server-config.wsdd</code> 的方来部署新服务的，我们也可以通过  AdminClient 来部署，写好了 HelloService 类后，把想要加入到 <code>server-config.wsdd</code> 文件中的内容放在一个单独的文件里，如这里的 deploy.wsdd，内容为<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;deployment xmlns="http://xml.apache.org/axis/wsdd/"
+            xmlns:java="http://xml.apache.org/axis/wsdd/providers/java"&gt;
+    &lt;service name="HelloService" provider="java:RPC"&gt;
+        &lt;parameter name="className" value="blog.yanbin.ws.HelloService" /&gt;
+        &lt;parameter name="allowedMethods" value="*" /&gt;
+        &lt;parameter name="scope" value="request" /&gt;
+    &lt;/service&gt;
+&lt;/deployment&gt;</pre>
+<br/>
+然后可执行类似如下的命令<br/><br/>
+<blockquote>
+$ java -Djava.ext.dirs=lib org.apache.axis.client.AdminClient -lhttp://localhost:8080/services/AdminService test/resources/deloy.wsdd
+</blockquote>
+<br/>
+-Djava.ext.dirs=lib 指定能运行 AdminClient 的含有足够依赖 jar 包的目录，如 <a href="https://archive.apache.org/dist/ws/axis/1_4/axis-bin-1_4.tar.gz">axis-bin-1_4.tar.gz</a> 解压后 webapps/axis/WEB-INFO/lib 目录<br/><br/>
+为了省事，当前项目包含必须的 jar 包，我们直接用 Java 代码来调用 AdminClient 更简单且可重用。本例中写在 RunAdminClient 类中，以单元测试用例的方式呈现<br/><br/>
+<pre class="lang:default decode:true">@Test
+void deployHelloService() {
+    AdminClient.main(new String[]{
+        "-lhttp://localhost:8080/services/AdminService",
+            "src/test/resources/deploy.wsdd"
+    });
+} </pre>
+<br/>
+如果要卸载该 HelloService, 把有关它的那几行从 <code>server-config.wsdd</code> 中移除掉，再重启服务就行。或者创建一个 undeploy.wsdd 文件，内容为<br/><br/>
+<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;undeployment xmlns="http://xml.apache.org/axis/wsdd/"&gt;
+    &lt;service name="HelloService"&gt;
+    &lt;/service&gt;
+&lt;/undeployment&gt;</pre>
+<br/>
+再对它执行 AdminClient，如<br/><br/>
+<blockquote>
+$ java -Djava.ext.dirs=lib org.apache.axis.client.AdminClient -lhttp://localhost:8080/services/AdminService test/resources/deloy.wsdd
+</blockquote>
+<br/>
+或是用 RunAdminClient 类中的<br/><br/>
+<pre class="lang:default decode:true">@Test
+void undeployHelloService() {
+    AdminClient.main(new String[]{
+        "-lhttp://localhost:8080/services/AdminService",
+        "src/test/resources/undeploy.wsdd"
+    });
+}</pre>
+<br/>
+用 AdminClient 的好处是不需要每次重启，因为它除了对 <code>server-config.wsdd</code> 文件修改外，还调用 AdminService 在内存里也作了手脚。<br/><br/>
+<h3>问题</h3><br/><br/>
+如果在 IntelliJ IDEA 中，你的 Axis 应用是一个子模块，那么在 IDE 中启动时须配置<br/><br/>
+<blockquote>
+Working directory: $MODULE_DIR$ 
+</blockquote>
+<br/>
+否则运行时报类似如下的错误<br/><br/>
+<blockquote>
+16 Nov 2021 19:25:11 [main] ERROR org.apache.axis.configuration.EngineConfigurationFactoryServlet.getServerEngineConfig(162) - Unable to find config file. Creating new servlet engine config file: /WEB-INF/server-config.wsdd<br />
+16 Nov 2021 19:25:11 [main] ERROR org.apache.axis.configuration.EngineConfigurationFactoryServlet.getServerEngineConfig(176) - Problem with servlet engine /WEB-INF directory<br />
+org.apache.axis.ConfigurationException: Configuration file directory '/private/var/folders/hm/t_nnzqw55g17fqwhf2rgtx3r0000gp/T/tomcat-docbase.8080.3352273356626804333/WEB-INF' does not exist or is not a directory or is not readable.<br />
+    at org.apache.axis.configuration.FileProvider.&lt;init&gt;(FileProvider.java:99)<br />
+    at org.apache.axis.configuration.EngineConfigurationFactoryServlet.getServerEngineConfig(EngineConfigurationFactoryServlet.java:174)
+</blockquote>
+<br/>
+因为从当前目录开始找不到 src/main/webapp/WEB-INF，而且放在该目录中的 index.html 也不会被注册为 welcome file。<br/><br/>
+<h3>总结</h3><br/><br/>
+最后好像也没有太多要说，升级到 Apache Axis2, 因为它最近都有更新，Axis 1 早就没人管了。或者还可以选择 <a href="http://cxf.apache.org/">Apache CXF</a> 去，CXF 是两个项目的联合体，Celtix 和 XFire(XFire 还真有耳闻)，曾经叫过 CeltiXfire，后来缩写成了 CXF(Celtix 含  CX, XFire 含 XF, 大家都公平)。还有一个选择是 Spring WS。这里有一篇三者对比的文章 <a href="https://dzone.com/articles/apache-cxf-vs-apache-axis-vs">Apache CXF vs. Apache AXIS vs. Spring WS</a>。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://github.com/alaeessaki/spring-boot-axis1.4-server">Spring boot axis 1.4 webService Server</a></li>
+    <li><a href="https://www.baeldung.com/spring-servletcomponentscan">The @ServletComponentScan Annotation in Spring Boot</a></li>
+    <li><a href="https://www.baeldung.com/register-servlet">How to Register a Servlet in Java</a></li>
+    <li><a href="https://www.logicbig.com/tutorials/spring-framework/spring-boot/boot-with-servlet-components.html">Using Servlet components: @WebServlet, @WebFilter and @WebListener in Spring boot application</a></li>
+</ol>

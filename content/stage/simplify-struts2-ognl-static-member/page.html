@@ -1,0 +1,172 @@
+---
+title: 简化 Struts2 OGNL 访问静态方法和静态变量
+url: /simplify-struts2-ognl-static-member/
+date: 2011-01-26T08:35:51-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Struts
+tags: 
+  - Struts2
+  - OGNL
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3099 
+wpStatus: publish
+views: 1959
+lastmod: 2021-09-03T12:20:38-05:00
+---
+
+前些日子折腾过这一话题，而且在 <a href="//unmi.cc/struts2-ognl-access-static" target="_blank" rel="noopener">Struts2 中 OGNL 如何更简单的访问静态变量和静态方法</a> 记述了其中的原理，也对实现作了初步的猜想，但没给出实际的答案。这里将会给出，探寻的过程中有过不少尝试，下面也将把解决的过程描述出来，仍有不少迷域之处。先交待一下答案，必须在一个自定义的 PreResultListener 里压入静态方法或静态变量所在类的对象实例，在返回结果之前方能保证它们是在栈顶的。</p>
+<br/>
+解决此问题的一个明确目标就是要把静态方法或静态变量所在类的对象实例压到 ValueStatic 已知的位置上，当然最应该就是在栈顶，其他的栈数据，如当前 Action 实例或 Model 对象应该在它们之下，这样的话，你就能用 @vs@, 或 @vs1@... 这样的方式明确访问哪个类的静态成员。<br/><br/>
+最简单方法，前篇也讲过，在 Action 的 execute() 方法中往 ValueStatic 中压入的值会在栈顶--在 Action 实例和 Model 实例之上。<!--more--><br/><br/>
+<pre class="lang:default decode:true">public class IndexAction extends ActionSupport implements ModelDriven&lt;User&gt; {<br/><br/>
+    public String execute() throws Exception {
+        ValueStack vs = ActionContext.getContext().getValueStack();<br/><br/>
+        System.out.println("IndexAction: " + vs);
+        vs.push(new Constants());
+        return SUCCESS;
+    }<br/><br/>
+    @Override
+    public User getModel() {
+        return new User();
+    }
+}</pre>
+<br/>
+上面类实现了 ModelDriver，model 实例会被放到 ValueStack 的根处，现在看 &lt;s:debug/&gt; 显示的 ValueStack:<br/><br/>
+<p style="text-align: center;"><img class="aligncenter" src="/wp-content/uploads/2011/01/struts-ognl-valuestack-1.png" alt="Struts2 OGNL ValueStack" width="695" height="413" /></p>
+<br/>
+自己在 execute 方法中压入的变量会在 Action 实例和 Model 对象之上，没问题，可以用 @vs@NAME, 或 @vs1@NAME 这么来使用。可是一般系统中一个常量或方法类想来也不太可能写在每一个执行方法中吧，不光 Action 众多，就是每个 Action 里的执行方法可能也不少。所以要找到一个一劳永逸的地方，只做一次，Run Anywhere。<br/><br/>
+尝试一，放在一个基类 Action 构造中，一个系统的 Action 全部继承自一个 BaseAction 是很常见，那就在 BaseAction 的初始方法中写下：<br/><br/>
+<pre class="lang:default decode:true">public BaseAction(){
+    ValueStack vs = ActionContext.getContext().getValueStack();
+    System.out.println("BaseAction:"+vs);
+    vs.push(new cc.unmi.struts2.Constants());
+}</pre>
+<br/>
+在基类的构造函数中 push 的内容将不会进入到 &lt;s:debug/&gt; 显示的 ValueStack 中，当然页面标签是取不到的。<br/><br/>
+看打印的结果：<br/><br/>
+BaseAction:com.opensymphony.xwork2.ognl.OgnlValueStack@14a5594<br />
+IndexAction: com.opensymphony.xwork2.ognl.OgnlValueStack@12143d8<br/><br/>
+它们不是同一个 ValueStack 实例，当然是没有效果的。<br/><br/>
+那么是不是因为在 BaseAction 构造函数中执行时，当前实例还未完全构造出来的原因呢，那再次放到 BaseAction 构造后的执行方法中。<br/><br/>
+尝试二，放到 BaseAction 实例的后处理方法中，我们用 @PostConstruct 注解，说明了某个方法在实例构造后紧接着执行(在用 Spring 注解来初始化 Action 类时会调用被注解的方法)，在 BaseAction 中：<br/><br/>
+<pre class="lang:default decode:true">@PostConstruct
+public void initBaseAction(){
+    ValueStack vs = ActionContext.getContext().getValueStack();
+    System.out.println("initBaseAction:"+vs);
+    vs.push(new cc.unmi.struts2.Constants());
+}</pre>
+<br/>
+其实，这种方法即使是能向 ValueStack 中压入值也是不行的，因为它太早执行了，而且 ValueStack 也不会是同一个实例：<br/><br/>
+initBaseAction:com.opensymphony.xwork2.ognl.OgnlValueStack@7d83e6<br />
+IndexAction: com.opensymphony.xwork2.ognl.OgnlValueStack@359f55<br/><br/>
+尝试三，走到现在想要验证的不光是怎么向栈顶压入值，还有就是在什么地方可以向 ValueStack 塞入值。Struts2 有一个内置的 prepare 拦截器，Struts2 的 defaultStack 拦截器栈中引用了该拦截器，你只要让你的 Action 实现 com.opensymphony.xwork2.Preparable 的 prepare 接口方法即可。这个 prepare 方法会在每回调用 Action 执行方法之前得到调用，可以想见该方法无法放置值在 ValueStack 的栈顶，会被 execute() 给沉下去。<br/><br/>
+<pre class="lang:default decode:true">public class IndexAction implements Preparable, ModelDriven&lt;User&gt; {<br/><br/>
+    public String execute() throws Exception {
+        ValueStack vs = ActionContext.getContext().getValueStack();
+        System.out.println("IndexAction: " + vs);
+        return "success";
+    }<br/><br/>
+    @Override
+    public void prepare() throws Exception {
+        ValueStack vs = ActionContext.getContext().getValueStack();
+        System.out.println("prepare:"+vs);
+        vs.push(new cc.unmi.struts2.Constants());
+    }<br/><br/>
+    @Override
+    public User getModel() {
+        return new User();
+    }
+}</pre>
+<br/>
+prepare:com.opensymphony.xwork2.ognl.OgnlValueStack@6c5aed<br />
+IndexAction: com.opensymphony.xwork2.ognl.OgnlValueStack@6c5aed<br/><br/>
+看下此时的 &lt;s:debug/&gt; 显示的 ValueStack 结构：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter" src="/wp-content/uploads/2011/01/struts-ognl-valuestack-2.png" alt="Struts2 OGNL ValueStack" width="655" height="220" /></p>
+<br/>
+Constants 确实是压到了 ValueStack 中了，但是它无法盖住 Model 对像 User。注：上面的图其实显示有些错位，User 才是 model, 它在 Constants 之上。<br/><br/>
+根据栈的原理要义，要后被执行的才会在栈顶。这时候就会想到自定义的 Struts2 拦截器，它可以决定是在 Action 的执行方法之前还是之后执行压栈的操作。<br/><br/>
+拦截器有一个特性就是包裹式的，前处理方法是最前面的拦截器最先得到执行，后处理方法则相反，在最下层的拦截器能最先得到执行。那么我们来看拦截器中怎么处理：<br/><br/>
+尝试四，拦截器中 push 值到 ValueStack，自定义拦截器：<br/><br/>
+<pre class="lang:default decode:true">public class StaticImportInterceptor extends AbstractInterceptor {<br/><br/>
+    @Override
+    public String intercept(ActionInvocation invocation) throws Exception {<br/><br/>
+        ValueStack vs = invocation.getInvocationContext().getValueStack();
+        System.out.println("Intercept before execute: "+vs);
+        vs.push(new Constants());<br/><br/>
+        String result = invocation.invoke();<br/><br/>
+        System.out.println("Intercept after execute: "+vs);
+        vs.push(new Date());<br/><br/>
+        return result;
+    }
+}</pre>
+<br/>
+struts.xml 中配置应用拦截器：<br/><br/>
+<pre class="lang:default decode:true">&lt;struts&gt;
+ &lt;package name="myPackage" extends="struts-default"&gt;<br/><br/>
+        &lt;interceptors&gt;
+            &lt;interceptor name="staticImport" class="cc.unmi.struts2.StaticImportInterceptor"/&gt;
+            &lt;interceptor-stack name="unmiDefaultStack"&gt;
+                &lt;interceptor-ref name="staticImport"/&gt;
+                &lt;interceptor-ref name="defaultStack"/&gt;       
+            &lt;/interceptor-stack&gt;
+        &lt;/interceptors&gt;<br/><br/>
+        &lt;default-interceptor-ref name="unmiDefaultStack"/&gt;</pre>
+<br/>
+执行后，用 &lt;s:debug/&gt; 查看到的 ValueStack 与上图(用 prepare) 是一样的，控制台下是：<br/><br/>
+Intercept before execute: com.opensymphony.xwork2.ognl.OgnlValueStack@97dadf<br />
+IndexAction: com.opensymphony.xwork2.ognl.OgnlValueStack@97dadf<br />
+Intercept after execute: com.opensymphony.xwork2.ognl.OgnlValueStack@97dadf<br/><br/>
+ValueStack 都是同一个，可是很奇怪的是在拦截器的 invocation.invoke() 之后无法往 ValueStack 中压入值，交换 struts.xml 中的 staticImport 和 defaultStack 也照旧，原来一直都搞不太明白其中机理。不过写到此时大约可以这么理解 invocation.invoke() 包含了结果页的处理，也就是 &lt;s:debug/&gt; 或是 struts2 标签先于拦截器里的<br/><br/>
+System.out.println("Intercept after execute: "+vs);<br />
+        vs.push(new Date());<br/><br/>
+被处理，所以它取不到后进入的值，因为 jsp 标签不代表前台的。<br/><br/>
+如果是这样使用拦截器，其实与 prepare 无分别的，因为 prepare() 也是可以写在 BaseAction 中的。<br/><br/>
+理论到现在，也该基本找到答案了，在 ValueStack 栈顶放置值的代码最佳执行位置应该是在 Action execute() 方法执行后，处理结果之前，理应要 Struts2 的 com.opensymphony.xwork2.interceptor.PreResultListener 出台了，它正好擅长做这事的。它可以让你在执行 Result(包括标签的执行) 之前得到回调。<br/><br/>
+尝试五，使用 PreResultListener， 它本身只是个监听器，需要借助于拦截器进行注册，所以要以下代码：<br/><br/>
+StaticImportInterceptor 拦截器：<br/><br/>
+<pre class="lang:default decode:true">public class StaticImportInterceptor extends AbstractInterceptor {<br/><br/>
+    @Override
+    public String intercept(ActionInvocation invocation) throws Exception {<br/><br/>
+        //注册 Result 前处理监听器
+        invocation.addPreResultListener( new StaticImportPreResultListener());
+        String result = invocation.invoke();<br/><br/>
+        return result;
+    }
+}</pre>
+<br/>
+注意啦, invocation.addPreResultListener( new StaticImportPreResultListener()); 必须在 invocation.invoke() 之前注册，否则完全是无用功，因为 invoke() 里把结果都处理完了，再注册结果预处理的监听器去听谁呢。<br/><br/>
+StaticImportPreResultListener 监听器：<br/><br/>
+<pre class="lang:default decode:true">public class StaticImportPreResultListener implements PreResultListener {<br/><br/>
+    @Override
+    public void beforeResult(ActionInvocation invocation, String resultCode) {
+        ValueStack vs = invocation.getStack();<br/><br/>
+        vs.push(new Date());
+        vs.push(new Constants());
+    }
+}</pre>
+<br/>
+struts.xml 中拦截器部分还是和前面一样的配置： <br/><br/>
+<pre class="lang:default decode:true">&lt;struts&gt;
+ &lt;package name="myPackage" extends="struts-default"&gt;<br/><br/>
+        &lt;interceptors&gt;
+            &lt;interceptor name="staticImport" class="cc.unmi.struts2.StaticImportInterceptor"/&gt;
+            &lt;interceptor-stack name="unmiDefaultStack"&gt;
+                &lt;interceptor-ref name="staticImport"/&gt;
+                &lt;interceptor-ref name="defaultStack"/&gt;      
+            &lt;/interceptor-stack&gt;
+        &lt;/interceptors&gt;<br/><br/>
+        &lt;default-interceptor-ref name="unmiDefaultStack"/&gt;</pre>
+<br/>
+现在可以看到 &lt;s:debug/&gt; 显示出来的 ValueStack 总算到达我们所期望的那样了：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter" src="/wp-content/uploads/2011/01/struts-ognl-valuestack-3.png" alt="Struts2 OGNL ValueStack 3" width="702" height="421" /></p>
+<br/>
+终于能控制在 ValueStack 的实例的位置了，以后在 jsp 中用 OGNL 再也不用写上长长的一串类全限名称了，只需用像 @vs@NAME，或 @vs2@parse(11255355535) 这样的精练写法就能调用到静态方法，取到静态变量了。<br/><br/>
+真是颇费周折，几经风波，苦苦追寻如是也。<br/><br/>
+以上代码为节约资源，都省略了包和类的引入部分，在 Eclipse 里可用 ctrl+shift+i 自动汇入，其他 IDE 应该也有相应的快捷键吧。

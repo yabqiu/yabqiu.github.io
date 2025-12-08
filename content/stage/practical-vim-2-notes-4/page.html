@@ -1,0 +1,36 @@
+---
+title: 《Practical Vim》阅读笔记 (4)
+url: /practical-vim-2-notes-4/
+date: 2017-05-15T01:15:56-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/01/vim-logo-en.png"
+categories:
+  - Vim
+tags: 
+  - vim
+  - Macro
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8040 
+wpStatus: publish
+views: 405
+lastmod: 2021-09-10T13:03:57-05:00
+---
+
+一路阅读完第五章直接跳跃到第十章有关宏的内容，宏的录制和回放功能是多数编辑器都会提供，但我却基本不用这一功能。在 Vim 中宏比点号(.) 更有效的处理重复性操作，既然作为一个 Vimer, 以重复操作为耻，因而十分有必要对它加以了解和掌握的，又是一个一分钟上手需一辈子来掌握的东西。</p>
+<br/>
+<img class="aligncenter wp-image-8071 size-full" src="/wp-content/uploads/2017/05/vi-macro-recording.png" alt="" width="360" height="45" /><br/><br/>
+1. 宏是录制在某个寄存器中，用 <code>q{register}</code> 启动录制，例如 <code>qa</code>, 然后执行一系操作，再次按 <code>q</code> 结束录制，第一次回放用 <code>@{register}</code>, 如 <span style="color: #666666; font-family: monospace;"><span style="background-color: #fafafa;"><code>@a</code>,以后多次执行上一次宏回放可用 <code>@@</code>.也可以支持数字,如 <code>10@a</code>, 或 <code>10@@</code>. <code>:reg a</code> 可查看寄存器 <code>a</code> 中宏的内容</span></span><br/><br/>
+2. 录制宏的一条金律是：确保每一条命令是可重复的。<code>h</code>, <code>j</code>, <code>k</code>, <code>l</code>, 没什么意义，而 <code>0e</code>, <code>A</code>, <code>I</code> 就是可重复的。当回放宏时遇到光标移动失败时, 如光标已在行首，宏中有 <code>h</code> 操作，那么后续的操作被放弃，根据 <code>visualbell</code> 配置可能有响声提示。宏的 motion 失败即放弃的特性让我们在重复执行宏时可以用一个足够大的数字，如 <code>200@@</code>, 反正无副作用<br/><br/>
+3. 宏的序列执行与并发执行，当用 <code>5@a</code> 执行宏 <code>"a   0f.r)w~j</code>, 其实是把宏放在一个队列里，往下跳行执行，其他任何一行执行失败，后续行将得不到更新。如果针对宏 <code>"a   0f.r)w~</code>, 对选择的多行执行 <code>:'&lt;,'&gt;normal @a</code> 时效果就不一样了，它的意思是针对选择的多行单独执行宏，任何行的失败互不影响，所以它是并发执行的<!--more--><br/><br/>
+4. 除加命令到已有的宏中，例如我们用 <code>qa</code> 录制了 <code>0f.r)w~</code>, 保存后意识到少按了一个 <code>j</code>, 办法是用 <code>qA</code>, <code>j</code>, <code>q</code> 就行了，内容变成 <code>0f.r)w~j</code>。这种办法只能在宏结尾附加命令，修改前面或中间另有他法<br/><br/>
+5. 针对缓冲区应用宏修改多个文件，打开多个文件的方法可以用 <code>vi *.rb</code>, 或进到 vi 后执行 <code>:cd ruby_module</code>, <code>:args *.rb</code>。现在用 <code>:args</code> 可以看到 <code>[animal.rb] banker.rb frog.rb person.rb</code>，缓冲取中有这些文件，缓冲区切换可用 <code>:first</code>, <code>:last</code>, <code>:prev</code>, 和 <code>:next</code>。我们录制一个宏用于裹上模块声明，内容是 <code>"a   gg/class^MOmodule Rank^[j&gt;G^[Goend^[</code>, 现在可用 <code>:argdo</code> 命令对所有缓冲区应用操作，<code>:argdo normal @a</code>, 为了什么录制宏时的文件不被两次修改，在执行 <code>:argdo</code> 命令之前撤销修改, 命令是 <code>:edit!</code>, 或 <code>:e !</code><br/><br/>
+6. 上面的 <code>:argdo normal @a</code> 对所有缓冲区并行执行了宏，如果要串行执行的话，需在原有宏后加一个 <code>:next</code> 命令，新的宏 a 的内容是 <code>gg/class^MOmodule Rank^[j&gt;G^[Goend^[:next^M</code>, 这时候可以用 <code>22@a</code> 依次 next 缓冲区应用宏，直接最后停下来。最后多个缓冲区的内容被修改后，要用 <code>:wall</code> 来保存所有文件<br/><br/>
+7. 利用宏中的 Vim 脚本可以做更有趣的事情，例如给每一行前分别加上序号 1), 2), 3) 等，录制一个宏 <code>I^R=i^M) ^[:let i+=1^M</code>, 然后选择后序的行执行命令 <code>:'&lt;,'&gt;normal @a</code> 就会为后面的行依次加上 2), 3), 4) 等。有必要说明一下宏里的指令表示法 <code>^[</code> 是 <code>Esc</code>, 因为 <code>&lt;C-[</code> 的效果与 <code>Esc</code> 是一样的;  <code>^M</code> 是回车，其他的像 <code>^R</code> 是 <code>&lt;C-r</code><br/><br/>
+8. 自由修改宏的方法是把存储宏的寄存器内容放到缓冲区中，假设录制的 a, <code>:put a</code> 或 <code>:ap</code> 命令可以把宏 a 的内容倒出来。然后编辑它，再存回到相应的寄存器上，命令是 <code>0"ay$</code>, 如果 <code>"add</code> 或 <code>V"ay</code> 都会在最后加上 <code>^J</code>. 因为 <code>0"ay$</code> 是 character-wise 的操作，后两种是 line-wise 的操作，所以会有行尾的 <code>^J</code><br/><br/>
+9. 另外也可以用 Vim script 直接修改宏的内容，如 <code>:let @a=substitute(@a, '\~', 'vU', 'g')</code>

@@ -1,0 +1,161 @@
+---
+title: 三、我对java中类路径的理解(摘)
+url: /understand-java-classpath/
+date: 2009-04-10T11:18:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - JVM
+tags: 
+  - Java
+  - JVM
+  - classpath
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 281 
+wpStatus: publish
+views: 532
+lastmod: 2010-08-10T10:16:51-05:00
+---
+
+Java中的类路径分“编译后的存放路径” 和 “运行时的查找路径”，下面分别谈谈<br/>
+<br/>
+<strong>1. java编译后的类存放路径，</strong><br/>
+<br/>
+分两种：“源文件被直接编译”和“源文件被间接编译”<br/>
+        1-1源文件直接编译<br/>
+          什么是源文件直接编译：即通过javac直接编译源文件<br/>
+建立d:\my目录，在其目录下新建一个文件，如下：<br/>
+<br/>
+Public class HelloWorld{<br/>
+    Public static void main(String[] args){<br/>
+        System.out.println(“HelloWorld”);<br/>
+    }<br/>
+}<br/>
+<br/>
+在命令行输入： javac HelloWorld.java<br/>
+<br/>
+这时在d:\my这个目录下就产生了一个类文件HelloWorld.class <!--more--><br/>
+在命令行输入： java HelloWorld<br/>
+HelloWorld<br/>
+<br/>
+正常输出<br/>
+<br/>
+改变一：<br/>
+把原文件中的输出内容改为”changeHelloWorld”<br/>
+重新编译，运行，可以看到在控制台输出了<br/>
+changeHelloWorld<br/>
+<br/>
+改变二:<br/>
+恢复一的改变，并删除之前生成的类文件， 在源文件中的头部加入<br/>
+Package com.test；<br/>
+<br/>
+然后在命令行输入： javac –d . HelloWorld.java<br/>
+这时在d:\my这个目录下就产生了一个新的目录com\test,类文件HelloWorld.class就位于test下<br/>
+注，如果不指明路径，则javac只会把生成的类文件放在默认包中，如同没包<br/>
+<br/>
+改变三:<br/>
+删除改变二中所产生的目录结构与类<br/>
+然后在命令行输入： javac –d d:\ HelloWorld.java<br/>
+这时在d:\ 这个根目录下就产生了一个新的目录com\test,类文件HelloWorld.class就位于test下<br/>
+<br/>
+总结：对于源文件被直接编译的，其规则如下：<br/>
+1. 每一次执行javac命令都会重新编译源文件，<br/>
+2. 编译后的类文件的存放地址可以指定<br/>
+3. 源文件带package结构的，编译时系统直接产生类文件存放的目录结构（针对package所指定，注意一定要明确指定编译后的路径喔）<br/>
+<br/>
+    1-2源文件间接编译<br/>
+          什么是源文件间接编译：放在A类中的B类，当A.java通过javac编译时，B也会被编译<br/>
+<br/>
+建立d:\my1目录，在其目录下新建两个文件，如下：<br/>
+A. java<br/>
+public class A{<br/>
+    public static void main(String[] args){<br/>
+        B b1 = new B();<br/>
+        b1.print();<br/>
+    }<br/>
+}<br/>
+<br/>
+B. java<br/>
+public class B{<br/>
+    public void print(){<br/>
+        System.out.println("package test");<br/>
+    }<br/>
+}<br/>
+<br/>
+接着在命令行输入 javac A.java<br/>
+这时在d:\my1这个目录下就产生了两个类文件A.class与B.class<br/>
+  执行java A<br/>
+  Package test<br/>
+<br/>
+改变一：<br/>
+  删除以上所产生的类文件，修改两个文件的源代码，分别在头部加上import edu.nctu.*;和package edu.nctu;即<br/>
+A. java<br/>
+import edu.nctu.*;<br/>
+public class A{<br/>
+    public static void main(String[] args){<br/>
+        B b1 = new B();<br/>
+        b1.print();<br/>
+    }<br/>
+}<br/>
+<br/>
+B. java<br/>
+package edu.nctu;<br/>
+public class B{<br/>
+    public void print(){<br/>
+        System.out.println("package test");<br/>
+    }<br/>
+}<br/>
+<br/>
+在命令行输入：<br/>
+Javac A.java<br/>
+接着会出现一些错误提示，主要提示如下：<br/>
+A. java:1:package edu.nctu does not exist<br/>
+<br/>
+解决方式：把d:\my1目录下的B.java移到d:\my1\edu\nctu\下就可以了<br/>
+<br/>
+注意： 如果d:\my1下仍然存在B.java则还会报错，因为编译器总是先到A.java本身所在的路径中寻找B.java，虽然编译器找到了B.java,可是对比其package声明之后，认为它应为位于edu\nctu目录下，不该在此目录，因此产生错误信息<br/>
+<br/>
+结论，对于间接被编译的.java文件，遵从如下规则<br/>
+1. 该间接文件没有包的，则被直接编译，生成的类文件存放地址和原文件相同<br/>
+2. 带包的间接文件，要想正确编译，必须明确手动建立包目录结构并且把间接文件置于其内<br/>
+3. 。。。<br/>
+<br/>
+<strong>2. 运行时的查找路径</strong> <br/>
+<br/>
+    java 是通过 java虚拟机来解释运行的, 也就是通过 java 命令。 javac 编译生成的 .class文件就是虚拟机要执行的代码, 称之为字节码(bytecode), 虚拟机通过 classloader来装载这些字节码, 也就是通常意义上的类. 这里就有一个问题, classloader 从哪里知道 java 本身的类库及用户自己的类在什么地方呢? 或者有着缺省值(当前路径).<br/>
+实际上 java 虚拟机是由 java luncher 初始化的, 也就是 java (或 java.exe)这个程序来做的. 虚拟机按以下顺序搜索并装载所有需要的类: <br/>
+<br/>
+    1, 系统类: 组成 java 平台的类, 包含 rt.jar等类. <br/>
+<br/>
+    2, 扩展类: 使用 java 扩展机制的类, 都是位于扩展目录($JAVA_HOME/jre/lib/ext)？中的 .jar 档案包. <br/>
+<br/>
+    3, 用户类: 开发者定义的类或者没有使用 java 扩展机制的第三方产品.<br/>
+<br/>
+以上的类，程序运行时，是如何找到的？ 下面做个说明：<br/>
+ <br/>
+当我们在命令行输入java XXX 的时候，java.exe的工作就是找到合适的JRE来执行类文件。Java.exe依照如下逻辑来寻找JRE:<br/>
+<br/>
+1. 自己的目录下有没有JRE目录<br/>
+<br/>
+2. 父目录下的JRE子目录<br/>
+<br/>
+3. 查询windows Registry(HKEY_LOCAL_MACHINE\Software\JavaSoft\Java Runtime Environment\).<br/>
+<br/>
+根据以上的逻辑，java找到JRE，进而找到系统类和扩展类（因为它们都位于JRE中，且位置固定？），所以“系统类”和“扩展类”的类查找问题就解决了，下面再谈谈用户类的查找，用户类路径就是一些包含类文件的目录, .jar, .zip 文件的列表,我们要使用它，必须在命令行中使用 -classpath 选项或者使用 CLASSPATH 环境变量来确定这些类的位置或则按缺省查找,规则如下：<br/>
+ <br/>
+*  ".", 指当前目录, 是缺省值.<br/>
+<br/>
+* CLASSPATH 环境变量, 一旦设置, 将缺省值覆盖<br/>
+<br/>
+* 命令行参数 -cp 或者 -classpath, 一旦指定, 将上两者覆盖.<br/>
+<br/>
+* 由 -jar 参数指定的 .jar 档案包, 就把所有其他的值覆盖, 所有的类都来自这个指定的档案包中. 由于生成可执行的 .jar 文件, 还需要其他一些知识, 比如 package等，对于package,import机制，下一个专题再尝试谈谈. <br/>
+<br/>
+        以上错漏之处，请大伙提出，先谢过<br/>
+<br/>
+摘自：<a href="http://topic.csdn.net/u/20090331/11/0D5E721C-0F61-4F60-9C0A-C643F649022D.html">http://topic.csdn.net/u/20090331/11/0D5E721C-0F61-4F60-9C0A-C643F649022D.html</a>

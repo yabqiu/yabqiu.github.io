@@ -1,0 +1,56 @@
+---
+title: Unmi 的 Struts2 学习笔记(八)
+url: /unmi-study-struts2-8/
+date: 2008-04-10T13:32:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/05/struts-logo.jpeg"
+categories:
+  - Struts
+tags: 
+  - Struts2
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 417 
+wpStatus: publish
+views: 319
+lastmod: 2020-03-22T11:15:30-05:00
+---
+
+吾同人数进寺庙，却从未点过一柱香。概因精神世界里终无所寄托。既不为生儿还是女而筹算，也无须因落下亏心事要请得神灵庇佑。想来，真要的东西，阿弥陀佛也给不了。在物价飞涨之际，谁能给你加薪，何来民主，看看这辈子能不能有机会参与选一回国家领导人，少说几句了，就这点言论自由了。</p>
+<br/>
+1. Struts 2 标签库以 OGNL 表达式为基础，对集合、对象的访问功能更强了。Struts 2 的标签用统一的前缀，一般为 "s"，不再像 Struts1 那样分 &lt;html:.../&gt;、&lt;bean:.../&gt;、&lt;logic:.../&gt; 等多个命名空间的标签。如果在 JSP 2.0 之前用过 JSTL，也就知道什么是 OGNL 表达式的。<br/><br/>
+2. Struts2 提供了很多 Struts1 标签没有的东西，如日历、树型控件、Tab页等；同时可借助 DWR，有标签支持 Ajax，除此还提供了主题、模板，还允许在页面中使用自定义组件。Struts2 标签都定义在 URI 为 "/struts-tags" 的命名空间下，Struts2 的标签库功能很强大，使用起来却更简单。<!--more--><br/><br/>
+3. 同 Struts1 相比，Struts2 的标签库不依赖于作何表现层技术，即大部分标签，不光能在 JSP 中用，还能在 Velocity 和 FreeMarker 等模板中用。Struts1 中要支持 EL，必须引入 struts-el.jar 和 JSTL 类库；而 Struts2 默认支持 OGNL、JSTL、Groovy 和 Velocity 表达式。<br/><br/>
+4. Struts2 的标签定义文件是在 Struts2-core-2.x.x.jar 的 META-INF 目录中的 struts-tags.tld。相比 Struts1 的标签定义是在 struts.jar 的 META-INF/tld 目录下的 struts-bean.tld、struts-html.tld等(Struts1 从 1.3 开始，包也分成了 struts-core-1.3.x.jar 和 struts-taglib-1.3.x.jar，所以 struts-bean.tld、struts-html.tld 等就在 struts-taglib-1.3.x.jar 的 META-INF/tld 目录下)。<br/><br/>
+5. Servlet 2.4 开始的应用在启动时会递归搜索 classpath 下的 tld 文件加载；Servlet 2.3 的应用在启动时好像会自动搜索 WEB-INF 目录下的 tld 文件加载，再之前的 Servlet 版本就必须在 web.xml 文件中加上  &lt;taglib&gt; 来指定 tld。<br/><br/>
+6. XWork 在原有的 OGNL 基础上增加了对 ValueStack 的支持。Struts2 的 Stack Context 需要多个“根”对象，其中 ValueStack 只是多个“根”对象的其中之一。如果要访问的属性属于根对象，则可以直接访问该属性，否则必须使用一个命名空间，如 #bar。<br />
+    ValueStack 是以属性名为 "struts.valueStack" 的 com.opensymphony.xwork2.util.OgnlValueStack 对象存在于 request 中的。<br/><br/>
+7. Struts2 中，系统的 ValueStatck 是 OGNL 表达式的第一个根对象(key=com.opensymphony.xwork2.util.ValueStack.ValueStack)，如果最近的 Action 存在，则 Action 上下文是第二个根对象(key=com.opensymphony.xwork2.ActionContext.name，只是 Action 的名字而已)。可以用 &lt;s:debug/&gt;显示出 Stack Contenxt 和 Value Stack Contents。<br/><br/>
+8. 标准 OGNL 表达式是："#" 表示从根开始，例如 request 是一个根<br />
+      &lt;s:property value = "#request['struts.request_uri']" /&gt;  输出当前请求的 URI，因为 "struts.request_uri" 包含有 "."，不然也可以用 #request.xxx 的形式。<br />
+      如果，只写成属性名，说明是根对象的 name 属性，但 Struts2 会有多个根对象，会不明确，因此这个时候 &lt;s:property value="${name}"/&gt; 就会访问 ValueStack 中的对象的属性 name -- ValueStack 是 OGNL 表达式的一个根对象。<br/><br/>
+9. Struts2 提供了一个特殊的 OGNL 访问器，对 ValueStack 从上至下搜索匹配。例如，ValueStack 中 有两个实例 Animal(name,species) 和 Login(name,salary)，括号中表示所含属性。如下的 Action 类<br />
+    public class LoginAction implements ModelDriven&lt;Animal&gt;{<br />
+       private Animal animal = new Animal();<br />
+       private String name = "Unmi";<br />
+       private String salary = "little";<br />
+       public Animal getModel(){<br />
+            return animal;<br />
+      }<br />
+       ...............................................<br />
+   }<br />
+   就会在 ValueStack 中压入两个对象，分别是  LoginAction 实例和 animal 实例，animal 在栈顶，那么<br />
+  &lt;s:property value="species"/&gt;    显示 animal 的 species 属性<br />
+  &lt;s:property value="salary"/&gt;    显示 LoginAction 实例 的 salary 属性<br />
+  &lt;s:property value="name"/&gt;    显示 animal 的 name 属性，因为自栈顶向下先匹配到 animal 的 name 属性<br />
+  此时，如果我需要获取 LoginAction 实例的 name 谁能告诉我如何取，如果已知 LoginAction 的实例名的话，还能<br />
+  &lt;s:property value="?LoginAction?.name" /&gt;  这里怎么才能行得通呢？压栈也不带实例名称的啊!<br />
+  幸好，还可以通过索引来访问  ValueStack 中的对象<br />
+  &lt;s:property value="[1].name"/&gt;  显示 LoginAction 实例的 name 属性 "Unmi"。这样写就会从栈的第二个位置找起，首先找到的就是 LoginAction 实例了。<br/><br/>
+这一部分还有些含混不清，ValueStack 还能如何压入值。<br/><br/>
+10. 最后，Struts2 还在 Stack Context 中放了一些命名对象，parameters、request、session、application、attr 来访问对应属性。如 request['name'] 或 request.name 访问请求 name 属性。特别说明一下 attr 对象，依次搜索 PageContext、HttpServletReqeust、HttpSession、ServletContext 中相应属性。

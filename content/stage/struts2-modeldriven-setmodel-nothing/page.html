@@ -1,0 +1,144 @@
+---
+title: Struts2 中 ModelDriven Action 的 setModel() 为何不起作用？
+url: /struts2-modeldriven-setmodel-nothing/
+date: 2011-02-18T07:04:53-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Struts
+tags: 
+  - Struts2
+  - Struts
+  - ModelDriven
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3184 
+wpStatus: publish
+views: 2810
+lastmod: 2021-09-03T12:54:19-05:00
+---
+
+我们在使用 Struts2 的时候一定有用过它的 ModelDriven 类型的 Action，它适于把零散的属性自动组装到一个 JavaBean 中，它的 Model 就相当于 Struts1 的 FormBean。你的 Action 必须实现 com.opensymphony.xwork2.ModelDriven 接口及它的 getModel() 方法，当然要声明一个存储 Model 对象的属性，这个属性将会被压入到 ValueStack 中。</p>
+<br/>
+你也可以自然或不自觉在 Action 中加入一个 setModel() 方法，试图在执行期修改当前的 Model 对象，比如像下面这样的 IndexAction 代码：<!--more--><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.struts2;<br/><br/>
+import com.opensymphony.xwork2.ModelDriven;<br/><br/>
+public class IndexAction implements ModelDriven&lt;User&gt; {<br/><br/>
+    private User user = new User("Fantasia");<br/><br/>
+    @Override
+    public User getModel() {
+        return this.user;
+    }<br/><br/>
+    public void setModel(User user){
+        this.user = user;
+    }<br/><br/>
+    public String execute() throws Exception {     
+        User newUser = new User("Unmi");
+        setModel(newUser); //试图设置新的 Model<br/><br/>
+        //或者直接用下面的方式想设置新的 Model
+        //this.user = newUser;      <br/><br/>
+        return "success";
+    }
+}</pre>
+<br/>
+所引用的 Model 对象 User 的代码如下：<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.struts2;<br/><br/>
+public class User {<br/><br/>
+    private String name;<br/><br/>
+    public User(String name){
+        this.name = name;
+    }<br/><br/>
+    public String getName() {
+        return name;
+    }
+    public void setName(String name) {
+        this.name = name;
+    }<br/><br/>
+    public String toString(){
+        return super.toString()+"@Name:"+this.name;
+    }
+}</pre>
+<br/>
+现在你来到转向的 jsp 页面里，用 Struts2  标签：<br/><br/>
+&lt;s:property value="name"/&gt;<br/><br/>
+来显示值，想想是 "Fantasia" 还是 "Unmi" 呢？--------- 是 "Fantasia”。<br/><br/>
+因为 property 标签显示的是 ValueStack 中根对象的属性值，根对象 Model 仍然是原来那个 user 对象。要是你使用：<br/><br/>
+&lt;s:property value="model.name"/&gt;<br/><br/>
+显示出来的正是设置进去的新的 Model  对象的 newUser 的 name 属性，显示为 "Unmi"。为什么呢，因为它找到的是根对象 IndexAction 的属性对象 model 的 name 属性。<br/><br/>
+我们用 &lt;s:debug/&gt; 看一下当前 ValueStack 中的状况：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter" style="border: gray 1px solid;" src="/wp-content/uploads/2011/02/Struts2-setModel1.png" alt="Struts2 setModel" width="738" height="301" /></p>
+<br/>
+旧的 User(name:Fantasia) 对象放在了 ValueStack 的根上了，而后来的 newUser(name:Unmi) 也确实被 Action 的 model 重新引用了。<br/><br/>
+这也是源自于我们的一种惯性思维，太清晰的把 JSP 分为前台，Action 部分为后台，好像是未显示前面之前可以随意改其中欲显示的内容，而实际并非总是如此。<br/><br/>
+原因是 ModelDrivenInterceptor 在 setModel() 之前已经调用 getModel() 把原来的 Model 对象放到了 ValueStack 的根上了，而后来的 setModel() 只是改变了 Action 的 model  的引用，并未修改在 ValueStack 根位置的 Model  的引用。<br/><br/>
+<p style="text-align: center;"><img class="aligncenter" style="border: gray 1px solid;" src="/wp-content/uploads/2011/02/Struts2-setModel2.png" alt="Struts2 setModel" width="760" height="466" /></p>
+<br/>
+如果你用 Spring 来管理 Struts2 的 Action，要是没有设置 scope="prototype"，则会出现第二次访问时 ValueStack 中的 Model 被成功替换的假象，原因是共用了前一个 Action 实例，当然拦截器在调用 getModel() 时会使用后面设置的 newUser。<br/><br/>
+那么我们怎么才能替换掉 ValueStack 中的 Model 对象，让 &lt;s:property value="name"/&gt; 能取到新设置 Model  对象的值呢？由于我们很难让 ValueStack 中的 Model  引用再指向别的对象，但可以改变其中的值，像：<br/><br/>
+getModel().setName("Another Name");<br/><br/>
+这样是对的，Model 中有许多的属性值，一个个设置是不太可能的，这时修我们可以自定义 setModel() 方法了，借助于 apache commons 或是 Spring 提供的 BeanUtils.copyProperties() 方法，它们的参数顺序不一样，且 Spring 的是抛出的 RuntimeException:<br/><br/>
+org.springframework.beans.BeanUtils.copyProperties(source, target);<br/><br/>
+org.apache.commons.beanutils.BeanUtils.copyProperties(dest, orig);<br/><br/>
+如果用 Spring 的 BeanUtils，那么此时的 setModel() 可写成：<br/><br/>
+<pre class="lang:default decode:true">public void setModel(User user){
+    org.springframework.beans.BeanUtils.copyProperties(this.user, user);
+}</pre>
+<br/>
+用 apache commons 的 BEanUtils，需捕获异常，写成（注意，这个是泛型版本）：<br/><br/>
+<pre class="lang:default decode:true">public void setModel(M model) {   
+    try {
+        org.apache.commons.beanutils.BeanUtils.copyProperties(this.model, model);
+    } catch (Exception e) {
+        log.error("Set model values error.",e);
+    }
+}</pre>
+<br/>
+写到这里，基本是大功告成了，研究的乐趣在什么地方呢？就是不断有新的风景，见第二个图有个判断：<br/><br/>
+<pre class="brush:java">if (refreshModelBeforeResult) {
+    invocation.addPreResultListener(new RefreshModelBeforeResult(modelDriven, model));
+}</pre>
+<br/>
+进到 RefreshModelBeforeResult 代码：<br/><br/>
+<pre class="lang:default decode:true">protected static class RefreshModelBeforeResult implements PreResultListener {
+    private Object originalModel = null;
+    protected ModelDriven action;<br/><br/>
+    public RefreshModelBeforeResult(ModelDriven action, Object model) {
+        this.originalModel = model;
+        this.action = action;
+    }<br/><br/>
+    public void beforeResult(ActionInvocation invocation, String resultCode) {
+        ValueStack stack = invocation.getStack();
+        CompoundRoot root = stack.getRoot();<br/><br/>
+        boolean needsRefresh = true;
+        Object newModel = action.getModel();<br/><br/>
+        // Check to see if the new model instance is already on the stack
+        for (Object item : root) {
+            if (item.equals(newModel)) {
+                needsRefresh = false;
+            }
+        }<br/><br/>
+        // Add the new model on the stack
+        if (needsRefresh) {<br/><br/>
+            // Clear off the old model instance
+            if (originalModel != null) {
+                root.remove(originalModel);
+            }
+            if (newModel != null) {
+                stack.push(newModel);
+            }
+        }
+    }
+}</pre>
+<br/>
+显然，只要设置了 modelDriven 的 refreshModelBeforeResult 属性为 true，使能让普通的 setModel 方法：<br/><br/>
+<pre class="brush:java ">public void setModel(M model){
+    this.model = model;
+}</pre>
+<br/>
+直接替换掉 ValueStack 根位置的 Model 的需求了。看下 JavaDoc 中对 refreshModelBeforeResult 的解释吧：<br/><br/>
+refreshModelBeforeResult - set to true if you want the model to be refreshed on the value stack after action execution and before result execution.  The setting is useful if you want to change the model instance during the action execution phase, like when loading it from the data layer.  This will result in getModel() being called at least twice.<br/><br/>
+下面的问题变成了如何配置已定义拦截器的属性了，这里就此打住，不再发挥了，还会另立专题讲述 <a href="http://unmi.cc/struts2-how-to-override-interceptor-parameters" target="_blank" rel="noopener">Struts2 中如何覆盖已内置拦截器的属性(参数)值</a>。

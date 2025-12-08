@@ -1,0 +1,173 @@
+---
+title: Oracle, PostgreSQL 字符串排序不一致及调整
+url: /oracle-postgresql-string-sorting-different-consistent/
+date: 2024-11-01T18:47:42-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/postgresql-logo.png"
+categories:
+  - Database
+tags: 
+  - database
+  - Oracle
+  - PostgreSQL
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13763 
+wpStatus: publish
+views: 134
+lastmod: 2024-11-01T18:47:42-05:00
+---
+
+有一个使用了不同数据库的应，Oracle 和 PostgreSQL，数据库中的记录完全相同，相同的查询语句(相同的排序，至少从字面上来说是的)取到的记录排序却不同，从而产生了 Bug。 简单演示一下默认排序各自在这两种数据库中的行为, 比如说表中有两条记录，'VFORX' 和 'ibbVA'。此处不创建物理表。<br/><br/>
+Oracle(Linux)<br/><br/>
+<blockquote>
+select * from (<br />
+    select 'VFORX' as value from dual<br />
+        union<br />
+    select 'ibbVA' from dual<br />
+) order by 1 desc;
+</blockquote>
+<br/>
+返回的结果是<!--more--><br/><br/>
+<pre class="lang:default decode:true">VALUE|
+-----+
+ibbVA|
+VFORX|</pre>
+<br/>
+PostgreSQL(Linux)<br/><br/>
+<pre class="lang:default decode:true ">select * from (
+    select 'VFORX'
+    union
+    select 'ibbVA'
+) a(c1) order by c1 desc</pre>
+<br/>
+得到的不同的排序结果<br/><br/>
+<pre class="lang:default decode:true">c1   |
+-----+
+VFORX|
+ibbVA|</pre>
+<br/>
+程序中只是简单的使用第一条记录的值，当然程序是有 Bug 的，这是外话。<br/><br/>
+能立即让它们行为一致的方式是保证排序后结果一致，在 PostgreSQL 中排序时指定 collate "POSIX" 或 "C"<br/><br/>
+<pre class="lang:default decode:true">select * from (
+    select 'VFORX'
+    union
+    select 'ibbVA'
+) a(c1) order by c1 collate "POXIS" desc</pre>
+<br/>
+用 <code>collate "C"</code> 也能得到一样的效果<br/><br/>
+<pre class="lang:default decode:true ">c1   |
+-----+
+ibbVA|
+VFORX|</pre>
+<br/>
+问题是解决了，从中也领悟了 collate 在数据库以及排序中的作用。以前隐约记得在创建数据库时不仅要指定数据库使用的字符集，也就是存储所采用的字符集，还会指定一个叫做 collate 的东西，当时并未太在意它意味着什么，而碰到问题后才想起它的重要。<br/><br/>
+collate 是定义字符集排序规则的关键字，如区不区分大小写，或按照某种语言的自然顺序。现在也回想起为什么 MySQL 的 varchar 类型默认不区分大小写，字段的值是 'AaB', 用 where a = 'aab' 也能查询出来的缘故。<br/><br/>
+<h3>PostgreSQL 中如何指定 collate</h3><br/><br/>
+<pre class="lang:default decode:true">SELECT datname, datcollate, datctype
+FROM pg_database
+WHERE datname = 'casdb'; </pre>
+<br/>
+看到<br/><br/>
+<pre class="lang:default decode:true ">datname|datcollate |datctype   |
+-------+-----------+-----------+
+casdb  |en_US.UTF-8|en_US.UTF-8|</pre>
+<br/>
+datcollate 也是 en_US.UTF-9, 我们可以在创建数据库时候指定 LC_COLLATE = 'C'<br/><br/>
+<pre class="lang:default decode:true">CREATE DATABASE mydb
+    LC_COLLATE = 'C'
+    LC_CTYPE = 'C'
+    TEMPLATE = template0;</pre>
+<br/>
+执行上面语句时还必须指定 TEMPLATE = template0, 否则有错。数据库创建后再查看<br/><br/>
+<pre class="lang:default decode:true">SELECT datname, datcollate, datctype
+FROM pg_database
+WHERE datname = 'mydb'</pre>
+<br/>
+datcollate 和 datctype 就变成了<br/><br/>
+<pre class="lang:default decode:true">datname|datcollate|datctype|
+-------+----------+--------+
+mydb   |C         |C       |</pre>
+<br/>
+切换数据库到 mydb 后<br/><br/>
+<pre class="lang:default decode:true">select * from (
+    select 'VFORX'
+    union
+    select 'ibbVA'
+) a(c1) order by c1 desc</pre>
+<br/>
+就变成了<br/><br/>
+<pre class="lang:default decode:true">c1   |
+-----+
+VFORX|
+ibbVA|</pre>
+<br/>
+或者表的字段级指定 collate 类型<br/><br/>
+<pre class="lang:default decode:true">CREATE TABLE my_table (
+    id serial PRIMARY KEY,
+    name VARCHAR(100) COLLATE "C"
+);<br/><br/>
+
+ALTER TABLE my_table
+    ALTER COLUMN name TYPE VARCHAR(100) COLLATE "C";</pre>
+<br/>
+<h3>Oracle 数据库如何指琮 collate</h3><br/><br/>
+Oracle 12.2 也开始支持 Schema, 表，列级别的 collate<br/><br/>
+<pre class="lang:default decode:true">CREATE TABLE t1 (
+  id          NUMBER,
+  company     VARCHAR2(15 CHAR) COLLATE BINARY_CI,
+  CONSTRAINT t1_pk PRIMARY KEY (id)
+);<br/><br/>
+CREATE TABLE t1 (
+  id          NUMBER,
+  company     VARCHAR2(15 CHAR),
+  CONSTRAINT t1_pk PRIMARY KEY (id)
+)
+DEFAULT COLLATION BINARY_CI;<br/><br/>
+CREATE USER test2 IDENTIFIED BY test2
+  DEFAULT TABLESPACE users
+  QUOTA UNLIMITED ON users
+  DEFAULT COLLATION BINARY_CI;</pre>
+<br/>
+执行上面的语句大概率会出现如下错语<br/><br/>
+<blockquote>
+<p class="p1">SQL Error [43929] [99999]: ORA-43929: Collation cannot be specified if parameter MAX_STRING_SIZE=STANDARD is set.</p>
+</blockquote>
+<br/>
+<pre class="lang:default decode:true">SELECT value FROM v$parameter WHERE name = 'max_string_size'; </pre>
+<br/>
+看到的是 <code>STANDARD</code><br/><br/>
+需修改成 extended 才行<br/><br/>
+<pre class="lang:default decode:true ">ALTER SYSTEM SET max_string_size=extended SCOPE=SPFILE;</pre>
+<br/>
+再重启数据库<br/><br/>
+<blockquote>
+SHUTDOWN IMMEDIATE;<br />
+STARTUP UPGRADE;
+</blockquote>
+<br/>
+Oracle 通常默认的 collate 是 BINARY, 由 NLS_COMP 和 NLS_SORT, NLS_LANGUAGE, NLS_TERRITORY 等决定的<br/><br/>
+<pre class="lang:default decode:true ">SELECT * FROM NLS_DATABASE_PARAMETERS WHERE parameter IN ('NLS_SORT', 'NLS_COMP');</pre>
+<br/>
+<pre class="lang:default decode:true ">Name     |Value   |
+---------+--------+
+PARAMETER|NLS_SORT|
+VALUE    |BINARY  |</pre>
+<br/>
+假如<br/><br/>
+<pre class="lang:default decode:true ">SELECT table_name, column_name, collation 
+FROM user_tab_columns 
+WHERE table_name = 'YOUR_TABLE_NAME';</pre>
+<br/>
+返回 NULL 的话就是用了默认的 collation.<br/><br/>
+Oracle 的 collate 可应用到 VARCHAR2, CHAR, CLOB, 可选值有<br/><br/>
+<ol>
+    <li>COLLATE BINARY:  基于二进制，排序最快，大小写敏感</li>
+    <li>COLLATE BINARY_CI: <strong>C</strong>ase <strong>I</strong>nsensitive, 比较时(如 &gt;, &lt;, =) 时大小写不敏感，但排序时区分大小写</li>
+    <li>COLLATE BINARY_AI: <strong>A</strong>ccent <strong>I</strong>nsensitive, 比较和排序时都不区分大小写</li>
+</ol>

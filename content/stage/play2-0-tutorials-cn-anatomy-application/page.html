@@ -1,0 +1,130 @@
+---
+title: Play 2.0 中文资料 - 剖析 Play 2.0 应用
+url: /play2-0-tutorials-cn-anatomy-application/
+date: 2012-10-04T23:06:48-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+  - PlayFramework
+tags: 
+  - 翻译
+  - Scala
+  - PlayFramework
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4802 
+wpStatus: publish
+views: 1258
+lastmod: 2021-06-01T16:36:32-05:00
+---
+
+<span style="font-size: medium;"><strong>标准的应用目录布局</strong></span><br/><br/>
+Play 应用的目录布局是标准化的，这样可保持尽量的简单. 一个标准的 Play 应用看起来如下:<br/><br/>
+<pre class="lang:default decode:true">app                      → 应用程序源文件
+ └ assets                → 待编译的资源文件
+    └ stylesheets        → 比如放置 LESS CSS 源文件
+    └ javascripts        → 比如放置 CoffeeScript 源文件
+ └ controllers           → 应用的控制器
+ └ models                → 应用的业务层
+ └ views                 → 视图模板
+conf                     → 配置文件和其他无需编译的放在 classpath 下的文件
+ └ application.conf      → 主配置文件
+ └ routes                → 路由定义文件
+public                   → 公共资源
+ └ stylesheets           → CSS 样式文件
+ └ javascripts           → Javascript 脚本文件
+ └ images                → 图片
+project                  → sbt 配置文件
+ └ build.properties      → sbt 项目属性配置
+ └ Build.scala           → 应用构建脚本
+ └ plugins.sbt           → sbt 插件配置
+lib                      → 不受管理的库依赖
+logs                     → 标准的日志目录
+ └ application.log       → 默认的日志文件
+target                   → 构建生成的东西
+ └ scala-2.9.1              
+    └ cache              
+    └ classes            → 编译生成的类文件
+    └ classes_managed    → 受管理的类文件 (如模板等生成的)
+    └ resource_managed   → 受管理的资源文件 (如 Less 等生成的)
+    └ src_managed        → 产生的源文件 (如模板等)
+test                     → 单元和功能性测试的源文件目录</pre>
+<br/>
+<strong><!--more--><span style="font-size: medium;">app/ 目录</span></strong><br/><br/>
+<code>app</code> 目录饮食了所有的执行构件: Java 和 Scala 的源代码, 模板和需编译的资源文件.<br/><br/>
+在 app 目录中有三个标准包, 它们各自对应着 MVC 构架模式的每一类部件:<br/><br/>
+<ul>
+    <li><code>app/controllers</code></li>
+    <li><code>app/models</code></li>
+    <li><code>app/views</code></li>
+</ul><br/><br/>
+你当然可以在其中加入自己的包, 如 <code>app/utils</code> 包.<br/><br/>
+<blockquote>
+注: 在 Play 2.0 中, controllers, models 和 views 三个包的命名是比较合理的, 如果需要你也可以更改这些包名 (比如给包名都加上前缀 <code>com.yourcompany</code>).
+</blockquote>
+<br/>
+其中有一个可选的目录叫做 <code>app/assets</code> 用于存放须编译的资源文件, 像 <a href="http://lesscss.org/">LESS 源文件</a> 和 <a href="http://jashkenas.github.com/coffee-script/">CoffeeScript 源文件 </a>.<br/><br/>
+<span style="font-size: medium;"><strong>public/ 目录</strong></span><br/><br/>
+存放在 <code>public</code> 目录中的资源文件是静态的, 它们直接被 Web 服务器所使用<span style="color: #0000ff;">(Unmi 注: 无需预处理)</span>.<br/><br/>
+这个目录分成三个标准的子目录，分别用于存放图片文件, CSS 样式表文件和 JavaScript 文件. 你应该像这样组织你的静态资源文件以保持所有的 Play 应用的一致性.<br/><br/>
+<blockquote>
+在新创建的应用中, <code>/public</code> 目录被映射在了 <code>/assets</code> URL 路径上, 不过你可以很轻易的改变这一映射规则, 甚至是使用数个存放静态资源的目录.
+<span style="color: #0000ff;">Unmi 注: Play 完成 /assets URL 到 /public 的映射是通过在 routes 路由文件中加入以下配置实现的：</span>
+<pre class="lang:default decode:true "># Map static resources from the /public folder to the /assets URL path
+GET     /assets/*file               controllers.Assets.at(path="/public", file)</pre>
+</blockquote>
+<br/>
+<span style="font-size: medium;"><strong>conf/ 目录</strong></span><br/><br/>
+<code>conf</code> 目录包含了应用的配置文件. 这儿有两个主要的配置文件:<br/><br/>
+<ul>
+    <li><code>application.conf</code>, 应用的主配置文件, 里面包含了标准的配置参数</li>
+    <li><code>routes</code>, 路由定义文件.</li>
+</ul><br/><br/>
+假如需要为应用添加特别的配置项, 较好的办法是在直接在 <code>application.conf</code> 文件中加入更好的配置项.<br/><br/>
+<span style="color: #0000ff;">Unmi 注: 如果你确实有必须写一个独立的配置文件，而且里面的配置项也比较多，可以在 application.conf 用 @include.extra=extra.conf 引入进来，这样可读性要比全堆在 application.conf 一个文件中要高。</span><br/><br/>
+如果某个库需要自己的配置文件, 尽量也放在 <code>conf</code> 目录中.<br/><br/>
+<span style="font-size: medium;"><strong>lib/ 目录</strong></span><br/><br/>
+<code>lib</code> 目录是可选的, 它包含了不受管理的库依赖. 所有的无法用构建系统需手工管理的 JAR 包. 只需丢到这个目录中去，它们就会被添加到应用的 classpath 中去.<br/><br/>
+<span style="font-size: medium;"><strong>project/ 目录</strong></span><br/><br/>
+<code>project</code> 目录饮食了 sbt 构建定义文件:<br/><br/>
+<ul>
+    <li><code>plugins.sbt</code> 定义了项目所用到的 sbt 插件</li>
+    <li><code>Build.scala</code> 定义了你的应用的构建脚本.</li>
+</ul><br/><br/>
+<span style="font-size: medium;"><strong>target/ 目录</strong></span><br/><br/>
+<code>target</code> 目录包含了一切由构建系统生成的文件. 它让你知晓构建时都产生了些什么是很有用处的.<br/><br/>
+<ul>
+    <li><code>classes/</code> 包含了所有编译后的类文件 (来自于 Java 和 Scala 源文件的).</li>
+    <li><code>classes_managed/</code> 仅仅包含了由框架管理而生成的类 (比如由路由和模板系统生成的类). 在你的 IDE 项目中, 这有助于你以外部类目录的方式添加一个类目录.</li>
+    <li><code>resource_managed/</code> 包含生成的资源文件, 比如说由编译像 LESS CSS 和 CoffeeScript 产生的目标文件.</li>
+    <li><code>src_managed/</code> 包含产生的源文件, 如由模板系统生成的 Scala 源文件.</li>
+</ul><br/><br/>
+<span style="font-size: medium;"><strong>基本的.gitignore 文件</strong></span><br/><br/>
+自动产生的目录应该让版本控制系统忽略掉的. 这是一个 Play 应用基本的<code>.gitignore</code> 文件:<br/><br/>
+<pre class="brush:plain">logs
+project/project
+project/target
+target
+tmp</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 也就是说上面那些文件或目录不应该加到版本服务器上, 只需要保留在每个开发者本地机器上即可。这个是 play new 为你生成的给 Git 用的 .gitignore 文件, 用 SVN 等别的版本管理服务时请作相应的忽略操作。</span><br/><br/>
+<span style="color: #0000ff;">用 Play 2.0.4 创建的项目的 .gitignore 文件内容行数比较多，是：</span><br/><br/>
+<pre class="brush:text">logs
+project/project
+project/target
+target
+tmp
+.history
+dist
+/.idea
+/*.iml
+/out
+/.idea_modules
+/.classpath
+/.project
+/RUNNING_PID</pre>

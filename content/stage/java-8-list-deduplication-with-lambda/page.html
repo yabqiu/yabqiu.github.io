@@ -1,0 +1,79 @@
+---
+title: Java 8 根据属性值对列表去重
+url: /java-8-list-deduplication-with-lambda/
+date: 2018-02-06T21:39:55-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/12/Java8-Logo.png"
+categories:
+  - Java8
+tags: 
+  - lambda
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8499 
+wpStatus: publish
+views: 5362
+lastmod: 2018-02-11T21:36:02-06:00
+---
+
+<p>对列表的去重处理，Java 8 在 <code>Stream</code> 接口上提供了类似于 SQL 语句那样的 <code>distinct()</code> 方法，不过它也只能基于对象整体比较来去重，即通过 equals/hashCode 方法。<code>distinct</code> 方法的功效与以往的 <code>new ArrayList(new HashSet(books))</code> 差不多。用起来是</p>
+
+<blockquote><br/>
+<p>List&lt;Book&gt; unique = book.stream().distinct().collect(Collectors.toList())</p>
+
+</blockquote>
+
+<p>并且这种去重方式需要在模型类中同时实现 equals 和 hashCode 方法。</p>
+
+<p>回到实际项目中来，我们很多时候的需求是要根据对象的某个属性来去重。比如接下来的一个实例，一个 books 列表中存在 ID 一样，name 却不同的 book, 我们认为这是重复的，所以需要根据 book 的 id 属性对行去重。在 collect 的时候用到的方法是 <code>collectinAndThen(...)</code>, 下面是简单代码:<!--more--></p>
+
+<pre class="lang:default decode:true ">import java.util.*;<br/>
+<br/>
+import static java.util.stream.Collectors.collectingAndThen;<br/>
+import static java.util.stream.Collectors.toCollection;<br/>
+<br/>
+<br/>
+public class Deduplication {<br/>
+<br/>
+    public static void main(String[] args) {<br/>
+<br/>
+        List&lt;Book&gt; books = Arrays.asList(<br/>
+            new Book(12, "Sun Java"),<br/>
+            new Book(12, "Oracle Java"),<br/>
+            new Book(15, "Scala")<br/>
+        );<br/>
+<br/>
+        List&lt;Book&gt; unique = books.stream().collect(<br/>
+            collectingAndThen(toCollection(() -&gt; new TreeSet&lt;&gt;(Comparator.comparing(o -&gt; o.id))),<br/>
+                ArrayList::new));<br/>
+<br/>
+        unique.forEach(book -&gt; System.out.printf("book[id: %s, name: %s]\n", book.id, book.name));<br/>
+    }<br/>
+}<br/>
+<br/>
+class Book {<br/>
+    public final Integer id;<br/>
+    public final String name;<br/>
+<br/>
+    public Book(Integer id, String name) {<br/>
+        this.id = id;<br/>
+        this.name = name;<br/>
+    }<br/>
+}</pre>
+
+<p>执行后打印出</p>
+
+<blockquote><br/>
+<p><span style="color: #800000;">book[id: 12, name: Sun Java]</span><br /><br/>
+ <span style="color: #800000;">book[id: 15, name: Scala]</span></p>
+
+</blockquote>
+
+<p>成功去重，换个名照样能认出来，还不依赖于 equals/hashCode 方法。</p>
+
+<p>链接： <a href="https://stackoverflow.com/questions/29670116/remove-duplicates-from-a-list-of-objects-based-on-property-in-java-8/39717788">Remove duplicates from a list of objects based on property in Java 8</a></p>

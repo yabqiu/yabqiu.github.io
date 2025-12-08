@@ -1,0 +1,102 @@
+---
+title: Play 2.0 中文资料 - 组合 Action
+url: /play2-0-tutorials-cn-actions-composition/
+date: 2012-10-20T04:48:33-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PlayFramework
+tags: 
+  - 翻译
+  - Scala
+  - PlayFramework
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4893 
+wpStatus: publish
+views: 747
+lastmod: 2021-05-21T11:17:28-05:00
+---
+
+本章介绍几种定义通用 Action 功能的方法.<br/><br/>
+<span style="font-size: medium;"><strong>基本的 Action 组合</strong></span><br/><br/>
+我们首先从一个简单的日志装饰器(logging decorator) 开始: 我们想要记录下当前 Action 每次被调用的日志.<br/><br/>
+我们不直接就定义自己的 Action, 而是首先提供一个用于创建标准 Action 的帮助方法:<br/><br/>
+<pre class="lang:default decode:true">def LoggingAction(f: Request[AnyContent] =&gt; Result): Action[AnyContent] = {
+  Action { request =&gt;
+    Logger.info("Calling action")
+    f(request)
+  }
+}</pre>
+<br/>
+接着你可以这么来使用:<!--more--><br/><br/>
+<pre class="lang:default decode:true">def index = LoggingAction { request =&gt;
+  Ok("Hello World")    
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: LoggingAction 接受的参数是个 Request[AnyContent] =&gt; Result 函数，而 request =&gt; Ok("Hello World") 就是这个类型，方法只有一个参数时，圆括号可写成花括号。实际的执行效果与下面代码一样：</span><br/><br/>
+<pre class="lang:default decode:true">def index = Action { request =&gt;
+  Logger.info("Calling action")
+  Ok("Hello World")
+}</pre>
+<br/>
+前面的例子很简单，且只是用了默认的  <code>parse.anyContent</code> Body 解析器，因为这种方式我们无从指定自己的 Body 解析器。当然我们还可以再定义一个帮助方法:<br/><br/>
+<pre class="lang:default decode:true">def LoggingAction[A](bp: BodyParser[A])(f: Request[A] =&gt; Result): Action[A] = {
+  Action(bp) { request =&gt;
+    Logger.info("Calling action")
+    f(request)
+  }
+}</pre>
+<br/>
+然后:<br/><br/>
+<pre class="lang:default decode:true">def index = LoggingAction(parse.text) { request =&gt;
+  Ok("Hello World")    
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 这与前面的例子其实差不多，不同之处就是多加了一个参数 bp: BodyParser[A]，它需要用到泛型 A，两个参数时是柯里化了的。</span><br/><br/>
+<strong><span style="font-size: medium;">包装已有的 Action</span></strong><br/><br/>
+另一种定义自己的 <code>LoggingAction</code> 的方式是包装另一个 <code>Action</code>:<br/><br/>
+<pre class="brush:scala">case class Logging[A](action: Action[A]) extends Action[A] {<br/><br/>
+  def apply(request: Request[A]): Result = {
+    Logger.info("Calling action")
+    action(request)
+  }<br/><br/>
+  lazy val parser = action.parser
+}</pre>
+<br/>
+现在你可以用它去包装任何其他的 Action 值:<br/><br/>
+<pre class="brush:scala">def index = Logging { 
+  Action { 
+    Ok("Hello World")
+  }
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 这里隐含的东西比较多，Logging 前有 case，它是一个样本类， case 在这里会为我们自动做几件事情：</span><br/><br/>
+<span style="color: #0000ff;">1. Logging 后面的参数  action: Action[A] 会自动用 val 声明为一个实例变量，在 apply 方法中就用到了</span><br />
+<span style="color: #0000ff;">2. 会生成一个工厂方法，也就是说可以用 Logging(action) 来构造 Logging 对象, 实际是会自动创建一个 Loggin  伴生对象，其中声明 apply(action: Action[A]): Logging 工厂方法。</span><br />
+<span style="color: #0000ff;">3. 其他会生成 toSring, hashCode, equals 等方法就不重要</span><br/><br/>
+<span style="color: #0000ff;">还有 Logging 继承自 Action，所以后面可以直接用 Logging 对象作为 Action。所以执行过程是：</span><br/><br/>
+<span style="color: #0000ff;">1. Action { Ok("Hello World") } 作为参数用于构造 Logging 实例<br />
+2. 由于 Logging 本身是一个 Action，所以它的 apply(request: Request[A]) 方法会被调用执行<br />
+3. action(request) 又会调用第一步构造的 Action 实例的 apply(request:Request[A]) 方法<br />
+</span><br/><br/>
+注： 它也将重用到被包装 Action 的 Body 解析器, 这时你就要这么写:<br/><br/>
+<pre class="brush:scala">def index = Logging { 
+  Action(parse.text) { 
+    Ok("Hello World")
+  }
+}</pre>
+<br/>
+<blockquote>
+另一种不需要定义 <code>Logging</code> 类，但能达到同样效果的方式是:
+<pre class="lang:default decode:true ">def Logging[A](action: Action[A]): Action[A] = {
+  Action(action.parser) { request =&gt;
+    Logger.info("Calling action")
+    action(request)
+  }
+}</pre>
+</blockquote>

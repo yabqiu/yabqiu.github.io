@@ -1,0 +1,254 @@
+---
+title: Spring 使用 Cache 解析及使用不同类型的 Cache
+url: /spring-cache-different-cache-types/
+date: 2022-07-14T17:12:10-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - Cache
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12476 
+wpStatus: publish
+views: 1724
+lastmod: 2022-07-14T17:21:50-05:00
+---
+
+要在一个 Spring 应用中开启缓存方法返回结果的功能很简单，不需要额外的依赖，相关的的注解  @Cacheable, @CacheConfig, @CachePut, @CacheEvict, @EnableCache 等来自 spring-context 包。默认的的 Cache 实现是把数据存入到 ConcurrentMap 中，所以数据一直在内存中，除非显式的调用被 @CacheEvict 的方法来清理。实际进行数据缓存时会有更复杂的策略，如元素个数，占用内存，过期时间，何时使用磁盘等，而且不同的数据类型应有不同的缓存策略。<br/><br/>
+因此，除了使用默认的 ConcurrentMap 作为缓存外，还可通过配置属性 <code>spring.cache.type</code> 来使用其他类型的缓存，如 Caffeine, Couchbase, EhCache, INfinispan, JCache, Redis 等，或自定义 CacheManager 来使用 Guava Cache。<!--more--><br/><br/>
+<h3>先来看来简单使用 Spring Cache 的步骤</h3><br/><br/>
+假设我们调用 UserRepository.getUser(id) 方法, id 相同的话首先取缓存中的数据，UserRepository 的代码如下<br/><br/>
+<pre class="lang:default decode:true ">@Repository
+public class UserRepository {<br/><br/>
+    @Cacheable("users")
+    public User getUser(String id) {
+        System.out.println("load user by id from database");
+        return new User(id, "Yanbin", "anywhere");
+    }
+}
+</pre>
+<br/>
+我们首先心里要清楚, @Cacheable 是通过代理的方式生效的，代理在调用 <code>getUser(id)</code> 之前检查缓存中是否有相应的数据，有则不调用 <code>getUser(id)</code> 方法，否则调用，并把结果存入缓存以备用。因为要实现代理，所以 @Cacheable 注解方法所在的实例必须是一个 Spring Bean, 而且要从外部调用 <code>getUser(id)</code> 方法。<br/><br/>
+现在来使用缓存，代码写在  App 类中<br/><br/>
+<pre class="lang:default decode:true">@SpringBootApplication
+@EnableCaching
+public class App implements ApplicationRunner {<br/><br/>
+    @Autowired
+    private UserRepository userRepository;<br/><br/>
+    public static void main(String[] args) {
+        SpringApplication.run(App.class, args);
+    }<br/><br/>
+    @Override
+    public void run(ApplicationArguments args) throws Exception {
+        IntStream.range(0, 3).forEach(i -&gt;
+                System.out.println(userRepository.getUser("001"))
+        );
+        System.out.println(userRepository.getUser("002"));
+        System.out.println(userRepository.getUser("001"));
+    }
+}</pre>
+<br/>
+运行结果如下：<br/><br/>
+<blockquote>
+load user by id from database<br />
+yanbin.blog.User@54ec8cc9<br />
+yanbin.blog.User@54ec8cc9<br />
+yanbin.blog.User@54ec8cc9<br />
+load user by id from database<br />
+yanbin.blog.User@1edb61b1<br />
+yanbin.blog.User@54ec8cc9
+</blockquote>
+<br/>
+相同的 id 后缓都是从缓存中获得数据而不用实际调用 <code>getUser(id)</code> 方法。<br/><br/>
+再次强调 Spring Cache 生效的几个必要条件<br/><br/>
+<ol>
+    <li>@EnableCaching 启用缓存，否则 @Cacheable  等注解不产生任何作用</li>
+    <li>被 @Cacheable 注解方法所在实例必须是一个 Spring Bean, 直接用  new UserRepository().getUser("001") 不会使用缓存</li>
+    <li>被 @Cacheable 注解的方法必须从外部调用，否则不会经过代理。UserRepository.foo() 方法调用 getUser("001") 也不会使用缓存</li>
+</ol>
+<br/>
+如果打个断点，就能看到在正常的调用栈之间添加了很多步骤<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/07/spring-cache-1.png"><img class="aligncenter wp-image-12477" src="https://yanbin.blog/wp-content/uploads/2022/07/spring-cache-1-800x385.png" alt="" width="711" height="342" /></a><br/><br/>
+<h3>解析 Spring Cache 的实现</h3><br/><br/>
+在我们使用 @EnableCaching 后，将会引入 SimpleCacheConfiguration, 在其中会调用 new ConcurrentMapCacheManager() 创建一个 CacheManager, 该 CacheManager 在用 @Cacheable(cacheNames="users") 检测到没有相应的 <code>users</code> 缓存实例 则会创建它，等于缓存是动态创建的。缓存是通过 ConcurrentMapCacheManager.createConcurrentMapCache(name) 创建的，是一个 ConcurrentHashMap 实例。<br/><br/>
+缓存数据的分类就是通过 @Cacheable 的 cacheNames 参数达成的，比如<br/><br/>
+<blockquote>
+@Cacheable("users")<br />
+public User getUser(String id);
+@Cacheable("roles")<br />
+public User getRole(String roleId);
+</blockquote>
+<br/>
+@Cacheable 的 cacheNames 还能指定数据同时存储到多个 cache 中去。<br/><br/>
+Spring Cache 其他相关的概念可在 @CacheConfig 中看到<br/><br/>
+<ol>
+    <li>keyGenerator:  cache key  的生成器，默认为 SimpleKeyGenerator，把方法的所有参数进行 hash 得到一个 key</li>
+    <li>cacheManager: 可以定义自己的 cacheManager, 默认为 ConcurrentMapCacheManager</li>
+    <li>cacheResolver: @Cacheable 可根据条件来选择对应的 cache，默认为 SimpleCacheResolver</li>
+</ol>
+<br/>
+当 Spring 在调用 @Cacheable("users") 之前，会从配置的 cacheManager 由 <code>users</code> 获得相应的 cache, 如 ConcurrentMapCacheManager 的方法<br/><br/>
+<pre class="lang:default decode:true">public Cache getCache(String name) {
+    Cache cache = this.cacheMap.get(name);
+    if (cache == null &amp;&amp; this.dynamic) {
+        synchronized (this.cacheMap) {
+            cache = this.cacheMap.get(name);
+            if (cache == null) {
+                cache = createConcurrentMapCache(name);
+                this.cacheMap.put(name, cache);
+            }
+        }
+    }
+    return cache;
+}</pre>
+<br/>
+有 <code>users</code> 对应的 Cache 就直接用，没有就调用 createConcurrentMapCache() 动态创建一个<br/><br/>
+从以上我们大概知道 Spring Cache 有哪些扩展点，keyGenerator, cacheManager, cacheResolver, 还有 CacheManagerCustomizer。@Cacheable和 @CachePut 的 key 属性还能使用 SpEL 表达式来选择 key, 如<br/><br/>
+<pre class="lang:default decode:true">@CachePut(value="users", key="#result.id")
+User getUser(String id, String condition)</pre>
+<br/>
+支持的属性有 #root.args, #root.caches, #root.target, #root.targetClass, #root.method, #root.methodName, #result, #Arguments<br/><br/>
+另外，我们主要聚焦 @Cacheable 注解，它还有 condition, unless 和 sync 来控制缓存的条件和是否同步存取缓存数据(默认为 false)<br/><br/>
+<h3>自定义不同的缓存实现</h3><br/><br/>
+系统中不同类型的数据我们需要配置不一样的缓存策略，这就要对缓存进行定制，有多种式<br/><br/>
+<ol>
+    <li>定义不同的 cacheManager, 在 @Cacheable 中通过 cacheManager 选择。多个 cacheManager 时须标明一个是 @Primary</li>
+    <li>自定义 cacheResolver, 在 @Cacheable 中指定 cacheResolver 属性，根据条件选择哪个 CacheManager</li>
+    <li>自定义 cacheManager, 在 cacheManager 中根据 cacheName 来选择不同的 Cache. 本人倾向于这种方式</li>
+</ol>
+<br/>
+后面的示例用到了 Guava Cache 实现，所以需先引入它<br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;com.google.guava&lt;/groupId&gt;
+    &lt;artifactId&gt;guava&lt;/artifactId&gt;
+    &lt;version&gt;31.1-jre&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+<h4>自定义多个 cacheManager</h4><br/><br/>
+<pre class="lang:default decode:true ">@Configuration
+public class AppConfig {<br/><br/>
+    @Bean
+    @Primary
+    public CacheManager rolesCacheManager() {
+        return new ConcurrentMapCacheManager("roles"){
+            public Cache createConcurrentMapCache(String name){
+                return new ConcurrentMapCache(name, CacheBuilder.newBuilder()
+                        .expireAfterWrite(5, TimeUnit.MINUTES).maximumSize(2).build().asMap(), false);
+            }
+        };
+    }<br/><br/>
+    @Bean
+    public CacheManager usersCacheManager() {
+        return new ConcurrentMapCacheManager("users"){
+            public Cache createConcurrentMapCache(String name){
+                return new ConcurrentMapCache(name, CacheBuilder.newBuilder()
+                                .expireAfterWrite(10, TimeUnit.MINUTES).maximumSize(1).build().asMap(), false);
+            }
+        };
+    }
+}</pre>
+<br/>
+在 UserRepository.getUser(id) 的 @Cacheable 需选择 cacheManager="usersCacheManager"<br/><br/>
+<pre class="lang:default decode:true ">    @Cacheable(value = "users", cacheManager = "usersCacheManager")
+    public User getUser(String id) {</pre>
+<br/>
+如果不指 cacheManager, 将会使用默认(@Primary) 的 rolesCacheManager, 它没有 <code>users</code> cache, 所以会报错<br/><br/>
+<blockquote>
+Cannot find cache named 'users' for Builder ....
+</blockquote>
+<br/>
+如果不标明一个 cacheManager 是 @Primary, 启动时会报错<br/><br/>
+<blockquote>
+No qualifying bean of type 'org.springframework.cache.CacheManager' available: expected single matching bean but found 2: rolesCacheManager,usersCacheManager
+</blockquote>
+<br/>
+usersCache 设置最多一个元素，所以执行相同 App 的输出为<br/><br/>
+<blockquote>
+load user by id from database<br />
+yanbin.blog.User@54ec8cc9<br />
+yanbin.blog.User@54ec8cc9<br />
+yanbin.blog.User@54ec8cc9<br />
+load user by id from database<br />
+yanbin.blog.User@503d56b5<br />
+load user by id from database<br />
+yanbin.blog.User@72bca894
+</blockquote>
+<br/>
+存入 002 后, 011 被驱逐出去了，所以再次调用 <code>getUser("001")</code> 又重新创建了一个新的元素，而非来自于缓存中<br/><br/>
+<h4>自定义 CacheResolver</h4><br/><br/>
+在上面定义了 usersCacheManager 和 rolesCacheManager 两个 Bean 的 AppConfig 中再加上一个 Bean<br/><br/>
+<pre class="lang:default decode:true ">    @Bean
+    public CacheResolver myCacheResolver(List&lt;CacheManager&gt; cacheManagers) {
+        return context -&gt; {
+            Collection&lt;Cache&gt; caches = new ArrayList&lt;&gt;();
+            cacheManagers.forEach(cacheManager -&gt; {
+                cacheManager.getCacheNames().forEach(cacheName -&gt; {
+                   if(context.getOperation().getCacheNames().contains(cacheName)) {
+                       caches.add(cacheManager.getCache(cacheName));
+                   }
+                });
+            });
+            return caches;
+        };
+    }</pre>
+<br/>
+根据注解 @Cacheable 中的 cacheNames 中定位到需要的 Cache<br/><br/>
+然后在 @Cacheable 中指定 cacheResolver="myCacheResolver"<br/><br/>
+<pre class="lang:default decode:true ">    @Cacheable(value = "users", cacheResolver = "myCacheResolver")
+    public User getUser(String id) {</pre>
+<br/>
+执行效果保持一至<br/><br/>
+<h3>自定义 cacheManager</h3><br/><br/>
+这种方式我们只需要定义一个 cacheManager, 也不用 cacheResolver, 在 AppConfig 中的 Bean 定义为<br/><br/>
+<pre class="lang:default decode:true ">@Configuration
+public class AppConfig {<br/><br/>
+    @Bean
+    public CacheManager cacheManager() {
+        Map&lt;String, Cache&gt; cacheMap = Stream.of(
+                new ConcurrentMapCache("users", CacheBuilder.newBuilder()
+                        .expireAfterWrite(10, TimeUnit.MINUTES).maximumSize(1).build().asMap(), false),
+                new ConcurrentMapCache("roles", CacheBuilder.newBuilder()
+                        .expireAfterWrite(5, TimeUnit.MINUTES).maximumSize(10).build().asMap(), false))
+                .collect(Collectors.toMap(ConcurrentMapCache::getName, c-&gt;c));<br/><br/>
+        return new CacheManager() {
+            @Override
+            public Cache getCache(@Nonnull String cacheName) {
+                return cacheMap.get(cacheName); // 根据 cacheName 选择 Cache
+            }<br/><br/>
+            @Override
+            @Nonnull
+            public Collection&lt;String&gt; getCacheNames() {
+                return cacheMap.keySet();
+            }
+        };
+    }
+}</pre>
+<br/>
+这个 cacheManager 将会替代原本默认的 ConcurrentMapCacheManager, 所以使用时不用指定 cacheManager，只要告诉 cacheName<br/><br/>
+<pre class="lang:default decode:true">    @Cacheable(value = "users")
+    public User getUser(String id) {</pre>
+<br/>
+系统中的 Cache 还是有所限制的好，不能无限的创建，容易导致问题，比如两个从不同数据源取 user 的 getUser(String id), 因为写错了 cacheName 就会造成性能的下降<br/><br/>
+DbUserRepository<br/><br/>
+<pre class="lang:default decode:true">@Cacheable(value = "user")
+public User getUser(String id) {</pre>
+<br/>
+S3UserRepository<br/><br/>
+<pre class="lang:default decode:true">@Cacheable(value = "users")
+public User getUser(String id) {</pre>
+<br/>
+这将会导致调用某一个 getUser(id) 方法时无法共享另一个 getUser(id) 的结果，因为 <code>user</code> 和 <code>users</code> 会分别创建两个 Cache。如果 CacheManager 中限定了不只有 <code>users</code> 时，则 Spring 在处理 <code>@Cacheable(value="user")</code> 会报告找不到 <code>user</code> Cache 的错误。<br/><br/>
+<h3>其他高级话题</h3><br/><br/>
+Spring Cache 默认时使用 ConcurrentHashMap 来缓存数据，不能设置额外的缓存策略。通过自定义 CacheManager 可以设定自己的缓存策略，或者使用第三方的 Spring 已提供的实现配置，如 Caffeine, Redis 等，当然需要引入相应的缓存实现依赖。<br/><br/>
+通过声明一个继承自 CachingConfigurerSupport 的 Spring Bean, 可为 Spring Cache 提供默认的 CacheManager, CacheResolver, KeyGenerator, 和 CacheErrorHandler.<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://springframework.guru/using-ehcache-3-in-spring-boot/">Using Ehcache 3 in Spring Boot</a></li>
+</ol>

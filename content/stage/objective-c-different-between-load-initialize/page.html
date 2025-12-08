@@ -1,0 +1,303 @@
+---
+title: Objective-C 类方法 load 和 initialize 的区别
+url: /objective-c-different-between-load-initialize/
+date: 2013-01-27T10:08:54-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - objective-c
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5500 
+wpStatus: publish
+views: 2075
+lastmod: 2021-05-13T15:30:01-05:00
+---
+
+过去两个星期里，为了完成一个工作，接触到了NSObject中非常特别<a href="http://developer.apple.com/library/ios/#documentation/General/Conceptual/DevPedia-CocoaCore/ClassMethod.html">的两个类方法(Class Method)</a>。它们的特别之处，在于iOS会在运行期提前并且自动调用这两个方法，而且很多对于类方法的规则（比如继承，<a href="http://developer.apple.com/library/ios/#documentation/General/Conceptual/DevPedia-CocoaCore/Category.html">类别(Category)</a>）都有不同的处理。</p>
+<br/>
+而因为这两个方法是在程序运行一开始就被调用的方法，我们可以利用他们在类被使用前，做一些预处理工作。比如我碰到的就是让类自动将自身类名保存到一个NSDictionary中。<br/><br/>
+先来看看NSObject Class Reference里对这两个方法说明：<br/><br/>
+<h3><a href="http://developer.apple.com/library/ios/#DOCUMENTATION/Cocoa/Reference/Foundation/Classes/NSObject_Class/Reference/Reference.html">+(void)initialize</a></h3><br/><br/>
+<blockquote>
+The runtime sends <code>initialize</code> to each class in a program exactly one time just before the class, or any class that inherits from it, is sent its first message from within the program. (Thus the method may never be invoked if the class is not used.) The runtime sends the initialize message to classes in a thread-safe manner. Superclasses receive this message before their subclasses.
+</blockquote>
+<br/>
+<h3><a href="http://developer.apple.com/library/ios/#DOCUMENTATION/Cocoa/Reference/Foundation/Classes/NSObject_Class/Reference/Reference.html">+(void)load</a></h3><br/><br/>
+<blockquote>
+The <code>load</code> message is sent to classes and categories that are both dynamically loaded and statically linked, but only if the newly loaded class or category implements a method that can respond.<br />
+The order of initialization is as follows:<!--more-->
+<ol>
+    <li>All initializers in any framework you link to.</li>
+    <li>All <code>+load</code> methods in your image.</li>
+    <li>All C++ static initializers and C/C++ <code>__attribute__(constructor)</code> functions in your image.</li>
+    <li>All initializers in frameworks that link to you.</li>
+</ol>
+In addition:
+<ul>
+    <li>A class’s <code>+load</code> method is called after all of its superclasses’ <code>+load</code> methods.</li>
+    <li>A category <code>+load</code> method is called after the class’s own <code>+load</code> method.</li>
+</ul>
+In a custom implementation of <code>load</code> you can therefore safely message other unrelated classes from the same image, but any <code>load</code> methods implemented by those classes may not have run yet.
+</blockquote>
+<br/>
+Apple的文档很清楚地说明了initialize和load的区别在于：load是只要类所在文件被引用就会被调用，而initialize是 在类或者其子类的第一个方法被调用前调用。所以如果类没有被引用进项目，就不会有load调用；但即使类文件被引用进来，但是没有使用，那么 initialize也不会被调用。<br/><br/>
+它们的相同点在于：方法只会被调用一次。（其实这是相对runtime来说的，后边会做进一步解释）。<br/><br/>
+文档也明确阐述了方法调用的顺序：父类(Superclass)的方法优先于子类(Subclass)的方法，类中的方法优先于类别(Category)中的方法。<br/><br/>
+不过还有很多地方是文章中没有解释详细的。所以再来看一些示例代码来明确其中应该注意的细节。<br/><br/>
+<strong>+(void)load与+(void)initialize初探</strong><br/><br/>
+<pre class="lang:default decode:true">/******* Interface *******/
+@interface SuperClass : NSObject
+@end
+ 
+@interface ChildClass : SuperClass
+@end
+ 
+@interface Insideinitialize : NSObject
+- (void)objectMethod;
+@end
+ 
+/******* Implementation *******/
+@implementation SuperClass
+ 
++ (void) initialize {
+    NSLog(@"%@ %s", [self class], __FUNCTION__);
+}
+ 
++ (void) load {
+    NSLog(@"%@ %s", [self class], __FUNCTION__);
+}
+ 
+@end
+ 
+@implementation ChildClass
+ 
++ (void) initialize {
+    NSLog(@"%@ %s", [self class], __FUNCTION__);
+    Insideinitialize * obj = [[Insideinitialize alloc] init];
+    [obj objectMethod];
+    [obj release];
+}
+ 
+@end
+ 
+@implementation Insideinitialize
+ 
+- (void)objectMethod {
+    NSLog(@"%@ %s", [self class], __FUNCTION__);
+}
+ 
++ (void) initialize {
+    NSLog(@"%@ %s", [self class], __FUNCTION__);
+}
+ 
++ (void) load {
+    NSLog(@"%s", __FUNCTION__);
+}
+ 
+@end</pre>
+<br/>
+这个示例代码中，一个SuperClass实现了<code>+(void)load</code>和<code>+(void)initialize</code>方法（实际上应该算是重写覆盖了NSObject的这两个方法）；ChildClass继承于SuperClass，但是只重写<code>+(void)initialize</code>没有<code>+(void)load</code>；Insideinitialize类也有<code>+(void)load</code>和<code>+(void)initialize</code>方法，它在ChildClass的i<code>+(void)initialize</code>方法中被构建出一个对象。类中的每个函数的实现都非常简单，只是输出类名和方法名。除了Insideinitialize的<code>+(void)load</code>方法只输出了类名，没有使用[self class]。<br/><br/>
+首先我们在Xcode的项目中只简单import这些类，而不去使用他们的，然后运行项目就会得到下边的结果：<br/><br/>
+<pre class="">SuperClass +[SuperClass initialize]
+SuperClass +[SuperClass load]
+Insideinitialize +[Insideinitialize load]</pre>
+<br/>
+就像Apple的文档中说的一下，只要有引用runtime就会自动去调用类的<code>+(void)load</code>方法。不过从输出中，我们还发现SuperClass的<code>+(void)initialize</code>也被调用了，而且是在<code>+(void)load</code>之前被执行；而Insideinitialize的<code>+(void)initialize</code>并没有执行。这是因为在SuperClass的<code>+(void)load</code>方法中，我们调用了类的class方法（[self class]），这就符合文档中对<code>+(void)initialize</code>的说明：在类的第一个方法被调用前调用。同时也说明runtime对<code>+(void)load</code>的调用并<strong>不</strong>视为类的第一个方法。而ChildClass因为没有用到，所以<code>+(void)initialize</code>的方法被没有被执行，而且它也没有去执行父类的<code>+(void)load</code>方法（虽然它有继承下该方法）。<br/><br/>
+<strong>+(void)load和+(void)initialize可当做普通类方法(Class Method)被调用</strong><br/><br/>
+接着， 在程序中让ChildClass直接调用load:<br/><br/>
+[ChildClass load];<br/><br/>
+程序正常运行，并输出了结果：<br/><br/>
+<pre class="">SuperClass +[SuperClass initialize]
+SuperClass +[SuperClass load]
++[Insideinitialize load]
+ChildClass +[ChildClass initialize]
+Insideinitialize +[Insideinitialize initialize]
+Insideinitialize -[Insideinitialize objectMethod]
+ChildClass +[SuperClass load]</pre>
+<br/>
+前面三个结果跟之前一样，不过之后ChildClass的<code>+(void)initialize</code>也被自动执行调用，并且我们可以在其中安全创建出Insideinitialize类并使用它，而Insideinitialize因为调用<code>alloc</code>方法是第一次使用类方法， 所以激发了Insideinitialize的<code>+(void)initialize</code>。<br/><br/>
+另一个方面，ChildClass继承下了<code>+(void)load</code>而且可以被安全地当做普通<a href="http://developer.apple.com/library/ios/#documentation/General/Conceptual/DevPedia-CocoaCore/ClassMethod.html">类方法(Class Method)</a>被使用。这也就是我之前所说的load和initialize被调用一次是相对runtime而言（比如SuperClass的initialize不会因为自身load方法调用一次，又因为子类调用了load又执行一次），我们依然可以直接去反复调用这些方法。<br/><br/>
+<strong>子类会调用父类的+(void)initialize</strong><br/><br/>
+接下来，我们再修改一下SuperClass和ChildClass：去掉SuperClass中的<code>+(void)load</code>方法；让ChildClass来重写<code>+(void)load</code>，但是去掉<code>+(void)initialize</code>。<br/><br/>
+<pre class="lang:default decode:true">/******* Interface *******/
+@interface SuperClass : NSObject
+@end
+ 
+@interface ChildClass : SuperClass
+@end
+ 
+@interface Insideinitialize : NSObject
+- (void)objectMethod;
+@end
+ 
+/******* Implementation *******/
+@implementation SuperClass
+ 
++ (void) initialize {
+    NSLog(@"%@ %s", [self class], __FUNCTION__);
+}
+ 
+@end
+ 
+@implementation ChildClass
+ 
++ (void) load {
+    NSLog(@"%@ %s", [self class], __FUNCTION__);
+}
+ 
+@end
+</pre>
+<br/>
+依然还是简单的引入这些类，并不去使用它们。运行之后，我们会得到这样的结果：<br/><br/>
+<pre>SuperClass +[SuperClass initialize]
+ChildClass +[SuperClass initialize]
+ChildClass +[ChildClass load]</pre>
+<br/>
+和之前一样，<code>+(void)load</code>会引起<code>+(void)initialize</code>。也很Apple文档中讲得那样，子类方法的调用会激起父类的<code>+(void)initialize</code>被执行。不过我们也看到虽然ChildClass没有定义<code>+(void)initialize</code>，但是它会使用父类的<code>+(void)initialize</code>。而之前的示例，我们看到子类并不会在runtime时去使用父类的<code>+(void)load</code>，也就是说只有新定义的<code>+(void)load</code>才会被runtime去调用执行。<br/><br/>
+<strong>类别(Category)中的+(void)load的+(void)initialize</strong><br/><br/>
+我们再来看看类<a href="http://developer.apple.com/library/ios/#documentation/General/Conceptual/DevPedia-CocoaCore/ClassDefinition.html">实现(@implementation)</a>和类的<a href="http://developer.apple.com/library/ios/#documentation/General/Conceptual/DevPedia-CocoaCore/Category.html">类别(Category)</a>中<code>+(void)load</code>和<code>+(void)initialize</code>的区别。<br/><br/>
+<pre class="lang:default decode:true">/******* Interface *******/
+@interface MainClass : NSObject
+@end
+ 
+/******* Category Implementation *******/
+@implementation MainClass(Category)
+ 
++ (void) load {
+    NSLog(@"%@ %s", [self class], __FUNCTION__);
+}
+ 
++ (void) initialize {
+    NSLog(@"%@ %s", [self class], __FUNCTION__);
+}
+ 
+@end
+ 
+@implementation MainClass(OtherCategory)
+ 
++ (void) load {
+    NSLog(@"%@ %s", [self class], __FUNCTION__);
+}
+ 
++ (void) initialize {
+    NSLog(@"%@ %s", [self class], __FUNCTION__);
+}
+ 
+@end
+ 
+/******* Implementation *******/
+@implementation MainClass
+ 
++ (void) load {
+    NSLog(@"%@ %s", [self class], __FUNCTION__);
+}
+ 
++ (void) initialize {
+    NSLog(@"%@ %s", [self class], __FUNCTION__);
+}
+ 
+@end
+</pre>
+<br/>
+简单import，运行，我们看到的结果是：<br/><br/>
+<pre>MainClass +[MainClass(OtherCategory) initialize]
+MainClass +[MainClass load]
+MainClass +[MainClass(Category) load]
+MainClass +[MainClass(OtherCategory) load]</pre>
+<br/>
+同样的<code>+(void)initialize</code>优先于<code>+(void)load</code>先执行。但是很明显的不同在于，只有最后一个<a href="http://developer.apple.com/library/ios/#documentation/General/Conceptual/DevPedia-CocoaCore/Category.html">类别(Category)</a>的<code>+(void)initialize</code>执行，其他两个都被隐藏。而对于<code>+(void)load</code>，三个都执行，并且如果Apple的文档中介绍顺序一样：先执行类自身的实现，再执行<a href="http://developer.apple.com/library/ios/#documentation/General/Conceptual/DevPedia-CocoaCore/Category.html">类别(Category)</a>中的实现。<br/><br/>
+<strong>Runtime调用+(void)load时没有autorelease pool</strong><br/><br/>
+最后再来看一个示例<br/><br/>
+<pre class="lang:default decode:true">@interface MainClass : NSObject
+@end
+ 
+@implementation MainClass
+ 
++ (void) load {
+    NSArray *array = [NSArray array];
+    NSLog(@"%@ %s", array, __FUNCTION__);
+}
+ 
+@end</pre>
+<br/>
+运行这段代码，Xcode给出如下的信息：<br/><br/>
+<pre>objc[84934]: Object 0x10a512930 of class __NSArrayI autoreleased with no pool in place - just leaking - break on objc_autoreleaseNoPool() to debug
+2012-09-28 18:07:39.042 ClassMethod[84934:403] (
+) +[MainClass load]</pre>
+<br/>
+其原因是runtime调用<code>+(void)load</code>的时候，程序还没有建立其autorelease pool，所以那些会需要使用到autorelease pool的代码，都会出现异常。这一点是非常需要注意的，也就是说放在<code>+(void)load</code>中的对象都应该是<a href="http://developer.apple.com/library/ios/#DOCUMENTATION/Cocoa/Reference/Foundation/Classes/NSObject_Class/Reference/Reference.html">alloc</a>出来并且不能使用<a href="http://developer.apple.com/library/ios/DOCUMENTATION/Cocoa/Reference/Foundation/Protocols/NSObject_Protocol/Reference/NSObject.html#//apple_ref/occ/intfm/NSObject/autorelease">autorelease</a>来释放。<br/><br/>
+<strong>不需要显示使用super调用父类中的方法</strong><br/><br/>
+当我们定义-(id)init和-(void)dealloc方法时，我们总是需要使用super关键字来调用父类的方法，让父类也完成相同的操 作。这是因为对对象的初始化和销毁过程，Objective-C不像C++,C#那样会自动调用父类默认构造函数。因此我们总是需要将这两个函数写成这 样：<br/><br/>
+<pre class="lang:default decode:true">- (id)init {
+    if ((self = [super init])) {
+        //do initialization
+    }
+ 
+    return self;
+}
+ 
+- (void)dealloc {
+    //do release
+ 
+    [super dealloc];
+}
+</pre>
+<br/>
+但是<code>+(void)initialize</code>和<code>+(void)load</code>不同，我们并不需要在这两个方法的实现中使用super调用父类的方法：<br/><br/>
+<pre class="lang:default decode:true ">+ (void)initialize {
+    //do initialization thing
+    [super initialize];
+}
+ 
++ (void) load {
+    //do some loading things
+    [super load];
+}
+</pre>
+<br/>
+super的方法会成功调用，但是这是多余的，因为runtime对自动对父类的<code>+(void)load</code>方法进行调用，而<code>+(void)initialize</code>则会随子类自动激发父类的方法（如Apple文档中所言）不需要显示调用。另一方面，如果父类中的方法用到的self（像示例中的方法），其指代的依然是类自身，而不是父类。<br/><br/>
+<strong>总结：</strong><br/><br/>
+<table border="1" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td>&nbsp;</td>
+<td>+(void)load</td>
+<td>+(void)initialize</td>
+</tr>
+<tr>
+<td>执行时机</td>
+<td>在程序运行后立即执行</td>
+<td>在类的方法第一次被调时执行</td>
+</tr>
+<tr>
+<td>若自身未定义，是否沿用父类的方法？</td>
+<td>否</td>
+<td>是</td>
+</tr>
+<tr>
+<td>类别中的定义</td>
+<td>全都执行，但后于类中的方法</td>
+<td>覆盖类中的方法，只执行一个</td>
+</tr>
+</tbody>
+</table>
+<br/>
+References:<br/><br/>
+<ol>
+    <li><a href="http://www.mikeash.com/pyblog/friday-qa-2009-05-22-objective-c-class-loading-and-initialization.html">Objective-C Class Loading and Initialization</a></li>
+    <li><a href="http://cocoawithlove.com/2008/03/cocoa-application-startup.html">Cocoa Application Startup</a></li>
+    <li><a href="http://www.friday.com/bbum/2009/09/06/iniailize-can-be-executed-multiple-times-load-not-so-much/">+initialize Can Be Executed Multiple Times (+load not so much)</a></li>
+    <li><a href="http://developer.apple.com/library/ios/DOCUMENTATION/Cocoa/Reference/Foundation/Classes/NSObject_Class/Reference/Reference.html#//apple_ref/doc/uid/TP40003706">NSObject Class Reference</a></li>
+    <li><a href="http://stackoverflow.com/questions/324666/should-initialize-load-always-start-with-an-if-self-myclass-class-guar">Should +initialize/+load always start with an: if (self == [MyClass class]) guard? – stackoverflow</a></li>
+    <li><a href="http://lists.apple.com/archives/Cocoa-dev/2005/Sep/msg00055.html">[super initialize] – Apple Mailing Lists</a></li>
+    <li><a href="http://www.winddisk.com/2012/08/19/objective-c-class-load-initialize/">Objective-C类初始化:load与initialize</a></li>
+</ol>
+<br/>
+摘自：<a href="http://blog.iderzheng.com/objective-c-load-vs-initialize/" target="_blank" rel="noopener">http://blog.iderzheng.com/objective-c-load-vs-initialize/</a>

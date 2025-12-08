@@ -1,0 +1,104 @@
+---
+title: 理解和灵活应用 Struts2 的文件下载功能
+url: /understand-apply-struts2-file-download/
+date: 2009-06-17T01:18:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Struts
+tags: 
+  - Struts2
+  - Download
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 261 
+wpStatus: publish
+views: 361
+lastmod: 2021-07-21T22:38:51-05:00
+---
+
+文件下载给我们最直接的概念就是，给个文件链接点击就下载。似乎太简单，然而 Struts2 却把它作为一个独立的学问来对待，理由有四：</p>
+<br/>
+1. 文件名为中文时，直接点击下载，链接可能会走样(某些浏览器，URL 编码的问题)，致使无法下载。<br />
+2. 不总是从下载实际的文件，文件内容有时候是动态生成的，如数据库中的内容。<br />
+3. 对于知名的文件类型不让浏览器直接打开，而是出现下载对话框保存文件。例如，要下载的文件是 .txt 的，可能直接就在浏览器中显示其内容。<br />
+4. 需要授权才能下载文件时<br/><br/>
+当然对于以上若干问题，Servlet/JSP 都能通过正确的 URL 编码，响应头设置、权限代码控制解决，只是 Struts2 让我们处理起来更方便了，内部原理自然是一样的。<!--more--><br/><br/>
+先来看下 Servlet 如何实现文件下载的，直接见代码：<br/><br/>
+<pre class="brush:java">PrintWriter out = response.getWriter();<br/><br/>
+//不管实际类型，待下载文件 ContentType 统一指定为 application/octet-stream
+response.setContentType("application/octet-stream");<br/><br/>
+//中文文件名必须转码为 ISO8859-1,否则为乱码
+String fileName = new String("文本文件.txt".getBytes(), "ISO8859-1");<br/><br/>
+//作为附件下载，相应的 "inline;filename = "+fileName 是在线(浏览器中显示内容)打开
+response.setHeader("Content-Disposition", "attachment;filename=" + fileName);<br/><br/>
+//因为文件编码也为 ISO8859-1，所以内容须转码成 ISO8859-1,尚不知如何控制下载文本文件的编码
+//或有谁知道的，还请告诉我一下。 文件内容可以从物理文件中来，或者数据库中读取填入等等
+out.write(new String("Servlet 文件下载测试".getBytes(), "ISO8859-1"));<br/><br/>
+out.close();</pre>
+<br/>
+知道了上面各行的含义，再来看下 Struts2 的解决方式，其实不过是把某些代码的功能移入到了配置文件而已。在李刚所著的《Struts 2 权威指南》中说 Struts 实现文件下载是由一个 download 拦截器。其实不然，只是一个 StreamResult(org.apache.struts2.dispatcher.StreamResult) 而已，也不像实现文件上传那样要额外的 JAR 包。在 StreamResult 中有以下几个默认属性要留意一下：<br/><br/>
+    public static final String DEFAULT_PARAM = "inputName";<br/><br/>
+    protected String contentType = "text/plain";<br />
+    protected String contentDisposition = "inline";<br />
+    protected String inputName = "inputStream";<br />
+    protected InputStream inputStream;<br />
+    protected int bufferSize = 1024;<br/><br/>
+StreamResult 的实现细节敬请阅读它的源代码，实现过程一言以蔽之就是：从 inputStream 获取内容，以相应的 contentType、contentDisposition 和 bufferSize 输出给浏览器，对 contentType 和 contentDisposition 的相应设置就能实现文件下载，可对照前面 Servlet 的实现。看个实际的例子吧。<br/><br/>
+struts.xml 中 Action 的配置，假定 Action 类为 com.unmi.DownLoadAction<br/><br/>
+<pre class="lang:default decode:true ">&lt;action name="download" class="com.unmi.action.DownloadAction"&gt;
+    &lt;result name="success" type="stream"&gt;&lt;!--type 为 stream 应用 StreamResult 处理--&gt;
+        &lt;param name="contentType"&gt;application/octet-stream&lt;/param&gt;&lt;!--默认为 text/plain--&gt;<br/><br/>
+        &lt;!-- 默认就是 inputStream，它将会指示 StreamResult 通过 inputName 属性值的 getter 方法，
+            比如这里就是 getInputStream() 来获取下载文件的内容，意味着你的 Action 要有这个方法 --&gt;
+        &lt;param name="inputName"&gt;inputStream&lt;/param&gt;<br/><br/>
+        &lt;!-- 默认为 inline(在线打开)，设置为 attachment 将会告诉浏览器下载该文件，filename 指定下载文
+            件保有存时的文件名，若未指定将会是以浏览的页面名作为文件名，如以 download.action 作为文件名，
+            这里使用的是动态文件名，${fileName}, 它将通过 Action 的 getFileName() 获得文件名 --&gt;
+        &lt;param name="contentDisposition"&gt;attachment;filename="${fileName}"&lt;/param&gt;
+        &lt;param name="bufferSize"&gt;4096&lt;/param&gt;&lt;!-- 输出时缓冲区的大小 --&gt;
+    &lt;/result&gt;
+&lt;/action&gt;</pre>
+<br/>
+说明：对于上面的配置其他参数可以用默认值，关键就是 contentDisposition 要设置为 attachment 才能提示下载，同时用 filename 指定文件名，若直接指定非动态的文件名。<br/><br/>
+DownloadAction 代码，需要实现 getInputStream() 返回输入流；因前面用的动态文件名，所以须加上 getFileName() 返回文件名，若非动态文件名，则该方法可省去。<br/><br/>
+<pre class="brush:java">package com.unmi.action;<br/><br/>
+import java.io.*;
+import java.text.*;
+import java.util.Date;<br/><br/>
+/**
+ * 文件下载的 Action
+ * @author Unmi
+ */
+public class NetbookSerialAction {<br/><br/>
+    public String execute() throws Exception {
+        //这里可加入权限控制
+        return "success";
+    }<br/><br/>
+    //获得下载文件的内容，可以直接读入一个物理文件或从数据库中获取内容
+    public InputStream getInputStream() throws Exception {
+        //return new FileInputStream("somefile.rar"); 直接下载 somefile.rar<br/><br/>
+        //和 Servlet 中不一样，这里我们不需对输出的中文转码为 ISO8859-1
+        return new ByteArrayInputStream("Struts2 文件下载测试".getBytes());
+    }<br/><br/>
+    //对于配置中的 ${fileName}, 获得下载保存时的文件名
+    public String getFileName() {
+        DateFormat df = new SimpleDateFormat("yyyy-MM-dd");
+        String fileName = "序列号(" + df.format(new Date()) + ").txt";
+        try {
+            //中文文件名也是需要转码为 ISO8859-1，否则乱码
+            return new String(fileName.getBytes(), "ISO8859-1");
+        } catch (UnsupportedEncodingException e) {
+            return "impossible.txt";
+        }
+    }
+}</pre>
+<br/>
+谨记一个就是，要想下载的文件名不乱码就要以 ISO8859-1 字符集进行转码，内容会否乱码可在调试中解决。<br/><br/>
+好啦，启动服务，访问 <a href="http://localhost:8080/teststruts2/download.action">http://localhost:8080/teststruts2/download.action</a>，浏览器便会提示下载 序列号(2009-06-17).txt，内容为：“Struts2 文件下载测试”。<br/><br/>
+参考：1. <a href="http://it.hexun.com/2009-06-04/118322014.html" target="_blank" rel="noopener">浅谈Struts2下载文件的方法实现</a><br />
+        2. <a href="http://www.xileju.biz/index.php/74/" target="_blank" rel="noopener">struts2多文件动态下载及中文解决方案</a>

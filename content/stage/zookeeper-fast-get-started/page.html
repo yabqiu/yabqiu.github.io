@@ -1,0 +1,172 @@
+---
+title: ZooKeeper 快速搭建与体验
+url: /zookeeper-fast-get-started/
+date: 2016-10-04T01:36:38-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/apache-zookeeper.jpg"
+categories:
+  - Java/JEE
+tags: 
+  - ZooKeeper
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7445 
+wpStatus: publish
+views: 725
+lastmod: 2021-09-03T17:08:42-05:00
+---
+
+Apache <a href="https://zookeeper.apache.org/">ZooKeeper</a> 是一个面向分布式应用程序的高性能协调服务器, 至于它的具体介绍像能提供命名和配置管理、同步和组服务等, 请自个 Google. 虽然对 ZooKeeper 早有耳闻, 也只最近因为项目中有 <a href="http://kafka.apache.org/">Kafka</a> 内部用到了 ZooKeeper, 所以才促使我着手去了解一下 ZooKeeper 为何物. ZooKeeper 脱胎于著名的项目 Hadoop, 它也像 <a href="https://hazelcast.org/">Hazelcast</a> 那样未采用严格意义的 Master-Slave 的集群方式, 而是动态选出 Leader, 这避免了单点故障的问题.<br/><br/>
+既然是集群, 实际应用是会在不同的机器上启动服务, 现如今有了 docker 很容易用它来测试多主机环境, 用 <code>docker search zookeeper</code> 就知道了. 本实例中暂不涉及 docker, 而是在同一个系统中用多个端口来启动三个 ZooKeeper 实例进行测试. 下面以 Mac/Linux 为例:<br/><br/>
+<h3>下载安装 ZooKeeper</h3><br/><br/>
+到 <a href="https://zookeeper.apache.org/releases.html#download">https://zookeeper.apache.org/releases.html#download</a> 下载, 写下此文时的最新稳定版是 <a id="file-link" tabindex="0" href="http://mirrors.gigenet.com/apache/zookeeper/stable/zookeeper-3.4.9.tar.gz">zookeeper-3.4.9.tar.gz</a>, 下载后解压到某处, 为方便起见把解压后的 zookeeper-3.4.9/bin 加到系统环境变量 $PATH 中, 以后方便任何时候运行 zkServer.sh, zkCli.sh 这样的命令.<!--more--><br/><br/>
+<h3>准备目录和文件</h3><br/><br/>
+建立三个目录 server1, server2 和 server3, 并在每个目录中创建子目录 data, dataLog, logs; 以  server1 为例,  它的目录结构如下:<br/><br/>
+<blockquote>
+─── server1<br />
+    ├── data<br />
+    ├── dataLog<br />
+    └── zookeeper.out
+</blockquote>
+<br/>
+最后在以上的每一个  serverx/data 目录中创建文件 myid, 里面写入一个数字, 分别是 1, 2, 和 3.<br/><br/>
+以 Mac/Linux 可用下面的命令来完成目录和 myid 文件中的创建<br/><br/>
+<pre class="lang:default decode:true ">mkdir -p {server1,server2,server3}/{data,dataLog,logs}
+for i in {1..3}; do echo "$i" &gt; server$i/data/myid; done</pre>
+<br/>
+<h3>配置文件</h3><br/><br/>
+配置文件可参考 zookeeper-3.4.9/conf 下的  zoo_sample.cfg. 分别在 server1, server2, server3 建立文件 <code>zoo.cfg</code>, 内容如下<br/><br/>
+<pre class="brush:text;highlight:6">tickTime=2000
+initLimit=5
+syncLimit=2
+dataDir=data
+dataLogDir=dataLog
+clientPort=2181
+server.1=127.0.0.1:2888:3888
+server.2=127.0.0.1:2889:3889
+server.3=127.0.0.1:2890:3890</pre>
+<br/>
+不同进程的 clientPort 必须不同, 比如这里 server1  是 2181, server2 是 2182, server3 是 2183.<br/><br/>
+server.X 这个数字就是对应的 data/myid  中的数字. server.X 后的第一个端口用来集群成员的信息交换, 第二个端口是在 leader  挂掉时进行新 leader 选举用的.<br/><br/>
+<h3>启动服务</h3><br/><br/>
+依次进到 server1, server2 和 server3 目录下执行 <code>zkServer.sh start ./zoo.cfg</code>, <br/><br/>
+<blockquote>
+➜ zookeeper for d in `ls`; do cd $d; zkServer.sh start ./zoo.cfg; cd ..; done<br />
+ZooKeeper JMX enabled by default<br />
+Using config: ./zoo.cfg<br />
+Starting zookeeper ... STARTED<br />
+ZooKeeper JMX enabled by default<br />
+Using config: ./zoo.cfg<br />
+Starting zookeeper ... STARTED<br />
+ZooKeeper JMX enabled by default<br />
+Using config: ./zoo.cfg<br />
+Starting zookeeper ... STARTED
+</blockquote>
+<br/>
+如果 <code>start</code> 后不带 <code>./zoo.cfg</code> 则会使用默认的配置文件 ZOOKEEPER_HOME/conf/zoo.cfg 文件.<br/><br/>
+这样 ZooKeeper 的三个节点都启动来了, 查看一下端口, 下面列出了 ZooKeeper 相关的端口<br/><br/>
+<blockquote>
+tcp46 0 0 *.2183 *.* LISTEN<br />
+tcp46 0 0 *.2182 *.* LISTEN<br />
+tcp46 0 0 *.2181 *.* LISTEN<br />
+tcp4 0 0 127.0.0.1.2889 127.0.0.1.50886 ESTABLISHED<br />
+tcp4 0 0 127.0.0.1.50886 127.0.0.1.2889 ESTABLISHED<br />
+tcp4 0 0 127.0.0.1.2889 127.0.0.1.50885 ESTABLISHED<br />
+tcp4 0 0 127.0.0.1.50885 127.0.0.1.2889 ESTABLISHED<br />
+tcp4 0 0 127.0.0.1.2889 *.* LISTEN<br />
+tcp4 0 0 127.0.0.1.3889 127.0.0.1.50869 ESTABLISHED<br />
+tcp4 0 0 127.0.0.1.50869 127.0.0.1.3889 ESTABLISHED<br />
+tcp4 0 0 127.0.0.1.3888 127.0.0.1.50868 ESTABLISHED<br />
+tcp4 0 0 127.0.0.1.50868 127.0.0.1.3888 ESTABLISHED<br />
+tcp4 0 0 127.0.0.1.3890 *.* LISTEN<br />
+tcp4 0 0 127.0.0.1.3889 *.* LISTEN<br />
+tcp4 0 0 127.0.0.1.3888 *.* LISTEN
+</blockquote>
+<br/>
+从上面结果可以发现端口  2888, 2889, 2890 之中只有 2889 端口正在监听, 也就是说 server2 是现在的 leader. 可以停掉某一个 server 看谁会当上新的 leader  了. ZooKeeper 读数据时只从所连接的服务器获取, 写数据时需通过 leader 同步到所有节点上后事物才算完成.<br/><br/>
+现在如果有兴趣的话也可以看看在 serverX 目录中 或 data, dataLog 中产生了什么文件.<br/><br/>
+<h3>用 ZooKeeper 命令行客户端测试</h3><br/><br/>
+<blockquote>
+ zkCli.sh -server 127.0.0.1:2181,127.0.0.1:2182,127.0.0.1:2183
+</blockquote>
+<br/>
+通常我们是指定一串服务器, 虽然指定单个服务器(如 zkCli.sh -server 127.0.0.1:2181) 也能连接整个 ZooKeeper 集群, 但是所连接的服务器出问题就完蛋了. 而指定一串服务器的好处是, 在当前所连接的服务器出故障时自动连接列表中别的可用服务器.<br/><br/>
+<blockquote>
+zkCli.sh -server 127.0.0.1:2181,127.0.0.1:2182,127.0.0.1:2183<br />
+Connecting to 127.0.0.1:2181,127.0.0.1:2182,127.0.0.1:2183<br />
+......................
+2016-10-04 00:41:23,804 [myid:] - INFO [main-SendThread(127.0.0.1:2182):ClientCnxn$SendThread@876] - Socket connection established to 127.0.0.1/127.0.0.1:2182, initiating session<br />
+[zk: 127.0.0.1:2181,127.0.0.1:2182,127.0.0.1:2183(CONNECTING) 0] 2016-10-04 00:41:26,821 [myid:] - INFO [main-SendThread(127.0.0.1:2182):ClientCnxn$SendThread@1299] - Session establishment complete on server 127.0.0.1/127.0.0.1:2182, sessionid = 0x2578e2b859b0000, negotiated timeout = 30000
+WATCHER::
+WatchedEvent state:SyncConnected type:None path:null
+[zk: 127.0.0.1:2181,127.0.0.1:2182,127.0.0.1:2183(CONNECTED) 0]
+</blockquote>
+<br/>
+现在进到了 ZooKeeper 客户端的控制台下, 输入任何不识别的命令都会显示出帮助<br/><br/>
+<blockquote>
+ZooKeeper -server host:port cmd args<br />
+stat path [watch]<br />
+set path data [version]<br />
+ls path [watch]<br />
+delquota [-n|-b] path<br />
+ls2 path [watch]<br />
+setAcl path acl<br />
+setquota -n|-b val path<br />
+history<br />
+redo cmdno<br />
+printwatches on|off<br />
+delete path [version]<br />
+sync path<br />
+listquota path<br />
+rmr path<br />
+get path [watch]<br />
+create [-s] [-e] path data acl<br />
+addauth scheme auth<br />
+quit<br />
+getAcl path<br />
+close<br />
+connect host:port
+</blockquote>
+<br/>
+十分有必要找一张图让我们初步了解一下 ZooKeeper 维护数据所采用的类似于文件系统的结构<br/><br/>
+<img class="aligncenter size-full wp-image-7447" src="/wp-content/uploads/2016/10/zookeeper_structure.gif" alt="zookeeper_structure" width="371" height="463" /><br/><br/>
+ZooKeeper 的每个子目录都称为 znode, znode 是有版本的, 分临时或永久节点. 只有 EPHEMERAL 类型的目录不能再有子目录. znode 可自动编号, 可被监控.<br/><br/>
+现在执行下 <code>ls /</code> 命令只能看到 [zookeeper] 这一个节点<br/><br/>
+<blockquote>
+[zk: 127.0.0.1:2181,127.0.0.1:2182,127.0.0.1:2183(CONNECTED) 7] ls /<br />
+[zookeeper]
+</blockquote>
+<br/>
+为了演示, 我们现用两个 ZooKeeper 客户端连接到不同的端口能感受 ZooKeeper 中数据的同步, 分别<br/><br/>
+<blockquote>
+zkCli.sh -server 127.0.0.1:2181<br />
+zkCli.sh -server 127.0.0.1:2182
+</blockquote>
+<br/>
+然后在一端创建 znode, 看另一端是否能得到新的数据<br/><br/>
+<img class="aligncenter wp-image-7448 size-full" src="/wp-content/uploads/2016/10/ZooKeeper_Data_Sync.png" alt="zookeeper_data_sync" width="867" height="346" /><br/><br/>
+默认时 <code>ls /</code> 只有 [zookeeper] 节点, 左边用命令<br/><br/>
+<blockquote>
+create /mynode helloworld
+</blockquote>
+<br/>
+然后在右端执行<br/><br/>
+<blockquote>
+ls /<br />
+get /mynode
+</blockquote>
+<br/>
+就能得到前面添加的数据, 值为 "helloworld"<br/><br/>
+前面 zkCli.sh 能干的事情用 ZooKeeper 的 Java API 也都能做, 看 Class <a href="http://zookeeper.apache.org/doc/r3.4.8/api/">ZooKeeper Java Doc API</a>.<br/><br/>
+ZooKeeper 集群式管理一个目录(znode) 结构, 在每一层目录上可以设置数据, znode 可被监控, 这对我们就很有用了. 我们可以用 ZooKeeper 用作集中式的配置管理. 相信很多时候并不需要我们写代码去应用 ZooKeeper, 而只是需要像 Kafka 那样配置代替编码.<br/><br/>
+链接:<br/><br/>
+<ol>
+    <li> <a href="http://blackproof.iteye.com/blog/2039040">zookeeper 入门讲解实例 转</a></li>
+    <li><a href="http://www.ibm.com/developerworks/cn/data/library/bd-zookeeper/">ZooKeeper 基础知识、部署和应用程序</a></li>
+    <li><a href="https://www.ibm.com/developerworks/cn/opensource/os-cn-zookeeper/">分布式服务框架 Zookeeper -- 管理分布式环境中的数据</a></li>
+</ol>

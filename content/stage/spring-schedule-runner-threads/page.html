@@ -1,0 +1,264 @@
+---
+title: Spring 定时任务(Schedule) 和线程
+url: /spring-schedule-runner-threads/
+date: 2017-06-05T01:02:12-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - Job
+  - Schedule
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8094 
+wpStatus: publish
+views: 10552
+lastmod: 2021-06-22T15:50:59-05:00
+---
+
+<h3>Spring 定时任务实例</h3><br/><br/>
+Spring 中使用定时任务很简单，只需要  @EnableScheudling 注解启用即可，并不要求是一个 Spring Mvc 的项目。对于一个 Spring Boot 项目，使用定时任务的简单方式如下：<br/><br/>
+pom.xml 中<br/><br/>
+<blockquote>
+<pre class="lang:xhtml decode:true">&lt;parent&gt;
+    &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-boot-starter-parent&lt;/artifactId&gt;
+    &lt;version&gt;1.5.3.RELEASE&lt;/version&gt;
+&lt;/parent&gt;
+&lt;dependencies&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+        &lt;artifactId&gt;spring-boot-starter&lt;/artifactId&gt;
+    &lt;/dependency&gt;
+&lt;/dependencies&gt;</pre>
+</blockquote>
+<br/>
+Application.java<!--more--><br/><br/>
+<blockquote>
+<pre class="lang:java decode:true">@EnableScheduling
+@SpringBootApplication
+public class Application {
+    public static void main(String[] args) {
+        SpringApplication.run(Application.class, args);
+    }
+}</pre>
+</blockquote>
+<br/>
+@EnableScheduling 是必须的。<strong>默认时定时任务的线程是由 Executors.defaultThreadFactory() 产生的，线程名称是 "pool-NUMBER-thread-...", 关键是线程的 daemon 属性为 false, 阻止了主线程的退出，使得任务能一遍遍执行</strong>。<br/><br/>
+SchedulRunner.java<br/><br/>
+<pre class="brush:java">@Component
+public class ScheduleRunner {<br/><br/>
+    @Scheduled(fixedDelay = 5000)
+    public void job1() {
+        System.out.println(Thread.currentThread() + ", job1@" + LocalTime.now());
+    }
+}</pre>
+<br/>
+顺带提一下注解 <a href="http://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/scheduling/annotation/Scheduled.html">@Scheduled</a> 的各个属性<br/><br/>
+<ol>
+    <li>cron:  以 UN*X 的 cron 的方式定义 job, 如 "0 * * * * NON-FRI"</li>
+    <li>fixedRate: 每次任务启动时的间隔时间，fixedRateString，意义是一样，只是可以通过外部来定义，如 fixedRateString = "${job1.fixed.rate}"</li>
+    <li>fixedDelay: 上次任务结束后间隔多少时间再启动下一次任务，这样避免前一个任务尚未结束又启动下一个任务，fixedDelayString 类似 fixedRateString</li>
+    <li>intialDelay: 程序启动后至任务首次执行时的间隔时间，针对 fixedRate(fixedRateString), fixedDelay(fixedDelayString)</li>
+    <li>zone: 给 cron 表达式用的时区</li>
+</ol>
+<br/>
+注意, 以上的时间都是毫秒<br/><br/>
+启动这个 Spring Boot 项目，可以看到 job1 每隔五分钟执行一次，并且全部由一个线程来执行<br/><br/>
+<blockquote>
+Thread[pool-1-thread-1,5,main], job1@21:57:46.822<br />
+Thread[pool-1-thread-1,5,main], job1@21:57:51.831<br />
+Thread[pool-1-thread-1,5,main], job1@21:57:56.836<br />
+Thread[pool-1-thread-1,5,main], job1@21:58:01.841
+</blockquote>
+<br/>
+<h3>居然总是同一个线程</h3><br/><br/>
+如果我们把上面的 fixedDelay 改成 fixedRate, 并且用 Thread.sleep(20000) 来模拟单次任务耗时 20 秒，试图让上次任务还在进行当中执行下一次任务<br/><br/>
+<pre class="brush:java">@Component
+public class ScheduleRunner {
+    
+    @Scheduled(fixedRate = 5000)
+    public void job1() {
+        System.out.println(Thread.currentThread() + ", job1@"  + LocalTime.now());
+        try {
+            Thread.sleep(20000);
+        } catch (InterruptedException e) {
+        }
+    }
+}   </pre>
+<br/>
+执行后，发现事与愿为<br/><br/>
+<blockquote>
+Thread[pool-1-thread-1,5,main], job1@21:58:57.564<br />
+Thread[pool-1-thread-1,5,main], job1@21:59:17.572<br />
+Thread[pool-1-thread-1,5,main], job1@21:59:37.575<br />
+Thread[pool-1-thread-1,5,main], job1@21:59:57.580
+</blockquote>
+<br/>
+并非每五秒启动下一个任务，而是每隔  20 秒，原来是只有一个线程来执行所有任务，后面的任务必须等前一个任务释放出了线程才能得到执行。<span style="color: #0000ff;"><strong>我们可以理解为 Spring 在任务调度时，fixedRate, fixedDelay 或 cron 只是决定提交任务到线程池的时刻，至于真正执行任务的时间就看有没有空闲的线程，因此最终决定于线程池的配置</strong></span>。<br/><br/>
+同样，如果我们在  ScheduleRunner 中声明两个任务(<span style="color: #0000ff;"><strong>后续的执行输出结果都以这两个任务为例</strong></span>)<br/><br/>
+<pre class="brush:java">@Component
+public class ScheduleRunner {<br/><br/>
+    @Scheduled(fixedDelay = 5000)
+    public void job1() {
+        System.out.println(Thread.currentThread() + ", job1@"  + LocalTime.now());
+        try {
+            Thread.sleep(20000);
+        } catch (InterruptedException e) {
+        }
+    }<br/><br/>
+    @Scheduled(fixedDelay = 5000)
+    public void job2() {
+        System.out.println(Thread.currentThread() + ", job2@" + LocalTime.now());
+    }
+}</pre>
+<br/>
+执行的效果是下面那样的<br/><br/>
+<blockquote>
+Thread[pool-1-thread-1,5,main], job2@22:05:12.236<br />
+Thread[pool-1-thread-1,5,main], job1@22:05:12.241<br />
+Thread[pool-1-thread-1,5,main], job2@22:05:32.244<br />
+Thread[pool-1-thread-1,5,main], job1@22:05:37.246<br />
+Thread[pool-1-thread-1,5,main], job2@22:05:57.250<br />
+Thread[pool-1-thread-1,5,main], job1@22:06:02.253
+</blockquote>
+<br/>
+也是因为始终只有一个线程的缘故，任务调度无法按照预定的要求，job1 和 job2 不能同时进行，更别说 job1 或是 job2 的前后两次任务同时进行。job2 每次要等待 job1 执行完释放出线程来执行，所以不管 fixedDelay 或 fixedRate 配置多小的时间间隔，中间都至少要等 20 秒。<br/><br/>
+既然我们知晓了是单一线程的原因，那么再追根究底看看，以及解决办法是什么？<br/><br/>
+<h3>如何创建任务线程的？</h3><br/><br/>
+查看源代码是最有效的，采用顺藤摸瓜的办法，从 @EnableScheduling 起，在 EnableScheduling 中找到 @see ScheduledAnnotationBeanPostProcessor, 来到 <a href="http://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/scheduling/annotation/ScheduledAnnotationBeanPostProcessor.html#setScheduler-java.lang.Object-">ScheduledAnnotationBeanPostProcessor.setScheduler(Object scheduler)</a> 方法的 JavaDoc<br/><br/>
+<a href="/wp-content/uploads/2017/06/spring-scheduling.png"><img class="aligncenter wp-image-8115 size-full" src="/wp-content/uploads/2017/06/spring-scheduling.png" alt="" width="807" height="291" /></a><br/><br/>
+说的是定时任务需要一个线程池(TaskScheduler 或 ScheduledExecutorService) 来执行，Spring 会通过以下顺序去获得 TaskScheduler 或是 ScheduledExecutorService 包装为 TaskScheduler 实例<br/><br/>
+<ol>
+    <li>类型为 TaskScheduler 的唯一 Bean</li>
+    <li>如果第 1 步未找到，或找到多个就尝试查找名称为 "taskScheduler", 类型为 TaskScheduler 的 Bean</li>
+    <li>查找类型为 ScheduledExecutorService 的 Bean, 并包装为 TaskScheduler 实例</li>
+    <li>如果第 3 步未到，或找到多个就尝试查找 名称为"taskScheduler", 类型为 ScheduledExecutorService 的 Bean, 并包装为 TaskScheduler 实例</li>
+</ol>
+<br/>
+也就是可以定一唯的类型为 TaskScheduler 或 ScheduledExecutorService 的 Bean, 或者是名称为 "taskScheduler" 的 TaskScheduler 或 ScheduledExecutorService 实例。<br/><br/>
+查找 TaskScheduler 的方法是 <a href="https://github.com/spring-projects/spring-framework/blob/master/spring-context/src/main/java/org/springframework/scheduling/annotation/ScheduledAnnotationBeanPostProcessor.java#L202">ScheduledAnnotationBeanPostProcessor.finishRegistration()</a>, 点接该链接查看源代码。<br/><br/>
+找到了 TaskScheduler 或 ScheduledExecutorService 后设置 Scheduler 的代码如下，在 <a href="https://github.com/spring-projects/spring-framework/blob/master/spring-context/src/main/java/org/springframework/scheduling/config/ScheduledTaskRegistrar.java#L89">ScheduledTaskRegistrar</a> 类中<br/><br/>
+<pre class="lang:default decode:true">public void setScheduler(Object scheduler) {
+    Assert.notNull(scheduler, "Scheduler object must not be null");
+    if (scheduler instanceof TaskScheduler) {
+        this.taskScheduler = (TaskScheduler) scheduler;
+    }
+    else if (scheduler instanceof ScheduledExecutorService) {
+        this.taskScheduler = new ConcurrentTaskScheduler(((ScheduledExecutorService) scheduler));
+    }
+    else {
+        throw new IllegalArgumentException("Unsupported scheduler type: " + scheduler.getClass());
+    }
+}</pre>
+<br/>
+对 ScheduledExecutorService 的包装是通过 ConsurrentTaskScheduler 类。<br/><br/>
+而在 ScheduledTaskRegistrar 中注册任务是由 scheduleTasks() 实现的，<br/><br/>
+<pre class="lang:default decode:true">protected void scheduleTasks() {
+    if (this.taskScheduler == null) {
+        this.localExecutor = Executors.newSingleThreadScheduledExecutor();
+        this.taskScheduler = new ConcurrentTaskScheduler(this.localExecutor);
+    }
+    ......
+}</pre>
+<br/>
+这才看到为什么默认情况下 Spring 用单线程来执行所有的任务, 因为 Spring 未定义 TaskScheduler 和 ScheduledExecutorService 这两个实例。此名，上面的<br/><br/>
+<blockquote>
+Executors.newSingleThreadScheduledExecutor()
+</blockquote>
+<br/>
+最终会调用 Executors.defaultThreadFactory() 来创建 daemon 为 false 的线程。<br/><br/>
+<h3>提供自定义的任务线程池</h3><br/><br/>
+一般来说，只用一个线程来执行所有的任务是满足不了我们的需求的，除非项目中只有一个任务时的以下两种情况<br/><br/>
+<ul>
+    <li>用 fixedDelay 来配置的</li>
+    <li>fixedRate 或 cron, 并且在时间间隔内每次任务必须能执行完成</li>
+</ul><br/><br/>
+知道了来龙去脉，就可以参考上面 1, 2, 3, 4 的顺序来定义一个自己的 TaskScheduler 来 ScheduledExecutorService 实例<br/><br/>
+<ul>
+    <li>类型为 TaskScheduler 或 ScheduledExecutorService 的实例</li>
+    <li>名称为 "taskScheduler" 的 TaskScheduler 或 ScheduledExecutorService 实例</li>
+</ul><br/><br/>
+TaskScheduler 接口有三个实现，分别是 ThreadPoolTaskScheduler, ConcurrentTaskScheduler, 和 DefaultMangedTaskScheduler(继承自 ConsurrentTaskScheduler)<br/><br/>
+ScheduledExecutorService 接口有两个实现类，分别是 ScheduledThreadPoolExecutor 和  DelegatedScheduledExecutorService<br/><br/>
+下面是几个例子，可在前面的 Application 类中配置一个 @Bean, 代码如下<br/><br/>
+<pre class="brush:java">    @Bean
+    public TaskScheduler taskScheduler() {
+        ThreadPoolTaskScheduler taskScheduler = new ThreadPoolTaskScheduler();
+        taskScheduler.setPoolSize(5);
+        return taskScheduler;
+    }</pre>
+<br/>
+再次运行<br/><br/>
+<blockquote>
+Thread[taskScheduler-1,5,main], job2@23:21:09.307<br />
+Thread[taskScheduler-2,5,main], job1@23:21:09.307<br />
+Thread[taskScheduler-1,5,main], job2@23:21:14.315<br />
+Thread[taskScheduler-3,5,main], job2@23:21:19.318<br />
+Thread[taskScheduler-1,5,main], job2@23:21:24.322<br />
+Thread[taskScheduler-1,5,main], job2@23:21:29.326<br />
+Thread[taskScheduler-2,5,main], job1@23:21:34.320<br />
+Thread[taskScheduler-4,5,main], job2@23:21:34.327
+</blockquote>
+<br/>
+现在分别由不同的的线程来执行各自的任务，互不干涉，每次任务由谁来执行只取决于池中的空闲线程。现在终于是 job1 每 25(20+5) 秒， job2 每 5 秒执行一次。应用中应根据任务间隔与每个任务执行时长来配置线程池的大小。此时线程池的名称是 TaskScheduler Bean 的名称，所以我们想改变线程池名称的话可以命一个新的 Bean 名称，改方法名或是指定 @Bean 的 name 属性，如<br/><br/>
+<pre class="brush:java">@Bean(name = "TaskPool")
+public TaskScheduler taskScheduler() {
+    .....
+}</pre>
+<br/>
+那么执行后打印的线程名称是<br/><br/>
+<blockquote>
+Thread[TaskPool-2,5,main], job1@23:26:09.330<br />
+Thread[TaskPool-1,5,main], job2@23:26:09.330
+</blockquote>
+<br/>
+<h4>线程 daemon 应该是 false, 除非主线程自己不退</h4><br/><br/>
+注意，如果是自己定义的线程池不能把线程的 daemon 设置为 true, 否则主线程很快退出进而整个进程结束，那就不是定时任务了。例如我们声明如下的 taskScheduler<br/><br/>
+<pre class="lang:default decode:true">@Bean
+public TaskScheduler taskScheduler() {
+    AtomicInteger number = new AtomicInteger(1);
+    ConcurrentTaskScheduler taskScheduler = new ConcurrentTaskScheduler(
+        Executors.newScheduledThreadPool(3, r -&gt; {
+            Thread thread = new Thread(r);
+            thread.setName("TaskPool-thread-" + number.getAndIncrement());
+            thread.setDaemon(true);   //daemon 为 true 导致主线程很快退出，从而进程退出
+            return thread;
+        }));
+    return taskScheduler;
+}</pre>
+<br/>
+执行程序后的效果可能是这样的<br/><br/>
+<a href="/wp-content/uploads/2017/06/spring-scheduling-2.png"><img class="aligncenter wp-image-8116 size-full" src="/wp-content/uploads/2017/06/spring-scheduling-2.png" alt="" width="600" height="113" /></a><br/><br/>
+这还比较幸运，任务被执行了一次，进程退出了，也有可能一次任务都无法执行，如果是 fixedDelay 稍长的任务更是不可能得到一次执行的机会进程就退出了。如果你的主线程自己控制了永不退出也是可行的。<br/><br/>
+这种情况下，我们一般是不会这么干 -- 把线程的 daemon 设置为 true，这也就是为什么 ConcurrentTaskScheduler 接收的是一个 ScheduledExecutorService 参数。<br/><br/>
+名称 "taskScheduler" 或类型 "ScheduledExecutorService" 来查找相应的 Bean, 如果都没有找到，就会使用默认的单线程的 scheduler 来 执行任务，这就是我们之前看到的效果。<br/><br/>
+<h3>@Scheduled 与 @Async</h3><br/><br/>
+还是有必要提到一种情况，@Scheduled 和 @Async 是可以共存的。可以试着这么做<br/><br/>
+<ul>
+    <li>给 Application 类加上 @EnableAsync</li>
+    <li>给 ScheduleRunner 的 job1() 和 job2() 方法加上注解 @Async</li>
+</ul><br/><br/>
+执行后<br/><br/>
+<blockquote>
+Thread[SimpleAsyncTaskExecutor-1,5,main], job1@00:13:36.763<br />
+Thread[SimpleAsyncTaskExecutor-2,5,main], job2@00:13:36.763<br />
+Thread[SimpleAsyncTaskExecutor-3,5,main], job1@00:13:41.738<br />
+Thread[SimpleAsyncTaskExecutor-4,5,main], job2@00:13:41.738<br />
+Thread[SimpleAsyncTaskExecutor-5,5,main], job1@00:13:46.742<br />
+Thread[SimpleAsyncTaskExecutor-6,5,main], job2@00:13:46.742
+</blockquote>
+<br/>
+SimpleAsyncTaskExecutor 并不使用线程池来执行任务，而是每次创建新的线程来执行任务，由于 job1() 和 job2() 两方法是异步的，所以 fixedDelay 的效果与 fixedRate 是一样的，因为方法一调用即认为是结束，马上就安排下一次执行的时间。如果想用 fixedDelay 让前后两次任务是有关联的，方法不能为 @Async.<br/><br/>
+<hr /><br/><br/>
+给自己备注一下：<br/><br/>
+用 @Scheduled 标注的方法最后是包装到  ScheduledMethodRunnable  中被执行的，它是一个 Runnable 接口的实现<br/><br/>
+<blockquote>
+Runnable runnable = new ScheduledMethodRunnable(bean, invocableMethod);
+</blockquote>

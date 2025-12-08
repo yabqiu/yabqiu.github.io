@@ -1,0 +1,150 @@
+---
+title: Struts2 使用 XSLTResult 输出页面内容详解
+url: /struts2-xsltresult-details/
+date: 2011-04-09T04:59:10-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Struts
+tags: 
+  - xslt
+  - Struts2
+  - Struts
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3410 
+wpStatus: publish
+views: 1214
+lastmod: 2021-09-04T11:30:40-05:00
+---
+
+Struts2 内置提供了 xslt 结果类型，实现类为 org.apache.struts2.views.xslt.XSLTResult，它让你方便的把获得的 XML 数据内容，或者是用 OGNL 能访问到的某个属性(像 ContenxtMap、Request 等中的属性)，通过一个 xslt 文件转换成你想要的格式。前面这句听来不怎么明白，后面慢慢道来。</p>
+<br/>
+在 Struts2 的 struts-default.xml 中定义了 chain、dispatcher、freemarker、httpheader、redirect、redirectAction、stream、velocity、xslt 和 plainText 10 种类型的 Result；而在 Struts2 初期版本中的 jasper、chart、jsf 和 tiles 结果类型已移到相应的插件去实现了。<br/><br/>
+freemarker、velocity 和 xslt 可以很自由的使用各自的模板语言，velocity 渐渐淡出了我们的视野，那还剩下 freemarker 和 xslt。freemarker 要求实合并的变量是实体类型，满足了多数时候的需求，不过现在要说的 xslt 结果类型，向 xslt 文件送去的数据可以是实体类型，也可以是原生的 org.w3c.dom.Document 类型，当然到了 xslt 文件这一层处理的都是<!--more--> org.w3c.dom.Document 类型。注意不能是别的 Document，如 org.dom4j.Document。这对于像调用 WebService 返回的是个 XML 内容然后用 xslt 文件格式化输出是最直截了当的，这就免去了我们想使用 Transformer.transform() 进行 xslt 转换 xml 的过程。<br/><br/>
+我们先作个准备，来看下 <a href="http://www.jarvana.com/jarvana/view/org/apache/struts/struts2-core/2.2.1.1/struts2-core-2.2.1.1-javadoc.jar!/org/apache/struts2/views/xslt/XSLTResult.html" target="_blank" rel="noopener">org.apache.struts2.views.xslt.XSLTResult</a> 有哪些可配置的属性：<br/><br/>
+adapterFactory      可定制自己的，告诉 XSLTResult 怎么把暴露的变量转换为 org.w3c.dom.Document 类型<br />
+exposedValue         送出给 xslt 模板要处理的数据，可用 OGNL 引用当前上下文中的变量，也可以是个集合<br />
+stylesheetLocation xslt 文件的位置，如 /WEB-INF/xslt/foo.xslt，基于当前应用的路径，struts2.1.1 前用 location<br />
+noCache                    是否缓存 xslt 模板，可通过 struts 的常量  struts.xslt.nocache 进行全局设置<br />
+parse                          是否启用 OGNL  表达式来解析 stylesheetLocation 获得实际的 xstl 文件位置，默认为 true<br/><br/>
+另有两个在 struts2.1.1 之前的配置属性是 exludingPattern 和 matchingPattern。<br/><br/>
+有了前面的了解，现在可以看个具体的实例了：<br/><br/>
+1. Action 中执行方法的代码：<br/><br/>
+<pre class="lang:default decode:true">public String execute(){<br/><br/>
+    Ticker user = new Ticker();
+    user.setId(100);
+    user.setName("Unmi");<br/><br/>
+    Map&lt;String, Object&gt; contextMap = ActionContext.getContext().getContextMap();
+    contextMap.put("user", user);<br/><br/>
+    return SUCCESS;
+ }</pre>
+<br/>
+cc.unmi.model.User 类中有两属性 id 和 name<br/><br/>
+2. struts.xml 中对该 Action 的配置：<br/><br/>
+<pre class="lang:default decode:true">&lt;action name="user" class="cc.unmi.action.UserAction"&gt;
+    &lt;result type="xslt"&gt;
+        &lt;param name="stylesheetLocation "&gt;/xslt/user.xslt&lt;/param&gt;
+        &lt;param name="exposedValue"&gt;user&lt;/param&gt;
+        &lt;param name="noCache"&gt;true&lt;/param&gt;
+    &lt;/result&gt;
+&lt;/action&gt;</pre>
+<br/>
+上面的 exposedValue 是个 OGNL 表达式，这里 user 是取自 ContextMap 中的，可以是 UserAction 本身的属性，或者 Request、ServletContext 中的属性，或者是 ModelDriven  Action 的模型对象，总之是用 OGNL 能访问到的任何东西都可以在这里引用。如果每一个 exposedValue 都要申明为当前 Action 的属性就够呛的，个人觉得放 ContextMap 是个很好的选择。<br/><br/>
+比如 exposedValue 值可以用 user.name, 或用大括号包起来的多个值 {user1, user2}，user1 和 user2 是当前 Action 的属性或是它的 model 中的属性是这么写。依据 OGNL 的规则，如果 user1 和 user2 不是 OGNL 上下文中根据对象的属性，则要写成 {#user1, #user2}，比如它们作为 ActionContext.getContext().getContextMap() 中的值。<br/><br/>
+3. /xslt/user.xslt 文件，最简单较通用的内容<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform"&gt;
+    &lt;xsl:output method="xml"/&gt;
+    &lt;xsl:template match="/result"&gt;
+        &lt;xsl:copy-of select="."/&gt;
+    &lt;/xsl:template&gt;
+&lt;/xsl:stylesheet&gt;</pre>
+<br/>
+最后，HttpServletResponse 响应的类型是由上面的 &lt;xsl:output method="xml"/&gt; 决定的。<br/><br/>
+4. 访问该 Action 输出的内容：<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;result&gt;
+    &lt;id&gt;100&lt;/id&gt;
+    &lt;name&gt;Unmi&lt;/name&gt;
+&lt;/result&gt;</pre>
+<br/>
+这是一个较简单的 bean 的输出，更深层次的 javabean，甚至带有 Map、List 属性的 javabean 会输出成什么样子的 xml，可以自己慢慢去试。<br/><br/>
+前面的 root 节点为什么是 &lt;result&gt; 呢，这要进到 <a href="http://jarvana.com/jarvana/view/org/apache/struts/struts2-core/2.2.1/struts2-core-2.2.1-javadoc.jar!/org/apache/struts2/views/xslt/AdapterFactory.html" target="_blank" rel="noopener">org.apache.struts2.views.xslt.AdapterFactory</a> 来寻下底。在 <a href="http://www.jarvana.com/jarvana/view/org/apache/struts/struts2-core/2.2.1.1/struts2-core-2.2.1.1-javadoc.jar!/org/apache/struts2/views/xslt/XSLTResult.html" target="_blank" rel="noopener">org.apache.struts2.views.xslt.XSLTResult</a> 的 execute() 方法中是用：<br/><br/>
+<pre class="brush:java">Object result = invocation.getAction();
+if (exposedValue != null) {
+    ValueStack stack = invocation.getStack();
+    result = stack.findValue(exposedValue);
+}<br/><br/>
+Source xmlSource = getDOMSourceForStack(result);</pre>
+<br/>
+找到 exposedValue 值的，从 ValueStack 找，这是个 OGNL ValueStack，所以 exposedValue 就是个 OGNL 表达式。然后最后一行调用跑到当前类的：<br/><br/>
+<pre class="brush:java">protected Source getDOMSourceForStack(Object value)
+    throws IllegalAccessException, InstantiationException {
+    return new DOMSource(getAdapterFactory().adaptDocument("result", value) );
+ }</pre>
+<br/>
+这里可以看到设置了一个 "result" 字符串作为根节点的标签名。再深入一步，来到 org.apache.struts2.views.xslt.AdapterFactory 类：<br/><br/>
+<pre class="brush:xml">public Document adaptDocument(String propertyName, Object propertyValue)
+    throws IllegalAccessException, InstantiationException {
+    //if ( propertyValue instanceof Document )
+    //  return (Document)propertyValue;<br/><br/>
+     return new SimpleAdapterDocument(this, null, propertyName, propertyValue);
+ }</pre>
+<br/>
+方法返回的是一个 org.w3c.dom.Document 类型，再推送给 xslt 文件。发现到上面注释掉的代码，作者的本意还在，如果本身就是个 org.w3c.dom.Document 类型，那么直接给 xslt 就行，只是现在这一逻辑放到 SimpleAdapterDocument 类里去了而已。<br/><br/>
+也就是说，如果你给 exposedValue 就是一个 org.w3c.dom.Document 类型，那么会保持好原来的 XML 格式，无需再用 "result" 作为根节点名，同时在你的 xslt 文件中也不是用 &lt;xsl:template match="/result"&gt; 来匹配根节点，而可能是 &lt;xsl:template match="/users"&gt;。<br/><br/>
+在调用 Service 返回 XML 数据，然后重新用 xslt 组织输出的应用场景中就好办了，不用解析原始的 XML 生成 JavaBean，再用标签显示，而是直接把原始的 XML 扔给 xslt 去处理。当然能力的发挥就要体现在 xslt 模板文件中了，xslt 中有不少函数，再不行 xslt 中可以使用 javascript 或 java 代码中的函数。<br/><br/>
+最后再看两种情况，exposedValue 是个单纯的字符串和是个用 {user1, user2} 表示的集合。<br/><br/>
+exposedValue 是个字符串，也就是在 Action 中返回前写成 contextMap.put("user", "Unmi"); xslt 文件还是那个 user.xslt，这种情况其实没必要说的，完全可以想见到它的输出就是： &lt;result&gt;Unmi&lt;/result&gt;。但还是要总结一下，当 exposedValue 类型是基本类型，像 int，long 等，以及它们的包装类型，再加上字符串类型，形成的 XML 的结构将会是 &lt;result&gt;toString() 返回值&lt;/result&gt;，如果是 null 将会报错，是不允许的。<br/><br/>
+之所以提到 exposedValue 是个简单字符串是为接下来作铺垫的，字符串是 "Unmi"，输出为 &lt;result&gt;Unmi&lt;/result&gt; 我是没意见的。但要是我的字符串是 "&lt;user&gt;&lt;name&gt;Unmi&lt;/name&gt;&lt;/user&gt;"，期待它直接作为 XML 数据时，以 Struts2 现有的方式会输出为<br/><br/>
+<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;result&gt;
+    &amp;lt;user&amp;gt;&amp;lt;name&amp;gt;Unmi&amp;lt;/name&amp;gt;&amp;lt;/user&amp;gt;
+&lt;/result&gt;</pre>
+<br/>
+这就不是我想要的，它不能作为一个简单的字符串，我们希望它直接被转换为相应的 org.w3c.dom.Document，输出结果应该为 &lt;user&gt;&lt;name&gt;Unmi&lt;/name&gt;&lt;/user&gt;，这就涉及到定制自己的 AdapterFactory 在字符串符合 XML 格式时直接转换为 Document，而不是简单框上 &lt;result&gt;，当然事先转换为 Document 再作为 exposedValue 也行的，只是通用性不强。<br/><br/>
+exposedValue 为 {user1, user2} 时 -- 如果 user1 和 user2 是放在 ContextMap 中的话，用 {#user1, #user2} 的形式。在前面的 Action 的  execute() 方法里，往 ContextMap 放值的代码改为：<br/><br/>
+<pre class="brush:java">contextMap.put("user1", user);
+contextMap.put("user2", user);</pre>
+<br/>
+然后，在 struts.xml 配置文件中，exposedValue 属性值改为 {#user1, #user2}，再看最后执行的页面输出：<br/><br/>
+<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;result&gt;
+    &lt;item&gt;
+        &lt;id&gt;100&lt;/id&gt;
+        &lt;name&gt;Unmi&lt;/name&gt;
+    &lt;/item&gt;
+    &lt;item&gt;
+        &lt;id&gt;100&lt;/id&gt;
+        &lt;name&gt;Unmi&lt;/name&gt;
+    &lt;/item&gt;
+&lt;/result&gt;</pre>
+<br/>
+要说明一下，在 XSLTResult.execute() 代码中，通过<br/><br/>
+ValueStack stack = invocation.getStack();<br />
+result = stack.findValue(“{#user1, #user2}”);<br/><br/>
+取到的是一个 ArrayList&lt;User&gt; 类型数据，遍历时把每一个元素用 &lt;item&gt; 包上。上面所有的如果不是直接提供给 xslt Document 类型，在 xml 中将会失去 javabean 本身的类型表述，而代之以 &lt;result&gt;&lt;item&gt;。<br/><br/>
+再如果是个 Map 是什么样的情况，不妨看下，Action 里：<br/><br/>
+<pre class="brush:xml">map.put("user", user);
+contextMap.put("user", map);</pre>
+<br/>
+exposedValue 还是 user<br/><br/>
+输出 XML 为：<br/><br/>
+<pre class="lang:default decode:true ">&lt;result&gt;
+    &lt;entry&gt;
+        &lt;key&gt;user&lt;/key&gt;
+        &lt;value&gt;
+            &lt;id&gt;100&lt;/id&gt;
+            &lt;name&gt;Unmi&lt;/name&gt;
+        &lt;/value&gt;
+    &lt;/entry&gt;
+&lt;/result&gt;</pre>
+<br/>
+&lt;key&gt;&lt;value&gt; 来了，再和 List 一结合，就有些乱了，乱了，不带有类型信息的 XML 太抽象难懂，并且造成 xslt 文件的难写，因为节点名都是难以捉摸的。所以直接送 org.w3c.dom.Document 经 xslt 会高明许多，个人认为。<br/><br/>
+参考：1. <a href="http://eryk.iteye.com/blog/643946" target="_blank" rel="noopener">使用struts2 返回 xslt result 资料</a><br />
+2. <a href="http://struts.apache.org/2.0.14/docs/xsl-result.html" target="_blank" rel="noopener">http://struts.apache.org/2.0.14/docs/xsl-result.html</a>

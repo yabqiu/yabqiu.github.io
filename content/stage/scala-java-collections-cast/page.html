@@ -1,0 +1,150 @@
+---
+title: Scala 和 Java 的集合类型相互转换
+url: /scala-java-collections-cast/
+date: 2016-05-08T00:15:16-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - Java
+  - Scala
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7251 
+wpStatus: publish
+views: 4578
+lastmod: 2021-05-04T15:39:35-05:00
+---
+
+在 Scala 和 Java 混合编程时免不了需要进行集合类型在两种语言间相互转换，更多的是在 Scala 调用 Java 的方法时把 Scala 的集合转型为 Java 的集合。典型场景是：</p>
+<br/>
+<blockquote>
+public void process(java.util.List&lt;String&gt; orderIds) {<br />
+  ......<br />
+}
+</blockquote>
+<br/>
+上面定义的 Java 方法，如果要在 Scala 中调用它，不考虑两种语言的集体类型转换的话，可以直接传入 Java 代码要求的类型，像这样<br/><br/>
+<blockquote>
+val orderIds = new java.util.ArrayList[String]<br />
+orderIds.add("SJ001")<br />
+process(orderIds)
+</blockquote>
+<br/>
+这样当然可以，但不能享受到 Scala 语言中集合使用的便利性，如快捷的构造，丰富的怪异的方法(++, ::, ## 等)。所以希望此时 Scala 中调用 <code>process()</code>  能接近这种方法<br/><br/>
+<blockquote>
+process(List("SJ001", "SJ002"))
+</blockquote>
+<br/>
+特别是当 Java 接受一个 java.util.Map 时，能在 Scala 里直接传入 <code>Map("key1" -&gt; "value1",  "key2" -&gt; "value2")</code> 就方便许多。<br/><br/>
+用方法来完成 Scala 和 Java 间对应集合类型的转换当然没问题，但别忘了 Scala 还支持隐式转换，那就是只要在 Scala 代码中引入 <a href="http://www.scala-lang.org/api/2.8.0/scala/collection/JavaConversions$.html">collection.JavaConversions._</a> 对于上面的方法在 Scala 中就可以直接传入 Scala 的 List() 了。也就是<!--more--><br/><br/>
+<strong><span style="color: #0000ff;">第一种办法，引入 collection.JavaConversions._ 完成双向自动转型</span></strong><br/><br/>
+<pre class="brush:scala">import collection.JavaConversions._<br/><br/>
+process(List("SJ001", "SJ002")</pre>
+<br/>
+collection.JavaCoversions 是 Scala 2.8 开始加入的，它的定义是<br/><br/>
+<pre class="brush:scala">object JavaCoversions extends WrapAsScala with WrapAsJava</pre>
+<br/>
+而在 Trait WrapAsScala 和  WrapAsJava 中定义了很多转型的隐式方法，下面的方法完成 Scala 的 Seq 到 Java List 的转型，摘自  WrapAsJava<br/><br/>
+<pre class="lang:default decode:true"> implicit def seqAsJavaList[A](seq: Seq[A]): ju.List[A] = seq match {
+   case JListWrapper(wrapped) =&gt; wrapped.asInstanceOf[ju.List[A]]
+   case _ =&gt; new SeqWrapper(seq)
+ }</pre>
+<br/>
+方法都是直接从源类型到目标类型，在 JavaCoversions 注释中，看出它能完成的转型有<br/><br/>
+<blockquote>
+* scala.collection.Iterable &lt;=&gt; java.lang.Iterable<br />
+* scala.collection.Iterable &lt;=&gt; java.util.Collection<br />
+* scala.collection.Iterator &lt;=&gt; java.util.{ Iterator, Enumeration }<br />
+* scala.collection.mutable.Buffer &lt;=&gt; java.util.List<br />
+* scala.collection.mutable.Set &lt;=&gt; java.util.Set<br />
+* scala.collection.mutable.Map &lt;=&gt; java.util.{ Map, Dictionary }<br />
+* scala.collection.concurrent.Map &lt;=&gt; java.util.concurrent.ConcurrentMap
+* scala.collection.Seq =&gt; java.util.List<br />
+* scala.collection.mutable.Seq =&gt; java.util.List<br />
+* scala.collection.Set =&gt; java.util.Set<br />
+* scala.collection.Map =&gt; java.util.Map<br />
+* java.util.Properties =&gt; scala.collection.mutable.Map[String, String]
+</blockquote>
+<br/>
+引入 collection.JavaCoversions._ 同样能实现 Java 集合到 Scala 集合类型的转换，如<br/><br/>
+<pre class="brush:scala">import collection.JavaConversions._<br/><br/>
+val orderIds: java.util.List[String] = Seq("SJ001", "SJ002")</pre>
+<br/>
+这原本很好的完成了 Scala 代码中两种类型集合的隐式转换，但不知为何 Scala 又搞出与引入 collection.JavaConversions._ 等同效果的做法，也可以通过引入<br/><br/>
+<pre class="brush:scala">import collection.convert.wrapAll._     //这个和引入 collection.JavaConversions._ 没什么分别
+import collection.convert.wrapAsJava._  //单纯完成 Scala 到 Java 集合类型的隐式转换
+import collection.convert.wrapAsScala._ //只是完成 Java  到 Scala 集合的隐式转换</pre>
+<br/>
+上面三种方式的出现令人更生迷惑，实际应用起让人更不知所往。我个人建议若是要实现类型的隐式转换还是用 <code>collection.JavaConversions._</code> 吧。<br/><br/>
+包 collection.convert 是这么定义，同时与前面的 JavaConversions 一对比，发现 JavaConversions 本来就是像 wrapAll 一样既实现了 WrapAsJava 也实现了 WrapAsScala。<br/><br/>
+<pre class="brush:scala">package object convert {
+ val decorateAsJava = new DecorateAsJava { }
+ val decorateAsScala = new DecorateAsScala { }
+ val decorateAll = new DecorateAsJava with DecorateAsScala { }
+ val wrapAsJava = new WrapAsJava { }
+ val wrapAsScala = new WrapAsScala { }
+ val wrapAll = new WrapAsJava with WrapAsScala { }
+}</pre>
+<br/>
+隐式转换我们采用的是把源类型 Wrap 为目标类型。读到这里肯定也没有忽略上面除了 Wrap 的方式，还有 Decorate 方式，那就是<br/><br/>
+<span style="color: #0000ff;"><strong>第二种办法，引入 collection.JavaConverters._, 进而显式调用 asJava() 或 asScala() 方法完成转型</strong></span><br/><br/>
+<pre class="brush:scala">import collection.JavaConverters._<br/><br/>
+val orderIds: java.util.List[String] = Seq("SJ001", "SJ002").asJava
+val name: Seq[String] = new java.util.ArrayList[String]().asScala</pre>
+<br/>
+<code><a href="http://www.scala-lang.org/api/2.8.1/scala/collection/JavaConverters$.html">collection.JavaCoverters</a>._</code> 是 Scala 2.8.1 加进来的。如果你在应用 JavaConversions 实现类型的隐式转换经常不知所以时，或者更希望掌控来龙去脉时推荐使用 JavaCoverters 和 asJava/asScala 进行显式的类型转换。<br/><br/>
+collection.JavaCoverters 的声明如下：<br/><br/>
+<pre class="brush:scala">object JavaConverters extends DecorateAsJava with DecorateAsScala</pre>
+<br/>
+是的，就是我们前面看到的 DecorateAsJava 和 DecorateAsScala, 下面方法摘自 DecorateAsJava<br/><br/>
+<pre class="brush:scala">implicit def seqAsJavaListConverter[A](b : Seq[A]): AsJava[ju.List[A]] =
+ new AsJava(seqAsJavaList(b))</pre>
+<br/>
+不像隐式转换，该方法本身不最终完成 Scala Set  到  Java List 的转换，而是隐式的获得一个中间对像 AsJava,  进一步调用  asJava 时是调用的 collection.convert.Decorators 的<br/><br/>
+<pre class="lang:default decode:true">private[collection] trait Decorators {
+ /** Generic class containing the `asJava` converter method */
+ class AsJava[A](op: =&gt; A) {
+ /** Converts a Scala collection to the corresponding Java collection */
+ def asJava: A = op
+ }
+.....</pre>
+<br/>
+类似的，Scala 也在这里制造了同样的混乱，你可以用下面选用下面的方式来实现 JavaCoverters._ 的功能<br/><br/>
+<pre class="brush:scala">import collection.convert.decorateAll._  //实现对集合对象调用 asJava/asScala 方法完成双向转型
+import collection.convert.decorateAsJava._  //调用 asJava 完成  Scala 到 Java 的集合类型转换
+import collection.convert.decorateAsScala._ //调用 asScala 完成  Java 到 Scala 的集合类型转换</pre>
+<br/>
+<span style="color: #0000ff;">总结一下，简单来讲就是两种方式来完成集合类型在 Scala 与 Java 间的转换</span><br/><br/>
+<ol>
+    <li><span style="color: #0000ff;">collection.JavaConversions._ 自动转型，Scala 2.8 加入的。隐式转型可能会造成阅读上的障碍，可能会让人难以知晓什么变成了什么</span></li>
+    <li><span style="color: #0000ff;">collection.JavaConverters._ 然后再调用 asJava/asScala 方法半自动转型(自动部分在生成 AsJava/AsScala 中间实例)。Scala 2.8.1 加入，稍新， asJava/asScala 为我们标记出了实际转型的地方，以及从哪个方向到哪个方向</span></li>
+</ol>
+<br/>
+<span style="color: #0000ff;">注: collection.{JavaConversions, JavaConverters} 的全限名是 scala.collection.{JavaConversions, JavaConverters}}, 这是因为 Scala 中默认引入了 scala 包。</span><br/><br/>
+<span style="color: #0000ff;">另外，等效的方式 collection.convert.wrapAll._, collection.convert.decorateAll._ 宜作暂忘</span><br/><br/>
+上面提及实例都是在 Scala 代码中如何完成集合在 Scala 与 Java 间又向转型，我们同样可以在 Java 代码中实现两种集合类型的转换。由于 Java 不可能用隐式转换，所以一切都是台面上的方法调用，看个例子：<br/><br/>
+<pre class="lang:default decode:true">import scala.collection.JavaConversions;
+import scala.collection.JavaConverters;<br/><br/>
+public class Test {
+  public void foo() {
+    scala.collection.Seq&lt;String&gt; a = null; //别介意这里的 null, 不想去找正确的 Seq 实现，所以 Scala 初始化一个 Seq 简单
+    List&lt;String&gt; list = JavaConversions.seqAsJavaList(a);<br/><br/>
+    List&lt;String&gt; b = null;
+    Buffer&lt;String&gt; buffer = JavaConverters.asScalaBufferConverter(b).asScala();
+  }
+}</pre>
+<br/>
+显然，在 Java 中使用 Scala 集合类型这样转型有点蛋疼，所以使用 PlayFramework 的话，它自带了一个工具类 <a href="https://github.com/playframework/playframework/blob/master/framework/src/play/src/main/java/play/libs/Scala.java">play.libs.Scala</a>, 有少许转换方法可利用<br/><br/>
+<img class="aligncenter size-full wp-image-7265" src="/wp-content/uploads/2016/05/play.libs_.Scala_.png" alt="play.libs.Scala" width="439" height="404" /><br/><br/>
+&nbsp;<br/><br/>
+参考： 1. <a href="http://docs.scala-lang.org/overviews/collections/conversions-between-java-and-scala-collections.html">Conversions Between Java and Scala Collections<br />
+</a>          2. <a href="http://stackoverflow.com/questions/8301947/what-is-the-difference-between-javaconverters-and-javaconversions-in-scala">What is the difference between JavaConverters and JavaConversions in Scala?<br />
+</a>          3. <a href="http://stackoverflow.com/questions/11679016/java-scala-collection-conversions-scala-2-10">Java &lt;-&gt; Scala Collection conversions, Scala 2.10 [duplicate]</a> <br />
+          4. <a href="http://stackoverflow.com/questions/674713/converting-a-java-collection-into-a-scala-collection">Converting a Java collection into a Scala collection<br />
+</a>          5. <a href="http://www.scala-lang.org/api/current/index.html#scala.collection.JavaConverters$">API scala.collection.JavaConverters</a>

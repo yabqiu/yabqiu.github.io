@@ -1,0 +1,201 @@
+---
+title: Unmi 学习 Groovy 之 Groovy 和 Swt
+url: /unmi-study-groovy-swt/
+date: 2008-12-08T23:03:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Groovy
+tags: 
+  - Groovy
+  - SWT
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 310 
+wpStatus: publish
+views: 550
+lastmod: 2018-03-02T20:38:20-06:00
+---
+
+<p>如上篇：<a href="http://unmi.cc/unmi-groovy-swing/" target="_blank" rel="noopener">Unmi 学习 Groovy 之 Groovy 和 Swing</a>，Groovy 应用 Markup、命名参数、匿名构造和闭包很好的支持了 Swing 开发。然而 IBM 当初考虑到 Swing 的表现自行开发了一个界面框架，并已广受开发者青睐，也在 RCP 中得到了发展。Groovy 自然也看到了这一点，有了实际动作，见 <a href="http://groovy.codehaus.org/GroovySWT">http://groovy.codehaus.org/GroovySWT</a>。它通过 SwtBuilder 和 JFaceBuilder 不令提供了对 Swt 的支持，还支持了 Swt 更上一层的 JFace。</p>
+
+<p>要使用 GroovySWT，必须先下载到 <a href="http://docs.codehaus.org/download/attachments/17022/groovy-swt-0.3.jar" target="_blank" rel="noopener">groovy-swt-0.3.jar</a>，或用 Eclipse 自带的 swt.jar，或从 Swt 官方网站(<a href="http://www.eclipse.org/swt/">http://www.eclipse.org/swt/</a>) 上下载最新的 swt.jar。或者直接下载打包的 <a href="http://docs.codehaus.org/download/attachments/17022/groovy-swt-0.3-including-Eclipse-libs.ZIP+" target="_blank" rel="noopener">groovy-swt-0.3-including-Eclipse-libs.ZIP</a>，其中包含有 groovy-swt-0.3 和 swt/jface 等包。swt/jface 工程的 classpath 设置这里不多说，本文假定你对 Swt 有一定的了解，最好能理解 Swt 的 HelloWorld 程序。下面还是以例子进行说明吧。<!--more--></p>
+
+<p><strong>Java-Swt 传统方式翻译为 groovy 的写法</strong></p>
+
+<table style="width: 75%;" border="0" align="center">
+
+<tbody>
+
+<tr valign="top">
+
+<td valign="top">
+
+<pre class="brush:groovy">import org.eclipse.swt.SWT<br/>
+import org.eclipse.swt.widgets.*<br/>
+import org.eclipse.swt.layout.RowLayout as Layout<br/>
+<br/>
+def display = new Display()<br/>
+def shell = new Shell(display)<br/>
+<br/>
+shell.layout = new Layout(SWT.VERTICAL)<br/>
+<br/>
+shell.text = 'Groovy / SWT Test'<br/>
+<br/>
+def label = new Label(shell, SWT.NONE)<br/>
+label.text = 'Simple demo of Groovy and SWT'<br/>
+shell.defaultButton = new Button(shell, SWT.PUSH)<br/>
+shell.defaultButton.text = '  Push Me  '<br/>
+<br/>
+shell.pack()<br/>
+shell.open()<br/>
+<br/>
+while (!shell.disposed) {<br/>
+    if (!shell.display.readAndDispatch()) shell.display.sleep()<br/>
+}</pre>
+
+</td>
+
+<td valign="top"><strong>执行该程序的界面如下：</strong><img style="border: 0px none;" src="http://unmi.cc/wp-content/uploads/2008/12/GroovySwt1.JPG" alt="GroovySwt1.JPG" border="0" /></td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<p><strong>使用 SwtBuilder 改写上面的程序，并加上了按钮事件处理的功能</strong></p>
+
+<table style="width: 75%;" border="0" align="center">
+
+<tbody>
+
+<tr valign="top">
+
+<td valign="top">
+
+<pre class="brush:groovy">import org.eclipse.swt.SWT<br/>
+import org.eclipse.swt.widgets.*<br/>
+<br/>
+def swt = new groovy.swt.SwtBuilder()<br/>
+def shell = swt.shell(text:'Groovy / SWT Test') {<br/>
+    rowLayout()<br/>
+    label(style:"none", text:'Simple demo of Groovy and SWT')<br/>
+    button(style:"push", text:'  Push Me  ') {<br/>
+        onEvent(type:"Selection", closure:{ println "Hello" })<br/>
+    }<br/>
+}<br/>
+<br/>
+//对于下面这块代码并未能作出简化<br/>
+shell.pack()<br/>
+shell.open()<br/>
+<br/>
+while (!shell.disposed) {<br/>
+    if (!shell.display.readAndDispatch()) shell.display.sleep()<br/>
+}</pre>
+
+</td>
+
+<td valign="top"><strong>执行该程序的界面如下：</strong><img style="border: 0px none;" src="http://unmi.cc/wp-content/uploads/2008/12/GroovySwt2.JPG" alt="GroovySwt2.JPG" width="237" height="63" border="0" />在 button 的闭包中用 onEvent 指示了什么<br /><br/>
+ 类型的事件执行什么闭包。</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<p>从上面的程序对比上可看出使用了 SwtBuilder 只简化了界面构造的代码，并加上了处理按钮点击的闭包。闭包是作为 shell 的参数，在布局管理方面的代码写法不同于 SwingBuilder，如上篇的</p>
+
+<p>tableLayout{    <br /><br/>
+     tr{    <br /><br/>
+         td(align:'center'){ label(text:'Username') }   <br /><br/>
+         td(align:'center'){ label(text:'Balance') }  <br /><br/>
+     } <br /><br/>
+ }</p>
+
+<p>而在 SwtBuilder 中 rowLayout() 和 Label() 是平级的，需要注意到这一点。</p>
+
+<p>最后看一下 Groovy 结合 JFace 应用的例子，JFace 对于 Swt 就如 MFC 和 Windows SDK 的关系。其中用到了 JFaceBuilder。</p>
+
+<table style="width: 75%;" border="0" align="center">
+
+<tbody>
+
+<tr valign="top">
+
+<td style="width: 24.4228%;" valign="top">
+
+<pre class="lang:default decode:true ">import groovy.jface.JFaceBuilder<br/>
+<br/>
+def  jface = new JFaceBuilder()<br/>
+def  mainapp<br/>
+//如果把 mainapp 定义和声明合在一起(def mainapp = jface.applicationWindows()，<br/>
+//则会在中间的 mainapp.setStatus('Hello ...') 引用 mainapp 时出错，<br/>
+//提示找不到当前类的 mainapp 属性<br/>
+<br/>
+//主应用程序窗口<br/>
+mainapp = jface.applicationWindow(title:"Groovy JFace Demo",<br/>
+    location:[400,300], size:[300, 200]) { 	<br/>
+<br/>
+	//主菜单<br/>
+	menuManager( text:"File" ) {//action: 就是一个菜单项，closure 为处理事件的闭包<br/>
+		action ( text:"Very Nice", closure:{ println "Very Nice !!!" } )<br/>
+	    separator()  //分隔线<br/>
+	    action ( text:"Check me", checked:true,<br/>
+                  closure:{ println "I've been checked" } )<br/>
+	}<br/>
+<br/>
+	menuManager( text:"Edit" ) {<br/>
+	    action ( text:"Say Hi Statusbar",<br/>
+                  closure:{ mainapp.setStatus('Hello ...') } )<br/>
+	    action ( text:"Clear Statusbar",<br/>
+                  closure:{ mainapp.setStatus('') } )<br/>
+    }<br/>
+<br/>
+	//工具栏<br/>
+	toolBarManager() {<br/>
+		action ( text:"&amp;Open", closure:{ println "Open file pressed" } )<br/>
+		action ( text:"&amp;C", closure:{ println "C pressed" } )<br/>
+		action ( text:"&amp;R", closure:{ println "R pressed" } )<br/>
+		action ( text:"&amp;A", closure:{ println "A pressed" } )<br/>
+		separator()<br/>
+		action ( text:"&amp;Z", closure:{ println "Z pressed" } )<br/>
+		action ( text:"&amp;Y", closure:{ println "Y pressed" } )<br/>
+		separator()<br/>
+		def act1 = action ( closure:{ println "last one" } )<br/>
+	  }<br/>
+<br/>
+    fillLayout ( type:"vertical" )<br/>
+	label( text:"A big red label", background:[204, 0, 0] )<br/>
+    label( text:"I can barelly read this", foreground:[0,200,0] )<br/>
+	label( text:"It sure looks like the dutch flag",<br/>
+               foreground:[255,255,255], background:[0, 0, 153] )<br/>
+}<br/>
+<br/>
+mainapp.getMenuBarManager().updateAll(true)<br/>
+mainapp.getToolBarManager().update(true)<br/>
+mainapp.getShell().layout()<br/>
+mainapp.open()</pre>
+
+</td>
+
+<td style="width: 300px;" valign="top"><strong>执行该程序的界面如下</strong>：<img style="border: 0px none;" src="http://unmi.cc/wp-content/uploads/2008/12/GroovySwt3.JPG" alt="GroovySwt3.JPG" border="0" />一个基本的 JFace 应用框架，有主菜单栏，工具栏，主<br /><br/>
+ 显示区域和状态栏，可点击菜单看看效果，工具栏上的<br /><br/>
+ 按钮设置了快捷方式</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<p>更多的关天 GroovySwt 的例子请参见 <a href="http://svn.codehaus.org/groovy/trunk/groovy/modules/groovy-swt/src/examples/">http://svn.codehaus.org/groovy/trunk/groovy/modules/groovy-swt/src/examples/</a> 中的演示代码。上面的代码比较分散，为方便下载，本人特地整理打成一个包放在了这里：<a href="/Files/Unmi/groovy-swt-examples.rar" target="_blank" rel="noopener">groovy-swt-examples.rar</a>。</p>
+
+<p>参考：<a href="http://groovy.codehaus.org/GroovySWT">http://groovy.codehaus.org/GroovySWT</a> 及其中的例子。</p>
+
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

@@ -1,0 +1,127 @@
+---
+title: Struts2 文件下载及找不到文件的处理办法
+url: /struts2-download-file-not-found/
+date: 2011-03-01T19:12:08-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Struts
+tags: 
+  - Struts2
+  - Struts
+  - 下载
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3243 
+wpStatus: publish
+views: 3903
+lastmod: 2021-09-03T13:11:20-05:00
+---
+
+Struts2 对文件的上传和下载提供了很好的支持，上传时直接用 java.io.File 来接收，下载时也无需自己去设置相应的 Stream 响应头，它提供了 org.apache.struts2.dispatcher.StreamResult 给 Action 使用。它反映到 struts.xml 配置里就是type="stream" 的 result，由 result 去负责把文件内容写入响应中去。Action 的执行方法在 result 之前执行，所以你可以借此控制下载权限，本文也演示了如何判断文件是否存在，不存在则导向到 FileNotFound 页面。StreamResult 中有哪些相关的配置参数可以参考它的源代码：<!--more--></p>
+<br/>
+<pre class="lang:default decode:true">public class StreamResult extends StrutsResultSupport {<br/><br/>
+    private static final long serialVersionUID = -1468409635999059850L;<br/><br/>
+    protected static final Logger LOG = LoggerFactory.getLogger(StreamResult.class);<br/><br/>
+    public static final String DEFAULT_PARAM = "inputName";<br/><br/>
+    protected String contentType = "text/plain";
+    protected String contentLength;
+    protected String contentDisposition = "inline";
+    protected String contentCharSet ;
+    protected String inputName = "inputStream";
+    protected InputStream inputStream;
+    protected int bufferSize = 1024;
+    protected boolean allowCaching = true;
+ 
+    .......................</pre>
+<br/>
+下面是一个文件下载的例子：<br/><br/>
+struts.xml<br/><br/>
+<pre class="lang:default decode:true">&lt;action name="down/pro" method="down"&gt;
+    &lt;param name="fileDir"&gt;c:/downloads/&lt;/param&gt;
+    &lt;result name="fileNotFound"&gt;errors/page_404.html&lt;/result&gt;
+    &lt;result type="stream"&gt;
+        &lt;param name="contentType"&gt;application/pdf&lt;/param&gt;
+        &lt;param name="inputName"&gt;targetFile&lt;/param&gt;
+        &lt;param name="contentDisposition"&gt;filename="${fileName}"&lt;/param&gt;
+        &lt;param name="buttferSize"&gt;4096&lt;/param&gt;
+    &lt;/result&gt;        
+&lt;/action&gt;</pre>
+<br/>
+说明：<br />
+1. fileDir 属性设置到 Action 的 fileDire 字段上，标识文件所处的目录。<br />
+2. fileNotFound result 是在文件找不到时转向的页面<br />
+3. inputName 用于指定待下载文件输入流的名称，即对应于 Action 的属性名；默认为 inputStream，这里定义为 targetFile，所<br/><br/>
+以 StreamResult 会调用 Action 的 getTargetFile() 方法。<br />
+4. ${fileName} 会被这里的 Action 的 fileName 属性替代，它是个 OGNL。<br />
+5. 其他的配置看 StreamResult 的源码了<br/><br/>
+<pre class="lang:default decode:true ">DownloadAction.java<br/><br/>
+package cc.unmi.download;<br/><br/>
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.InputStream;<br/><br/>
+import com.opensymphony.xwork2.ActionSupport;<br/><br/>
+
+public class DownloadAction extends ActionSupport{
+       
+    private String fileDir;
+    private String fileName;
+        
+    public InputStream getTargetFile() {
+        try {
+            String filePath = fileDir + fileName;
+            return new FileInputStream(filePath);
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }<br/><br/>
+    public String down(){
+        
+        //这里判断文件存不存在，不存在则转向到 fileNotFound 页面
+        String filePath = fileDir + fileName;
+        if(!new File(filePath).exists()){
+            return "fileNotFound";
+        }
+        
+        //由 StreamResult 来处理后续的部分了
+        return SUCCESS;
+    }
+    
+    
+    public String getFileDir() {
+        return fileDir;
+    }<br/><br/>
+    public void setFileDir(String fileDir) {
+        this.fileDir = fileDir;
+    }<br/><br/>
+    public void setFileName(String fileName) {
+        this.fileName = fileName;
+    }<br/><br/>
+    public String getFileName() {
+        return fileName;
+    }
+}</pre>
+<br/>
+如果文件不存，getTargetFile() 里出现异常，在页面中将会打出：<br/><br/>
+<span style="color: #800000;">Struts Problem Report</span><br />
+<span style="color: #800000;">Struts has detected an unhandled exception:</span><br/><br/>
+<span style="color: #800000;">Messages: Can not find a java.io.InputStream with the name [targetFile] in the invocation stack. Check the tag</span><br/><br/>
+<span style="color: #800000;">specified for this action.</span><br />
+<span style="color: #800000;"> </span><br />
+<span style="color: #800000;">File: org/apache/struts2/dispatcher/StreamResult.java </span><br />
+<span style="color: #800000;">Line number: 237</span><br />
+<span style="color: #800000;">--------------------------------------------------------------------------------</span><br/><br/>
+<span style="color: #800000;">Stacktraces</span><br />
+<span style="color: #800000;">java.lang.IllegalArgumentException: Can not find a java.io.InputStream with the name [targetFile] in the invocation</span><br/><br/>
+<span style="color: #800000;">stack. Check the tag specified for this action. </span><br />
+<span style="color: #800000;">    org.apache.struts2.dispatcher.StreamResult.doExecute(StreamResult.java:237)</span><br />
+<span style="color: #800000;">    org.apache.struts2.dispatcher.StrutsResultSupport.execute(StrutsResultSupport.java:186)</span><br />
+<span style="color: #800000;">    com.opensymphony.xwork2.DefaultActionInvocation.executeResult(DefaultActionInvocation.java:373)</span><br />
+<span style="color: #800000;">    com.opensymphony.xwork2.DefaultActionInvocation.invoke(DefaultActionInvocation.java:277)</span><br/><br/>
+getTargetFile() 会在 down() 后由 StreamResult 调用，所以可在 down() 中判断文件不存在就 return "fileNotFound";

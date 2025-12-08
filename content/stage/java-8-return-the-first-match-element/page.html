@@ -1,0 +1,119 @@
+---
+title: Java 8 返回集合中第一个匹配的元素
+url: /java-8-return-the-first-match-element/
+date: 2015-12-17T01:10:52-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - Java8
+tags: 
+  - lambda
+  - java8
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7105 
+wpStatus: publish
+views: 8837
+lastmod: 2021-09-03T17:31:38-05:00
+---
+
+在 Java 8 之前如果我们要找到集合中第一个匹配元素，要使用外部循环，如下面方法 findFirstMatch() 如果找到一个大于 3 的数字立即返回它，否则返回 null</p>
+<br/>
+<blockquote>
+  public Integer findFirstMatch() {<br />
+    List&lt;Integer&gt; integers = Arrays.asList(1, 4, 2, 5, 6, 3);<br />
+    for(int i: integers) {<br />
+      if(i &gt; 3) return i;<br />
+    }<br />
+    return null;<br />
+  }
+</blockquote>
+<br/>
+因为在 for 循环中找到第一个大于 3 的数字是 4, 并且立即返回，所以不管集合 integers 再大，也不会遍历整个集合。<br/><br/>
+注：不要纠结于上面示例方法的实际用途，实际上集体和匹配条件都该通过参数传入方法的，这里只作演示循环。<br/><br/>
+那么我们来到 Java 8 之后用 Stream API 该如何实现，翻遍了 Stream API, 能过滤元素的操作也就是 filter 方法，于是尝试这样的写法<!--more--><br/><br/>
+<pre class="lang:default decode:true">public Integer findFirstMatch() {
+  return Stream.of(1, 4, 2, 5, 6, 3)
+    .filter(i -&gt; i &gt; 3)
+    .findFirst()
+    .orElse(null);
+}</pre>
+<br/>
+上面返回值也是 4. 由于使用其他语方的经验，上面用 findFirst() 方法只需要返回第一个匹配的元素，我们担心的是 filter() 操作是否会对集合中所有元素都判断一次，如果不是找到 4 立即返回，那么从一个大集合中查找元素的效率就降低。<br/><br/>
+答案是 filter() 在找到 4 之后也是立即停止遍历，与第一段代码中的 <code>for(int : intergers) if(i &gt; 3) return i</code> 效果一致，因为 Stream 的中间操作在未遇到终止操作前是不会处理，它们是懒操作的。这里有两个概念, Stream API 的操作分为两类：<br/><br/>
+<strong>中间操作(Intermediate operations)</strong>: 指的是仍然返回 Stream 类型的操作，如  filter, map, limit, sorted 等. 中间操作构成是一个管道操作。中间操作不产生任何结果。<br />
+<strong>终止操作(Terminal operations)</strong>: 指的就是返回非 Stream 类型的操作，包括返回值为 void 的操作，如 findFirst, forEach, count, collect 等。<br/><br/>
+<span style="text-decoration: underline;">重复一遍：Stream 的中间操作在未遇到终止操作前是不会处理，它们是懒操作的。中间与终止操作类似于构造者模式，中间操作只是准备部件，在执行终止操作的时候才按需执行前面的中间操作，未执行 build() 方法前什么也不是。</span><br/><br/>
+联系上面的操作, filter 是中间操作，findFirst 是终止操作，filter 看到了 findFirst 后才开始执行，所以 filter 知道只需要返回一个元素就够了，所以找到一个元素也是立即返回，不再对后面的 2, 5, 6, 3  进行对比。我们可以用代码验证这一解释<br/><br/>
+<pre class="lang:default decode:true">public static Integer findFirstMatch() {
+  return Stream.of(1, 4, 2, 5, 6, 3)
+    .filter(i -&gt; {
+      System.out.println("filter: " + i);
+      return i &gt; 3;
+    })
+    .findFirst()
+    .orElse(null);
+}<br/><br/>
+//
+System.out.println(findFirstMatch());</pre>
+<br/>
+上面代码的输出为<br/><br/>
+<blockquote>
+<span style="color: #800000;">filter: 1</span><br />
+<span style="color: #800000;">filter: 4</span><br />
+<span style="color: #800000;">4</span>
+</blockquote>
+<br/>
+可以看出 filter 只走过了两个元素，看到 4 大于 3 立即返回<br/><br/>
+再来个 limit 方法的例子<br/><br/>
+<pre class="lang:default decode:true">Stream.of(1, 4, 2, 5, 6, 3)
+  .filter(i -&gt; {
+    System.out.println("filter: " + i);
+    return i &gt; 3;
+  }).limit(2).count();</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+<span style="color: #800000;">filter: 1</span><br />
+<span style="color: #800000;">filter: 4</span><br />
+<span style="color: #800000;">filter: 2</span><br />
+<span style="color: #800000;">filter: 5</span>
+</blockquote>
+<br/>
+<strong>这种立即返回的操作也叫做短路操作，和用 &amp;&amp; 和  || 进行 boolean 操作类似。Stream 的短路操作包括: allMatch, noneMatch, findFirst, findAny 和 limit</strong><br/><br/>
+最后证明一下中间操作在未碰到终止操作之前什么也不会处理<br/><br/>
+<pre class="lang:default decode:true">System.out.println(Stream.of(1, 4, 2, 5, 6, 3)
+  .filter(i -&gt; {
+    System.out.println(“filter: " + i);
+     return i &gt; 3;
+  }).limit(1));</pre>
+<br/>
+输出类似如下<br/><br/>
+<blockquote>
+<span style="color: #800000;">java.util.stream.SliceOps$1@7ef20235</span>
+</blockquote>
+<br/>
+未进行一个过滤操作<br/><br/>
+为什么我们会担心 filter 或 map 总是会作用于所有集合元素呢？因为其他语言的 filter 或 map 可能不是懒操作。我们看下面的 Scala 代码，也是要取集合中第一个匹配的元素<br/><br/>
+<blockquote>
+scala&gt; List(1, 4, 2, 5, 6).filter{i=&gt;println(i); i &gt; 3}.head<br />
+1<br />
+4<br />
+2<br />
+5<br />
+6<br />
+res2: Int = 4
+</blockquote>
+<br/>
+Scala 即使只要找元素 4，但 filter 操作总是要对所有元素过一遍，filter 和 head 是按顺序操作的，filter 并不能知晓  head 的意图。因为 Scala 操作是集合本身，而 Java 8 操作的是集合相关联的 Stream 对象。这让我们在感叹 Java 8 集合操作每次都要调用 stream() 或 parallelStream() 的多余之外，同时能享受到 Stream 中间操作的懒惰行为带来便利与效率。<br/><br/>
+顺便体验一下，前面的 findFirstMatch() 方法用 Lambda 简单的写法只需一行<br/><br/>
+<pre class="lang:default decode:true ">public Integer findFirstMatch() {
+    return Stream.of(1, 4, 2, 5, 6, 3).filter(i -&gt; i &gt; 3).findFirst().orElse(null);
+}</pre>
+<br/>
+是的，用 Java 8 Lambda, 让代码就这么简单。如果 Java 8 也能支持像 Swift 那样的 @autoclousre 和默认参数名的话，希望能写成 return Stream.of(1, 4, 2, 5, 6, 3).filter($0 &gt; 3).findFirst().orElse(null);

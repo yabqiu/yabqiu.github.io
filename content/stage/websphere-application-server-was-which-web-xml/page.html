@@ -1,0 +1,56 @@
+---
+title: Websphere Application Server (WAS) 中应用的哪一个 web.xml 在起作用
+url: /websphere-application-server-was-which-web-xml/
+date: 2008-05-13T10:38:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Mid-Ware
+tags: 
+  - WAS
+  - Web.xml
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 397 
+wpStatus: publish
+views: 2076
+lastmod: 2021-09-02T14:40:41-05:00
+---
+
+从 Tomcat 再到使用 Webshpere Application Server (WAS) 不光金钱上付出太多(这当然不用我操心)，精力上也费神的多，不过收获也不少，特别是商业产品在处理大用户量的并发访问能力是 Tomcat 无法比的。这里记述一个使用 WAS 给应用打补丁时遇到的问题--要更新哪一个 web.xml。</p>
+<br/>
+为便于描述，我们假设已在 WAS 下部署了一个名叫 Prod.war 的包(你也可以部署一个 ear 包，部署的 ear 包后的目录名更明确一些)，WAS 的安装目录表示为 WAS_HOME，WAS 所在的主机名为 unmi，那么 Prod.war 部署后所在的目录就是<br/><br/>
+WAS_HOME/installedApps/unmi/Prod_war.ear/Prod.war<br/><br/>
+用过 WAS 的人都知道，如果是部署后要给应用打补丁的话，和 Tomcat 下的应用一样，也是把类或 JSP 拷到如上相应的目录中就行了，换了类，WAS 会自动重新加载。<!--more--><br/><br/>
+可偏偏有一次打补丁，有个同事加的是一个 Servlet 类，如 com.unmi.ReportServlet，并在 web.xml 对这个 Servlet 作为相应的配置<br/><br/>
+<pre class="lang:default decode:true ">&lt;servlet&gt;
+    &lt;servlet-name&gt;ReportServlet&lt;/servlet-name&gt;
+    &lt;servlet-class&gt;com.unmi.ReportServlet&lt;/servlet-class&gt;
+&lt;/servlet&gt;<br/><br/>
+.........................................................................................<br/><br/>
+&lt;servlet-mapping&gt;
+    &lt;servlet-name&gt;ReportServlet&lt;/servlet-name&gt;
+    &lt;url-pattern&gt;/ReportServlet&lt;/url-pattern&gt;
+&lt;/servlet-mapping&gt;</pre>
+<br/>
+然后把 web.xml 拷贝到 WAS_HOME/installedApps/unmi/Prod_war.ear/Prod.war/WEB-INF/ 中，再把 ReportServlet.class 拷到 WAS_HOME/installedApps/unmi/Prod_war.ear/Prod.war/WEB-INF/classes/com/unmi/ 目录中。<br/><br/>
+然后无论怎么重启应用还是应用服务器，通过 /ReportServlet 的 URL 总是 404 Not Found，没法进入到 com.unmi.ReportServlet，一时有些不知所措，过后到 WAS 管理控制台下看看该应用的 Web 模块-&gt;(点应用名展开)-&gt;查看部署描述符，在 Servlet Mappings 中不曾发现有那个 /ReportServlet，原来是没有部署上 ReportServlet 啊。<br/><br/>
+此时，大家的心都飞到家里去了，本来打补丁就是选择晚上下班后 9 点以后没什么用户访问才进行的，正有些焦头烂额，甚至是考虑发布整个应用，但碍于正式环境上的应用是许久以前发布的，一直是不断打补丁补掇起来的。完全重新发布应用自然是有很大的风险性，本地代码即使是 VSS 代码与正式环境不同步那是常用事(唉，不想扯另一话题的)。差点订下规定说，以后能有别的技术方法实现的，就不要去改 web.xml 文件。<br/><br/>
+有些当然只是说说罢了，实际摆在面前的是硬着头皮也要上，明天业务不能中断的。<br/><br/>
+那若不是 WAS_HOME/installedApps/unmi/Prod_war.ear/Prod.war/WEB-INF/web.xml 在起作用，又会是哪个文件呢？于是搜索 WAS_HOME 目录下的所有 xml 文件，看哪个文件中有内容 ReportServlet，终于发现是藏匿在 WAS_HOME/config/cells/unmi/applications/Prod_war.ear/deployments/Prod_war/Prod.war/WEB-INF/ 中，对了，就是这里，把要更新的 web.xml 替换掉这个目录中的 web.xml，然后重启应用，OK，ReportServlet 可用了，一切正常。<br/><br/>
+细心点你会发现在 WAS_HOME/config/cells/unmi/applications/Prod_war.ear/deployments/Prod_war/Prod.war/WEB-INF/  可以看到你的 war 包中的 WEB-INF 目录下的所有文件，连 struts-config.xml 等都在这里了。其实在这个目录中除 web.xml、ibm-web-bnd.xmi  有关部署描述文件外，实际应用运行是不会使用此目录中的其他文件的，struts-config.xml 等在这里只不过一个摆设；同样不客气的是，在目录 WAS_HOME/installedApps/unmi/Prod_war.ear/Prod.war/WEB-INF 中作客的 web.xml 也只是充个样罢了，毫无用处，还混淆了视听。<br/><br/>
+前面主戏算是过去了，然余震未断。上面的故事是假设把应用部署在非集群的环境，实际情况是部署在集群环境的。集群环境中 Prod.war 部署后所在的目录就会是 WAS_HOME/installedApps/unmiNetwork/Prod_war.ear/Prod.war，所以，基于这一实际，需要做的就应把 web.xml 覆盖到 WAS_HOME/config/cells/unmiNetwork/applications/Prod_war.ear/deployments/Prod_war/Prod.war/WEB-INF 这个目录中去。<br/><br/>
+可是有一天，突然发现那个 /ReportServlet 又访问不到了，查看一下 WAS_HOME/config/cells/unmiNetwork/applications/Prod_war.ear/deployments/Prod_war/Prod.war/WEB-INF/web.xml 的内容，发现怎么又恢复成原样了呢？有关 ReportServlet 的配置不见了，顿时不知所以。隐约间还是回想了起来，原来整个应用及 DeploymentManager(DM) 都重启了，肯定是 DeploymentManager 作的怪。找了找，发现在 DM_HOME/config/cells/unmiNetwork/applications/Prod_war.ear/deployments/Prod_war/Prod.war/WEB-INF 中也有一个 web.xml (DM_HOME 代表 DeploymentManager 的安装目录)，就它还是老样，重启 DM 肯定又用这个同步到了各节点去的。于是乎把此处的 web.xml 也换成新的了，以后无论是重启应用服务器还是 DM 都不会有问题了。<br/><br/>
+本文侧重于发现问题及解决问题的过程，过程中才有乐趣，但对于务实且重效率的人固然是看了会眼花。因此最后还是总结一下吧：<br/><br/>
+WAS 下的 Web 应用，如果要更新 web.xml 文件，该替换哪一个 web.xml 呢？<br/><br/>
+·非集群环境要更新 WAS_HOME/config/cells/[unmi]/applications/[Prod_war.ear]/deployments/[Prod_war]/[Prod.war]/WEB-INF/ 中的 web.xml  文件<br/><br/>
+·集群环境则，只是做了上一步，重启应用后确实有效果，但若要在 DM 重启后仍然有效的话，还需更新<br />
+    DM_HOME/config/cells/[unmiNetwork]/applications/[Prod_war.ear]/deployments/[Prod_war]/[Prod.war]/WEB-INF 中的 web.xml 文件<br/><br/>
+·如果只更新 WAS_HOME/installedApps/[unmi]/[Prod_war.ear]/[Prod.war]/WEB-INF/web.xml (非集群环境) 或<br />
+    WAS_HOME/installedApps/[unmiNetwork]/[Prod_war.ear]/[Prod.war]/WEB-INF/web.xml (集群环境) 都是无济于事的。<br/><br/>
+·WAS_HOME 和 DM_HOME 分别代表 AppServer 和 DeploymentManager 的安装目录。集群和非集群情况下有一个目录的差别就是有无 "Network"，指默认安装情况了。以上中括号中的内容视你的具体情况而定的，WAS 和 DM 是把部署描述文件和程序文件分离的，其实有时还是有它好处的。非集群环境没怎么感觉到，集群环境还是能感觉到，就是在节点间进行配置同步的时候。

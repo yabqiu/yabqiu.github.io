@@ -1,0 +1,85 @@
+---
+title: 较为完美的一种标题缩略显示方法
+url: /title-fixed-width/
+date: 2007-07-04T07:08:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - Web/JS
+tags: 
+  - Java
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 504 
+wpStatus: publish
+views: 445
+lastmod: 2021-09-04T10:07:03-05:00
+---
+
+通常在网页里都有一种这样的需求，为了界面整洁，在显示标题时需要把长标题以部分加省略号连缀显示，就比如中国博客网显示日志标题--下面那样</p>
+<br/>
+·在VC6中使用正则表达式解析...(2007-06-24)<br />
+·VC中使用CInternet...(2007-06-23)<br />
+·开源嵌入式数据库 SQLit...(2007-06-23) <br/><br/>
+问题一是前面那部分字符串怎么来确定，上面很明显示的看得出来，因为标题中混杂着中英文，仍然没有达到初衷。<!--more--><br/><br/>
+大部分的实现方式是原字符串超过一定的长度一切取前面指定个数的字符然后加上省略号，显示中文和英文是不能同等对待，10个汉字的宽度一般来说要大于10字母的宽度，再聪明一点就是近似把一个汉字折算成两个字母宽度来估算，可是还要注意一点即使全是英文，10个W也要比10i宽得多，还是未能得尝所愿。<br/><br/>
+对于单纯的切取前面若干字符的支持有一些现成的东西：<br />
+1. Jakarta Commons Lang 中的 StringUrl.abbreviate() 工具方法<br />
+2. prototype.js 中的 truncate 函数<br />
+3. CSS 样式表 text-overflow:ellipsis 或 -o-text-overflow:ellipsis (opera中)<br />
+可是第三种方法又有点傻，会根据你所设字符集可能从半个字符中断开，产生乱码，前面两种方法以双字节字符来处理，没这个问题。你可把第二个&lt;div&gt;拷贝出来，文件存成UTF-8 或别的字符集文件来试试。<br/><br/>
+<pre class="lang:default decode:true">&lt;div style="border:1px solid red;overflow:hidden;text-overflow:ellipsis;-o-text-overflow:ellipsis;white-space:nowrap;width:60px" &gt; I am Unmi &lt;/div&gt;</pre>
+<br/>
+效果如右所示：<br/><br/>
+<div style="border: 1px solid red; overflow: hidden; text-overflow: ellipsis; -o-text-overflow: ellipsis; white-space: nowrap; width: 60px;">I am Unmi</div>
+<br/>
+<pre class="lang:default decode:true">&lt;div style="border:1px solid red;overflow:hidden;text-overflow:ellipsis;-o-text-overflow:ellipsis;white-space:nowrap;width:60px"&gt;我在哪里&lt;/div&gt;</pre>
+<br/>
+效果如右所示：<br/><br/>
+<div style="border: 1px solid red; overflow: hidden; text-overflow: ellipsis; -o-text-overflow: ellipsis; white-space: nowrap; width: 60px;">我在哪里</div>
+<br/>
+费了这么多像素，这才真正切入正题，字符串真正宽度总是跟选用的字体名、字型、大小有关，下面要介绍的方法就是依据显示所用的字体、字形、大小可算出每一个字符在屏幕上的真正显示宽度单位，不管是中文还是英文、是W还是i都可以在正确的位置切下去。<br/><br/>
+如假设一个中文字是12个单位宽度，那么W是12个单位宽度，i是2个单位宽度。<br/><br/>
+实现代码如下：getFitWidthString 传入一个字符串及预设显示宽度单位，可能不是真正的像素。<br/><br/>
+<pre class="lang:default decode:true">public static String getFitWidthString( Object object, int point ){
+    String str = ( null == object ) ? "" : object.toString();
+    //假定网页显示字符用的是 11pt 的 宋体 普通字体
+    FontMetrics fm = Toolkit.getDefaultToolkit().getFontMetrics(new Font("宋体", Font.PLAIN, 11));
+    int length = 0;
+    int pos = 0;
+    for( int i = 0; i &lt; str.length(); i++){
+        int currlen = fm.charWidth( str.charAt( i ) );
+        length += currlen;
+        if( length &gt; point ){
+            continue;
+        }
+        pos = i-1;
+    }
+    pos=pos&lt;0 ? 0 : pos;
+    if( point &lt; length ){
+        return str.substring( 0, pos ) + "";
+    }
+    else{
+        return str;
+    }
+}</pre>
+<br/>
+回到最早的那个例子，如果用getFitWidthString来截取字符串执行如下码，我们可以看看输出效果<br/><br/>
+<pre class="brush:java ">System.out.println(getFitWidthString("在VC6中使用正则表达式解析字符串", 160));
+System.out.println(getFitWidthString("VC中使用CInternetSession抓取网页内容", 160));
+System.out.println(getFitWidthString("开源嵌入式数据库 SQLite 简介", 160));</pre>
+<br/>
+取了160个输出单位宽度，输出<br/><br/>
+<div style="font-size: 11pt; font-family: 宋体;">
+在VC6中使用正则表达式解...<br />
+VC中使用CInternetSessio...<br />
+开源嵌入式数据库 SQLite 简介
+</div>
+<br/>
+是不是更准确了些，当然还有些瑕疵，单个字符占宽度单位多的话误差也会大一些，你可以对上面的程序进行修正更满足您的需求。<br/><br/>
+因为用到了AWT图形环境的东西，所以如果你是在控制台下启动的应用服务器就需要作些配置，就像WEB应用使用了JFreeChart来画图也是需要为Unix/Linux控制台下启动的应用服务器作些配置，Tomcat要在启动脚本中加个参数，WAS的话要下载一个插件，Windows下总是在图形环境下，无需作额外设置。

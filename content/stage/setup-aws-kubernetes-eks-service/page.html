@@ -1,0 +1,298 @@
+---
+title: 搭建使用 AWS 的 Kubernetes EKS 服务
+url: /setup-aws-kubernetes-eks-service/
+date: 2020-04-05T00:45:46-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2020/03/kubernetes_logo.png"
+categories:
+  - AWS
+  - Kubernetes
+tags: 
+  - AWS
+  - Terraform
+  - Kubernetes
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10050 
+wpStatus: publish
+views: 2037
+lastmod: 2022-01-19T21:57:33-06:00
+---
+
+前面从无到有或是分别以 Docker Desktop, Minikube, kind 来搭建过 Kubernetes 集群。而如今各大云服务提供商基本都推出了各自的 Kubernetes 服务，例如：<br/><br/>
+<ol>
+    <li>Google GKE - Google Kubernetes Engine</li>
+    <li>Amazon EKS - Amazon Elastic Kubernetes Service</li>
+    <li>Microsoft AKS - Azure Kubernetes Service</li>
+    <li>IBM Cloud Kubernetes Service</li>
+    <li>Alibaba Cloud Container Service</li>
+</ol>
+<br/>
+所以对 Kubernetes 的进一步学习过程中何不一跃而直上云霄，直接尝试 AWS 的 EKS 如何搭建。EKS 是在 2018 年 6 月份正式推出，见 <a href="https://aws.amazon.com/about-aws/whats-new/2018/06/amazon-elastic-container-service-for-kubernetes-eks-now-ga/">Amazon Elastic Container Service for Kubernetes Now Generally Available</a>。EKS 在 AWS 上是与 ECS 并列的服务，它们的功能也比较类似，都是伸缩性的容器服务，ECS 配置管理更分散，EKS 本身就是一个集群管理工具。它们也有些共同的东西，如 Auto Scaling Groups, Launch Templates。<br/><br/>
+现在用 Terraform 脚本来演示一下如何创建一个 EKS 集群，并启动三个 EC2 Worker 节点(EKS 也支持 Fargate Worker 节点)，并部署一个应用。Terraform 脚本将会列出完成该任务的基本要素，也将会看看背后发生了什么。<!--more--><br/><br/>
+本文中的 Terraform 完全依照 AWS Web console 上的 <a href="https://console.aws.amazon.com/eks/home?region=us-east-1#/cluster-create">Create EKS cluster</a> 和 创建 Configure Node Group 两个步骤来进行的。<br/><br/>
+创建 EKS Cluster 界面主要需要提供<br/><br/>
+<ol>
+    <li>Cluster name: 集群的名称</li>
+    <li>Kubernetes version: 现支持 1.13, 1.14, 和 1.15, 默认为 1.15</li>
+    <li><a href="https://docs.aws.amazon.com/eks/latest/userguide/service_IAM_role.html">EKS Cluster IAM Role</a>: 允许 EKS 和 Kubernetes control plane 管理 AWS 资源，要两个 IAM policy：<a href="https://console.aws.amazon.com/iam/home#/policies/arn:aws:iam::aws:policy/AmazonEKSServicePolicy%24jsonEditor">AmazonEKSServicePolicy</a> 和 <a href="AmazonEKSClusterPolicy">AmazonEKSClusterPolicy</a>, 并且 Assume role 是 eks.amazonaws.com。如果你的 AWS 有人已配置好了 <code>eksServiceRole</code> 或 <code>AWSServiceRoleForAmazonEKS</code> 就直接用它。 </li>
+    <li>Networking: VPC 和 Subnets 按需选择就了(假定这些基础设施都配置好了)，注意选择 Subnet 时要确定该区域(Availability Zone) 支持 EKS</li>
+    <li>Security groups: 集群节点间的访问控制，用 Terraform 创建 EKS 集群时会自动创建 Security group</li>
+</ol>
+<br/>
+相应的 Terraform 脚本片段如下<br/><br/>
+<h3>创建 <code>eksServiceRole</code></h3><br/><br/>
+<pre class="lang:default decode:true ">resource "aws_iam_role" "eksServiceRole" {
+  name = "eksServiceRole"<br/><br/>
+  assume_role_policy = &lt;&lt;EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "eks.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+}<br/><br/>
+resource "aws_iam_role_policy_attachment" "attach_eksServicePolicy" {
+  role = aws_iam_role.eksServiceRole.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
+}<br/><br/>
+resource "aws_iam_role_policy_attachment" "attach_eksClusterPolicy" {
+  role = aws_iam_role.eksServiceRole.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+}</pre>
+<br/>
+注：在 <code>iaws_iam_role</code> 中可以用 <code>managed_policy_arns = []</code> 直接引用 managed policy, 无需 <code>aws_iam_role_policy_attachement</code><br/><br/>
+<h3>创建 EKS 集群</h3><br/><br/>
+<pre class="lang:default decode:true">locals {
+  subnet_ids = [         //随意选择几个可用的 subnet
+    "subnet-bb46cbe7",
+    "subnet-ac86d6e6",
+    "subnet-8266e9ac"
+  ]
+}<br/><br/>
+resource "aws_eks_cluster" "myeks-cluster" {
+  name = "myeks-cluster"
+  version = "1.15"
+  role_arn = aws_iam_role.eksServiceRole.arn
+  vpc_config {
+    subnet_ids = local.subnet_ids
+  }
+}</pre>
+<br/>
+创建 EKS 集群的过程可能需要十分钟。<br/><br/>
+执行完后除产生一个 myeks-cluster 外，还创建了一个相应的 Security group, 名为 eks-cluster-sg-myeks-cluster-&lt;123456&gt;, 它开放了所有网络端口。我们可以根据实际来调整这个 Security group， 比如 Control Plane 与 Worker 节点之间是通过 6443 端口通信的。<br/><br/>
+此时 AWS 界面上可以看到创建好的 <code>myeks-cluster</code>, 要是急不可奈的话，想立即用 kubectl 命令查看下也行。需要下面的步骤：<br/><br/>
+更新 ~/.kube/config 文件<br/><br/>
+<blockquote>
+$ aws eks --profile my-aws-profile --region us-east-1 update-kubeconfig --name myeks-cluster<br />
+Updated context arn:aws:eks:us-east-1:069762108088:cluster/myeks-cluster in /Users/yanbin/.kube/config
+</blockquote>
+<br/>
+假设前面执行 Terraform 脚本用的 profile 也是 my-aws-profile, 配置的默认区域是 us-east-1。在没有设置环境变量 <code>KUBECONFIG</code> 时，更新内容到 <code>$HOME/.kube/config</code> 文件中，否则更新到 <code>KUBECONFIG</code> 环境变量指向的文件中。这时候一切顺利的话，执行 <code>kubectl get nodes</code> 和 <code>kubectl get pods</code> 就能看到<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/04/kubernetes-aws-eks-1.png"><img class="aligncenter wp-image-10052" src="https://yanbin.blog/wp-content/uploads/2020/04/kubernetes-aws-eks-1-800x162.png" alt="" width="523" height="106" /></a><br/><br/>
+说明 Kubernete 的 Control Plane 能连接上，也看不到 Master 节点，但 Control Plane 在运行就得付钱的。因为目前还没有 Worker 节点，所以看到的 Pods 状态还是 Pending，不用急，完成下面的步骤就会正常。<br/><br/>
+好了，继续往下走，在 AWS EKS 控制台下，进到 <code>myeks-cluster</code> 中，需要添加 Worker 节点，我们有两个选择，可以是 EC2 的 Node Group, 也可以是 Fargate Profile。一个 EKS 集群可以添加多个 Node Group 或 Fargate Profile, 下面以 Node Group 为例，每一个 Node Group 有自己的 Auto Scaling Group 和 Launch Template。<br/><br/>
+现在开始到 Add Node Group 的步骤，从界面上来看需要提供：<br/><br/>
+<ol>
+    <li>Node Group 的名称，按业务或 EC2 实例类型来规划都可</li>
+    <li>Node IAM Role Name: 工作节点将要用到的 <a href="https://docs.aws.amazon.com/eks/latest/userguide/worker_node_IAM_role.html">EKS Node IAM Role</a>,  要有基本的 IAM policy:   <a href="https://console.aws.amazon.com/iam/home#/policies/arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy%24jsonEditor">AmazonEKSWorkerNodePolicy</a>, <a href="https://console.aws.amazon.com/iam/home#/policies/arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy%24jsonEditor">AmazonEKS_CNI_Policy</a>,  和 <a href="https://console.aws.amazon.com/iam/home#/policies/arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly%24jsonEditor">AmazonEC2ContainerRegistryReadOnly</a>, 并且 Assume role 是 <code>ec2.amazonaws.com</code>. 再就是节点上运行任务要什么权限就加什么</li>
+    <li>Subnets: 子网，一般选与创建 EKS 集群时一样的就行</li>
+    <li>SSH key pair: 如果允许远程访问工作节点的话，指定一个 SSH 登陆用的 key</li>
+    <li>下面步骤有 EC2 实例类型及 AMI 的选择，Auto Scaling 相关的 EC2 实例数的选择</li>
+</ol>
+<br/>
+于是我们有下面的 Terraform 片段<br/><br/>
+<h3>创建 eks-NodeInstanceRole</h3><br/><br/>
+<pre class="lang:default decode:true">resource "aws_iam_role" "eks-NodeInstanceRole" {
+  name = "eks-NodeInstanceRole"
+  assume_role_policy = &lt;&lt;EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+}<br/><br/>
+resource "aws_iam_role_policy_attachment" "attach_worker_eks-NodeInstanceRole" {
+  role = aws_iam_role.eks-NodeInstanceRole.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+}<br/><br/>
+resource "aws_iam_role_policy_attachment" "attach_ecr_eks-NodeInstanceRole" {
+  role = aws_iam_role.eks-NodeInstanceRole.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}<br/><br/>
+resource "aws_iam_role_policy_attachment" "attach_cni_eks-NodeInstanceRole" {
+  role = aws_iam_role.eks-NodeInstanceRole.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+}
+</pre>
+<br/>
+注：在 <code>iaws_iam_role</code> 中可以用 <code>managed_policy_arns = []</code> 直接引用 managed policy, 无需 <code>aws_iam_role_policy_attachement</code><br/><br/>
+在其中可加以后任务要用到的权限<br/><br/>
+<h3>创建 EC2 Node Group </h3><br/><br/>
+<pre class="lang:default decode:true">resource "aws_eks_node_group" "myeks-ec2-node_group" {
+  cluster_name = aws_eks_cluster.myeks-cluster.name
+  node_group_name = "ec2-node_group"
+  node_role_arn = aws_iam_role.eks-NodeInstanceRole.arn
+  subnet_ids = local.subnet_ids
+  instance_types = ["m5a.large"]<br/><br/>
+  remote_access {
+    ec2_ssh_key = "my-ssh-key-pair"
+  }<br/><br/>
+  scaling_config {
+    desired_size = 3
+    max_size = 3
+    min_size = 1
+  }
+}
+</pre>
+<br/>
+继续 <code>terraform apply</code> 执行当前的脚本，由于需要启动三个 EC2 实例，也需几分钟的时间。<br/><br/>
+等到所有的 EC2 实例都准备就绪后，再用 <code>kubectl</code> 命令来查看一下<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/04/kubernetes-aws-eks-2.png"><img class="aligncenter wp-image-10060" src="https://yanbin.blog/wp-content/uploads/2020/04/kubernetes-aws-eks-2-800x383.png" alt="" width="537" height="257" /></a><br/><br/>
+现在 Kubernetes 的集群已经跑起来了。<br/><br/>
+回过头来了解一下在 Terraform 创建 Node Group 的背后还做了什么。首先它创建了一个 Launch Template 以及相应的 Auto Scaling Group，Launch template 和 Auto Scaling Group 的命名都是 <code>eks-&lt;guid&gt;</code> 的格式。<br/><br/>
+Launch Template 中就是前面指定的 EC2 类型与  AMI 等相关的内容<br/><br/>
+相应的 Auto Scaling Group 也是在创建  Node Group 指定的几个像 desired_size, max_size, min_size  几个数字，没有看到 Scaling Policy, 但有设定 Lifecycle Hooks, 关联到了一个非当前 AWS 帐号能看到的 SNS topic  <code>eks-asg-lifecycle-hook-topic</code>。看来真正执行 Auto Scaling 的行为还是由 Kubernetes 自己来控制的。<br/><br/>
+启动了三个 EC2 实例作为 Worker 节点，在 EC2 实例的 userdata 中加入了一些信息与 EKS  集群的相关联起来。<br/><br/>
+<h3>启用 EKS 的 Dashboard</h3><br/><br/>
+关于部署和访问 EKS 的 Dashboard 在 <a href="https://aws.amazon.com/premiumsupport/knowledge-center/eks-cluster-kubernetes-dashboard/?nc1=h_ls">How do I set up a Kubernetes dashboard on an Amazon EKS cluster?</a> 中讲得很详细，只需下面几个基本步骤<br/><br/>
+部署 Dashboard<br/><br/>
+<blockquote>
+$ kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v1.10.1/src/deploy/recommended/kubernetes-dashboard.yaml
+</blockquote>
+<br/>
+创建服务帐号和权限<br/><br/>
+<pre class="lang:default decode:true">cat &lt;&lt;EOF | kubectl apply -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eks-admin
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: eks-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: eks-admin
+  namespace: kube-system
+EOF</pre>
+<br/>
+代理到本地<br/><br/>
+<blockquote>
+$ kubectl port-forward svc/kubernetes-dashboard -n kube-system 6443:443
+</blockquote>
+<br/>
+现在就可以用 https://127.0.0.1:6443 访问，获取登陆 Dashboard 的 token 命令是<br/><br/>
+<blockquote>
+$ kubectl -n kube-system describe secret $(kubectl -n kube-system get secret | grep eks-admin | awk '{print $1}')
+</blockquote>
+<br/>
+<h3>部署一个 Web 应用到 EKS</h3><br/><br/>
+EKS 运行的也是 Docker 容器，AWS 的 Docker 镜像要放到 ECR 上，所以先要创建一个  ECR 仓库，Terraform 脚本是<br/><br/>
+<pre class="lang:default decode:true ">resource "aws_ecr_repository" "python-web" {
+  name = "python-web"
+}
+</pre>
+<br/>
+<code>terraform apply</code> 创建好后，然后在本地预备好一个 python-web  的镜像，最后推送到该 ECR 仓库去备用。<br/><br/>
+创建文件 app.py<br/><br/>
+<pre class="lang:default decode:true ">import socket
+from http.server import HTTPServer, BaseHTTPRequestHandler<br/><br/>
+class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers();
+        hostname = socket.gethostname()
+        ip = socket.gethostbyname(hostname)
+        self.wfile.write(('You hit: ' + hostname + '(' + ip + ')\n').encode())<br/><br/>
+httpd = HTTPServer(('', 80), SimpleHTTPRequestHandler);
+httpd.serve_forever()
+</pre>
+<br/>
+然后是 Dockerfile<br/><br/>
+<pre class="lang:default decode:true ">FROM python:3.7.7-alpine3.10
+ADD app.py /app.py
+ENTRYPOINT ["python", "app.py"]
+</pre>
+<br/>
+再依照 <a href="https://yanbin.blog/push-docker-image-to-amazon-ecr-repository/">推送 Docker 镜像到 Amazon ECR 仓库</a> 中的方式，以下几步推送 python-web:latest 到 ECR 中，假设这里创建的 ECR 的 URI 是 http://012345678.dkr.ecr.us-east-1.amazonaws.com/python-web<br/><br/>
+<blockquote>
+$ aws ecr get-login --no-include-email | sh<br />
+$ docker build -t 012345678.dkr.ecr.us-east-1.amazonaws.com/python-web:latest .<br />
+$ docker push 012345678.dkr.ecr.us-east-1.amazonaws.com/python-web:latest
+</blockquote>
+<br/>
+部署 python-web 到  EKS<br/><br/>
+<blockquote>
+$ kubectl create deployment python-web-app --image=012345678.dkr.ecr.us-east-1.amazonaws.com/python-web:latest<br />
+$ kubectl scale  deployment python-web-app --replicas=4
+</blockquote>
+<br/>
+replicas=4  后看下 python-web 应用在工作节点上的分布情况<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/04/kubernetes-aws-ek2-3.png"><img class="aligncenter size-large wp-image-10059" src="https://yanbin.blog/wp-content/uploads/2020/04/kubernetes-aws-ek2-3-800x102.png" alt="" width="800" height="102" /></a><br/><br/>
+因为 3 个节点，4 个复本，在同个 EC2 实例上会有两个 Pod 运行。<br/><br/>
+暴露服务<br/><br/>
+<blockquote>
+$ kubectl expose deployment python-web-app --type=LoadBalancer --port 80
+</blockquote>
+<br/>
+这里指定服务类型为 <code>LoadBalancer</code> 就会请求 AWS 给它一个 ELB 域名。过一会儿可以看到 python-web-app 服务的 EXTERNAL-IP 是一个 ELB 域名。<br/><br/>
+<blockquote>
+$ kubectl get svc<br />
+NAME                     TYPE                   CLUSTER-IP          EXTERNAL-IP                                                   PORT(S)              AGE<br />
+kubernetes             ClusterIP            10.100.0.1                &lt;none&gt;                                                                 443/TCP              162m<br />
+python-web-app   LoadBalancer    10.100.147.93         a9c4a.........us-east-1.elb.amazonaws.com    80:30224/TCP    2m
+</blockquote>
+<br/>
+在 AWS 的 Load Balancers  里可看到这个 ELB 配置。<br/><br/>
+如果当前处在与 EKS 集群同一个 VPC 中，那么可以直接访问那个  EXTERNAL-IP<br/><br/>
+<blockquote>
+$ for k in $(seq 1 6); do<br />
+> curl a9c4a.........us-east-1.elb.amazonaws.com<br />
+> done<br />
+You hit: python-web-app-69cf87b786-b6clk(172.31.93.209)<br />
+You hit: python-web-app-69cf87b786-96s8h(172.31.36.86)<br />
+You hit: python-web-app-69cf87b786-b6clk(172.31.93.209)<br />
+You hit: python-web-app-69cf87b786-nmg2b(172.31.24.27)<br />
+You hit: python-web-app-69cf87b786-b6clk(172.31.93.209)<br />
+You hit: python-web-app-69cf87b786-b6clk(172.31.93.209)
+</blockquote>
+<br/>
+看到请求被分配到每一个节点上。我们只有 3 个 Worker 节点，上面显示了 4 个不同的 IP, 所以它们是 Docker 容器的 IP 地址。<br/><br/>
+如果想要从外部访问 EKS 集群服务，那么还需要配置 ELB, router 53 来处理外部请求，这是其他的话题。<br/><br/>
+后续话题：EKS 的 Auto Scaling, Node Group 或 Fargate Profile 的选择<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://learn.hashicorp.com/terraform/aws/eks-intro">AWS EKS Introduction</a></li>
+    <li><a href="https://aws.amazon.com/premiumsupport/knowledge-center/eks-cluster-kubernetes-dashboard/?nc1=h_ls">How do I set up a Kubernetes dashboard on an Amazon EKS cluster?</a></li>
+    <li><a href="https://eksworkshop.com/">Amazon EKS Workshop</a></li>
+    <li><a href="https://www.edureka.co/blog/amazon-eks/#S5">Building A Kubernetes App With Amazon EKS</a></li>
+    <li><a href="https://ahmet.im/blog/mastering-kubeconfig/">Mastering the KUBECONFIG file</a></li>
+    <li><a href="https://rickhw.github.io/2019/10/13/AWS/Study-Notes-EKS_Provision-Cluster/">EKS 學習筆記 - 基礎安裝篇</a></li>
+</ol>

@@ -1,0 +1,169 @@
+---
+title: Spring 项目中把 SQL 语句写在 .sql 文件中
+url: /spring-external-sql-statements/
+date: 2016-11-12T02:49:18-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - Spring
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7535 
+wpStatus: publish
+views: 1439
+lastmod: 2021-09-03T17:03:22-05:00
+---
+
+我们在使用 JDBC 时, 如果把所有的 SQL 语句全写在 Java 文件中, 由于 Java 不支持 Here Document, 多行字符串要么用加号, 要么用 Java 8 的 <code>String.join()</code> 方法来连接, 同时不能对 SQL 语句进行语法加亮, 所以这样的 SQL 字符串阅读性很差. 别说为何不用 Hibernate 之类的而不直接写原始的 SQL 语句, 在操作复杂的系统时还是会用到 JdbcTemplate 吧.</p>
+<br/>
+所以我们希望能把 SQL 语句写在单独的 <code>*.sql</code> 文件里, 这样很多编辑器就能语法高亮显示, 或在输入时还能得到智能提示. 有种办法是把 <code>*.sql</code> 用作为属性文件, 那么在其中定义多行的 SQL 语句时就得这样<br/><br/>
+<blockquote>
+select.user=select id, firstname, lastname, address \<br />
+  from users \<br />
+  where id=?
+</blockquote>
+<br/>
+加载后就能用 <code>getProperty("select.user")</code> 来引用相应的语句了. 属性文件的换行与 Bash  一样, 也是用  <code>\</code>, 但如此, 则 <code>*.sql</code> 并非一个纯粹的 SQL 文件, 不能正确的进行语法加亮, 一旦写上 SQL 的注释 <code>--</code> 就更是在添乱了.<br/><br/>
+所以我们的第二个方案是: 首先 <code>*.sql</code> 就该是一个真正的  SQL 文件, 而不是伪装的属性文件, 为了能在程序中引用每一条 SQL 语句, 我们该如何表示各自的 Key 呢? 这里的灵感仍然是来自于 Linux Shell, 在 Linux Shell 中指定执行环境的用了特殊的注释方式 <code>#!</code>, 如<br/><br/>
+<blockquote>
+#!/bin/bash<br />
+#!/usr/bin/env python
+</blockquote>
+<br/>
+<!--more-->依葫芦画瓢, SQL 的标准单注释是 <code>--</code>, 因而我们也创建一个特别的注释 <code>--!</code>, , 其后的字符串就是接下来 SQL 语句的 Key. 举例如下<br/><br/>
+<blockquote>
+--!select.user<br />
+select id, firstname, lastname, address<br />
+  from users<br />
+  where id=?<br />
+<br />
+--!update.user<br />
+update ........
+</blockquote>
+<br/>
+<code>--!</code> 之后是 key <code>select.user</code>, 往下在未到文件结束, 或是遇到下一个 <code>--!</code> 之前就是这个 key 对应的完整 SQL 语句的内容.<br/><br/>
+本文以 Spring 项目为例来演示如何应这个 <code>SQL</code> 文件, 其实在其他类型的 Java 项目中同样可以借鉴.<br/><br/>
+因为这是一个真正的 SQL 文件, 所以在 Spring 中我们无法直接作为属性文件来加载. 假设我们把该文件存储为 <code>src/resources/sql/queries.sql</code>, 因此我们不能直接用<br/><br/>
+<blockquote>
+@PropertySource(value = "classpath:sql/queries.sql")<br />
+public class AppConfig {  ......  }
+</blockquote>
+<br/>
+加载该文件.<br/><br/>
+幸好 <a href="http://docs.spring.io/spring/docs/current/javadoc-api/org/springframework/context/annotation/PropertySource.html">PropertySource</a> 注解还有一个属性 <code>factory</code>, 类型为 <code>PropertySourceFactory</code>, 这就是我们作文章的地方, 马上着手自定义一个 <code>SqlPropertySourceFactory</code>, 在其中总有办法把一个 <code>*.sql</code> 的内容转换为 <code>Properties</code>. 因此将来我们要加载  <code>sql/queries.sql</code> 文件所用的注解形式就会是<br/><br/>
+<blockquote>
+@PropertySource(value = "classpath:sql/queries.sql", factory = SqlPropertySourceFactory.class)<br />
+public class AppConfig { ......}
+</blockquote>
+<br/>
+接下来就是本文的关键, 看看 <code>SqlPropertySourceFactory</code> 的实现<br/><br/>
+<span style="font-size: 12pt;"><strong><span style="color: #0000ff;">SqlPropertySourceFactory.java</span></strong></span><br/><br/>
+<pre class="lang:default decode:true ">package cc.unmi;<br/><br/>
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.io.support.EncodedResource;
+import org.springframework.core.io.support.PropertySourceFactory;<br/><br/>
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.util.*;
+import java.util.stream.Collectors;<br/><br/>
+public class SqlPropertySourceFactory implements PropertySourceFactory {<br/><br/>
+    private static final String KEY_LEADING = "--!";<br/><br/>
+    @Override
+    public PropertySource&lt;?&gt; createPropertySource(String name, EncodedResource resource) throws IOException {<br/><br/>
+        Deque&lt;Pair&gt; queries = new LinkedList&lt;&gt;();<br/><br/>
+        new BufferedReader(resource.getReader()).lines().forEach(line -&gt; {
+            if (line.startsWith(KEY_LEADING)) {
+                queries.addLast(new Pair(line.replaceFirst(KEY_LEADING, "")));
+            } else if (line.startsWith("--")) {
+                //skip comment line
+            } else if (!line.trim().isEmpty()) {
+                Optional.ofNullable(queries.getLast()).ifPresent(pair -&gt; pair.lines.add(line));
+            }
+        });<br/><br/>
+        Map&lt;String, Object&gt; sqlMap = queries.stream()
+                .filter(pair -&gt; !pair.lines.isEmpty())
+                .collect(Collectors.toMap(pair -&gt; pair.key,
+                        pair -&gt; String.join(System.lineSeparator(), pair.lines),
+                        (r, pair) -&gt; r, LinkedHashMap::new));<br/><br/>
+        System.out.println("Configured SQL statements:");
+        sqlMap.forEach((s, o) -&gt; System.out.println(s + "=" + o));<br/><br/>
+        return new MapPropertySource(resource.toString(), sqlMap);
+    }<br/><br/>
+    private static class Pair {
+        private String key;
+        private List&lt;String&gt; lines = new LinkedList&lt;&gt;();<br/><br/>
+        Pair(String key) {
+            this.key = key;
+        }
+    }
+}</pre>
+<br/>
+我们定义的 <code>src/resources/sql/queries.sql</code> 文件内容如下:<br/><br/>
+<pre class="brush:sql">--external queries in this file<br/><br/>
+--!select_users_by_id
+select id, firstname, lastname, address
+ from users where id=?<br/><br/>
+--!add_user
+insert users(id, firstname, lastname, address)
+  values(DEFAULT, ?, ?, ?)
+--<br/><br/>
+--!no_statement
+---<br/><br/>
+--!update
+update users set firstname=? where id=?</pre>
+<br/>
+最后是如何应用它, 我们以 SpringBoot 的方式来启动一个 Spring 项目<br/><br/>
+<strong><span style="color: #0000ff; font-size: 12pt;">DemoApplication.java</span></strong><br/><br/>
+<pre class="brush:java">package cc.unmi;<br/><br/>
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.context.EnvironmentAware;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.PropertySource;
+import org.springframework.core.env.Environment;<br/><br/>
+@SpringBootApplication
+@PropertySource(value = "classpath:sql/queries.sql", factory = SqlPropertySourceFactory.class)
+public class DemoApplication implements EnvironmentAware {<br/><br/>
+    private Environment env;<br/><br/>
+    @Value("${add_user}")
+    private String sqlAddUser;<br/><br/>
+    @Bean
+    public String testBean() {
+        System.out.println("SQL_1:" + env.getProperty("select_users_by_id"));
+        System.out.println("SQL_2:" + sqlAddUser);
+        return "testBean";
+    }<br/><br/>
+    public static void main(String[] args) {
+        SpringApplication.run(DemoApplication.class, args);
+    }<br/><br/>
+    @Override
+    public void setEnvironment(Environment environment) {
+        env = environment;
+    }
+}</pre>
+<br/>
+既然已转换为普通的属性了, 所以可以通过表达式 <code>${key}</code> 或 <code>env.getProperty("key")</code> 来引用它们.<br/><br/>
+执行上面的代码, 输出如下:<br/><br/>
+<blockquote>
+Configured SQL statements:<br />
+select_users_by_id=select id, firstname, lastname, address<br />
+ from users where id=?<br />
+add_user=insert users(id, firstname, lastname, address)<br />
+  values(DEFAULT, ?, ?, ?)<br />
+update=update users set firstname=? where id=?<br />
+SQL_1:select id, firstname, lastname, address<br />
+ from users where id=?<br />
+SQL_2:insert users(id, firstname, lastname, address)<br />
+  values(DEFAULT, ?, ?, ?)
+</blockquote>
+<br/>
+就这么简单. 当然那个 *.sql 文件最好是写得严谨一些, 我们可以将来对 <code>SqlPropertySourceFactory</code> 进行逐步完善以应对更多的可能. 不管怎么说它是一个真正的 SQL 文件, 在代码中也能像任何别的属性那么方便的引用其中定义的  SQL 语句了.

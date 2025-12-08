@@ -1,0 +1,56 @@
+---
+title: Java 的参数检查与断言 - Guava Preconditions
+url: /java-assertion-guava-preconditions/
+date: 2016-12-13T00:11:13-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Assert
+  - Guava
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7629 
+wpStatus: publish
+views: 3106
+lastmod: 2021-06-22T15:14:56-05:00
+---
+
+在前一篇 <a href="http://unmi.cc/scala-parameter-check-and-assertion/">Scala 的参数检查与断言: require, assert, assume 和 ensuring</a>，捉摸 Scala 的断言时提到了 JDK 内置对断言的粗略支持，也就是 <code>assert</code> 语句，并且默认该特性是被关掉，需 <code>-ea</code> 开启。</p>
+<br/>
+<blockquote>
+assert object != null;<br />
+assert object != null : "object can't be null";
+</blockquote>
+<br/>
+还进一步接触了 Scala 的 <code>Predef</code> 方法 <code>require</code>, <code>assert</code>, <code>assume</code>, 和 <code>ensuring</code> 是怎么检验参数与断言运算结果的，Scala 的这些方法在校验失败时相应的抛出 <code>IllegalArgumentException</code> 和  <code>AssertionError</code> 异常。<br/><br/>
+JDK  7 引入了 <a href="https://docs.oracle.com/javase/8/docs/api/java/util/Objects.html">Objects</a> 工具类，它的三个 <code>T requireNotNull(T object)</code> 方法能对参数进行 null 值检查，null 时抛出 <code>NullPointerException</code><br/><br/>
+<img class="aligncenter size-large wp-image-7633" src="/wp-content/uploads/2016/12/Java-Objects-requireNotNull-800x119.png" alt="" width="800" height="119" /><br/><br/>
+<!--more-->可是我认为这个  <code>requireNotNull()</code> 对我们帮助其实不大，<code>NullPointerException</code> 的抛出只不过是早晚的事。我们更迫切需要一个像 Scala  那样的 <code>require</code>, <code>assert</code> 等方法，很幸运 Google 的 Guava 库为我们发明了这个轮子，那就是 Guava 的 <a href="https://google.github.io/guava/releases/20.0/api/docs/com/google/common/base/Preconditions.html">Preconditions</a>， 而且它比之 Scala 的处理方式来说有更完善的语义。它在断言运算结果时摒弃了含糊的 <code>AssertionError</code> 错误，代之以 <code>java.lang.IllegalStateException</code> 异常，说明运算的结果并预期(非法的状态)。<br/><br/>
+<img class="aligncenter size-full wp-image-7634" src="/wp-content/uploads/2016/12/Guava-Preconditions.png" alt="" width="742" height="271" /><br/><br/>
+由上图可知，Preconditions(<a href="https://github.com/google/guava/blob/master/guava/src/com/google/common/base/Preconditions.java">点击查看它的源码</a>) 的方法包括四大类：<br/><br/>
+<ol>
+    <li>checkArgument(boolean expression, ...): 校验参数，失败则抛出 <code>java.lang.IllegalArgumentException</code></li>
+    <li>checkState(boolean expression, ...):  检验中间结果，失败则抛出 <code>java.lang.IllegalStateException</code>, 语义上比 <code>AssertionError</code> 要准确</li>
+    <li>checkNotNull(T reference, ...): 和 <code>Objects.requireNotNull(T Objejct)</code> 功能一样，失败也是抛出 <code>java.lang.NullPointerExeption</code>, 成功则得到被校验的值。可用这个方法替代  Objects 中的相应方法。</li>
+    <li>checkXxxIndex(): 这类方法用得较少，检验是否为集合的有效索引，失败则抛出 <code>IndexOfOfBoundsException</code></li>
+</ol>
+<br/>
+来个类似于上篇的的简单例子吧：<br/><br/>
+<pre class="lang:default decode:true ">import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;<br/><br/>
+........<br/><br/>
+public void register(String name) {
+  checkArgument(name != null &amp;&amp; !name.toLowerCase().equals("admin"),
+    "name[%s] can't be null or 'admin'", name); 
+  int id = findIdByName(name);
+  checkState(id == null, "Duplicated name[%] with id[%s]", name, id);
+  ......
+}</pre>
+<br/>
+&nbsp;

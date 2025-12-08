@@ -1,0 +1,189 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第四章. 部署 Job (第三部分)
+url: /quartz-job-scheduling-framework-4-3/
+date: 2007-12-30T20:50:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/10/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 454 
+wpStatus: publish
+views: 727
+lastmod: 2021-09-03T21:43:21-05:00
+---
+
+<strong>5. 易失性、持久性和可恢复性<br />
+</strong></p>
+<br/>
+这三个属性有些类似的，由于它们影响的都是 Job 的运行时行为。我们下面依次讨论它们。<br/><br/>
+<strong>·Job 的易失性<br />
+</strong><br />
+一个易失性的 Job 是在程序关闭之后不会被持久化。一个 Job 是通过调用 <span style="color: #800080;">JobDetail</span> 的 <span style="color: #800080;">setVolatility(true)</span> 被设置为易失性的。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>当你需要持久化 Job 时不应使用 <span style="color: #800080;">RamJobStore<br />
+</span></strong><br />
+<span style="color: #800080;">RamJobStore</span> 使用的是非永久性存储器，所有关于 Job 和 Trigger 的信息会在程序关闭之后丢失。保存 Job 到 <span style="color: #800080;">RamJobStore</span> 有效的使得它们是易失性的。假如你需要让你的 Job 信息在程序重启之后仍能保留下来，你就该考虑另一种 <span style="color: #800080;">JobStore</span> 类型，比如 <span style="color: #800080;">JobStoreTX</span> 或者 <span style="color: #800080;">JobStoreCMT</span>。它们会在第六章“作业存储与持久化”中讲到。</td>
+</tr>
+</tbody>
+</table>
+<br/>
+Job 易失性的默认值是 <span style="color: #800080;">false</span>.<!--more--><br/><br/>
+<strong>·Job 持久性</strong><br/><br/>
+一个持久的 Job 是它应该保持在  <span style="color: #800080;">JobStore</span> 中的，甚至是在没有任何 Trigger 去触发它的时候。我们说，你设置了一个单次触发的 Trigger，触发之后它就变成了 <span style="color: #800080;">STATE_COMPLETE</span> 状态。Job 执行一次后就不再被触发了，这个 Trigger 部署之后只为了执行一次。这个 Trigger 指向的 Job 现在成了一个孤儿 Job，因为不再有任何 Trigger 与之相关联了。<br/><br/>
+假如你设置一个 Job 为连续性的，即使它成了孤儿 Job 也不会从 <span style="color: #800080;">JobStore</span> 移除掉。这样可以保证在将来，无论何时你的程序决定为这个 Job 增加另一个 Trigger 都是可用的。假如调用了 <span style="color: #800080;">JobDetail</span> 的 <span style="color: #800080;">setDurability(false)</span> 方法，那么在所有的触发器触发之后 Job 将从 <span style="color: #800080;">JobStore</span> 中移出。连续性的默认值是 <span style="color: #800080;">false</span>。因此，Job 和 Trigger 的默认行为是：当 Trigger 完成了所有的触发、Job 在没有 Trigger 与之关联时它们就会从 <span style="color: #800080;">JobStore</span> 中移除。<br/><br/>
+<strong>·Job 的可恢复性</strong><br/><br/>
+当一个 Job 还在执行中，Scheduler 经历了一次非预期的关闭，在 Scheduler 重启之后可恢复的 Job 还会再次被执行。这个 Job 会再次重头开始执行。Scheduler 是没法知道在程序停止的时候 Job 执行到了哪个位置，因此必须重新开始再执行一遍。<br/><br/>
+要设置 Job 为可恢复性，用下面的方法：<br/><br/>
+<pre class="brush:java">public void setRequestsRecovery(boolean shuldRecover);</pre>
+<br/>
+默认时，这个值为 <span style="color: #800080;">false</span>，Scheduler 不会试着去恢复 job 的。<br/><br/>
+<strong>·从 Scheduler 中移除 Job</strong><br/><br/>
+你可用多种方式移除已部署的 Job。一种方式是移除所有与这个 Job 相关联的 Trigger；如果这个 Job 是非持久性的，它将会从 Scheduler 中移出。一个更简单直接的方式是使用 <span style="color: #800080;">deleteJob()</span> 方法：<br/><br/>
+<pre class="brush:java">public boolean deleteJob(String jobName, String groupName) throws SchedulerException;</pre>
+<br/>
+<strong>·中断 Job<br />
+</strong><br />
+有时候需要能中断一个 Job，尤其是对于一个长时间执行的 Job。例如，假定你有一个 Job 运行过程要花费一个小时，你发现在 5 分钟的时候因某个非受控的错误被中断需要接着执行。你或许也会中断 Job，修复问题，然后又继续运行。<br/><br/>
+Quartz 包括一个接口叫做 <span style="color: #800080;">org.quartz.InterruptableJob</span>，它扩展了普通的 Job 接口并提供了一个 <span style="color: #800080;">interrupt()</span> 方法：<br/><br/>
+<pre class="brush:java">public void interrupt() throws UnableToInterruptJobException;</pre>
+<br/>
+可以提供 Job 部署时所用的 Job 的名称和组名调用 Scheduler 的 <span style="color: #800080;">interrupte()</span> 方法：<br/><br/>
+<pre class="brush:java">public boolean interrupt(SchedulingContext ctxt, String jobName, String groupName)
+    throws UnableToInterruptJobException;</pre>
+<br/>
+代码 4.8 就是一个叫做 <span style="color: #800080;">ChedkForInterruptJob</span> 的 <span style="color: #800080;">InterruptableJob</span> 例子。<br/><br/>
+Scheduler 接着会调用你的 Job 的 <span style="color: #800080;">interrupt()</span> 方法。这时就取决于你和你的 Job 决定如何中断 Job 了。Quartz 有几种如何处理中断的方式，代码 4.8 中提供的是比较通用的。Quartz 框架可向 Job 发出中断请求的信号，但此时是你在控制着 Job，因此需要你为中断信号作出响应。<br/><br/>
+<strong>代码 4.8. <span style="color: #800080;">InterrupableJob</span> 能用来决定是否调用了 Scheduler 的 <span style="color: #800080;">interrupte()</span><br />
+</strong><br/><br/>
+<pre class="lang:default decode:true ">public class CheckForInterruptJob implements InterruptableJob {
+     static Log logger = LogFactory.getLog(CheckForInterruptJob.class);<br/><br/>
+     private boolean jobInterrupted = false;<br/><br/>
+     private int counter = 5;<br/><br/>
+     private boolean jobFinished = false;<br/><br/>
+     public void interrupt() throws UnableToInterruptJobException {
+          jobInterrupted = true;
+     }<br/><br/>
+     public void execute(JobExecutionContext context)
+               throws JobExecutionException {<br/><br/>
+          while (!jobInterrupted &amp;&amp; !jobFinished) {<br/><br/>
+               // Perform a small amount of processing
+               logger.info("Processing the job");
+               counter--;<br/><br/>
+               if (counter &lt;= 0) {
+                    jobFinished = true;
+                    }<br/><br/>
+               // Sleep and wait for 3 seconds
+               try {
+                    Thread.sleep(3000);
+               } catch (InterruptedException e) {
+                    // do nothing
+               }
+          }
+          if (jobFinished) {
+               logger.info("Job finished without interrupt");
+          } else if (jobInterrupted) {
+               logger.info("Job was interrupted");
+          }
+     }
+}</pre>
+<br/>
+<strong>·框架所提供的 Job</strong><br/><br/>
+Quartz 框架提供了几个可在你的应用程序中轻松使用的 Job，表 4.1 列出了那种 Job 及用法<br/><br/>
+<table border="0" width="650" cellspacing="5">
+<caption><strong>表 4.1. Quartz 框架所提供的 Job</strong></caption>
+<tbody>
+<tr>
+<td><strong>Job 类</strong></td>
+<td><strong>Job 用法</strong></td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobs.FileScanJob</span></td>
+<td>检查某个指定文件是否变化，并在文<br />
+件被改变时通知到相应监听器的 Job</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobs.FileScanListener</span></td>
+<td>在文件被修改后通知 <span style="color: #800080;">FileScanJob</span> 的监听器 </td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobs.NativeJob</span></td>
+<td>用来执行本地程序(如 windows 下 .exe 文件) 的 Job</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobs.NoOpJob</span></td>
+<td>什么也不做，但用来测试监听器不是很有用的。<br />
+一些用户甚至仅仅用它来导致一个监听器的运行</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobs.ee.mail.SendMailJob</span></td>
+<td>使用 JavaMail API 发送 e-mail 的 Job</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobs.ee.jmx.JMXInvokerJob</span></td>
+<td>调用 JMX bean 上的方法的 Job</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobs.ee.ejb.EJBInvokerJob</span></td>
+<td>用来调用 EJB 上方法的 Job</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<strong>6. 快速了解Java 线程</strong><br/><br/>
+本章很短小却很有必要暂时从对 Quartz 框架的讨论中转移到这个话题来。线程在 Quartz 框架中扮演着一个很重要的角色。要是没有线程，Java(以及 Quartz) 就不得不使用重量级的进程来执行并发的任务(Job，对于 Quartz 来说)。这个材料对于已经理解了 Java 中线程如何工作的人来说是很基本的。假如你是这类人，请宽容一下。假如你还没有机会去学习有关 Java 线程的知识，现在是个相当好的时机去快速了解它。尽管主要是关注于 Java 线程的讨论，我们在后面部份会由此进一步讨论线程在 Quartz 是如何运用的。<br/><br/>
+<strong>·Java 中的线程</strong><br/><br/>
+线程允许程序同一时间做很多任务，至少，看起来那些任务是并发执行的。本章的讨论不考虑并行处理的情形，在任一特定时刻仅有一个线程在执行，但是 CPU 给每个线程一小片时间运行(通过时间片)然后来回在线程间快速的切换。这就是我们所看到的多线程运行的样子。<br/><br/>
+Java 语言使用 Thread 类内建了对线程的支持。当一个线程被通知运行，该线程的 <span style="color: #800080;">run()</span> 方法就被执行。正是因为你创建了一个线程实例并且调用的是 <span style="color: #800080;">start()</span> 方法，所以并不意意味着相应的 <span style="color: #800080;">run()</span> 方法会得到立即执行；这个线程实例必须等待，直到 JVM 告诉它可以运行。<br/><br/>
+<strong>·线程的生命周期</strong><br/><br/>
+线程在它的生命周期中会是几种可能的状态中的一种。在同一时刻只能处于一种状态，这些状态是由 JVM 指示的，而不是操作系统。线程状态列示如下：<br/><br/>
+    ·新建<br/><br/>
+    ·可运行<br/><br/>
+    ·阻塞<br/><br/>
+    ·等待中<br/><br/>
+    ·指定时间的等待<br/><br/>
+    ·结束<br/><br/>
+当一个新的线程被创建后，它就被指定为新建状态。线程在此状态时不会被分配任何系统资源。要使线程转到可运行状态，必须调用 <span style="color: #800080;">start()</span> 方法。<br/><br/>
+当调用了新建线程的 <span style="color: #800080;">start()</span> 方法，线程进入到就绪状态并被认为是运行中的。这不代表这个线程实际正在执行指令。即使线程的状态被设置为可运行，已安排去运行，它或许不得不等到其他执行中的线程结束或被临时挂起。JVM 来决定哪个线程该获得下次运行的机会。JVM 决定下个线程的行为依赖于数个因素，包括操作系统、特定的 JVM 实现和线程优先级及其他因素。图 4.4 显示了 Java 线程的生命周期。<br/><br/>
+<p style="text-align: center;"><strong>图 4.4. Java 线程的生命周期</strong></p>
+<br/>
+<div><img class=" aligncenter" src="/wp-content/uploads/2007/12/QuartzFigure4.4.JPG" alt="QuartzFigure4.4.JPG" width="493" height="280" border="0" /></div>
+<br/>
+阻塞和等待状态对于本书来说讨论的余地不大，也是要好分几个主题才能讲清，我们在此不必对此深入。假如你想要关于这些主题更多信息的话，你可以看 Sun 站点的 Java 指南关于线程的内容，<a href="http://java.sun.com/docs/books/tutorial/essential/threads/index.html">http://java.sun.com/docs/books/tutorial/essential/threads/index.html</a>。<br/><br/>
+<strong>·进程和线程</strong><br/><br/>
+每一个 Java 程序被指派一个进程。程序接着把任务分派到线程中。甚至是你在写一个仅包含一个 main() 方法的 "Hello, World" 程序，程序仍然要使用线程，虽然只有一个。<br/><br/>
+有时候，所谓“轻量级进程”指的就是线程。这与实际的操作系统进程“重量级”一词形成对比。假如你正在使用 Windows 系统，你可以在任务管理器中看到运行着的重量级进程，但是你看不到线程。图 4.5 描绘了一个 Java 程序中的多线程如何操作。<br/><br/>
+<div style="text-align: center;"><strong>图 4.5. 运行在一个程序中的两个线程</strong></div>
+<br/>
+<img class=" aligncenter" src="/wp-content/uploads/2007/12/QuartzFigure4.5.JPG" alt="QuartzFigure4.5.JPG" width="447" height="357" border="0" /><br/><br/>
+从图 4.5 中看到，线程通常不会并发着运行的。这里还是先排除多 CPU 和并行处理的情况的话，同一时刻只能有一个线程才能得到 CPU 的参与执行。每一个 JVM 和操作系统对此处理方式可能有所不同，然而，有时，一个线程可能要执行完成后，另一线程才能接着运行。这就是所知的“非抢先式”。其他的，一个线程中途被打断来让其他线程做它们的事。这被称做“抢先式”。一般的，线程必须完成运行后另一线程才能获得 CPU，这种对 CPU 资源的竟争通常是基于线程优先级的。<br/><br/>
+<strong>·理解和使用线程优先级</strong><br/><br/>
+我们已多次提到，可运行线程是否能获得下次运行机会是由 JVM 来决定的。JVM 支持的一种知名的调度方案“固定优先级调度”，它调度线程是基于它们与其他可运行线程优先级相比较而定的。<br/><br/>
+优先级是一个指定给新线程的整数值，它还应参考创建它的父线程的优先级。这个值从 <span style="color: #800080;">Thread.MIN_PRIORITY</span> (等于 1)，到 <span style="color: #800080;">Thread.MAX_PRIORITY</span> (等于 10)。这些常量值在 <span style="color: #800080;">java.lang.Thread</span> 类中有定义。<br/><br/>
+这个值越大 (最大到 <span style="color: #800080;">MAX_PRIORITY</span>)，所具有的优先级就越高。除非特别指定，Java 程序中多数刚创建的线程运线在 <span style="color: #800080;">Thread.NORMAL_PRIORITY</span> (恰好是个中值 5) 级别上。你可能用 <span style="color: #800080;">setPriority()</span> 方法来修改线程的优先级。<br/><br/>
+通常，一个运行着的线程持续运行直到下面情况中的一个：<br/><br/>
+    ·线程让出 CPU (可能是调用了它的 <span style="color: #800080;">sleep()</span> 方法、<span style="color: #800080;">yield()</span> 方法或者是 <span style="color: #800080;">Object.wait()</span> 方法)。<br/><br/>
+    ·线程的 <span style="color: #800080;">run()</span> 结束了。<br/><br/>
+    ·OS 支持时间片的话，它的时间到了<br/><br/>
+    ·另一高优先级的线程变为了可运行状态<br/><br/>
+<strong>·守护线程</strong><br/><br/>
+守护线程有时指的是服务线程，因为他们运行在很低的优先级别上(在后台)，完成些非紧急但却本质的任务。例如，Java 的垃圾回收器就是一个守护线程的例子。这个线程运行在后台，查找并回收程序不再使用的内存。<br/><br/>
+你可以通过传递 <span style="color: #800080;">true</span> 给 <span style="color: #800080;">setDaemon()</span> 方法使线程成为守护线程。不然，这个线程就是一个用户线程。你仅能在线程启动之前把它设置为守护线程。守护线程有点特别的就是假如只有守护线程在运行而没有活着的非守护线程，此时 JVM 仍然是存在的。<br/><br/>
+<strong>· Java 线程组和线程池</strong><br/><br/>
+Java 的 <span style="color: #800080;">ThreadGroup</span> 由 <span style="color: #800080;">java.lang.ThreadGroup</span> 类实现的，描绘的是一组行为如单一实体般的线程。每一个 Java 线程都是线程组的成员。在一个线程组中，你可以停止或启动所有的线程组成员。你还可以设置线程优先级和执行其他线程的通用功能。线程组对于构建像 Quartz 那样的多线程程序是非常有用的。<br/><br/>
+当一个 Java 程序启动后，它就创建了一个叫做 <span style="color: #800080;">main</span> 的 <span style="color: #800080;">ThreadGrop</span>。除非特别指定，所有创建的线程都会成为这个组的成员。当一个线程被指定到某个 <span style="color: #800080;">ThreadGroup</span> 时，它才会被改变。<br/><br/>
+<strong>·Java 线程池 (<span style="color: #800080;">ThreadPool</span>)<br />
+</strong><br />
+Java 1.5 引入一个新的概念到 Java 语言中，称之线程池。第一眼看来，这有些像是线程组，但是它实际是用于不同目的的。尽量多个线程能从属于一个相同的 <span style="color: #800080;">ThreadGroup</span> 中，组是享用不到典型的池化资源带来的好处的。这就是说，线程组仅仅是用于对成员的组织。<br/><br/>
+线程池是可共享的资源，是一个能被用来执行任务的可管理的线程集合。线程池(通常讲的资源池) 比非池化资源提供了几点好处。首先也是首要的，资源池通过减少过度的对象创建改善了性能。假如你实例化十个线程，并重复的使用它们，而不是每次需要一个都创建一个新的线程，你将会改善程序的性能。这个概念在 Java 和 J2EE 领域中比比皆是。另外的优点包括能限制资源的数量，这有助于程序的稳定性和可扩展性。这是一个非常有意义的特征，而不管你所用的是什么语言，或是什么程序。

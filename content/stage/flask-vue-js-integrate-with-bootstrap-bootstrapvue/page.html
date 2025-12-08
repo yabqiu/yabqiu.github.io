@@ -1,0 +1,222 @@
+---
+title: Flask, Vue.js 中集成 Bootstrap/BootstrapVue
+url: /flask-vue-js-integrate-with-bootstrap-bootstrapvue/
+date: 2020-07-04T16:57:33-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2020/07/vue_logo.png"
+categories:
+  - Web/JS
+  - Vue.js
+  - Flask
+tags: 
+  - Vue
+  - Boostrap
+  - BootstapVue
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10333 
+wpStatus: publish
+views: 1704
+lastmod: 2021-12-07T22:33:12-06:00
+---
+
+紧接上一篇 <a href="https://yanbin.blog/flask-vue-js-integration-dev-deploy/">Flask 和 Vue.js 开发及整合部署实例</a>，来体验一下它们与 Bootstrap/BootstrapVue 的集成。漂亮的网站少不得一个好的 CSS 框架，现在有许许多的 CSS 框架可选，纯 CSS 的, 轻量级的, 含 JS 的 CSS 框架，如 <a href="https://purecss.io/">Pure</a>, <a href="https://bulma.io/">Bulma</a>, <a href="https://picturepan2.github.io/spectre/">Spectre</a>, 国产的 <a href="https://element.eleme.io/#/en-US">Element</a> 等。而我总觉得 Bootstrap 更是五臟俱全，像 Element 专为 Vue.js 打造的一样，Bootstrap 也有 BootstrpVue 那样一个结晶品。</p>
+<br/>
+本文准确的内容应该是关于 Vue.js 与 Bootstrap/BootstrapVue 的话题，与 Flask 没什么事，不过这里呢，还是强拉上 Flask, 由 Flask 的 API 来产生一些数据。<br/><br/>
+同样是阅读 <a href="https://zhuanlan.zhihu.com/p/76588212">Flask和Vue.js构建全栈单页面web应用【通过Flask开发RESTful API】</a>的一个实践品。本篇基于 <a href="https://yanbin.blog/flask-vue-js-integration-dev-deploy/">Flask 和 Vue.js 开发及整合部署实例</a> 中的步骤建立的项目 <a href="https://github.com/yabqiu/flask-vue-app.git">flask-vue-app</a>，方便起见，用了一个新项目名称 <a href="https://github.com/yabqiu/flask-vue-bootstrap">flask-vue-bootstrap</a>。记得我们为 Flask 和 Vue.js 分别建立了 backend  和 frontend 两个子项目。<!--more--><br/><br/>
+<h3>安装体验 Bootstrap</h3><br/><br/>
+在 frontend 目录中执行<br/><br/>
+<blockquote>
+$ npm install bootstrap --save        # 当前(2020-07-04) 安装版本为 bootstrap@4.5.0，锁定版本安装用  npm instll bootstrap@4.5.0 --save
+</blockquote>
+<br/>
+<em>注：忽略 jquery 和 proper.js 的警告，不要安装它们</em><br/><br/>
+把  Bootstrap 样式导入到 frontend 项目中，只需要在 frontend/src/main.js 中加上一行<br/><br/>
+<pre class="lang:default decode:true">import 'bootstrap/dist/css/bootstrap.css';</pre>
+<br/>
+可以想像这一步就完成了 Bootstrap 的 css 和 js 文件的导入，相当于下面两行代码<br/><br/>
+<blockquote>
+&lt;link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css"&gt;<br />
+&lt;script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.min.js"&gt;&lt;/script&gt;
+</blockquote>
+<br/>
+接下来要应用 Bootstrap 的样子，先在 frontend/src/App.vue 的 style 部分中的 <code>#app</code> 块中加上<br/><br/>
+<pre class="lang:default decode:true ">margin-top: 60px;</pre>
+<br/>
+这样才不至于下面要显示的按钮紧贴着页面顶部，然后在 ping  组件 frontend/components/Ping.vue 中的 &lt;template&gt; 部分修改为<br/><br/>
+<pre class="lang:default mark:2,3 decode:true">&lt;template&gt;
+  &lt;div class="container"&gt;
+    &lt;button type="button" class="btn btn-primary"&gt;{{ msg }}&lt;/button&gt;
+  &lt;/div&gt;
+&lt;/template&gt;</pre>
+<br/>
+样式 <code>container</code>, <code>btn</code>, 和 <code>btn-primary</code> 就是来自于  Bootstrap<br/><br/>
+这时候假如  <code>backend</code> 和 <code>frontend</code> 下还分别运行着<br/><br/>
+<blockquote>
+$ python app.py                       # backend 目录下<br />
+$ npm run serve                      # frontend 目录下
+</blockquote>
+<br/>
+上边两个服务没运行的话就执行它们，这时候 http://localhost:8080/ping 会自动刷新，显示了 Bootstrap 风格的 <code>pong!</code> 按钮<br/><br/>
+<h3><a href="https://yanbin.blog/wp-content/uploads/2020/07/flask-vue-bootstrap-1.png"><img class="aligncenter wp-image-10337" src="https://yanbin.blog/wp-content/uploads/2020/07/flask-vue-bootstrap-1-800x343.png" alt="" width="504" height="216" /></a>显示一个 Bootstrap 表格</h3><br/><br/>
+再来一个例子，做一个显示 Book 列表的页面，Bootstrap 风格，数据由 Flask API 提供。也借些了解一下 Vue.js 的简要开发步骤，完整的  CRUD 程序的开发还要再放一放 <br/><br/>
+<h4>创建一个 Books 组件</h4><br/><br/>
+需要创建文件 frontend/components/Books.vue 文件，内容为<br/><br/>
+<pre class="lang:default decode:true">&lt;template&gt;
+  &lt;div class="container"&gt;
+    &lt;div class="row"&gt;
+      &lt;div class="col-sm-12"&gt;
+        &lt;h1&gt;Books&lt;/h1&gt;
+        &lt;hr&gt;&lt;br&gt;&lt;br&gt;
+        &lt;button type="button" class="btn btn-success btn-sm"&gt;Add Book&lt;/button&gt;
+        &lt;br&gt;&lt;br&gt;
+        &lt;table class="table table-hover"&gt;
+          &lt;thead&gt;
+            &lt;tr&gt;
+              &lt;th scope="col"&gt;Title&lt;/th&gt;
+              &lt;th scope="col"&gt;Author&lt;/th&gt;
+              &lt;th scope="col"&gt;Read?&lt;/th&gt;
+              &lt;th&gt;&lt;/th&gt;
+            &lt;/tr&gt;
+          &lt;/thead&gt;
+          &lt;tbody&gt;
+            &lt;tr v-for="(book, index) in books" :key="index"&gt;
+              &lt;td&gt;{{ book.title }}&lt;/td&gt;
+              &lt;td&gt;{{ book.author }}&lt;/td&gt;
+              &lt;td&gt;
+                &lt;span v-if="book.read"&gt;Yes&lt;/span&gt;
+                &lt;span v-else&gt;No&lt;/span&gt;
+              &lt;/td&gt;
+              &lt;td&gt;
+                &lt;div class="btn-group" role="group"&gt;
+                  &lt;button type="button" class="btn btn-warning btn-sm"&gt;Update&lt;/button&gt;
+                  &lt;button type="button" class="btn btn-danger btn-sm"&gt;Delete&lt;/button&gt;
+                &lt;/div&gt;
+              &lt;/td&gt;
+            &lt;/tr&gt;
+          &lt;/tbody&gt;
+        &lt;/table&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/template&gt;<br/><br/>
+&lt;script&gt;
+import axios from 'axios';<br/><br/>
+export default {
+  data() {
+    return {
+      books: [],
+    };
+  },
+  methods: {
+    getBooks() {
+      const path = 'http://localhost:5000/api/books';
+      axios.get(path)
+        .then((res) =&gt; {
+          this.books = res.data.books;
+        })
+        .catch((error) =&gt; {
+          // eslint-disable-next-line
+          console.error(error);
+        });
+    },
+  },
+  created() {
+    this.getBooks();
+  },
+};
+&lt;/script&gt;</pre>
+<br/>
+由以上内容可知，该组件将从 http://localhost:5000/api/books API 获取数据，数据的结构为 [{title: '...', author: '...'， read: true/false}, ...]<br/><br/>
+<h4>Vue 的  <code>/</code> 路由指向 Books 组件</h4><br/><br/>
+更新 fontend/router/index 文件，两处改动<br/><br/>
+首先引入 Books 组件<br/><br/>
+<pre class="lang:default decode:true">import Books from './components/Books.vue'</pre>
+<br/>
+再在 <code>const routes</code> 数组中把 path: '/' 的路由更改为<br/><br/>
+<pre class="lang:default decode:true ">{
+  path: '/',
+  name: 'Books',
+  component: Books,
+}</pre>
+<br/>
+用 http://localhost:8080/ 将能访问 Books 列表。要显示出 Books 列表还需要在  Flask 中创建一个  <code>/api/books</code> API<br/><br/>
+<h4>创建 Flask API <code>/api/books</code></h4><br/><br/>
+在 backend/app.py 中添加<br/><br/>
+<pre class="lang:default decode:true ">BOOKS = [
+    {
+        'title': 'Software Telemetry',
+        'author': 'Jamie Riedesel',
+        'read': True
+    },
+    {
+        'title': 'Grokking Streaming Systems',
+        'author': 'Josh Fischer and Ning Wang',
+        'read': False
+    },
+    {
+        'title': 'Rust in Action',
+        'author': 'Tim McNamara',
+        'read': True
+    }
+]<br/><br/>
+
+@app.route('/api/books', methods=['GET'])
+def all_books():
+    return jsonify({
+        'status': 'success',
+        'books': BOOKS
+        })
+</pre>
+<br/>
+我们在 Manning 出版社找了畅销书的前三本，<code>/api/books</code> 返回 JSON 字符串.<br/><br/>
+打开 http://localhost:8080/, 看到<br/><br/>
+<h3><a href="https://yanbin.blog/wp-content/uploads/2020/07/flask-vue-bootstrap-2.png"><img class="aligncenter size-large wp-image-10340" src="https://yanbin.blog/wp-content/uploads/2020/07/flask-vue-bootstrap-2-800x421.png" alt="" width="800" height="421" /></a>关于 BootstrapVue</h3><br/><br/>
+有了 Bootstrap 为什么还要 BootstrapVue 呢？记得前面安装 Bootstrap 时提示有些组件依赖到  jQuery, 而 Vue 使用的是虚拟 DOM, 如果使用 jQuery 来操作 DOM，将无法实现 Vue 的 View 与 Model 的双向绑定。BootstrapVue 解除了 Bootstrap 对 jQuery 的依赖问题，同时 BootstrapVue 还为 Vue 提供了很多标签指令，如 b 开头的 &lt;b-button&gt; 等。<br/><br/>
+注意：千万不要用 jQuery 去直接操作绑定了 Vue 数据的 DOM 元素。<br/><br/>
+安装 BootstrapVue, 在 frontend 目录中执行<br/><br/>
+<blockquote>
+$ npm install bootstrap-vue --save    # 当前(2020-07-04) 安装的 BootstrapVue 是 2.15.0，所以欲锁定安装版本可用  npm install bootstrap-vue@2.15.0  --save
+</blockquote>
+<br/>
+BootstrapVue 的使用，修改 frontend/src/main.js, 其加加上两行<br/><br/>
+<pre class="lang:default decode:true">import BootstrapVue from 'bootstrap-vue';
+import 'bootstrap-vue/dist/bootstrap-vue.css';  // 不加上这行，显示 BootstrapVue 组件时样式不对，如 b-modal 背景黑色不透明<br/><br/>
+Vue.use(BootstrapVue);</pre>
+<br/>
+Vue 组件中应用 BootstrapVue 的实例，可以在 frontend/src/components/Books.vue 中把行<br/><br/>
+<pre class="lang:default decode:true ">&lt;button type="button" class="btn btn-success btn-sm"&gt;Add Book&lt;/Button&gt;</pre>
+<br/>
+改为<br/><br/>
+<pre class="lang:default decode:true ">&lt;b-button class="btn-success btn-sm"&gt;Add Book&lt;/b-button&gt;</pre>
+<br/>
+在浏览器中，以上 &lt;b-button&gt; 的写法分别会被渲染为<br/><br/>
+<pre class="lang:default decode:true ">&lt;button type="button" class="btn btn-success btn-sm btn-secondary"&gt;Add Book&lt;/button&gt;</pre>
+<br/>
+BootstrapVue 还支持许多的 HTML 组件，特别是在用到 Modal 窗口时应该要用 BootstrapVue 的  &lt;b-modal&gt; 标签，因为 Bootstrap 的 Modal 组件要使用到 jQuery，在 Vue 项目应尽力避免使用 jQuery 来操作 DOM.<br/><br/>
+<h3>再试 Flask 与 Vue.js 的集成</h3><br/><br/>
+这是一个回顾，具体集成实现的原理见上一篇 <a href="https://yanbin.blog/flask-vue-js-integration-dev-deploy/">Flask 和 Vue.js 开发及整合部署实例</a>。假如现在在项目的根目录，下面命令用于集成 Flask 与 Vue.js，完后只需要启动 Flask<br/><br/>
+<pre class="lang:default decode:true ">$ cd frontend
+$ npm run build
+$ cd ../backend
+$ ln -s ../frontend/dist static
+$ python app.py</pre>
+<br/>
+不需要启动 <code>npm run serve</code> 了，直接通过 Flask 的服务访问 http://localhost:5000<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/07/flask-vue-bootstrap-3.png"><img class="aligncenter size-large wp-image-10343" src="https://yanbin.blog/wp-content/uploads/2020/07/flask-vue-bootstrap-3-800x421.png" alt="" width="800" height="421" /></a><br/><br/>
+这能获得与之前访问 http://localhost:8080 一样的效果。<br/><br/>
+<h3>小结</h3><br/><br/>
+本文的全部关键操作总结如下，其他都是 Vue 的常规操作了：<br/><br/>
+<ol>
+    <li><code>npm install bootstrap --save</code></li>
+    <li>src/main.js 中加 <code>import 'bootstrap/dist/css/bootstrap.css;</code></li>
+    <li><code>npm install bootstrap-vue --save</code></li>
+    <li>src/main.js 中再加 <code>import BootstrapVue from 'bootstrap-vue;</code> , <code>import 'bootstrap-vue/dist/bootstrap-vue.css;</code>  和 <code>Vue.use(BootstrapVue)</code></li>
+</ol>
+<br/>
+本文的完整代码在：<a href="https://github.com/yabqiu/flask-vue-bootstrap.git">https://github.com/yabqiu/flask-vue-bootstrap.git</a>

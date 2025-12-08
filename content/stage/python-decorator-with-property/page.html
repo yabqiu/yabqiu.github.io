@@ -1,0 +1,98 @@
+---
+title: Python 中带属性的装饰器
+url: /python-decorator-with-property/
+date: 2022-01-01T18:13:48-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - decorator
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12110 
+wpStatus: publish
+views: 400
+lastmod: 2022-01-01T18:13:48-06:00
+---
+
+刚刚完成 <a href="https://yanbin.blog/python-ellipsis-star-slash-args-kwargs/">由 Python 的 Ellipsis 到 *, /, *args, **kwargs 函数参数</a>, 又回想起在 <a href="https://yanbin.blog/master-python-decorators/">熟悉和应用 Python 的装饰器</a>，关于带属性的装饰器一直未交代，安心不下来，Python 中带属性的装饰器用得非常普遍，如 Flask 的 <code>@app.route('/')</code>。</p>
+<br/>
+我们一看到 Python 的装饰器(Decorator) 会很直截的与 Java 的注解(Annotation) 联系起来，其实除了都用 <code>@</code> 符号外是存在很大区别的。正如它们被翻译成的中文名那样，Java 的注解在一定程度上就是一个注释，只要没有注解处理器处理它们就可以被忽略，Java 要用反射来处理注解。而 Python 的装饰器更象是代理，函数一旦被装饰后，调用目标函数时是无法挣脱装饰器函数的控制的，是硬核的。<!--more--><br/><br/>
+在 Python 中被装饰的函数想要在执行期跳过装饰器函数的附加行为，能想到的一个比喻就是像踢开**闹**, 除非上面内部的通容才能做到。<br/><br/>
+回到 Python 的装饰器的话题上来，我们除了让装饰器可以传递函数参数，接受函数的返回值外，现在要给装饰器加上属性。在原来的装饰器实现上进行改进，在 熟悉和应用 Python 的装饰器 一文中有个例子是<br/><br/>
+<pre class="lang:default decode:true">from functools import wraps<br/><br/>
+def my_decorator(func):
+   
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        print(f"before calling {func.__name__}")
+        func(*args, **kwargs)
+        print(f"after calling {func.__name__}")
+ 
+    return wrapper
+ 
+ 
+@my_decorator
+def say_hello(firstname, lastname, **kwargs):
+    print(f"Hello {firstname} {lastname}!", kwargs)
+ 
+ 
+say_hello("Steve", "Jobs", company="Apple", country="USA")</pre>
+<br/>
+如果我们想要的装饰器能写成<br/><br/>
+<blockquote>
+@my_decorator(path='/hello_world')
+</blockquote>
+<br/>
+那我们的 my_decorator 实现上还得加上一个层次<br/><br/>
+<pre class="lang:default decode:true">from functools import wraps<br/><br/>
+def my_decorator(path):
+    def inner_decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            print(f"input path {path}")
+            print(f"before calling {func.__name__}")
+            func(*args, **kwargs)
+            print(f"after calling {func.__name__}")
+ 
+        return wrapper<br/><br/>
+    return inner_decorator
+ 
+ 
+@my_decorator(path="/hello_world")
+def say_hello(firstname, lastname, **kwargs):
+    print(f"Hello {firstname} {lastname}!", kwargs)
+ 
+ 
+say_hello("Steve", "Jobs", company="Apple", country="USA")</pre>
+<br/>
+装饰器实现最外层的函数不再是直接面对函数(以函数为参数)，而是将要的属性作为参数。执行上面的代码输出为<br/><br/>
+<blockquote>
+input path /hello_world<br />
+before calling say_hello<br />
+Hello Steve Jobs! {'company': 'Apple', 'country': 'USA'}<br />
+after calling say_hello
+</blockquote>
+<br/>
+同样的，装饰器的机制是，得到原函数包装后的函数，再调用该 wrapper 函数，所以按照这机制不用 @my_decorator 的话，就是<br/><br/>
+<pre class="lang:default decode:true">my_decorator(path="/hello_world")(say_hello)("Steve", "Jobs", company="Apple", country="USA")</pre>
+<br/>
+还有一个更巧妙的实现，可以利用 my_decorator 的一个参数，时为 function 时为 path, 见 Python 的 functools.py 中 https://github.com/python/cpython/blob/main/Lib/functools.py#L508<br/><br/>
+<pre class="lang:default decode:true">def lru_cache(maxsize=128, typed=False):
+...<br/><br/>
+    if isinstance(maxsize, int):
+        # Negative maxsize is treated as 0
+        if maxsize &lt; 0:
+            maxsize = 0
+    elif callable(maxsize) and isinstance(typed, bool):
+        # The user_function was passed in directly via the maxsize argument
+        user_function, maxsize = maxsize, 128
+...</pre>
+<br/>
+接下来还有更多的关于 Python 装饰器的内容，如用类代替函数作为装饰器等

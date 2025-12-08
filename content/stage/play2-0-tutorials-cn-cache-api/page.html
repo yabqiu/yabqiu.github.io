@@ -1,0 +1,75 @@
+---
+title: Play 2.0 中文资料 - Play 缓存 API
+url: /play2-0-tutorials-cn-cache-api/
+date: 2013-01-16T10:46:12-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+  - PlayFramework
+tags: 
+  - 翻译
+  - Scala
+  - PlayFramework
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4909 
+wpStatus: publish
+views: 1215
+lastmod: 2021-05-19T16:38:03-05:00
+---
+
+默认的 Cache API 实现是用的 <a href=" http://ehcache.org/">EHCache</a>. 你也可以通过插件来提供自己的缓存实现.<br/><br/>
+<strong><span style="font-size: medium;">访问 Cache API</span></strong><br/><br/>
+缓存 API 由 <code>play.api.cache.Cache</code> 对象提供. 它需要注册一个缓存插件.<br/><br/>
+<blockquote>
+<strong>注:</strong> Cache API 尽力保持自身最小化，而允许插入多种实现. 如果你需要一个更具体的 API, 那就通过你自己的缓存插件来使用它.
+</blockquote>
+<br/>
+<span style="color: #0000ff;">Unmi 注: EhCachePlugin 的注册方式可以查看 play_x.x.x.jar(比如 $PLAY_HOME/repository/local/play/play_2.9.1/2.0.4/jars/play_2.9.1.jar) 包中的 play.plugins 中的内容：</span><br/><br/>
+<pre class="brush:text">100:play.api.i18n.MessagesPlugin
+200:play.api.db.BoneCPPlugin
+300:play.db.ebean.EbeanPlugin
+400:play.db.jpa.JPAPlugin
+500:play.api.db.evolutions.EvolutionsPlugin
+600:play.api.cache.EhCachePlugin
+1000:play.api.libs.concurrent.AkkaPlugin
+10000:play.api.GlobalPlugin</pre>
+<br/>
+<span style="color: #0000ff;">这是 Play2.0.4 默认注册的插件，其中就包含了 600:play.api.cache.EhCachePlugin 插件。<!--more--></span><br/><br/>
+使用下面简单的 API，你就可以往缓存中存数据了:<br/><br/>
+<pre class="brush:scala">Cache.set("item.key", connectedUser)</pre>
+<br/>
+之后获取它:<br/><br/>
+<pre class="brush:scala">val maybeUser: Option[User] = Cache.getAs[User]("item.key")</pre>
+<br/>
+当缓存数据不存在时，还有一个帮助方法在你获取或设置缓存数据给你带来了便利:<br/><br/>
+<pre class="brush:scala">val user: User = Cache.getOrElseAs[User]("item.key") {
+  User.findById(connectedUser)
+}</pre>
+<br/>
+<strong><span style="font-size: medium;">缓存 HTTP 响应数据</span></strong><br/><br/>
+你可以用标准的 Action 组合简单的创建一个聪明的具体缓存特性的 Action.<br/><br/>
+<blockquote>
+<strong>注:</strong> Play HTTP <code>Result</code> 实例可安全的被缓存并被重用.
+</blockquote>
+<br/>
+Play 提供了默认, 内建的方式来应对标准的情况:<br/><br/>
+<pre class="brush:scala">def index = Cached("homePage") {
+  Action {
+    Ok("Hello world")
+  }
+}</pre>
+<br/>
+或者甚至是这样:<br/><br/>
+<pre class="lang:default decode:true ">def userProfile = Authenticated { user =&gt;
+  Cached(req =&gt; "profile." + user) {      
+    Action { 
+      Ok(views.html.profile(User.find(user)))
+    }   
+  }
+}</pre>

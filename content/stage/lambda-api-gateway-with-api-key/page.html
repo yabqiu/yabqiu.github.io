@@ -1,0 +1,400 @@
+---
+title: Lambda + API Gateway 创建需  API Key 验证的 API
+url: /lambda-api-gateway-with-api-key/
+date: 2021-10-06T22:40:09-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - Terraform
+  - APIGateway
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11783 
+wpStatus: publish
+views: 898
+lastmod: 2022-01-04T00:18:58-06:00
+---
+
+希望在标题上尽量包含更多的信息，原本命题为: Lambda + API Gateway 创建需 API Key 验证的 API(Docker + Python + Terraform), 但是觉得太长了，于是只取了前半部份。仍然要在开头部分强调一下本文件打算要实现什么<br/><br/>
+<ol>
+    <li>在 AWS  用 Lambda  和  API Gateway 创建 API</li>
+    <li>创建的 API 是 public 的，需要用 x-api-key 来验证</li>
+    <li>Lambda 的实现代码打包在了一个 Docker 镜像中</li>
+    <li>整个 AWS 的基础架构(包括 ECR, Lambda, API Gateway 及权限等)是由 Terraform 脚本创建管理的</li>
+</ol>
+<br/>
+目标明确，我们直冲到代码的目录结构来，项目目录为 api-gateway-demo, Github 上的链接为 <a href="https://github.com/yabqiu/api-gateway-demo">api-gateway-demo</a>. 后面详叙还会把其中每一个文件的内部给列出来<!--more--><br/><br/>
+<pre class="lang:default decode:true">api-gateway-demo
+├── python
+│   ├── Dockerfile
+│   ├── app.py
+│   └── requirements.txt
+└── terraform
+    ├── ecr.tf
+    ├── lambda-api-gateway
+    │   ├── api-gateway.tf
+    │   ├── iam.tf
+    │   └── lambda.tf
+    └── main.tf</pre>
+<br/>
+由于创建 Lambda 的时候需经指定 Docker 镜像 的 hash, 而非 tag 名称，所以执行分以下几步<br/><br/>
+<ol>
+    <li>Terraform 创建 ECR</li>
+    <li>创建 Docker 镜像并推送到上一步创建的 ECR 中</li>
+    <li>创建 Lambda 及 API Gateway 诸要素</li>
+</ol>
+<br/>
+也就是为什么要把其中三个 *.tf 文件放在一个子目录中去的缘故。也有人通过  Terraform 的 <code>null_resource</code> 配置 <code>provisioner "local-exec"</code> 在新建好 ECR 后自动创建 Docker 镜像及推送到 ECR 中去，但本文还是让事情更简单一些<br/><br/>
+<h3>创建 ECR</h3><br/><br/>
+需要进到 <code>terraform</code>  目录，用到 <code>ecr.tf</code> 和 <code>main.tf</code>, 并把对模块 <code>lambda-api-gateway</code> 的引用用  <code>count = 0</code> 禁用掉。<br/><br/>
+<strong>ecr.tf</strong><br/><br/>
+<pre class="lang:default decode:true ">resource "aws_ecr_repository" "apidemo-lambda" {
+  name = "apidemo-lambda"
+}<br/><br/>
+output ecr-url {
+  value = aws_ecr_repository.apidemo-lambda.repository_url
+}
+</pre>
+<br/>
+<strong>main.tf</strong><br/><br/>
+<pre class="lang:default mark:5-8 decode:true">provider "aws" {
+  region = "us-east-1"
+}<br/><br/>
+module "lambda-api-gateway" {
+  count = 0
+  source = "./lambda-api-gateway"
+  ecr = aws_ecr_repository.apidemo-lambda
+}
+</pre>
+<br/>
+执行 terraform apply 后得到新建 ECR 的 url 如<br/><br/>
+<blockquote>
+$ terraform apply --auto-approve<br />
+......
+Outputs:
+ecr-url = "123456789088.dkr.ecr.us-east-1.amazonaws.com/apidemo-lambda"
+</blockquote>
+<br/>
+<h3>创建并推着 Docker 镜像</h3><br/><br/>
+进到 <code>python</code> 目录, 先浏览一下其下的三个文件<br/><br/>
+<strong>app.py</strong><br/><br/>
+<pre class="lang:default decode:true ">import json
+import uuid<br/><br/>
+
+def build_response(body: object, status_code=200):
+    return {
+        'headers': { "Content-type": "application/json" },
+        'statusCode': status_code,
+        'body': json.dumps(body, indent=4) + '\n'
+    }<br/><br/>
+
+def get_job_info(event):
+    job_id = event['pathParameters']['jobId']
+    return build_response({'message': f'job[{job_id}] is done'})<br/><br/>
+
+def create_job(event):
+    job_name = json.loads(event['body'])['name']
+    job_id = str(uuid.uuid4())
+    return build_response({'message': f'job[{job_id}] submitted'}, 201)<br/><br/>
+
+def handler(event, context):
+    resource = event['resource']
+    http_method = event['httpMethod']<br/><br/>
+    if resource == '/jobs/{jobId}' and http_method == 'GET':
+        return get_job_info(event)
+    elif resource == '/jobs' and http_method == 'POST':
+        return create_job(event)
+    else:
+        return build_response({'message': 'Not found'}, 404)
+</pre>
+<br/>
+其中用来处理两种类型的请求，分别是<br/><br/>
+<ol>
+    <li>GET /jobs/{jobId}</li>
+    <li>POST /jobs</li>
+</ol>
+<br/>
+由 resource 和 http_method 来路由请求到不同的方法，返回数据的格式特别要注意，必须是一个 API Gateway 能理解的格式，如上面的包含 <code>header</code>, <code>statusCode</code>, 和 <code>body</code> 的 Python 字典。API Gatewy 收到 Lambda 的返回，提取出相应的字段组装成一个 HTTP 响应包，如果 Lambda 端随意就可能见到 "malformed Lambda proxy response" 的问题。<br/><br/>
+<strong>requirements.txt</strong><br/><br/>
+<pre class="lang:default decode:true ">boto3</pre>
+<br/>
+其中定义了本 Python 项目用到的第三方包(要是用到的话)<br/><br/>
+<strong>Dockerfile</strong><br/><br/>
+<pre class="lang:default decode:true ">FROM public.ecr.aws/lambda/python:3.9<br/><br/>
+RUN yum update -y &amp;&amp; yum upgrade -y &amp;&amp; rm -Rf /var/cache/yum<br/><br/>
+COPY app.py ${LAMBDA_TASK_ROOT}
+COPY requirements.txt  .<br/><br/>
+RUN  pip3 install --no-cache-dir -r requirements.txt --target "${LAMBDA_TASK_ROOT}"<br/><br/>
+CMD [ "app.handler" ]
+</pre>
+<br/>
+基本镜像用 AWS 官方提供的，它为我们设定了下列内容<br/><br/>
+<ol>
+    <li>"WorkingDir": "/var/task"</li>
+    <li>"Env": ["LAMBDA_TASK_ROOT"="/var/task"]</li>
+    <li>"Entrypoint": ["/lambda-entrypoint.sh"]         我们的 app.handler 将作为它的参数</li>
+</ol>
+<br/>
+执行命令<br/><br/>
+<blockquote>
+$ aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 123456789088.dkr.ecr.us-east-1.amazonaws.com<br />
+Login Succeeded<br />
+$ docker build -t 123456789088.dkr.ecr.us-east-1.amazonaws.com/apidemo-lambda:1.0.0 .<br />
+$ docker push 123456789088.dkr.ecr.us-east-1.amazonaws.com/apidemo-lambda:1.0.0
+</blockquote>
+<br/>
+注：关于创建 Lambda Docker 镜像及本地测试请参见：<a href="https://docs.aws.amazon.com/lambda/latest/dg/images-create.html#images-create-from-base">Creating Lambda container images</a>, 此非本文的内容 <br/><br/>
+<h3>创建 Lambda 及 API Gateway 基础设施</h3><br/><br/>
+现在再回到  <code>terraform</code> 目录，执行前需把 <code>main.tf</code> 中设置 <code>count = 1</code> 开启对模块 <code>lambda-api-gateway</code> 的调用。照旧，先看下其中三个文件的内容<br/><br/>
+<strong>lambda-api-gateway/iam.tf</strong><br/><br/>
+<pre class="lang:default decode:true">resource "aws_iam_role" "apidemo_lambda_role" {
+  name               = "apidemo_lambda_role"
+  assume_role_policy = &lt;&lt;EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": ""
+    }
+  ]
+}
+EOF
+}<br/><br/>
+resource aws_iam_role_policy_attachment attach-lambda_basic_access_execution_role {
+  role       = aws_iam_role.apidemo_lambda_role.id
+  policy_arn = data.aws_iam_policy.lambdaBasicExecutionRole.arn
+}<br/><br/>
+
+data "aws_iam_policy" "lambdaBasicExecutionRole" {
+  name = "AWSLambdaBasicExecutionRole"
+}</pre>
+<br/>
+在 Lambda 最基本的角色权限，能够在 CloudWatch 中创建 Log Group, Log Stream, 并往上写日志<br/><br/>
+<strong>lambda-api-gateway/lambda.tf</strong><br/><br/>
+<pre class="lang:default decode:true ">resource "aws_lambda_function" "apidemo-lambda" {
+  function_name = "apidemo-lambda"
+  description = "Demo API Gateway with Lambda"
+  timeout       = 300
+  role          = aws_iam_role.apidemo_lambda_role.arn
+  package_type  = "Image"
+  image_uri     = "${var.ecr.repository_url}@${data.aws_ecr_image.lambda_image.id}"
+}<br/><br/>
+# this docker image must be present, or else can't create the Lambda function
+data aws_ecr_image lambda_image {
+  repository_name = var.ecr.name
+  image_tag       = var.image-tag
+}<br/><br/>
+variable image-tag {
+  default = "1.0.0"
+}<br/><br/>
+variable "ecr" {
+}
+</pre>
+<br/>
+创建一个 Lambda 并关联相应的 IAM role 和 Docker 镜像<br/><br/>
+<strong>lambda-api-gateway/api-gateway.tf</strong><br/><br/>
+<pre class="lang:default decode:true">resource "aws_api_gateway_rest_api" "demo-gateway-api" {
+  name = "demoapi"
+  api_key_source = "HEADER"
+  description = "Define REST APIs for demo"
+}<br/><br/>
+resource "aws_api_gateway_api_key" "demoapi-apikey" {
+  name = "demoapi-key"
+}<br/><br/>
+resource "aws_api_gateway_resource" "job_resource" {
+  rest_api_id = local.rest_api.id
+  parent_id   = local.rest_api.root_resource_id
+  path_part   = "jobs"
+}<br/><br/>
+resource "aws_api_gateway_resource" "jobid_resource" {
+  parent_id   = aws_api_gateway_resource.job_resource.id
+  path_part   = "{jobId}"
+  rest_api_id = local.rest_api.id
+}<br/><br/>
+resource "aws_api_gateway_method" "post_job" {
+  authorization = "NONE"
+  http_method   = "POST"
+  resource_id   = aws_api_gateway_resource.job_resource.id
+  rest_api_id   = local.rest_api.id
+  api_key_required = true
+}<br/><br/>
+resource "aws_api_gateway_method" get_job_status {
+  http_method   = "GET"
+  resource_id   = aws_api_gateway_resource.jobid_resource.id
+  rest_api_id   = local.rest_api.id
+  authorization = "NONE"
+  api_key_required = true
+}<br/><br/>
+resource aws_api_gateway_integration integration {
+  count = length(local.resource_methods)
+  rest_api_id = local.rest_api.id
+  resource_id = local.resource_methods[count.index].resource_id
+  http_method = local.resource_methods[count.index].http_method
+  integration_http_method = "POST"
+  type = "AWS_PROXY"
+  uri = aws_lambda_function.apidemo-lambda.invoke_arn
+}<br/><br/>
+resource "aws_api_gateway_deployment" "latest" {
+  rest_api_id = local.rest_api.id
+  stage_name = "stg"
+  description = "Deploy driveapi to staging"
+  depends_on = [
+    aws_api_gateway_integration.integration[0],
+    aws_api_gateway_integration.integration[1]
+  ]
+}<br/><br/>
+resource "aws_api_gateway_usage_plan" "demoapi_usage_plan" {
+  name = "demoapi-limit-access"<br/><br/>
+  api_stages {
+    api_id = local.rest_api.id
+    stage  = "stg"
+  }
+  depends_on = [
+    aws_api_gateway_deployment.latest
+  ]
+}<br/><br/>
+resource "aws_api_gateway_usage_plan_key" "plan_2_key" {
+  key_id        = aws_api_gateway_api_key.demoapi-apikey.id
+  key_type      = "API_KEY"
+  usage_plan_id = aws_api_gateway_usage_plan.demoapi_usage_plan.id
+}<br/><br/>
+resource "aws_lambda_permission" "allow_api_gatewall" {
+  count = length(local.api_path_levels)
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.apidemo-lambda.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn = "${local.rest_api.execution_arn}/${local.api_path_levels[count.index]}"
+}<br/><br/>
+locals {
+  api_path_levels = [
+    "*/${aws_api_gateway_method.get_job_status.http_method}${aws_api_gateway_resource.jobid_resource.path}",
+    "*/${aws_api_gateway_method.post_job.http_method}${aws_api_gateway_resource.job_resource.path}"
+  ]<br/><br/>
+  rest_api = aws_api_gateway_rest_api.demo-gateway-api<br/><br/>
+  resource_methods = [
+    aws_api_gateway_method.get_job_status,
+    aws_api_gateway_method.post_job
+  ]
+}</pre>
+<br/>
+终于来到本文最重要也是最复杂的地方了, 当然是最需要加以解释的，由后面的效果有助我们理解这一大段 Terraform 脚本。基本上就是创建一个使用 Docker 镜像的 Lambda, 在 API Gateway 中创建了一个 API <code>demoapi</code>, 因为是 REST API, 相应的资源是 <code>/jobs</code> 和 <code>/jobs/{jobId}</code>，并设置为 Lambda 的触发器，调用 API 需要在头上加上 <code>x-api-key</code>。<br/><br/>
+API 定义参照 REST API, 什么是资源，什么又是资源上的操作方法，然后把操作方法代理到相应的 Lambda，这一步叫做集成(Integration)。通过 API Gateway 想要调用 Lambda，需要在 Lambda 那一段加上相应的调用权限，最后通过使用计划(Usage Plan) 的方式把对资源的操作与 API Key 关联了起来。这一套建立起来之后，再最后就是部署到某个环境中去，API Gateway 就会为所定义的 API 生成一个 URL，开始使用了。<br/><br/>
+<h3>最终效果及测试</h3><br/><br/>
+执行 <code>terraform apply --auto-approve</code>, 如果一切顺利的话(运气不好的话，terraform 执行中可能用依赖的问题，解决办法可多执行几次，或加上 <code>depends_on</code>)，就可以开始调用前面定义的 APIs 了<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/10/lambda-api-gateway-1.png"><img class="aligncenter wp-image-11791" src="https://yanbin.blog/wp-content/uploads/2021/10/lambda-api-gateway-1.png" alt="" width="850" height="410" /></a><br/><br/>
+可以在 API Gateway 的 Resources 里去测试这两个 API，但这儿会跳过 API key 的验证。所以应该找到 Stages  里 API 的 URL 来测试<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/10/lambda-apigateway-2.png"><img class="aligncenter wp-image-11792" src="https://yanbin.blog/wp-content/uploads/2021/10/lambda-apigateway-2.png" alt="" width="825" height="277" /></a><br/><br/>
+在这个页面我们找到 endpoint 是 https://q0dejwgby4.execute-api.us-east-1.amazonaws.com/stg/*, 用 curl 命令来测试下<br/><br/>
+<pre class="lang:default decode:true ">$ curl -i https://q0dejwgby4.execute-api.us-east-1.amazonaws.com/stg/jobs/12345
+HTTP/2 403
+content-type: application/json
+content-length: 23
+......<br/><br/>
+{"message":"Forbidden"}%
+$
+$ curl -i -H "x-api-key:ZBM8yE3p7N8KZZ5MUkeKm730LZaag1l31tYJaaOp" \
+> https://q0dejwgby4.execute-api.us-east-1.amazonaws.com/stg/jobs/12345
+HTTP/2 200
+content-type: application/json
+content-length: 40
+......<br/><br/>
+{
+    "message": "job[12345] is done"
+}
+$
+$ curl -i -X POST -H "Content-Type:application/json" \
+> https://q0dejwgby4.execute-api.us-east-1.amazonaws.com/stg/jobs --data '{"name": "new_job_xyz"}'
+HTTP/2 403
+content-type: application/json
+content-length: 23
+......<br/><br/>
+{"message":"Forbidden"}%
+$
+$ curl -i -X POST -H "x-api-key:ZBM8yE3p7N8KZZ5MUkeKm730LZaag1l31tYJaaOp" -H "Content-Type:application/json" \
+> https://q0dejwgby4.execute-api.us-east-1.amazonaws.com/stg/jobs --data '{"name": "new_job_xyz"}'
+HTTP/2 201
+content-type: application/json
+content-length: 73
+......<br/><br/>
+{
+    "message": "job[7ed815c9-27e6-4e87-833b-c484d0696a8c] submitted"
+}</pre>
+<br/>
+不提供 <code>x-api-key</code> 就不允许调用相应的 API, 得到  403: Forbidden 的消息。那么  <code>x-api-key</code> 从哪儿来的呢？我们前面自己定义的，可在 API Keys 里找到<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/10/lambda-apigateway-3.png"><img class="aligncenter wp-image-11793" src="https://yanbin.blog/wp-content/uploads/2021/10/lambda-apigateway-3.png" alt="" width="850" height="461" /></a><br/><br/>
+这也验证了 API Key 是生效了的，当我们对 <code>aws_api_gateway_method</code> 设置了 <code>api_key_required</code> 时，相应的资源上就会标记为 <code>API Key  Required</code>.<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/10/lambda-apigateway-4.png"><img class="aligncenter wp-image-11794" src="https://yanbin.blog/wp-content/uploads/2021/10/lambda-apigateway-4.png" alt="" width="579" height="234" /></a><br/><br/>
+API Gateway 的 API Key 不仅仅是用来允不允许对某个资源的访问，还能用来限制对 API 的访问配额，所以是通过 <code>aws_api_gateway_usage_plan</code> 让 API 定义与 API Key 进行关联的。它可以控制对某个 API 一秒之内最多访问的次数，或一天(周) 之内最多访问多少次，前面的 Terraform 脚本中没有进行这样的配置限制。<br/><br/>
+最后别忘了 Lambda + API Gateway 中的 Lambda 这一主要劳动力，看看它发生了什么变化，这得上一张大图<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/10/lambda-apigateway-5.png"><img class="aligncenter wp-image-11795" src="https://yanbin.blog/wp-content/uploads/2021/10/lambda-apigateway-5.png" alt="" width="850" height="729" /></a><br/><br/>
+每一个 REST API 对应一个 Lambda 的触发器，并有相应的权限，同时 API Key 在这里也能看到，所以对像 <code>POST /jobs</code> 和 <code>GET /jobs/{jobId}</code> 可以使用不同的 API Key.<br/><br/>
+如果在 API Gateway 的 Resource 中新加了一个  API， 也部署了，但在 Lambda 端未加上相应的权限，调用时也是得到 401: Forbidden<br/><br/>
+记得前面我们用 Terraform 生成的 API Gateway Resources 中，请求方法的 <code>Method Response</code> 显示为<br/><br/>
+<img class="aligncenter wp-image-11797" src="https://yanbin.blog/wp-content/uploads/2021/10/lambda-apigateway-6.png" alt="" width="207" height="172" /><br/><br/>
+而通过 AWS 控制台页面创建的一个请求方法的  <code>Method Response</code> 有些不一样，是这样子的<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/10/lambda-apigateway-7.png"><img class="aligncenter wp-image-11798" src="https://yanbin.blog/wp-content/uploads/2021/10/lambda-apigateway-7.png" alt="" width="215" height="178" /></a><br/><br/>
+那么这有什么影响呢？我也不确定，反正 <code>Integration Request</code> 那个卡片里的 Type 都是 <code>LAMBDA_PROXY</code>。之前碰过好像 Terraform 创建的 Resource 会出现 401: Forbidden 的情况，但后来又消失了。想要达成与 Web 控制台创建的一样效果的话，在 Terraform 中还要加上以下的 <code>aws_api_gateway_method_response</code> 和 <code>aws_api_gateway_integration_response</code> 两个声明 <br/><br/>
+<pre class="lang:default decode:true ">resource "aws_api_gateway_method_response" "method_response" {
+  count = length(local.resource_methods)
+  rest_api_id = local.rest_api.id
+  resource_id = local.resource_methods[count.index].resource_id
+  http_method = local.resource_methods[count.index].http_method
+  status_code = "200"<br/><br/>
+  response_models = {
+    "application/json" = "Empty"
+  }<br/><br/>
+}<br/><br/>
+resource "aws_api_gateway_integration_response" "integration_response" {
+  count = length(local.resource_methods)
+  rest_api_id = local.rest_api.id
+  resource_id = local.resource_methods[count.index].resource_id
+  http_method = local.resource_methods[count.index].http_method
+  status_code = "200"<br/><br/>
+  response_templates = {
+    "application/json" = ""
+  }
+}</pre>
+<br/>
+这两个一加，在执行 Terraform 时更容易出现依赖的问题。一个办法是这两个语句可以在后期补上，再执行  Terraform 脚本，或让它们去依赖 <code>aws_api_gateway_deployment</code>。<br/><br/>
+另外在 Lambda 中处理请求与响应时还有不少东西需要不断深入，比如说<br/><br/>
+<ol>
+    <li>像  /job/{jobId} 中 pathParameter 怎么从  event 中取</li>
+    <li>像 ?key1=value1 中的 queryParameter 怎么从 event 中取</li>
+    <li>post body 如何从 event 中取，以及它与请求时的 <code>Content-Type</code> 的关系</li>
+    <li>post body 中如何获得 multipart/form-data 文件上传表单数据及文件内容</li>
+    <li>如何处理请求与响应数据的压缩，Content-Encoding, Accept-Encoding</li>
+    <li>如何进行文件下载，Content-Type: application/octet-stream, Content-Disposition: attachment; filename="abc.zip" </li>
+</ol>
+<br/>
+Lambda + API Gateway 的  <code>{"message":"Forbidden"}</code> 的情况很容易让人抓狂，其中有一个原因居然与本地 DNS 缓冲有关，必要时须清一下它<br/><br/>
+ Mac OS X Yosemite and later:<br/><br/>
+<blockquote>
+sudo killall -HUP mDNSResponder
+</blockquote>
+<br/>
+Windows:<br/><br/>
+<blockquote>
+ipconfig /flushdns
+</blockquote>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://bogotobogo.com/DevOps/AWS/aws-API-Gateway-Lambda-Terraform-with-ECR-Container.php">API GATEWAY INVOKING LAMBDA FUNCTION WITH TERRAFORM - LAMBDA CONTAINER</a></li>
+    <li><a href="https://jarombek.com/blog/sep-7-2018-aws-lambda-api-gateway">Using AWS Lambda with API Gateway and Terraform</a></li>
+    <li><a href="https://github.com/hashicorp/terraform/issues/10494">Document how to use a LAMBDA_PROXY #10494</a></li>
+    <li><a href="https://aws.amazon.com/premiumsupport/knowledge-center/api-gateway-troubleshoot-403-forbidden/">How do I troubleshoot HTTP 403 Forbidden errors from API Gateway?</a></li>
+    <li><a href="https://aws.amazon.com/premiumsupport/knowledge-center/malformed-502-api-gateway/">How do I resolve API Gateway "malformed Lambda proxy response" errors or 502 status codes?</a></li>
+    <li><a href="https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html#api-gateway-simple-proxy-for-lambda-output-format">Output format of a Lambda function for proxy integration</a></li>
+</ol>

@@ -1,0 +1,28 @@
+---
+title: Scala 2.10 新特性之使用隐式类进行类型隐式转换
+url: /scala-2-10-new-features-implicit-class/
+date: 2013-01-18T12:50:28-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - Java
+  - Scala
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5399 
+wpStatus: publish
+views: 2676
+lastmod: 2016-04-21T02:59:40-05:00
+---
+
+<p>在 Scala 2.10.0 之前类型的隐式转换必须通过隐式方法来完成，现在的 Scala 可以用 implicit class 来声明类，并且它的主构造器 (Primary Constructor) 只有一个参数时，就可以用来把参数隐式转换成该类型。</p><p>能理解上面什么意思，知道怎么用隐式类吗？ 就上面那句话，我自己都不知道在说什么。</p><p>首先要知道 Scala 先前是怎么依据隐式方法进行类型的隐式转换，其次又何谓主构造器呢？ 关于 Scala 2.10.0 的 implicit class，官方的解释在这里 <a title="Scala 2.10.0 implicit class" href="http://docs.scala-lang.org/sips/pending/implicit-classes.html" target="_blank">http://docs.scala-lang.org/sips/pending/implicit-classes.html</a> 再多说只能让大家更摸不到头，实例演示是王道：</p><p><img class="aligncenter size-full wp-image-5401" src="http://unmi.cc/wp-content/uploads/2013/01/scala-2.10.0-implicit-class.png" alt="scala-2.10.0-implicit-class" width="750" height="200" /> <!--more--></p><p>效果应该很明显。字符串在调用 sayHello 方法时，发现自己没有这个方法，就试图用某种方式转型成具有 sayHello 方法的类型，这里它找到了 implicit class 这个隐式类可以用来转型成 Person 类，最后调用了生成的 Person 实例的  sayHello 方法。</p><p>那什么是主构造函数呢，就是跟在 class 关键字后面那部分，因为 Scala 比 Java 更省事，声明类的时候把主构造函数也一同声明了。</p><p>implicit class 类名后的参数列表必定是一个参数的，否则会报错： <span style="color: #800000;">error: implicit classes must accept exactly one primary constructor parameter</span> 因为这种类型的类非常大的一个用途就是用作隐式转型。</p><p>回想一下，之前需要通过隐式方法来进行隐式转型，类似的，这样的隐式方法也必须是只能一个参数。<span style="color: #0000ff;">实质上隐式类就是声明类的同时，还帮你创建了一个隐式方法用来转型用，并且这个原本就叫做隐式方法的方法比原来隐藏的更深了</span>，这样就好理解了吧。</p><p>既然我们已经有了隐式方法帮助转型为何还要增加一个隐式类的概念呢？ 我的观点有如下几个(敝人列举的时候一般以几点开头，因为不是领导，而且再点点的同时还正在思考，许多东西都是在思考的时候发掘出来的)：</p><p>1. implicit class 的时候把类型和隐式方法都准备好了，无须像下面这样分两步：</p><pre class="brush:scala">class Person(val name: String) {<br/>
+    def sayHello = s"Hello I'm $name."<br/>
+}<br/>
+<br/>
+implicit final def str2Person(name: String) = new Person(name)</pre><p>先声明一个类，再声明隐式方法来创建这个类实例。而且这个隐式方法与类是分离的。</p><p>2. 用声明的隐式方法转型，这个隐式方法必须是对当前作用域可见，或是存在于目标类型的伴生对象中。如果是存在别的类中，如 cc.unmi.MyClass 中，必须用 <span style="color: #800000;">import cc.unmi.MyClass._</span> 像静态引入一样包括进来，光 <span style="color: #800000;">import cc.unmi.MyClass</span> 到这个级别还不够。如果是用的隐式类，引入这个隐式类即可。</p><p>还能补充吗？ 我们说隐式类由主构造函数自动具有一个隐式方法，虽然这样的类看起来很干净，但因此也只能有这么一个转型方法，想要更多的转型方法，还是要呼唤隐式方法。当然隐式方法方法真多了，你一定会迷惑的。</p><p>另外，对隐式类标注的 Annotation @bar，实际会同时标注到类和隐式方法上去了，但这个 Annotation 写成 @(bar genClass) 的话只会作用了类上。</p><p>参考：<a href="http://docs.scala-lang.org/sips/pending/implicit-classes.html" target="_blank">http://docs.scala-lang.org/sips/pending/implicit-classes.html</a></p>

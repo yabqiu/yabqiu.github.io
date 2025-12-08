@@ -1,0 +1,33 @@
+---
+title: 用 p6spy 来观察 Java 程序中执行的所有 SQL 语句（四. 结合 SQL Profiler）
+url: /p6spy-view-java-executing-sql-profiler/
+date: 2009-03-30T20:34:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - Log
+  - p6spy
+  - SqlProfiler
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 290 
+wpStatus: publish
+views: 457
+lastmod: 2015-06-30T21:43:01-05:00
+---
+
+<p>p6spy 虽好，但把 SQL 语句输出到文件或是控制台中看起来有些吃力。若能图形界面展示出来便可一目了然，亲切许多。有种方法是配置 p6spy.properties 使用 Log4j 的 SocketAppender，然后启动 Log4j 的 org.apache.log4j.net.SocketServer 界面，或是在 Eclipse log4j plug-in 中也能观察所执行的 SQL 语句。</p><p>不过还有种更专业做法，本篇将介绍 p6spy 如何结合 Sql Profiler 或 IronTrack SQL 来使用，并附以贴图，来感受一下吧。也以此来完成关于 p6spy 的这个系列。其实你到后面也会发现，即便是用 Sql Pofier 的实现过程也是借助了 Log4j 的 SocketApender，你可以从它自己带的 p6spy.properties 文件中的配置看出来，即其中的 log4j.appender.SQLPROFILER_CLIENT=org.apache.log4j.net.SocketAppender 这么一个配置。<!--more--></p><p>结合 Sql Profiler 的文章网上较多，这里参考了文后链接中的几篇文章写就而成。下面分别以结合 Sql Profiler 和 IronTack SQL 说明。关于 p6spy 的使用配置可参考：<a href="http://unmi.cc/p6spy-view-java-executing-sql-tomcat/" target="_blank">用 p6spy 来观察 Java 程序中执行的所有 SQL 语句(二. Tomcat 下的配置）</a>。你也可以配置在应用中，即把相关 jar 包放在应用的 WEB-INF/lib 下，p6spy.properties 放在应用的 WEB-INF/classes 中。所以下面有关于 p6spy 的配置就不再重复了。</p><p><strong>p6spy + Sql Profiler 观察 SQL 语句<br /> </strong><br /> Sql Profiler 的下载地址：<a href="http://sourceforge.net/project/showfiles.php?group_id=80782">http://sourceforge.net/project/showfiles.php?group_id=80782</a>，当前版本是 0.3，下载的文件是 sqlprofiler-0.3-bin.zip。</p><p>1. 把压缩包中的 sqlprofiler.jar 拷到 p6spy.jar 所在的目录中，比如 Tomcat 5.x 的 common/lib 目录中<br /> 2. 你也应该看到了压缩包中还有个 p6spy.properties 文件，我们就在这个文件基础上少作改动，把它放在加载 p6spy.jar 的加载器能见的位置上，如 Tomcat 5.x 的 common/classes 目录中。<br />     注意：如果你在 Tomcat 中，p6spy.jar 和 sqlprofiler.jar 是由 commons 加载器加载的，那么要用到的 log4j-x.x.x.jar 也必须放在与他们同一目录中由 cmmons 类加载器来加载，如果仍然在应用的 WEB-INF/lib目录中的话，log4j 的类对于 p6spy 和 sqlprofiler 来说不可见。如果你对于类加载器不熟的话，还是别把事情搞太复杂了，把那些 jar 文件全部放到应用的 WEB-INF/lib 中吧，但是配置连接池的时候又可能碰到新问题。<br /> 3. 修改 p6spy.properties 文件，启用你所用的 realdriver，如对于 oracle 是 realdrive=oraclejdbc.driver.OacleDriver。<br /> 4. 命令行下进到 sqlprofiler.jar 所在的目录，执行 java -jar sqlprofiler.jar，出现界面，监听 p6spy 的 SQL 语句输出<br /> 5. 启动应用，进行业务操作，就能在Sql Profile 界面上直观的看到你需要的东西了。界面上有三个标签，分别看截图：</p><div><img src="http://unmi.cc/wp-content/uploads/2009/03/sqlprofiler1.jpg" alt="sqlprofiler1.jpg" width="750" height="534" border="0" /> </div><div><strong>Profiler 标签页</strong></div><div><img src="http://unmi.cc/wp-content/uploads/2009/03/sqlprofiler2.jpg" alt="sqlprofiler2.jpg" width="750" height="534" border="0" /></div><div><strong>Logger 标签页</strong></div><div><img src="http://unmi.cc/wp-content/uploads/2009/03/sqlprofiler3.jpg" alt="sqlprofiler3.jpg" width="750" height="534" border="0" /> </div><div><strong>Analysis 标签页</strong></div><div><img src="http://unmi.cc/wp-content/uploads/2009/03/sqlprofiler4.jpg" alt="sqlprofiler4.jpg" width="750" height="534" border="0" /> </div><div><strong>生成建议创建索引的脚本</strong></div><p>再看看保存成的建议创建索引的 SQL 脚本：</p><pre class="brush:sql">CREATE INDEX om_customer_user_index ON om_customer_user ( user_id );<br/>
+CREATE INDEX om_order_headers_index ON om_order_headers ( creation_date,org_id );<br/>
+CREATE INDEX om_order_type_index ON om_order_type ( type_name );<br/>
+CREATE INDEX sys_lookups_index ON sys_lookups ( lookup_type,lookup_code );<br/>
+CREATE INDEX sys_lookups_index2 ON sys_lookups ( lookup_type );<br/>
+CREATE INDEX sys_menu_index ON sys_menu ( application_id );<br/>
+CREATE INDEX sys_messages_lines_items_index ON sys_messages_lines_items ( reader_id,status,flag,reader_type,segmen3,item_id );<br/>
+CREATE INDEX sys_org_v_index ON sys_org_v ( org_type_id );</pre><p><strong>注：</strong>你不一定要在应用所在的机器上运行 SQL Profiler，并且常常需要在在某台机器上监听应用服务器的 SQL 语句执行，方法就是修改 p6spy.properties 中的 log4j.appender.SQLPROFILER_CLIENT.RemoteHost=localhost，把 RemoteHost 参数由 localhost 改成你要机器的 IP，然后在那台机器上运行 SQL Profiler 监听程序即可。还有 SQL Profiler 要比应用先启动，因为它是以被动的方式来监听 p6spy 的输出。</p><p><strong>p6spy + IronTrack SQL 观察 SQL 语句</strong></p><p>考虑到篇幅和文章主题的鲜明性，还是把这部分内容放到单独日志中，请关注下一篇：用 p6spy 来观察 Java 程序中执行的所有 SQL 语句(五. 结合 IronTrack SQL）</p><p>参考：1. <a href="http://www.javaresearch.org/article/42102.htm" target="_blank">使用Log4j搭建一个日志服务器</a><br />         2. <a href="/hexuzhong/archive/2006/01/28/29345.html" target="_blank">利用P6SPY ＋SQL Profiler记录、统计web app对数据库的操作</a><br />         3. <a href="http://www.cnblogs.com/wllyy189/archive/2008/09/25/1298870.html" target="_blank">P6Spy + SQL Profiler + IronTrackSQL【修改】</a></p>

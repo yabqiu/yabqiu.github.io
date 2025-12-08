@@ -1,0 +1,70 @@
+---
+title: 设置 NSZombieEnabled 定位 EXC_BAD_ACCESS 错误
+url: /nszombieenabled-locate-exc_bad_access-error/
+date: 2011-09-20T12:29:50-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - ios
+  - objective-c
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4046 
+wpStatus: publish
+views: 3455
+lastmod: 2021-09-03T14:45:32-05:00
+---
+
+我们做 iOS 程序开发时经常用遇到 EXC_BAD_ACCESS 错误导致 Crash，出现这种错误时一般 Xcode 不会给我们太多的信息来定位错误来源，只是在应用 Delegate 上留下像<span style="color: #800000;"> Thread 1: Program received signal: "EXC_BAD_ACCESS"</span>，让问题无从找起。</p>
+<br/>
+比如你对已释放的对象发送消息时就会出现，EXC_BAD_ACCESS，再如 release 的对象再 release，release 那些 autorelease 的对象等也会报这样的错。默认设置下 Xcode 不会给你定位具体是哪一行代码，不该去使用已释放的对象，或者 release 用错了。<br/><br/>
+比如 UIViewController 子类中这样的代码：<!--more--><br/><br/>
+<pre class="lang:default decode:true">static NSMutableArray *array;<br/><br/>
+- (void)viewDidLoad
+{
+    [super viewDidLoad];
+    array = [[NSMutableArray alloc] initWithCapacity:5];
+    [array release];
+}<br/><br/>
+- (void) viewWillAppear:(BOOL)animated {   
+    [array addObject:@"Hello"];
+}</pre>
+<br/>
+上面的代码就会出现 EXC_BAD_ACCESS 错误，但我执行时 Xcode 一出错却是定位在我在 AppDelegate 的 application:didFinishLaunchingWithOptions: 方法上的某行了，如果代码量多了，要查找具体问题非常难，但凭经验了。<br/><br/>
+不过 NSZombieEnabled 环境变量可以帮我们的忙，就是当设置NSZombieEnabled环境变量后，一个对象销毁时会被转化为_NSZombie，设置NSZombieEnabled后，当你向一个已经释放的对象发送消息，这个对象就不会向之前那样Crash或者产生 一个难以理解的行为，而是放出一个错误消息，然后以一种可预测的可以产生debug断点的方式消失， 因此我们就可以找到具体或者大概是哪 个对象被错误的释放了。 <br/><br/>
+对 Xcode 设置了 NSZombieEnabled 之后，Xcode 会明确定位在行 [array addObject:@"Hello"]，然后控制台下报的错误信息是：<br/><br/>
+<span style="color: #800000;">*** -[__NSArrayM addObject:]: message sent to deallocated instance 0x6557370</span><br/><br/>
+如何设置 NSZombieEnabled 呢，在 Xcode3 和 Xcode4 下设置不一样，Xcode4 下设置很简单。<br />
+Xcode3 下 NSZombieEnabled 设置方法如下：<br/><br/>
+1.   在XCode左边那个Groups &amp; Files栏中找到Executables，双击其中的一项，或者右键Get Info；<br />
+2.  切换到Arguments <br />
+3.  这里一共有两个框，在下面那个Variables to be set in the environment:点+号添加一项，Name里填NSZombieEnabled，Value填Yes，要保证前面的钩是选中的。<br/><br/>
+Xcode4 下设置 NSZombieEnabled 的方法：<br/><br/>
+你可以点击 Xcode4 菜单 Product -&gt; Edit Scheme -&gt; Arguments, 然后将点击”加号”, 将 NSZombieEnabled 参数加到 Environment Variables 窗口中, 后面的数值写上 ”YES”.<br/><br/>
+或者在 Xcode4 菜单 Product -&gt; Edit Scheme -&gt; Diagnostics 设置窗口中直接勾上 Enable Zombie Objects 即可，Xcode 可用 cmd＋shift＋&lt; 进到这个窗口。<br/><br/>
+<p style="text-align: center;"><img class="aligncenter" src="/wp-content/uploads/2011/09/NSZombieEnabled.png" alt="NSZombieEnabled" width="696" height="463" /></p>
+<br/>
+Xcode4 已经考虑到了现在的要求，所以提供了更便捷的设置的方式，你也可以在这个窗口中设置其他一些参数，你肯定能由此获得更多的帮助信息。<br/><br/>
+另外再说一下，如果没有为 Xcode 设置 NSZombieEnable，像下面的代码或许可以正确执行，打印出你所期望的结果 “Hello”<br/><br/>
+<pre class="lang:default decode:true ">static NSMutableArray *array;<br/><br/>
+- (void)viewDidLoad
+{
+    [super viewDidLoad];
+    array = [[NSMutableArray alloc] initWithCapacity:5];
+    [array release];
+    [array addObject:@"Hello"];
+    NSLog(@"%@", [array objectAtIndex:0]);
+}</pre>
+<br/>
+但是一旦加上了 NSZombieEnable 设置，上面的代码行  [array addObject:@"Hello"] 也将无法投机取巧了，同样会得到错误提示：<br/><br/>
+<span style="color: #800000;">*** -[__NSArrayM addObject:]: message sent to deallocated instance 0x6557370</span><br/><br/>
+即使该 array 所指向的内存还是原来的数据也不能逃脱掉 NSZombieEnable 的法眼。也就是之所以未设置 NSZombieEnable 时上面代码能得到正确结果，是因为，虽然 [array release] 是标记为释放掉该内存块，但是后面使用 array 时，因为该指针指向的内存数据未被覆盖，所以未出错，这和 C++ 的指针 delete 后的效果是一样的。<br/><br/>
+参考：1. <a href="http://mobilesolutions.blog.163.com/blog/static/18922417620115301051794/" target="_blank" rel="noopener">设置NSZombieEnabled解决EXC_BAD_ACCESS错误</a><br />
+            2. <a href="http://lihailiang123456.blog.163.com/blog/static/174652129201132811149508/?fromdm&amp;fromSearch&amp;isFromSearchEngine=yes" target="_blank" rel="noopener">查找 EXC_BAD_ACCESS 问题根源的方法 </a><br />
+            3. <a href="http://huchenqiang90.blog.163.com/blog/static/11250080020114324222909/?fromdm&amp;fromSearch&amp;isFromSearchEngine=yes" target="_blank" rel="noopener">XCode调试技巧-纠结的EXC_BAD_ACCESS</a>

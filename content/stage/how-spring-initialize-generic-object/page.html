@@ -1,0 +1,149 @@
+---
+title: Spring 如何初始化泛型类实例
+url: /how-spring-initialize-generic-object/
+date: 2016-12-09T01:20:05-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Spring
+tags: 
+  - Spring
+  - Spring Boot
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7608 
+wpStatus: publish
+views: 3681
+lastmod: 2021-09-03T17:02:36-05:00
+---
+
+在 Java 中对于泛型类型，比如这样简单的类定义</p>
+<br/>
+<blockquote>
+class Processor&lt;T&gt; {}
+</blockquote>
+<br/>
+如果直接初始化时要指定具体类型的话，我们可以这么写<br/><br/>
+<blockquote>
+Processor&lt;String&gt; processor = new Processor&lt;&gt;();  //Java 7 及以上版本
+</blockquote>
+<br/>
+<strong><span style="color: #0000ff;">Spring 对基本泛型的初始化</span></strong><br/><br/>
+如果我们要用 Spring 容器来初始化这个类，比如给上面那个类加个 @Named 注解<br/><br/>
+<blockquote>
+@Named<br />
+class Processor&lt;T&gt; {<br />
+}
+</blockquote>
+<br/>
+这时候我们通过 <code>beanFactory.getBean(Processor.class)</code> 得到的是一个什么样的实例呢？Spring 怎么知道要指定什么具体类型呢？很简单，任何不确定的情况都是 Object。所以通过容器得到的  <code>Processor</code> 实例相当于用下面代码构造出来的<br/><br/>
+<blockquote>
+Processor processor = new Processor();  //更准确来讲是 Processor&lt;Object&gt; processor = new Processor&lt;&gt;();
+</blockquote>
+<br/>
+<span style="color: #0000ff;"><strong>再进一步</strong></span>，对于有上限约束的泛型定义，Spring 才如何应对呢？像<!--more--><br/><br/>
+<pre class="lang:default decode:true">@Named
+class Processor&lt;T extends Number&gt; {
+}</pre>
+<br/>
+类似的，<span style="color: #800000;">class Processor&lt;T&gt;</span> 相当于 <span style="color: #800000;">class Processor&lt;T extends Object&gt;</span>, 因此 Spring 在具体类型未明的情况下也是要用最顶层可接受类型，Spring 将会针对上面的代码实例出下面的对象<br/><br/>
+<pre class="lang:default decode:true">Processor&lt;Number&gt; processor = new Processor&lt;&gt;();</pre>
+<br/>
+<strong><span style="color: #0000ff;">再复杂一些</span></strong>，泛型的子类型仍然是泛型的情况，如下代码<br/><br/>
+首先定义了一个泛型接口<br/><br/>
+<pre class="lang:default decode:true">public interface Service&lt;T&gt; {
+  String process(T t);
+}</pre>
+<br/>
+然后要求 Spring 容器来初始下面的 NumberService 实例<br/><br/>
+<pre class="lang:default decode:true ">@Named
+public class NumberService&lt;R extends Number&gt; implements Service&lt;R&gt; {<br/><br/>
+  @Override
+  public String process(R number) {
+    return "Process Number: " + number;  
+  }
+}</pre>
+<br/>
+Spring 在初始化 NumberService 实例同样是要取用最顶层可接受类型，通过下面的代码来初始化<br/><br/>
+<pre class="lang:default decode:true">NumberService&lt;Number&gt; numberService = new NumberService&lt;&gt;();</pre>
+<br/>
+<strong><span style="color: #0000ff;">再终极一些</span></strong>，泛型类型并且类型也是泛型的，Spring 该如何拿捏？<br/><br/>
+<pre class="lang:default decode:true">@Named
+public class Processor&lt;T&gt; {<br/><br/>
+  @Inject
+  Private Service&lt;T&gt; service;
+}</pre>
+<br/>
+此时 Spring 该如何确定上面的类型 T 呢？因为有了 Service&lt;T&gt; service 属性的存在而不能再笼统的想像 Spring 会采用下面的代码来初始化 Processor 实例<br/><br/>
+<blockquote>
+<del>Processor&lt;Object&gt; processor = new Processor&lt;&gt;();</del>
+</blockquote>
+<br/>
+而是 Processor 的具体类型必须通过被注入的 Service&lt;T&gt; 实例的具体类型来推断的，这就取决于在 Spring 容器中存在什么样的 Service&lt;T&gt; 实例。举两个例子<br/><br/>
+如果 Spring 中有初始化<br/><br/>
+<pre class="lang:default decode:true">@Named
+public class StringService implements Service&lt;String&gt; {
+  @Override
+  public String process(String string) {
+    return "Process String: " + string;
+  }
+}</pre>
+<br/>
+那么前面的 Processor&lt;T&gt; 实例就相当于<br/><br/>
+<pre class="lang:default decode:true">Processor&lt;String&gt; processor = new Processor&lt;&gt;();
+processor.service = new StringService();</pre>
+<br/>
+如果 Spring 中初始化的 Service&lt;T&gt; 是前面那个 NumberService&lt;R extends Number&gt; implements Service&lt;R&gt;, 那么 Spring 容器中的 Processor&lt;T&gt; 实例相当于<br/><br/>
+<pre class="lang:default decode:true">Processor&lt;Number&gt; processor = new Processor&lt;&gt;();
+processor.service = new NumberService&lt;Number&gt;();</pre>
+<br/>
+那如果前面的 NumberService 和 StringService 同时在 Spring 容器中注册了呢？Spring 同样要为难了，在没有 @Primary 的情况下无法确定使用哪个实例来注入 Service&lt;T&gt; service 属性了，出现类似错误<br/><br/>
+<blockquote>
+2016-12-09 00:56:50.922  WARN 4950 --- [           main] s.c.a.AnnotationConfigApplicationContext : Exception encountered during context initialization - cancelling refresh attempt: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'processor': Unsatisfied dependency expressed through field 'service'; nested exception is org.springframework.beans.factory.NoUniqueBeanDefinitionException: No qualifying bean of type 'cc.unmi.Service&lt;?&gt;' available: expected single matching bean but found 2: numberService,stringService<br />
+2016-12-09 00:56:50.941 ERROR 4950 --- [           main] o.s.b.d.LoggingFailureAnalysisReporter   : <br />
+<br />
+***************************<br />
+APPLICATION FAILED TO START<br />
+***************************<br />
+<br />
+Description:<br />
+<br />
+Field service in cc.unmi.Processor required a single bean, but 2 were found:<br />
+    - numberService: defined in file [/Users/Yanbin/Workspaces/github/spring-generic-demo/target/classes/cc/unmi/NumberService.class]<br />
+    - stringService: defined in file [/Users/Yanbin/Workspaces/github/spring-generic-demo/target/classes/cc/unmi/StringService.class]<br />
+<br />
+<br />
+Action:<br />
+<br />
+Consider marking one of the beans as @Primary, updating the consumer to accept multiple beans, or using @Qualifier to identify the bean that should be consumed
+</blockquote>
+<br/>
+这和普通属性的注入时有多个可选实例时是一样的错误。<br/><br/>
+<strong><span style="color: #0000ff;">总结一下</span></strong><br/><br/>
+如果 Spring 在初始化泛型类时，未提供任何具体类型则会采用最上限的类型来初始化实例<br/><br/>
+<ol>
+    <li>@Named class Processor&lt;T&gt;  -&gt;  new Processor&lt;Object&gt;()</li>
+    <li>@Named class Processor&lt;T extends Number&gt; -&gt; new Processor&lt;Number&gt;();</li>
+</ol>
+<br/>
+如果泛型类型与被注入的属性的具体类型有关联，则由属性类型推断出主类型<br/><br/>
+<blockquote>
+@Named class Processor&lt;T&gt; {<br />
+  @Inject Service&lt;T&gt; service;<br />
+}
+</blockquote>
+<br/>
+此时 Spring 容器中存在 class StringService implements Service&lt;String&gt; 的实例，则会由属性 service(StringService 实例) 推断出 Processor 的具体类型是 Processor&lt;String&gt;<br/><br/>
+当然这个 Processor 类也是可以定义的稍复杂一些，如<br/><br/>
+<blockquote>
+@Named class Processor&lt;T extends Number&gt; {<br />
+    @Inject Service&lt;T&gt; service;<br />
+}
+</blockquote>
+<br/>
+&nbsp;<br/><br/>
+关于本文的示例代码可参考 <a href="https://github.com/yabqiu/spring-generic-demo">https://github.com/yabqiu/spring-generic-demo</a>, 请运行 mvn spring-boot:run 查看输出结果来理解 Spring 怎么去初始化泛型类实例的。

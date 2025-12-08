@@ -1,0 +1,125 @@
+---
+title: Java 中显式 throw 与调用只 throw 异常方法的区别
+url: /java-explicitly-throw-and-call-only-throw-function/
+date: 2025-04-16T14:14:53-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Exception
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14137 
+wpStatus: publish
+views: 91
+lastmod: 2025-04-17T01:09:48-05:00
+---
+
+Java 代码中如果显式的用 <code>throw</code> 关键字抛出异常，那么在该分支中其后的语句不可到达，并且即使对于有返回值的函数也不必写 <code>return</code>  语句了。像下面的代码<br/><br/>
+<blockquote>
+<div>
+<pre class="lang:default decode:true ">private static int foo(int num) {
+    if (num == 0) {
+        throw new RuntimeException("");
+    } else {
+        return num + 1;
+    }
+}</pre>
+</div>
+</blockquote>
+<br/>
+以上代码是合法的。要清洁代码的话，最后的 <code>return num + 1</code>  不必写在 <code>else</code> 条件中，这样写只是为了验证抛出异常后不必有返回值。<br/><br/>
+比如我们想对该代码进行重构，把 <code>throw</code> 语句抽取到一个方法中，以便于在该方法中集中处理错误信息，于是变成了<!--more--><br/><br/>
+<pre class="lang:default decode:true ">private static int foo(int num) {
+    if (num == 0) {
+        panic(-1, "something", "wrong");
+    } else {
+        return num + 1;
+    }
+}<br/><br/>
+private static void panic(int errorCode, String... message) {
+    throw new RuntimeException("errorCode: %s, message: %s".formatted(errorCode, String.join(" ", message)));
+}
+</pre>
+<br/>
+看起来是把整条  <code>throw</code> 语句置换成的 <code>panic()</code> 方法调用, 咋一看没什么问题，可是上面代码无法编译通过<br/><br/>
+<blockquote>
+javac Test.java<br />
+Test.java:12: error: missing return statement<br />
+        }<br />
+        ^<br />
+1 error
+</blockquote>
+<br/>
+因为 Java 编译器只看在当前代码行有没有 <code>throw</code> 关键字，才会认定后面的语句会否到达或可省略 <code>return</code> 语句，把 <code>throw</code>  关键字藏到一个方法中(即使该方法直接 throw 异常) 就不能理解了。<br/><br/>
+这时候保证方法只有一个出口就有成效了，修改后的代码<br/><br/>
+<pre class="lang:default decode:true ">private static int foo(int num) {
+    if (num == 0) {
+        panic(-1, "something", "wrong");
+    }
+    return num + 1;
+}
+</pre>
+<br/>
+如此就和显式 <code>throw</code> 异常一样的效果了，但会给阅读代码带来困惑，必须清楚 <code>panic()</code> 方法必定是抛出了异常，而不能在某种逻辑下不抛异常，而正常执行了 <code>if</code> 语句后续的代码。<br/><br/>
+<code>panic</code> 是借鉴了 Go, Rust 语言中的用法，<code>panic</code> 是 Go 语言的关键字，<code>panic!</code> 是 <code>Rust</code> 的宏，它们都能立即抛出异常。<br/><br/>
+<blockquote>
+// Go language<br />
+panic("something went wrong!")
+// Rust language<br />
+panic!("something went wrong!");
+</blockquote>
+<br/>
+在 <code>panic()</code> 或 <code>panic!()</code> 的语句都不可到达。<code>panic</code> 不是 Java 的关键字，但如果在 Java 中也约定用 <code>panic()</code> 表明此处必抛出异常的，就必须调整后代码中的 if/else 条件语句，以保证 <code>panic()</code> 与 throw 语句有同等效果。<br/><br/>
+另一个问题是，在显式 throw 后的代码是不可到达的，像以下代码<br/><br/>
+<pre class="lang:default decode:true">private static int foo(int num) {
+    if (num == 0) {
+        throw new RuntimeException("");
+        return num * 2;
+    }
+    return num + 1;
+}</pre>
+<br/>
+是无法通过编译的，因为代码行 <code>return num * 2</code>  紧接在 <code>throw</code> 语句之后，不可到达，用 <code>javac</code> 编译得到的错误是<br/><br/>
+<blockquote>
+Test.java:9: error: unreachable statement<br />
+        return num * 2;<br />
+        ^<br />
+1 error
+</blockquote>
+<br/>
+而且在 IntelliJ IDEA 中也能标识出来<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/04/intellij-idea-exception-1.png"><img class="aligncenter wp-image-14143" src="https://yanbin.blog/wp-content/uploads/2025/04/intellij-idea-exception-1-800x282.png" alt="" width="510" height="180" /></a><br/><br/>
+同样的，把该 <code>throw</code> 语句换成  <code>panic()</code> 方法调用, 改成下面的样子<br/><br/>
+<pre class="lang:default decode:true ">private static int foo(int num) {
+    if (num == 0) {
+        panic(-1, "");
+        return num * 2;
+    }
+    return num + 1;
+}<br/><br/>
+private static void panic(int errorCode, String... message) {
+    throw new RuntimeException("errorCode: %s, message: %s".formatted(errorCode, String.join(" ", message)));
+}</pre>
+<br/>
+则可通过编译，虽然实际行为并没有变，语句 <code>return num * 2</code> 同样是永远不会被执行。<br/><br/>
+而且在 IntelliJ IDEA 中也无法识别出来动态抛出异常后的代码是不可到达的<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/04/intellij-idea-exception-2.png"><img class="aligncenter wp-image-14144" src="https://yanbin.blog/wp-content/uploads/2025/04/intellij-idea-exception-2.png" alt="" width="350" height="157" /></a><br/><br/>
+要让 IntelliJ IDEA 能作一定动态分析的话，需要把 IntelliJ IDEA 的 Editor/Inspections/Java/Probable bugs/Unreachable code 选项勾选上，默认未选择。<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/04/intellij-idea-exception-3.png"><img class="aligncenter wp-image-14145" src="https://yanbin.blog/wp-content/uploads/2025/04/intellij-idea-exception-3.png" alt="" width="369" height="152" /></a><br/><br/>
+现在 IntelliJ IDEA 就会用灰色标识出来 <code>return num * 2</code> 是不可到达的，同时我们可以测试一下，如果把 panic() 函数改成不抛出或只是有条件的抛出异常，则 <code>return num * 2</code> 就会被认为是可到达的(正常色彩显示)。<br/><br/>
+看相关的介绍说用 IntelliJ jetbrains 的 @Contract 标识为 <code>fail</code> 的方法可让 IntelliJ IDEA 用红色标识 panic() 后的代码不可到达，可实测未达到预期，仍然是只有灰色提示。<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/04/intellij-idea-exception-4.png"><img class="aligncenter wp-image-14146 size-large" src="https://yanbin.blog/wp-content/uploads/2025/04/intellij-idea-exception-4-800x314.png" alt="" width="800" height="314" /></a><br/><br/>
+最后的总结<br/><br/>
+<ol>
+    <li>在 IntelliJ IDEA 中识别永远抛异常方法调用后代码不可到达的方式只有勾选上 IntelliJ IDEA 的 Editor/Inspections/Java/Probable bugs/Unreachable code</li>
+    <li>确保 <code>panic()</code> 方法只抛出异常，安排好方法的 if/else 的结构，对于有返回值的方法，在调用了 panic() 之后保证也有一个返回出口，以通过编译</li>
+    <li>在感觉使用 panic() 模式有些不适的话，考虑回归传统的 <code>throw</code> 异常的方式, 省得影响代码阅读，也太考验 Java IDE 和编译器。比如 myError 是静态引入的一个函数， <code>throw myError(-1, "something went wrong")</code> 比 <code>panic(-1, "something went wrong")</code> 多了几个字符</li>
+    <li>至少我本文写到这里就打算直接用 <code>throw myError(...)</code> 的，不想再折腾 <code>panic(...)</code> 了，在未得到 Java 编译器支持的话，这样的 <code>panic(...)</code> 并优雅</li>
+</ol>

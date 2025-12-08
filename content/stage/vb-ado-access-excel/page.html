@@ -1,0 +1,56 @@
+---
+title: VB采用ADO的方式操作Excel表格
+url: /vb-ado-access-excel/
+date: 2006-07-09T11:49:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - C++/VB
+tags: 
+  - vb
+  - Excel
+  - Ado
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 559 
+wpStatus: publish
+views: 1478
+lastmod: 2021-09-04T10:45:55-05:00
+---
+
+使用VB配搭着ADO可以像操纵Access数据文件一样操作Excel文件，对于如何用ADO操作Excel文件，首先应该建立一些基本概念。你需要将一个Excel数据文件想象为一个关系数据库，Excel文件中的每个工作表就对应该数据库中的一个表，而工作表中的每一列当然就是表的列了。</p>
+<br/>
+代码如下：操作 book1.xls 的 sheet1 工作表,注意要写成 sheet1$ (加个美元符号)<!--more--><br/><br/>
+<pre class="lang:default decode:true ">Dim adoConnection As New ADODB.Connection
+Dim adoRecordset As New ADODB.Recordset
+'OLE DB + ODBC Driver 方式:
+'adoConnection.Open "Data Provider=MSDASQL.1;driver=Microsoft Excel Driver (*.xls);DBQ=c\book1.xls"
+'Microsoft.Jet.OLEDB.4.0 方式,(建议)
+adoConnection.Open "Provider=Microsoft.Jet.OLEDB.4.0;Persist Security Info=False;" &amp; _
+                            "Data Source=c:\book1.xls;Extended Properties='Excel 8.0;HDR=Yes'"<br/><br/>
+adoRecordset.Open "select * from [sheet1$]", adoConnection, adOpenKeyset, adLockOptimistic<br/><br/>
+Debug.Print adoRecordset.RecordCount
+Dim i As Integer
+Do Until adoRecordset.EOF
+  For i = 0 To adoRecordset.Fields.Count - 1
+    Debug.Print adoRecordset.Fields.Item(i).Name
+    Debug.Print adoRecordset.Fields.Item(i).Value
+  Next i
+  adoRecordset.MoveNext
+Loop</pre>
+<br/>
+构造ConnectionString时，OLE DB的提供者要选择Microsoft Jet 4.0 OLE DB Provider作为ADO的驱动程序。这本来是用于连接Access数据库的驱动程序，但也可打开Excel文件。<br />
+连接的数据库名称当然就是你要打开的Excel文件，注意扩展名是*.xls，而不是*.mdb，如c:\book1.xls<br />
+最关键的一点是，还要设置扩展属性Extended Properties为"Excel 8.0"，否则，测试连接时会报告无法识别数据格式的错误。<br />
+HDR是指明有没有标题头，默认就是"Yes"，所以这里也可以不写<br/><br/>
+    '注: OLE DB + ODBC Driver 方式不支持以下语句,但 Microsoft.Jet.OLEDB.4.0 方式支持!<br />
+    adoConnection.Execute "insert into [sheet1$](姓名) values(3)"<br />
+    adoRecordset.AddNew Array("姓名", "性别", "年龄", "地址"), Array(1, 2, 3, 4)<br/><br/>
+对Excel表格执行增、删、改记录就这么简单，VB对所有列应该都当是字符类型对待，另外注意表格不规整的情况。Unmi主要是因为看过有人在用VB操纵Excel文件是，先把Excel转到Access来操作，完了之后再转回成Excel格式，其完全是多些一举，所以到网上搜集了几篇整理了出来，更详细的内容请参考底下文档链接。<br/><br/>
+参考文档：1. <a href="http://www.anqn.com/dev/delphi/a/2005-08-28/a52532.shtml">在DELPHI中使用ADO直接访问Excel数据文件</a><br />
+　　　　　2. <a href="http://www.china-askpro.com/msg35/qa95.shtml">问专家：能否用VB的ADO的方法访问Excel文件</a><br />
+　　　　　3. <a href="http://www.xuevb.net/modules/news/article.php?storyid=805">在 Visual Basic 或 VBA 中使用 ADO 来处理 Excel 数据</a> (这里有比较详细的解说)

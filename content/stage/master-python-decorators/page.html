@@ -1,0 +1,370 @@
+---
+title: 熟悉和应用 Python 的装饰器
+url: /master-python-decorators/
+date: 2019-01-03T23:10:42-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - decorator
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9228 
+wpStatus: publish
+views: 647
+lastmod: 2019-01-07T22:35:42-06:00
+---
+
+<p>Python 在语法上除了冒号与强制缩进外其实也没有太多令人眼前一亮的东西，倒是它的装饰器(Decorator) 值得玩味。初读 《THE Quick Python Book》一书，关于 Decorator(装饰器) 这一节匆匆而过，只是觉得它像 Java 注解一样的东西，没太细究。后来慢慢看到还是不少地方在用装饰器，如 Python 的属性 <code>@property</code>, <code>@name_attr.setter</code>, 还有 Flask 中用于定义路由的 <code>@app.route('/')</code> 等。</p>
+
+<p>因此还是有必要花些功夫去更深入的了解 Python 的装饰器，从目前对装饰器的理解，它兼具 Java 的注解与代理的功能，而且比 Java 中自定义注解的处理与动态代理的实现要简单的多，甚至不需要特别牵涉到到面向方面的编程这么一个专门的概念。Python 的装饰器并非指的设计模式中的装饰器模式，Python 的装饰器主要还是关于代理，或叫方法拦截，切面的。</p>
+
+<p>装饰器简单说来就是一个高阶函数，即一个函数作为另一个函数的参数，比如说函数 A 作为函数 B 的参数，然后函数 B 的实现有能力决定实际调用 A 的前后作点手脚，甚至压根不调用 A。由此，装饰器完全可以实现面向方面的 @Before, @After, @Around, @AfterReturning, @AfterThrowing 所有语义。</p>
+
+<p>Python 中的函数像 JavaScript 的一样是头等对象(first-class objects)，所以函数本身可以作为参数任意传递，一个函数也可以返回另一个函数。Python 的函数中还允许用相同的 <code>def func():...</code> 语法定义内部函数。<!--more--></p>
+
+<h2>一个简单的装饰器</h2><br/>
+<p>基于高阶函数来拦截对某一函数的调用，在 Python 中我们可以写成下面的代码</p>
+
+<pre class="lang:default decode:true">def my_decorator(func):<br/>
+    def wrapper():<br/>
+        print("before calling func")<br/>
+        func()<br/>
+        print("after calling func")<br/>
+    <br/>
+    return wrapper<br/>
+<br/>
+<br/>
+def say_hello():<br/>
+    print("Hello world!")<br/>
+<br/>
+<br/>
+my_decorator(say_hello)()</pre>
+
+<p>以上代码执行后输出</p>
+
+<blockquote><br/>
+<p>before calling func<br /><br/>
+Hello world!<br /><br/>
+after calling func</p>
+
+</blockquote>
+
+<p>如果明白了函数可以作为参数和返回值的话，且函数名即相应函数的引用，函数引用后加对括号<code>()</code> 即是对该函数的调用的话，以上代码就好理解了。</p>
+
+<p><code>my_decorator</code> 函数接收一个函数作为参数，并声明了一个内部函数，内部函数在实际调用 <code>my_decorator</code> 参数代表的函数前后做点事情，最后 <code>my_decorator</code> 返回那个内部函数，何时调用该内部函数的由外部使用者都来决定</p>
+
+<p><code>my_decorator(say_hello)()</code>, <code>my_decorator</code> 接收函数 <code>say_hello</code> 为参数(注意 say_hello 后没有括号，说明是函数的引用)，而后得到 <code>my_decorator</code> 内部函数 <code>wrapper</code> 的引用，最后对返回函数加括号 <code>()</code> 才触发对 <code>wrapper</code> 函数的调用，因此才有了上面的输出效果。</p>
+
+<p>那这个是不就是装饰器了呢？非也，这不过一个普通的高阶函数，实现了对函数的拦截，为达到效果我们不对直接对 <code>say_hello()</code> 函数进行调用。</p>
+
+<p>该引入我们 Python 的装饰器语法糖了，像 Java 的注解一样的符号 <code>@</code>。于是前面的代码可以改写成</p>
+
+<pre class="lang:default decode:true">def my_decorator(func):<br/>
+    def wrapper():<br/>
+        print("before calling func")<br/>
+        func()<br/>
+        print("after calling func")<br/>
+<br/>
+    return wrapper<br/>
+<br/>
+<br/>
+@my_decorator<br/>
+def say_hello():<br/>
+    print("Hello world!")<br/>
+<br/>
+<br/>
+say_hello()</pre>
+
+<p>有了 <code>@my_decorator</code> 才能叫做装饰器。代码执行的效果与前面是完全一样的：</p>
+
+<blockquote><br/>
+<p>before calling func<br /><br/>
+Hello world!<br /><br/>
+after calling func</p>
+
+</blockquote>
+
+<p>函数 <code>my_decorator</code> 定义没有变，不同的在函数 <code>say_hello</code> 定义前加了一个注解(装饰) <code>@my_decorator</code>, 表明对函数的 <code>say_hello()</code> 的直接调用会触发该装饰器的执行 -- 即 <code>say_hello</code> 函数会作为参数传递给 <code>my_decorator</code>(后面我们会知道连同 <code>say_hello</code> 的参数也会进来)。有了装饰器 <code>@my_decorator</code> 现在直接调用 <code>say_hello()</code> 就行了。</p>
+
+<p>如果不小心把调用代码写成了和原来一样 <code>my_decorator(say_hello)()</code>, 那么执行输出这下面那样的</p>
+
+<blockquote><br/>
+<p>before calling func<br /><br/>
+before calling func<br /><br/>
+Hello world!<br /><br/>
+after calling func<br /><br/>
+after calling func</p>
+
+</blockquote>
+
+<p>原因是在 <code>wrapper</code> 内部函数调用 <code>func()</code> 时又被装饰了一次。</p>
+
+<h3>与 Java 动态代理，注解，切面的对比</h3><br/>
+<p>Java 也有类似 <code>@</code> 的语法，那是注解，Java 1.5 支持自定义注解。但要在 Java 中实现一个基于注解标识的动态代理可以说是非常的复杂，需要定义相关的接口，对注解进行反射，甚至是用 CGLib 对字节码进行动态修改。或者是要用到 AspectJ 特定的语法来拦截函数的调用。相比 Python 的装饰器实现真的是太太简单了，Java 只能干羡慕的份。</p>
+
+<h2>从字节码来理解装饰器</h2><br/>
+<p>类似于 Java 虚拟机执行的是中间代码，Python 解释器执行的也是中间代码，俗称字节码。Python 的装饰器 <code>@</code> 用法既然是叫做语法糖，那么它在生成字节码的时候一定会安插些什么。下面来做个实验，针对上面的 <code>say_hello()</code> 方法</p>
+
+<pre class="lang:default decode:true">@my_decorator<br/>
+def say_hello():<br/>
+    print("Hello world!")</pre>
+
+<p>如果 <code>say_hello()</code> 方法中有或没有 <code>@my_decorator</code> 装饰时分别产生怎样的字节码(假设保存上面代码的文件名为 <code>test.py</code>)</p>
+
+<h3>没有 <code>@my_decorator</code> 装饰时</h3><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; import dis,test<br/>
+&gt;&gt;&gt; dis.dis(test.say_hello)<br/>
+ 12           0 LOAD_GLOBAL              0 (print)<br/>
+              2 LOAD_CONST               1 ('Hello world!')<br/>
+              4 CALL_FUNCTION            1<br/>
+              6 POP_TOP<br/>
+              8 LOAD_CONST               0 (None)<br/>
+             10 RETURN_VALUE<br/>
+</pre>
+
+<p>这是一个普通的方法调用，只执行 <code>say_hello()</code> 函数自身的代码</p>
+
+<h3>加上 <code>@my_decorator</code> 装饰后</h3><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; import dis,test<br/>
+&gt;&gt;&gt; dis.dis(test.say_hello)<br/>
+  3           0 LOAD_GLOBAL              0 (print)<br/>
+              2 LOAD_CONST               1 ('before calling func')<br/>
+              4 CALL_FUNCTION            1<br/>
+              6 POP_TOP<br/>
+<br/>
+  4           8 LOAD_DEREF               0 (func)<br/>
+             10 CALL_FUNCTION            0<br/>
+             12 POP_TOP<br/>
+<br/>
+  5          14 LOAD_GLOBAL              0 (print)<br/>
+             16 LOAD_CONST               2 ('after calling func')<br/>
+             18 CALL_FUNCTION            1<br/>
+             20 POP_TOP<br/>
+             22 LOAD_CONST               0 (None)<br/>
+             24 RETURN_VALUE<br/>
+</pre>
+
+<p>我们看到 Python 编译后把 <code>say_hello()</code> 放到了 <code>my_decorator()</code> 函数中去执行，由此实现了对 <code>say_hello()</code> 函数的拦截，这就是 <code>my_decorator</code> 语法糖的效果。对  <code>say_hello()</code> 调用实际上是对 <code>my_decorator(say_hello)()</code> 的调。接下来对 <code>@functools.wraps</code> 装饰器的说明就能看到这一点。</p>
+
+<h2><code>@functools.wraps</code> 装饰器的功用</h2><br/>
+<p>前面使用装饰器修改方法时，对内部函数最好用 <code>@wraps(func)</code> 说明一下，来看看有或没有 <code>@wraps(func)</code> 时不同的效果。</p>
+
+<pre class="lang:default decode:true">def my_decorator(func):<br/>
+    def wrapper():<br/>
+        """my_decorator docstring"""<br/>
+        func()<br/>
+<br/>
+    return wrapper<br/>
+<br/>
+<br/>
+@my_decorator<br/>
+def say_hello():<br/>
+    """say_hello docstring"""<br/>
+    print("Hello world!")<br/>
+<br/>
+<br/>
+help(say_hello)</pre>
+
+<p>执行结果是：</p>
+
+<blockquote><br/>
+<p>Help on function wrapper in module __main__:</p>
+
+<p>wrapper()<br /><br/>
+my_decorator docstring</p>
+
+</blockquote>
+
+<p>想查看  <code>say_hello</code> 的帮助却显示了 <code>my_decorator.wrapper()</code> 函数的使用帮助，这会令人费解。</p>
+
+<p>这就是  <code>@wraps(func)</code> 的用处</p>
+
+<pre class="lang:default decode:true">from functools import wraps<br/>
+<br/>
+<br/>
+def my_decorator(func):<br/>
+    @wraps(func)<br/>
+    def wrapper():<br/>
+        """my_decorator docstring"""<br/>
+        func()<br/>
+<br/>
+    return wrapper<br/>
+<br/>
+<br/>
+@my_decorator<br/>
+def say_hello():<br/>
+    """say_hello docstring"""<br/>
+    print("Hello world!")<br/>
+<br/>
+<br/>
+help(say_hello)</pre>
+
+<p>执行结果是：</p>
+
+<blockquote><br/>
+<p>Help on function say_hello in module __main__:</p>
+
+<p>say_hello()<br /><br/>
+say_hello docstring</p>
+
+</blockquote>
+
+<p>所以加上 <code>@wraps</code> 更符合我们的要求，虽然在调用结果上没什么差异，但是帮助文档显示时不会答非所问。</p>
+
+<h2>装饰带参数的函数调用</h2><br/>
+<p>前面例子中的 <code>say_hello()</code> 函数没有带参数，如果 <code>say_hello</code> 有参数的话如何装饰它呢？首先来看看带一个参数的情况</p>
+
+<pre class="lang:default mark:2,4,11,12,15 decode:true ">def my_decorator(func):<br/>
+    def wrapper(name):<br/>
+        print("before calling func")<br/>
+        func(name)<br/>
+        print("after calling func")<br/>
+<br/>
+    return wrapper<br/>
+<br/>
+<br/>
+@my_decorator<br/>
+def say_hello(name):<br/>
+    print(f"Hello {name}!")<br/>
+<br/>
+<br/>
+say_hello("Python")</pre>
+
+<p>注意以上加亮的代码行，更多参数可以逐个加。假如一个装饰器函数(像 <code>my_decorator</code>) 要被用来装饰多个或任意不同的函数，每个被装饰的函数的参数就没有固定的个数了，那我们的装饰器的内部函数就必须支持变参了。</p>
+
+<pre class="lang:default mark:2,4 decode:true">def my_decorator(func):<br/>
+    def wrapper(*args):<br/>
+        print(f"before calling {func.__name__}")<br/>
+        func(*args)<br/>
+        print(f"after calling {func.__name__}")<br/>
+<br/>
+    return wrapper<br/>
+<br/>
+<br/>
+@my_decorator<br/>
+def say_hello(name):<br/>
+    print(f"Hello {name}!")<br/>
+<br/>
+<br/>
+@my_decorator<br/>
+def say_hi(firstname, lastname):<br/>
+    print(f"Hello {firstname} {lastname}")<br/>
+<br/>
+<br/>
+say_hello("Python")<br/>
+say_hi("Bill", "Gates")</pre>
+
+<p>执行输出如下：</p>
+
+<blockquote><br/>
+<p>before calling say_hello<br /><br/>
+Hello Python!<br /><br/>
+after calling say_hello<br /><br/>
+before calling say_hi<br /><br/>
+Hello Bill Gates<br /><br/>
+after calling say_hi</p>
+
+</blockquote>
+
+<p>Python 的函数还有任意字典参数的情况，所以对上面的例子还需进一步扩展</p>
+
+<pre class="lang:default decode:true ">def my_decorator(func):<br/>
+    def wrapper(*args, **kwargs):<br/>
+        print(f"before calling {func.__name__}")<br/>
+        func(*args, **kwargs)<br/>
+        print(f"after calling {func.__name__}")<br/>
+<br/>
+    return wrapper<br/>
+<br/>
+<br/>
+@my_decorator<br/>
+def say_hello(firstname, lastname, **kwargs):<br/>
+    print(f"Hello {firstname} {lastname}!", kwargs)<br/>
+<br/>
+<br/>
+say_hello("Steve", "Jobs", company="Apple", country="USA")</pre>
+
+<p>执行后输出为</p>
+
+<blockquote><br/>
+<p>before calling say_hello<br /><br/>
+Hello Steve Jobs! {'company': 'Apple', 'country': 'USA'}<br /><br/>
+after calling say_hello</p>
+
+</blockquote>
+
+<h2>装饰有返回值的的函数</h2><br/>
+<p>前面的例子中被装饰的函数都没有返回值(准确来说返回值为 None)，如果被装饰的函数是有返回值的话，装饰器函数应该怎么处理呢？看下面的例子</p>
+
+<pre class="lang:default mark:4,6 decode:true">def my_decorator(func):<br/>
+    def wrapper(*args, **kwargs):<br/>
+        print(f"before calling {func.__name__}")<br/>
+        result = func(*args, **kwargs)<br/>
+        print(f"after calling {func.__name__}")<br/>
+        return result<br/>
+<br/>
+    return wrapper<br/>
+<br/>
+<br/>
+@my_decorator<br/>
+def say_hello(firstname, lastname, **kwargs):<br/>
+    print(f"Hello {firstname} {lastname}!", kwargs)<br/>
+    return f"Hi your self, from {firstname}"<br/>
+<br/>
+<br/>
+greeting = say_hello("Steve", "Jobs", company="Apple", country="USA")<br/>
+print("result: ", greeting)<br/>
+</pre>
+
+<p>执行后的输出为：</p>
+
+<blockquote><br/>
+<p>before calling say_hello<br /><br/>
+Hello Steve Jobs! {'company': 'Apple', 'country': 'USA'}<br /><br/>
+after calling say_hello<br /><br/>
+result: Hi your self, from Steve</p>
+
+</blockquote>
+
+<h2>装饰器的应用领域</h2><br/>
+<p>至此，Python 装饰器的的实现基本上都清楚了，接下来可以按需丰富装饰器的功能，及想像它更多的应用领域。比如在装饰器函数中可以加入条件决定是否调用被装饰的函数，或者依据输入参数来修改被装饰函数的最终输出。或者是改变对目标函数的输入参数等。</p>
+
+<p>更现实世界中装饰器的应用有，用装饰器来测量对某些函数的调用时间，调试代码，日志输出，参数校验，事物控制，对函数返回值的缓存处理，注册插件，用装饰器来实现单例等。比如本文最前面提到的 <code>Flask</code> 就是用装饰器来声明路由的。</p>
+
+<h2>更强大的装饰器应用</h2><br/>
+<p>除了以上演示到的能处理不定参数，返回值的装饰器外，Python 装饰器还有更得杂的表现行为，例如</p>
+
+<ol>
+
+	<li>一个函数可以应用多个装饰器</li>
+
+	<li>装饰器还可以用来装饰类</li>
+
+	<li>装饰器还可以带有自己的参数，或可选参数，如 Flask 的 <code>@app.route('/')</code></li>
+
+	<li>装饰器本身还可以是一个类，不仅仅实现为一个函数</li>
+
+	<li>装饰器可以有内部状态，比如能统计函数被调用的次数</li>
+
+</ol>
+
+<p>以上装饰器的特性就是说 Java 注解有的我们也有，没有的我们也要有，并且要做的更强大。关于 Python 十分详尽的内容请参考这篇文章 <a href="https://realpython.com/primer-on-python-decorators/">Primer on Python Decorators</a>，还有同样是来自于该文的 <a href="https://yanbin.blog/wp-content/uploads/2019/01/decorators-cheatsheet.pdf" target="_blank" rel="nofollow noopener noreferrer">decorators-cheatsheet.pdf 速查手册</a>。</p>
+
+<p>&nbsp;</p>
+
+<p>链接：</p>
+
+<ol>
+
+	<li><a href="https://blog.csdn.net/u010786109/article/details/44774325">查看python字节码</a></li>
+
+	<li><a href="https://realpython.com/primer-on-python-decorators/">Primer on Python Decorators</a></li>
+
+</ol>

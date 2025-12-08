@@ -1,0 +1,128 @@
+---
+title: Vim 中 Java 代码自动完成 - vim-javacomplete2
+url: /vim-java-autocomplete-with-vim-javacomplete2/
+date: 2017-01-04T21:46:36-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/01/vim-logo-en.png"
+categories:
+  - Vim
+tags: 
+  - vim
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7708 
+wpStatus: publish
+views: 7374
+lastmod: 2021-06-22T15:55:06-05:00
+---
+
+用 Java 进行编码基本还是离不开 IntelliJ IDEA 或 Eclipse, 看别人完全用 Vim 进行 Javascript 项目编程很是眼红，估摸着能不能把 Vim 打造成一个更强的 Java IDE。语法高亮是不在话下，最主要是给它加上自动完成功能，不光对当前类，项目中的方法或变能能提示，而且必须像 Java IDE 那样理解所有的项目依赖。这就是今天试用的一个 Vim 插件 <a href="https://github.com/artur-shaik/vim-javacomplete2">vim-javacomplete2</a>，另种可能更好的方案 <a href="https://github.com/Valloric/YouCompleteMe">YouCompleteMe</a> + <a href="http://eclim.org/">Eclim</a> 还会再研究。</p>
+<br/>
+提到 Vim 的自动完成功能，有必要了解 Vim 自带的提示功能<br/><br/>
+<ol>
+    <li>ctrl - n/p:  Vim 根据当前缓冲区的关键字来提示，像 Sublime 或 Visual Studio Code 中的关键字提示</li>
+    <li>ctrl - x 进行自动自动完成模式，接着一些操作如 ctrl - l/n/t/i 完成类似于 ctrl - n/p 的操作; ctrl - k 能基于字典自动完成，完整按键是 ctrl - x ctrl -k</li>
+    <li>ctrl - x ctrl - o, 这个单独拉出来，是使用 Vim 的 Omni Completion 功能来自动完成，因为将要用到的 vim-javacomplete2 就依赖于这个功能</li>
+</ol>
+<br/>
+除 YouCompleteMe 插件外，另外还两个 Vim 下的自动完成插件是 <a href="https://github.com/Shougo/neocomplete.vim">NeoComplete</a> 和 <a href="https://github.com/ajh17/VimCompletesMe">VimCompleteMe</a>。<br/><br/>
+摘要部分算是说完了，现在开始体验 vim-javacomplete2 对 Java 项目的自动完成功能。它所有完成的代码提示不仅要支持基本的 Java 类库, 当前项目的类, 手动添加的 jar 包 ，还能支持 <code>maven</code>, <code>gradle</code> 和 Eclipse 的 <code>.classpath</code> 文件中定义的 classpath, 这完全能应付我们实际中的项目了。实际运作也是一个 C/S 结构，这个插件会启动一个 javavi server, 用 <a href="https://github.com/javaparser/javaparser">javaparser</a> 来解析依赖, 然后 Vim 中用 omnifunc 经 socket 连接到 javavi server 获得提示列表的。<!--more--><br/><br/>
+<h3>vim-javacomplete2 的安装</h3><br/><br/>
+我是通过 Vundle 来安装这个插件的，假定你已安装好 Vundle, 那么只要在 <code>~/.vimrc</code> 中加上一行<br/><br/>
+<blockquote>
+Plugin 'artur-shaik/vim-javacomplete2'
+</blockquote>
+<br/>
+然后启动 Vim 时使用命令 <code>vim +PluginInstall +qall</code> 或者进入到 Vim 中执行 <code>:PluginInstall</code> 也行<br/><br/>
+再回到 <code>.vimrc</code> 文件中，指定 <code>omnifunc</code> 连接到该插件<br/><br/>
+<blockquote>
+autocmd FileType java setlocal omnifunc=javacomplete#Complete
+</blockquote>
+<br/>
+<h3>体验一下简单的 Java 提示</h3><br/><br/>
+输入完 <code>list</code>., 然后按下  <code>ctrl -x ctrl -o</code> 就得到下图中的提示，列出 list 的所有方法，以及原型<br/><br/>
+<img class="aligncenter size-full wp-image-7709" src="/wp-content/uploads/2017/01/vim-javacomplete2-1.png" alt="" width="732" height="469" /><br/><br/>
+如果本插件只是对 JDK 类库有自动完成也没什么卵用，它需要真正派上用场就要能够理解像 Maven, Gradle 那些工具管理的依赖，如果你的项目是 SBT 就无法直接用了，办法还是有的, 在项目中同时放一个相同依赖的 <code>pom.xml</code> 文件。<br/><br/>
+<h3>对 Maven pom.xml 中依赖的自动完成</h3><br/><br/>
+假设我们在当前目录下创建了一个 <code>pom.xml</code> 文件，并且在依赖部分添加了一个 Google Guava 的依赖<br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;com.google.guava&lt;/groupId&gt;
+    &lt;artifactId&gt;guava&lt;/artifactId&gt;
+    &lt;version&gt;20.0&lt;/version&gt;
+&lt;/dependency&gt;
+</pre>
+<br/>
+再次启动 Vim, 然后我们试着去使用 Maven 给我们添加的依赖库，我喜欢 <code>ImmutableMap</code> 了，请看图<br/><br/>
+<img class="aligncenter size-full wp-image-7710" src="/wp-content/uploads/2017/01/vim-javacomplete2-2.png" alt="" width="732" height="469" /><br/><br/>
+没错，这个 <code>ImmutableMap</code> 只能是当前项目中的 <code>pom.xml</code> 给我们带来的。还请注意第一行<br/><br/>
+<blockquote>
+import com.google.common.collection.ImmutableMap
+</blockquote>
+<br/>
+还是由 Vim 自动添加上去的，所以在 Vim 中只需直接输入 <code>ImmutableMap.</code>, 再按下 <code>ctrl - x ctrl - o</code>, 不光提示方法，还自动加上 import 语句，真有点像是在 IDEA 中写代码，从此可以在 Vim 中进行快乐的 Java 编程了。<br/><br/>
+前面说过，当前目录下的 pom.xml 文件是自动解析的，也可以用<br/><br/>
+<blockquote>
+let g:JavaComplete_PomPath = "your_path/to/pom.xml"
+</blockquote>
+<br/>
+来自由的指定 pom.xml 文件，或者 <code>g:JavaComplete_LibsPath</code> 指定多个 jar 包文件，<code>g:JavaComplete_SourcesPath</code> 指定源代码路径，由此可知这个插件不仅仅会解析依赖，还懂编译代码。更多配置请参见 <a href="https://github.com/artur-shaik/vim-javacomplete2">https://github.com/artur-shaik/vim-javacomplete2</a>。<br/><br/>
+<h3>遇到的一个坑</h3><br/><br/>
+安装好插件后，启动 Vim 时遇到过这样一个错误<br/><br/>
+<blockquote>
+No Javavi library classes found, it means that we couldn't compile it. Do you have JDK8+ installed?<br />
+Failed to compile javavi server
+</blockquote>
+<br/>
+这是一个 Bug, <a href="https://github.com/artur-shaik/vim-javacomplete2/issues/220">https://github.com/artur-shaik/vim-javacomplete2/issues/220</a><br/><br/>
+进到插件安装目录 <code>.vim/bundle/vim-javacomplete2/libs/javavi</code>, 看到它里面的 <code>target</code> 目录所有者是 root, 所以把这个 <code>target</code> 目录删除，并在此处运行 <code>maven compile</code> 命令下载了该插件用到的第三方依赖, 并重新生成了 <code>target</code> 目录<br/><br/>
+<blockquote>
+➜  javavi git:(master) pwd<br />
+/Users/Yanbin/.vim/bundle/vim-javacomplete2/libs/javavi<br />
+➜  javavi git:(master) mvn compile<br />
+[INFO] Scanning for projects...<br />
+[INFO] ------------------------------------------------------------------------<br />
+[INFO] Building javavi 1.0-SNAPSHOT<br />
+[INFO] ------------------------------------------------------------------------<br />
+Downloading: https://repo.maven.apache.org/maven2/com/github/javaparser/javaparser-core/2.5.1/javaparser-core-2.5.1.pom<br />
+..........<br />
+Downloading: https://repo.maven.apache.org/maven2/org/json/json/20150729/json-20150729.pom<br />
+..........<br />
+Downloading: https://repo.maven.apache.org/maven2/org/jmockit/jmockit/1.20/jmockit-1.20.pom<br />
+.........<br />
+[INFO] Compiling 57 source files to /Users/Yanbin/.vim/bundle/vim-javacomplete2/libs/javavi/target/classes
+</blockquote>
+<br/>
+<h3>更好的弹出提示</h3><br/><br/>
+ 到目前为止我们使用 Vim 默认的 <code>ctrl - x ctrl -o</code> 来弹出提示, 需要两次组合按键, 为了简化操作还能利用其他两个插件 <a href="https://github.com/vim-scripts/AutoComplPop">AutoComplPop</a> 或 <a href="https://github.com/ervandew/superta">SuperTab</a>. AutoComplPop 可以配置成关键字符弹出提示, 如点号, 或输入两个字符号匹配到列表时弹出。我在使用 AutoComplPop 配置时有些问题, 所以最终选择了 SuperTab.<br/><br/>
+安装 SuperTab: Vundle 管理插件的话在 ~/.vimrc 中加上<br/><br/>
+<blockquote>
+Plugin 'ervandew/supertab'
+</blockquote>
+<br/>
+并在其中加上配置<br/><br/>
+<blockquote>
+let g:SuperTabDefaultCompletionType = '&lt;C-x&gt;&lt;C-o&gt;'
+</blockquote>
+<br/>
+记得 <code>PlugInstall</code>, 然后在 Vim 中就可以按一下 <code>Tab</code> 键实现 <code>ctrl - x ctrl -o</code> 的功能, 这符一些 IDE 的习惯。<br/><br/>
+<h3>一个最简单的 Vim 配置</h3><br/><br/>
+Vim 在启动的时候能够通过参数 <code>-u autocomplete.vim</code> 来使用 <code>autocomplete.vim</code> 中的配置，而不应用 <code>~/.vimrc</code> 配置文件。下面是一个达到本文 Java 自动提示的最简的 Vim 配置文件 <code>autocomplete.vim</code> -- 应用 Vundle 管理插件，打开了语法加亮。<br/><br/>
+<pre class="lang:default decode:true">set nocompatible
+filetype plugin indent on
+syntax on<br/><br/>
+set shell=/bin/bash
+set rtp+=~/.vim/bundle/Vundle.vim<br/><br/>
+call vundle#begin()<br/><br/>
+Plugin 'VundleVim/Vundle.vim'
+Plugin 'ervandew/supertab'
+Plugin 'artur-shaik/vim-javacomplete2'<br/><br/>
+call vundle#end()<br/><br/>
+autocmd FileType java setlocal omnifunc=javacomplete#Complete
+let g:SuperTabDefaultCompletionType = '&lt;C-x&gt;&lt;C-o&gt;'</pre>
+<br/>
+用 <code>vim -u autocomplete.vim +PluginInstall +qall</code> 或 <code>vim -u autocomplete.vim</code> 进行 Vim 执行命令以 <code>:PluginInstall</code> 安装好了所有插件后，以后启动 Vim 带上参数 <code>-u autocomplete.vim</code> 就可以使用 Java 代码的提示功能。

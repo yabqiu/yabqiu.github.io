@@ -1,0 +1,221 @@
+---
+title: Java8 Optional 几个常见错误用法
+url: /java8-optional-several-common-incorrect-usages/
+date: 2018-07-22T23:23:45-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/12/Java8-Logo.png"
+categories:
+  - Java8
+tags: 
+  - Optional
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8824 
+wpStatus: publish
+views: 1550
+lastmod: 2018-08-15T15:38:11-05:00
+---
+
+<p>Java 8 引入的 Optional 类型，基本是把它当作 null 值优雅的处理方式。其实也不完全如此，Optional 在语义上更能体现有还是没有值。所以它不是设计来作为 null 的替代品，如果方法返回 null 值表达了二义性，没有结果或是执行中出现异常。</p>
+
+<p>在 Oracle  做  Java 语言工作的  Brian Goetz 在 Stack Overflow 回复  <a href="https://stackoverflow.com/questions/26327957/should-java-8-getters-return-optional-type/26328555#26328555">Should Java 8 getters return optional type?</a> 中讲述了引入  Optional 的主要动机。</p>
+
+<blockquote><br/>
+<p>Our intention was to provide a limited mechanism for library method return types where there needed to be a clear way to represent “no result”, and using null for such was overwhelmingly likely to cause errors.</p>
+
+</blockquote>
+
+<p>说的是  Optional 提供了一个有限的机制让类库方法返回值清晰的表达有与没有值，避免很多时候 null 造成的错误。并非有了  Optional 就要完全杜绝 NullPointerException。</p>
+
+<p>在 Java 8 之前一个实践是方法返回集合或数组时，应返回空集合或数组表示没有元素; 而对于返回对象，只能用 null 来表示不存在，现在可以用  Optional 来表示这个意义。</p>
+
+<p>自 Java8 于  2014-03-18 发布后已 5 年有余，这里就列举几个我们在项目实践中使用 Optional 常见的几个用法。</p>
+
+<h3>Optional 类型作为字段或方法参数</h3><br/>
+<p>这儿把 Optional  类型用为字段(类或实例变量)和方法参数放在一起来讲，是因为假如我们使用 IntelliJ IDEA 来写 Java 8 代码，IDEA 对于  Optional 作为字段和方法参数会给出同样的代码建议：<!--more--></p>
+
+<blockquote><br/>
+<p>Reports any uses of <strong>java.util.Optional&lt;T&gt;</strong>, <strong>java.util.OptionalDouble</strong>, <strong>java.util.OptionalInt</strong>, <strong>java.util.OptionalLong</strong> or <strong>com.google.common.base.Optional</strong> as the type for a field or parameter. Optional was designed to provide a limited mechanism for library method return types where there needed to be a clear way to represent "no result". Using a field with type <strong>java.util.Optional</strong> is also problematic if the class needs to be <strong>Serializable</strong>, which <strong>java.util.Optional</strong> is not.</p>
+
+</blockquote>
+
+<p>不建议用任何的 Optional 类型作为字段或参数，Optional 设计为有限的机制让类库方法返回值清晰的表达 "没有值"。 Optional 是不可被序列化的，如果类是可序列化的就会出问题。</p>
+
+<p>上面其实重复了 Java 8 引入  Optional 的意图，我们还有必要继续深入理解一下为什么不该用  Optional 作为字段或方法参数。</p>
+
+<p>当我们选择 Optional 类型而非内部包装的类型后，应该是假定了该 Optional 类型不为 null，否则我们在使用 Optional 字段或方法参数时就变得复杂了，需要进行两番检查。</p>
+
+<pre class="lang:default decode:true">public class User {<br/>
+    private String firstName;<br/>
+    private Optional&lt;String&gt; middleName = Optional.empty();<br/>
+    private String lastName;<br/>
+<br/>
+    public void setMiddleName(Optional&lt;String&gt; middleName) {<br/>
+        this.middleName = middleName;<br/>
+    }<br/>
+<br/>
+    public String getFullName() {<br/>
+        String fullName = firstName;<br/>
+        if(middleName != null) {<br/>
+            if(middleName.isPresent()){<br/>
+                fullName = fullName.concat("." + middleName.get());<br/>
+        }<br/>
+<br/>
+        return fullName.concat("." + lastName);<br/>
+    }<br/>
+}</pre>
+
+<p>由于  <code>middleName</code> 的 setter 方法，我们可能造成 middleName 变为 null 值，所以在构建 fullName 时必须两重检查。</p>
+
+<p>并且在调用 <code>setMiddleName(...)</code> 方法时也有些累赘了</p>
+
+<pre class="lang:default decode:true ">user.setMiddleName(Optional.empty());<br/>
+user.setMiddleName(Optional.of("abc"));</pre>
+
+<p>而如果字段类型非 Optional 类型，而传入的方法参数为 Optional 类型，要进行赋值的话</p>
+
+<pre class="lang:default decode:true ">    private String middleName;<br/>
+<br/>
+    public void updateMiddleName(Optional&lt;String&gt; middleName) {<br/>
+        if(middleName != null) {<br/>
+            this.middleName = middleName.orElse(null);<br/>
+        } else {<br/>
+            this.middleName = null;<br/>
+        }<br/>
+    }</pre>
+
+<p>前面两段代码如果应用 <code>Optional.ofNullable(...)</code> 包裹 <code>Optional</code> 来替代 <code>if(middleName != null)</code> 就更复杂了。</p>
+
+<p>对于本例直接用 <code>String</code> 类型的 middleName  作为字段或方法参数就行，null 值可以表达没有 middleName。如果不允许 null 值  middleName, 显式的进行入口参数检查而拒绝该输入 -- 抛出异常。</p>
+
+<h3>利用 Optional 过度检查方法参数</h3><br/>
+<p>这一 Optional 的用法与之前的可能为 null 值的方法参数，不分清红皂白就用  <code>if...else</code> 检查，心中毫无安全感，步步惊心，结果可能事与愿违。类似于只要听人说桃子与西瓜不能一起的传言，不去求证，而是宁可信其有，不可信可无，不管真与假，反正不一起吃肯定不会死一样。对于绝对不会 null 的值就不必用 Optional 来使自己得到安心。</p>
+
+<pre class="lang:default decode:true ">public User getUserById(String userId) {<br/>
+    if(userId != null) {<br/>
+        return userDao.findById(userId);<br/>
+    } else {<br/>
+        return null;<br/>
+    }<br/>
+}</pre>
+
+<p>只是到了 Java 8 改成了用 Optional</p>
+
+<pre class="lang:default decode:true">    return if(Optional.ofNullable(userId)<br/>
+        .map(id -&gt; userDao.findById(id))<br/>
+        .orElse(null);</pre>
+
+<p>上面两段代码其实是同样的问题，如果输入的 <code>userId</code> 是 null 值不调用 <code>findById(...)</code> 方法而直接返回 null 值，这就有两个问题</p>
+
+<ol>
+
+	<li>返回 null 时到底是传入了 null 值 userId 还是 <code>userDao.findById(...)</code> 返回了 null 值</li>
+
+	<li>从 <code>getUserById(userId)</code> 的调用约定来说到底能不能接受 null 值 userId？如果不允许应该直接拒绝调用，否则返而隐藏了潜在的 bug</li>
+
+</ol>
+
+<p>这种情况下立即抛出 NullPointerException 是一个更好的主意，参考下面的代码</p>
+
+<pre class="lang:default decode:true">public User getUserById(String userId) { //抛出出 NullPointerException 如果 null userId<br/>
+    return userDao.findById(Objects.requireNoNull(userId, "Invalid null userId");<br/>
+}<br/>
+<br/>
+//or<br/>
+public User getUserById(String userId) { //抛出 IllegalArgumentException 如果 null userId<br/>
+    Preconditions.checkArgument(userId != null, "Invalid null userId");<br/>
+    return userDao.findById(userId);<br/>
+}</pre>
+
+<p>即使用了 Optional 的 <code>orElseThrow</code> 抛出异常也不能明确异常造成的原因，比如下面的代码</p>
+
+<pre class="lang:default decode:true">public User getUserById(String userId) {<br/>
+    return Optional.ofNullable(userId)<br/>
+        .map(id -&gt; userDao.findById(id))<br/>
+        orElseThrow(() -&gt; <br/>
+            new RuntimeException("userId 是 null 或 findById(id) 返回了 null 值"));<br/>
+}</pre>
+
+<p>纠正办法是认真的审视方法的输入参数，对不符合要求的输入应立即拒绝，防止对下层的压力与污染，并报告出准确的错误信息，以有利于快速定位修复。</p>
+
+<h3>Optional.map(...) 中再次 null 值判断</h3><br/>
+<p>假如有这样的对象导航关系 <code>user.getOrder().getProduct().getId()</code>, 输入是一个  <code>user</code> 对象</p>
+
+<pre class="lang:default decode:true">    String productId = Optional.ofNullable(user)<br/>
+        .map(User::getOrder)<br/>
+        .flatMap(order -&gt; Optional.ofNullable(order.getProduct()))  //1<br/>
+        .flatMap(product -&gt; Optional.ofNullable(product.getId()))   //2<br/>
+        .orElse("");</pre>
+
+<p>#1 和 #2 中应用 <code>flatMap</code> 再次用 <code>Optional.ofNullable()</code> 是因为担心 <code>order.getProduct()</code> 或 <code>product.getId()</code> 返回了 null 值，所以又用 <code>Optional.ofNullable(...)</code> 包裹了一次。代码的执行结果仍然是对的，代码真要这么写的话真是 Oracle 的责任。这忽略了 <code>Optional.map(...)</code> 的功能，只要看下它的源代码就知道</p>
+
+<pre class="lang:default decode:true ">    public&lt;U&gt; Optional&lt;U&gt; map(Function&lt;? super T, ? extends U&gt; mapper) {<br/>
+        Objects.requireNonNull(mapper);<br/>
+        if (!isPresent())<br/>
+            return empty();<br/>
+        else {<br/>
+            return Optional.ofNullable(mapper.apply(value));<br/>
+        }<br/>
+    }</pre>
+
+<p><code>map(...)</code> 函数中已有考虑拆解后的 null 值，因此呢 flatMap 中又 Optional.ofNullable 是多余的，只需简单一路用 <code>map(...)</code> 函数</p>
+
+<pre class="lang:default decode:true ">    String productId = Optional.ofNullable(user)<br/>
+        .map(User::getOrder)<br/>
+        .map(order -&gt; order.getProduct())  //1<br/>
+        .map(product -&gt; product.getId())   //2<br/>
+        .orElse("");</pre>
+
+<h3>Optional.ofNullable 应用于明确的非  null 值</h3><br/>
+<p>如果有时候只需要对一个明确不为 null 的值进行 Optional 包装的话，就没有必要用 <code>ofNullable(...)</code> 方法，例如</p>
+
+<pre class="lang:default decode:true">public Optional&lt;User&gt; getUserById(String userId) {<br/>
+    if("ADMIN".equals(userId)) {<br/>
+        User adminUser = new User("admin");<br/>
+        return Optional.ofNullable(adminUser); //1<br/>
+    } else {<br/>
+        return userDao.findById(userId);<br/>
+    }<br/>
+}</pre>
+
+<p>在代码 #1 处非常明确 <code>adminUser</code> 是不可能为 null 值的，所以应该直接用 <code>Optional.of(adminUser)</code>。这也是为什么 <code>Optional</code> 要声明 <code>of(..)</code> 和 <code>ofNullable(..)</code> 两个方法。看看它们的源代码：</p>
+
+<pre class="lang:default decode:true ">    public static &lt;T&gt; Optional&lt;T&gt; of(T value) {<br/>
+        return new Optional&lt;&gt;(value);<br/>
+    }<br/>
+<br/>
+    public static &lt;T&gt; Optional&lt;T&gt; ofNullable(T value) {<br/>
+        return value == null ? empty() : of(value);<br/>
+    }</pre>
+
+<p>知道被包裹的值不可能为 null 时调用 <code>ofNullable(value)</code> 多了一次多余的 null 值检查。相应的对于非 null 值的字面常量</p>
+
+<pre class="lang:default decode:true">Optional.ofNullable(100);  //这样不好<br/>
+Optional.of(100);          //应该这么用</pre>
+
+<p>小结：</p>
+
+<ol>
+
+	<li>要理解 Optional 的设计用意，所以语意上应用它来表达有/无结果，不适于作为类字段与方法参数</li>
+
+	<li>倾向于方法返回单个对象，用 Optional 类型表示无结果以避免 null 值的二义性</li>
+
+	<li>Optional 进行方法参数检查不能掩盖了错误，最好是明确非法的参数输入及时抛出输入异常</li>
+
+	<li>对于最后两种不正确的用法应熟悉 Optional 的源代码实现就能规避</li>
+
+</ol>
+
+<p>链接：</p>
+
+<ol>
+
+	<li><a href="http://dolszewski.com/java/java-8-optional-use-cases/">Java 8 Optional use cases</a></li>
+
+</ol>

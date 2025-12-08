@@ -1,0 +1,101 @@
+---
+title: 如何无需密码进行 SSH 连接[翻译]
+url: /ssh-no-need-input-password/
+date: 2009-07-20T02:33:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Linux/Unix
+tags: 
+  - Linux
+  - SSH
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 242 
+wpStatus: publish
+views: 2757
+lastmod: 2016-12-03T03:09:31-06:00
+---
+
+<p>译自：<a href="http://www.vineetmanohar.com/2009/07/17/howto-ssh-without-password/">http://www.vineetmanohar.com/2009/07/17/howto-ssh-without-password/</a></p>
+
+<p>这个简单的教程讲解了如何无需输入密码 SSH 连接到远程机器。在你需频繁的登陆到同一机器，而又不得不一次次输入密码时就可以使用这一技术。这也很适于这样的场景：当你有一个脚本需要通过 SSH 从远程机器取文件或者在远程机器上执行一个任务，并且希望能自动的运行该脚本，而用不着人工去输入一个密码。</p>
+
+<p>这些指令在 Linux 和 Mac 下能正常工作。你可以在 Windows 下参照同样的方法来使用 Putty，但是我这里没有针对具体 Putty 指令作描述。</p>
+
+<p><strong><span style="font-size: medium;">目标：从本机登陆到远程服务器无需输入密码<br /><br/>
+ </span></strong><br /><br/>
+ <strong>步骤 1/2：在本机上：生成认证码</strong></p>
+
+<p>认证码是一个私钥公钥对。你的公钥也是一个 2-3 行的长长看不懂东西。公钥就像是你登录后的唯一标识。私钥就像是你的密码，但比一个规则的密码要长。你可以通过如下命令来产生你的公钥和私钥：<!--more--></p>
+
+<pre class="brush:shell">ssh-keygen -t rsa</pre>
+
+<pre class="brush:text;toolbar:false,gutter:false">Generating public/private rsa key pair.Enter file in which to save the key (/home/vineetmanohar/.ssh/id_rsa:</pre>
+
+<p>接受默认的选择。<strong>按回车键</strong>。</p>
+
+<pre class="brush:text;toolbar:false,gutter:false">Enter passphrase (empty for no passphrase):<br/>
+Enter same passphrase again:</pre>
+
+<p><strong>回车两次</strong>。密钥(passphrase) 是用来对你的私钥进行加密的，加密后就没有人能看得懂它了。然而，假如你想要无密码登陆的话，就不能对你的私钥进行加密。</p>
+
+<pre class="brush:text;toolbar:false,gutter:false">The key fingerprint is:<br/>
+5e:26:52:34:a1:22:18:68:11:11:7d:8d:c6:d5:4b:bf vineetmanohar@vineetmanohr.com</pre>
+
+<p><strong>刚刚做了什么？</strong></p>
+
+<p>在你的本机上的 ~/.ssh 目录中，你创建了两个文件。</p>
+
+<pre class="brush:shell">cd ~/.ssh<br/>
+ls -l</pre>
+
+<pre class="brush:text;toolbar:false,gutter:false">-rw------- 1 vineetmanohar vineetmanohar 1675 2009-07-17 17:27 id_rsa<br/>
+-rw-r--r-- 1 vineetmanohar vineetmanohar  411 2009-07-17 17:27 id_rsa.pub</pre>
+
+<p><strong>id_rsa</strong> 包含了你的私钥。<strong>id_rsa.pub</strong> 中含有了你的公钥。</p>
+
+<p><strong>步骤 2/2：在远程机器上：认证无需密码的登陆</strong></p>
+
+<p>登陆到远程机器</p>
+
+<pre class="brush:shell">ssh hostname -l username</pre>
+
+<pre class="brush:text;toolbar:false,gutter:false">The authenticity of host 'vineetmanohar.com (XXX.XXX.XXX.XX)' can't be established.<br/>
+RSA key fingerprint is 44.2b:93:ce:1b:1b:99:3a:6d:91:d1:50:aa:0d:87:40.<br/>
+Are you sure you want to continue connecting (yes/no)?</pre>
+
+<p>[Unmi 注] 如果你执行 ssh hostname -l username 时，未得到上面的提示，那应该是在你的 ~/.ssh/ 目录中有一个 known_hosts 文件中包含有该远程机器的信息，那么你可把该文件删除(如果有能耐确定是其中哪一块对应于这个远程机器的话也可以只删除对应的部分)，然后再执行 ssh hostname -l username 命令即可。另外命令 ssh username@hostname 是等效的。</p>
+
+<p>输入 <strong>yes</strong> 并回车</p>
+
+<pre class="brush:text;toolbar:false,gutter:false">Warning: Permanently added 'vineetmanohar.com,XXX.XXX.XXX.XX' (RSA) to the list of known hosts.<br/>
+username@vineetmanohar.com's password:</pre>
+
+<p><strong>输入密码，并回车</strong></p>
+
+<p>在远程机器上创建一个 .ssh 目录，并在其中生成一个 .authorized_keys 文件。你需要拷贝你本机上的 'id_rsa.pub' 中的全部内容贴到远端服务器的 .authorized_keys 文件中。</p>
+
+<pre class="brush:shell">mkdir .ssh<br/>
+chmod 700 .ssh<br/>
+cd .ssh<br/>
+touch authorized_keys<br/>
+chmod 600 authorized_keys<br/>
+# copy-paste the entire contents of your local machine's ~/.ssh/id_rsa.pub file in authorized_keys<br/>
+vi authorized_keys<br/>
+# logout<br/>
+exit</pre>
+
+<p>现在你就能登陆到远程服务器时不用输入你的密码了。</p>
+
+<pre class="brush:text;toolbar:false,gutter:false"># type this command from your local machine<br/>
+ssh hostname -l username</pre>
+
+<p>SSH 可以无密码登陆了！现在，你也能进行 scp 操作而不用输入你的密码了。</p>
+
+<hr /><br/>
+<p>博主注：其实在用 <code>ssh-keygen</code> 生成密钥之后，在本机直接用命令 <code>ssh-copy-id user@hostname</code> 就能把本地的公钥拷到远端机器上了， 用不着那些手工操作。见 <a href="https://linux.die.net/man/1/ssh-copy-id">ssh-copy-id(1) - Linux man page</a></p>

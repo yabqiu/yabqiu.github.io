@@ -1,0 +1,131 @@
+---
+title: Springfox 解决在单一资源操作多个方法实现时生成 Swagger 文档的问题
+url: /springfox-single-resource-operation-multiple-methods-swagger-documentation/
+date: 2018-05-06T01:06:21-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/swagger-logo.png"
+categories:
+  - Spring
+tags: 
+  - restful
+  - Swagger
+  - API
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8686 
+wpStatus: publish
+views: 1711
+lastmod: 2021-09-10T12:47:53-05:00
+---
+
+在命名本文的标题都敲打了几分钟时间，问题很简单，然而用简短的一个标题完全描述出来却有点费事。在 Spring MVC 项目结合 Springfox 来生成 Swagger API 文档时，如果一个资源操作因为请求参数的不同而映射到多个 controller 方法，那么 Swagger 可能只能生成某一个 API 条目，其余都被忽略。至于为什么说是 "可能", 可能正好未遵循命名规范而躲过了这一劫。由此引出</p>
+<br/>
+<h3>我们的问题</h3><br/><br/>
+我们这里用了资源操作一词，它包含了两部分信息: 资源与操作，比如 <code>/users/{userId}</code> 是资源，而发生在其上的 HTTP 各种方法，如 POST, GET, PUT, DELETE 等就是操作。而 Spring MVC 中允许我们针对不同的查询参数把相同的资源操作映射到不同的 controller 方法上，也是为了保持逻辑上更为清晰。<br/><br/>
+比如下面的例子路由配置的例子<br/><br/>
+<blockquote>
+GET /users/{userId}     UserController.getUserInfo                                    //默认<br />
+GET /users/{userId}     UserController.getUserInfo                                   //当有 ?source=file 时<br />
+GET /users/{userId}     CloudUserController.getUserInfoFromCloud       //当有 ?source=cloud 时
+</blockquote>
+<br/>
+看到上面资源与操作完全相同，仅仅因为 source 查询参数的不同而映射到三个 controller 方法。用代码体现如下图<!--more--><br/><br/>
+<a href="/wp-content/uploads/2018/05/swagger-methods-1.png"><img class="aligncenter size-full wp-image-8687" src="/wp-content/uploads/2018/05/swagger-methods-1.png" alt="" width="728" height="491" /></a><br/><br/>
+假设该应用的 Web 上下文是 swagger-test, 那么启动应用后，通过 URL http://localhost:8080/swagger-test/swagger-ui.html 访问，并且把所有 controller 下的API 都展开(看 controller 后显示的向下箭头就代表着展开了所有的 API) <br/><br/>
+<a href="/wp-content/uploads/2018/05/swagger-methods-2.png"><img class="aligncenter size-full wp-image-8689" src="/wp-content/uploads/2018/05/swagger-methods-2.png" alt="" width="797" height="177" /></a><br/><br/>
+从上图中看到，我们定义了三个 <code>GET /users/{userId}</code> 的 API, Swagger 只显示了一个，CloudUserController 中什么也没有，Swagger 只会显示它找到的最后一个。<br/><br/>
+这是为什么呢？事情要从源头上找，也就是 swagger-ui.html 显示的内容来自于这里的 http://localhost:8080/swagger-test/v2/api-docs, 打开来看, 在 <code>paths</code> 下只有 <code>/users/{userId}</code> 一个对象<br/><br/>
+<a href="/wp-content/uploads/2018/05/swagger-methods-3.png"><img class="aligncenter size-full wp-image-8690" src="/wp-content/uploads/2018/05/swagger-methods-3.png" alt="" width="519" height="175" /></a><br/><br/>
+它组织 API 的方式是 <code>资源/操作</code>, 所以前面想要用参数来区分的三个 API，它们在 <code>/v2/api-docs</code> 都表示为<br/><br/>
+<pre class="lang:default decode:true">"paths": {
+    "/users/{userId}": {
+        "get": {
+            ....</pre>
+<br/>
+资源名都是 <code>/users/{userId}</code>, 操作也都是 <code>get</code>，如此 Swagger 在生成 JSON 文档时以上三个 API 使用相同的 JSON key, 造成相互覆盖，只有最后面那个 API 保留了下来。<br/><br/>
+<h3>解决办法</h3><br/><br/>
+由 Swagger 组织 <code>资源/操作</code> 的方式受到启发，其实只要做点变通就能让 Swagger 生成所有定义的 API，如果阅读到这儿的读者大概也猜到了。对啦，就是修改路径中的变量名(path variable name)，我们不能总是用 <code>{userId}</code>, 比如另两个改成 <code>{user-id}</code>, <code>{user_id}</code>, 这种做法更为混乱，那么下一个怎么办呢？倒不如简单了事，用序号去区分，如 <code>userId$1</code>, <code>userId$2</code>, 再多都能应会。<br/><br/>
+实际上路径变量的改名是对 Swagger 的欺骗行为，因为本质上, 从 RESTful 资源的概念来讲 <code>/users/{userId}</code> 与 <code>/users/{userId$1}</code> 是没有区别。为了达到欺骗的效果，我们只能合理的不去遵循 Java 的变量命名规则了。前面只要区分出不同就行，也可以用 <code>userId1</code>, <code>userId2</code> 的方式，我之所以选用 <code>userId$1</code>, <code>userId$2</code> 是效仿了 Java 在对付匿名类生成 class 文件名的做法。<br/><br/>
+回到前面的例子，修改后的代码如下<br/><br/>
+<strong>UserController</strong><br/><br/>
+<pre class="lang:default decode:true">@RestController
+@RequestMapping("/users")
+public class UserController {<br/><br/>
+    @GetMapping(value = "/{userId}")
+    public Map&lt;String, Object&gt; getUserInfo(@PathVariable("userId") Integer userId) {
+        return ImmutableMap.of("UserId", userId, "Source", "DB");
+    }<br/><br/>
+    @GetMapping(value = "/{userId$1}", params = {"source=file"})
+    public Map&lt;String, Object&gt; getUserInfoFromFile(@PathVariable("userId$1") Integer userId) {
+        return ImmutableMap.of("UserId", userId, "Source", "File");
+    }
+}</pre>
+<br/>
+<strong>CloudUserController</strong><br/><br/>
+<pre class="lang:default decode:true ">@RestController
+@RequestMapping("/users")
+public class CloudUserController {<br/><br/>
+    @GetMapping(value = "/{userId$2}", params = {"source=cloud"})
+    public Map&lt;String, Object&gt; getUserInfoFromCloud(@PathVariable("userId$2") Integer userId) {
+        return ImmutableMap.of("UserId", userId, "Source", "Cloud");
+    }
+}</pre>
+<br/>
+注意 <code>@PathVariable</code> 中的变量名也要作相应的修改。<br/><br/>
+重启服务，再次浏览 http://localhost:8080/swagger-test/swagger-ui.html, 是下面的情景<br/><br/>
+<a href="/wp-content/uploads/2018/05/swagger-methods-4.png"><img class="aligncenter size-large wp-image-8691" src="/wp-content/uploads/2018/05/swagger-methods-4-800x283.png" alt="" width="800" height="283" /></a><br/><br/>
+所有的 API 都展露无余，如果通过 swagger-ui.html 来直接对 API 进行测试的话，也都没问题，会命中各自对应的 controller 方法。<br/><br/>
+查看一下相应的 http://localhost:8080/swagger-test/api-docs<br/><br/>
+<a href="/wp-content/uploads/2018/05/swagger-methods-5.png"><img class="aligncenter size-full wp-image-8692" src="/wp-content/uploads/2018/05/swagger-methods-5.png" alt="" width="316" height="201" /></a><br/><br/>
+三个 API 由于路径中变量名的不同，它们有了各自独立的 JSON key, 才能在一个地方被平行的容得下。<br/><br/>
+<h3>进一步探讨</h3><br/><br/>
+目前我们是已知有三个 <code>/users/{userId}</code> API 的 controller 方法实现，假如一个团队中其他成员又用一个不同的请求参数，或其他的方式对 <code>/users/{userId}</code> 又加了一个新的实现方法，会造成某一个 API 在  Swagger 文档中缺失。因此我们最好能有一种机制让 Swagger 生成 <code>/v2/api-docs</code> 文档中发现有相同的资源/操作发生时给予警示。<br/><br/>
+http://localhost:8080/swagger-test/v2/api-docs 文档的生成是由 <code>@EnableSwagger2</code> 开启的，应该从它入手。看了下源代码，这里先列一个线索<br/><br/>
+<a href="/wp-content/uploads/2018/05/swagger-methods-6.png"><img class="aligncenter size-full wp-image-8695" src="/wp-content/uploads/2018/05/swagger-methods-6.png" alt="" width="774" height="519" /></a><br/><br/>
+Spring MVC 的所有 API 会在 Spring 启动的时候被扫描并分组存入到 <code>DocumentationCache</code> 缓存中去，就是上面的 <code>scanned</code> 变量。这里面会保存所有 API 条目，不会按 <code>资源/操作</code> 进行去重，进到下一步<br/><br/>
+然后在访问 http://localhost:8080/swagger-test/v2/api-docs 会进入到 <code>springfox.documentation.swagger2.web.Swagger2Controller</code> 的 <code>getDocumentation(@RequestParam(value = "group", required = false) String swaggerGroup, HttpServletRequest servletRequest)</code> 方法。<br/><br/>
+<a href="/wp-content/uploads/2018/05/swagger-methods-7.png"><img class="aligncenter size-large wp-image-8696" src="/wp-content/uploads/2018/05/swagger-methods-7-800x381.png" alt="" width="800" height="381" /></a><br/><br/>
+<code>/v2/api-docs</code> 根据 <code>group</code> 从 <code>documentationCache</code> 中取出 Spring 启动时扫描到的所有 API, 此时取到的 <code>documentation</code> 仍然是包含所有 API (含重复的 <code>资源/操作</code>)。关键代码出现在上面的高亮行<br/><br/>
+<blockquote>
+Swagger swagger = mapper.mapDocumentation(documentation);
+</blockquote>
+<br/>
+<code>mapper</code> 的实现类是 <code>ServiceModelToSwagger2MapperImpl</code>, 它的方法 <code>mapDocumentation(Documentation from)</code>  中的行<br/><br/>
+<blockquote>
+swagger.setPaths(mapApiListings(from.getApiListings()));
+</blockquote>
+<br/>
+将会把重复的<code>资源/操作</code> 过滤掉，<code>mapApiListings(Multimap&lt;String, ApiListing&gt; apilistings)</code> 的实现在抽象类 <code>ServiceModelToSwagger2Mapper</code> 中<br/><br/>
+<pre class="lang:default mark:5 decode:true">  protected Map&lt;String, Path&gt; mapApiListings(Multimap&lt;String, ApiListing&gt; apiListings) {
+    Map&lt;String, Path&gt; paths = newTreeMap();
+    for (ApiListing each : apiListings.values()) {
+      for (ApiDescription api : each.getApis()) {
+        paths.put(api.getPath(), mapOperations(api, Optional.fromNullable(paths.get(api.getPath()))));
+      }
+    }
+    return paths;
+  }</pre>
+<br/>
+上面代码高亮行 <code>api.getPath()</code> 是 key, 对应的 Path 包括所有允许的操作，按顺序是 <code>get</code>, <code>head</code>, <code>post</code>, <code>put</code>, <code>delete</code>, <code>options</code>, 和 <code>patch</code>.<br/><br/>
+<pre class="lang:default mark:5 decode:true">  private Path mapOperations(ApiDescription api, Optional&lt;Path&gt; existingPath) {
+    Path path = existingPath.or(new Path());
+    for (springfox.documentation.service.Operation each : nullToEmptyList(api.getOperations())) {
+      Operation operation = mapOperation(each);
+      path.set(each.getMethod().toString().toLowerCase(), operation);
+    }
+    return path;
+  }</pre>
+<br/>
+以上的高亮行，<code>path.set(...)</code> 设置某个路径的允许的操作，从这个点上可以发出警告。如果在 <code>path.set("get", operation)</code> 前，我们检测到 <code>path.get("get")</code> 不为 null 时说明有重复的 <code>资源/操作</code> 定义，给出警告信息。<br/><br/>
+具体的做法参考，<code>ServiceModelToSwagger2MapperImpl</code> 是一个用 <code>@Component</code> 定义的 Spring Bean, 我们可以创建它的子类，并声明为 <code>@Primary</code>, 从而替换掉 <code>Swagger2Controller</code> 中的 <code>ServiceModelToSwagger2Mapper</code> 依赖。然后把前面的两个方法<br/><br/>
+<blockquote>
+protected Map&lt;String, Path&gt; mapApiListings(Multimap&lt;String, ApiListing&gt; apiListings)<br />
+private Path mapOperations(ApiDescription api, Optional&lt;Path&gt; existingPath)
+</blockquote>
+<br/>
+置换掉就行了。

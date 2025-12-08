@@ -1,0 +1,203 @@
+---
+title: 启用并测试 Kafka 的 SASL + ACL 认证授权
+url: /kafka-enable-saslacl/
+date: 2019-10-29T00:41:07-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/kafka-logo.png"
+categories:
+  - Kafka
+tags: 
+  - SASL
+  - JAAS
+  - ACL
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9646 
+wpStatus: publish
+views: 6971
+lastmod: 2019-10-29T00:41:07-05:00
+---
+
+<p>Kafka 默认情况下是没有启用安全机制，这让能连接到 Broker 的客户端可以为所欲为，自 Kafka 0.9.0.0 版本引入了安全配置，但是需要进行一些配置来开启它。Kafka 安全主要包含三个方面：认证(authentication)，授权(authorization), 和信道加密(encryption)。其中认证机制和授权分别通过 SASL(<strong>S</strong>imple <strong>A</strong>uthentication and <strong>S</strong>ecurity <strong>L</strong>ayer)和  ACL(<strong>A</strong>ccess <strong>C</strong>ontrol <strong>L</strong>ist) 来实现。本篇主要演示 SASL + ACL 的配置，未涉及 SSL 信道加道，所以没有配置 Kerberos, 客户端与 Broker 之间的数据传输仍然以明文(PLAINTEXT) 传输，这在内网使用 Kafka 基本没问题。</p>
+
+<p>开启 SASL 和 ACL 需要在 Broker 和 Client 端进行相应的配置，要为两端创建包含用户认证信息的 JAAS(<strong>J</strong>ava <strong>A</strong>uthentication and <strong>A</strong>uthorization <strong>S</strong>ervice) 文件。听其名就是为 Java 代码服务的，不知客户端要支持别的语言(如 Python) 时应该如何配置客户端。<!--more--></p>
+
+<p>本例测试用的当前最新版的 Kafka 2.3.1。在 Kafka 的安装目录(kafka_2.12-2.3.1/config) 中创建服务端配置文件 <code>jaas.conf</code>, 填入内容</p>
+
+<pre class="lang:default decode:true ">KafkaServer {<br/>
+    org.apache.kafka.common.security.plain.PlainLoginModule required<br/>
+    username = "admin"<br/>
+    password = "admin_password"<br/>
+    user_admin = "admin_password"<br/>
+    user_reader = "reader_password"<br/>
+    user_writer = "writer_password";<br/>
+};</pre>
+
+<p>注意最后两行后的分别必不可少，以上往 Kafka Server 端加了三个用户，分别为 admin, reader, 和 write, 以及各自等号后对应的密码.</p>
+
+<p>再到 Kafka 的配置文件 <code>config/server.properties</code> 后加上以下内容</p>
+
+<pre class="lang:default decode:true ">authorizer.class.name=kafka.security.auth.SimpleAclAuthorizer<br/>
+listeners=SASL_PLAINTEXT://:9092<br/>
+security.inter.broker.protocol=SASL_PLAINTEXT<br/>
+sasl.mechanism.inter.broker.protocol=PLAIN<br/>
+sasl.enabled.mechanisms=PLAIN<br/>
+super.users=User:admin</pre>
+
+<p>指明用 SASL_PLAINTEXT 协议，及超级用户为 <code>admin</code>。</p>
+
+<p>现在可以依次启动 ZooKeeper 和 Kafka 了</p>
+
+<blockquote><br/>
+<p>$ bin/zookeeper-server-start.sh config/zookeeper.properties<br /><br/>
+$ export EXTRA_ARGS="-Djava.security.auth.login.config=config/jaas.conf"; bin/kafka-server-start.sh config/server.properties</p>
+
+</blockquote>
+
+<p>至此 Kafka 服务端就支持用户认证，注意到 ZooKeeper 尚未支持用户认证，所以通过 <code>--zookeeper ubuntu-server-1:2181</code> 来执行的命令会绕过安全验证。假设 ZooKeeper 和 Kafka 均运行在主机名为 <code>ubuntu-server-1</code> 的机器上。</p>
+
+<p>注：为什么可以用 <code>EXTRA_ARGS</code>？如果我们打开  <code>bin/kafka-server-start.sh</code> 脚本，发现有</p>
+
+<blockquote><br/>
+<p>exec $base_dir/kafka-run-class.sh $EXTRA_ARGS kafka.Kafka "$@" </p>
+
+</blockquote>
+
+<p>同时发现它调用的是 <code>bin/kafka-run-class.sh</code>，在其中有</p>
+
+<blockquote><br/>
+<p>if [ -z "$KAFKA_OPTS" ]; then<br /><br/>
+    KAFKA_OPTS=""<br /><br/>
+fi<br /><br/>
+........<br /><br/>
+exec $JAVA $KAFKA_HEAPS_OPTS $KAFKA_JVM_PERFORMANCE_OPTS $KAFKA_GC_LOG_OPTS $KAFKA_JMX_OPTS $KAFKA_LOG4J_OPTS -c $CLASSPATH $KAFKA_OPTS "$@"</p>
+
+</blockquote>
+
+<p>所以也可以用 <code>KAFKA_OPTS</code> 来替代 <code>EXTRA_ARGS</code> 的功效。同样的 <code>kafka-console-producer</code>, <code>kafka-console-consumer</code> 也是调用了 <code>kafka-run-class.sh</code>, 所以后也是用了 <code>KAFKA_OPTS</code> 环境变量来指定这两命令的系统属性。</p>
+
+<p>现在我们可以在客户端用以下命令创建一个 Topic test1</p>
+
+<blockquote><br/>
+<p>$ kafka-topics --zookeeper ubuntu-server-1:2181 --create --topic test1 --partitions 2 --replication-factor 1<br /><br/>
+Created topic test1.</p>
+
+</blockquote>
+
+<p>因为 ZooKeeper 未启用安全，所以通过 ZooKeeper 仍然可以创建 Topic, 如果是指定 <code>--bootstrap-server ubuntu-server-1:9092</code> 的话</p>
+
+<blockquote><br/>
+<p>$ kafka-topics --bootstrap-server ubuntu-server-1:9092 --create --topic test1 --partitions 2 --replication-factor 1</p>
+
+</blockquote>
+
+<p>以上命令会在 Kafka 服务端输出下面类似错误信息</p>
+
+<blockquote><br/>
+<p>[2019-10-29 03:50:07,396] INFO [SocketServer brokerId=0] Failed authentication with /172.28.128.1 (Unexpected Kafka request of type METADATA during SASL handshake.) (org.apache.kafka.common.network.Selector)</p>
+
+</blockquote>
+
+<p>因为 Kafka 服务端开启了安全认证，这时候试图以未认证的方式来启动一个 <code>kafka-console-produer</code> 后会有如下错误</p>
+
+<blockquote><br/>
+<p>$ kafka-console-producer --broker-list ubuntu-server-1:9092 --topic test1<br /><br/>
+&gt;[2019-10-28 22:50:07,721] WARN [Producer clientId=console-producer] Bootstrap broker ubuntu-server-1:9092 (id: -1 rack: null) disconnected (org.apache.kafka.clients.NetworkClient)<br /><br/>
+[2019-10-28 22:50:08,083] WARN [Producer clientId=console-producer] Bootstrap broker ubuntu-server-1:9092 (id: -1 rack: null) disconnected (org.apache.kafka.clients.NetworkClient)</p>
+
+</blockquote>
+
+<p>也就是说客户端也要加入安全认证，所以在客户端也要创建 JAAS 配置文件，我们分别测试 producer  和 consumer 需要的权限，所以先创建 producer 使用的 <code>producer_jaas.conf</code> 文件，写入内容</p>
+
+<pre class="lang:default decode:true ">KafkaClient {<br/>
+  org.apache.kafka.common.security.plain.PlainLoginModule required<br/>
+  username = "writer"<br/>
+  password = "writer_password";<br/>
+};<br/>
+</pre>
+
+<p>以新的方式启动 <code>kafka-console-producer</code></p>
+
+<blockquote><br/>
+<p>$ export KAFKA_OPTS="-Djava.security.auth.login.config=producer_jaas.conf"; kafka-console-producer --broker-list ubuntu-server-1:9092 --topic test1 --producer-property security.protocol=SASL_PLAINTEXT --producer-property sasl.mechanism=PLAIN</p>
+
+</blockquote>
+
+<p>这时候输入一条消息后会出现 Topic test1 不能被访问的错误</p>
+
+<blockquote><br/>
+<p>$ export KAFKA_OPTS="-Djava.security.auth.login.config=producer_jaas.conf"; kafka-console-producer --broker-list ubuntu-server-1:9092 --topic test1 --producer-property security.protocol=SASL_PLAINTEXT --producer-property sasl.mechanism=PLAIN<br /><br/>
+&gt;hello<br /><br/>
+[2019-10-28 23:28:05,256] WARN [Producer clientId=console-producer] Error while fetching metadata with correlation id 3 : {test1=TOPIC_AUTHORIZATION_FAILED} (org.apache.kafka.clients.NetworkClient)<br /><br/>
+[2019-10-28 23:28:05,257] ERROR [Producer clientId=console-producer] Topic authorization failed for topics [test1] (org.apache.kafka.clients.Metadata)<br /><br/>
+[2019-10-28 23:28:05,258] ERROR Error when sending message to topic test1 with key: null, value: 5 bytes with error: (org.apache.kafka.clients.producer.internals.ErrorLoggingCallback)<br /><br/>
+org.apache.kafka.common.errors.TopicAuthorizationException: Not authorized to access topics: [test1]</p>
+
+</blockquote>
+
+<p>原因为未给该 <code>writer</code> 用户授权写 <code>test1</code> Topic 的权限，还需要配置 ACL 规则，须执行的命令是</p>
+
+<blockquote><br/>
+<p>$ unset KAFKA_OPTS                        //如果未设置 KAFKA_OPTS 就不需要这一步<br /><br/>
+$ kafka-acls --authorizer kafka.security.auth.SimpleAclAuthorizer --authorizer-properties zookeeper.connect=ubuntu-server-1:2181 --add --allow-principal User:writer --operation Write --topic test1<br /><br/>
+Adding ACLs for resource `Topic:LITERAL:test1`:<br /><br/>
+User:writer has Allow permission for operations: Write from hosts: *</p>
+
+<p>Current ACLs for resource `Topic:LITERAL:test1`:<br /><br/>
+User:writer has Allow permission for operations: Write from hosts: *<br /><br/>
+User:reader has Allow permission for operations: Write from hosts: *</p>
+
+</blockquote>
+
+<p>执行前请先把  <code>KAFKA_OPTS</code> 环境变量清除掉，授权后现在可以用 <code>writer</code> 用户向 <code>test1</code> 发送消息了。如果要让该用户能向所有 Topic 发送消息的话可以用 <code>--topic *</code> 指定所有。</p>
+
+<p>Kafka ACL 规则还能配置允许 Client 的 IP, 更详细的规则可直接看 <code>kafka-acls</code> 的命令帮助或请参考官方文档：<a href="https://docs.confluent.io/current/kafka/authorization.html">https://docs.confluent.io/current/kafka/authorization.html</a>。默认时 Kafka 服务端的  <code>allow.everyone.if.no.acl.found=false</code>, 所以它工作在白名单机制，只加给用户授权了才能访问相应资源，否则什么也访问不了。</p>
+
+<blockquote><br/>
+<p>$ export KAFKA_OPTS="-Djava.security.auth.login.config=producer_jaas.conf"; kafka-console-producer --broker-list ubuntu-server-1:9092 --topic test1 --producer-property security.protocol=SASL_PLAINTEXT --producer-property sasl.mechanism=PLAIN<br /><br/>
+&gt;hello<br /><br/>
+&gt;kafka<br /><br/>
+&gt;test done<br /><br/>
+&gt;^C</p>
+
+</blockquote>
+
+<p>要使用 <code>reader</code> 用户从 Topic <code>test1</code> 中读取消息的话，也需要建立一个 JAAS 文件，如 <code>consumer_jaas.conf</code>，内容为</p>
+
+<p>这儿直接说吧，一个 Consumer 需要的 ACL 规则得对相应 Topic 的 Read 权限再加上 Consumer Group 的 Read  权限，简单一点用下面的命令直接让 <code>reader</code> 用户有对所有 Topic 所有消费组的读权限</p>
+
+<blockquote><br/>
+<p>$ unset KAFKA_OPTS                 //如果未设置 KAFKA_OPTS 就不需要这一步<br /><br/>
+$ kafka-acls --authorizer kafka.security.auth.SimpleAclAuthorizer --authorizer-properties zookeeper.connect=ubuntu-server-1:2181 --add --allow-principal User:reader --operation Read --topic "*" --group "*"<br /><br/>
+Adding ACLs for resource `Topic:LITERAL:*`:<br /><br/>
+User:reader has Allow permission for operations: Read from hosts: *</p>
+
+<p>Adding ACLs for resource `Group:LITERAL:*`:<br /><br/>
+User:reader has Allow permission for operations: Read from hosts: *</p>
+
+<p>Current ACLs for resource `Topic:LITERAL:*`:<br /><br/>
+User:reader has Allow permission for operations: Read from hosts: *</p>
+
+<p>Current ACLs for resource `Group:LITERAL:*`:<br /><br/>
+User:reader has Allow permission for operations: Read from hosts: *</p>
+
+</blockquote>
+
+<p>启动带安全验证的 <code>kafka-console-consumer</code></p>
+
+<blockquote><br/>
+<p>export KAFKA_OPTS="-Djava.security.auth.login.config=consumer_jaas.conf"; kafka-console-consumer --bootstrap-server ubuntu-server:9092 --topic test1 --from-beginning --consumer-property security.protocol=SASL_PLAINTEXT --consumer-property sasl.mechanism=PLAIN --consumer-property group.id=test-group<br /><br/>
+hello<br /><br/>
+kafka<br /><br/>
+test done</p>
+
+</blockquote>
+
+<p>其他的需要用 <code>admin</code> 用户的就为 <code>admin</code> 建立一个相应的 <code>jaas.conf</code> 文件，由于 <code>admin</code> 在 Kafka 服务端指定成了 <code>super.user</code>, 所以 <code>admin</code> 是不受 ACL 限制的，它默认拥有所有的权限。</p>
+
+<p>本文用的是 Kafka 的命令来验证 Producer 与 Consumer, 如果是用 Java 写的代码的话，在创建 Producer 或  Consumer 时只要设置前面用到的必须的属性即可。倘若还需再进一步启用 SSL 进行数据传输加密，可以用 Java 的 keytool 命令创建证书，再分发到客户端，此处不再多讲。据说启用了 SSL 之后 Kafka 的吞吐量会有 10% -40% 的下降。</p>

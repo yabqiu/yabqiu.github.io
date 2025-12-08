@@ -1,0 +1,159 @@
+---
+title: 体验 Scala 2.12 支持的 Java 8 风格(SAM) Lambda
+url: /scala-2-12-java-8-sam-lambda/
+date: 2017-11-28T23:27:34-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2017/11/scala-logo.png"
+categories:
+  - Scala
+tags: 
+  - lambda
+  - SAM
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8382 
+wpStatus: publish
+views: 2033
+lastmod: 2017-11-28T23:35:21-06:00
+---
+
+<p>上一次关注 Scala 新版本特性还是在将近五年前，针对的是  Scala 2.10. 后来也一直在使用 Scala，基本上是 Scala 2.11，但对 Scala 2.11 所带来的新特性基本无知，大约有个 Macro 功能，没什么机会用上，应用 sbt 时稍有接触。还是老句老话，了解新特性最可靠的文档是每个版本的的 Release Notes, 比如 <a href="https://github.com/scala/scala/releases/v2.12.0">Scala 2.12.0 Release Notes</a>.</p>
+
+<p>其中 Scala 2.12 带来的主要特性在于对 Java 8 的充分支持：</p>
+
+<ol>
+
+	<li>Scala 可以有方法实现的 trait 直接编译为带默认方法的 Java 接口</li>
+
+	<li>Lambda 表达式无需生成相应的类，而是用到 <code>invokedynamic</code> 字节码指令(这个是 Java 7 加进来的新指令)</li>
+
+	<li>最方便的功能莫过于终于支持 Java  8 风格的 Lambda，即功能性接口的 SAM(Single Abstract Method)</li>
+
+</ol>
+
+<h3>Scala 的 Lambda 内部实现</h3><br/>
+<p>这儿主要是体验 Scala 2.12 如何使用 Java 8 风格的 Lambda. 在 Scala 2.12 之前，Scala 对 Lambda 的支持是为你准备了一大堆的 trait 类，有</p>
+
+<ol>
+
+	<li>Function0, Function1, ...... Function22 (接收多个参数，返回一个值)</li>
+
+	<li>Product1, Product2, ...... Product22 (函数返回多个值，即 TupleX 时用的)</li>
+
+</ol>
+
+<p><!--more--></p>
+
+<p>类似的 Scala Tuple 的实现也是一堆的 Tuple1, Tuple2, ...... Tuple22.</p>
+
+<p>Scala 并不需要像 Java 那样区分 Function, Producer 和 Consumer，因为 Scala 的函数没有严格意义上区分是否有返回值，没有就是 Unit。</p>
+
+<p>我们来看一下在 Scala 任意写一个 Lambda 生成了什么样的代码</p>
+
+<pre class="lang:scala decode:true ">val f1 = (a: Int, b: String) =&gt; a + b</pre>
+
+<p>如果查看在 sbt 项目的 target/scala-2.11/classes 中生成的字节码文件，发现上面一行生成的大致等效的代码如下(忽略细节)</p>
+
+<pre class="lang:default decode:true">Function f1 = new AbstractFunction2() {<br/>
+    public final String apply(int a, String b) {<br/>
+        return a + b;<br/>
+    }<br/>
+}</pre>
+
+<p>AbstractFunction2 是 scala.runtime 包中的类，它继承自 Function2 特质。</p>
+
+<h3>Scala 2.12 之前对 SAM 的支持</h3><br/>
+<p>但是对于想在 Scala 2.12 之前使用 Java 8 的功能性接口，写出来比 Java 8 还麻烦，必须要写成匿名类(和没有 Lambda 的 Java 一样)。因为 Scala 2.12 才是为 Java 8 而生的。</p>
+
+<p>比如对于简单的声明一个 java.lang.Runnable 实例, 它是一个功能性接口，用 Java 8 可以这样写</p>
+
+<pre class="lang:default decode:true ">Runnable runnable = () -&gt; {}</pre>
+
+<p>而 Scala 2.11 想要简单的写成如下方式是不行的</p>
+
+<pre class="lang:default decode:true">val runnable = () =&gt; {}   //这是不行的，它只是一个 Function0<br/>
+val runnable: Runnable = () =&gt; {} //这样也不行，提示 () =&gt; Unit 不能赋给 Runnable 类型变量<br/>
+val runnable = (Runnable) (() =&gt; {}) //强转也不行，Scala 不认识<br/>
+</pre>
+
+<p>正常情况下在 Scala 2.11 中创建一个 Runnable 实例需要这么写</p>
+
+<pre class="lang:default decode:true">val runnable = new Runnable {<br/>
+  override def run(): Unit = ???<br/>
+}<br/>
+<br/>
+//所以启动一个线程需要这样<br/>
+new Thread(new Runnable {<br/>
+  override def run(): Unit = println("hello")<br/>
+}).start()</pre>
+
+<p>是不是有一种似曾相识的感觉，和 Java 8 之前的写法如出一辙, 一点也没占上 Scala Lambda 的光。</p>
+
+<p>其实 Scala 2.11 也是可以支持 Java 8 的 SAM 的，但只是一个实验性的特性，需要打开编译选项 <code>-Xexperimental</code>, 可以通过在 sbt 的 <code>build.sbt</code> 文件中加上一行</p>
+
+<pre class="lang:default decode:true ">scalacOptions += "-Xexperimental"</pre>
+
+<p>来开启实验特性。同时若要让 IntelliJ IDEA 识别支持 SAM 的语法，也需要 IntelliJ IDEA 的 Perferences/../Scala Compiler 中勾选上 <code>Experimental Features</code> 选项框。如此在 Scala 2.11 中也可以写成</p>
+
+<pre class="lang:default decode:true">val runnable: Runnable = () =&gt; {}<br/>
+new Thread(() =&gt; {}).start()</pre>
+
+<p>上面方法声明的 Runnable 与写成匿名类的方式是一样的了，内部也是实现为 Runnable 的匿名类。</p>
+
+<p><span style="color: #800000;">这么一个简单例子打开实验选项来支持 SAM 还是可以的，但是在我经历的一个实际使用 Scala 2.11 的项目中试图打开实验选项却造成项目无法编译。所以实验性的东西需谨慎使用; 譬如说 Spark 2.2 官方并未声明能支持 Scala 2.12 的话，脱了裤子强行上就会有风险。</span></p>
+
+<h3>Scala 2.12 对 SAM 的支持</h3><br/>
+<p>现在已经没有惊喜了，就是在 Scala 2.11 中打开了 <code>-Xexperimental</code> 选项时的书写方式</p>
+
+<pre class="lang:default decode:true ">val runnable: Runnable = () =&gt; {}<br/>
+new Thread(() =&gt; {}).start()</pre>
+
+<p>只是到了在 Scala 2.12 中，<code>val runnable: Runnable = () =&gt; {}</code> 不再是生成一个实现了 Runnable 接口的匿名类，而是产生如下的字节码</p>
+
+<pre class="lang:default decode:true ">0: invokedynamic #38,  0             // InvokeDynamic #0:run:()Ljava/lang/Runnable;<br/>
+5: astore_2</pre>
+
+<h4>实战自定义的 SAM</h4><br/>
+<p>在 Scala 中我们可以定义一个抽象类或 trait</p>
+
+<pre class="lang:default decode:true ">abstract class F2 {<br/>
+  def foo(a: Int, b: String): String<br/>
+}<br/>
+<br/>
+//或者<br/>
+trait F2 {<br/>
+  def foo(a: Int, b: String): String<br/>
+}</pre>
+
+<p>那么要声明一个 F2 实例的写法可以用</p>
+
+<pre class="lang:default decode:true ">val f2: F2 = (a: Int, b: String) =&gt; a + b<br/>
+<br/>
+//因为有 f2: F2 指定类型，所以参数列表中的类型可以省略<br/>
+val f2: F2 = (a, b) =&gt; a + b<br/>
+<br/>
+println(f2.foo(1, "100"))</pre>
+
+<p>如果不指定变量类型，只是声明为</p>
+
+<pre class="lang:default decode:true ">val f2 = (a: Int, b: String) =&gt; a + b<br/>
+f2.apply(1, "100")</pre>
+
+<p>那么 f2 只是一个 Function2 实例，因为没有上下文。这个和 Java 8 的 Lambda 类型推断差不多，只是 Scala 在无法确定类型的时候还那么多默认的 Function0, Function1, ...... Function22 可用。</p>
+
+<p>同样，我们在给类型提供上下文时，比如方法参数的类型，也可以简化成 Java 8 那样的写法</p>
+
+<pre class="lang:default decode:true">//方法接受 F2 类型<br/>
+def bar(f2: F2): String = f2.foo(1, "100")<br/>
+<br/>
+//bar 方法参数中的 Lambda 会被推断为 F2 类型实例，而不会是 Function2<br/>
+bar((a, b) =&gt; a + b)</pre>
+
+<p>说白了，就是 Java 8 怎么支持 SAM 的 Lambda, Scala 2.12 也是同样的语法风格，唯一不同的是参数列表与实现的分隔符分别是 <code>-&gt;</code> 与 <code>=&gt;</code>。</p>
+
+<p>链接：1. <a href="https://blog.jetbrains.com/scala/2015/07/16/try-experimental-sam-in-scala-plugin-1-7/">Try Experimental SAM in Scala Plugin 1.7 for IntelliJ IDEA 15 EAP</a></p>

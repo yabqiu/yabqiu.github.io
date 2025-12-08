@@ -1,0 +1,145 @@
+---
+title: 使用 JMockit 来 mock 构造函数
+url: /jmockit-mock-constructors/
+date: 2017-02-28T01:50:57-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2017/11/jmockit-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Unit Test
+  - jMockit
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7888 
+wpStatus: publish
+views: 8140
+lastmod: 2021-09-03T16:48:48-05:00
+---
+
+Java 测试的 Mock 框架以前是用 JMockit, 最近用了一段时间的 Mockito, 除了它流畅的书写方式，经常这也 Mock 不了，那也 Mock 不了，需要迁就于测试来调整实现代码，使得实现极不优雅。比如 Mockito 在 私有方法，final 方法，静态方法，final 类，构造方法面前统统的缴械了。powermock 虽然可作 Mockito 的伴侣来突破 Mockito 本身的一些局限，但是我一用它来 Mock 一个构造方法就出错</p>
+<br/>
+<blockquote>
+Caused by: java.lang.ClassNotFoundException: org.mockito.exceptions.Reporter
+</blockquote>
+<br/>
+原因是 Mockito 变化太快，powermock 跟不上它的步伐 -- <a href="https://github.com/powermock/powermock/issues/684">https://github.com/powermock/powermock/issues/684</a>，于是我只能止步。<br/><br/>
+不得已再祭出 JMockit 这号称(也确实是)一无所不能的大杀器，在此见识一下它怎么 Mock 构造函数的<br/><br/>
+本篇实例所使用的 JMockit 版本是 1.30, 当前最新版 1.31, 由于尚未被 Maven 中央仓库收录，所以暂用 1.30。在 pom.xml 中如下方式引入<!--more--><br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;org.jmockit&lt;/groupId&gt;
+    &lt;artifactId&gt;jmockit&lt;/artifactId&gt;
+    &lt;version&gt;1.30&lt;/version&gt;
+    &lt;scope&gt;test&lt;/scope&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+待测试的代码是类 Example, 代码如下<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+public class Example {<br/><br/>
+    public String findOneUser(String category) {
+        if("general".equals(category) || category.equals("admin")) {
+            return new UserService(new UserDao(), category).findById(123);
+        }
+        throw new RuntimeException("Invalid category");
+    }
+}</pre>
+<br/>
+它的 findOneUser(category) 方法中需要根据条件来创建一个 UserService 实例，所以未把 UserService 实例声明为 Example 的属性，通过 Example 的构造函数来传入，若如此就很容易用 Mockito 的 Mock 这个 UserService 实例了。<br/><br/>
+<blockquote>
+private UserService userService;<br />
+<br />
+public Exmple(UserService userService) {<br />
+    this.userService = userServie;<br />
+}
+</blockquote>
+<br/>
+上面的实现是 Mockito 最喜爱的口味了。但由于 userService 并不跟随 Example 创建，所以 Mockito 去 Mock findOneUser(category) 里的 new UserService(userDao,  "admin") 就显示得捉襟见肘了。<br/><br/>
+在使用 JMockit mock UserService 构造函数之前，贴出一下 UserService 的演示实现<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+public class UserService {
+    private UserDao userDao;
+    private final String category;<br/><br/>
+    public UserService(UserDao userDao, String category) {
+        this.userDao = userDao;
+        this.category = category;
+    }<br/><br/>
+    public String findById(int id) {
+        return userDao.findById(id);
+    }
+}</pre>
+<br/>
+我们要测试的目标方法是 Example.findOneUser(category), 其中一个测试是 userService 实例的 findById(id) 方法获得什么它也返回什么，所以单元测试中的 service.findById(id) 方法不应该调用实际的 userDao 的相应方法，也就是我们要 Mock 的目的所在。所以本例中的 UserDao 的方法并未实现，如下<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+public class UserDao {
+    public String findById(int id) {
+       throw new RuntimeException("not implemented");
+    }
+}</pre>
+<br/>
+那么来看测试代码 ExampleTest<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import mockit.Expectations;
+import mockit.Mocked;
+import org.junit.Test;<br/><br/>
+import static org.junit.Assert.assertEquals;<br/><br/>
+public class ExampleTest {<br/><br/>
+    @Mocked
+    private UserService userService;<br/><br/>
+    @Test
+    public void testFindOneUser() {
+        new Expectations() {{
+           new UserService(withInstanceOf(UserDao.class), "admin");
+           result = userService;<br/><br/>
+           userService.findById(123);
+           result = "Hello Yanbin's blog";
+        }};<br/><br/>
+        Example example = new Example();
+        String user = example.findOneUser("admin");
+        assertEquals("Hello Yanbin's blog", user);
+    }
+}</pre>
+<br/>
+上面的测试 testFindOneUser() 顺利通过，这里的精髓就在<br/><br/>
+<blockquote>
+new UserService(withInstance(UserDao.class), "admin");<br />
+result = userService;
+</blockquote>
+<br/>
+JMockit 只是把构造函数当成一个普通的有返回值的方法而已。<br/><br/>
+我们也可以换一种方式来 Mock 构造函数，用  new MockUp&lt;Class&gt; 的方式，用以植入 Mock 的内部变量值，下面的例子不直接 Mock UserService 实例，而是通 $init 函数来改变生成的 userService 实例的内部状态，以便对它内部的操作作进一步精细的控制。$init 在 JVM 中就就构造函数的表示法。<br/><br/>
+下面的例子，Mockito 和 JMockit 双管齐下，结合 JMockit 的强悍功能，以及 Mockito 的 BBD 风格，你也可以只使用 JMockit 的 Expectations API 来 mock 对 mockedUserDao 的操作。<br/><br/>
+<pre class="lang:default decode:true ">package cc.unmi;<br/><br/>
+import mockit.Deencapsulation;
+import mockit.Invocation;
+import mockit.MockUp;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.runners.MockitoJUnitRunner;<br/><br/>
+import static org.junit.Assert.assertEquals;
+import static org.mockito.Mockito.when;<br/><br/>
+@RunWith(MockitoJUnitRunner.class)
+public class ExampleTest {<br/><br/>
+    @org.mockito.Mock
+    private UserDao mockedUserDao;<br/><br/>
+    @Test
+    public void testFindOneUser()  {<br/><br/>
+        new MockUp&lt;UserService&gt;() {
+            @mockit.Mock
+            public void $init(Invocation invocation, UserDao userDao, String category) {
+                UserService userService = invocation.getInvokedInstance();
+                Deencapsulation.setField(userService, mockedUserDao);
+            }
+        };<br/><br/>
+        when(mockedUserDao.findById(123)).thenReturn("Hello Again");<br/><br/>
+        Example example = new Example();
+        String user = example.findOneUser("admin");
+        assertEquals("Hello Again", user);
+    }
+}</pre>
+<br/>
+MockUp 和 Expectations API 其实也是 JMockit 的两种书写方式，前者可用于 mock 私有方法，后者常用，但功能稍弱一些。

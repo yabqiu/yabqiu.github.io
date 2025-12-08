@@ -1,0 +1,58 @@
+---
+title: 纯Java程序读取DBF文件型数据库
+url: /pure-java-access-dbf/
+date: 2006-03-03T11:03:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - DBF
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 585 
+wpStatus: publish
+views: 1116
+lastmod: 2021-09-03T10:45:17-05:00
+---
+
+还记得那个古老的Foxbase和Foxpro产生的数据库吗？与access（MDB）类似的文件型数据库，可是有些地方有人还在用它。DBF数据库一般都是在Foxbase或Foxpro中或由它们生成的应用程序来访问，也可以通过建立ODBC的方式来访问。</p>
+<br/>
+Java要访问什么数据库第一个念头就会是有没有相应的驱动啊，有驱动那好办，若是没有驱动那能不能通过配置ODBC，用JDBC-ODBC桥来访问呢？当然Java访问DBF文件是可以通过JDBC－ODBC的方式，但这样的话是不是纯Java实现还说，倒是得为要访问的DBF文件建一个数据源麻烦，尤其是程序移植时。<!--more--><br/><br/>
+还好有一个访问DBF文件的JDBC驱动可以用，那就是xBaseJ，当前版本是v2.1 (试用版下载地址<a href="http://www.americancoders.com">http://www.americancoders.com</a>)。xBaseJ是一个Java写成的dBase数据库引擎，支持dBase III、IV DBF、DBT、NDX、MDX和FPT文件，还有独立的C/S结构类，用于开发Java程序。不过这东西还真贵，注册费用是$95，是美元啦！<br/><br/>
+先可以体验一下xBaseJ的简单应用，运行自带的例子程序。解压下载过来的xdbfj21F.zip文件，把其中的xBaseJ.jar加到classpath下，最好在IDE里用。然后可以运行自带的createDBFS.java程序，它会在当前目录创建一个数据库文件DBFs.DBF，再执行testread.java,需要传入参数DBFs.DBF，就是刚刚生成的数据库文件名，控制台下可以看到输出createDBFS程序插入的数据记录。<br/><br/>
+但同时你也会看到试用版的xBaseJ会在控制台下打印出过期时间（如Package Expires: 2006-04-01　　Package Will Expire ），但倘若我写的不控制台程序，过期信息它也找不着去哪儿打印出来。并且同一进程打开的文件数不能超过5个。<br/><br/>
+不过在Java包中这种限制相信都难不倒多少人，Java的字节码可是能被反编译的，下面告诉各位一下如果 xBaseJ 过期，也不输出过期，并且去除打开文件数量的限制。<br/><br/>
+先找着是在哪行代码执行后出现过期信息的，在testread.java源代码中设个断点，就在第一次介入xBaseJ的代码行处，aDBF = new DBF(arg[0]);。调试时你可以看到就是执行new DBF(arg[0])后打印出过期信息的。用工具（如Java源代码反编译专家）反编译出DBF.class文件，看构造函数DBF(String s)就可以追溯到是private void A600000(String s)方法中打印出来的信息，并对打开文件数作的限制。其实打开的源文件，只要查到一下输出信息，比如"Package Expired"就能直接找到在哪里输出的。<br/><br/>
+找到了在哪里就好办了，把约束给解除掉啊，注释掉你不想要的东西，例如，把下面两块代码注释掉就行了<br/><br/>
+第一块是：去除时间限制，不打印提示信息<br/><br/>
+<pre class="lang:default decode:true">Calendar calendar = Calendar.getInstance();
+if(calendar.get(1) &gt; 2006)
+    System.err.println("Package Expired");
+else
+if(calendar.get(1) == 2006)
+{
+    if(calendar.get(2) &gt; 2)
+        System.err.println("Package Expired");
+    if(calendar.get(2) == 2)
+        System.err.println("Package Will Expire ");
+}
+System.out.println("Package Expires: 2006-04-01");</pre>
+<br/>
+第二块是：去除同一进程打开文件数量限制<br/><br/>
+<pre class="lang:default decode:true crayon-selected ">results ++;
+    if(results &gt; 5L)
+        throw new xBaseJException("Demo Version File Count Overload - limited to 5");</pre>
+<br/>
+编译这个DBF类，把生成的DBF.class替换掉原来xBaseJ.jar包中的该文件就行了，就这么简单。如果大家对这种方式侵权无太多的顾虑的话就可以这样用它。<br/><br/>
+大家反编译xBaseJ的字节码是也会注意到，他们发布的时候还有意把类、方法、变量命名给混淆了一下，但这丝毫不会影响作这种简单的Crack。<br/><br/>
+对xBaseJ使用上更多的介绍可以参数下载的xdbfj21F.zip中帮助文档，或运行一下所带的其他例子程序，参看网站<a href="http://www.americancoders.com/xBaseJ2.1/index.html">http://www.americancoders.com/xBaseJ2.1/index.html</a>可以获取到更多的信息。<br/><br/>
+例如：提供了SWING图形界面创建DBF文件，浏览、增、删、改DBF文件中的记录，还允许通过RMI的方式远程访问DBF文件。还有更多的附加支持包可供下载。<br/><br/>
+DBF Beans <a href="http://www.americancoders.com/xBaseJ2.1/makeDBFbean.zip">http://www.americancoders.com/xBaseJ2.1/makeDBFbean.zip</a> 简化你的代码读取DBF文件和创建Javabean<br />
+xBaseJMailer <a href="http://www.americancoders.com/xBaseJMailer.html">http://www.americancoders.com/xBaseJMailer.html</a> 读取DBF记录并通过Email发送出去<br />
+dbf2xml application <a href="http://www.americancoders.com/xBaseJ2.1/dbf2xml.zip">http://www.americancoders.com/xBaseJ2.1/dbf2xml.zip</a> 读取DBF记录生成xml文件

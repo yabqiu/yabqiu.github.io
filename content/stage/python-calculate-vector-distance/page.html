@@ -1,0 +1,180 @@
+---
+title: 向量间距离/相似度及用 Python 进行计算
+url: /python-calculate-vector-distance/
+date: 2022-09-20T15:25:34-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - similarity
+  - distance
+  - vector
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12727 
+wpStatus: publish
+views: 1704
+lastmod: 2024-12-09T23:08:25-06:00
+---
+
+[latexpage]计算距离的目的也是为了确定两个向量的相似度，这里的向量可以是纯数学的数组，或者是一系列带有某些可量化特征值的物件。写作本文的原由是需要用 Numpy 计算两个实际对象的相似度，实现代码非常简单，因此更不能满足于此，借此机会多多了解下向量之间距离和相似度的概念，还回顾下一些相关的数学知识。<br/><br/>
+计算两个向量的相似度有许多的方法，如<br/><br/>
+<ol>
+    <li>欧氏距离(Euclidean Distance): 点间直线距离，数值越小越相似</li>
+    <li>夹角余弦(Cosine): 余弦相似度(Cosine Similarity)，计算两个向量之间的夹角，值在  -1 ～ 1 之间</li>
+    <li>曼哈顿距离(Manhattan Distance): 点间在坐标系上的绝对轴距总和</li>
+    <li>切比雪夫距离(Chebyshev Distance): 像国际象棋中的王从一格子到另一个格子间的距离</li>
+    <li>标准化欧氏距离(Standardized Euclidean distance): 先对各个分量进行标准化，再求欧氏距离</li>
+    <li>其他距离和相关系数，如马氏距离(Mahalanobis Distance), 兰氏距离(Lance Williams Distance); 皮尔逊相关系数(Pearson Correlation Coefficient), 杰卡德相似系数(Jaccard similarity coefficient)</li>
+</ol>
+<br/>
+本文主要关注到欧氏距离和余弦相似度这两个数值的求解上。<!--more--><br/><br/>
+<h3>向量间的距离</h3><br/><br/>
+当每个向量只有两个值时，两个向量表示的就是在平面坐标上的两个点，如 (x1, y1) 和 (x2, y2), 那么它们之间的距离公式可由勾股定理推导出来，即<br/><br/>
+<blockquote>
+[latex]d = \sqrt{(x_2 - x_1)^2 + (y_2 - y_1)^2}[/latex]<img class="J-formula-img" title="" src="https://bkimg.cdn.bcebos.com/formula/dde6014fc0047e35aad41addaf570fb3.svg" alt="" align="absmiddle" data-png="https://bkimg.cdn.bcebos.com/formula/dde6014fc0047e35aad41addaf570fb3.png" data-width="118" data-height="37" />
+</blockquote>
+<br/>
+推广到三维空间的两个点，一个点可投影到另两个点所在的平面，经过多次勾股定理推算出相应的距离公式为<br/><br/>
+<blockquote>
+[latex]d = \sqrt{(x_2-x_1)^2+(y_2-y_1)^2+(z_2-z_1)^2}[/latex]
+</blockquote>
+<br/>
+由此，任意维度中两个点间的距离就是  \[ D_{ij}^2 = \sum_{v=1}^n (X_{vi} - X_{vj})^2 \]<br/><br/>
+开始用 Python 来计算两个向量之间的距离<br/><br/>
+<h4>Python 集合推导形式</h4><br/><br/>
+<pre class="lang:default mark:3-4 decode:true">import math<br/><br/>
+def eucli_dist(A, B):
+    return math.sqrt(sum([(a-b)**2 for (a,b) in zip(A, B)]))<br/><br/>
+print(eucli_dist((0,0), (3,4)))       # 5.0
+print(eucli_dist((1,2,3), (3,5,8)))   # 6.164414002968976</pre>
+<br/>
+<h4>利用 Numpy 两个向量间直接运算</h4><br/><br/>
+<pre class="lang:default mark:3-4 decode:true">import numpy as np<br/><br/>
+def eucli_dist(A, B):
+    return np.sqrt(sum(np.power((A-B), 2)))  # 或者 np.sqrt(sum(np.square(A-B))<br/><br/>
+print(eucli_dist(np.array([0,0]), np.array([3,4])))       # 5.0
+print(eucli_dist(np.array([1,2,3]), np.array([3,5,8])))   # 6.164414002968976</pre>
+<br/>
+<h4>Numpy 计算向量的范数(即距离)</h4><br/><br/>
+说到向量的 模与 范, 就是一堆的线性代数的概念了, 当初学习线性代数和矩阵的时候可没想到如今还能用得上它们。Norm 源于拉丁语的 norma, 意为木匠用的三角规(Carpenter's square), 演变为英文就是 normal。<br/><br/>
+模和范，模范是两个容易混淆的概念，有时它们又是同一个意义，相应的有模式，范式。中文中模是指 modules, 范指的是 norm。在 Google 中搜索了有关向量的模与范之后反而更糊涂了，有说向量的模表示为 |v|, 范表示为 ||v||，向量的模表示意义上也就是绝对值，实际上单元素向量的模就是元素的绝对值 |(x)| = |x|<br/><br/>
+或说模长为范数，范数有 L0, L1, L∞ 和 Lp 范数<br/><br/>
+L0 范数: 向量中所有非零分量的个数, X=(x1,x2,..., xn),  ||X||<sub>0</sub> = X 中所有非零分量的个数，若 A = (0, 3, 6), ||A||<sub>0</sub> = 2<br/><br/>
+L1 范数: 向量中每个分量的绝对值之和, \[||X||_1=|x_1|+|x_2|+...+|x_n|, ||X||=\sum_{i=1}^n|x_i|\] <br/><br/>
+L2 范数: 向量中每个分量平方总和再开二次方, \[||X||<sub>2</sub> = \(\sqrt{|x_1|^2+|x_2|^2+|x_3|^2}\)= \sqrt{\sum_{i=1}^n|x_i|^2\], 由于每个分量都平方了，所以可省略每个分量上的绝对值操作<br/><br/>
+L∞ 范数: 向量中每个分量的绝对值的最大值, ||X||∞ = max(|X<sub>1</sub>|, |X<sub>2</sub>| ... |X<sub>n</sub>|)<br/><br/>
+Lp 范数: 向量在每个分量绝对值的 p 次数总和, 再开 p 次方,  L2 活范数是 Lp 的特例 \[||x||_p=\sqrt[p]{|x_1|^p+|x_2|^p+...+|x_n|^p}=\sqrt{\sum_{i=1}^n|x_i|^2}\]<br/><br/>
+我们通常所说的范数是指 L2 范数，我们要计算的欧氏距离(<a href="https://zh.wikipedia.org/wiki/%E6%AC%A7%E5%87%A0%E9%87%8C%E5%BE%97%E8%B7%9D%E7%A6%BB">欧几里得距离</a>)对应的就是 L2 范数。向量的范数相当于是一维或多维空间的原点(0,0...0) 到向量点间的距离，即<br/><br/>
+<blockquote>
+\(||X||_2=\sqrt{|x_1-0|^2+|x_2-0|^2+|x_3-0|^2}\)
+</blockquote>
+<br/>
+那么任意两个点间的距离就是<br/><br/>
+<blockquote>
+\(||XY|| = \sqrt{|y_1-x_1|^2+|y_2-x_2|^2+|y_3-x_3|^2\) 
+</blockquote>
+<br/>
+在 Numpy 中用 np.linalg.norm() 函数求范数<br/><br/>
+<pre class="lang:default mark:3-4 decode:true ">import numpy as np<br/><br/>
+def eucli_dist(A, B):
+    return np.linalg.norm(A-B)<br/><br/>
+print(eucli_dist(np.array([0,0]), np.array([3,4])))       # 5.0
+print(eucli_dist(np.array([1,2,3]), np.array([3,5,8])))   # 6.164414002968976</pre>
+<br/>
+<code>linalg</code> 即 linear algebra, 线性代数的意思<br/><br/>
+和前面输出的结果一样, np.linalg.norm() 默认计算的是 L2 范数, 相当于 np.linalg.norm(ord=2), 再来看它用来计算一个向量的范数<br/><br/>
+<pre class="lang:default decode:true ">a = np.array([3,4])
+print(np.linalg.norm(a, ord=2))  # 5.0</pre>
+<br/>
+就是计算向量 (3,4) 到原点间的距离<br/><br/>
+<h4>通过点差及其转置的点积求得</h4><br/><br/>
+<pre class="lang:default decode:true ">import numpy as np<br/><br/>
+def eucli_dist(A, B):
+    temp = A - B
+    return np.sqrt(np.dot(temp.T, temp))<br/><br/>
+print(eucli_dist(np.array([0,0]), np.array([3,4])))       # 5.0
+print(eucli_dist(np.array([1,2,3]), np.array([3,5,8])))   # 6.164414002968976</pre>
+<br/>
+点积的概念我们将在后面学习到<br/><br/>
+<h4>scipy 的 distance.euclidean() 函数</h4><br/><br/>
+<pre class="lang:default decode:true ">from scipy.spatial import distance<br/><br/>
+def eucli_dist(A, B):
+    return distance(A, B)<br/><br/>
+print(eucli_dist((0,0), (3,4)))       # 5.0
+print(eucli_dist((1,2,3), (3,5,8)))   # 6.164414002968976</pre>
+<br/>
+math.dist() 函数计算两点间距离<br/><br/>
+<pre class="lang:default decode:true ">from math import dist<br/><br/>
+def eucli_dist(A, B):
+    return dist(A, B)<br/><br/>
+print(eucli_dist((0,0), (3,4)))       # 5.0
+print(eucli_dist((1,2,3), (3,5,8)))   # 6.164414002968976
+</pre>
+<br/>
+最简单的原来就在手边<br/><br/>
+<h3>余弦相似性计算</h3><br/><br/>
+<a href="https://zh.wikipedia.org/wiki/%E4%BD%99%E5%BC%A6%E7%9B%B8%E4%BC%BC%E6%80%A7">余弦相似性</a>通过测量两个向量的夹角余弦值来度量它们之间的相似性，欧氏距离只管距离的绝对值, 余弦相似度只管方向。所有值在 -1 ~ 1 之间，指向相同方向时，即零度角，余弦值为 1， 90 度夹角余弦值为 0，反方向时相似度为 -1, 余弦相似度通常用于正空间，所以值在 0 ~ 1 之间。<br/><br/>
+计算公式<br/><br/>
+两个向量间的余弦值可以通过欧几里得点积公式求出：<br/><br/>
+a . b = ||a|| ||b|| cos <i>θ</i><br/><br/>
+给定两个属性的向量，A 和 B，其余弦相似 <i>θ </i>由点的向量长度给出<i>，</i>如下所示<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/09/similarity-002.png"><img class="wp-image-12766 aligncenter" src="https://yanbin.blog/wp-content/uploads/2022/09/similarity-002-800x199.png" alt="" width="402" height="100" /></a><br/><br/>
+这里的 A<sub>i</sub> 和 B<sub>i</sub> 分别代表向量 A 和 B 的各分量，通过前面的学习可知，||A|| 和 ||B|| 分别表示 A 和 B 的 L2 范数。<br/><br/>
+相似性值 -1 意味着两个向量指向截然相反，1 表示它们指向完全相同，0 通常表示它们是独立的。<br/><br/>
+关于向量的<a href="https://zh.wikipedia.org/wiki/%E7%82%B9%E7%A7%AF">点积</a>与<a href="https://zh.wikipedia.org/wiki/%E5%8F%89%E7%A7%AF">叉积</a><br/><br/>
+点积(Dot product), 名称源自于点号 a .b, 读作 a dot b, 又称数量积或标量积，在欧几里得几何中，两个笛尔尔坐标向量的点积常称为内积(Inner product)<br/><br/>
+叉积(Cross product), 用符号 <code>X</code> 表示，又称向量积，与点积不同的是，它的运行结果还是向量，相应的它也被称为外积(Outer product)<br/><br/>
+点积的定义如下<br/><br/>
+\[\vec{a} \cdot \vec{b} = \sum_{i=1}^n a_i b_i = a_1 b_1 + a_2 b_2 + \cdots + a_n b_n\]<br/><br/>
+<h4>NumPy 计算余弦相似性</h4><br/><br/>
+由上面的公式，使用 NumPy 就有了下面的计算余弦相似度代码<br/><br/>
+<pre class="lang:default decode:true">import numpy as np<br/><br/>
+def cosine_similarity(A, B):
+    return np.dot(A, B) / (np.linalg.norm(A) * np.linalg.norm(B))<br/><br/>
+x = np.array([1, 2, 3])
+y = np.array([3, 5, 8])<br/><br/>
+print(cosine_similarity(x, y)) # 0.998906107238672</pre>
+<br/>
+<h4>用 scipy 计算余弦相似性</h4><br/><br/>
+<pre class="lang:default decode:true">from scipy import spatial<br/><br/>
+def cosine_similarity(A, B):
+    return 1 - spatial.distance.cosine(A, B)<br/><br/>
+x = (1, 2, 3)
+y = (3, 5, 8)<br/><br/>
+print(cosine_similarity(x, y)) # 0.9989061072386719</pre>
+<br/>
+精度上有一点误差<br/><br/>
+另外两种方式，使用 sklearn 或 torch 库<br/><br/>
+<h4>使用 sklearn 的 cosine_similarity() 函数 计算余弦相似性</h4><br/><br/>
+<pre class="lang:default decode:true ">import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity as cs<br/><br/>
+def cosine_similarity(A, B):
+    return cs(A.reshape(1, -1), B.reshape(1, -1))<br/><br/>
+x = np.array([1, 2, 3])
+y = np.array([3, 5, 8])<br/><br/>
+cos_sim = cosine_similarity(x.reshape(1, -1), y.reshape(1, -1))
+print(cos_sim[0][0]) # 0.998906107238672</pre>
+<br/>
+<h4>使用 touch 的  cosine_similarity() 函数</h4><br/><br/>
+<pre class="lang:default decode:true ">import torch
+import torch.nn.functional as F<br/><br/>
+x = torch.FloatTensor([1, 2, 3])
+y = torch.FloatTensor([3, 5, 8])<br/><br/>
+cos_sim = F.cosine_similarity(x, y, dim=0)
+print(cos_sim.item()) # 0.9989060759544373</pre>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://cloud.tencent.com/developer/article/1668762">计算向量间相似度的常用方法</a></li>
+    <li><a href="https://blog.csdn.net/linkequa/article/details/87282642">向量 模 (module) 范数 (norm)</a></li>
+    <li><a href="https://www.cnblogs.com/Kalafinaian/p/11143995.html">范数的概念</a></li>
+    <li><a href="https://www.delftstack.com/zh/howto/numpy/calculate-euclidean-distance/">使用 NumPy 模块查找两点之间的欧几里得距离</a></li>
+    <li><a href="https://zhuanlan.zhihu.com/p/508625294">Python计算余弦相似性 (cosine similarity) 方法汇总</a></li>
+</ol>

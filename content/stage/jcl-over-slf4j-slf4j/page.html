@@ -1,0 +1,103 @@
+---
+title: SLF4J 的几种实际应用模式--之三：JCL-Over-SLF4J+SLF4J
+url: /jcl-over-slf4j-slf4j/
+date: 2010-04-07T10:42:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - SLF4J
+  - Logback
+  - Log
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 203 
+wpStatus: publish
+views: 6000
+lastmod: 2021-09-02T11:01:49-05:00
+---
+
+我们前面已经讲过了 SLF4J 的两种用法：SLF4J+Log4J  和 SLF4J+Logback，那是在比较理想的情况下，所用组件只使用了 SLF4J 这一种统一日志框架的时候。可是 JCL 一直影响深远，SLF4J 渐入佳境的时个，在你的项目中很可能所用的组件，它们分别用了 JCL 和 SLF4J 两种组件。比如说在项目中用了 Hibernate 3.5 和 Struts，或其他 Apache 的一些开源组件，你大约也不想用了 SLF4J 的组件日志信息输出到 A 处，用了 JCL 的组件日志输出到 B 处，那你自己写的代码中的日志信息该往哪儿写呢？</p>
+<br/>
+中国人一直都愿追求大一统，不喜欢城邦制的便于分而治之。但说到日志输出还是得统一到单一通道中来，一方面多个通道浪费资源，另方面也便于配置和管理。那么既然 SLF4J 是趋势，当 SLF4J 和 JCL 被丢到一个坛子里，首先会让 SLF4J 为主，JCL 为辅，也就是要把 JCL 桥接到 SLF4J 上来，通过 SLF4J 统一输出日志信息。于是也就是这篇要介绍的 SLF4J 使用模式：JCL-Over-SLF4J+SLF4J。<!--more--><br/><br/>
+从前面对 SLF4J 的认识可知，即使把 JCL 转嫁到 SLF4J，还是无法输出日志，还需要一种日志实现，下层该用 Log4J 还得用 Log4J，想用 Logback 还是要用 Logback。所以到了 SLF4J 后还得往下走，也就是前面那两条路 SLF4J+Log4J 和 SLF4J+Logback，本篇使用 SLF4J 的模式具体就要分为：<br/><br/>
+JCL-Over-SLF4J+<strong>SLF4J+Log4J</strong> 和 JCL-Over-SLF4J+<strong>SLF4J+Logback</strong>，这两种实现方式差不多。只是分别用的 jar 包和配置文件不同，SLF4J+Log4J 和 SLF4J+Logback 原来要哪些文件现在还是需要那些文件，只是都要加上 jcl-over-slf4j-1.5.11.jar 包。这里说明 JCL-Over-SLF4J+<strong>SLF4J+Logback</strong> 的方式。<br/><br/>
+需要的配置文件和组件包，下面四个 jar 文件和一个 xml文件都是要放在项目的 ClassPath 上。<br/><br/>
+1. slf4j-api-1.5.11.jar<br />
+2. logback-core-0.9.20.jar<br />
+3. logback-classic-0.9.20.jar<br />
+4. logback.xml 或 logback-test.xml<br />
+5. jcl-over-slf4j-1.5.11.jar<br/><br/>
+第 1 和第 5 个包在 <a href="http://www.slf4j.org/download.html">http://www.slf4j.org/download.html</a> 处下载，第二第三个包在 <a href="http://logback.qos.ch/download.html">http://logback.qos.ch/download.html</a> 下载，可能包文件名中的版本号有些差异。<br/><br/>
+下面是一个最简单的 logback.xml 文件内容<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;configuration&gt;
+  &lt;appender name="stdout" class="ch.qos.logback.core.ConsoleAppender"&gt;
+      &lt;encoder charset="GBK"&gt;
+          &lt;pattern&gt;[Consociate] %d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n&lt;/pattern&gt;
+      &lt;/encoder&gt;
+  &lt;/appender&gt;  <br/><br/>
+  &lt;root level="DEBUG"&gt;
+    &lt;appender-ref ref="stdout" /&gt;
+  &lt;/root&gt;
+&lt;/configuration&gt;</pre>
+<br/>
+为了看看效果，我们在输入的 pattern 中加入了 [Consociate]，来检验是否统一到单一的日志通道中去了。<br/><br/>
+使用 了 JCL 和 SLF4J  的代码<br/><br/>
+<pre class="lang:default decode:true ">package com.unmi;<br/><br/>
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;<br/><br/>
+public class TestJCLOverSlf4j {
+    //SLF4J 的 Logger
+    private static final Logger logger = LoggerFactory.getLogger("From SLF4J");<br/><br/>
+    //JCL 的 Log
+    private static final Log log = LogFactory.getLog("From JCL");<br/><br/>
+    //分别用上面的 logger 和 log 输出日志，从输出可以看到它们统一到一个通道中了
+    public static void main(String[] args) {
+        logger.info("Hello {}","From SLF4J");
+        log.info("Hello From JCL");
+    }
+}</pre>
+<br/>
+我们在上面代码中，既使用了 JCL 统一日志框架，也使用了 SLF4J 的统一日志框架。要注意一点，从 JCL 桥接过来的 log 不能输出参数化消息了。上面代码使用了 org.apache.commons.logging.Log，import org.apache.commons.logging.LogFactory，但你却用不着引入 commons-logging.jar 包。<br/><br/>
+执行上面的代码，看到输出：<br/><br/>
+[Consociate] 23:19:39.890 [main] INFO  From SLF4J - Hello From SLF4J<br />
+[Consociate] 23:19:39.921 [main] INFO  From JCL - Hello From JCL<br/><br/>
+很明显示 JCL 框架和 SLF4J 框架的日志输出都统一到了一个通道中来了，为什么呢? SLF4J 使用的是 Logback 输出的信息，这一点没问题的，而 JCL 是不认识 Logback 的，所以 JCL 框架的输出必然是绕道到 SLF4J，最后也是由 Logback 输出的。<br/><br/>
+<strong>实现分析：</strong><br/><br/>
+我们打开 jcl-over-slf4j-1.5.11.jar，看到里面有两个包 org.apache.commons.logging 和 org.apache.commons.logging.impl，并有相应的类，这就是为什么，虽然在代码中有：<br/><br/>
+import org.apache.commons.logging.Log;<br />
+import org.apache.commons.logging.LogFactory;<br/><br/>
+却不用把 commons-logging.jar 包引入到类路径上的原因。<br/><br/>
+再深入下 jcl-over-slf4j-1.5.11.jar，看到其中还有个文件 /META-INF/services/org.apache.commons.logging.LogFactory，内容为：<br/><br/>
+org.apache.commons.logging.impl.SLF4JLogFactory<br/><br/>
+# Axis gets at JCL through its own mechanism as defined by Commons Discovery, which<br />
+# in turn follows the instructions found at:<br />
+# <a href="http://java.sun.com/j2se/1.3/docs/guide/jar/jar.html#Service">http://java.sun.com/j2se/1.3/docs/guide/jar/jar.html#Service</a> Provider<br/><br/>
+JCL 运行时使用了 SLF4JLogFactory，从而完成了 JCL 的日志实现委托给了 SLF4J，再由 SLF4J 进一步完成具体的日志输出。<br/><br/>
+采用 JCL-Over-SLF4J+<strong>SLF4J+Log4J</strong> 使用模式也是相似的，这里就不详述了。总结下就是 JCL 把 SLF4J 当作它的日志实现。<br/><br/>
+再来想象个问题：如果我们把这两个包 jcl-over-slf4j-1.5.11.jar 和 slf4j-jcl-1.5.11.jar 都放到 ClassPath 下会有什么情况呢？JCL 代理给 SLF4J，SLF4J 又绑定到 JCL，对了，死循环，StackOverFlow 错误：<br/><br/>
+<span style="color: #ff0000;">SLF4J: Detected both jcl-over-slf4j.jar AND slf4j-jcl.jar on the class path, preempting StackOverflowError.<br />
+SLF4J: See also </span><a href="http://www.slf4j.org/codes.html#jclDelegationLoop"><span style="color: #ff0000;">http://www.slf4j.org/codes.html#jclDelegationLoop</span></a><span style="color: #ff0000;"> for more details.<br />
+java.lang.ExceptionInInitializerError<br />
+at org.slf4j.impl.StaticLoggerBinder.&lt;init&gt;(StaticLoggerBinder.java:82)<br />
+at org.slf4j.impl.StaticLoggerBinder.&lt;clinit&gt;(StaticLoggerBinder.java:51)<br />
+at org.slf4j.LoggerFactory.getSingleton(LoggerFactory.java:230)<br />
+at org.slf4j.LoggerFactory.bind(LoggerFactory.java:121)<br />
+at org.slf4j.LoggerFactory.performInitialization(LoggerFactory.java:112)<br />
+at org.slf4j.LoggerFactory.getILoggerFactory(LoggerFactory.java:275)<br />
+at org.slf4j.LoggerFactory.getLogger(LoggerFactory.java:248)<br />
+at com.unmi.TestJCLOverSlf4j.&lt;clinit&gt;(TestJCLOverSlf4j.java:10)<br />
+Caused by: java.lang.IllegalStateException: Detected both jcl-over-slf4j.jar AND slf4j-jcl.jar on the class path, preempting StackOverflowError. See also </span><a href="http://www.slf4j.org/codes.html#jclDelegationLoop"><span style="color: #ff0000;">http://www.slf4j.org/codes.html#jclDelegationLoop</span></a><span style="color: #ff0000;"> for more details.<br />
+at org.slf4j.impl.JCLLoggerFactory.&lt;clinit&gt;(JCLLoggerFactory.java:64)<br />
+... 8 more<br />
+Exception in thread "main"<br />
+</span>

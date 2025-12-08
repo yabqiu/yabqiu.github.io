@@ -1,0 +1,39 @@
+---
+title: Unmi 的 Struts2 学习笔记(四)
+url: /unmi-study-struts2-4/
+date: 2008-02-22T11:00:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/05/struts-logo.jpeg"
+categories:
+  - Struts
+tags: 
+  - Struts2
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 439 
+wpStatus: publish
+views: 496
+lastmod: 2019-12-11T19:00:59-06:00
+---
+
+在这个陌生的城市里，的确承受着巨大的压力。房东的驱赶与无理的加价，想置个家电须顾及到搬迁。也开始学会了算计着过活，两块五与三块的公交，宁愿等待与拥挤，就连省下一顿饭钱都能暗自庆幸。周末了，老老实实呆在家里吧！</p>
+<br/>
+1. 按这个顺序加载 Struts2 的常量，struts-default.xml、struts-plugin.xml、struts.xml、web.xml；后加载的会覆盖前面的同名常量。强烈不推荐在 web.xml 中配置 Struts2 常量。<br/><br/>
+2. Struts1 中有一种 Action 类型是 ForwardAction，而在 Struts2 中相应的配置方式是 &lt;action name="Showcase"&gt;&lt;result&gt;/showcase.jsp&lt;/result&gt;&lt;/action&gt;，Showcase.action 直接映射到 /showcase.jsp。<!--more--><br/><br/>
+3. struts.xml 中 &lt;package ../&gt; 的 namespace (命名空间) 相当于 Struts1 的模块的概念，但比 Struts1 的模块间切换要便。例如，对于以下的配置<br />
+    &lt;package name="get" extends="struts-default" namespace="/book"&gt;<br />
+          &lt;action name="GetBooks" class="..."&gt;<br />
+     因 action GetBooks 所在的包指定了命名空间，所以 URL 就需要 /book/GetBooks.action 与它映射了。<br />
+     如果未指定命名空间或指定为 "" 就是默认命名空间，指定 "/" 就是根命名空间，URL 就应该是 /GetBooks.action。配置在默认命名空间中的 Action 相当于全局的，即类似于 Struts1 的 &lt;global-action .../&gt;。也就是说当找不到指定命名空间(例如 /barspace/bar.action) 中的 Action (bar.action) 时，就会尝试去默认命名空间 ("") 里去找。<br/><br/>
+4. 系统不会严格区分 Action 里哪个属性是用于封装请求参数的属性，那个属性是封装处理结果的属性。对系统而言，封装请求参数的属性和封装处理结果的属性是完全平等的。<br/><br/>
+5. Struts2 的 Action 可以是一个 POJO，可以实现 Action 接口，也可以继承 ActionSupport。实际上 ActionSupport 类是 Struts2 默认的 Action 处理类，就是说，配置 Action 时未指定 class 属性时，系统自动指定为 ActionSupport 类。<br/><br/>
+6. Struts2 中要访问 Servlet API 必须借助于 ActionContext 类，其中有访问对 HttpServletRequest(request)，HttpSession(session)，ServletContext(application) 进行操作的方法 (操作的是各自的 attribute 属性)，不过还没发现如何操作 HttpServletResponse(response) 对象。注意，这些方法都转换成了对 Map 实例的操作，而非真实的 Servlet API 实例，Struts2 会完成与实际存储的映射，所以 Action 仍然是脱离 Servlet API 的。ActionContext 直接的 get() 和 put() 方法针对的是 request 的属性。<br/><br/>
+7. Struts2 也可以直接访问 Servlet API 实例，让你的 Action 实现后面其中一个接口就能获取到相应 Servlet API 实例：ServletContextAware、ServletRequestAware、ServletResponseAware。注意要实现的接口方法。如果觉得实现接口的方式麻烦，那么可以借助 ServletActionContext 的方法来拿到 Servlet API 的各个实例。这样却是让 Action 与 Servlet API 耦合起来了。<br/><br/>
+8. 即使我们在 Struts2 的 Action 中获得了 HttpServletResponse 对象，也不要尝试直接在 Action 中生成对客户端的输出，没效果的，因为 Action 只是一个控制器，它并不直接对浏览者生成任何响应。这也是为什么 ActionContext 未提供对 HttpServletResponse 的操作，只是操作 Cookie 要用到 response。在 Struts1 中，如果 Action 返回 null 时，可以通过 response.getWriter().println("Hello World."); 输出内容到页面。<br/><br/>
+9. Struts2 也有像 Struts1 那样的对 Action 动态方法调用的特性，它是通过指定 form 的 action="ActionName!methodName.action" 来实现的，例如某表单的 action="Login!regist.action"，提交后将会调用 name="Login" 的 Action 类的 regist() 方法，而非默认的 execute() 方法。这种方式可以在一个 Action 中包含多个处理逻辑。是不是 Struts1 要方便，不需要在配置文件中对这个 Action 配置额外的属性。<br/><br/>
+10. 可为 action 配置指定一个 method 属性，同上，这种方式也在一个 Action 类中定义多个逻辑，每个处理方法映射成一个逻辑 Action，有不同的 name 属性，非常类似于 Struts1 的 MappingDispatchAction。缺点就是不像上面那样，被分开的多个逻辑 Action 不能共享 &lt;result&gt; 配置，并且 action 配置的 class 属性值产生冗余。

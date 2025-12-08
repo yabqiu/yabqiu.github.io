@@ -1,0 +1,177 @@
+---
+title: Python 常用日期处理 -- 内置模块 datetime
+url: /python-date-libraries-usages/
+date: 2019-04-24T23:30:47-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - Date
+  - Calendar
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9349 
+wpStatus: publish
+views: 852
+lastmod: 2019-05-01T10:56:52-05:00
+---
+
+<p>仅以此篇记录一下个人常用的 Python 处理日期的库与函数，主要涉及的类库有 Python 自带的 <a href="https://docs.python.org/3/library/datetime.html#">datetime</a>, <a href="https://docs.python.org/3/library/time.html#module-time">time</a> 和 <a href="https://docs.python.org/3/library/calendar.html">calendar</a>，以及第三方的 <a href="https://dateutil.readthedocs.io/en/stable/index.html#">dateutil</a>。说到日期处理基本上要覆盖的概念有 date, time, datetime, timezone, calendar, 时间的比较与差值，解析与格式化显示等。</p>
+
+<p>在 datetime 模块中类之间的继承关系如下：</p>
+
+<blockquote><br/>
+<p>object<br /><br/>
+├── <strong>date</strong><br /><br/>
+│      └── <strong>datetime</strong><br /><br/>
+├── <strong>time</strong><br /><br/>
+├── <strong>timedelta</strong><br /><br/>
+└── tzinfo<br /><br/>
+         └── timezone</p>
+
+</blockquote>
+
+<p>我们着重体验一下前面粗体显示的 datetime, date, time, timedelta 对象, timezone 也不是不重要，有时候也可能只需要处理本地时间。<!--more--></p>
+
+<h2>datetime, date, time 实例的创建</h2><br/>
+<p>可以使用它们各自的构造函数，提供必要的参数来创建相应的实例，下面是它们的构造函数</p>
+
+<pre class="lang:default decode:true ">datetime:<br/>
+    def __new__(cls, year, month=None, day=None, hour=0, minute=0, second=0,<br/>
+                microsecond=0, tzinfo=None, *, fold=0)<br/>
+date:<br/>
+    def __new__(cls, year, month=None, day=None)<br/>
+<br/>
+time:<br/>
+    def __new__(cls, hour=0, minute=0, second=0, microsecond=0, tzinfo=None, *, fold=0)</pre>
+
+<p>比如</p>
+
+<pre class="lang:default decode:true ">from datetime import datetime, date, time, timedelta<br/>
+<br/>
+today = date(2019, 4, 24)  # 2019-04-24</pre>
+
+<h3>获得当前日期或时间</h3><br/>
+<pre class="lang:python decode:true">date.today()   #2019-04-24<br/>
+datetime.now()   # 2019-04-24 21:41:40.226300<br/>
+<br/>
+datetime.today() # 2019-04-24 21:41:50.336293<br/>
+datetime.today().date() #2019-04-24<br/>
+datetime.today().time()  #21:41:50.336303<br/>
+<br/>
+datetime.now().date()<br/>
+datetime.now().time()</pre>
+
+<p>从语义上应该调用 <code>date.today()</code> 和 <code>datetime.now()</code>，<code>datetime.today()</code> 只是 datetime 继承自 date 的函数。</p>
+
+<p>time 没有 <code>today()</code> 或 <code>now()</code> 方法，所以只有通过 <code>datetime.now()</code> 来得到相应的 time, datetime 兼具 date 与 time 信息，所以总是可以经由 datetime 来获得相应的  date 和 time。</p>
+
+<h3>解析字符串获得实例</h3><br/>
+<pre class="lang:default decode:true">date.fromisoformat('2019-04-24')               # 2019-04-24<br/>
+datetime.fromisoformat('2019-04-24T13:12:23')  # 2019-04-24 13:12:23<br/>
+datetime.strptime('04/24/2019', '%m/%d/%Y')    # 2019-04-24 00:00:00<br/>
+time.fromisoformat('12:12:24+06:00')           #12:12:24+06:00</pre>
+
+<p>datetime, date 和  time 都有 <code>fromisoformat()</code> 方法，就是要了解它们各自的 ISO 表示格式。能指定格式来解析字符串只有 datetime 有 <code>strptime()</code> 方法，因为有了 <code>datetime</code> 也就有了相应的 date 与 time</p>
+
+<p>date, datetime 与 time 相应的 ISO 格式如下</p>
+
+<ol>
+
+	<li>date ISO format: YYYY-MM-DD</li>
+
+	<li>datetime ISO format: YYYY-MM-DD[*HH[:MM[:SS[.fff[fff]]]][+HH:MM[:SS[.ffffff]]]]</li>
+
+	<li>time ISO format: HH[:MM[:SS[.fff[fff]]]][+HH:MM[:SS[.ffffff]]]</li>
+
+</ol>
+
+<p>能自由解析字符串的就是 <code>datetime.strptime(str, fmt)</code>，Python 借鉴了标准 C 的日期格式定义字符串，见 <a href="https://docs.python.org/3/library/datetime.html#strftime-and-strptime-behavior">strftime() and strptime() Behavior</a>. 后面的 strftime() 函数也要用到相同的格式定义法。</p>
+
+<p>注：strftime() 和  strptime() 中的 <code>f</code> 和 <code>p</code> 分别对应着 <code>format</code> 和 <code>parse</code> 的首字母。</p>
+
+<h3>基于 Timestamp 来创建实例</h3><br/>
+<p>Python 本身没有 Timestamp 这么一个类型，这里的 timestamp 是一个浮点数表示的</p>
+
+<pre class="lang:default decode:true">ts = datetime.today().timestamp()   # 1556161777.38553<br/>
+date.fromtimestamp(ts)              # 2019-04-24<br/>
+datetime.fromtimestamp(ts)          # 2019-04-24 22:09:37.385530</pre>
+
+<p>time 没有 <code>fromtimestamp()</code> 方法</p>
+
+<h2>格式化输出</h2><br/>
+<p>date, datetime 和 time 都有 <code>isoformat()</code> 和 <code>strftime(fmt)</code> 函数，格式字符串请参考 <a href="https://docs.python.org/3/library/datetime.html#strftime-and-strptime-behavior">strftime() and strptime() Behavior</a>。</p>
+
+<pre class="lang:default decode:true">date.today().strftime('%a %b %d, %Y')  # Wed Apr 24, 2019<br/>
+datetime.today().isoformat()           # 2019-04-24T22:21:38.747318<br/>
+datetime.today().time().strftime('%Y') # 1900<br/>
+date.today().strftime('%S')            # 00</pre>
+
+<p>上面是几个例子，注意在 Python 中像 time 没有年月日信息时格式化时想要输出年份会得到不期望的值，但不会象 Java 中那样报错。比如下面的 Java 代码</p>
+
+<pre class="lang:default decode:true ">DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");<br/>
+LocalDate.now().format(formatter);  //2019-04-24<br/>
+LocalTime.now().format(formatter);  //Exception java.time.temporal.UnsupportedTemporalTypeException: Unsupported field: YearOfEra</pre>
+
+<p>由于 <code>LocalTime.now()</code> 没有年月日信息，所以无法格式化为 <code>yyyy-MM-dd</code>。</p>
+
+<h2>时间, 日期的比较与 timedelta</h2><br/>
+<ol>
+
+	<li>date, datetime, time 都定义有 <code>__lt__</code>, <code>__le__</code>, <code>__ne__</code>, <code>__gt__</code>, <code>__ge__</code>, <code>__eq__</code> 函数，所以两个相同类型的实例之间是可以进行比较时间上的先后的。</li>
+
+	<li>其中的 date, datetime 还定义了 <code>__sub__</code> 和 <code>__rsub__</code> 函数，因此两个 date 或两个 datetime 实例进行相减会得到一个 timedelta 实例</li>
+
+	<li>另外, date, datetime  也定义了 <code>__add__</code>, <code>__radd__</code> 函数，date 或 datetime 可以加减一个 timedelta 来得到一个新的实例</li>
+
+</ol>
+
+<p>下面看几个简单的示例</p>
+
+<pre class="lang:default decode:true">d1 = datetime.today()                           # 2019-04-24 23:00:31.672769<br/>
+delta = timedelta(days=2, weeks=1, seconds=-3)  # 8 days, 23:59:57<br/>
+d2 = d1 + delta                                 # 2019-05-03 23:00:28.672769<br/>
+d3 = d1 - delta                                 # 2019-04-15 23:00:34.672769<br/>
+<br/>
+d2 - d1                                         # 8 days, 23:59:57<br/>
+d2 &gt; d1                                         # True<br/>
+d1 &lt; d3                                         # False<br/>
+<br/>
+datetime.today().date() + delta)                # 2019-05-02</pre>
+
+<p>注意，不同类型间不能相减，比如用 date 减去一个  datetime 就不合法了。<code>d1 + delta</code>,  <code>d1 - delta</code> 和 <code>delta + d1</code> 都没问题, 但是 <code>delta - d1</code> 就不行了。</p>
+
+<p>timedelta 表示了两个时间的差值，用它来推算另一个实例的时候不带有日历信息，如果想要在日历上推演就得借助于 calendar。</p>
+
+<h2>不可忽略的 <a href="https://docs.python.org/3/library/time.html#time.localtime">time</a> 模块</h2><br/>
+<p>前面讲到的是 datetime 模块中的 time 类型，Python 还自带了 time 模块，由 <code>import time</code> 引入。它提供了一些很实用的功能</p>
+
+<ol>
+
+	<li>time 包含了完整的如上的 datetime 信息，并不像 datetime 中的 time 不含年月日信息</li>
+
+	<li>locatime(), strptime(), gmtime(), asctime(), mktime() 用以构造 time 实例</li>
+
+	<li>strftime() 可用来格式化输出</li>
+
+	<li>time.time() 得到当前的 Unix 时间戳</li>
+
+	<li>time.sleep(sec) 用来暂停当前线程若干秒</li>
+
+</ol>
+
+<p>关于 calendar 和 dateutil 的内容有后续</p>
+
+<p>链接：</p>
+
+<ol>
+
+	<li><a href="https://www.guru99.com/date-time-and-datetime-classes-in-python.html">Python DataTime, TimeDelta, Strftime(Format) with Examples</a></li>
+
+</ol>

@@ -1,0 +1,127 @@
+---
+title: Java 8 Lambda 写法与简化
+url: /java-8-lambda-simple-ways/
+date: 2015-12-07T23:06:21-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java8
+tags: 
+  - lambda
+  - java8
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7087 
+wpStatus: publish
+views: 991
+lastmod: 2021-09-03T17:33:36-05:00
+---
+
+Java 8 的 Lambda 表达式的实现方式还是基于已有的字节码指令，由 Lambda 表达式的方法签名结合上下文并经由 SAM 推断出正确的类型来。Java 8 的 Lambda 完整书写格式是</p>
+<br/>
+<code>(type parameter1 [type parameter2, ...type parametern]) -&gt; { statements here }</code><br/><br/>
+这种标准格式所表示的就是方法签名。<br/><br/>
+虽不及其他语言的 Lambda 表达式，像 Swift, Scala 可省略参数部分，可用默认参数名 <code>$0</code>, <code>$1</code>, 或 <code>_</code>, 但 Java 8 的 Lambda 还是可以进行酌情简化<br/><br/>
+<ol>
+    <li>参数类型总是可省略   --     <code>(x, y) -&gt; { x + y; }</code></li>
+    <li>参数为一个时，参数括号可省略  --    <code>x -&gt; { System.out.println(x); }</code></li>
+    <li>语句为一条时，可省略大括号, 并且语句后不要分号 --  <code>x -&gt; System.out.println(x)</code></li>
+    <li>上面更进一步，如果是单条 return 语句，必须把 return 关键字去掉  --  <code>x -&gt; "Hello " + x</code></li>
+    <li>就差一点，参数部分总是不能省，无参必须写成 <code>() -&gt; System.out.println("hi")</code></li>
+    <li>Java 8 中若要近似的实现无参数部分写法，那就是方法引用了 -- <code>System.out::println</code></li>
+</ol>
+<br/>
+<!--more--><br/><br/>
+<strong>. 参数类型总是可省略, 基本上我们总是省略掉参数类型</strong><br/><br/>
+<pre class="lang:default decode:true">interface Function {
+  void call(String x, String y);
+}<br/><br/>
+void foo(Function f) {
+  f.call("a", "b");
+}<br/><br/>
+foo((x, y) -&gt; {     //(x, y) 完整写法是 (String x, String y)
+  System.out.println(x);
+  System.out.println(y);
+});</pre>
+<br/>
+<strong>. 参数为一个时，参数括号省略</strong><br/><br/>
+<pre class="lang:default decode:true">interface Function {
+  void call(String x);
+}<br/><br/>
+Function f = x -&gt; {
+  System.out.println();
+  System.out.println(x);
+};
+f.call("Hello");</pre>
+<br/>
+<strong>. 语句为一条时，可省略大括号, 并且语句后不要分号</strong><br/><br/>
+<pre class="lang:default decode:true">interface Function {
+  void call(String x);
+}<br/><br/>
+void foo(Function f) {
+  f.call("Hi");
+}<br/><br/>
+foo(x -&gt; System.out.println(x)); //不能写成 foo(x -&gt; System.out.println(x);); 这像话</pre>
+<br/>
+<strong>. 如果是单条 return 语句，省去大括时必须把 return 关键字去掉</strong><br/><br/>
+<pre class="lang:default decode:true">interface Function {
+  void String call(String x);
+}<br/><br/>
+foo(x -&gt; "Hello " + x)</pre>
+<br/>
+<strong>. 参数部分的括号总是需要</strong><br/><br/>
+<pre class="lang:default decode:true">interface Function {
+  void call();
+}<br/><br/>
+Function f = () -&gt; System.out.println();</pre>
+<br/>
+不写出 <code>-&gt;</code> 来似乎不知道这是一个 Lambda.<br/><br/>
+Java  8 中目前还无法简化成类似于 Swift/Scala 中的 foo(System.out.println()) 或 foo {System.out.println()}。不过可以采用方法引用的方式，只是<span style="color: #ff0000;">方法引用有其缺陷--不能捕获外部变量</span>。<br/><br/>
+<pre class="lang:default decode:true">public class TestLambda {<br/><br/>
+  public static void main(String[] args) {
+    foo(TestLambda::todo);  //todo 方法的签名正好是 x -&gt; String
+  }<br/><br/>
+  static void foo(Function f){
+    System.out.println(f.call("World"));
+  }<br/><br/>
+  static String todo(String x) { //也就是这个方法正好符合 Function 的 SAM 方法签名
+    return "Hello " + x;
+  }
+}<br/><br/>
+interface Function {
+  String call(String x);
+}</pre>
+<br/>
+前面说过用方法引用的缺陷是无法捕外部变量，譬如用 Lambda 的方式<br/><br/>
+<pre class="lang:default decode:true">String external = "ABC";
+foo(x -&gt; external + x);</pre>
+<br/>
+而在前面的 todo 方法中却访问不到 external 变量，如果给 todo 再增加一个参数来传递 external 则不符合 Function 的 SAM 的签名了。<br/><br/>
+除非，除非用实例的方法引用，那么需要每次传入外部参数来构造实例，例如这样<br/><br/>
+<pre class="lang:default decode:true ">public class TestLambda {<br/><br/>
+  public static void main(String[] args) {
+    String external = "ABC";
+    foo(new MethodProvider(external)::todo); //输出 Hello ABC World
+  }<br/><br/>
+  static void foo(Function f){
+    System.out.println(f.call("World"));
+  }
+}<br/><br/>
+class MethodProvider {
+  private String _external;<br/><br/>
+  public MethodProvider(String external) {
+    this._external = external;
+  }<br/><br/>
+  String todo(String x) {
+    return "Hello " + _external + " " + x;
+  }
+}<br/><br/>
+interface Function {
+  String call(String x);
+}</pre>
+<br/>
+这样着实有些怪异，而且有点把欲作简化的东西复杂化了。

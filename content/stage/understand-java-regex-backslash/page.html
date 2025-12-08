@@ -1,0 +1,83 @@
+---
+title: 理解 Java 正则表达式怪异的 \\ 和 \\\\，让您见怪不怪
+url: /understand-java-regex-backslash/
+date: 2010-11-29T06:40:57-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - Regex
+  - 正则表达式
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2880 
+wpStatus: publish
+views: 6315
+lastmod: 2017-04-07T01:43:00-05:00
+---
+
+<p>Java 语言里的几大变革，一为 jdk1.4 引入的正则表达式，jdk1.5 引入的泛型。没有泛型之前有不少人曾想方设法从编译器入手让 Java 支持泛型。说到泛型  Perl 无疑是该方面的佼佼者，虽然我们不要求 Java 的正则表式能像 Perl 那样可以用来写诗，但至少能有 JavaScript 好用些，可是还不如。JavaScript 里 // 两斜线一框就是一个模式，分组和后向引用更方便，当然前面那两家伙是动态的，不太好比。</p>
+
+<p>复杂的用法不说，且说 Java 的正则表达式在匹配点(.)  和斜杠(\)，表达式要分别写作 \\. 和 <a>\\\\</a>，难看些，不好理解。幸好还有些人记住了，匹配点(.) 或  {、[、(、?、$、^ 和 * 这些特殊符号要要前加双斜框，匹配 \ 时要用四斜杠，这确实能让你包走天涯的。那么为什么是这样呢，不是一个斜杠、三个或更多呢，所以知其然还要知其所以然，这样才能每次心中有数，方能以一变应万变。<!--more--></p>
+
+<p>首先，Java 的正则表达式语法说明参见：<a href="https://download.oracle.com/javase/6/docs/api/java/util/regex/Pattern.html">https://download.oracle.com/javase/6/docs/api/java/util/regex/Pattern.html</a>。</p>
+
+<p>用最简单的例子来说明问题吧，不创建 Pattern、Matcher 等对象，就看 String 对象的 replaceAll(String regex, String replacement)，它第一个参数接收的就是一个正则表达式，我们可以在 IDE 里的调试器中看 "a.b".replaceAll(".","") 能不能得到你期望的结果。</p>
+
+<p>先说为什么像点号（其他的特殊符号还有引号中的 "{、[、(、?、$、^ 和 *"）前面要加双斜杠，注意逗号(,) 不是这一类特殊字符，因为它只会出现在中括号或花括号中。</p>
+
+<p>显然，如果直接执行</p>
+
+<pre class="brush:java">"a.b".replaceAll(".","");  //返回空字符串</pre>
+
+<p>得到的值不是你想要的结果，成空字符串了，因为点号 "." 匹配了所有的字符，那要只匹配点号该如何呢，对的，双斜杠</p>
+
+<pre class="brush:java">"a.b".replaceAll("\\.","");  //对的，得到的是 ab</pre>
+
+<p>那为什么是双斜杠呢？这个很简单，因为点号(.)，是个特殊字符，所以它前面需要需要加个斜杠给它转义，你要真只用一个斜杠来转义，问题就来了，提示你：</p>
+
+<p style="text-align: center;"><img class="aligncenter" title="java regex slash" src="//unmi.cc/wp-content/uploads/2010/11/java_regex_slash_2.jpg" alt="java regex slash" width="617" height="76" /></p>
+
+<p><span style="color: #ff0000;">Invalid escape sequence (valid ones are \b \t \n \f \r \" \' \\)，</span>也就是 Java 不认 \. 序列，所以还需要前面再加一道杠给其后的斜杠转义出一个斜杠给点号(.) 用，也就是在 Java 字符串看起来是 “\\.”, 但作为正则表达式来说就是 “\.”，这于其语言的正则表达式是一致的。</p>
+
+<p><strong>也就是说 Java 的正则表达式字符串有两层次的意义，那就是 Java 字符串转义出符合正则表达式语法的字符串，“\\.”, 转义后交给正则表达式的就是 “\.”，这是符合传统的。因为我们平时字符串转义后直接用于输出，所以带来不少误解，这里的最终的正则表达式就是 Java 字符串的输出。</strong></p>
+
+<p style="text-align: center;"><img class="aligncenter" src="//unmi.cc/wp-content/uploads/2010/11/java_regex_slash_1.jpg" alt="java regex slash 1" width="645" height="179" /></p>
+
+<p>细心的同志一定能看到在调试器里的显示，看我们写成的“\\.”, 在调试器里显示的是 “\\\\.”，说的是如果我们要得到 “\\.”，这样的输出那 Java 的字符串就必须写成 “\\\\.”, 两个斜杠转义出一个斜杠。</p>
+
+<p>好的，理解了上面的由来，我们来看看用四个斜杠来匹配一个斜杠的原理。主要原因是斜杠 \ 本身就是用于转义别的字符的，当然它的架子不是一般的大。因为正则表达式串就是 Java 字符串的输出，正常思维在正则表达式里匹配斜杠用 “\\”, 那么在 Java 程序里向控制台输出 “\\”双斜杠该如何写呢，对了，就是 “\\\\”，就这么简单。</p>
+
+<p>再一次从错误里找下原因吧，假如我们写成：</p>
+
+<pre class="brush:java">"a\\b".replaceAll("\", "");</pre>
+
+<p>报什么错呢？<span style="color: #ff0000;">String literal is not properly closed by a double-quote</span>，因为斜杠把其后的双引号给转义了，当然字符串是未结束。再给它加个斜杠又如何呢？</p>
+
+<pre class="brush:java">"a\\b".replaceAll("\\", "");</pre>
+
+<p>Java 的语法是通过了，但是执行正则表达式不干了，你转义出来的交给正则表达式的一个斜杠，叫它情何以堪，该去转义谁呢？所以运行时异常报 <span style="color: #ff0000;">An exception occurred: java.util.regex.PatternSyntaxException</span>。</p>
+
+<p>如果写成三个斜杠呢？</p>
+
+<pre class="brush:java">"a\\b".replaceAll("<a>\\\</a>", ""); //与单个斜杠是一样的异常，挂单的斜杠把双引号给转义了</pre>
+
+<p>所以这样推来推去也是该写成</p>
+
+<pre class="brush:java">"a\\b".replaceAll("<a>\\\\</a>", "");</pre>
+
+<p>对于正则表达式看到的就是 “\\”，哪种语言的正则表达式要的也是这个，也是第一个斜杠转义了第二个，第三个转义了第四个，最终就是 “\\”，正则表达式里转互相转义一下就是 “\”了。</p>
+
+<p>我原来理解还只是停留下转义啊，再转义的基础上，随着写这篇才更加理解到其中要义的，才发现，原来 Java 的正则表达式和其他语言的正则表达式语言是统一的。<strong>只要记住一点，你要想的正则表达式字符串是什么，而正则表达式字符串就是 Java 字符串的的输出结果，你就知道应该怎么写了</strong>。</p>
+
+<p>最后来看下 Eclipse 调试器里仅匹配单个斜杠时，IDE 里显示的有多疯狂：</p>
+
+<p style="text-align: center;"><img class="aligncenter" src="//unmi.cc/wp-content/uploads/2010/11/java_regex_slash_3.jpg" alt="java_regex_slash_3.jpg" width="641" height="167" /></p>
+
+<p>这让你体验到四个斜杠又何其多也。注：全文中的斜框标准意义上应该叫做反斜杠，在此就不作全文替换了。</p>

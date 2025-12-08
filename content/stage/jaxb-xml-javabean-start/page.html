@@ -1,0 +1,179 @@
+---
+title: 应用 JAXB 把 XML 转换成相应的 JavaBean
+url: /jaxb-xml-javabean-start/
+date: 2011-04-21T07:23:15-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - xml
+  - jaxb
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3455 
+wpStatus: publish
+views: 4627
+lastmod: 2021-09-03T13:57:42-05:00
+---
+
+跨系统的调用目前无疑是 WebService 的天下，指的是通过 HTTP 请求方式获得 XML 或 JSON 数据的方式，RESTFul 也得到了很好的应用。规范意义上的 Soap 调用不知道还不多不多，反正当年用过的 Corba 鲜有耳闻了，就像很多人对 EJB2 不会有概念一样。</p>
+<br/>
+Java 在调用 WebService 获得了 XML 之后，接下来一种常见的处理方式就是把它转换成相应的 JavaBean，再丢给其他组件像 Jsp 标签，FreeMarker 等去就很流畅了。关于 XML 与 JavaBean 互相转换有两个操作叫做：Marshaller 和 Unmarshaller，还没见一个权威的翻译，大概就是编组与反编组，意义如同序列化与反序列化。也就是由 JavaBean 到 XML 叫做 Marshal，由 XML 到 Java 叫做 Unmarshal。<br/><br/>
+通常从 XML 到 JavaBean 的转换机会大的多，所以我主要也是研究了下如何把 XML 映射成 JavaBean，虽然现在的工具一样也都支持这两个方向的转换。有许多组件可以做到，像 <a href="http://www.oracle.com/technetwork/articles/javase/index-140168.html" target="_blank" rel="noopener">JAXB</a>(Java Architecture for XML Binding)、<!--more--><a href="http://xmlbeans.apache.org/" target="_blank" rel="noopener">XMLBeans</a>、<a href="http://jibx.sourceforge.net/" target="_blank" rel="noopener">JiBX</a>、<a href="http://www.castor.org/" target="_blank" rel="noopener">Castor</a>。前面这些工具都提供了工具根据 XML 数据和相应的 Schma 产生相应 Java 类的功能，我还是喜欢先入为主的方式，自己手工写好了 JavaBean 主动去包容 XML 数据。<br/><br/>
+JAXB是Java EE平台的API之一，同时是Java Web服务开发包（<a href="http://en.wikipedia.org/wiki/Java_Web_Services_Development_Pack" target="_blank" rel="noopener">JWSDP</a>）的一部分。 JAXB也是Web服务互操作性技术（WSIT）的基础之一. JAXB是J2SE1.6的一部分。JAXB 1.0是在Java社群过程中作为JSR 31开发出来的。JAXB 2.0是作为JSR 222开发的。<br/><br/>
+下面看个 JAXB 把 XML 转换为 JavaBean 的例子，本例由一个 XML 文件和四个类组成，所涵盖到的内容有，元素和属性的映射，Namespace 的使用，以及一个自定义的 XmlAdapter 类。<br/><br/>
+1. XML 文件，users.xml:<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;users xmlns:i="http://www.w3.org/2001/XMLSchema-instance"&gt;
+    &lt;user i:type="worker"&gt;
+        &lt;id&gt;1&lt;/id&gt;
+        &lt;name&gt;Unmi&lt;/name&gt;
+        &lt;time&gt;2010-11-18T21:57:15.07&lt;/time&gt;
+    &lt;/user&gt;
+    &lt;user i:type="yuan"&gt;
+        &lt;id&gt;2&lt;/id&gt;
+        &lt;name&gt;She&lt;/name&gt;
+        &lt;time&gt;2010-10-18T21:20:15.25&lt;/time&gt;
+    &lt;/user&gt;
+&lt;/users&gt;</pre>
+<br/>
+2. 两个 JavaBean，为获得上面数据组装到 JavaBean，我用了两个 Java 类，分别是 UserList.java 和 User.java。<br/><br/>
+UserList.java<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.jaxb;<br/><br/>
+import java.util.List;<br/><br/>
+import javax.xml.bind.annotation.XmlElement;
+import javax.xml.bind.annotation.XmlRootElement;<br/><br/>
+/**
+ * @author Unmi CreateTime: Apr 21, 2011
+ */
+@XmlRootElement(name = "users")
+public class UserList {
+    List&lt;User&gt; users;<br/><br/>
+    @XmlElement(name = "user")
+    public List&lt;User&gt; getUsers() {
+        return users;
+    }<br/><br/>
+    public void setUsers(List&lt;User&gt; users) {
+        this.users = users;
+    }
+}</pre>
+<br/>
+为类用 XmlRootElement 注解了这是个根元素，对应于 XML 中的 users 元素，并在它的属性 users 的 getter 方法上应用了 XmlElement，节点名为 user。<br/><br/>
+User.java<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.jaxb;<br/><br/>
+import java.util.Date;<br/><br/>
+import javax.xml.bind.annotation.XmlAttribute;
+import javax.xml.bind.annotation.XmlElement;
+import javax.xml.bind.annotation.adapters.XmlJavaTypeAdapter;<br/><br/>
+/**
+ * @author Unmi
+ * CreateTime: Apr 21, 2011
+ */
+public class User {
+    private int id;
+    private String type;
+    private String name;
+    private Date date;<br/><br/>
+    @XmlElement(name = "id")
+    public int getId() {
+        return id;
+    }<br/><br/>
+    public void setId(int id) {
+        this.id = id;
+    }<br/><br/>
+    @XmlElement(name = "name")
+    public String getName() {
+        return name;
+    }<br/><br/>
+    public void setName(String name) {
+        this.name = name;
+    }<br/><br/>
+    @XmlElement(name = "time")
+    @XmlJavaTypeAdapter(DateAdapter.class)
+    public Date getDate() {
+        return date;
+    }<br/><br/>
+    public void setDate(Date date) {
+        this.date = date;
+    }<br/><br/>
+    @XmlAttribute(name = "type", namespace = "http://www.w3.org/2001/XMLSchema-instance")
+    public String getType() {
+        return type;
+    }<br/><br/>
+    public void setType(String type) {
+        this.type = type;
+    }<br/><br/>
+    public String toString() {
+        return id + ":" + name + ":" + type + ":" + date;
+    }
+}</pre>
+<br/>
+类不需要进行注解，同样是对属性的 getter 方法注解标识其对应于 XML 上的什么节点。对于时间节点用了自定义的 DateAdapter 在字符串与 Date 类型间转换。注意 getType() 的注解，用的是 XmlAttribute，并带有命名空间，这里的 namespace 不能写成 "i" 的。<br/><br/>
+DateAdapter.java<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.jaxb;<br/><br/>
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.Date;<br/><br/>
+import javax.xml.bind.annotation.adapters.XmlAdapter;<br/><br/>
+public class DateAdapter extends XmlAdapter&lt;String, Date&gt; {
+    private DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SS");<br/><br/>
+    public Date unmarshal(String val) throws Exception {
+        if (val == null) {
+            return null;
+        }
+        return df.parse(val);
+    }<br/><br/>
+    public String marshal(Date val) throws Exception {
+        if (val == null) {
+            return null;
+        }
+        return df.format(val);
+    }
+}</pre>
+<br/>
+看到分别对应于 unmarshal 和 marshal 的两个方法，写过 Struts 或 Hibernate 的 TypeHandler 会很容易理解的。<br/><br/>
+Client.java，客户端调用代码：<br/><br/>
+<pre class="lang:default decode:true ">package cc.unmi.jaxb;<br/><br/>
+import java.net.URL;<br/><br/>
+import javax.xml.bind.JAXBContext;
+import javax.xml.bind.Unmarshaller;<br/><br/>
+/**
+ * @author Unmi
+ * CreateTime: Apr 21, 2011
+ */
+public class Client {<br/><br/>
+    public static void main(String[] args) throws Exception {
+        JAXBContext context = JAXBContext.newInstance(UserList.class);
+        Unmarshaller unmarshaller = context.createUnmarshaller();
+        URL xmlFileUrl = ClassLoader.getSystemResource("users.xml");
+        UserList userList = (UserList) unmarshaller.unmarshal(xmlFileUrl);
+        System.out.println(userList.getUsers().get(0).getName());
+   }
+}</pre>
+<br/>
+执行后看到控制台如下输出就说明了各个属性都工作正常：<br/><br/>
+<span style="color: #800000;"><strong>1:Unmi:worker:Thu Nov 18 21:57:15 CST 2010</strong></span><br/><br/>
+<strong>特性说明：</strong><br/><br/>
+1. 用注解的方式，可声明在 setter/getter 方法上，也可以在属性上，但不能同时对一个属性注解两次，否则就会报错：@javax.xml.bind.annotation.XmlElement annotation is found on two places; one would be suffice.<br />
+     如果只在属性上用 XmlElement 注解，也会出错：Class has two properties of the same name "id".  此时得在对应的 getter 或 setter 方法加上注解：@XmlTransient。<br/><br/>
+2. 如果取一个 List 数据必须声明出一个相应的 XxxList 类，其中包含一个 List 属性，这里的 XxxList 有点多余。还不清楚如何在业务类中直接映射出 List&lt;User&gt; 属性。<br/><br/>
+3. 有 Namespace 时，需要写全 namespace，如namespace=<a href="http://www.w3.org/2001/XMLSchema-instance">http://www.w3.org/2001/XMLSchema-instance</a>. 这有点啰唆。<br/><br/>
+4. 使用还是很简单，可以定义自己的类型转换类，像这里的 DateAdapter<br/><br/>
+5. 如果更深层次的 XML 结构，只需依循着 XPATH 用进行更深度的注解类的属性。理解了上面的例子，对于只表示一个 Java 对象的 XML 的映射方法就很简单了。<br/><br/>
+6. 因为注解的方法，如果一个 Bean 去映射多个 XML 时，就有困难，比如节点名变了，但映射的是同一个属性时这个 JavaBean 类不好重用。<br/><br/>
+7. Bean 需要一个默认构造函数，对象是通过默认构造函数创建的，属性要通过 setter 方法去设置，所以可以在构造方法和 setter 方法中对实例作某些修饰。<br/><br/>
+8. 更多注解的使用请浏览下包 javax.xml.bind.annotation 中的所有注解类，像 XmlElementWrapper、XmlList、DomHandler 等，都会有用处的。在 unmarshl 时可支持更多的输入源类型，最后见下几个图：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter" src="/wp-content/uploads/2011/04/jabx_unmarshal.png" alt="jabx_unmarshal" width="740" height="248" /></p>
+<br/>
+<img src="/wp-content/uploads/2011/04/jabx_annotation1.png" alt="jabx_annotation1.png" width="315" height="390" />     <img src="/wp-content/uploads/2011/04/jabx_annotation2.png" alt="jabx_annotation2.png" width="315" height="372" /><br/><br/>
+资料：1. <a href="http://stackoverflow.com">http://stackoverflow.com</a> 上搜索有关 jaxb 的资源<br />
+             2. <a href="http://dev.firnow.com/course/3_program/java/javajs/2007917/71596.html" target="_blank" rel="noopener">使用JAXB将XML Schema绑定到Java类</a><br />
+             3. <a href="http://icarusliu.iteye.com/blog/231784" target="_blank" rel="noopener">用JAXB生成一个XML文档</a><br />
+             4. <a href="http://www.oracle.com/technetwork/articles/javase/index-140168.html" target="_blank" rel="noopener">Java Architecture for XML Binding (JAXB)</a><br />
+             5. <a href="http://jaxb.java.net/">http://jaxb.java.net/</a>

@@ -1,0 +1,98 @@
+---
+title: Unmi 学习 Groovy 之正则表达式
+url: /unmi-study-groovy-regex/
+date: 2008-09-02T21:03:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Groovy
+tags: 
+  - Groovy
+  - Regex
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 336 
+wpStatus: publish
+views: 780
+lastmod: 2021-08-29T21:56:07-05:00
+---
+
+一提到 Perl,很多人对它啧啧称道的就是它那强大的正则表达式。一段富含正则表达式的 Perl 代码能让人觉得眼花缭乱，不过一旦习惯了就会对此爱不释手。而 Java 是在 1.4(在之前的版本需要依靠 jakarta-oro 库来提供对正则表式的支持--也是参考了 Perl) 中才加入了正则表达式，但它的相关操作还是略显古板。</p>
+<br/>
+当从 Java 分化出 Groovy 脚本语言一支，在处理正则表达式时也不想落后，从 Perl 那里学来了一些更为紧凑的语法，使用起来方便多了。虽相比 Perl 还有些差距，基本还是能知足了。下面来介绍 Groovy 中如何使用正则表达式，还是从 Java 的正式表达式说开，好有个对比。<br/><br/>
+比如在 Java 中要检查一段文本是否与某个模式相匹配，使用代码：<!--more--><br/><br/>
+<pre class="brush:java">import java.util.regex.*;   //需引入相关的类<br/><br/>
+Pattern p = Pattern.compile("(ab)*"); //编译一个模式
+Matcher m = p.matcher("abababab"); //创建一个 Matcher 对象
+System.out.println(m.matches()); //进行匹配，返回一个 boolean 值，输出为 true</pre>
+<br/>
+我们的 Groovy 处理正则表达式时，引入了类似于 Perl 的语法，与上面代码完全对应的 Groovy 的写法就是<br/><br/>
+<pre class="brush:groovy">p = ~"(ab)*";           // ~ 符号要紧靠其他的字符串，并与前面的等号有空格
+m = "abababab" =~ p;    //=~ 是一个整体
+println m.matches();  //输出为 true</pre>
+<br/>
+&nbsp;<br/><br/>
+Groovy 中应用了下列规则：<br/><br/>
+1. ~"pattern" ---- 创建 Pattern 对象。它用来替换 Pattern.compile("pattern");<br/><br/>
+2. "text" =~ pattern ----创建 Matcher 对象。它相当于 pattern.matcher("text")。<br/><br/>
+我们还可以用更紧凑的语法来创建 Matcher 对像，那就是<br/><br/>
+<pre class="brush:groovy">m = "abababab" =~ "(ab)*"</pre>
+<br/>
+=~ 是 Pattern.compile("pattern").matcher("text") 的替代。也由此可见，在  =~ 既能是一个 Pattern，也可以是一个字符串，如果是字符串就自动编译成了一个 Pattern。<br/><br/>
+有了 Matcher 对象，就可以用标准的 Java 方式来使用了，如替换、取出分组字串等。<br/><br/>
+对于最前面例子中的三行代码，通过 Groovy 引入了 ==~ 的操作符就可以写在一行里了：<br/><br/>
+<pre class="brush:groovy">println "abababab" ==~ "(ab)*" //输出为 true</pre>
+<br/>
+==~ 就相当于 Pattern.compile("pattern").matcher("text").matchers(); 返回一个 boolean 值，三步为一体了。<br/><br/>
+<strong>注意：</strong>在创建 Pattern 对像时 ~ 符号紧贴正则表达式字符串；创建 Matcher 时 =~ 是一个整体。<br/><br/>
+&nbsp;<br/><br/>
+其他一些 Groovy 的正则表达式应用举例：<br/><br/>
+<strong>1. Groovy 也可以像 JavaScript 里那样表示一个正则表达式</strong>。如<br/><br/>
+<pre class="brush:groovy">p = ~/Hello/;         //其实/Hello/ 也是一种 Groovy 的字符串表示法
+println p.class.name; //打印的是 'java.util.regex.Pattern'</pre>
+<br/>
+其实就是一个 Groovy 字符串("、'、"""、'''括起来的都行)。不过为了代码的可阅读性，我们可针对正则表达式用 /Hello/ 的形式，一看就知道是个正则表达式。但是不能像 JavaScript 那样，在第二个"/"后加 g 或者 i 来表示全局或忽略大小写，Groovy 中忽略大小写的匹配要用 (?i:X)，例如<br/><br/>
+<pre class="brush:groovy">println "Hello World" ==~ /(?i:hEllo.*)/;  //输出为 true</pre>
+<br/>
+<strong>2. =~ 的不同上下文</strong>。m = "Hello World!" =~ /Hello/; 语句构造的 m 是一个 Matcher 对象，不过要是我们给包上 if 语句或是断言，就相当于执行了 Matcher 的 find() 方法，如<br/><br/>
+<pre class="brush:groovy">assert "Hello World!" =~ /Hello/  //找到模式，断言成立
+if("Hello World!" =~ /Hello/)
+   println "Found"                //找到模式，输出 Found</pre>
+<br/>
+<strong>3. 替换操作</strong><br/><br/>
+<pre class="lang:default decode:true ">s = "1.23".replaceAll(/\d/){ num -&gt; num.toInteger() + 1};
+println s;   //数字递增了 1，打印的 s 为 2.34</pre>
+<br/>
+<strong>4. 用闭包输出匹配值</strong><br/><br/>
+<pre class="brush:groovy">finder = "10.128.12.16" =~ /\d+/
+finder.each{
+   println finder[it]
+}</pre>
+<br/>
+输出结果为：<br/><br/>
+10<br />
+128<br />
+12<br />
+16<br/><br/>
+<strong>5. 贪婪和非贪婪匹配</strong><br/><br/>
+一般情况下，正则表达式的匹配都是贪婪的，例如：<br/><br/>
+<pre class="brush:groovy">m="10.128.12.16" =~ /(\d.*)\./
+if(m.find()){
+    println m.group(1);
+}</pre>
+<br/>
+或许你希望上面的输出是 10，只想让 /(\d.*)\./ 中的 ".*" 到第一个点之前停下来，可事实不是这样，这里的 ".*" 会试图吃尽所有的字符，到最后一个点之前才会停下来，所以上面代码的输出是 10.128.12。那我们想要输出是 10，该如何呢？你只要在 "*" 后加上一个 "?"，即正则表达式写成 /(\d.*?)\./ 即可，它就会在碰到的下一个点之前停下来。<br/><br/>
+<pre class="brush:groovy">m="10.128.12.16" =~ /(\d.*?)\./
+if(m.find()){
+    println m.group(1);   //星号加个问题，表示非贪婪匹配，输出为 10
+}</pre>
+<br/>
+对于正则表达式中的其他量词也是一样的：/(\d.+)\./ 贪婪的； /(\d.+?)\./ 非贪婪的。/(\d.{1,})\./ 贪婪的；/(\d.{1,}?)\./ 非贪婪的，等等。<br/><br/>
+记住，只要在正则表达的量词后加上一个问号“?” 就是非贪婪的。<br />
+<strong>参考：</strong>1. 《Java 脚本编程 语言、框架和模式》 第 4 章<br />
+         2. 《Groovy in Action》 第三章<br />
+         3. 《Groovy 经典入门》　－－Groovy Tutorial

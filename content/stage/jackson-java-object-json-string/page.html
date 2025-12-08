@@ -1,0 +1,137 @@
+---
+title: 使用 Jackson 把 Java 对象转换成 JSON 字串
+url: /jackson-java-object-json-string/
+date: 2013-01-19T00:21:07-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - Scala
+  - PlayFramework
+tags: 
+  - Scala
+  - json
+  - jackson
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5405 
+wpStatus: publish
+views: 19758
+lastmod: 2021-05-19T16:22:24-05:00
+---
+
+原来 Java 项目中用的 JSON 组件库主要是 <a href="http://code.google.com/p/google-gson/" target="_blank" rel="noopener">Gson</a> 和 <a href="http://json-lib.sourceforge.net/" target="_blank" rel="noopener">json-lib</a>，Gson 算是很错的库，json-lib 略显寒碜。好啦，最近 Play 2.x 中弃用了 Gson 而采纳了 <a href="http://jackson.codehaus.org" target="_blank" rel="noopener">Jackson</a>，所以现在就来打探一下 Jackson，踩个点吧。</p>
+<br/>
+Jackson 号称非常高的性能，听说比另两位兄弟 Gson 和 json-lib 高出一大截，我没有亲测，可是有心人做了，看这个链接 <a href="http://wangym.iteye.com/blog/738933" target="_blank" rel="noopener">两款JSON类库Jackson与JSON-lib的性能对比(新增第三款测试)</a> 中的数据。2010 年 8 月份的测试结果，不知现在随着版本的变更是否仍然保持着这种悬殊。<br/><br/>
+通常我会在把文章开头塞丰满，做足前戏，并不是因为在天涯混习惯了的缘故，况且我在天涯总是讷于言的; 在这里，自己的地盘自己作主，不会有要求码足多少字才能发表的自虐性需求，仅仅是让本文在主页上显示时的的概要不空洞而已，可以简单粗暴的称之为废话。<br/><br/>
+了了，先了解 Jacson 最贴近实际应用场景的应用，即 Jackson 怎么把一个 Java 生成对应的 JSON 字符串，看看前面的文字有这么多了，直接上一段代码吧，而后再慢慢假设与分解：<!--more--><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.testjackson;<br/><br/>
+import org.codehaus.jackson.annotate.JsonAutoDetect.Visibility;
+import org.codehaus.jackson.annotate.JsonMethod;
+import org.codehaus.jackson.map.ObjectMapper;
+import org.codehaus.jackson.map.SerializationConfig;<br/><br/>
+/**
+ * @author Unmi
+ */
+public class TestClient {<br/><br/>
+    /**
+     * @param args
+     * @throws Exception
+     */
+    public static void main(String[] args) throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        
+        mapper.setVisibility(JsonMethod.FIELD, Visibility.ANY);
+        mapper.configure(SerializationConfig.Feature.INDENT_OUTPUT, true);
+        
+        Person person = new Person("Unmi", new Address("JiangXi"));
+        
+        String json = mapper.writeValueAsString(person);
+        System.out.println(json);
+    }
+}<br/><br/>
+class Person {
+    private String name;
+    private Address address;<br/><br/>
+    public Person(String name, Address address){
+        this.name = name;
+        this.address = address;
+    }
+}<br/><br/>
+class Address {
+    private String province;
+    
+    public Address(String province){
+        this.province = province;
+    }
+    
+    public String getProvince(){
+        return this.province;
+    }
+}</pre>
+<br/>
+要使用 Jackson，自然要引入相应的 jar 包，用 Maven 管理依赖的在 pom.xml 中加上：<br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;org.codehaus.jackson&lt;/groupId&gt;
+    &lt;artifactId&gt;jackson-mapper-asl&lt;/artifactId&gt;
+    &lt;version&gt;1.9.11&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+这样在项目中就会有了 jackson-mapper-asl-1.9.11.jar 和 jackson-core-asl-1.9.11.jar 这两个 jar 包，其实当前版本是 2.1.0，只是 Maven 中央库中还没有。<br/><br/>
+上面代码结果是可预测了，就是：<br/><br/>
+<pre class="lang:default decode:true">{
+  "name" : "Unmi",
+  "address" : {
+    "province" : "JiangXi"
+  }
+}</pre>
+<br/>
+Jackson 提供了 ObjectMapper 和 JsonGenerator 两个 API 让你去玩转 JSON，其实内部实现肯定汇合在一起了，别让两个选择就使你不会选择了。<br/><br/>
+如果把第一段代码中的第 20 行拿掉，运行会抛出异常：<br/><br/>
+<span style="color: #ff0000;">Exception in thread "main" org.codehaus.jackson.map.JsonMappingException: No serializer found for class cc.unmi.testjackson.Person and no properties discovered to create BeanSerializer (to avoid exception, disable SerializationConfig.Feature.FAIL_ON_EMPTY_BEANS) )</span><br />
+<span style="color: #ff0000;">    at org.codehaus.jackson.map.ser.impl.UnknownSerializer.failForEmpty(UnknownSerializer.java:52)</span><br />
+<span style="color: #ff0000;">    at org.codehaus.jackson.map.ser.impl.UnknownSerializer.serialize(UnknownSerializer.java:25)</span><br />
+<span style="color: #ff0000;">    at org.codehaus.jackson.map.ser.StdSerializerProvider._serializeValue(StdSerializerProvider.java:610)</span><br />
+<span style="color: #ff0000;">    at org.codehaus.jackson.map.ser.StdSerializerProvider.serializeValue(StdSerializerProvider.java:256)</span><br />
+<span style="color: #ff0000;">    at org.codehaus.jackson.map.ObjectMapper._configAndWriteValue(ObjectMapper.java:2575)</span><br />
+<span style="color: #ff0000;">    at org.codehaus.jackson.map.ObjectMapper.writeValueAsString(ObjectMapper.java:2097)</span><br/><br/>
+原因是 Jackson 默认情况下不知道怎么去序列化，解决办法是:<br/><br/>
+1. 用上面的第 20 行代码，setVisibility，这个属性也可以通过 SerializationConfig 来设置<br />
+2. 或是给你要转换 Json 的类加上注解 @JsonAutoDetect(fieldVisibility=JsonAutoDetect.Visibility.ANY)3. 也可以给字段或 getter 上加上 @JsonProperty 注解，还能用它指定序列化时的属性名<br/><br/>
+第 21 行是辅助设置，对格式的控制等，比要不要输出 null 值的，数字日期怎么显示，多瞧瞧那些 Feature:<br/><br/>
+org.codehaus.jackson.map.SerializationConfig.Feature.*<br />
+org.codehaus.jackson.JsonGenerator.Feature.*<br />
+org.codehaus.jackson.JsonParser.Feature.*<br/><br/>
+Jackson 的定制性还是很强的。再来想像这么一个需求，想输出的 JSON 属性也可定制，比如不想 {"name": "Unmi"}，想要属性的第一个字母是大写的，{"Name": "Unmi"}。没问题，用 ObjectMapper  的<br/><br/>
+setPropertyNamingStrategy(PropertyNamingStrategy s) 方法<br/><br/>
+定义自己的 PropertyNamingStrategry, 可以继承自 PropertyNamingStrategy 或 PropertyNamingStrategyBase，显然继承自 PropertyNamingStrategyBase 来简单，因为它帮你适配了，只需覆写它的一个方法，如：<br/><br/>
+<pre class="lang:default decode:true">import org.codehaus.jackson.map.PropertyNamingStrategy.PropertyNamingStrategyBase;<br/><br/>
+public class CapitalizedPropertyNamingStrategy extends PropertyNamingStrategyBase {<br/><br/>
+    @Override
+    public String translate(String propertyName) {
+        String name = propertyName.replaceAll("^\\w", propertyName.toUpperCase().substring(0,1));
+        return name;
+    }<br/><br/>
+}</pre>
+<br/>
+然后对 mapper 调用<br/><br/>
+<pre class="brush:java">mapper.setPropertyNamingStrategy(new CapitalizedPropertyNamingStrategy());</pre>
+<br/>
+再次运行代码，结果就变成了：<br/><br/>
+<pre class="lang:default decode:true ">{
+  "Name" : "Unmi",
+  "Address" : {
+    "Province" : "JiangXi"
+  }
+}</pre>
+<br/>
+还有什么需求，混迹代码中，最不能缺的就是想像力了。<br/><br/>
+小结一下：<br/><br/>
+1. ObjectMapper 可用来序列化和反序列化对象，而 JsonParser 是用来反序列化的，JsonGenerator 是序列化的。若想让代码职责分明，就用 JsonParser 或  JsonGenerator 代替 ObjectMapper 来用<br/><br/>
+2. ObjectMapper 和 JsonGenerator 有各种各样的 writeXxx() 方法，可以让结果输出到不同的目的地; 同样  ObjectMapper 和 JsonParser 也有各色 readXxx() 方法，方便你从不同的源获得数据<br/><br/>
+3. 多看看 Jackson 为我们提供了注释 Annotation，留意上面那几个 Feature 中有些什么枚举值，这里面也是我们的扩展点。<br/><br/>
+参考： 1. <a href="http://wiki.fasterxml.com/JacksonInFiveMinutes" target="_blank" rel="noopener">JacksonInFiveMinutes</a>

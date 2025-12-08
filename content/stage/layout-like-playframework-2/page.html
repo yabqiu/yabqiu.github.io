@@ -1,0 +1,77 @@
+---
+title: 建立 Play 2 框架一样的目录布局
+url: /layout-like-playframework-2/
+date: 2016-04-15T23:34:36-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+  - PlayFramework
+tags: 
+  - play2
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7208 
+wpStatus: publish
+views: 463
+lastmod: 2023-12-13T00:04:13-06:00
+---
+
+sbt 项目继承并扩展了 Maven 的默认项目布局, 加入了 Scala 代码的支持, 所以目录如 Shell 命令 <code>mkdir -p src/{main,test}/{java,scala,resources}</code> 生成的目录结构, 即</p>
+<br/>
+<blockquote>
+.<br />
+└── src<br />
+    ├── main<br />
+    │   ├── java<br />
+    │   ├── resources<br />
+    │   └── scala<br />
+    └── test<br />
+        ├── java<br />
+        ├── resources<br />
+        └── scala
+</blockquote>
+<br/>
+这个目录目录虽然很清晰, 但把 Java 和 Scala 代码拆在两处没多大必要, 其次是层次多了点. 因使用 Play Framework 时日有点久了, 比较习惯于 Play 2 改造后的项目布局. 我们启动到 Play 2 的 activator(其实就是加入了定制的 sbt) 控制台, 用命令看它的目录布局<!--more--><br/><br/>
+<blockquote>
+[Test Play 2] $ show javaSource test:javaSource scalaSource test:scalaSource resourceDirectory test:resourceDirectory<br />
+[info] compile:javaSource<br />
+[info]     /Users/yanbin/Workspaces/test_play_2/app<br />
+[info] test:javaSource<br />
+[info]    /Users/yanbin/Workspaces/test_play_2/test<br />
+[info] compile:scalaSource<br />
+[info]     /Users/yanbin/Workspaces/test_play_2/app<br />
+[info] test:scalaSource<br />
+[info]     /Users/yanbin/Workspaces/test_play_2/test<br />
+[info] compile:resourceDirectory<br />
+[info]     /Users/yanbin/Workspaces/test_play_2/conf<br />
+[info] test:resourceDirectory<br />
+[info]     /Users/yanbin/Workspaces/test_play_2/test/resources
+</blockquote>
+<br/>
+理清一下的话, 它的目录布局就是 <code>mkdir -p app conf test/resources</code> 生成的结构<br/><br/>
+<blockquote>
+.<br />
+├── app<br />
+├── conf<br />
+└── test<br />
+    └── resources
+</blockquote>
+<br/>
+是不是清爽了许多呢? 其实我们项目到现在都还没有使用到 test/resources 目录, 所以只要一个平面的目录结构, 即 <strong>app</strong>(Java 和 Scala 产品代码), <strong>conf</strong>(配置文件), 和 <strong>test</strong>(测试代码, 无论 Java 或 Scala) 目录.<br/><br/>
+Play 2 实现上面的布局是由 <a href="https://github.com/playframework/playframework/blob/master/framework/src/sbt-plugin/src/main/scala/play/sbt/PlayLayoutPlugin.scala">PlayLayoutPlugin.scala</a> 插件代码来定义的. 那自己的 sbt 项目如何定义这样的目录结构呢, 照抄吗. 只要在自己的 <code>build.sbt</code> 文件里写上<br/><br/>
+<pre class="brush:scala">sourceDirectory in Compile := baseDirectory.value / "app"
+sourceDirectory in Test := baseDirectory.value / "test"<br/><br/>
+resourceDirectory in Compile := baseDirectory.value / "conf"
+resourceDirectory in Test := (sourceDirectory in Test).value / "resource"<br/><br/>
+scalaSource in Compile := baseDirectory.value / "app"
+scalaSource in Test := baseDirectory.value / "test"<br/><br/>
+javaSource in Compile := baseDirectory.value / "app"
+javaSource in Test := baseDirectory.value / "test"</pre>
+<br/>
+第四行("resource" 行) 没在 <a href="https://github.com/playframework/playframework/blob/master/framework/src/sbt-plugin/src/main/scala/play/sbt/PlayLayoutPlugin.scala">PlayLayoutPlugin.scala</a> 中定义, 我自己加上去的, 如果用不上就不要它. 然后进入 sbt 控制台, 用 <code>show javaSource test:javaSource scalaSource test:scalaSource resourceDirectory test:resourceDirectory</code> 看下输出应该就是我们想要的目录布局.<br/><br/>
+如果去掉前两行一般来说也说得过去, 但用 <code>show sourceDirectory compile:sourceDirectory test:sourceDiretory</code> 显示的分别是 src, src/main 和 src/test 目录. 所以严谨点定义还需像上面八行那样定义布局. 我也可以把它做成一个插件放在 github 上去的.

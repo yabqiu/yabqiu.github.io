@@ -1,0 +1,159 @@
+---
+title: Vagrant 没了 VirtualBox 的话可以配 Qemu
+url: /vagrant-leave-virtualbox-for-qemu/
+date: 2023-12-23T00:30:13-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2021/04/vagrant_logo.png"
+categories:
+  - Linux/Unix
+tags: 
+  - VirtualBox
+  - Vagrant
+  - Qemu
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13368 
+wpStatus: publish
+views: 594
+lastmod: 2023-12-30T23:51:20-06:00
+---
+
+开源虚拟机软件 VirtualBox 从当初不可一世的 Sun 易手到 Oracle 之间，变得不那么被许多公司信任了。之前一直是用 Vagrant 搭配 VirtualBox 在 Mac 下使用 Linux 虚拟机，因为不需要用到 Linux 桌面，用 Vagrant 操作虚拟机非常方便。但现在不得不要考虑别的方式，那就是 Vagrant + Qemu。Vagrant 的默认 Provider 是 VirtualBox, 我们搜索 Vagrant Box <a href="https://app.vagrantup.com/boxes/search">https://app.vagrantup.com/boxes/search</a> 的时候，注意到  Vagrant 其实支持的 Provider 是一个很长的列表:</p>
+<br/>
+<blockquote>
+aws, cloudstack, digitalocean, docker, google, hyperv, libvirt, lxc, openstack, parallels, qemu, rackspace, softlayer, veertu, virtubalbox, vmware, vmware_desktop, vmware_fusion, vmware_ovf, vmware_workstation, vsphere, xenserver
+</blockquote>
+<br/>
+有些尚未听说过，还有一些虽说支持，但别人提供的相应的 box 不多，Qemu 还算不错的 virtualbox 的替代品。Qemu 也是一款开源的虚拟机软件，它支持 Linux, macOS 和 Windows  平台，但它本身未提供友好的 UI 工具，所以创建一个 Qemu 虚拟机的命令会让人畏而却步。在 macOS 下有一个 Qemu 的 UI 工具 <a href="https://mac.getutm.app/">UTM</a><!--more--><br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2023/12/utm-1-1.png"><img class="aligncenter wp-image-13372" src="https://yanbin.blog/wp-content/uploads/2023/12/utm-1-1-800x583.png" alt="" width="479" height="349" /></a><br/><br/>
+Qemu 像 VirtualBox 一样可支持多种操作系统，而且还不限于当前的 CPU 架构，还能模拟不同的 CPU 架构，如运行在 x86 上，可模拟 Arm, RISC-V 等，当然 Arm 等别的 CPU 下也能模板 x86 架构。<br/><br/>
+有了 UTM 使用 Qemu 也很方便，如果无需操作系统桌面，如运行 Linux Server 版本，那可用 Vagrant + Qemu 组合，也用不着 UTM。<br/><br/>
+下面来体验下在 macOS 下如何安装使用 Vagrant + Qemu，所用平台是 MacBook Pro 2019, Intel 芯片, OS 为 macOS Ventura - Version 13.6<br/><br/>
+安装<br/><br/>
+<blockquote>
+brew install qemu<br />
+brew install vagrant<br />
+vagrant plugin update<br />
+vagrant plugin install vagrant-qemu
+</blockquote>
+<br/>
+初始始 box<br/><br/>
+<blockquote>
+vagrant init -m generic/ubuntu2004
+</blockquote>
+<br/>
+这时会在当前目录下生成 Vagrantfile<br/><br/>
+<pre class="lang:default decode:true "># -*- mode: ruby -*-
+# vi: set ft=ruby :<br/><br/>
+Vagrant.configure("2") do |config|
+  config.vm.box = "generic/ubuntu2004"
+end</pre>
+<br/>
+还需对 Vagrantfile 进行修改为<br/><br/>
+<pre class="lang:default decode:true ">Vagrant.configure("2") do |config|
+  config.vm.box = "generic/ubuntu2004"
+  config.vm.provider :qemu do |qe|
+    qe.memory = "2G"    # if don't want to use default value
+    qe.arch = "x86_64"
+    qe.machine = "q35"
+    qe.cpu = "qemu64"
+    qe.net_device = "virtio-net-pci"
+    qe.qemu_dir = '/usr/local/share/qemu'
+  end
+  config.vm.provider "qemu"
+end</pre>
+<br/>
+qe.qemu_dir 的值可通过命令以下命令获得<br/><br/>
+<blockquote>
+echo `brew --prefix`/share/qemu
+</blockquote>
+<br/>
+启动命令 vagrant up<br/><br/>
+<blockquote>
+Bringing machine 'default' up with 'qemu' provider...<br />
+==&gt; default: Checking if box 'generic/ubuntu2004' version '4.3.8' is up to date...<br />
+==&gt; default: Machine already provisioned. Run `vagrant provision` or use the `--provision`<br />
+==&gt; default: flag to force provisioning. Provisioners marked to run always will still run.
+</blockquote>
+<br/>
+ssh 连接 vagrant ssh<br/><br/>
+<blockquote>
+vagrant ssh<br />
+Last login: Sat Dec 23 05:41:48 2023 from 10.0.2.2<br />
+vagrant@ubuntu2004:~$
+</blockquote>
+<br/>
+大功告成<br/><br/>
+但得来上面的结果可不是一帆风顺的，比如启动时的各种错误<br/><br/>
+<blockquote>
+Invalid config.
+Error: Invalid qemu dir: /opt/homebrew/share/qemu
+</blockquote>
+<br/>
+还有<br/><br/>
+<blockquote>
+Stderr: qemu-system-x86_64: unsupported machine type
+</blockquote>
+<br/>
+还有<br/><br/>
+<blockquote>
+Stderr: qemu-system-aarch64: invalid accelerator hvf
+</blockquote>
+<br/>
+再如<br/><br/>
+<blockquote>
+Stderr: qemu-system-x86_64: CPU model 'host' requires KVM or HVF
+</blockquote>
+<br/>
+其实一切的错误根源都都冲着 Qemu 而去的，也就是命令 <code>qemu-system-x86_64</code>， 像<br/><br/>
+<blockquote>
+qemu-system-x86_64 --help<br />
+qemu-system-x86_64 -machine help   # 列出所有支持的 machine<br />
+qemu-system-x86_64 -cpu help  # 列出 cpu mode
+</blockquote>
+<br/>
+把错误信息发问到 ChatGPT, 它仍然发扬着一本正经胡说八道的作风，完全得不到我想要的答案。最有效的还是 Vagrant QEMU Provider 的官方文档 <a href="https://github.com/ppggff/vagrant-qemu/tree/v0.3.5?tab=readme-ov-file">https://github.com/ppggff/vagrant-qemu/tree/v0.3.5?tab=readme-ov-file</a><br/><br/>
+如果不在 Vagrantfile 文件中用<br/><br/>
+<blockquote>
+config.vm.provider "qemu"
+</blockquote>
+<br/>
+指定 provider 是 qemu 的话，就必须 vagrant up 指定 provider, 如<br/><br/>
+<blockquote>
+ vagrant up --provider qemu
+</blockquote>
+<br/>
+或者用 <code>VAGRANT_DEFAULT_PROVIDER</code> 环境变量修改 provider, 如<br/><br/>
+<blockquote>
+export VAGRANT_DEFAULT_PROVIDER=qemu<br />
+vagrant up
+</blockquote>
+<br/>
+当然，方便起见可把环境变量  VAGRANT_DEFAULT_PROVIDER 定义移入 shell 的相应配置文件中，如 .zshrc, .bashrc 等。<br/><br/>
+如果 vagrant up 不指定 --provider qemu, 就会默认尝试用 virtualbox 或 libvirt, 因为本机没有安装 VirtualBox, 所以直接 vagrant up 会失败<br/><br/>
+<blockquote>
+vagrant up<br />
+Bringing machine 'default' up with 'libvirt' provider...<br />
+Error while connecting to Libvirt: Error making a connection to libvirt URI qemu:///system:<br />
+Call to virConnectOpen failed: Failed to connect socket to '/usr/local/var/run/libvirt/virtqemud-sock': No such file or directory
+</blockquote>
+<br/>
+在执行 vagrant plugin install vagrant-qemu 出现过错误<br/><br/>
+<blockquote>
+Unable to resolve dependency: user requested 'vagrant-libvirt (= 0.12.0)'
+</blockquote>
+<br/>
+执行 vagrant plugin update 可解决。<br/><br/>
+看来 Qemu 本身还依赖于 Libvirt, 而 libvirt 也是 Vagrant 所支持的 provider 的一种，应该可以用 Vagrant + Libvert 的方式, 参见 GitHub 的 <a href="https://github.com/vagrant-libvirt/vagrant-libvirt">vagrant-libvirt</a> 项目 。<br/><br/>
+当前配置从宿主机无法访问到虚拟机，可以使用端口映射或桥接的网络配置方式，留待以后再细究吧。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://medium.com/@mhmridul2400/install-vagrant-linux-using-qemu-and-create-two-namespaces-and-connect-them-by-veth-cable-on-d2b9506093b0">Install vagrant, Linux using QEMU and create two namespaces and connect them by (veth) cable on (Mac M2).</a></li>
+</ol>
+<br/>
+&nbsp;

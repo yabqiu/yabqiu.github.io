@@ -1,0 +1,72 @@
+---
+title: 调用Windows外壳程序格式化磁盘
+url: /windows-call-shell-format-disk/
+date: 2007-07-15T02:47:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Windows
+  - C++/VB
+tags: 
+  - Windows
+  - Shell
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 501 
+wpStatus: publish
+views: 823
+lastmod: 2021-09-03T10:13:17-05:00
+---
+
+看资料介绍说 Windows 2000 以上的 SDK 提供了格式化逻辑驱动器的函数 SHFormatDrive, 这是一个外壳函数（Windows界面操作环境称之为外壳）,从 shell32.dll 库导出，调用后会弹出一个格式化对话框，只有用户单击"开始"按钮后格式化才开始，使用时应包含头文件 shlobj.h </p>
+<br/>
+我都照做了，下载安装了 Windows XP SP2 的 SDK, 并配置在了 VC 的 include和lib目录中了，也把新SDK的目录调到了最上面，程序中也包含了 shlobj.h, 而且看到新的 SDK 的 shlobj.h 中确实有 SHFormatDrive 函数原型，可是当我使用 SHFormatDrive 函数编译时总提示我找不到这个符号。不知道发生什么问题了，留待以后有需求时再解决吧,反正就是预编译宏展开时，不是去 include 新的 SDK 的 shlobj.h 文件，include 的是 VC98 中的 shlobj.h 文件。<!--more--> 无奈之时，只能手工的加载 shell32.dll, 找到 SHFormatDrive 函数地址进行调用了。<br/><br/>
+ SHFormatDrive 函数用法如下：<br/><br/>
+<pre class="brush:cpp">DWORD　SHFormatDrive(
+       HWND hwnd;   //为格式化对话框指定父窗口句柄
+       UINT drive,  //要格式化的驱动器。0代表A盘，1代表B盘，依次类推
+       UINT fmtID,  //物理格式标识，仅有一个值可用：SHFMT_ID_DEFAULT
+       UINT options 
+    //用于改变对话框的默认选项。0表示默认，SHFMT_OPT_FULL 表示选中"快速格式化"选项，
+    //SHFMT_OPT_SYSONLY 表示选中"创建一个MS-DOS启动盘"选项
+);</pre>
+<br/>
+函数的返回值是最后一次成功格式化的碰盘标识，或者是下列取值之一：<br />
+SHFMT_ERROR         上次格式化出错，磁盘可能被格式化<br />
+SHFMT_CANCEL         格式化被取消<br />
+SHFMT_NOFORMAT       不能进行磁盘格式化 <br/><br/>
+实现代码如下： <br/><br/>
+<pre class="lang:default decode:true ">//像新的SDK那样定义几个宏,你也可以不定义这几个宏，在传参或判断返回值是直接用常量值
+#define SHFMT_ID_DEFAULT    0xFFFF
+#define SHFMT_OPT_FULL     0x0001
+#define SHFMT_OPT_SYSONLY  0x0002
+#define SHFMT_ERROR     0xFFFFFFFFL
+#define SHFMT_CANCEL    0xFFFFFFFEL
+#define SHFMT_NOFORMAT  0xFFFFFFFDL<br/><br/>
+//定义要导出的函数指针类型
+typedef DWORD (WINAPI * PFNSHFORMATDRIVE)(HWND hwnd,UINT drive,UINT fmtID,UINT options);<br/><br/>
+//加载 Shell32.dll 动态库
+HINSTANCE hInstance=LoadLibrary("Shell32.dll");<br/><br/>
+if(hInstance==NULL) {
+    return;
+}<br/><br/>
+//定义函数 SHFormatDrive 的地址
+PFNSHFORMATDRIVE pFnSHFormatDrive=(PFNSHFORMATDRIVE)::GetProcAddress(hInstance,"SHFormatDrive");<br/><br/>
+if(pFnSHFormatDrive==NULL) {
+    FreeLibrary(hInstance);
+    return;
+}<br/><br/>
+//调用函数 SHFormatDrive
+DWORD dwRet = (pFnSHFormatDrive)(NULL,2,SHFMT_ID_DEFAULT,SHFMT_OPT_FULL);<br/><br/>
+//父窗口句可以传NULL,如果你是窗口程序中可以用以下两个函数得到 HWND 传入<br/><br/>
+//HWND hParentWnd = this-&gt;GetSafeHwnd()
+//HWND hParentWnd = AfxGetMainWnd()-&gt;GetSafeHwnd()<br/><br/>
+//释放句柄资源
+FreeLibrary(hInstance);</pre>
+<br/>
+参考资料：1. <a href="http://blog.csdn.net/bestbear/articles/67148.aspx">磁盘格式化的编程实现</a><br />
+          2. 《Windows 程序设计》（王艳平编著），第八章 Windows 文件操作的内存映射

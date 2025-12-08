@@ -1,0 +1,77 @@
+---
+title: PHP 异步执行方法，模拟多线程
+url: /php-simulate-multithread/
+date: 2010-04-28T11:45:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PHP
+tags: 
+  - php
+  - multithread
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 185 
+wpStatus: publish
+views: 2091
+lastmod: 2021-09-02T10:49:15-05:00
+---
+
+PHP 本身没有多线程的东西，但可以曲线的办法来造就出同样的效果，比如多进程的方式来达到异步调用，只限于命令模式。还有一种更简单的方式，可用于 Web 程序中，那就是用 fsockopen()、fputs() 来请求一个 URL 而无需等待返回，如果你在那个被请求的页面中做些事情就相当于异步了。</p>
+<br/>
+关键代码如下：<br/><br/>
+<pre class="lang:default decode:true">$fp=fsockopen('localhost',80,&amp;$errno,&amp;$errstr,5);
+if(!$fp){
+    echo "$errstr ($errno)&lt;br /&gt;\n";
+}
+fputs($fp,"GET another_page.php?flag=1\r\n");
+fclose($fp);</pre>
+<br/>
+上面的代码向页面 another_page.php 发送完请求就不管了，用不着等待请求页面的响应数据，利用这一点就可以在被请求的页面 another_page.php 中异步的做些事情了。<!--more--><br/><br/>
+比如，一个很切实的应用，某个 Blog 在每 Post 了一篇新日志后需要给所有它的订阅者发个邮件通知。如果按照通常的方式就是：<br/><br/>
+日志写完 -&gt; 点提交按钮 -&gt; 日志插入到数据库 -&gt; 发送邮件通知 -&gt; 告知撰写者发布成功<br/><br/>
+那么作者在点提交按钮到看到成功提示之间可能会等待很常时间，基本是在等邮件发送的过程，比如连接邮件服务异常、或器缓慢或是订阅者太多。而实际上是不管邮件发送成功与否，保证日志保存成功基本可接受的，所以等待邮件发送的过程是很不经济的，这个过程可异步来执行，并且邮件发送的结果不太关心或以日志形式记录备查。<br/><br/>
+改进后的流程就是：<br/><br/>
+日志写完 -&gt; 点提交按钮 -&gt; 日志插入到数据库 ---&gt; 告知撰写者发布成功<br />
+                                                           └ 发送邮件通知 -&gt; [记下日志]<br/><br/>
+用个实际的程序来测试一下，有两个 php，分别是 write.php 和 sendmail.php，在 sendmail.php 用 sleep(seconds) 来模拟程序执行使用时间。<br/><br/>
+write.php，执行耗时 1 秒<br/><br/>
+<pre class="lang:default decode:true">&lt;?php <br/><br/>
+function asyn_sendmail() {
+    $fp=fsockopen('localhost',80,&amp;$errno,&amp;$errstr,5);
+    if(!$fp){
+        echo "$errstr ($errno)&lt;br /&gt;\n";
+    }
+    sleep(1);
+    fputs($fp,"GET /sendmail.php?param=1\r\n"); #请求的资源 URL 一定要写对
+    fclose($fp);
+} <br/><br/>
+echo time().'&lt;br&gt;';
+echo 'call asyn_sendmail&lt;br&gt;';
+asyn_sendmail();
+echo time().'&lt;br&gt;';
+?&gt;</pre>
+<br/>
+sendmail.php，执行耗时 10 秒<br/><br/>
+<pre class="lang:default decode:true ">&lt;?php
+//sendmail();
+//sleep 10 seconds
+sleep(10);
+fopen('C:\'.time(),'w');
+?&gt;</pre>
+<br/>
+通过页面访问 write.php，页面输出：<br/><br/>
+1272472697<br />
+call asyn_sendmail<br />
+1272472698<br/><br/>
+并且在 C:\ 生成文件：<br/><br/>
+1272472708<br/><br/>
+从上面的结果可知 sendmail.php 花费至少 10 秒，但不会阻塞到 write.php 的继续往下执行，表明这一过程是异步的。<br/><br/>
+参考：1. <a href="http://hi.baidu.com/xletian/blog/item/9d354a233006d4569922ede3.html" target="_blank" rel="noopener">PHP多线程类</a><br />
+        2. <a href="http://hi.baidu.com/xletian/blog/item/9d354a233006d4569922ede3.html" target="_blank" rel="noopener">浅析php中实现多线程</a><br />
+        3. <a href="http://edu.qudong.com/program/php/jinjiegaoshou/20080317/431.html" target="_blank" rel="noopener">php实现多线程（实际是多进程，夸平台）</a><br />
+        4. <a href="http://www.wellho.net/resources/ex.php4?item=h112/dopost.php" target="_blank" rel="noopener">Using the POST method to read from a URL within a PHP script</a>

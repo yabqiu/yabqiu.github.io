@@ -1,0 +1,265 @@
+---
+title: Spring Boot Web 输出 Tomcat 的访问日志到控制台
+url: /spring-boot-web-tomcat-access-logs-to-console/
+date: 2022-10-26T12:54:02-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - AWS
+  - EC2
+  - AccessLog
+  - ECS
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12872 
+wpStatus: publish
+views: 1256
+lastmod: 2023-02-08T15:15:15-06:00
+---
+
+当我们直接使用 Tomcat  时，访问日志的配置在 $TOMCAT_HOME/conf/server.xml 中<br/><br/>
+<blockquote>
+&lt;Valve className="org.apache.catalina.valves.AccessLogValve" directory="logs"<br />
+              prefix="localhost_access_log" suffix=".txt"<br />
+              pattern="%h %l %u %t &amp;quot;%r&amp;quot; %s %b" /&gt;
+</blockquote>
+<br/>
+产生的日志文件在 $TOMCAT_HOME/logs 目录中，生成以日期戳进行区分的滚动日志文件，如 localhost_access_log.2022-10-25.txt 等<br/><br/>
+而在我们使用  Spring Boot Web 时, 默认的嵌入式 Web 应用服务器是 Tomcat，我们可以在 Spring 属性文件中配置是否启用 Tomcat 访问日志(默认不启用)。属性文件中的配置针对的是如何输出访问日志到文件，而我们有时候需要输出访问日志到控制台而不非文件，比如 AWS 上的 ECS 应用，控制台的输出可直接发送到 CloudWatch，这样便于分析日志。<br/><br/>
+在 Spring Web 中可以用 Interceptor 或 Filter 来记录访问日志，但在请求出错时无法准确显示出响应时间和状态码，毕竟 Tomcat 的访问日志在代码的外层，进出 Controller 方法的输入输出信息也就掌握的更清楚。<br/><br/>
+本文的任务是探索输出 Spring Boot Web 嵌入式 Tomcat 的访问日志到控制台。有两种方式<!--more--><br/><br/>
+<ol>
+    <li>配置特殊输出设备文件 /dev/stdout 引导 Tomcat 输出访问日志到控制台</li>
+    <li>定制 Tomcat 的 AccessLogValve，获取到访问日志记录，然后自己控制输出，直接 Sytem.out.println 或由通用日志框架(slf4 等) 输出</li>
+</ol>
+<br/>
+关于访问日志的配置可在 Spring 属性文件(application.properties 或 yaml 文件) 中定制，属性名为 <code>server.tomcat.accesslog.*</code> 等一系列配置中。在 <a href="https://docs.spring.io/spring-boot/docs/current/reference/html/application-properties.html">Spring Common Application Properties</a> 页面中搜索 <a href="https://docs.spring.io/spring-boot/docs/current/reference/html/application-properties.html">server.tomcat.accesslog</a>. 下面列出相关的属性, 说明及默认值，按大概的关注度由强及弱排列<br/><br/>
+<ol>
+    <li>server.tomcat.accesslog.enabled: 是否开启访问日志，默认为 false</li>
+    <li>server.tomcat.accesslog.directory: 访问日志目录，可用绝对或相对目录(相对于 Tomcat Base 目录)，默认为 logs</li>
+    <li>server.tomcat.accesslog.prefix: 日志文件名前缀，默认为 access_log</li>
+    <li>server.tomcat.accesslog.suffix: 日志文件名后缀，默认为 .log</li>
+    <li>server.tomcat.accesslog.pattern: 日志记录行输出格式，默认为 common, 即 <code>%h %l %u %t "%r" %s %b</code></li>
+    <li>server.tomcat.accesslog.file-date-format: 插入到日志文件名中的日期格式，默认为 .yyyy-MM-dd, 所以结合 prefix, suffix, 最后的文件名就像 localhost_access_log.2022-10-25.log</li>
+    <li>server.tomcat.accesslog.condition-if: 如果设置了值为 "needLog", 那么只有请求的 ServletRequest.getAttribute("needLog") 不为 null 时才记录; 默认为空，即所有的访问都被记录</li>
+    <li>server.tomcat.accesslog.condition-unless: 如果设置了值为 "excludeLog" 的话，只有 ServletRequest.getAttribute("excludeLog") 为 null 时才记录; 默认为空，即所有访问都被记录</li>
+    <li>server.tomcat.accesslog.rotate: 是否滚动访问日志文件，默认是 true</li>
+    <li>server.tomcat.accesslog.rename-on-rotate: 日志文件名是否含有时间戳，直到被滚动时才加上时间戳。默认为 false，表示当前日志文件名含有时间戳</li>
+    <li>server.tomcat.accesslog.max-day: 访问日志保留的最大天数，默认为 -1, 表示永远</li>
+    <li>server.tomcat.accesslog.buffered:  在输出日志内容到文件前是否缓存, 缓存中的内容被定期刷到文件中，默认为 true。缓存到减少日志输出对正常业务代码的性能影响</li>
+    <li>server.tomcat.accesslog.check-exists: 是否检查日志文件是否存在，比如在外部重命名了日志文件后会重新创建，默认为 false</li>
+    <li>server.tomcat.accesslog.encoding: 日志文件的字符集，默认为系统默认字符集</li>
+    <li>server.tomcat.accesslog.locale: 产生时间戳所用的区域(Locale)，默认为 Java 的默认 local</li>
+    <li>server.tomcat.accesslog.request-attributes-enabled: 是否把 IP 地址，Hostname, 协议，端口号附加到 Request 中去，默认为  false</li>
+    <li>server.tomcat.accesslog.ipv6-canonical: 是否使用 IPv6 的规范格式，默认为 false</li>
+</ol>
+<br/>
+如果在 Spring Boot 中引入的不是 Tomcat，比如 undertow, 那么相应的访问日志配置属性就是 <code>server.undertow.accesslog.*</code>。<br/><br/>
+上面的属性对应到 <code><a href="https://docs.spring.io/spring-boot/docs/current/api/org/springframework/boot/autoconfigure/web/ServerProperties.Tomcat.Accesslog.html">org.springframework.boot.autoconfigure.web.ServerProperties.Tomcat.Accesslog</a></code>, <a href="https://tomcat.apache.org/tomcat-9.0-doc/api/org/apache/catalina/valves/AccessLogValve.html"><code>org.apache.catalina.values.AccessLogValve</code></a> 和 <a href="https://tomcat.apache.org/tomcat-9.0-doc/api/org/apache/catalina/valves/AbstractAccessLogValve.html"><code>org.apache.catalina.values.AbstractAccessLogValve</code></a> 中的属性。<br/><br/>
+<h3>输出访问日志到  /dev/stdout(标准输出)</h3><br/><br/>
+在进行实质性配置之前看一下只是单单启用 <code>server.tomcat.accesslog.enabled=true</code> ，其他属性全保持默认值时的访问日志在哪里。为此我们先在 <code>application.properties</code> 中加上一行<br/><br/>
+<pre class="lang:default decode:true ">server.tomcat.accesslog.enabled=true</pre>
+<br/>
+根据其他属性的默认值，我们可此访问日志文件将会是 logs/access_log.2022-10-26.log (写作时的日期), 这是一个相对路径，相对目录是 <code>System.getProperty("catalina.home")</code>, 比如在 Mac OS X 下在一次 Spring Boot Web 应用启动后输出的值为<br/><br/>
+<blockquote>
+/private/var/folders/hz/h515j94x4ls272nvxf3pqt800000gq/T/tomcat.8080.17520809821230678569
+</blockquote>
+<br/>
+访问了一次 /test 后，产生的日志文件可见如下<br/><br/>
+<blockquote>
+$ ~ ls /private/var/folders/hz/h515j94x4ls272nvxf3pqt800000gq/T/tomcat.8080.17520809821230678569<br />
+logs work<br />
+$ ~ ls /private/var/folders/hz/h515j94x4ls272nvxf3pqt800000gq/T/tomcat.8080.17520809821230678569/logs<br />
+access_log.2022-10-26.log<br />
+$ ~ cat /private/var/folders/hz/h515j94x4ls272nvxf3pqt800000gq/T/tomcat.8080.17520809821230678569/logs/access_log.2022-10-26.log<br />
+0:0:0:0:0:0:0:1 - - [26/Oct/2022:10:08:53 -0500] "GET /test HTTP/1.1" 200 12
+</blockquote>
+<br/>
+创建文件输出流来输出内容到控制台可用下面的方式<br/><br/>
+<pre class="lang:default decode:true ">FileOutputStream out = new FileOutputStream("/dev/stdout");
+out.write("hello".getBytes());</pre>
+<br/>
+执行后控制台输出为<br/><br/>
+<blockquote>
+hello
+</blockquote>
+<br/>
+由此，我们可以让 Tomcat 认为输出文件是 <code>/dev/stdout</code> 这一绝对文件路径，为达到此目的，我们必须原本访问日志文件的中，后缀置空掉，最后的 Spring 属性配置如下<br/><br/>
+<pre class="lang:default decode:true">server.tomcat.accesslog.enabled=true
+server.tomcat.accesslog.directory=/dev
+server.tomcat.accesslog.prefix=stdout
+server.tomcat.accesslog.buffered=false
+server.tomcat.accesslog.suffix=
+server.tomcat.accesslog.file-date-format=</pre>
+<br/>
+这样 Tomcat 就会乖乖的输出访问日志到  /dev/stdout，关闭缓存的目的是要立即看到访问日志输出。<br/><br/>
+如果我们对它进行追根溯源的话，可以找到线索<br/><br/>
+<pre class="lang:default decode:true">ServletWebServerApplicationContext.createWebServer()
+        getWebServerFactory()
+             WebServerFactoryCustomizerBeanPostProcessor.postProcessBeforeInitialization(WebServerFactory webServerFactory)
+                    beanFactory.getBeansOfType(WebServerFactoryCustomizer.class)
+                           webServerFactoryCustomizer.customize(webServerFactory)
+                                TomcatWebServerFactoryCustomizer.customize(webServerFactory)
+                                    propertyMapper.from(tomcatProperties::getAccesslog).when(ServerPropperties.Tomcat.Accesslog::isEnabled)
+                                                                  .to(enabled -&gt; customizeAccessLog(configurableTomcatWebServerFactory)
+                                          AccessLogValve valve = new AccessLogValve();
+                                          Accesslog accessLogConfig = tomcatProperties.getAccesslog();
+                                          map.from(accessLogConfig.getPattern()).to(valve::setPattern);
+                                          map.from(accessLogConfig.getDirectory()).to(valve::setDirectory);
+                                          map.from(accessLogConfig.getPrefix()).to(valve::setPrefix);
+                                          ......
+                                          factory.addEngineValues(value)<br/><br/>
+AccessLogValve.open()
+    getLogFile(boolean useDateStamp)
+        new File(dir.getAbsoluteFile(), prefix + useDateStamp? dateStamp: "" + suffix)</pre>
+<br/>
+因为 AccessLogValve 最终是用 new File() 来创建访问日志文件的，也就是为什么我们指定输出到 /dev/stdout 便是标准输出控制台了。<br/><br/>
+从上可知，我们以 Hack 的方式用 /dev/stdout 欺骗了 Spring Boot 使得访问日志输出到了控制台，同时也为我们指明了另一个方向，那就是<br/><br/>
+<h3>用 WebServerFactoryCustomizer 定制 AccessLogValue</h3><br/><br/>
+从前面的源代码可知 Spring 发现有 WebServerFactoryCustomizer 实例便会调用它的 customize() 方法，所以我们只要声明一个这样的 Bean 就能定制 Tomcat 的 AccessLogValue<br/><br/>
+创建类 AccessValveConfig<br/><br/>
+<pre class="lang:default decode:true">package yanbin.blog;<br/><br/>
+import org.apache.catalina.valves.AbstractAccessLogValve;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
+import org.springframework.boot.web.server.WebServerFactoryCustomizer;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.stereotype.Component;<br/><br/>
+import java.io.CharArrayWriter;
+import java.util.List;<br/><br/>
+@Configuration
+public class AccessValveConfig implements WebServerFactoryCustomizer&lt;TomcatServletWebServerFactory&gt; {
+    private static final Logger logger = LoggerFactory.getLogger(AccessValveConfig.class);
+    private final CustomAccessLogValve customAccessLogValve;<br/><br/>
+    public AccessValveConfig(CustomAccessLogValve customAccessLogValve){
+        this.customAccessLogValve = customAccessLogValve;
+    }<br/><br/>
+    @Override
+    public void customize(TomcatServletWebServerFactory factory) {
+        factory.setEngineValues(List.of(customAccessLogValve));
+    }<br/><br/>
+    @Component
+    public static class CustomAccessLogValve extends AbstractAccessLogValve {<br/><br/>
+        private static final String pattern = "remote_host=%h, request=%r, status_code=%s, execute_time=%D," +
+                "  bytes_received=%{Content-Length}i, bytes_sent=%b, user_agent=%{User-Agent}i";<br/><br/>
+        public CustomAccessLogValve(){
+            setConditionUnless("ignore-access-log");   // request.setAttribute("ignore-access-log", "") 的请求不被记录，比如被频繁访问的 health-check
+            setPattern(pattern);
+        }<br/><br/>
+        @Override
+        protected void log(CharArrayWriter message) {
+            logger.info("TomcatAccessLog: {}", message.toString());
+        }
+    }
+}</pre>
+<br/>
+现在测试一下，在控制台上会输出<br/><br/>
+<blockquote>
+2022-10-26 11:52:35.301 INFO 34986 --- [nio-8080-exec-1] yanbin.blog.AccessValveConfig : remote_host=0:0:0:0:0:0:0:1, request=GET /test HTTP/1.1, status_code=200, execute_time=56, bytes_received=-, bytes_sent=12, user_agent=curl/7.64.1
+</blockquote>
+<br/>
+日志是通过 SLFJ 输出来的，timestamp, 线程信息由 SLFJ 负责<br/><br/>
+<h3>有关于访问日志的 pattern 及定制</h3><br/><br/>
+当我们在定制 pattern 时，了解它是如何获取各种信息的很重要。前面提到过内置的可用字段可以在 <a href="https://tomcat.apache.org/tomcat-9.0-doc/api/org/apache/catalina/valves/AbstractAccessLogValve.html"><code>org.apache.catalina.values.AbstractAccessLogValve</code></a> 中找到，如 %a, %A, %r 等，以及用 ${xxx}i, %{xxx}o, %{xxx}c, %{xxx}r, %{xxx}s 可分别从请求头(i), 响应头(o), cookie(c), Request attribute(r), Session attribute(s) 中提取属性值。它们的实现在 org.apache.Catalina.values.AccessLogElement 子类中，如 ResponseHeaderElement。<br/><br/>
+假如我们有自己需求的话，比如我们部署在 ECS Container 中应用希望能获得所在 EC2 的 IP 地址，而不是容器的 IP 地址，就可以实现一个 EC2AttributeElement，之后在 pattern 中配置 %{ip}E，为此我们需下面几步<br/><br/>
+<ol>
+    <li>在 Pattern 中加上 %{ip}E</li>
+    <li>在 CustomAccessLogValve 中覆盖 createAccessLogElement(String name, char pattern) 方法，并在 CustomAccessLogValve 中(因为 AccessLogElement 是一个 protected 类) 创建 Ec2AttributeElement类，相关的代码如下<br />
+<pre class="lang:default decode:true">@Component
+public static class CustomAccessLogValve extends AbstractAccessLogValve {<br/><br/>
+    private static final String pattern = "remote_host=%h, local_host=%{ip}E, request=%r, status_code=%s, execute_time=%D," +
+            "  bytes_received=%{Content-Length}i, bytes_sent=%b, user_agent=%{User-Agent}i";<br/><br/>
+    public CustomAccessLogValve(){
+        setConditionUnless("ignore-access-log");
+        setPattern(pattern);
+    }<br/><br/>
+    @Override
+    protected AccessLogElement createAccessLogElement(String name, char pattern) {
+        if(pattern == 'E') {
+           return new EC2AttributeElement(name);
+        }
+        return super.createAccessLogElement(name, pattern);
+    }<br/><br/>
+    private static class EC2AttributeElement implements AccessLogElement {<br/><br/>
+        private final String attrName;<br/><br/>
+        public EC2AttributeElement(String attrName) {
+            this.attrName = attrName;
+        }<br/><br/>
+        @Override
+        public void addElement(CharArrayWriter buf, Date date, Request request, Response response, long time) {
+            // curl http://169.254.169.254/latest/meta-data/local-ipv4
+            if("ip".equals(attrName)) {
+                String ipUrl = "http://169.254.169.254/latest/meta-data/local-ipv4";
+                try(InputStream is = (InputStream) new URL(ipUrl).getContent()){
+                    String ip = new Scanner(is).next();
+                    buf.append(ip);
+                } catch (IOException e) {
+                    buf.append("??");
+                }
+            } else {
+                buf.append("-");
+            }
+        }
+    }<br/><br/>
+    
+    @Override
+    protected void log(CharArrayWriter message) {
+        logger.info(message.toString());
+    }
+}</pre>
+在 ECS 容器中可通过 <code>curl http://169.254.169.254/latest/meta-data/local-ipv4</code> 获得所在 EC2 实例的 IP 地址, 前面的代码还应把第一次成功解析出来的 IP 地址缓存起来，后续直接使用。
+</li>
+</ol>
+<br/>
+最后，部署到 EC2 的 Docker 容器中的 Spring Boot Web  的访问日志就会像<br/><br/>
+<blockquote>
+2022-10-26 12:43:51.253 INFO 36843 --- [nio-8080-exec-1] yanbin.blog.AccessValveConfig : remote_host=0:0:0:0:0:0:0:1, local_host=192.168.86.23, request=GET /test HTTP/1.1, status_code=200, execute_time=56, bytes_received=-, bytes_sent=12, user_agent=curl/7.64.1
+</blockquote>
+<br/>
+备注：<br/><br/>
+无法是在 EC2 还是在 EC2 上运行的 ECS 容器中都可以通过 http://169.254.169.254/latest/meta-data/ 获得相应的 EC2 实例的信息，如<br/><br/>
+<blockquote>
+[root@xyz-01234567 ~]# curl http://169.254.169.254/latest/meta-data/<br />
+ami-id<br />
+ami-launch-index<br />
+ami-manifest-path<br />
+autoscaling/<br />
+block-device-mapping/<br />
+events/<br />
+hostname<br />
+iam/<br />
+identity-credentials/<br />
+instance-action<br />
+instance-id<br />
+instance-life-cycle<br />
+instance-type<br />
+local-hostname<br />
+local-ipv4<br />
+mac<br />
+metrics/<br />
+network/<br />
+placement/<br />
+profile<br />
+reservation-id<br />
+security-groups<br />
+services/<br />
+[root@xyz-01234567 ~]# curl http://169.254.169.254/latest/meta-data/hostname<br />
+ip-192-168-86-23.ec2.internal<br />
+[root@lin-01234567 ~]# curl http://169.254.169.254/latest/meta-data/instance-type<br />
+t3.small
+</blockquote>
+<br/>
+其他的信息以相同的方式获得<br/><br/>
+参考：<br/><br/>
+<ol>
+    <li><a href="https://pedrojuarez.medium.com/ec2-ecs-instance-metadata-2939d7a6f2ce">How to get host ip and port from inside ECS container</a></li>
+    <li><a href="https://medium.com/skale-5/how-to-redirect-logs-to-stdout-ab4cea3c61ad">How to redirect logs to stdout?</a></li>
+</ol>

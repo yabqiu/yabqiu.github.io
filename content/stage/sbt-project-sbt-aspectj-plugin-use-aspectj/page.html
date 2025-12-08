@@ -1,0 +1,143 @@
+---
+title: sbt 项目通过 sbt-aspectj-plugin 使用 AspectJ
+url: /sbt-project-sbt-aspectj-plugin-use-aspectj/
+date: 2015-11-17T23:28:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - AspectJ
+  - sbt
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7030 
+wpStatus: publish
+views: 522
+lastmod: 2023-12-13T00:06:52-06:00
+---
+
+Java 在运用面向方向编程时，依照  <a href="https://eclipse.org/aspectj/" target="_blank" rel="noopener">AspectJ</a> 的语法自己书写 *.aj 文件可以得到尽可能大的控制能力。如果是一个 <a href="http://www.scala-sbt.org/" target="_blank" rel="noopener">sbt</a> 的项目，有一个 <a href="https://github.com/sbt/sbt-aspectj" target="_blank" rel="noopener">sbt-aspectj-plugin</a> 插件可以帮上我们的忙。那么如何应用这个插件呢？ 该插件首页面告诉我们要在 <code>project/plugins.sbt</code> 中加上下面这句话</p>
+<br/>
+<pre class="brush:scala">addSbtPlugin("com.typesafe.sbt" % "sbt-aspectj" % "0.10.4")</pre>
+<br/>
+其他就是参考例子 <a href="https://github.com/sbt/sbt-aspectj/tree/v0.10.4/src/sbt-test">runnable sample projects</a>，然而这几个例子并非那么直白。所以还是自己做一个最简单的例子来体验 sbt 项目如何使用 AspectJ.<!--more--><br/><br/>
+这是一个默认的 sbt+AspectJ 的项目布局<br/><br/>
+sbt-aspectj-sample/<br />
+├── build.sbt<br />
+├── project<br />
+│   ├── build.properties<br />
+│   └── plugins.sbt<br />
+└── src<br />
+    └── main<br />
+        ├── aspectj<br />
+        │   └── SampleAspect.aj<br />
+        └── java<br />
+            └── sample<br />
+                └── Sample.java<br/><br/>
+各文件的内容分别如下：<br/><br/>
+<strong>build.sbt</strong><br/><br/>
+<pre class="lang:default decode:true">import com.typesafe.sbt.SbtAspectj._
+import com.typesafe.sbt.SbtAspectj.AspectjKeys._<br/><br/>
+name := "sbt-aspectj-sample"<br/><br/>
+val main = (project in file("."))
+    .settings(aspectjSettings: _*)
+    .settings(
+        inputs in Aspectj &lt;+= compiledClasses,
+        products in Compile &lt;&lt;= products in Aspectj,
+        products in Runtime &lt;&lt;= products in Compile,
+        verbose in Aspectj := true
+    )</pre>
+<br/>
+上面的配置是把属性用 project.setting() 方法来设置，也可以不依赖于 (project in file("."))，下面的配置是一样的<br/><br/>
+<pre class="lang:default decode:true">import com.typesafe.sbt.SbtAspectj._
+import com.typesafe.sbt.SbtAspectj.AspectjKeys._<br/><br/>
+name := "sbt-aspectj-sample"<br/><br/>
+aspectjSettings<br/><br/>
+inputs in Aspectj &lt;+= compiledClasses<br/><br/>
+products in Compile &lt;&lt;= products in Aspectj<br/><br/>
+products in Runtime &lt;&lt;= products in Compile</pre>
+<br/>
+和 .settings(aspectjSetting:_*) 一样，上面的 aspectjSetting 同样是关键，否则会报如下错误：<br/><br/>
+<pre class="lang:default decode:true">[error] References to undefined settings:
+[error]
+[error]   aspectj:inputs from aspectj:inputs (/Users/yanbin/Desktop/sbt-aspectj-sample/build.sbt:8)
+[error]
+[error]   aspectj:products from compile:products (/Users/yanbin/Desktop/sbt-aspectj-sample/build.sbt:10)</pre>
+<br/>
+<strong>build.properties </strong>(只放了一行)<br/><br/>
+<pre class="brush:scala">sbt.version=0.13.5</pre>
+<br/>
+<strong>plugins.sbt</strong> (加载 sbt-aspectj 依赖)<br/><br/>
+<pre class="lang:default decode:true">addSbtPlugin("com.typesafe.sbt" % "sbt-aspectj" % "0.10.4")</pre>
+<br/>
+<strong>src/main/java/sample/Sample.java</strong> (Java 代码在 sbt 项目中默认位置)<br/><br/>
+<pre class="lang:default decode:true">package sample;<br/><br/>
+public class Sample {
+    public static void main(String[] args) {
+        System.out.println("Print from Sample class");
+    }
+}</pre>
+<br/>
+<strong>src/main/aspectj/SampleAspect.aj</strong> (方面定义文件默认放在 src/main/aspectj 目录中)<br/><br/>
+<pre class="lang:default decode:true">public aspect SampleAspect {<br/><br/>
+  before(): execution(* sample.Sample.main(..)) {
+    System.out.println("Weaved content from SampleAspect");
+  }
+}</pre>
+<br/>
+用 aspect 定义方面，文件名是  *.aj，它也可以用 Java 一样用  <code>package sample</code> 来定义包名，但没要求包名与目录层次一致。上面方面定义的是在招待 sample.Sample.main() 方法前打印 "Wearved content from SampleAspect".<br/><br/>
+现在来看执行效果<br/><br/>
+进到 sbt-aspectj-sample 目录中，然后执行 sbt 命令，接着执行 sbt 的 run 任务就会看到下面的输出<br/><br/>
+<pre class="lang:default decode:true">[I] ➜  sbt-aspectj-sample git:(master) ✗ sbt
+[info] Loading project definition from /Users/yanbin/Desktop/sbt-aspectj-sample/project
+[info] Set current project to sbt-aspectj-sample (in build file:/Users/yanbin/Desktop/sbt-aspectj-sample/)
+> run
+[info] Weaving 1 input with 1 AspectJ source to /Users/yanbin/Desktop/sbt-aspectj-sample/target/scala-2.10/aspectj/classes...
+[info] info directory classpath entry does not exist: /Library/Java/JavaVirtualMachines/jdk1.8.0_45.jdk/Contents/Home/jre/lib/sunrsasign.jar
+[info] info zipfile classpath entry does not exist: /Library/Java/JavaVirtualMachines/jdk1.8.0_45.jdk/Contents/Home/jre/classes
+[info] info Pipelining compilation
+[info] info compiling /Users/yanbin/Desktop/sbt-aspectj-sample/src/main/aspectj/SampleAspect.aj
+[info] info weaver operating in reweavable mode.  Need to verify any required types exist.
+[info] info woven aspect SampleAspect (from /Users/yanbin/Desktop/sbt-aspectj-sample/src/main/aspectj/SampleAspect.aj)
+[info] info woven class sample.Sample (from /Users/yanbin/Desktop/sbt-aspectj-sample/target/scala-2.10/classes/sample/Sample.class)
+[info] info Compiler took 768ms
+[info] Running sample.Sample
+Weaved content from SampleAspect
+Print from Sample class
+[success] Total time: 1 s, completed Nov 17, 2015 11:15:09 PM</pre>
+<br/>
+从上面可看出在执行 sample.Sample.main() 方法之前执行了方面 SampleAspect 中 before() 指定的方法，说明拦截成功。<br/><br/>
+这里只是一个最简单的例子实现了方面的正确切入，更多 AspectJ 的语法如 after(), around() 或捕获异常等，请参考其他相关资料。<br/><br/>
+ 比如可以把 src/main/aspectj/SampleAspect.aj 改为<br/><br/>
+<pre class="lang:default decode:true">package sample;<br/><br/>
+privileged public aspect SampleAspect {<br/><br/>
+  pointcut aroundMain(String[] args) : execution(* sample.Sample.main(..)) &amp;&amp; args(args);<br/><br/>
+  void around(String[] args): aroundMain(args) {
+    System.out.println("inputs: " + java.util.Arrays.asList(args));
+    proceed(args);
+    System.out.println("after method");
+  }
+}</pre>
+<br/>
+同时把 build.sbt 中的<br/><br/>
+verbose in Aspectj := true<br/><br/>
+改为<br/><br/>
+verbose in Aspectj := false<br/><br/>
+再进到 sbt 控制台执行下 run param1 param2 看下输出是<br/><br/>
+<pre class="lang:default decode:true">[I] ➜  sbt-aspectj-sample git:(master) ✗ sbt
+[info] Loading project definition from /Users/yanbin/Desktop/sbt-aspectj-sample/project
+[info] Set current project to sbt-aspectj-sample (in build file:/Users/yanbin/Desktop/sbt-aspectj-sample/)
+> run param1 param2
+[info] Running sample.Sample param1 param2
+inputs: [param1, param2]
+Print from Sample class
+after method
+[success] Total time: 0 s, completed Nov 17, 2015 11:45:00 PM
+></pre>
+<br/>
+这样拦截了整个方法的前前后后的执行，借此可以修改目标方法原有的参数值。

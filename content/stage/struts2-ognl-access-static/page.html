@@ -1,0 +1,98 @@
+---
+title: Struts2 中 OGNL 如何更简单的访问静态变量和静态方法
+url: /struts2-ognl-access-static/
+date: 2011-01-20T07:35:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Struts
+tags: 
+  - Struts2
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3068 
+wpStatus: publish
+views: 2154
+lastmod: 2017-04-09T00:40:26-05:00
+---
+
+<p>在 struts2 标签中是使用 OGNL 来访问对象属性或方法的，也就是访问的 ValueStack 中的值，即 OgnlValueStack。OGNL 也能让你直接访问类的静态变量和静态方法，标准写法是：</p>
+
+<p>@类全限定名@静态属性或方法名，比如访问某个常量：</p>
+
+<p>&lt;s:property value="@cc.unmi.common.Constants@MY_NAME"/&gt;</p>
+
+<p>&lt;s:property value="@cc.unmi.common.Utils.now()"/&gt;</p>
+
+<p>麻烦就是一定要写上类的全限定名称，实际应用时肯定比这个还要长，所以必须寻求一种更精练的写法。幸好像这篇文章：<a href="http://blog.csdn.net/icemenlover/archive/2009/10/20/4702040.aspx" target="_blank">Struts2 OGNL 的增强</a> 提到了可以用：<!--more--></p>
+
+<blockquote><br/>
+<p>除了使用标准的OGNL表达式访问静态字段和静态方法外，Struts2还允许你不指定完整的类名，而是通过“vs”前缀来调用保存在栈中的静态字段和静态方法。<br /><br/>
+ 　@vs@FOO_PROPERTY<br /><br/>
+ 　@vs@someMethod()<br /><br/>
+ 　@vs1@someMethod()<br /><br/>
+ vs表示ValueStack，如果只有vs，那么将使用栈顶对象的类；如果在vs后面跟上一个数字，那么将使用栈中指定位置处的对象类。</p>
+
+</blockquote>
+
+<p>看似确实很精简，实际上也是。但问题是我们该怎么把自己的常量或静态方法(应该是它们所在的类) 放到 ValueStack 上呢，并且是在栈里的哪个位置呢？</p>
+
+<p>OGNL 本身的规定是在它的上下文中只能有一个 root，然后 XWork/Struts2 对它衍生了，它认为在 ValueStack 中可以有多个根对象，对根对象的属性的访问可以不用 # 号。在 Struts2 的标签中对于是否该附上 # 号，也许很多人会有些迷糊。</p>
+
+<p>比如对于一个简单的 Action 转向的 jsp 页面 index.jsp，在其中用 &lt;s:debug/&gt; 来查看一下 ValueStack:</p>
+
+<p style="text-align: center;"><img class="aligncenter" src="//unmi.cc/wp-content/uploads/2011/01/ognl-struts21.jpg" alt="ognl-struts2-valuestack" width="480" height="395" /></p>
+
+<p>上图中这两个对象 IndexAction 和 DefaultTextProvider 就是 ValueStack 的根对象，所以如果要访问 IndexAction 的 locale 属性就可以直接用 &lt;s:property value="locale"/&gt; 来访问，而不需要用井号(#) 的方式，像 &lt;s:property value="#some.locale"/&gt; 来访问的。但如果 ValueStack 中多个根对象含相同的属性名，Struts2 如何知道是取哪个根对象的相应属性呢？这也难不倒 Struts2 的，它用一个特殊的 OGNL PropertyAccessor，从栈顶的对象找下去，找到为止。</p>
+
+<p>想像一下，对于 ModelDriven 的 Action，我们可以直接用 &lt;s:property value="id"/&gt; 访问到 Action 中 model 对象的 id 属性，就是因为 Struts2 把 Action 的 model 对象放到了 ValueStack 的根位置上了，并且处理 Action 实例的顶上。</p>
+
+<p>明白了上面的原理之后，我们可以有两种方式在 Struts2 标签中用 @vs@FOO_PROPERTY 的形式来访问静态变量或静态方法。</p>
+
+<p><strong><span style="text-decoration: underline;">1）把常量和静态方法(非它们所在的类)声明在某个根对象中</span></strong></p>
+
+<p>比如，这里的 IndexAction, 我们在其中声明：</p>
+
+<pre class="brush:java">public static final String MY_NAME="Unmi come from IndexAction";</pre>
+
+<p>在 jsp 中用 &lt;s:property value="@vs@MY_NAME"/&gt; 就能够显示出它的值为： Unmi com from IndexAction。对于静态方法也是类似的。由上图得知，IndexAction 处在 ValueStack 的栈顶，由上往下，即位置为 1 (从零起)，所以也可以用 &lt;s:property value="@vs1@MY_NAME"/&gt;</p>
+
+<p>我们也可以来看一下 ValueStack 中是什么样子的，用 &lt;s:debug/&gt; 显示出来是没有变化的，因为静态变量不会显示出来的。</p>
+
+<p>该方法的实际应用，可以把静态变量或静态方法声明在 Action 类中，比如放在 BaseAction 中。或是能否寻找一种更巧妙的方式，在应用程序初始化时把某个 Constants 类中的常量或 Utils 中静态方法用 AOP 或字节码修改的方法插入到 BaseAction 中。这个方法此处不深究了。</p>
+
+<p><strong><span style="text-decoration: underline;">2）把常量或静态方法所在类压入到 ValueStack 中直接作为根对象</span></strong></p>
+
+<p>比如，可以在这里的 IndexAction 的 execute() 方法，或初始方法中加上代码：</p>
+
+<pre class="brush:java">ValueStack vs = ActionContext.getContext().getValueStack();<br/>
+vs.push(new cc.unmi.struts2.Constants());</pre>
+
+<p>然后在 jsp 中同样是用 &lt;s:property value="@vs@MY_NAME"/&gt; 可以显示出 Constants 的 MY_NAME 静态变量来。现在来看一下新的 ValueStack 是啥样子：</p>
+
+<p style="text-align: center;"><img class="aligncenter" src="//unmi.cc/wp-content/uploads/2011/01/ognl-struts22.jpg" alt="ognl-struts2-valuestack-2" width="475" height="350" /></p>
+
+<p>在栈顶多了一个 Constants 对象，这样就可以用 @vs@MY_NAME 或 @vs@foo() 来访问其中的静态变量或静态方法了。你可以使用此代码向 ValueStack 中压入多个实例，比如 vs.push(new cc.unmi.struts2.Utils())，那么你在用 @vs@ 的方式访问时就得知道每个根据对象的位置为，是 @vs@ 还是 @vs1@ 就得自己心里有底了。</p>
+
+<p>实际操作也应该是在你的 BaseAction 的初始化时用把常量类或工具类的实例压到 ValueStack 中。看到这里你可能会有个疑问，我们调用静态方法或常量里推荐用类实例去引用，所以往栈里压入一个 Class 实例更表意，也就是要这么写：</p>
+
+<p>vs.push(cc.unmi.struts.Constans.class);</p>
+
+<p>想法是不错的，然而这样做反而是不行的，你可以看到 ValueStack 中栈顶是一个 java.lang.Class，并且右边是 Class 实例所有的属性，像:</p>
+
+<p>interface false<br /><br/>
+ declaredClasses [Ljava.lang.Class;@1485542<br /><br/>
+ constructors [Ljava.lang.reflect.Constructor;@1d59d3c<br /><br/>
+ componentType null<br /><br/>
+ superclass class java.lang.Object<br /><br/>
+ canonicalName cc.unmi.struts2.Constants<br /><br/>
+ enumConstants null<br /><br/>
+ declaredMethods [Ljava.lang.reflect.Method;@145e5a6</p>
+
+<p>但是却不能用 &lt;s:property value="@vs@MY_NAME"/&gt; 显示出你想要常量来。这其实产生了一个矛盾，通常我们的常量和工具类是不可实例化的，要放在 ValueStack 中的却是它的一个实例，所以要破下常规了。</p>
+
+<p>至于有没有办法直接往 ValueStack 中压入一个相应的 Class 实例，比如借助于泛型的支持，还须进一步细磨一番，不知是否可行。</p>

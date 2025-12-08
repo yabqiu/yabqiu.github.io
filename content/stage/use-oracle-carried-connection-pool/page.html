@@ -1,0 +1,137 @@
+---
+title: 为何不直接使用 Oracle 提供的连接池实现
+url: /use-oracle-carried-connection-pool/
+date: 2008-01-16T14:47:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2006/01/oracle-logo.png"
+categories:
+  - Java/JEE
+  - Database
+tags: 
+  - Java
+  - Oracle
+  - pool
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 450 
+wpStatus: publish
+views: 1102
+lastmod: 2019-12-11T19:03:33-06:00
+---
+
+我在 Websphere Application Server (WAS) 下配置 JDBC 提供程序时，选择了 Oracle JDBC Driver 确定之后，看到最后一个选项是：oracle.jdbc.pool.OracleConnectionPoolDataSource。</p>
+<br/>
+顾名思义，这是一个 DataSource 实现为，就像 DBCP 的 BasicDataSource 一样。那么能不能也像 BasicDataSource 那样，通过 new BasicDataSource()，然后设置各个必须的属性得到一个数据源 DataSource 呢？这个 OracleConnectionPoolDataSource 又是在哪个包里呢？<!--more--><br/><br/>
+用 Eclipse 的 Jar Search 插件一查，原来它就是我们熟知的 classes111.jar 里，当然，在 $ORACLE_HOME/jdbc/lib 下的 classes12.jar、classes12.zip、classes12dms.jar、classes111.zip， nls_charset11.jar、nls_charset11.zip、nls_charset12.jar、nls_charset12.zip、 ojdbc14.jar、ojdbc14_g.jar。它们都是可用的 Oracle 驱动包，只是一直都未搞明它们之间有什么或大或小的差异。<br/><br/>
+先看一段 DataSource 的创建及测试代码<br/><br/>
+<pre class="brush:java">import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;<br/><br/>
+import javax.sql.DataSource;<br/><br/>
+import oracle.jdbc.pool.OracleConnectionPoolDataSource;<br/><br/>
+/**
+ * 创建及测试 OracleDataSource
+ * @author Unmi
+ */
+public class OracleDataSourceCreator {<br/><br/>
+    /**
+     * 测试代码
+     * @param args
+     * @throws SQLException
+     */
+    public static void main(String[] args) throws SQLException {
+        DataSource ds = createDataSource();
+        Connection conn = ds.getConnection();<br/><br/>
+        //打印出 conn 的实现类名
+        System.out.println("Connection 实现类是："+conn);<br/><br/>
+        //测试查询记录
+        Statement stmt = conn.createStatement();
+        ResultSet rs = stmt.executeQuery("select * from dual");
+        if(rs.next()){
+            System.out.println(rs.getString(1));
+        }<br/><br/>
+        //以下测试是否使用的是连接池,每次关闭连接前用 netstat -na|findstr 38.2 查看连接
+        conn.close();
+        conn = ds.getConnection();
+        conn.close();
+        conn = ds.getConnection();
+        conn.close();
+    }<br/><br/>
+    /**
+     * 创建一个 DataSource
+     * @throws SQLException
+     */
+    public static DataSource createDataSource() throws SQLException
+    {
+        OracleConnectionPoolDataSource ocps = new OracleConnectionPoolDataSource();
+        ocps.setURL("jdbc:oracle:thin:@10.128.38.2:1521:sr3");
+        ocps.setUser("qatest");
+        ocps.setPassword("qatest");
+        return ocps;
+    }
+}</pre>
+<br/>
+测试过程及结果：运行上面的代码，确实能获得数据库表中的记录，并且 Connection 的实现类是 oracle.jdbc.driver.OracleConnection。我们可以通过设定断点在 main() 方法的第一个 conn.close() 代码行，进行单步调试。<br/><br/>
+这时我们在命令行下执行 netstat -na|findstr 38.2 查看到 38.2 的连接，发现该连接是 ESTABLISHED<br/><br/>
+执行 conn.close() 方法，再用上面的 netstat 命令，看到上一个连接是 TIME_WAIT<br />
+再执行 conn = ds.getConnection(); netstat 看到又新启了一个连接 ESTABLISHED<br />
+再执行 conn.close()，上面连接变为 TIME_WAIT<br/><br/>
+注：短时间内，根据目标地址加端口号可唯一确定是否同一连接<br/><br/>
+由此我们可以断定，我们拿到的数据库的连接并没有被池化，有点是为 OracleConnectionPoolDataSource 所迷惑了。每次取的都是新的连接，因为在 conn.close() 是实际关闭了物理连接，连接无法被重用。<br/><br/>
+那么怎么才能让连接池化可重复利用呢？我们要引入 OracleConnectionCacheImpl,也是在 classes111.jar 中有，和 OracleConnectionPoolDataSource 一样都实现了 DataSource 接口。<br/><br/>
+把上面的 createDataSource() 方法实现替换如下：<br/><br/>
+<pre class="brush:java">    /**
+     * 创建一个 DataSource,这个才是最终可用参考版
+      * 外加 OracleConnectionCacheImpl 对 OracleConnectionPoolDataSource 包装
+      * @throws SQLException
+     */
+    public static DataSource createDataSource() throws SQLException
+    {
+        OracleConnectionPoolDataSource ocps = new OracleConnectionPoolDataSource();
+        ocps.setURL("jdbc:oracle:thin:@10.128.38.2:1521:sr3");
+        ocps.setUser("qatest");
+        ocps.setPassword("qatest");<br/><br/>
+        OracleConnectionCacheImpl occi = new OracleConnectionCacheImpl();
+        occi.setConnectionPoolDataSource(ocps);
+        return occi;
+    }</pre>
+<br/>
+重新对我们改过的代码作相同的测试，我们发现每次 conn.close() 之后，原来的连接状态仍然是 ESTABLISHED，下一次用 ds.getConnection() 取到的仍然是原来的连接，这样就达到了连接池化的目的。还有，一个实际生产环境用的连接池都会根据实际设置连接的最小及最大数量以及清除策略，是我们看到 OracleConnectionPoolDataSource 没有相应的设置项，这也没问题，还得靠 OracleConnectionCacheImpl 来设置 minLimit 和 maxLimit 属性。这里我们不显式的使用 OracleConnectionPoolDataSource，并且加上连接的最小最大连接量的设定，后的创建连接池的方法实现如下：<br/><br/>
+<pre class="brush:java">    /**
+     * 创建一个 DataSource
+     * 直接使用 OracleConnectionCacheImpl
+     * @throws SQLException
+     */
+    public static DataSource createDataSource() throws SQLException
+    {
+        OracleConnectionCacheImpl occi = new OracleConnectionCacheImpl();
+        occi.setURL("jdbc:oracle:thin:@10.128.38.2:1521:sr3");
+        occi.setUser("qatest");
+        occi.setPassword("qatest");<br/><br/>
+        occi.setMinLimit(2);  //最小连接数
+        occi.setMaxLimit(10); //最大连接数<br/><br/>
+        return occi;
+    }</pre>
+<br/>
+实际上 OracleConnectionCacheImpl 的 ConnectionPoolDataSource 还是 OracleConnectionPoolDataSource。浏览 OracleConnectionCacheImpl 的方法你可以加上更多的属性控制。如果有需要特别是在容器中应用，你可以把创建的 DataSource 绑定到上下文中，方便应用随时引用。<br/><br/>
+后记，我们看到 Oracle 的驱动包都是 1M 多，还是有些内涵的，只是鲜见有人用它自带的连接池实现，一般是考虑通用性，就说其实数据库的移植性绝大多时候只是个漂亮的晃子，想想你做的哪个系统在两种类型数据库上有部署过。Oracle 自带我想应有它的优势，毕竟人家最了解自己了。<br/><br/>
+刚开始我用 OracleConnectionPoolDataSource 一时改变不了用 BasicDataSource 的惯性思维，总在想：如何设置数据库的驱动类啊？其实根本用不着，只缘它身在驱动包中。<br/><br/>
+还有一种不使用 OracleConnectionCacheImpl 也能用上连接池，那就是每次取连接不从 DataSource 中取，而是从一个 PooledConnection 实例中取，在第一段代码中改 main() 方法取连接的代码为如下：<br/><br/>
+<pre class="brush:java">       DataSource ds = createDataSource();
+       PooledConnection pooledConn = ((OracleConnectionPoolDataSource)ds).getPooledConnection();
+       Connection conn = pooledConn.getConnection();</pre>
+<br/>
+不过，这种用户确实让人觉得有些别扭，本人不赞同这么使用，对于使用者来说规约不明。<br/><br/>
+另外，在 WAS 中配置 Oracle 连接池时，WAS 还会用到一个数据源帮助程序类名 com.ibm.websphere.rsadapter.OracleDataStoreHelper，这是在 $WAS_HOME/lib/rsaexternal.jar 包中的，尚不清楚有何用。<br/><br/>
+此文的目的是为 WAS 作自定义安全认证用户注册表作铺垫，意图是 WAS 控制台及上的应用以配置方式通过数据库作 Form/Basic 认证，需要写一个自定义的 JdbcRegistry 实现 UserRegistry 接口，希望通过以上方式配置数据库连接池获得连接。<br/><br/>
+参考：1. <a href="http://www.cjsdn.net/post/print?bid=10&amp;id=49250">连接池是否有用? </a><br />
+      2. <a href="http://edu.stuccess.com/KnowCenter/J2EE/j2eetec/yuanchuang/00000017.htm">简单的数据库连接池(Oracle)</a><br />
+      3. <a href="http://epasser.aydc.com.cn/article/adp/2/content15426.html">Oracle连接池的实现</a><br />
+      4. <a href="http://www.z6688.com/info/27258-1.htm">用Oracle自带的连接缓冲类的一个例子</a><br />
+      5. <a href="http://topic.csdn.net/t/20060424/22/4710573.html">ConnectionPoolDataSource这个接口是干什么用的</a>

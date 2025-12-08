@@ -1,0 +1,100 @@
+---
+title: 应用 Castor 把 XML 转换成相应的 JavaBean(一)
+url: /castor-xml-to-javabean-1/
+date: 2011-04-23T03:06:30-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2011/04/castor-feature.gif"
+categories:
+  - XML/DOM
+  - Java/JEE
+tags: 
+  - xml
+  - castor
+  - data binding
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3485 
+wpStatus: publish
+views: 1825
+lastmod: 2021-09-03T14:03:33-05:00
+---
+
+之前有一篇用例子演示了 <a href="http://unmi.cc/jaxb-xml-javabean-start" target="_blank" rel="noopener">应用 JAXB 把 XML 转换成相应的 JavaBean</a>，现在来看另一款 XML Data Binding 工具 <a href="http://www.castor.org/" target="_blank" rel="noopener">Castor</a> 怎么把 XML 映射成 JavaBean  的，相对于 JAXB 规范性的东西，Castor 的官方网站上关于 Castor 的使用文档我觉得要多些。作为一个 XML Data Binding  工具，Castor 同样提供了 Marshaller 和 Unmarshaller 的功能，它不依赖于注解，还是采用映射文件的方式，像 Hibernate 那样的映射文件。</p>
+<br/>
+从 Castor 的官方网站 <a href="http://www.castor.org/">http://www.castor.org/</a> 看到它的外围生态系统还是不错的，有 JDO、Maven、Spring、Eclipse Plugin 的支持，也有众多组件用到了它。和其他类似工具一样，Castor 也提供了 XML、Schema 生成 Class 类的功能，但照例这里还是看看先有类的情况，怎么从 XML 中获取相应值。<br/><br/>
+通常使用 Castor 从 XML 得到 JavaBean 需要一个映射文件，要是 JavaBean 的属性和 XML 中的节点名足够齐整规范就可以省去映射文件，先看不用映射文件的例子：<!--more--><br/><br/>
+1. 引入 castor 相关的 jar 包，如果你是用 maven 来管理你的项目依赖(很多都是了吧)，可以在 pom.xml 中加入下面依赖：<br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;org.codehaus.castor&lt;/groupId&gt;
+    &lt;artifactId&gt;castor-xml&lt;/artifactId&gt;
+    &lt;version&gt;1.3.1&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+实际上引入了两个 jar 包，分别是 castor-core-1.3.1.jar 和 castor-xml-1.3.1.jar，非 maven 项目就直接下载或是 ant+ivy 也可以自动管理依赖。<br/><br/>
+2. Person.java：<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.castor;<br/><br/>
+import java.util.Date;<br/><br/>
+/**
+ * @author Unmi Qiu
+ * CreateTime: Apr 23, 2011
+ */
+public class Person {
+    private String name;
+    private Date birthDay;<br/><br/>
+    public String getName() {
+        return name;
+    }
+    public void setName(String name) {
+        this.name = name;
+    }
+    public Date getBirthDay() {
+        return birthDay;
+    }
+    public void setBirthDay(Date birthDay) {
+        this.birthDay = birthDay;
+    }  
+}</pre>
+<br/>
+3. person.xml 文件：<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;person&gt;
+    &lt;name&gt;Ryan 'Mad Dog' Madden&lt;/name&gt;
+    &lt;birth-day&gt;2011-04-15T00:00:00.000+08:00&lt;/birth-day&gt;
+&lt;/person&gt;</pre>
+<br/>
+这里标签名与属性名是相对应的，对于驼峰格式的属性名标签映射为横杠分割形式，如 birthDay 变是 birth-day。这里时间也是用的标准字符串，否则需要加个DateHandler 来转换。<br/><br/>
+4. Client.java  客户端调用代码：<br/><br/>
+<pre class="lang:default decode:true ">package cc.unmi.castor;<br/><br/>
+import java.io.InputStream;<br/><br/>
+import org.exolab.castor.xml.MarshalException;
+import org.exolab.castor.xml.Unmarshaller;
+import org.exolab.castor.xml.ValidationException;
+import org.xml.sax.InputSource;<br/><br/>
+public class Client {<br/><br/>
+    public static void main(String[] args) throws MarshalException, ValidationException {
+        InputStream xmlInputStream = ClassLoader.getSystemResourceAsStream("person.xml");
+        Unmarshaller unmarshaller = new Unmarshaller(Person.class);
+        InputSource inputSource = new InputSource(xmlInputStream);
+        Person person = (Person)unmarshaller.unmarshal(inputSource);
+        System.out.println(person.getBirthDay());
+    }
+}</pre>
+<br/>
+控制台输出为：<strong>Fri Apr 15 00:00:00 CST 2011</strong>，说明属性能正确获得，成功从 XML 转换得到 JavaBean。<br/><br/>
+几点说明：<br/><br/>
+1)  Java 对象是通过默认构造方法创建的，所以必须提供默认构造函数，属性是通过 setter 方法设置的<br />
+2)  引入了 castor 的包，应该把日志输出组件配置上，如 commons-logging 或 slf4j，如此你就可以看到日志中的详细信息<br />
+3)  Castor 的 unmarshal 未提供泛型实现，虽然提供了被转换后的 JavaBean 的 Class，但 unmarshal 返回的仍然是 Object，你需要转型，或是包装出一个泛型版本来<br />
+4) Castor 中可对 castor.core.properties 和 castor.xml.properties 进行定制，默认配置文件分别为 /org/castor/core/castor.core.properties 和 /org/castor/xml/castor.xml.properties。<br/><br/>
+<p style="text-align: center;"><img class="aligncenter" src="/wp-content/uploads/2011/04/castor-unmarshal.png" alt="castor unmarshal" width="697" height="186" /></p>
+<br/>
+本篇就列这一个例子吧，关于稍复杂一点的映射还是再开一篇章吧，那请见下一篇：<a href="/castor-xml-to-javabean-2" target="_blank" rel="noopener">应用 Castor 把 XML 转换成相应的 JavaBean(二)</a><br/><br/>
+参考：1. <a href="http://www.castor.org/xml-mapping.html">http://www.castor.org/xml-mapping.html</a><br />
+             2. <a href="http://castor.org/spring-xml-intro.html">http://castor.org/spring-xml-intro.html</a><br />
+             3. <a href="http://www.castor.org/xml-framework.html">http://www.castor.org/xml-framework.html</a><br />
+             4. <a href="http://www.castor.org/reference/html/XML%20data%20binding.html">http://www.castor.org/reference/html/XML%20data%20binding.html</a>

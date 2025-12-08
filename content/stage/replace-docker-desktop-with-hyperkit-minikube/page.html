@@ -1,0 +1,309 @@
+---
+title: 摆脱 Docker Desktop 即将到来的收费
+url: /replace-docker-desktop-with-hyperkit-minikube/
+date: 2021-09-11T00:01:41-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2014/05/homepage-docker-logo.png"
+categories:
+  - Docker
+tags: 
+  - Docker
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11697 
+wpStatus: publish
+views: 5302
+lastmod: 2021-10-08T12:20:23-05:00
+---
+
+最近本人在 Mac OS X 下安装的 Docker Desktop 经常蹦出要升级的窗口，<code>Skip this update PRO</code> 不能用，<code>Install &amp; Restart</code>  也总是失败，所以每次只能 <code>SNOOZE</code>。原来觉得事有蹊跷，后来才知道这或许与近日吵得沸沸扬扬的 Docker Desktop 收费计划有关。Docker Desktop 是专门为 Windows 和 Mac OS X 定制的，Mac OS X 和 Windows  都是开发人员用的平台。Linux 下可以不用 Docker Desktop，Linux 下 Docker 之间甚至一层窗户纸都没有，实际部署的 Docker 服务也是运行在 Linux 下的。</p>
+<br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/09/docker-desktop-update.png"><img class="aligncenter size-full wp-image-11698" src="https://yanbin.blog/wp-content/uploads/2021/09/docker-desktop-update.png" alt="" width="483" height="254" /></a><br/><br/>
+墙里边微信正在谋划着对聊天记录的云存储收年费，外边是 Docker 在向大公司和开发人员下手，这难道是美国加州版的共同富裕？<!--more--><br/><br/>
+查看一下当前 <a href="https://docs.docker.com/subscription/#docker-desktop-license-agreement">Docker Subscription Service Agreement</a>, 将来可不被收费的对象包括个人用户，教育行业和非商业的开源项目，小企业不收费的门槛是雇员少于 250 并且年收入少于 1 千万美金。还给出一个开始有效日为 2021 年 8 月 31 日，再加一个<em>慷慨</em>的最后宽限日期为  2022 年 1 月 31 日，这其间大家自愿。<br/><br/>
+对于一个公司人数不少，且日常使用公司配发 Mac 笔记本的开发人员，只能等着被收费了，除非不计法律的风险。<br/><br/>
+不过，也别急着发慌，还是有替换方案，这里是 Docker Desktop 收费，Docker 仍然是免费的。这儿有两个 Docker Desktop 的替代方案：<br/><br/>
+<ol>
+    <li>hyperkit + minikube</li>
+    <li>Podman</li>
+</ol>
+<br/>
+原文见 <a href="https://arnon.me/2021/09/replace-docker-with-minikube/">Replacing Docker Desktop with hyperkit + minikube</a><br/><br/>
+未雨绸缪，况且本人几乎不用 Docker Desktop 提供的 UI, 更不愿用 Docker Desktop 提供的  Kubernetes。先在 Mac 下尝试一番没有 Docker Desktop 的日子，第一步把 Docker Desktop 痛痛快快的卸载掉，这时候连 docker 命令都没有了。<br/><br/>
+<h2>方案 一： hyperkit + minikube</h2><br/><br/>
+首先要依次安装 docker cli，hyperkit, 和 minikube<br/><br/>
+<h3>安装 Docker CLI</h3><br/><br/>
+<blockquote>
+$ brew install docker<br />
+$ brew install docker-compose     # 有必要的话把它装了
+</blockquote>
+<br/>
+这时候应该就能执行 <code>docker</code> 和 <code>docker-compose</code> 这两个命令了, 但是 docker ps 等命令还无法执行, 因为还没有 DOCKER_HOST, 用 <code>docker --version</code> 看下版本还是可以的。<br/><br/>
+如果还不见 docker, 可以尝试下面的命令<br/><br/>
+<blockquote>
+$ brew install docker-toolbox
+</blockquote>
+<br/>
+<h3>安装 hyperkit 和 minikube 前启动</h3><br/><br/>
+<blockquote>
+$ brew install hyperkit<br />
+$ brew install minikube<br />
+$ minikube start
+</blockquote>
+<br/>
+Minikube 实际上是启动了一个 Kubernetes 集群，这里是本人写的一篇 <a href="https://yanbin.blog/several-method-installing-kubernetes-cluster/">几种简单安装 Kubernetes 集群的方法</a>, 其中就介绍到了如何用 Minikube 来体验 Kubernetes。<br/><br/>
+这里的 minikube 默认使用的 driver 是 hyperkit，相当于是 <code>minikube start --driver=hyperkit</code>, 也可以指定 virtualbox，命令为 <code>minikube start --driver=virtualbox</code>, 或通过 <code>minikube config set driver virtualbox</code> 来修改。minikube 推荐使用 <code>hyperkit</code>, 坚持使用 virtualbox 的话就可不用安装 <code>hyperkit</code>, 而需安装 <code>virtualbox</code>。使用 virtualbox 为 driver 就会看到在 VirtualBox 中会创建一个虚拟机，<br/><br/>
+Minikube 启动后可用 Kubernetes 的命令 <code>kubectl get service</code> 查看它所有启动的服务。假如提示 <code>kubectl</code> 命令找不到的话，即用下方命令安装它<br/><br/>
+<blockquote>
+$ brew install kubernetes-cli 
+</blockquote>
+<br/>
+<pre class="lang:default decode:true">$ kubectl get services<br/><br/>
+NAME         TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
+kubernetes   ClusterIP   10.96.0.1    &lt;none&gt;        443/TCP   88m
+$ kubectl get pods --namespace kube-system
+kubectl
+NAME                               READY   STATUS    RESTARTS        AGE
+coredns-78fcd69978-ghntt           1/1     Running   1 (77m ago)     88m
+etcd-minikube                      1/1     Running   1 (77m ago)     88m
+kube-apiserver-minikube            1/1     Running   1 (3m4s ago)    89m
+kube-controller-manager-minikube   1/1     Running   1 (77m ago)     88m
+kube-proxy-7bsc2                   1/1     Running   1 (77m ago)     88m
+kube-scheduler-minikube            1/1     Running   1 (3m4s ago)    88m
+storage-provisioner                1/1     Running   2 (2m17s ago)   88m</pre>
+<br/>
+<h3>执行 docker 相关命令</h3><br/><br/>
+即将到来的有小激动人心的时刻，现在立马执行像  <code>docker ps</code> 的命令会出现不能连接 Docker daemon 的错误<br/><br/>
+<blockquote>
+Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?
+</blockquote>
+<br/>
+需先执行下面一条命令<br/><br/>
+<blockquote>
+eval $(minikube docker-env)
+</blockquote>
+<br/>
+它其实是帮我们设置了四个环境变量，直接执行 <code>minikube docker-env</code> 就能看到它的输出<br/><br/>
+<blockquote>
+$ minikube docker-env
+export DOCKER_TLS_VERIFY="1"<br />
+export DOCKER_HOST="tcp://192.168.64.2:2376"<br />
+export DOCKER_CERT_PATH="/Users/yanbin/.minikube/certs"<br />
+export MINIKUBE_ACTIVE_DOCKERD="minikube"
+# To point your shell to minikube's docker-daemon, run:<br />
+# eval $(minikube -p minikube docker-env)
+</blockquote>
+<br/>
+至此，我们就能做我们之前用  docker 做的所有事情了，像<br/><br/>
+<blockquote>
+docker build .<br />
+docker ps<br />
+docker push<br />
+等等
+</blockquote>
+<br/>
+如果在每一个会话中都需要上面的环境变量，那么就把 <code>eval $(minikube docker-env)</code> 加到相应 shell 的初始化配置文件中去，如  Zsh 的  .<code>zshrc</code> 文件。<br/><br/>
+<h3>Minikube 的配置</h3><br/><br/>
+这种方式又仿佛让我们回到了没有 Docker Desktop 之前用 boot2docker 的时代，回看之前 2014 年时写的 Mac 下通过 boot2docker 来使用 Docker 的日志 <a href="https://yanbin.blog/mac-os-x-experience-docker/">Mac OS X 下安装使用 Docker</a>，都是被逼的, 轮回来得太快。<br/><br/>
+前面看到的 DOCKER_HOST 是 192.168.64.2 这个主机，实际上 Docker 要做的事情都是它干的，docker 命令不过是个皮。我们一路下来，显示 192.168.64.2 就是 Minikube 启动的一个虚拟机，<code>minikube ssh</code> 就能进到里面去<br/><br/>
+<pre class="lang:default decode:true">yanbin $ minikube ssh<br/><br/>
+                         _             _
+            _         _ ( )           ( )
+  ___ ___  (_)  ___  (_)| |/')  _   _ | |_      __
+/' _ ` _ `\| |/' _ `\| || , &lt;  ( ) ( )| '_`\  /'__`\
+| ( ) ( ) || || ( ) || || |\`\ | (_) || |_) )(  ___/
+(_) (_) (_)(_)(_) (_)(_)(_) (_)`\___/'(_,__/'`\____)<br/><br/>
+
+$ hostname
+minikube
+$ ifconfig | grep 192
+inet addr:192.168.64.2 Bcast:192.168.64.255 Mask:255.255.255.0
+$ cat /proc/cpuinfo | grep processor
+processor   : 0
+processor   : 1
+$ cat /proc/meminfo | grep MemTotal
+MemTotal:        3935188 kB</pre>
+<br/>
+进到该虚拟机，我们列出相关的信息，CPU 2 个，内存 4 G。该虚拟机的 CPU 和内存可以进行配置<br/><br/>
+<blockquote>
+$ minikube config set cpus 2<br />
+$ minikube config set memory 2048
+</blockquote>
+<br/>
+需要在 minikube stop|start 后重新生效，还能在 <code>minikube start</code> 时指定配置参数<br/><br/>
+<blockquote>
+$ minikube start --memory=8192 --cpus=4 --disk-size=50g
+</blockquote>
+<br/>
+更多的 minikube 命令用 <code>minikube --help</code> 查看，比如 <code>minikube ip</code> 直接查看到该虚拟机的 IP 地址。<br/><br/>
+<blockquote>
+$ minikube dashboard --url
+</blockquote>
+<br/>
+上面命令让我们直接在浏览器中打开一个 <strong>Kubernetes Dashboard</strong>，想在其中看什么 Kubernetes 的信息都方便，绝对可以把 Docker Desktop 内置的 Kubernetes 比下去。<br/><br/>
+可能的一个问题，Mac 连了 VPN 之后 minikube 启动会有问题, 既然在无 VPN 情况下启动了 minikube, 一旦连接上了 VPN 后，还是不能用，原因是启动 minikube 的 bridge 的网络在连上 VPN 后不通。具体点讲就是连接了 VPN 之后，VPN 把到原本应该经过 xboxnetX 网络进到虚拟机(如 192.168.99.101) 的路由换成了走 VNP 的网络设备(如 utun2)，而且用 <code>route</code> 还删不掉，在 Cisco AnyConnect 中把  <code>All local (LAN) access when using VPN (if configured)</code> 勾选上也不行。<br/><br/>
+<h3>方案二：Podman</h3><br/><br/>
+我们看到目前 Docker CLI 还是用 Apache 2.0 授权的，可自由使用，万一这也被 Docker 的后台公司看上商机了呢？不用慌张，我们还有一个后招，那就是 Docker CLI 的替代品 <code>Podman</code>。要是将来 Podman 也参于围剿，那会更热闹了。<br/><br/>
+在 Mac OS 下 Podman 的安装(无论什么都可以 brew 一下)<br/><br/>
+<blockquote>
+$ brew install podman
+</blockquote>
+<br/>
+安装的 Podman 当前版本 为 3.3.1.<br/><br/>
+Podman 可独自挑大梁，它提供了兼容 Docker CLI 的 podman，以及 Mac OS 与 Docker 容器间的媒介虚拟机。在用 podman 之前需用 <code>machine</code> 命令创建并启动那个虚拟机<br/><br/>
+<blockquote>
+$ podman machine init<br />
+$ podman machine start
+</blockquote>
+<br/>
+既然是一个 Linux 虚拟机就能 ssh 进去探个究竟，下面是那几个命令一并的输出信息<br/><br/>
+<pre class="lang:default decode:true">$ podman machine init<br/><br/>
+Downloading VM image: fedora-coreos-34.20210904.1.0-qemu.x86_64.qcow2.xz: done
+Extracting compressed file
+$ podman machine start<br/><br/>
+INFO[0000] waiting for clients...
+INFO[0000] listening tcp://0.0.0.0:7777
+INFO[0000] new connection from  to /var/folders/hm/t_nnzqw55g17fqwhf2rgtx3r0000gp/T/podman/qemu_podman-machine-default.sock
+Waiting for VM ...
+qemu-system-x86_64: warning: host doesn't support requested feature: CPUID.80000001H:ECX.svm [bit 2]
+ Downloads git:(:|) podman machine ssh<br/><br/>
+Connecting to vm podman-machine-default. To close connection, use `~.` or `exit`
+Fedora CoreOS 34.20210904.1.0
+Tracker: https://github.com/coreos/fedora-coreos-tracker
+Discuss: https://discussion.fedoraproject.org/c/server/coreos/<br/><br/>
+[core@localhost ~]$ cat /proc/cpuinfo | grep processor
+processor   : 0
+[core@localhost ~]$ cat /proc/meminfo | grep MemTotal
+MemTotal:        2013528 kB</pre>
+<br/>
+上面的信息告诉我们 podman 初始化并启动了一个  Qemu 的 fecora-coreos 虚拟机，一个 CPU, 内存为 2Gb。<br/><br/>
+如果我们需要调整该虚拟机的 CPU 和内存，在 <code>podman machine init</code> 时，可指定 --cpus, --memory  参数，用 <code>podman machine init --help</code> 查看帮助信息<br/><br/>
+<blockquote>
+$ podman machine init --help<br />
+Initialize a virtual machine
+Description:<br />
+    initialize a virtual machine
+Usage:<br />
+    podman machine init [options] [NAME]
+Examples:<br />
+podman machine init myvm
+Options:<br />
+        --cpus uint                          Number of CPUs. The default is 1. (default 1)<br />
+        --disk-size uint                  Disk size in GB (default 10)<br />
+        --ignition-path string       Path to ignition file<br />
+        --image-path string          Path to qcow image<br />
+        -m, --memory uint            Memory (in MB) (default 2048)
+</blockquote>
+<br/>
+或用 <code>podman info</code>, <code>podman system info</code> 也能查看到 <code>podman</code> 系统的信息。<br/><br/>
+podman 可替代 Docker CLI, 所以先前的 <code>docker build</code>, <code>docker ps</code> 之类的命令可以用 <code>podman build</code>，<code>podman ps</code> 等，因此我们可创建一个别名<br/><br/>
+<blockquote>
+$ alias docker=podman
+</blockquote>
+<br/>
+现在来试一下 <code>podman pull busybox</code> 试图拉取一个镜像<br/><br/>
+<blockquote>
+$ podman pull busybox<br />
+Error: failed to parse "X-Registry-Auth" header for /v3.3.1/libpod/images/pull?alltags=false&amp;arch=&amp;authfile=&amp;os=&amp;password=&amp;policy=always&amp;quiet=false&amp;reference=busybox&amp;username=&amp;variant=: error storing credentials in temporary auth file (server: "https://index.docker.io/v1/", user: ""): key https://index.docker.io/v1/ contains http[s]:// prefix
+</blockquote>
+<br/>
+原因是之前的 Docker Desktop 创建了 <code>～/.docker/config.json</code> 文件，不能被 podman 所用，把它删除了(参考：<a href="https://stackoverflow.com/questions/69121872/podman-error-failed-to-parse-x-registry-auth-header">podman: Error: failed to parse "X-Registry-Auth" header</a>)，再试就没问题了。<br/><br/>
+如果一切顺利的话就可以用 <code>podman</code> 来替代 docker 去构建镜像等操作了。<br/><br/>
+可是在我的本地仍然是 <code>podman build .</code> 构建不了，也许是因为原来安装过 Docker Desktop, hyperkit, 和 minikube 的缘故，也可能是当前 <code>podman</code>  的 bug。<br/><br/>
+接着来构建一个镜像，Dockerfile 内容写成<br/><br/>
+<pre class="lang:default decode:true">FROM busybox</pre>
+<br/>
+或是<br/><br/>
+<pre class="lang:default decode:true ">FROM docker.io/busybox</pre>
+<br/>
+执行<br/><br/>
+<blockquote>
+$ podman --log-level=debug build .
+</blockquote>
+<br/>
+会看到两种类型的错误<br/><br/>
+<blockquote>
+Error: failed Request: Unable to copy tar file from request body /v3.3.1/libpod/build?dockerfile=%5B%22Dockerfile%22%5D&amp;forcerm=1&amp;isolation=1&amp;jobs=1&amp;layers=1&amp;networkmode=0&amp;nsoptions=%5B%7B%22Name%22%3A%22user%22%2C%22Host%22%3Atrue%2C%22Path%22%3A%22%22%7D%2C%7B%22Name%22%3A%22network%22%2C%22Host%22%3Atrue%2C%22Path%22%3A%22%22%7D%5D&amp;outputformat=application%2Fvnd.oci.image.manifest.v1%2Bjson&amp;pullpolicy=missing&amp;rm=1&amp;shmsize=67108864&amp;t=
+</blockquote>
+<br/>
+或是<br/><br/>
+<blockquote>
+Error: mkdir /var/tmp/libpod_builder721137603: no space left on device
+</blockquote>
+<br/>
+用 <code>podman machine ssh</code> 进到虚拟机果然看到<br/><br/>
+<blockquote>
+[core@localhost ~]$ mkdir /var/tmp/libpod_builder721137603<br />
+mkdir: cannot create directory ‘/var/tmp/libpod_builder721137603’: No space left on device
+</blockquote>
+<br/>
+删除了 <code>~/.config/containers</code>  和 <code>~/.local/share/containers</code> 也无济于事。<br/><br/>
+后来发现  <code>No space left on device</code> 是因为把 <code>Dockerfile</code> 放在了 <code>~/Downloads</code> 目录中，在构建 Docker 镜像时把该目录中的所有文件都发向了 podman machine, 把  Dockerfile 挪出到一个新建目录中就行。<br/><br/>
+后来重启后，又瞎折腾了一翻，发现 <code>podman build .</code> 又能工作了，不知所以。<br/><br/>
+至于 <code>Dockerfile</code> 中的 <code>FROM</code> 要不是加上 <code>docker.io</code> 前缀，这是无所谓的，用 <code>podman info</code> 可查看 <code>podman</code> 搜寻 Docker 镜像的顺序是<br/><br/>
+<blockquote>
+registries:<br />
+  search:<br />
+  - registry.fedoraproject.org<br />
+  - registry.access.redhat.com<br />
+  - docker.io<br />
+  - quay.io
+</blockquote>
+<br/>
+<code>podman login docker.io</code> 按提示输入用户名和密码就能创建 docker hub, 能往其中 push  自己的镜像。<br/><br/>
+AWS 的 ECR 登陆，用<br/><br/>
+<blockquote>
+$ aws ecr get-login-password --region us-east-1 | podman login --username AWS --password-stdin &lt;1234567890&gt;.dkr.ecr.us-east-1.amazonaws.com
+</blockquote>
+<br/>
+也可以登陆成功，之后就能 podman pull &lt;1234567890&gt;.dkr.ecr.us-east-1.amazonaws.com/abc:latest，或者是 podman pull AWS ECR 上的 image 了.<br/><br/>
+<h3>方案三：原始的 Docker Machine</h3><br/><br/>
+再不济我们还可以再回到重新，用 docker-machine 的办法<br/><br/>
+<blockquote>
+$ brew install docker-machine<br />
+$ docker-machine create --driver virtualbox default<br />
+$ eval $(docker-machine env)<br />
+$ docker ps
+</blockquote>
+<br/>
+前面的 Minikube + hyperkit 和这里的 Docker Machine 最终都是用的 Docker Daemon, docker 命令连接到 Docker Machine 来操作的。则 podman 是 Daemonless 的，所以也就只有它不怕 VPN 连接的干扰。<br/><br/>
+我本人目前的使用的就是 docker-machine，创建的是 VirtualBox 虚拟机，具体步骤是<br/><br/>
+<blockquote>
+$ docker-machine create --driver virtualbox --engine-env DOCKER_TLS=no --engine-opt host=tcp://0.0.0.:2375 default<br />
+$ docker-machine stop<br />
+$ VBoxManage modifyvm "default" --natpf1 "docker,tcp,127.0.0.1,2375,,2375<br />
+$ docker-machine start<br />
+$ export DOCKER_HOST=tcp://localhost:2375<br />
+$ docker ps
+</blockquote>
+<br/>
+通过本地的端口映射就不会受连接 VPN 之后路由的影响，同时在 docker-machine 里还能访问外面(包括 VPN 的资源)<br/><br/>
+如果在使用 AWS ECR 时出现类似下面的错误<br/><br/>
+<blockquote>
+<div data-pm-slice="1 1 []" data-en-clipboard="true">$ aws ecr get-login-password --region us-east-1 | \</div>
+<div>  docker login --username AWS --password-stdin 123456789077.dkr.ecr.us-east-1.amazonaws.com</div>
+<div>Error saving credentials: error storing credentials - err: exec: "docker-credential-desktop": executable file not found in $PATH, out: ``</div>
+</blockquote>
+<br/>
+<div>需要做的就是修改 <code>~/.docker/config.json</code>，把其中的 <code>credsStore</code> 改成 <code>credStore</code> 就行了，现在什么都能解决了，IntelliJ IDEA 中如何要使用  Docker 的话，可配置用 <code>TCP socket</code>, <code>Engine API URL:</code> 中填上 <code>tcp://localhost:2375</code>。</div>
+<br/>
+<h3>总结</h3><br/><br/>
+其实在 Mac 下通过 minikube 来使用 docker 与 Docker Desktop 的方式是差不多的，用 Docker Desktop 来运行容器也是在它的一个虚拟机中运行，Docker Desktop 给出的虚拟机内存默认为 2 G, 需要更大内存来运行像 Java 容器同样需要修改 Docker Desktop 的配置。<br/><br/>
+最后重新罗列基本的命令<br/><br/>
+<blockquote>
+$ brew install docker<br />
+$ brew install hyperkit<br />
+$ brew install minikube<br />
+$ minikube start<br />
+$ eval $(minikube docker-env)<br />
+$ docker ......................
+</blockquote>
+<br/>
+podman 一个 Docker Desktop 的完全替代方案，它管理自己的中间虚拟机，podman 命令可作为  docker 命令的别名使用。<br/><br/>
+用回 Docker Machine 也没问题，只有 podman 在连接了 VPN 后还能正常使用，而其他要配置 <code>DOCKER_HOST</code> 的方式会受到 VPN 连接的影响，需手工加 route, 或更难做。Docker Desktop 也没有这个 VPN 的问题。<br/><br/>
+最后还发现一个 Docker Desktop 的替代品 Lima, 见 <a href="https://mdnice.com/writing/d6e0cdeac23a4bf29673b0bbd936737f">Lima：Docker Desktop for Mac 的免费开源且自由的替代品</a>，尝试了一下，没有前两种方式那么友好。再有 Canonical 的 <a href="https://microk8s.io/">MicroK8s</a>, 没有 Docker Desktop 的日子会更热闹了。

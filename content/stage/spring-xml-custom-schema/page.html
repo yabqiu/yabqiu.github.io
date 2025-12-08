@@ -1,0 +1,194 @@
+---
+title: Spring 2.0可扩展XML配置初探[转]
+url: /spring-xml-custom-schema/
+date: 2011-02-21T06:30:42-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Spring
+tags: 
+  - Spring
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3208 
+wpStatus: publish
+views: 345
+lastmod: 2021-09-03T13:09:04-05:00
+---
+
+本文通过一个简单的例子，说明如何去扩展XML配置，它大致需要的几个步骤。具体的需求是使用自定义标签定义一个简单的bean，这个bean有一个或多个属性，标签定义完成后，可以在其他项目中用自定义标签来定义该bean。</p>
+<br/>
+Spring 2.0版本支持扩展XML配置，着实兴奋了一下，在我看来，Spring作为目前最流行的框架，不能扩展用户自定义的配置，实在是Spring的一个很不爽的地方，的方式用起来比较通用，起码到目前为止符合大部分人的使用习惯，并且能完成Spring所有的配置操作，但是对于第三方的提供商或则会经常扩展Spring功能的开发者来说，使用这样的配置方式或许不是他们最想要的，他们需要使组件的配置更加直观、易阅读、易扩展……试想使用下面的配置方式。<!--more--><br/><br/>
+<pre class="lang:default decode:true">&lt;mytag:datasource id="datasource"
+                  databaseType="oracle"
+                  ip="192.168.1.110"
+                  port="1521"
+                  databaseName="myDB"
+                  userName="admin"
+                  password="password" /&gt; <br/><br/>
+&lt;mytag:ehCache id="ehcache"
+               cache="true"
+               maxElements="100000"
+               timeToIdleSeconds="120"
+               timeToLiveSeconds="120"
+               overflowToDisk="true" /&gt;</pre>
+<br/>
+ 上面的代码中配置了两个组件，datasource和cache组件，相比普通的bean&amp;propertiy方式，很显然，这种配置方式更直观，更易读，更重要的是，如果作为组件发布，使用者也可以很方便快捷的开始使用，而不需要关心组件的任何实现细节。<br/><br/>
+扩展XML配置大致需要一下几个步骤：<br/><br/>
+1、创建一个需要扩展的组件<br />
+2、定义一个xsd文件描述组件内容<br />
+3、创建一个文件，实现BeanDefinitionParser接口，用来解析xsd文件中的定义和组件定义<br />
+4、创建一个Handler文件，扩展自NamespaceHandlerSupport，目的是将组件注册到Spring容器<br />
+5、编写spring.handlers和spring.schemas文件<br/><br/>
+提供一个简单的例子，来说明如何去扩展一个Spring配置，需求如下：使用自定义标签定义一个简单的bean，这个bean有一个或多个属性，标签定义完成后，可以在其他项目中用自定义标签来定义该bean。<br/><br/>
+首先，创建一个需要扩展的组件，在这里只是一个简单的bean，而且这个bean只有一个属性age。<br/><br/>
+<strong>One.java</strong><br/><br/>
+<pre class="lang:default decode:true">package com.mysite.tag;<br/><br/>
+public class One {
+    private String age;<br/><br/>
+    public One() {
+    }<br/><br/>
+    public String getAge() {
+        return age;
+    }<br/><br/>
+    public void setAge(String age) {
+        this.age = age;
+    }
+}</pre>
+<br/>
+ 然后，建立一个xsd文件，来描述这个bean。<br/><br/>
+<strong>mytag.xsd<span style="color: #ff0000;">（Unmi 注：创建在 src/com/mysite/tag 目录中）</span></strong><br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;xsd:schema xmlns="http://www.mysite.org/schema/mytag"
+ xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:beans="http://www.springframework.org/schema/beans"
+ targetNamespace="http://www.mysite.org/schema/mytag"
+ elementFormDefault="qualified" attributeFormDefault="unqualified"&gt;
+ &lt;xsd:import namespace="http://www.springframework.org/schema/beans" /&gt;
+ &lt;xsd:element name="one"&gt;
+  &lt;xsd:complexType&gt;
+   &lt;xsd:complexContent&gt;
+    &lt;xsd:extension base="beans:identifiedType"&gt;
+     &lt;xsd:attribute name="age" type="xsd:string" default="99999" /&gt;
+    &lt;/xsd:extension&gt;
+   &lt;/xsd:complexContent&gt;
+  &lt;/xsd:complexType&gt;
+ &lt;/xsd:element&gt;
+&lt;/xsd:schema&gt;</pre>
+<br/>
+<span style="color: #ff0000;">Unmi 注：这里的 mytag.xsd 也可以写成如下的形式，简单些：</span><br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;xsd:schema xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+        targetNamespace="http://www.mysite.org/schema/mytag" xmlns:tag="http://www.mysite.org/schema/mytag"
+        elementFormDefault="qualified"&gt;
+    &lt;xsd:element name="one"&gt;
+        &lt;xsd:complexType&gt;
+            &lt;xsd:attribute name="id" type="xsd:string" use="required" form="unqualified" /&gt;
+            &lt;xsd:attribute name="age" type="xsd:string" default="99999" /&gt;
+        &lt;/xsd:complexType&gt;
+    &lt;/xsd:element&gt;
+&lt;/xsd:schema&gt;</pre>
+<br/>
+ 在上面的xsd文件描述了一个新的targetNamespace，并在这个空间中定义了一个name为one的element，one有一个age属性，类型为string，默认值为99999.xsd文件是xml DTD的替代者，使用XML Schema语言进行编写，这里对xsd schema不做太多解释，有兴趣可以参考相关的资料。<br/><br/>
+创建一个Java文件，该文件实现了BeanDefinitionParser接口，用来解析xsd文件中的定义并注册到组件中。<br/><br/>
+<strong>MyBeanDefinitionParser.java</strong><br/><br/>
+<pre class="lang:default decode:true">package com.mysite.tag;<br/><br/>
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.beans.factory.config.BeanDefinitionHolder;
+import org.springframework.beans.factory.support.BeanDefinitionReaderUtils;
+import org.springframework.beans.factory.support.RootBeanDefinition;
+import org.springframework.beans.factory.xml.BeanDefinitionParser;
+import org.springframework.beans.factory.xml.ParserContext;
+import org.w3c.dom.Element;<br/><br/>
+public class MyBeanDefinitionParser implements BeanDefinitionParser {
+    public BeanDefinition parse(Element element, ParserContext parserContext) {
+        RootBeanDefinition def = new RootBeanDefinition();<br/><br/>
+        // 设置Bean Class
+        def.setBeanClass(One.class);<br/><br/>
+        // 注册默认ID属性
+        String id = element.getAttribute("id");
+        BeanDefinitionHolder idHolder = new BeanDefinitionHolder(def, id);
+        BeanDefinitionReaderUtils.registerBeanDefinition(idHolder, parserContext.getRegistry());<br/><br/>
+        // 注册age属性
+        String age = element.getAttribute("age");
+        BeanDefinitionHolder ageHolder = new BeanDefinitionHolder(def, age);
+        BeanDefinitionReaderUtils.registerBeanDefinition(ageHolder, parserContext.getRegistry());<br/><br/>
+        def.getPropertyValues().addPropertyValue("age", age);<br/><br/>
+        return def;
+    }
+}</pre>
+<br/>
+ 上面的代码仅仅实现了一个方法public BeanDefinition parse(Element element, ParserContext parserContext)，设置相关的Bean Class，解析了对应的xsd文件，并将解析的内容注册到上下文中，同时返回一个BeanDefinition对象（BeanDefinition是Spring的bean定义，提供了bean部分的操作方法，如isSingleton()、isLazyInit()等)。<br/><br/>
+注意，id属性是一个默认的属性，可以不在xsd文件中描述，但是需要注册它，否则将无法通过getBean方法获取标签定义的bean，也无法被其他bean引用。<br/><br/>
+另外，下面代码是给bean的属性赋值，这个是不可缺少的，否则在使用标签定义时将无法获取bean属性的值。<br/><br/>
+<pre class="brush:java">def.getPropertyValues().addPropertyValue("age", age);</pre>
+<br/>
+ 然后为组件编写一个Handler文件，扩展自NamespaceHandlerSupport，它的作用是将组件注册到Spring容器。<br/><br/>
+<strong>MyNameSpaceHandler.java</strong><br/><br/>
+<pre class="lang:default decode:true">package com.mysite.tag;<br/><br/>
+import org.springframework.beans.factory.xml.NamespaceHandlerSupport;<br/><br/>
+public class MyNameSpaceHandler extends NamespaceHandlerSupport {
+    public void init() {
+        registerBeanDefinitionParser("one", new MyBeanDefinitionParser());
+    }
+}</pre>
+<br/>
+ 实际执行的过程只有一句代码，注册了一个名字为one的扩展配置，包含了MyBeanDefinitionParser所parser相关xsd的内容。<br/><br/>
+到了这里，一个Spring扩展标签已经完成，但是我们目前还没办法使用它，Spring没那么聪明，它无法知道我们在什么地方定义了哪些扩展标签，这些标签将被谁解析，这个过程要我们通过一些文件来告知Spring知道，它们就是spring.handlers和spring.schemas，它们放在META-INF目录中，Spring.jar的META-INF目录中也有同名的文件，它们的文件内容基本上是相似的，而Spring在执行过程中，如果发现其他jar文件的META-INF文件夹中包含有这两个文件，Spring将会合并它们。<br/><br/>
+<span style="color: #ff0000;">Unmi 注：如果不进行打包，只在当前项目中直接测试本程序，可把以下两文件放在项目根目录下的 META-INF 文件夹中。</span><br/><br/>
+<strong>spring.schemas</strong><br/><br/>
+<pre class="brush:text">http\://www.mysite.org/schema/mytag=com.mysite.tag.MyNameSpaceHandler</pre>
+<br/>
+ <strong>spring.handlers</strong><br/><br/>
+<pre class="brush:text">http\://www.mysite.org/schema/mytag.xsd=com/mysite/tag/mytag.xsd</pre>
+<br/>
+ 而spring.schemas将告诉Spring配置文件知道，如果在配置中引用http://www.mysite.org/schema/mytag.xsd，它应该去什么地方找相应的xsd文件。<br/><br/>
+而spring.handlers文件将告诉Spring，应该使用哪个Handler注册扩展标签。<br/><br/>
+现在为止，一个完整的xml扩展标签全部完成，做一个小应用测试一下。<br/><br/>
+将整个项目打包成jar文件（别忘记META-INF内的两个文件），然后新建一个项目，引用刚才打包的jar文件，并引用Spring相关文件。<br/><br/>
+需要注意，自定义xml扩展配置只有xsd方式的引用才可以使用。<br/><br/>
+<strong>application.xml</strong><br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;beans xmlns="http://www.springframework.org/schema/beans"
+     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:tag="http://www.mysite.org/schema/mytag"
+     xsi:schemaLocation="http://www.springframework.org/schema/beans
+         http://www.springframework.org/schema/beans/spring-beans-2.0.xsd
+         http://www.mysite.org/schema/mytag http://www.mysite.org/schema/mytag.xsd"&gt;
+    &lt;tag:one id="oneBean" age="99"/&gt;
+&lt;/beans&gt;</pre>
+<br/>
+ 在xml文件引用上可以看到，配置了一个名字为tag的名称空间，目标为http://www.mysite.org/schema/mytag命名空间，这个目标名称空间必须是存在于项目的引用中的(mytag.xsd中所定义的)。<br/><br/>
+<pre class="lang:default decode:true ">&lt;tag:one id="oneBean" age="99"/&gt;</pre>
+<br/>
+上面定义了一个id为oneBean的组件，使用了“one”扩展标签，也就是我们在handler中所注册的，组件age属性的值为99。<br/><br/>
+<strong>TestClient.java<span style="color: #ff0000;">（Unmi 注：直接在当前项目中运行本代码即可，不一定要打成 jar 包在别的项目中使用）</span></strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.spring;<br/><br/>
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.context.support.ClassPathXmlApplicationContext;<br/><br/>
+import com.mysite.tag.One;<br/><br/>
+/**
+ * 测试客户端
+ *
+ * @author Unmi
+ */
+public class TestClient {<br/><br/>
+    public static void main(String[] args) {
+        BeanFactory context = new ClassPathXmlApplicationContext("applicationContext.xml");
+        One one = (One) context.getBean("oneBean");
+        System.out.print(one+":Age=&gt;"+one.getAge());
+    }
+}</pre>
+<br/>
+ 运行测试程序，结果如下：<br/><br/>
+<pre class="lang:default decode:true ">com.mysite.tag.One@406199:Age=&gt;99</pre>
+<br/>
+ Spring的xml扩展是一个非常有用的特性，在Spring2.0的版本中也提供了一些新的标签使用，如，等，但就目前来讲受大家关注程度并不高，我想大部分使用Spring的开发人员都在使用Spring开发企业应用，而Spring所提供的定义的方式对于开发人员来说已经能够满足需要，但是如果看的更远一些，在Spring以后的发展过程中，xml扩展应该会成为spring的核心特性之一，或许到时大家会习惯这样的方式来编写Spring配置文件吧！<br/><br/>
+<pre class="lang:default decode:true">&lt;XXCompany:XXXModule id=""&gt;
+    ...
+    ...</pre>
+<br/>
+ 原文链接：<a href="http://developer.51cto.com/art/200707/51780.htm">http://developer.51cto.com/art/200707/51780.htm</a><br/><br/>
+参考：1. <a href="http://www.blogjava.net/i369/articles/157730.html" target="_blank" rel="noopener">关于spring 2.0自定义xml 标记</a>

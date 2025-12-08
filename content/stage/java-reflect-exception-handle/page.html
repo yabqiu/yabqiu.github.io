@@ -1,0 +1,73 @@
+---
+title: 使用Java的反射调用方法应注意的异常处理
+url: /java-reflect-exception-handle/
+date: 2006-03-07T10:07:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - Exception
+  - Reflect
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 584 
+wpStatus: publish
+views: 1377
+lastmod: 2020-07-09T16:12:29-05:00
+---
+
+先看下面的代码，看看程序执行会是什么样的结果：</p>
+<br/>
+<pre class="brush:java">import java.lang.reflect.Method;
+/**
+ * @author Unmi
+ */
+public class ExceptionTest {<br/><br/>
+   public static void main(String[] args) {
+      try{
+         foo1();
+      }catch (MyException me) {
+         System.out.println(“Exception Type: MyException”);
+      }catch (Exception e) {
+         System.out.println(“Exception Type: Exception”);
+      }
+   }<br/><br/>
+   public static void foo1() throws Exception{
+      Method method = ExceptionTest.class.getDeclaredMethod(“foo2″,new Class[]{});
+      
+      //注意调用foo2时，foo2方法会抛出MyException异常
+      method.invoke(null,new Object[]{}); 
+   }<!--more-->
+   
+   public static void foo2() throws Exception{
+      throw new MyException(); //foo2方法直接抛出异常
+   }
+}<br/><br/>
+//一个自定义的异常
+class MyException extends Exception{
+   
+}
+</pre>
+<br/>
+<!--more-->简单分析上面的代码，代码中自定义了一个异常类，main调用了方法foo1,而方法foo1调用了方法foo2，在方法foo2中抛出的异常是MyException，该异常向上传播，在main方法中被catch，那么是不会会第一个catch语句捕获到，在控制台下打印出"<span style="color: #dc009c;">Exception Type: MyException</span>"呢？其实不然，异常会被第二个catch语句捕获，实际执行结果是"<span style="color: #dc009c;">Exception Type: Exception</span>"。<br/><br/>
+也就是尽管foo2方法中抛出的是MyException，但是让foo1通过反射方式调用后，异常被重新封装。从foo1方法中执向外面的异常实际是"InvocationTargetException"，也就是执行method.invoke方法的异常了，那么在foo1中如何知道触发的实际异常呢，InvocationTargetException有一个方法getTargetException()可以获取到是MyException异常。<br/><br/>
+如果我们想在main方法中更细致的处理实际方法执行所抛出的异常，应如何做呢？我们可以改写foo1中的反射调用代码行<br/><br/>
+<pre class="brush:java">method.invoke(null,new Object[]{});</pre>
+<br/>
+替换如下，让在foo2中触发的实际异常向外抛<br/><br/>
+<pre class="brush:java">try{
+    method.invoke(null,new Object[]{}); 
+}catch (InvocationTargetException ite) {
+    //确定实际引发异常MyException,Exception子类，所以强型转换
+    throw (Exception)ite.getTargetException();
+}</pre>
+<br/>
+这样的话，这个异常将在main方法的第一个catch块被捕获，异常类型被还原成MyException。<br/><br/>
+我是在项目中使用Struts，写了一个BaseAction，在BaseAction中根据参数反向调用相应的Action Perform方法时，在BaseAction中也是写成上面代码那样的异常捕获方式，结果发现只要是Action Perform方法中抛出的异常总是作为Exception被捕获的，而不能正确处理异常中描述的业务含业。<br/><br/>
+用Struts做项目时，经常会写自己的BaseAction，由这个BaseAction去分发执行哪一个实际方法，并且由它统一根据上抛的异常处理错误信息时就应该注意到这种问题。

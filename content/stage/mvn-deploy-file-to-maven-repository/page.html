@@ -1,0 +1,260 @@
+---
+title: mvn 命令上传文件到 Maven 仓库
+url: /mvn-deploy-file-to-maven-repository/
+date: 2021-11-13T23:51:04-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - nexus
+  - deploy
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11921 
+wpStatus: publish
+views: 2206
+lastmod: 2022-06-30T13:49:49-05:00
+---
+
+针对一个 Maven 的 Java 项目，我们执行 mvn deploy 命令时想要把生成的 jar 包上传到 Maven 仓库(本文将使用私有的 Nexus 仓库)中去。所要用到的插件 <a href="http://maven.apache.org/plugins/maven-deploy-plugin/usage.html">Maven Deploy Plugin</a>，本文实际就是讲述如何用该插件上传 jar 包到 Maven  仓库，更多用法请参考该插件的官方文档。<br/><br/>
+本文关键性的两个配置文件是 pom.xml 和 settings.xml。前者配置仓库的地址，后者中配置用户名和密码。要确定 Maven 使用了哪个 settings.xml 文件，用 <code>mvn -X</code> 查看，比如下面的输出<br/><br/>
+<blockquote>
+[DEBUG] Reading global settings from /usr/local/Cellar/maven/3.8.3/libexec/conf/settings.xml<br />
+[DEBUG] Reading user settings from /Users/yanbin/.m2/settings.xml
+</blockquote>
+<br/>
+Maven 还允许在执行 mvn 命令时用  -s 或 --settings 参数指定 settings.xml 文件，如 mvn deploy --settings settings.xml<br/><br/>
+所以对于 settings.xml 文件的修改，可修改全局的，用户的或参数 --settings 指定的。<!--more--><br/><br/>
+来一个实际的应用场景，假如我们要上传 jar 包(根据是否为 SNAPSHOT 包) 到下方相应的仓库中<br/><br/>
+<ol>
+    <li>https://nexus.example.com/repository/maven-releases: release 包，即版本号不是 *-SNAPSHOT</li>
+    <li>https://nexus.example.com/repository/maven-snapshots: snapshot 包，即版本号为 *-SNAPSHOT</li>
+</ol>
+<br/>
+瞧瞧可采用的几种方式<br/><br/>
+<h3>基本的操作方式</h3><br/><br/>
+下面是一个完整的 pom.xml 文件<br/><br/>
+<pre class="lang:default decode:true">&lt;project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd"&gt;<br/><br/>
+    &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+    &lt;groupId&gt;blog.yanbin&lt;/groupId&gt;
+    &lt;artifactId&gt;kafka-common&lt;/artifactId&gt;
+    &lt;version&gt;1.0.0-SNAPSHOT&lt;/version&gt;
+    &lt;name&gt;kafka-common&lt;/name&gt;<br/><br/>
+    &lt;distributionManagement&gt;
+        &lt;repository&gt;
+            &lt;id&gt;private-release&lt;/id&gt;
+            &lt;url&gt;http://nexus.example.com/repository/maven-releases&lt;/url&gt;
+        &lt;/repository&gt;
+        &lt;snapshotRepository&gt;
+            &lt;id&gt;private-snapshot&lt;/id&gt;
+            &lt;url&gt;http://nexus.example.com/repository/maven-snapshots&lt;/url&gt;
+        &lt;/snapshotRepository&gt;
+    &lt;/distributionManagement&gt;<br/><br/>
+&lt;/project&gt; </pre>
+<br/>
+由于 version 是 1.0.0-SNAPSHOT，所以将会部署到 distributionManagement/snapshotRepository 指示的仓库中，该仓库的 id 是 private-snapshot。如果我们执行 mvn deploy，Maven 将从 settings.xml 中找到该 id 对应的用户名和密码。因此我们须在 settings.xml 文件中预先配置<br/><br/>
+假如我们修改用户的 settings.xml 文件 <code>~/.m2/settings.xml</code><br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0"?&gt;
+&lt;settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd"&gt;
+  &lt;servers&gt;
+    &lt;server&gt;
+      &lt;id&gt;private-snapshot&lt;/id&gt;
+      &lt;username&gt;admin&lt;/username&gt;
+      &lt;password&gt;admin123&lt;/password&gt;
+    &lt;/server&gt;
+  &lt;/servers&gt;
+&lt;/settings&gt; </pre>
+<br/>
+现在我们来执行 mvn deploy, 这里跳过 test 和 install 这两步<br/><br/>
+<pre class="lang:default decode:true ">$ mvn deploy -Dmaven.test.skip -Dmaven.install.skip
+......
+[INFO] --- maven-deploy-plugin:2.7:deploy (default-deploy) @ kafka-common ---
+Downloading from private-snapshot: http://nexus.example.com/repository/maven-snapshots/blog/yanbin/kafka-common/1.0.0-SNAPSHOT/maven-metadata.xml
+Downloaded from private-snapshot: http://nexus.example.com/repository/maven-snapshots/blog/yanbin/kafka-common/1.0.0-SNAPSHOT/maven-metadata.xml (773 B at 4.0 kB/s)
+Uploading to private-snapshot: http://nexus.example.com/repository/maven-snapshots/blog/yanbin/kafka-common/1.0.0-SNAPSHOT/kafka-common-1.0.0-20211114.001059-5.jar
+Uploaded to private-snapshot: http://nexus.example.com/repository/maven-snapshots/blog/yanbin/kafka-common/1.0.0-SNAPSHOT/kafka-common-1.0.0-20211114.001059-5.jar (1.9 kB at 13 kB/s)
+Uploading to private-snapshot: http://nexus.example.com/repository/maven-snapshots/blog/yanbin/kafka-common/1.0.0-SNAPSHOT/kafka-common-1.0.0-20211114.001059-5.pom
+Uploaded to private-snapshot: http://nexus.example.com/repository/maven-snapshots/blog/yanbin/kafka-common/1.0.0-SNAPSHOT/kafka-common-1.0.0-20211114.001059-5.pom (1.2 kB at 1.9 kB/s)
+Downloading from private-snapshot: http://nexus.example.com/repository/maven-snapshots/blog/yanbin/kafka-common/maven-metadata.xml
+Downloaded from private-snapshot: http://nexus.example.com/repository/maven-snapshots/blog/yanbin/kafka-common/maven-metadata.xml (283 B at 2.5 kB/s)
+Uploading to private-snapshot: http://nexus.example.com/repository/maven-snapshots/blog/yanbin/kafka-common/1.0.0-SNAPSHOT/maven-metadata.xml
+Uploaded to private-snapshot: http://nexus.example.com/repository/maven-snapshots/blog/yanbin/kafka-common/1.0.0-SNAPSHOT/maven-metadata.xml (773 B at 4.9 kB/s)
+Uploading to private-snapshot: http://nexus.example.com/repository/maven-snapshots/blog/yanbin/kafka-common/maven-metadata.xml
+Uploaded to private-snapshot: http://nexus.example.com/repository/maven-snapshots/blog/yanbin/kafka-common/maven-metadata.xml (283 B at 2.6 kB/s)
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+......</pre>
+<br/>
+上传成功了，如果 version 不是 *-SNAPSHOT, 比如为 <code>1.0.0</code>, 它将会上传到 id 为  <code>private-release</code> 仓库，在 <code>~/.m2/settings.xml</code> 就要有对应 id 为 <code>private-release</code> 的 <code>&lt;server&gt;</code> 来配置用户和密码。<br/><br/>
+还可以其他多种传入用户名密码的方式<br/><br/>
+<h3>通过系统属性传入帐号信息</h3><br/><br/>
+配置 <code>~/.m2/settings.xml</code> 的 &lt;server&gt;<br/><br/>
+<pre class="lang:default decode:true">  &lt;servers&gt;
+    &lt;server&gt;
+      &lt;id&gt;private-snapshot&lt;/id&gt;
+      &lt;username&gt;${CI_USERNAME}&lt;/username&gt;
+      &lt;password&gt;${CI_PASSWORD}&lt;/password&gt;
+    &lt;/server&gt;
+  &lt;/servers&gt;</pre>
+<br/>
+mvn 命令为<br/><br/>
+<blockquote>
+$ mvn deploy -DCI_USERNAME=admin -DCI_PASSWORD=admin123
+</blockquote>
+<br/>
+<h3>通过环境变量传入帐号信息</h3><br/><br/>
+配置 <code>~/.m2/settings.xml</code> 的 &lt;server&gt;<br/><br/>
+<pre class="lang:default decode:true">    &lt;server&gt;
+      &lt;id&gt;private-snapshot&lt;/id&gt;
+      &lt;username&gt;${env.CI_USERNAME}&lt;/username&gt;
+      &lt;password&gt;${env.CI_PASSWORD}&lt;/password&gt;
+    &lt;/server&gt;</pre>
+<br/>
+执行 mvn 命令前必须设置相应的环境变量<br/><br/>
+<blockquote>
+$ export CI_USERNAME=admin<br />
+$ export CI_PASSWORD=admin123<br />
+$ mvn deploy
+</blockquote>
+<br/>
+<h3>settings.xml 中全动态</h3><br/><br/>
+我们还可以在 settings.xml 把 &lt;server&gt; 的 id, username 和 password 配置成全动态的，如<br/><br/>
+<pre class="lang:default decode:true">    &lt;server&gt;
+      &lt;id&gt;${repo.id}&lt;/id&gt;
+      &lt;username&gt;${repo.login}&lt;/username&gt;
+      &lt;password&gt;${repo.pwd}&lt;/password&gt;
+    &lt;/server&gt;</pre>
+<br/>
+有了它以后就能以一变应万变，只要看着 pom.xml 中的 distributionManagement/*/id 下菜就行了，如<br/><br/>
+<blockquote>
+$ mvn deploy -Drepo.id=private-snapshot -Drepo.login=admin -Drepo.pwd=admin123
+</blockquote>
+<br/>
+这种全动态的 &lt;server&gt; 配置放到  settings.xml 中简直是百利而无一害，就是一个<strong><span style="color: #0000ff;">万能的 &lt;server&gt; 配置</span></strong>。<br/><br/>
+<h3>配置用户名密码到 url 中</h3><br/><br/>
+这种方式我们用不着 <code>settings.xml</code> 文件，测试前可把  <code>settings.xml</code> 文件删除。只需修改 <code>pom.xml</code> 文件， 给 distributionManagement 中的 &lt;url&gt; 中配置上用户名和密码<br/><br/>
+<pre class="lang:default decode:true">    &lt;distributionManagement&gt;
+        &lt;repository&gt;
+            &lt;id&gt;private-release&lt;/id&gt;
+            &lt;url&gt;http://admin:admin123@nexus.example.com/repository/maven-releases&lt;/url&gt;
+        &lt;/repository&gt;
+        &lt;snapshotRepository&gt;
+            &lt;id&gt;private-snapshot&lt;/id&gt;
+            &lt;url&gt;http://admin:admin123@nexus.example.com/repository/maven-snapshots&lt;/url&gt;
+        &lt;/snapshotRepository&gt;
+    &lt;/distributionManagement&gt;
+</pre>
+<br/>
+然后执行 <code>mvn deploy</code> 即能成功上传 jar 包。这种配置方式肯定不安全，绝对不应该把密码放到项目文件中去的，所以千万别采用。<br/><br/>
+<h3>使用 alt*Repository 系统属性</h3><br/><br/>
+继续往深处挖，<a href="https://maven.apache.org/plugins/maven-deploy-plugin/deploy-mojo.html">mvn deploy:deploy</a> 还提供对 <code>altDeploymentRepository</code>, <code>altSnapshotDeploymentRepository</code>, 和 <code>altReleaseDeploymentRepository</code> 三个属性的覆盖。这就能演绎出更精致的用法。在 <code>pom.xml</code> 中整个 <code>&lt;distributionManagement&gt;</code> 都不需要配置，你不想要 <code>settings.xml</code> 文件也没问题，只要命令<br/><br/>
+<blockquote>
+$ mvn deploy -DaltDeploymentRepository=private-snapshot::default::http://admin:admin123@nexus.example.com/repository/maven-snapshots
+</blockquote>
+<br/>
+如果是搭配前面那个万能的 settings.xml &lt;server&gt; 配置，需要命令就是<br/><br/>
+<blockquote>
+$ mvn deploy -DaltDeploymentRepository=private-snapshot::default::http://nexus.example.com/repository/maven-snapshots \<br />
+  -Drepo.id=private-snapshot -Drepo.login=admin -Drepo.pwd=admin123
+</blockquote>
+<br/>
+注意 <code>alt*Repository</code> 的格式是 <code>id::layout::url</code>, layout 为 default 就行。其他两个，altSnapshotDeploymentRepository 和  altReleaseDeploymentRepository  也能用系统属性覆盖。<br/><br/>
+-DaltDeploymentRepository 的方式给我们带来一种不用修改原有的 pom.xml 文件也能把它部署到任意仓库的便利。如果是自己管理的 Maven 项目，还是推荐在  pom.xml 中加上 &lt;distributionManagement&gt; 配置，这为我们使用 mvn deploy 命令更简单。<br/><br/>
+<h3>直接上传一个 jar 文件</h3><br/><br/>
+有时候拿到的是一个别人的 jar，没有源文件，想把它直接上传到 Maven 仓库中去供其它 Java 项目享用, 这时候我们要用到的命令是 mvn deploy:deploy-file。当然登陆 nexus Web 控制台手工上传也行，本文主要讲 mvn deploy 的使用。<br/><br/>
+回顾一下用 twine 把一个 Python 的 whl 包上传到 nexus 上的方式<br/><br/>
+<blockquote>
+twine upload --repository-url=https://nexus.example.com/repository/pypi-hosted/ dist/bounded_executor-0.0.3-py3-none-any.whl
+</blockquote>
+<br/>
+直接上传一个 jar 文件与针对 Maven 项目执行 <code>mvn deploy</code> 并无多大区别，唯一不同的是 Maven 项目有一个 pom.xml 文件，在其中有 groupId, artifactId, version 等的描述，而使用 <code>mvn deploy:deploy-file</code> 的话就要在命令中给出相同的信息。<code>mvn deploy:deploy-file</code> 也能用 <code>-DpomFile</code> 指定一个 pom.xml 文件, 如果该 jar 有传递的依赖也许是有必要用这个参数。<br/><br/>
+<h4>应用 settings.xml 的帐号信息</h4><br/><br/>
+执行 deploy:deploy-file 依旧可以用 settings.xml 文件，配置方式与前面三种方式是一样的，帐户信息可明文配置，或从系统属性或环境变量中来。假如 jar 包文件名是 redis-common-1.0.0-SNAPSHOT.jar, <code>～/.m2/settings.xml</code> 中配置的 server<br/><br/>
+<pre class="lang:default decode:true">  &lt;servers&gt;
+    &lt;server&gt;
+      &lt;id&gt;private-snapshot&lt;/id&gt;
+      &lt;username&gt;${CI_USERNAME}&lt;/username&gt;
+      &lt;password&gt;${CI_PASSWORD}&lt;/password&gt;
+    &lt;/server&gt;
+  &lt;/servers&gt;</pre>
+<br/>
+上传该 jar 包到私有仓库的命令是<br/><br/>
+<blockquote>
+mvn deploy:deploy-file -DCI_USERNAME=admin -DCI_PASSWORD=admin123 \<br />
+  -DgroupId=blog.yanbin.redis -DartifactId=redis-common -Dversion=1.0.0-SNAPSHOT -Dpackaing=jar \<br />
+  -DrepositoryId=private-snapshot \<br />
+  -Durl=http://nexus.example.com/repository/maven-snapshots \<br />
+  -Dfile=redis-common-1.0.0-SNAPSHOT.jar
+</blockquote>
+<br/>
+<span style="color: #0000ff;"><strong>settings.xml 中配置 &lt;server&gt; 的 id, username, password 全部从系统属性/环境变量中来的方式也适用于此处</strong></span>。<br/><br/>
+<h4>无需 settings.xml 文件</h4><br/><br/>
+也可以完全不用 settings.xml 文件，而在 mvn 命令中的 URL 中带上用户名和密码。测试下面的命令前把 <code>~/.m2/settings.xml</code> 文件先删除<br/><br/>
+<blockquote>
+mvn deploy:deploy-file \<br />
+  -DgroupId=blog.yanbin.redis -DartifactId=redis-common -Dversion=1.0.0-SNAPSHOT -Dpackaing=jar \<br />
+  -Durl=http://admin:admin123@nexus.example.com/repository/maven-snapshots \<br />
+  -Dfile=redis-common-1.0.0-SNAPSHOT.jar
+</blockquote>
+<br/>
+这种方式对于临时把一个 jar 包上传到私有仓库更快捷，反正是本机执行，不应有什么安全隐患。此时如果使用 settings.xml 配置了用户名和密码，那么 -Durl 中的用户名和密码将被忽略。<br/><br/>
+和任何 bash 命令一样，密码中带有特殊符号的要注意转义，比如密码是 <code>aB!ak47%^</code>，在 mvn deploy:deploy-file 命令的 -Durl 写成<br/><br/>
+<blockquote>
+-Durl=http://admin:aB!ak47%^@nexus.example.com/repository/maven-snapshots
+</blockquote>
+<br/>
+在 zsh 中将会看到<br/><br/>
+<blockquote>
+zsh: event not found: ak47
+</blockquote>
+<br/>
+在 bash 中看到的是<br/><br/>
+<blockquote>
+bash: !ak47%^@nexus.example.com/repository/maven-snapshots: event not found
+</blockquote>
+<br/>
+原因是感叹号 <code>!</code> 在 zsh 和 bash 中是唤起一个历史命令，如 <code>!ak47</code> 是从历史命令中查找一个以 <code>ak47</code> 开头的命令，没有的话就是 <code>event not found</code>.<br/><br/>
+所以我们必须对感叹号进行转义，在它前头加上反斜杠，完整的 mvn deploy:deploy-file 命令是<br/><br/>
+<blockquote>
+mvn deploy:deploy-file \<br />
+  -DgroupId=blog.yanbin.redis -DartifactId=redis-common -Dversion=1.0.0-SNAPSHOT -Dpackaing=jar \<br />
+  -Durl=http://admin:<span style="color: #800000;">aB\!ak47%^</span>@nexus.example.com/repository/maven-snapshots \<br />
+  -Dfile=redis-common-1.0.0-SNAPSHOT.jar
+</blockquote>
+<br/>
+实际的密码  <code>aB!ak47%^</code> 被转义为 <code>aB\!ak47%^</code>。<br/><br/>
+如果把这个 mvn deploy:deploy-file 命令写到一个 <code>deploy.sh</code> 文件中的话，转义又多余了，其中 -Durl 部分写成 -Durl=http://admin:<span style="color: #800000;">aB!ak47%^</span>@nexus.... ，然后用  <code>sh deploy.sh</code> 执行也不会有问题。<br/><br/>
+<h3>Maven effective-settings 插件</h3><br/><br/>
+该插件能显示出 Maven  用到的 settings 信息，包括其中配置的用户名密码<br/><br/>
+<blockquote>
+$ mvn help:effective-settings -DshowPasswords=true
+</blockquote>
+<br/>
+<h3>总结</h3><br/><br/>
+对于 mvn deploy 或 mvn deploy:deploy-file 命令，所需要的用户名密码信息可配置到本地的 settings.xml 文件中。<br/><br/>
+如果想通过命令行传递帐号信息，在 settings.xml 加上一个全能的 &lt;server&gt; 配置<br/><br/>
+<pre class="lang:default decode:true ">    &lt;server&gt;
+      &lt;id&gt;${repo.id}&lt;/id&gt;
+      &lt;username&gt;${repo.login}&lt;/username&gt;
+      &lt;password&gt;${repo.pwd}&lt;/password&gt;
+    &lt;/server&gt;</pre>
+<br/>
+是非常有积极意义的，在 CI(如 Jenkins) 上执行时要注意屏蔽控制台输出中的密码信息。<br/><br/>
+使用 -DaltDeploymentRepository=&lt;id::default::user:pass@url&gt; 的方式能够在不触及任何配置的情况下把构建部署到任意仓库中<br/><br/>
+最后又要重复一下，真正要把 mvn deploy 用法写下来，不可避免的会越走越远，这就是写博客的意义，与草草了事的笔记不在一个数量极上。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://www.baeldung.com/maven-deploy-nexus">Maven Deploy to Nexus</a></li>
+    <li><a href="https://mincong.io/2018/08/04/maven-deploy-artifacts-to-nexus/">Maven: Deploy Artifacts to Nexus</a></li>
+    <li><a href="https://maven.apache.org/guides/mini/guide-3rd-party-jars-remote.html">Guid to deploying 3rd party JARs to remote repository</a></li>
+    <li><a href="https://newbedev.com/is-it-possible-to-pass-a-password-in-maven-deploy-in-the-command-line">Is it possible to pass a password in Maven Deploy in the command line?</a></li>
+</ol>

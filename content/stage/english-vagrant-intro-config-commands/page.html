@@ -1,0 +1,434 @@
+---
+title: Introduce Vagrant and common usages
+url: /english-vagrant-intro-config-commands/
+date: 2021-06-24T12:18:47-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2021/04/vagrant_logo.png"
+categories:
+  - Docker
+tags: 
+  - Docker
+  - Vagrant
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11037 
+wpStatus: publish
+views: 617
+lastmod: 2021-06-24T12:18:47-05:00
+---
+
+Many of my demos about Kafka, Docker, Python, Kubernates, and etc. are made with Vagrant virtual machines. It is time to write a blog for some frequently used Vagrant commands. Vagrant is a member of the HashiCorp family. Others of HashiCorp's famous tools include  <a href="https://learn.hashicorp.com/terraform">Terraform</a> , <a href="https://learn.hashicorp.com/consul">Consul</a> ,  <a href="https://learn.hashicorp.com/vault">Vault</a> , <a href="https://learn.hashicorp.com/boundary">Boundary</a> , <a href="https://learn.hashicorp.com/packer">Packer</a> , <a href="https://learn.hashicorp.com/nomad">Nomad</a> and <a href="https://learn.hashicorp.com/waypoint">Waypoint</a> . <br/><br/>
+Speaking of Vagrant, I have to mention the similar Docker, in fact, they are quite different, while they both give people the external feeling that they are command line control Linux. Vagrant is essentially a virtual machine shell, allowing us to use Vagrant commands to interact with the virtual machine more conveniently, instead of switching back and forth between the host machine and the virtual machine, it is more convenient to manage multiple virtual machines in one single terminal; while Docker is a container, The essence of a container is a process on the host machine, but it is isolated from the file system, process, network, etc. of the process with a namespace, making the container process look like a virtual OS.<br/><br/>
+Vagrant is a tool for the development environment, and Docker is a tool for the deployment environment; Vagrant operates a standard Linux or Windows operating system, and the Docker is very critical on image size. Docker image is usually a trimmed system, just has necessary command to run our service. Since Vagrant corresponds to a virtual machine, the operation status with Vagrant and the installed software will be retained after Vagrant virtual machine shutdown, while the operations status in Docker are all for the current container (copy-on-write), which does not affect the corresponding image , Unless it is committed as a new image with docker commit.<br/><br/>
+Understand that Vagrant is just the shell of a virtual machine, so it requires different virtual machine implementations, such as VirtualBox, Hyper-V, VMware, etc., and we can use Vagrant to interact with Docker as well. Vagrant can support multiple Operation Systems.<!--more--><br/><br/>
+With Vagrant, no longer to download OS installation ISO image file, then take a long time to setup a new virtual machine step-by-step. Or manually import a compressed virtual machine file exported by others. Everything is similar to Docker. Just select an online box.<br/><br/>
+first of all, if we want to use Vagrant under Mac OS X, we should install Virtualbox, then Vagrant, which can be installed with brew commands<br/><br/>
+<blockquote>
+$ brew install --cask virtualbox<br />
+$ brew install vagrant
+</blockquote>
+<br/>
+After installation, we can run the Vagrant command. The current version is<br/><br/>
+<blockquote>
+$ VirtualBoxVM --help<br />
+Oracle VM VirtualBox VM Runner v6.1.20<br />
+$ vagrant --version<br />
+Vagrant 2.2.15
+</blockquote>
+<br/>
+At this time, using vagrant's <code>up</code>, <code>halt</code> or other sub-commands can be treated as communicating with virtual machine commands such as VirtualBoxVM, VBoxManage. Let's take a look at how the vagrant command creates, starts, ssh and shutdown a virtual machine.<br/><br/>
+Docker has a Dockerfile, which corresponds to Vagrant is Vagrantfile. If we want to create multiple virtual machines on the same host, we usually create a separate directory for each Vagrantfile. For example, if we want to create a Ubuntu 20.04 LTS virtual machine, just create a folder <code>ubuntu-20.04</code>, and then put a file Vagrantfile inside<br/><br/>
+Executing <code>vagrant</code> command will search for <code>Vagrantfile</code> in order, from current to the root folder. For example, ./Vagrantfile -&gt; ../Vagrantfile -&gt; ../../Vagrantfile, ... until / Vagrantfile. By modifying the environment variable <code>VAGRANT_CWD</code>, we can change the search start position. Multiple virtual machines can be defined in one single Vagrantfile file, this is more convenient, will be explained below.<br/><br/>
+To search a official ubuntu 20.04 box (no longer called mirror), we can go to https://app.vagrantup.com/boxes/search?utf8=%E2%9C%93&amp;sort=downloads&amp;provider=virtualbox&amp;q=ubuntu+20.04, the copy below content from this web page<br/><br/>
+<pre class="lang:default decode:true">Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/focal64"
+end</pre>
+<br/>
+For the content of Vagrantfile, the following commands do the same thing as above<br/><br/>
+<blockquote>
+~$ mkdir ubuntu-20.04 &amp;&amp; cd ubuntu-20.04<br />
+ubuntu-20.04$ cat &lt;&lt; EOF &gt; Vagrantfile<br />
+Vagrant.configure("2") do |config|<br />
+    config.vm.box = "ubuntu/focal64"<br />
+end<br />
+EOF
+</blockquote>
+<br/>
+We can also use <code>vagrant init</code> command<br/><br/>
+<blockquote>
+ubuntu-20.04$ vagrant init ubuntu/focal64
+</blockquote>
+<br/>
+to achieve substantially equivalent results with previous cat command. Only thing different is that <code>Vagrantfile</code> created by  <code>vagrant init</code> contains many detailed comments. Vagrantfile is a ruby file, because Vagrant is written in ruby.<br/><br/>
+By default, the operation instructions of the vagrant virtual machine described below are for the virtual machine indicated by the Vagrantfile file in the current directory. If we want to operate on a virtual machine in any directory, we must to specify the name or ID of the virtual machine. If we don't specify the name in the Vagrantfile, all the virtual machines will have default names, and the IDs are different. How to get virtual machines Name or ID? command <code>vagrant global-status</code> will help us, leave its details later.<br/><br/>
+Now we can start using <code>up</code>, <code>ssh</code>, <code>halt</code> and other commands to start the virtual machine, <code>ssh</code> to the virtual machine, and <code>shutdown</code> the virtual machine<br/><br/>
+From the command line prompt, we can identify whether the shell is currently in the host or in the virtual machine. The similar $ or ubuntu-20.04$ is on localhost, while vagrant@ubuntu-focal:~$ is in the virtual machine. <code>vagrant ssh</code> username is <code>vagrant</code><br/><br/>
+<h3>vagrant up starts a virtual machine</h3><br/><br/>
+<pre class="lang:default decode:true">ubuntu-20.04$ vagrant up
+Bringing machine 'default' up with 'virtualbox' provider...
+==&gt; default: Importing base box 'ubuntu/focal64'...
+==&gt; default: Matching MAC address for NAT networking...
+==&gt; default: Checking if box 'ubuntu/focal64' version '20210415.0.0' is up to date...
+==&gt; default: A newer version of the box 'ubuntu/focal64' for provider 'virtualbox' is
+==&gt; default: available! You currently have version '20210415.0.0'. The latest is version
+==&gt; default: '20210429.0.0'. Run `vagrant box update` to update.
+==&gt; default: Setting the name of the VM: ubuntu-2004_default_1619755398798_4656
+==&gt; default: Clearing any previously set network interfaces...
+==&gt; default: Preparing network interfaces based on configuration...
+    default: Adapter 1: nat
+==&gt; default: Forwarding ports...
+    default: 22 (guest) =&gt; 2222 (host) (adapter 1)
+==&gt; default: Running 'pre-boot' VM customizations...
+==&gt; default: Booting VM...
+==&gt; default: Waiting for machine to boot. This may take a few minutes...
+    default: SSH address: 127.0.0.1:2222
+    default: SSH username: vagrant
+    default: SSH auth method: private key
+    default: Warning: Connection reset. Retrying...
+    default: Warning: Remote connection disconnect. Retrying...
+    default:
+    default: Vagrant insecure key detected. Vagrant will automatically replace
+    default: this with a newly generated keypair for better security.
+    default:
+    default: Inserting generated public key within guest...
+    default: Removing insecure key from the guest if it's present...
+    default: Key inserted! Disconnecting and reconnecting using new SSH key...
+==&gt; default: Machine booted and ready!
+==&gt; default: Checking for guest additions in VM...
+==&gt; default: Mounting shared folders...
+    default: /vagrant =&gt; /Users/yanbin/vagrant/ubuntu-20.04</pre>
+<br/>
+Any time, we can check what happens to VirtualBox, now we see<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-1-1.png" data-slb-active="1" data-slb-asset="1278705458" data-slb-internal="0" data-slb-group="10710"><img class="aligncenter wp-image-10714" src="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-1-1-800x307.png" sizes="(max-width: 850px) 100vw, 850px" srcset="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-1-1-800x307.png 800w, https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-1-1-300x115.png 300w, https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-1-1-768x294.png 768w, https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-1-1-1536x589.png 1536w, https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-1-1.png 1806w" alt="" width="850" height="326" data-attachment-id="10714" data-permalink="https://yanbin.blog/vagrant-intro-config-commands/vagrant-virtualbox-1-2/" data-orig-file="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-1-1.png" data-orig-size="1806,692" data-comments-opened="1" data-image-meta="{&quot;aperture&quot;:&quot;0&quot;,&quot;credit&quot;:&quot;&quot;,&quot;camera&quot;:&quot;&quot;,&quot;caption&quot;:&quot;&quot;,&quot;created_timestamp&quot;:&quot;0&quot;,&quot;copyright&quot;:&quot;&quot;,&quot;focal_length&quot;:&quot;0&quot;,&quot;iso&quot;:&quot;0&quot;,&quot;shutter_speed&quot;:&quot;0&quot;,&quot;title&quot;:&quot;&quot;,&quot;orientation&quot;:&quot;0&quot;}" data-image-title="vagrant-virtualbox-1" data-image-description="" data-medium-file="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-1-1-300x115.png" data-large-file="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-1-1-800x307.png" /></a><br/><br/>
+If we create a new directory, put a Vagrantfile file and start it with vagrant up, we'll see another virtual machine in VirtualBox started. And from above screenshot, we noticed that the memory of the virtual machine created by Vagrant is only 1024 MB. Other configurations can be seen in its Settings, such as the network is NAT. Most of these can be configured through Vagrantfile. If we use vagrant to control VirtualBox, please try not to modify the virtual machine settings directly in VirtualBox.<br/><br/>
+<h3>File sharing between virtual machine and host</h3><br/><br/>
+Notice that the mounted shared directory shows up during the startup of vagrant, such as the above<br/><br/>
+<pre class="lang:default decode:true">==&gt; default: Mounting shared folders... 
+    default: /vagrant =&gt; /Users/yanbin/vagrant/ubuntu-20.04</pre>
+<br/>
+That is, go to the /vagrant directory on the virtual machine, and the content is the /Users/yanbin/vagrant/ubuntu-20.04 directory on localhost, which is the directory where the Vagrantfile file is located. Mounted in the virtual machine is a readable and writable file system, and files can be shared between the virtual machine and localhost through this shared folder.<br/><br/>
+<h3>vagrant ssh: ssh to virtual machine</h3><br/><br/>
+<pre class="lang:default decode:true">ubuntu-20.04$ vagrant ssh
+Welcome to Ubuntu 20.04.2 LTS (GNU/Linux 5.4.0-72-generic x86_64)<br/><br/>
+.......<br/><br/>
+  System information as of Fri Apr 30 04:19:44 UTC 2021<br/><br/>
+  System load:  0.02              Processes:               113
+  Usage of /:   3.2% of 38.71GB   Users logged in:         1
+  Memory usage: 20%               IPv4 address for enp0s3: 10.0.2.15
+  Swap usage:   0%<br/><br/>
+.......<br/><br/>
+Last login: Fri Apr 30 04:06:24 2021 from 10.0.2.2
+vagrant@ubuntu-focal:~$ free
+              total        used        free      shared  buff/cache   available
+Mem:        1004584      143788      500384         940      360412      706680
+Swap:             0           0           0
+vagrant@ubuntu-focal:~$ hostname
+ubuntu-focal</pre>
+<br/>
+At this time, we entered the VirtualBox virtual machine ubuntu-2004_default_1619..., and now we can do what ssh can do.<br/><br/>
+<code>vagrant halt</code>: Turn off the current virtual machine, the status of the virtual machine in VirtualBox becomes Powered Off<br/><br/>
+<code>vagrant status</code>: View the status of the current virtual machine, running, poweroff, not created (never up), saved (the state after executing vagrant suspend)<br/><br/>
+<h3>vagrant destroy: destroy the virtual machine</h3><br/><br/>
+<blockquote>
+ubuntu-20.04$ vagrant destroy<br />
+default: Are you sure you want to destroy the 'default' VM? [y/N] y<br />
+==&gt; default: Forcing shutdown of VM...<br />
+==&gt; default: Destroying VM and associated drives..
+</blockquote>
+<br/>
+The vagrant destroy operation will delete the corresponding virtual machine from VirutalBox.<br/><br/>
+The commands of vagrant can be listed with vagrant --help, and let's take a look at some other common used vagrant commands<br/><br/>
+<h3>vagrant global-status - List the status of all virtual machines</h3><br/><br/>
+<pre class="lang:default decode:true">$ vagrant global-status
+id       name    provider   state    directory
+--------------------------------------------------------------------------
+cef6e15  default virtualbox poweroff /Users/yanbin/vagrant/ubuntu-18.04
+b9988a1  default virtualbox running  /Users/yanbin/vagrant/fedora30
+5888413  default virtualbox running  /Users/yanbin/vagrant/ubuntu-20.04</pre>
+<br/>
+Above information tells use all ID and name of each Vagrant virtual machines. Name is not unique, but ID is. If we use name follows vagrant command, it will only affect the first available virtual machine.<br/><br/>
+<code>vagrant up cef6e15</code> Will start the virtual machine of ubuntu-18.04<br/><br/>
+<code>vagrant ssh b9988a1</code> Will ssh to connect to fedora30 virtual machine<br/><br/>
+With id or name, We can run vagrant command anywhere, don't have to go to the directory where Vagrantfile is located.<br/><br/>
+<h3>vagrant cloud search - search box</h3><br/><br/>
+If we don't want to open https://app.vagrantup.com/boxes/search web search a vagrant box, we can also use commands to search<br/><br/>
+<pre class="lang:default decode:true">ubuntu-20.04$ vagrant cloud search fedora
+| NAME                 | VERSION | DOWNLOADS | PROVIDERS                                              |
++----------------------+---------+-----------+--------------------------------------------------------+
+| generic/fedora28     | 3.2.18  |   267,894 | vmware_desktop, virtualbox, parallels, libvirt, hyperv |
+| generic/fedora27     | 3.2.18  |   171,412 | vmware_desktop, virtualbox, parallels, libvirt, hyperv |
+| generic/fedora32     | 3.2.18  |   116,801 | vmware_desktop, virtualbox, parallels, libvirt, hyperv |
+| generic/fedora33     | 3.2.18  |   114,666 | vmware_desktop, virtualbox, parallels, libvirt, hyperv |
+| generic/fedora26     | 3.2.18  |   111,408 | vmware_desktop, virtualbox, parallels, libvirt, hyperv |
+| generic/fedora25     | 3.2.18  |   102,329 | virtualbox, vmware_desktop, parallels, libvirt, hyperv |
+| generic/fedora29     | 3.2.18  |    88,640 | vmware_desktop, virtualbox, parallels, libvirt, hyperv |
+| generic/fedora30     | 3.2.18  |    83,148 | vmware_desktop, virtualbox, parallels, libvirt, hyperv |
+| roboxes/fedora28     | 3.2.18  |    55,764 | vmware_desktop, virtualbox, parallels, libvirt, hyperv |
+| lavabit/magma-fedora | 3.2.18  |    53,727 | vmware_desktop, virtualbox, libvirt, hyperv            |
++----------------------+---------+-----------+--------------------------------------------------------+</pre>
+<br/>
+All boxes, versions and providers corresponding to the keywords will be listed. Sometime, searching box in terminal is slower more than with web page. We can choose either way, search https://app.vagrantup.com, or use commdn <code>vagrant cloud search</code>, once we get found the box, then create Vagrant file manually, or vagrant init, or vagrant box add.<br/><br/>
+<h3>vagrant box add - add box to local warehouse</h3><br/><br/>
+<blockquote>
+$ vagrant box add generic/fedora30 --provider virtualbox
+</blockquote>
+<br/>
+If no provider is specified, all available providers will be listed for selection. vagrant box add can also add a box from a url or local file path. The box of vagrant box add is stored in the <code>~/.vagrant.d/boxes</code> directory under Mac OS X<br/><br/>
+<pre class="lang:default decode:true">$ ls -l ~/.vagrant.d/boxes
+total 0
+drwxr-xr-x  4 yanbin  staff  128 Apr 29 23:45 generic-VAGRANTSLASH-fedora30
+drwxr-xr-x  4 yanbin  staff  128 Apr 30 00:29 hashicorp-VAGRANTSLASH-vagrant-share
+drwxr-xr-x  4 yanbin  staff  128 Apr 29 23:53 ubuntu-VAGRANTSLASH-bionic64
+drwxr-xr-x  4 yanbin  staff  128 Apr 29 19:15 ubuntu-VAGRANTSLASH-focal64</pre>
+<br/>
+<h3>vagrant box list - list local boxes</h3><br/><br/>
+<blockquote>
+$ vagrant box list<br />
+generic/fedora30 (virtualbox, 3.2.18)<br />
+ubuntu/bionic64 (virtualbox, 20210415.0.0)<br />
+ubuntu/focal64 (virtualbox, 20210415.0.0)
+</blockquote>
+<br/>
+<h3>vagrant box remove - remove box from local</h3><br/><br/>
+<blockquote>
+$ vagrant box remove ubuntu/bionic64<br />
+Removing box 'ubuntu/bionic64' (v20210415.0.0) with provider 'virtualbox'...
+</blockquote>
+<br/>
+Of course, it will be removed from <code>~/.vagrant.d/boxes</code> directory.<br/><br/>
+Other vagrant box commands:<br/><br/>
+vagrant box outdated: check if all boxes are updated<br/><br/>
+vagrant box update: update box<br/><br/>
+<h3>vagrant's share command</h3><br/><br/>
+<code>vagrant share</code> it not a built-in command, we must install the <code>vagrant-share</code> plug-in and <code>ngrok</code> component firstly<br/><br/>
+<blockquote>
+$ vagrant plugin install vagrant-share<br />
+$ brew install ngrok
+</blockquote>
+<br/>
+Commands such as vagrant share --ssh, vagrant share --http 80 do not seem useful to use.<br/><br/>
+The following is some knowledges about Vagrantfile configurations, including machine name, memory, CPU, network, port forwarding, and pre-installed software when initializing the virtual machine.<br/><br/>
+To understand the how to config <code>Vagrantfile</code>, we could check a <code>Vagrantfile</code> generated by command <code>vagrant init ubuntu/focal64</code>. Where it has details explainations. The official documentation is here <a href="https://www.vagrantup.com/docs/vagrantfile">https://www.vagrantup.com/docs/vagrantfile</a> , I do very like the style HashiCorp's online documentation, visiting Terraform's online documentation is almost my everyday work.<br/><br/>
+<h3>Configure hostname of  a virtual machine</h3><br/><br/>
+By default, the hostname of the virtual machine is uncertain, and comes from the machine name preset in the box. When we configure multiple Vagrant virtual machines for clustering, it is necessary to specify a meaningful machine name for each virtual machine. in this case, the Vagrantfile needs to be configured as follows<br/><br/>
+<pre class="lang:default decode:true">Vagrant.configure("2") do |config|
+  config.vm.hostname = "k8s-master"
+  config.vm.box = "ubuntu/focal64"
+end </pre>
+<br/>
+Then use the command <code>vagrant reload</code> to restart the virtual machine (the equivalent of <code>vagrant halt; vagrant up</code>), and then <code>vagrant ssh</code>, we'll see hostname becomes k8s-master<br/><br/>
+<blockquote>
+ubuntu-20.04$ vagrant ssh<br />
+vagrant@k8s-master:~$ hostname<br />
+k8s-master 
+</blockquote>
+<br/>
+<h3>Configure virtual machine identifier name</h3><br/><br/>
+Here, virtual machine identifier name and virtual machine hostname are different concepts. virtual machine name is an identifier for vagrant operations. Execute <code>vagrant global-status</code> shows this name<br/><br/>
+<pre class="lang:default decode:true">$ vagrant global-status
+id       name    provider   state   directory
+-----------------------------------------------------------------------
+f284d36  default virtualbox running /Users/yanbin/vagrant/ubuntu-20.04
+def48b8  default virtualbox running /Users/yanbin/vagrant/fedora30</pre>
+<br/>
+Remember that, many vagrant can task parameters <code>[id | name]</code>, which is above id or name, but because the name is always  <code>default</code> by default, so use <code>id</code> to identify the virtual machine is always a good idea, for example<br/><br/>
+<blockquote>
+$ vagrant ssh f284d36<br />
+$ vagrant halt d3f48b8
+</blockquote>
+<br/>
+If we give the virtual machine an identifier name, for example <code>ubuntu-server-1</code>, then the operation can be<br/><br/>
+<blockquote>
+$ vagrant up ubuntu-server-1
+</blockquote>
+<br/>
+To configure the identifier name of the virtual machine, <code>Vagrantfile</code> call the <code>config.vm.define</code> function and pass in a name<br/><br/>
+<pre class="lang:default decode:true">Vagrant.configure("2") do |config|
+  config.vm.define "ubuntu-server-1"
+  config.vm.box = "ubuntu/focal64"
+end</pre>
+<br/>
+Reload the virtual machine, use <code>vagrant global-status</code> to check it again<br/><br/>
+<pre class="lang:default decode:true">$ vagrant global-status
+id       name            provider   state   directory
+------------------------------------------------------------------------------
+def48b8  default         virtualbox running /Users/yanbin/vagrant/fedora30
+6dc44cb  ubuntu-server-1 virtualbox running /Users/yanbin/vagrant/ubuntu-20.04</pre>
+<br/>
+Name changed. Now we can use name to operate. Actually, the virtual machine identifier name is not that important, because we can always use ID. We can see more information from the command <code>vagrant global-status</code>,  including the directory where the virtual machine located. We'll frequently use <code>vagrant global-status</code> to check ID, name before other vagrant commands.<br/><br/>
+Note: After updating the virtual machine name, need <code>vagrant global-status --prune</code>to clean out the junk entries.<br/><br/>
+<h3>Configure the name of the virtual machine</h3><br/><br/>
+Why there is another name? The reason why we say the name of the virtual machine here is because..., first configure and then see the effect after running<br/><br/>
+<pre class="lang:default mark:4-6 decode:true">Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/focal64"<br/><br/>
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "ubuntu-server-x"
+  end
+end</pre>
+<br/>
+Run <code>vagrant destroy</code>, then <code>vagrant up</code>, then open VirtualBox, we'll see<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-2.png" data-slb-active="1" data-slb-asset="1688829543" data-slb-internal="0" data-slb-group="10710"><img class="aligncenter wp-image-10722" src="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-2-800x421.png" sizes="(max-width: 697px) 100vw, 697px" srcset="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-2-800x421.png 800w, https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-2-300x158.png 300w, https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-2-768x404.png 768w, https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-2.png 1395w" alt="" width="697" height="367" data-attachment-id="10722" data-permalink="https://yanbin.blog/vagrant-intro-config-commands/vagrant-virtualbox-2/" data-orig-file="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-2.png" data-orig-size="1395,734" data-comments-opened="1" data-image-meta="{&quot;aperture&quot;:&quot;0&quot;,&quot;credit&quot;:&quot;&quot;,&quot;camera&quot;:&quot;&quot;,&quot;caption&quot;:&quot;&quot;,&quot;created_timestamp&quot;:&quot;0&quot;,&quot;copyright&quot;:&quot;&quot;,&quot;focal_length&quot;:&quot;0&quot;,&quot;iso&quot;:&quot;0&quot;,&quot;shutter_speed&quot;:&quot;0&quot;,&quot;title&quot;:&quot;&quot;,&quot;orientation&quot;:&quot;0&quot;}" data-image-title="vagrant-virtualbox-2" data-image-description="" data-medium-file="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-2-300x158.png" data-large-file="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-2-800x421.png" /></a><br/><br/>
+<code>ubuntu-server-x</code>, instead of xxx_default followed by a timestamp with nanoseconds. When we choose to use vagrant, we probably rarely check virtual machine name in VirtualBox.<br/><br/>
+<h3>Configure virtual machine memory and CPU</h3><br/><br/>
+The configuration of virtual machine memory is obviously very important. Just imagine what development work can we do with the default 1G memory? Earlier we have come to the configuration of the config.vm.provider block, and the configuration of memory and CPU is also carried out. For example, we configure 2G memory and 3 CPUs.<br/><br/>
+<pre class="lang:default mark:4-7 decode:true">Vagrant.configure("2") do |config|
+  config.vb.box = "ubuntu/focal64"
+ 
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = 2048
+    vb.cpus = 3
+  end
+end</pre>
+<br/>
+After vagrant reload, vagrant ssh into the virtual machine, check the memory and CPU<br/><br/>
+<div id="urvanov-syntax-highlighter-60d49e60977a2555479841" class="urvanov-syntax-highlighter-syntax crayon-theme-classic urvanov-syntax-highlighter-font-monaco urvanov-syntax-highlighter-os-mac print-yes notranslate" data-settings=" minimize scroll-mouseover">
+<div class="urvanov-syntax-highlighter-main">
+<pre class="lang:default decode:true">vagrant@ubuntu-focal:~$ cat /proc/meminfo | grep MemTotal
+MemTotal:        2035020 kB
+vagrant@ubuntu-focal:~$ cat /proc/cpuinfo | grep processor
+processor   : 0
+processor   : 1
+processor   : 2</pre>
+</div>
+</div>
+<br/>
+The memory has changed from the default 1G to 2G, and there are 3 CPUs.<br/><br/>
+<h3>Network configuration</h3><br/><br/>
+The default network configuration of the Vagrant virtual machine is NAT, which allows the virtual machine to access the external network and communicate with the host or other local virtual machines, but the external machine cannot directly access the virtual machine. We can configure to obtain IP from DHCP (it will be on the same network as the host, which is equivalent to the bridge option in VirutalBox), or use a static IP address, which makes it easier to interact with external machines.<br/><br/>
+<pre class="lang:default decode:true">Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/"
+  config.vm.network "public_network"
+# config.vm.network "private_network", type: "dhcp"  # save as above
+# config.vm.network "private_network", ip: "172.28.1.100" # static private IP  
+  config.vm.network "forwarded_port", guest: 80, host: 8080
+end</pre>
+<br/>
+Then execution <code>vagrant reload</code> will ask which network interface to choose to connect to an external network. After vagrant started, <code>vagrant ssh</code> login, we will be able to see<br/><br/>
+<pre class="lang:default decode:true">vagrant ssh
+Welcome to Ubuntu 20.04.2 LTS (GNU/Linux 5.4.0-72-generic x86_64)<br/><br/>
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage<br/><br/>
+  System information as of Fri Apr 30 14:06:34 UTC 2021<br/><br/>
+  System load:  0.21              Processes:               131
+  Usage of /:   3.2% of 38.71GB   Users logged in:         0
+  Memory usage: 9%                IPv4 address for enp0s3: 10.0.2.15
+  Swap usage:   0%                IPv4 address for enp0s8: 192.168.86.47</pre>
+<br/>
+IP address <code>192.168.86.47</code> is allocated from my wifi router IP address, rather than 10.0.2.15 is assigned on from NAT.<br/><br/>
+<blockquote>
+config.vm.network "provate_network", ip: "172.28.1.100"
+</blockquote>
+<br/>
+The above static IP address will cause a virtual network 172.28.1.1/24 to be created on the host machine, such as vboxnet1, or vboxnet2 (if vboxnet1 is used). Therefore, the static IP of the virtual machine can always be accessed by the host machine and other virtual machines on the host machine.<br/><br/>
+If too many static IP segments are configured in the Vagrantfile, too many network devices like vboxnet1, vboxnet2, vboxnet3... will be generated in the host operating system. You can see them with ifconfig<br/><br/>
+<pre class="lang:default decode:true">$ ifconfig
+....
+vboxnet0: flags=8843&lt;UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST&gt; mtu 1500
+    ether 0a:00:27:00:00:00
+    inet 127.0.0.1 netmask 0xffffff00 broadcast 127.0.0.255
+vboxnet1: flags=8843&lt;UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST&gt; mtu 1500
+    ether 0a:00:27:00:00:01
+    inet 10.0.2.1 netmask 0xffffff00 broadcast 10.0.2.255
+vboxnet2: flags=8943&lt;UP,BROADCAST,RUNNING,PROMISC,SIMPLEX,MULTICAST&gt; mtu 1500
+    ether 0a:00:27:00:00:02
+    inet 172.28.1.1 netmask 0xffffff00 broadcast 172.28.1.25</pre>
+<br/>
+vboxnetX network interfaces are generated because of too may configuring static IP in Vagrantfile, we need to use VBoxMange to clean up<br/><br/>
+<blockquote>
+$ VBoxManage hostonlyif remove vboxnet1<br />
+$ VBoxManage hostonlyif remove vboxnet2
+</blockquote>
+<br/>
+Adding <code>auto_config: false</code> to config.vm.network will no longer automatically configure vboxnetX. It needs to be created manually to avoid a lot of garbage. The complete configuration is as follows<br/><br/>
+<blockquote>
+config.vm.network "private_network", ip: "172.28.1.100", auto_config: false
+</blockquote>
+<br/>
+For example, for VBoxManger, we should create a network manually<br/><br/>
+<blockquote>
+$ VBoxManage natnetwork add --netname myvboxnet1 --network "172.28.1.100/24" --enable --dhcp on
+</blockquote>
+<br/>
+It will be like this in VirtualBox<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-5.png" data-slb-active="1" data-slb-asset="1015010244" data-slb-internal="0" data-slb-group="10710"><img class="aligncenter wp-image-10732" src="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-5-800x529.png" sizes="(max-width: 550px) 100vw, 550px" srcset="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-5-800x529.png 800w, https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-5-300x199.png 300w, https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-5-768x508.png 768w, https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-5.png 1100w" alt="" width="550" height="364" data-attachment-id="10732" data-permalink="https://yanbin.blog/vagrant-intro-config-commands/vagrant-virtualbox-5/" data-orig-file="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-5.png" data-orig-size="1100,728" data-comments-opened="1" data-image-meta="{&quot;aperture&quot;:&quot;0&quot;,&quot;credit&quot;:&quot;&quot;,&quot;camera&quot;:&quot;&quot;,&quot;caption&quot;:&quot;&quot;,&quot;created_timestamp&quot;:&quot;0&quot;,&quot;copyright&quot;:&quot;&quot;,&quot;focal_length&quot;:&quot;0&quot;,&quot;iso&quot;:&quot;0&quot;,&quot;shutter_speed&quot;:&quot;0&quot;,&quot;title&quot;:&quot;&quot;,&quot;orientation&quot;:&quot;0&quot;}" data-image-title="vagrant-virtualbox-5" data-image-description="" data-medium-file="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-5-300x199.png" data-large-file="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-5-800x529.png" /></a><br/><br/>
+<h3>Port forwarding configuration</h3><br/><br/>
+Especially when configured as a default NAT network or static IP, external machines (non-host machines or other virtual machines on it) cannot be directly accessed. In this situation, the port forwarding function is required, which need host port to map to virtual machine port.<br/><br/>
+<pre class="lang:default decode:true">Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/"
+  config.vm.network "forwarded_port", guest: 80, host: 8080
+end</pre>
+<br/>
+Then <code>vagrant reload</code>, we can see the output when starting<br/><br/>
+<div id="urvanov-syntax-highlighter-60d49e60977b1656293772" class="urvanov-syntax-highlighter-syntax crayon-theme-classic urvanov-syntax-highlighter-font-monaco urvanov-syntax-highlighter-os-mac print-yes notranslate" data-settings=" minimize scroll-mouseover">
+<div class="urvanov-syntax-highlighter-main">
+<pre class="lang:default decode:true">==&gt; default: Forwarding ports...
+    default: 80 (guest) =&gt; 8080 (host) (adapter 1)
+    default: 22 (guest) =&gt; 2200 (host) (adapter 1)</pre>
+</div>
+</div>
+<br/>
+Or use to <code>vagrant port</code> list the current port mapping<br/><br/>
+<blockquote>
+$ vagrant port<br />
+22 (guest) =&gt; 2200 (host)<br />
+80 (guest) =&gt; 8080 (host)
+</blockquote>
+<br/>
+The host sees the 8080 listening port started by VBoxHead1<br/><br/>
+<pre class="lang:default decode:true">$ netstat -na|grep 8080
+tcp4       0      0  *.8080                 *.*                    LISTEN
+$ lsof -i :8080
+COMMAND     PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+VBoxHeadl 33617 yanbin   20u  IPv4 0xd679f7ee9be9755d      0t0  TCP *:http-alt (LISTEN)</pre>
+<br/>
+Let's do a test of port forwarding,  we need to <code>vagrant ssh</code> enter the virtual machine to install apache, and start it in virtual machine, then access the host port 8080<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-3.png" data-slb-active="1" data-slb-asset="2111794088" data-slb-internal="0" data-slb-group="10710"><img class="aligncenter wp-image-10726" src="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-3-800x362.png" sizes="(max-width: 829px) 100vw, 829px" srcset="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-3-800x362.png 800w, https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-3-300x136.png 300w, https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-3-768x347.png 768w, https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-3-1536x695.png 1536w, https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-3.png 1658w" alt="" width="829" height="375" data-attachment-id="10726" data-permalink="https://yanbin.blog/vagrant-intro-config-commands/vagrant-virtualbox-3/" data-orig-file="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-3.png" data-orig-size="1658,750" data-comments-opened="1" data-image-meta="{&quot;aperture&quot;:&quot;0&quot;,&quot;credit&quot;:&quot;&quot;,&quot;camera&quot;:&quot;&quot;,&quot;caption&quot;:&quot;&quot;,&quot;created_timestamp&quot;:&quot;0&quot;,&quot;copyright&quot;:&quot;&quot;,&quot;focal_length&quot;:&quot;0&quot;,&quot;iso&quot;:&quot;0&quot;,&quot;shutter_speed&quot;:&quot;0&quot;,&quot;title&quot;:&quot;&quot;,&quot;orientation&quot;:&quot;0&quot;}" data-image-title="vagrant-virtualbox-3" data-image-description="" data-medium-file="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-3-300x136.png" data-large-file="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-3-800x362.png" /></a><br/><br/>
+config.vm.network "forward_port", guest: &lt;port&gt;, host: &lt;port&gt; can appear multiple times in the Vagrantfile to configure multiple port mappings. Because it's a ruby ​​function call, we can call it using named parameters.<br/><br/>
+<h3>Pre-installed software (provision)</h3><br/><br/>
+If we need, we can manually install sofeware after <code>vagrant up</code>, and <code>vagrant ssh</code>. But if we run <code>vagrant destroy</code> destroy the virtual machine, the <code>vagrant up</code>, we have to install the same software again. To avoid installing the sofeware every time, we can use the vagrant box with our wanted software, or after manually after installing the software, we can saved the virtual machine as a new box with command <code>vagrant package --base name --output /path/to/name.box</code>, <code>--base name</code>the <code>name</code>available <code>VBoxManage list vms</code> listed.<br/><br/>
+if <code>--output</code> parameter ommited, the new box will be saved in the current directory, the file name is <code>package.box</code>. Once we save the new box locally, we can it then <code>vagrant box add /path/to/name.box</code>.<br/><br/>
+In addition to the above two approaches, provision is the better way to pre-install software, or other settings. Look at the configuration first<br/><br/>
+<pre class="lang:default mark:4-7 decode:true">Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/focal64"<br/><br/>
+  config.vm.provision "shell", inline: &lt;&lt;-SHELL
+    apt update
+    apt install -y apache2
+  SHELL
+end</pre>
+<br/>
+The configuration here <code>config.vm.provision</code> is executed only the first time we create a virtual machine, the future <code>vagrant up</code> will not execute it again. So, when we run  <code>vagrant destroy</code> destroyed a vagrant virtual machine, next time, running <code>vagrant up</code> will re-create a new virtual machine and install Apache2. For an existing virtual machine, modify <code>config.vm.provision</code>, <code>vagrant halt</code> then <code>vagrant up</code> won't execute the commands in <code>config.vm.provision</code>.<br/><br/>
+Unless run  <code>vagrant provision</code> to force execute the content of <code>config.vm.provision</code>. Or use <code>vagrant [up|reload] --provision</code> to provision at startup/reload.<br/><br/>
+Besides using inline to execute scripts, provision can also execute external script files, or call Ansible, Chef, puppet, etc. For details, please see <a href="https://www.vagrantup.com/docs/provisioning">https://www.vagrantup.com/docs/provisioning</a> .<br/><br/>
+<h3>Configure multiple virtual machines in a Vagrantfile</h3><br/><br/>
+For each vagrant machine, we create a new folder and a separate Vagrantfile is not necessary. We could organize multiple related vagrant virtual machine in one single <code>Vagrantfile</code><br/><br/>
+<pre class="lang:default decode:true">Vagrant.configure("2") do |config|
+  config.vm.provision "shell", inline: "echo Hello"<br/><br/>
+  config.vm.define "web" do |web|
+    web.vm.box = "generic/fedora33"
+    web.vm.provision :shell, inline: "dnf install httpd -y; systemctl start httpd.service"
+  end<br/><br/>
+  config.vm.define "db" do |db|
+    db.vm.box = "ubuntu/focal64"
+    db.vm.provision :shell, inline: "apt install -y mysql-server"
+  end
+end</pre>
+<br/>
+Then <code>vagrant up</code>, it will start both virtual machines displayed <code>web</code>and <code>db</code> when boot up, check the status<br/><br/>
+<pre class="lang:default decode:true ">$ vagrant global-status
+id       name    provider   state    directory
+----------------------------------------------------------
+b638892  web     virtualbox running  /Users/yanbin/vagrant
+d5a0845  db      virtualbox running  /Users/yanbin/vagrant</pre>
+<br/>
+If you want to control individually, add id or name, such as <code>vagrant up web</code>, <code>vagrant ssh db</code>, and etc.<br/><br/>
+link:<br/><br/>
+<ol>
+    <li><a href="https://zhuanlan.zhihu.com/p/259833884">Super detailed Vagrant getting started guide</a></li>
+    <li><a href="https://stackoverflow.com/questions/17845637/how-to-change-vagrant-default-machine-name">How to change Vagrant 'default' machine name?</a></li>
+</ol>

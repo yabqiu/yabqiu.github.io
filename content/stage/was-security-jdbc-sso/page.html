@@ -1,0 +1,78 @@
+---
+title: WAS 安全性中定制用注册表，通过 JDBC 验证用户实现 SSO
+url: /was-security-jdbc-sso/
+date: 2008-01-27T00:51:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Mid-Ware
+tags: 
+  - JDBC
+  - WAS
+  - sso
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 446 
+wpStatus: publish
+views: 663
+lastmod: 2019-12-11T19:02:25-06:00
+---
+
+通常 Websphere Application Server (WAS) 都是结合 LDAP 来对用户对行验证，实现单点登陆的。因为 LDAP 有着一个得天独厚的优势，它对查询进行了优化，因此 WAS 理所当然的提供了对 LDAP 十分完善的支持。从 WAS 控制台进 <strong>安全性</strong>－＞<strong>用户注册表</strong>－＞<strong>LDAP</strong>，在类型里可以看到支持 IBM_Directory_Server、SecureWay、Sun ONE、Domino、Active_Directory、eDirectory 还可定制 LDAP 连接。<br/><br/>
+好，就此打住，我在这里要介绍的是如何配置 WAS 控制台和应用通过 JDBC 来验证用户。这一想法产生的背景是：公司原所有系统是通过 Portal 做的集成，配置 LDAP 便能实现 SSO，但有一个新的项目暂不能通过 LDAP 来验证，但也要能实现 SSO，于是就意思到要用 JDBC 来进行用户验证。你也许已注意到在 <strong>安全性</strong>－＞<strong>用户注册表</strong> 下除了 本地 <strong>OS</strong> 和 <strong>LDAP</strong> 外，还有一个 <strong>定制</strong>。我们就是要在这个 "<strong>定制</strong>" 上做文章的。下面详细具体步骤。<!--more--><br/><br/>
+刚装好的 WAS 是没有启动安全性的，所以可以在 WAS 启动后，输入任意用户名进入到控制台。在 WAS 控制台中，我们进到 <strong>安全性</strong>－＞<strong>用户注册表</strong>－＞<strong>定制</strong> 页面，定制注册表类名 文本框中是 <span style="color: #800080;">com.ibm.websphere.security.FileRegistrySample</span>，以及说明中提到这个类要实现 <span style="color: #800080;">com.ibm.websphere.security.UserRegistry</span> 接口。在 eclipse 中用 Jar Search 目录指向到 WAS_HOME/lib 目录查找到 FileRegistrySample 类在 wssec.jar 包中，用工具反编译出这个类作为参考。同样找到接口类在 sas.jar 包中，可以看到这个接口类中有多少个方法要实现，在我们编译用户定制注册表类是要引入 WAS_HOME/sas.jar 包。<br/><br/>
+<strong>1. 编写 JdbcRegistry.java 类</strong> (假定我们用 Oracle 数据库并用 Oracle 驱动包提供的连接池)<br/><br/>
+因为代码行太多，不在此列出，见附件 <a href="http://unmi.cc/wp-content/uploads/2008/01/was_security.rar">was_security.rar</a> 中的 JdbcRegistry.java 源文件。 <br/><br/>
+注意类 JdbcRegistry 中注释，每个方法中都加了一个 System.out.println() 语句，方便观察哪些方法会被何时执行。本篇的测试只看到前几个方法能得到执行。关于使用 Oracle 自带连接池实现可以参考之前的一篇日志：<a href="http://unmi.cc/use-oracle-carried-connection-pool/" target="_blank" rel="noopener noreferrer">为何不直接使用 Oracle 提供的连接池实现</a>。编译时需引入 WAS_HOME/lib/sas.jar 和 ORACLE_HOME/jdbc/lib/classes12.jar(或别的 Oracle 驱动包)。<br/><br/>
+<strong>2. 拷贝类 JdbcRegistry.class 文件</strong><br/><br/>
+JdbcRegistry.java 编译后会在 com\unmi\websphere\security 目录下产生 JdbcRegistry.class 文件（命令行用 javac 编译须带上 -d 才能生成目录结构的）。把这个 com 目录整个拷贝到 WAS_HOME/classes 目录下，当然，你也可以把这个 com 目录打到一个包，如 JdbcSec.jar 中，然后把这个包放到 WAS_HOME/lib 目录下，不过要明白 WAS_HOME/classes 下的类文件要优先于 WAS_HOME/lib 下 jar 包中的类被加载。<br/><br/>
+<strong>3. WAS 控制台设置</strong><br/><br/>
+① 为 JdbcRegistry 定制属性，<strong>安全性</strong>－＞<strong>用户注册表</strong>－＞<strong>定制</strong> 进到定制页面，点 <strong>定制属性</strong> 进入到属性定制页面。参考下图及你的实际输入正确的属性值。<br/><br/>
+<div align="center"><img src="http://unmi.cc/wp-content/uploads/2008/01/WasJdbcRegistryProps_2.jpg" alt="" /></div>
+<br/>
+定制完属性后，保存，控制台又会回到欢迎页面<br/><br/>
+② 配置用户注册表类，在 <strong>安全性</strong>－＞<strong>用户注册表</strong>－＞<strong>定制</strong> 页面,如下图<br/><br/>
+<div align="center"><img src="http://unmi.cc/wp-content/uploads/2008/01/WasJdbcRegistry_2.jpg" alt="" /></div>
+<br/>
+<strong>服务器用户标识 </strong>和 <strong>服务器用户密码 </strong>中输入数据库中存在的用户名和密码；<strong>定制注册表类名 </strong>中输入刚刚建立的类的全限名 <span style="color: #800080;">com.unmi.websphere.security.JdbcRegistry</span>；<strong>忽略大小写</strong> 选项随意，因为代码中未作相应处理。<br/><br/>
+完成后点击 <strong>应用</strong>，会提示保存，请保存。如果点击的是 <strong>确定</strong> 按扭，则会定向到 <strong>全局安全性</strong> 页面，我们下面会讲到 <strong>全局安全性</strong> 设置。这里建议点 <strong>应用</strong> 按钮，感觉 WAS 的向导顺序有点乱。<br/><br/>
+如果前面输入的用户名和密码不匹配将不能完成保存。还有这里输入的用户和也可启用安全性后登陆 WAS 控制台的用户。<br/><br/>
+③ 配置 LTPA 及 SSO (这一步非必要的，别以为这里有 SSO 就是必须的)<br/><br/>
+进到 <strong>安全性</strong>－＞<strong>认证机制</strong>－＞<strong>LTPA</strong> 页面，这一步就不贴图了，设置任意的密码。再在该页的下方点 <strong>单次注册（SSO）</strong>，然后只勾选上<strong> 已启用</strong>，<strong>确定</strong>、<strong>保存</strong> 就 OK 啦。<br/><br/>
+LTPA 是轻量级第三方认证(Lightweight Thrid Party Authertication)。启用了 LTPA 后会在请求中生成 LTPA Token (令牌).<br/><br/>
+④ 最后要启用 全局安全限，进 <strong>安全性</strong>－＞<strong>全局安全限</strong> 页面，照图中设置：<br/><br/>
+<div align="center"><img src="http://unmi.cc/wp-content/uploads/2008/01/GlobalSecurity_2.jpg" alt="" /></div>
+<br/>
+关键选项：<br/><br/>
+<strong>已启用</strong>　勾上<br />
+<strong>执行 Java 2 安全性</strong> 不选<br />
+<strong>活动协议</strong> CSI 和 SAS<br />
+<strong>活动认证机制</strong> 如果配置了 LTPA 则可选 LTPA，也可选 SWAM<br />
+<strong>活动用户注册表</strong> 选 定制<br/><br/>
+<strong>确定</strong>、<strong>保存</strong>后，控制台的设置就完成了。<br/><br/>
+<strong>4. 应用安全性，实现 Jdbc 用户验证和 SSO</strong><br/><br/>
+① 进入控制台<br/><br/>
+前面的步骤完成后，可以 stopServer.bat server1 停掉 WAS 了，然后可以用 startServer.bat server1 启动 WAS，也可以带上用户名和密码参数来启动 WAS，完整命令是：startServer.bat server1 -username unmi -password 123456。(用在控制台中为定制 JdbcRegistry 配置的用户名)。<br/><br/>
+但是切记，配置好了安全性的 WAS 在停止服务时，一定要加上用户名和参数，如 stopServer.bat server1 -username unmi -password 123456，否则无法结束服务。<br/><br/>
+再次打开控制台：<a href="http://localhost:9090/admin">http://localhost:9090/admin</a>，这时你会发现会弹出一个安全警告，接受后，请求自动定向到 9043 (HTTP协议端口上，这个端口依赖你的配置，默认为 9043)，然后要求输入用户名和密码，你只有输入为 JdbcRegistry 指定的用户密及相应密码方能进入控制台。届此，我们已经成功了半步。<br/><br/>
+② 部署测试应用<br/><br/>
+下载 <a title="WasJdbcRegistry.zip" href="http://unmi.cc/wp-content/uploads/2008/01/TestJdbcRegistry.zip">TestJdbcRegistry.zip</a>，改名为 TestJdbcRegistry1.war，然后部署到 WAS 的 server1 服务器上，取上下文根为 <strong>test1,</strong> 部署过程只有第 4 步与通常不同。如下图，需要勾选上 <strong>所有已认证的用户</strong>。其他都一样的。<br/><br/>
+<div align="center"><img src="http://unmi.cc/wp-content/uploads/2008/01/DeployWasJdbcRegistry_2.jpg" alt="" /></div>
+<br/>
+然后启动 WasJdbcRegistry 应用.<br/><br/>
+③ 感受 SSO，单点登陆<br/><br/>
+未完，待续。。。。。。<br/><br/>
+参考资料：1. <a href="http://publib.boulder.ibm.com/infocenter/wasinfo/v5r1//index.jsp?topic=/com.ibm.websphere.base.doc/info/aes/ae/usec_tdaman.html">Configuring custom user registries</a><br />
+             2. <a href="http://unmi.cc/use-oracle-carried-connection-pool/">为何不直接使用 Oracle 提供的连接池实现</a><br />
+             3. <a href="http://unmi.cc/tomcat-openldap-config-application/">Tomcat 和 OpenLDAP, 从配置到应用</a><br/><br/>
+控制台登录验证用户时执行的方法<br />
+checkPassword<br />
+getUniqueUserId<br />
+getUniqueGroupIds<br/><br/>
+<a href="http://swingchen.bokee.com/3194578.html">http://swingchen.bokee.com/3194578.html</a><br/><br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

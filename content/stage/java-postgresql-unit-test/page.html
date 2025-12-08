@@ -1,0 +1,197 @@
+---
+title: Java 与'嵌入式' PostgreSQL 数据库的单元测试
+url: /java-postgresql-unit-test/
+date: 2019-06-03T23:14:58-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/postgresql-logo.png"
+categories:
+  - Java/JEE
+  - Database
+tags: 
+  - Java
+  - PostgreSQL
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9416 
+wpStatus: publish
+views: 1829
+lastmod: 2019-06-03T23:22:18-05:00
+---
+
+<p>在我们对数据库 DAO 类进行单元测试时，通常不应该依赖于一个外部数据库，所以会选用特定比较接近于真实数据库类型的内存或嵌入式数据库，如 HSQLDB(HyperSQL), H2, Derby 等。但总难免会用到特定数据库的特性，这时候就无法用前述各种数据库进行测试了。非要单元测试中覆盖到所用的数据库特性的话可以选择用 docker，如 <a href="https://www.testcontainers.org/">Testcontainers</a>, 经过模块扩展，它可以由 docker 来启动许多种类型的数据库，MySQL, Postgres, Oracle-XE, MS SQL Server, Couchbase 等等，详情见 <a href="https://www.testcontainers.org/modules/databases/">Database containers</a>。刚了解到的是它的模块化的无限可能，像支持 Kafka Containers 和 Localstack Module 等。</p>
+
+<p>这里就不走 Testcontainers 那条路 -- 要求构建服务器上也要有 docker。早先希望能找到一种嵌入式或内存 PostgreSQL 数据库，后来发现 PostgreSQL 未能提供 In-Process 和 In-Memory 的启动方式，好在 PostgreSQL 是开源，有人可以把它改造为小型的可由测试代码启停的本地数据库。有两个具有代表性的组件，分别是 <a href="https://github.com/opentable/otj-pg-embedded">OpenTable Embedded PostgreSQL Component</a> 和 <a href="https://github.com/yandex-qatools/postgresql-embedded">Embedded PostgreSQL Server</a>，它们都号称是 Embedded，所谓嵌入式，其实是进测试进程外的数据库。</p>
+
+<p>下面简单体验下两个组件的用法<!--more--></p>
+
+<h2>OpenTable Embedded PostgreSQL Component</h2><br/>
+<p>在 Maven 项目中引入该组件</p>
+
+<pre class="lang:default decode:true ">&lt;dependency&gt;<br/>
+    &lt;groupId&gt;com.opentable.components&lt;/groupId&gt;<br/>
+    &lt;artifactId&gt;otj-pg-embedded&lt;/artifactId&gt;<br/>
+    &lt;version&gt;0.13.1&lt;/version&gt; &lt;!-- 当前版本是 0.13.1 --&gt;<br/>
+    &lt;scope&gt;test&lt;/scope&gt;<br/>
+&lt;/dependency&gt;</pre>
+
+<h3>在单元测试类中控制 PostgreSQL 起停的最基本代码</h3><br/>
+<pre class="lang:default decode:true ">@Rule<br/>
+public SingleInstancePostgresRule pg = EmbeddedPostgresRules.singleInstance();</pre>
+
+<p>在测试中就可以用下面的方式获得相应的数据源，不用关心启动 PostgreSQL 所用的端口号，它会随机选用端口号</p>
+
+<p><a href="https://yanbin.blog/wp-content/uploads/2019/06/postgresql-test-1.png"><img class="aligncenter wp-image-9417" src="https://yanbin.blog/wp-content/uploads/2019/06/postgresql-test-1-800x178.png" alt="" width="814" height="181" /></a></p>
+
+<p>然后进行执行自己的数据库初始化代码，创建新表，插入测试数据等等。</p>
+
+<p>上面 @Rule 在初始和终止时有类似下面的信息日志输出(节选了重要部分)</p>
+
+<blockquote><br/>
+<p>2019-06-04 02:51:49,873 INFO class=EmbeddedPostgres thread=main event_description="Detected a Darwin x86_64 system"<br /><br/>
+2019-06-04 02:51:50,043 INFO class=EmbeddedPostgres thread=main event_description="Postgres binaries at <strong>/var/folders/xz/vqv039517flcxtqzrq_jjy1xqzfzc0/T/embedded-pg/PG-3d7ce5d05cd575a649dd635576931b19</strong>"<br /><br/>
+......................<br /><br/>
+2019-06-04 02:51:50,113 INFO class=init-aa136468-71bb-40a5-9d6b-0284db0eaa86:initdb thread=log:pid(64860) event_description="fixing permissions on existing directory <strong>/var/folders/xz/vqv039517flcxtqzrq_jjy1xqzfzc0/T/epg1343892286024759082</strong> ... ok"<br /><br/>
+......................<br /><br/>
+2019-06-04 02:51:51,859 INFO class=init-aa136468-71bb-40a5-9d6b-0284db0eaa86:initdb thread=log:pid(64860) event_description=" <strong>/var/folders/xz/vqv039517flcxtqzrq_jjy1xqzfzc0/T/embedded-pg/PG-3d7ce5d05cd575a649dd635576931b19/bin/pg_ctl -D /var/folders/xz/vqv039517flcxtqzrq_jjy1xqzfzc0/T/epg1343892286024759082 -l logfile start</strong>"<br /><br/>
+2019-06-04 02:51:51,857 INFO class=EmbeddedPostgres thread=main event_description="aa136468-71bb-40a5-9d6b-0284db0eaa86 initdb completed in 00:00:01.810"<br /><br/>
+2019-06-04 02:51:51,875 INFO class=EmbeddedPostgres thread=main event_description="aa136468-71bb-40a5-9d6b-0284db0eaa86 postmaster started as java.lang.UNIXProcess@481a996b on port 60180. Waiting up to PT10S for server startup to finish."<br /><br/>
+2019-06-04 02:51:51,935 INFO class=pg-aa136468-71bb-40a5-9d6b-0284db0eaa86 thread=log:pid(64871) event_description="waiting for server to start....2019-06-03 21:51:51.935 CDT [64873] LOG: listening on IPv6 address "::1", port 60180"<br /><br/>
+2019-06-04 02:51:51,936 INFO class=pg-aa136468-71bb-40a5-9d6b-0284db0eaa86 thread=log:pid(64871) event_description="2019-06-03 21:51:51.935 CDT [64873] LOG: listening on IPv4 address "127.0.0.1", port 60180"<br /><br/>
+2019-06-04 02:51:51,936 INFO class=pg-aa136468-71bb-40a5-9d6b-0284db0eaa86 thread=log:pid(64871) event_description="2019-06-03 21:51:51.936 CDT [64873] LOG: listening on Unix socket "/tmp/.s.PGSQL.60180""<br /><br/>
+......................<br /><br/>
+2019-06-04 02:51:52,010 INFO class=pg-aa136468-71bb-40a5-9d6b-0284db0eaa86 thread=log:pid(64871) event_description="server started"<br /><br/>
+2019-06-04 02:51:52,104 INFO class=EmbeddedPostgres thread=main event_description="aa136468-71bb-40a5-9d6b-0284db0eaa86 postmaster startup finished in 00:00:00.234"</p>
+
+<p>2019-06-04 02:51:52,239 INFO class=init-aa136468-71bb-40a5-9d6b-0284db0eaa86:pg_ctl thread=log:pid(64884) event_description="waiting for server to shut down.... done"<br /><br/>
+2019-06-04 02:51:52,239 INFO class=EmbeddedPostgres thread=main event_description="aa136468-71bb-40a5-9d6b-0284db0eaa86 shut down postmaster in 00:00:00.110"</p>
+
+</blockquote>
+
+<p>输出的日志虽然删除了不少内容还是占了很大篇幅，上面粗体分别是 PostgreSQL 程序安装目录，数据库目录(测试完会被删除)，和启动 PostgreSQL 数据库的命令，以及启动后各种连接方式(u端口号, Unix socket 连接等)</p>
+
+<p>进到 PostgreSQL 的二进制目录查看到该组件 0.13.1 对应的 PostgreSQL 版本为 10.6</p>
+
+<h3>或者配置数据库迁移组件 FlyWay(相当于 Python 下的 SQLAlchemy)</h3><br/>
+<pre class="lang:default decode:true">@Rule <br/>
+public PreparedDbRule db =<br/>
+    EmbeddedPostgresRules.preparedDatabase(<br/>
+        FlywayPreparer.forClasspathLocation("db/my-db-schema"));</pre>
+
+<p>也能由 db 得到数据源。</p>
+
+<h3>纯手工启停 PostgreSQL</h3><br/>
+<p>前面是用 @Rule 或 @ClassRule 来控制 PostgreSQL，到了 JUnit5 后摒弃了 @Rule 和 @ClassRule, 要迁移到 JUnit5 的 @ExtendWith，或是简单的用代码来控制</p>
+
+<pre class="lang:default decode:true">private static EmbeddedPostgres pg;<br/>
+<br/>
+@BeforeClass<br/>
+public static void initDb() throws IOException {<br/>
+    pg = EmbeddedPostgres.builder().setCleanDataDirectory(true).start();<br/>
+<br/>
+    //初始化数据库<br/>
+    ResourceDatabasePopulator databasePopulator = new ResourceDatabasePopulator();<br/>
+    DefaultResourceLoader resourceLoader = new DefaultResourceLoader();<br/>
+    databasePopulator.addScripts(<br/>
+        resourceLoader.getResource("schema.sql"),<br/>
+        resourceLoader.getResource("data.sql"));<br/>
+    databasePopulator.execute(ps.getPostgresDatabase());<br/>
+}<br/>
+<br/>
+@AfterClass<br/>
+public static void shutdownDb() throws IOException {<br/>
+    pg.close();<br/>
+}<br/>
+</pre>
+
+<h2>Embedded PostgreSQL Server</h2><br/>
+<p>除了 OpenTable Embedded PostgreSQL Component 外的另一个选择，首先 Maven 项目的话加上依赖</p>
+
+<pre class="lang:default decode:true">&lt;dependency&gt;<br/>
+    &lt;groupId&gt;ru.yandex.qatools.embed&lt;/groupId&gt;<br/>
+    &lt;artifactId&gt;postgresql-embedded&lt;/artifactId&gt;<br/>
+    &lt;version&gt;2.10&lt;/version&gt; &lt;!-- 当前版本 --&gt;<br/>
+&lt;/dependency&gt;</pre>
+
+<p>它没有提供相就的 @Rule, 需要用代码控制启停</p>
+
+<pre class="lang:default decode:true">private static EmbeddedPostgres postgres;<br/>
+<br/>
+@BeforeClass<br/>
+public static void initDb() throws Exception {<br/>
+    postgres = new EmbeddedPostgres(Version.V11_1/*, "/path/to/predefined/data/directory"*/);<br/>
+    String url = postgres.start();<br/>
+<br/>
+    Connection conn = DriverManager.getConnection(url);<br/>
+    //.....<br/>
+}<br/>
+<br/>
+@AfterClass<br/>
+public static void shutdonwDb() {<br/>
+    postgres.stop();<br/>
+}</pre>
+
+<p>启动时可以选择数据文件的目录或用默认的目录，由 <code>EmbeddedPostgres</code> 启动数据库后可获得  JDBC 连接字符串，不能直接得到数据源。它有多个 PostgreSQL 版本可选，9.5, 9.6, 10.6, 11.1 可选。它唯有一个长处是由 <code>EmbeddedPostgres</code> 可直捣 PostgreSQL 的数据库进程，从而进行某些 <code>postgres</code> 命令能进行的操作，见下图</p>
+
+<p><a href="https://yanbin.blog/wp-content/uploads/2019/06/postgresql-test-2.png"><img class="aligncenter wp-image-9422" src="https://yanbin.blog/wp-content/uploads/2019/06/postgresql-test-2-800x187.png" alt="" width="634" height="148" /></a></p>
+
+<p>也来窥探一下它的启停过程</p>
+
+<blockquote><br/>
+<p>Download Version{11.1-1}:OS_X:B64 START<br /><br/>
+Download Version{11.1-1}:OS_X:B64 DownloadSize: 242187339<br /><br/>
+Download Version{11.1-1}:OS_X:B64 0% 1% 2% 3% 4%............ 97% 98% 99% 100% Download Version{11.1-1}:OS_X:B64 downloaded with 3331kb/s<br /><br/>
+Download Version{11.1-1}:OS_X:B64 DONE<br /><br/>
+Extract /Users/yanbin/.embedpostgresql/postgresql-11.1-1-osx-binaries.zip START<br /><br/>
+........................................................................................Extract /Users/yanbin/.embedpostgresql/postgresql-11.1-1-osx-binaries.zip DONE<br /><br/>
+2019-06-04 03:52:43,645 INFO class=Executable thread=main event_description="start AbstractPostgresConfig{storage=Storage{dbDir=<strong>/var/folders/xz/vqv039517flcxtqzrq_jjy1xqzfzc0/T/postgresql-embed-821b4ee9-ccaa-45b1-a1b2-dfa6e0359869/db-content-0e69f370-ac09-4b33-be86-e3097670189f</strong>, dbName='postgres', isTmpDir=true}, network=Net{host='localhost', <strong>port=61845</strong>}, timeout=Timeout{startupTimeout=15000}, credentials=Credentials{username='postgres', password='postgres'}, args=[], additionalInitDbParams=[-E, SQL_ASCII, --locale=C, --lc-collate=C, --lc-ctype=C]}"<br /><br/>
+2019-06-04 03:52:44,516 INFO class=Executable thread=main event_description="start AbstractPostgresConfig{storage=Storage{dbDir=/var/folders/xz/vqv039517flcxtqzrq_jjy1xqzfzc0/T/postgresql-embed-821b4ee9-ccaa-45b1-a1b2-dfa6e0359869/db-content-0e69f370-ac09-4b33-be86-e3097670189f, dbName='postgres', isTmpDir=true}, network=Net{host='localhost', port=61845}, timeout=Timeout{startupTimeout=15000}, credentials=Credentials{username='postgres', password='postgres'}, args=[postgres], additionalInitDbParams=[]}"<br /><br/>
+2019-06-04 03:52:44,542 INFO class=Executable thread=main event_description="start AbstractPostgresConfig{storage=Storage{dbDir=/var/folders/xz/vqv039517flcxtqzrq_jjy1xqzfzc0/T/postgresql-embed-821b4ee9-ccaa-45b1-a1b2-dfa6e0359869/db-content-0e69f370-ac09-4b33-be86-e3097670189f, dbName='postgres', isTmpDir=true}, network=Net{host='localhost', port=61845}, timeout=Timeout{startupTimeout=15000}, credentials=Credentials{username='postgres', password='postgres'}, args=[], additionalInitDbParams=[-E, SQL_ASCII, --locale=C, --lc-collate=C, --lc-ctype=C]}"</p>
+
+<p>2019-06-04 03:52:44,664 INFO class=PostgresProcess thread=main event_description="trying to stop postgresql"<br /><br/>
+2019-06-04 03:52:44,741 INFO class=Executable thread=main event_description="start AbstractPostgresConfig{storage=Storage{dbDir=/var/folders/xz/vqv039517flcxtqzrq_jjy1xqzfzc0/T/postgresql-embed-821b4ee9-ccaa-45b1-a1b2-dfa6e0359869/db-content-0e69f370-ac09-4b33-be86-e3097670189f, dbName='postgres', isTmpDir=true}, network=Net{host='localhost', port=61845}, timeout=Timeout{startupTimeout=15000}, credentials=Credentials{username='postgres', password='postgres'}, args=[stop], additionalInitDbParams=[]}"</p>
+
+<p>2019-06-04 03:52:44,868 INFO class=ProcessControl thread=main event_description="execSuccess: false [kill, 67796]"</p>
+
+</blockquote>
+
+<p>第一次运行需要下载相应版本的 PostgreSQL 二进制包(240 多M)，临时目录 <code>~/.embedpostgresql/</code> 下有则无需下载，由以上日志也能看出实现原理与 OpenTable Embedded PostgreSQL Component 基本是一样的。</p>
+
+<h2>选择哪一个测试组件？</h2><br/>
+<p>以下是两个组件的对比</p>
+
+<p>OpenTable Embedded PostgreSQL</p>
+
+<ol>
+
+	<li>提供了多种初始化方式, @Rule, FlyWay, Liquibase</li>
+
+	<li>提供了多种数据连接方式，TCP/IP, 本地 Socket 等</li>
+
+	<li>直接获得数据源</li>
+
+	<li>当前 PostgreSQL 是 10.7, 二进制文件安装后总尺寸不到 100M</li>
+
+</ol>
+
+<p>Embedded PostgreSQL Server</p>
+
+<ol>
+
+	<li>只能手动启动，停止 PostgreSQL</li>
+
+	<li>只能直接获得 JDBC 连接字符串，自己创立连接或数据源</li>
+
+	<li>提供多个 PostgreSQL 版本的选择(意义可能不大)</li>
+
+	<li>下载的二进制安装文件很大，压缩包都有 PostgreSQL 11.1 -- 240 多M， PostgreSQL 10.6 -- 280 多M</li>
+
+</ol>
+
+<p>综上对比本人还是会选择 OpenTable Embedded PostgreSQL，再其次可能是 Testcontainers + PostgreSQL 模块。</p>
+
+<p>&nbsp;</p>

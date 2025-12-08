@@ -1,0 +1,83 @@
+---
+title: Spark 提交任务时 Invalid signature file digest 错误
+url: /spark-submit-invalid-signature-file-digest-error/
+date: 2017-11-21T00:07:07-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2017/11/spark-logo.png"
+categories:
+  - Spark
+tags: 
+  - Spark
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8377 
+wpStatus: publish
+views: 976
+lastmod: 2017-11-21T00:07:07-06:00
+---
+
+<p>第一次用  <code>spark-submit</code> 提交任务，是 Scala 的程序，命令格式是</p>
+
+<blockquote><br/>
+<p>spark-submit --class &lt;main-class&gt; --master local[*] --name "My first Spark Job" spark-test-fat-1.0-SNAPSHOT.jar</p>
+
+</blockquote>
+
+<p>结果报出错误</p>
+
+<blockquote><br/>
+<p>Exception in thread "main" java.lang.SecurityException: Invalid signature file digest for Manifest main attributes<br /><br/>
+ at sun.security.util.SignatureFileVerifier.processImpl(SignatureFileVerifier.java:330)<br /><br/>
+ at sun.security.util.SignatureFileVerifier.process(SignatureFileVerifier.java:263)<br /><br/>
+ at java.util.jar.JarVerifier.processEntry(JarVerifier.java:318)<br /><br/>
+ ......<br /><br/>
+ at org.apache.spark.deploy.SparkSubmit$.main(SparkSubmit.scala:119)<br /><br/>
+ at org.apache.spark.deploy.SparkSubmit.main(SparkSubmit.scala)</p>
+
+</blockquote>
+
+<p>Google 查了下，是需要把 jar 文件中的 <code>META-INF/*.RSA META-INF/*.DSA META-INF/*.SF</code> 文件清理掉。我们可以执行如下命令从现有的 jar 中除去</p>
+
+<blockquote><br/>
+<p>zip -d &lt;jar file name&gt;.jar META-INF/*.RSA META-INF/*.DSA META-INF/*.SF</p>
+
+</blockquote>
+
+<p>是因为 jar 包中包含有这些文件才造成提交 Spark 时验证文件签名摘要时失败。<!--more--></p>
+
+<p>由于我是采用 <code>maven-shade-plugin</code> 生成前面那个 fat(也就 uberjar) jar 包的，其实在配置这个构建插件的时候也可以不把 <code>META-INF/*.RSA META-INF/*.DSA META-INF/*.SF</code> 三种类型的文件包含在最终的 jar 包中。需要在生成 uberjar 时把它们排除掉，见下面的配置</p>
+
+<pre class="lang:default mark:15-22 decode:true ">&lt;plugin&gt;<br/>
+    &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;<br/>
+    &lt;artifactId&gt;maven-shade-plugin&lt;/artifactId&gt;<br/>
+    &lt;version&gt;3.0.0&lt;/version&gt;<br/>
+    &lt;executions&gt;<br/>
+        &lt;execution&gt;<br/>
+            &lt;phase&gt;package&lt;/phase&gt;<br/>
+            &lt;goals&gt;<br/>
+                &lt;goal&gt;shade&lt;/goal&gt;<br/>
+            &lt;/goals&gt;<br/>
+        &lt;/execution&gt;<br/>
+    &lt;/executions&gt;<br/>
+    &lt;configuration&gt;<br/>
+        &lt;filters&gt;<br/>
+            &lt;filter&gt;<br/>
+                &lt;artifact&gt;*:*&lt;/artifact&gt;<br/>
+                &lt;excludes&gt;<br/>
+                    &lt;exclude&gt;META-INF/*.SF&lt;/exclude&gt;<br/>
+                    &lt;exclude&gt;META-INF/*.DSA&lt;/exclude&gt;<br/>
+                    &lt;exclude&gt;META-INF/*.RSA&lt;/exclude&gt;<br/>
+                &lt;/excludes&gt;<br/>
+            &lt;/filter&gt;<br/>
+        &lt;/filters&gt;<br/>
+    &lt;/configuration&gt;<br/>
+&lt;/plugin&gt;</pre>
+
+<p>这样后，再执行 <code>mvn package</code> 生成的 uberjar 包就可以成功被 <code>spark-submit</code> 提交了。</p>
+
+<p>参考：<a href="https://gist.github.com/hkhamm/88923412992d284580ea">Solving a Spark Invalid signature file digest for Manifest main attributes error</a></p>

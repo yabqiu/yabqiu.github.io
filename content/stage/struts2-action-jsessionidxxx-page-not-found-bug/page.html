@@ -1,0 +1,69 @@
+---
+title: Struts2 action 的 ;jsessionid=xxx 使找不到页面 Bug 的解决
+url: /struts2-action-jsessionidxxx-page-not-found-bug/
+date: 2008-06-02T03:35:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/05/struts-logo.jpeg"
+categories:
+  - Struts
+tags: 
+  - Struts2
+  - jsessionid
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 385 
+wpStatus: publish
+views: 2085
+lastmod: 2020-03-22T11:46:45-05:00
+---
+
+在 Websphere Application Server(WAS，我用的还是 WAS 5.1，所以用的 Struts2 也是 j4 版，恐怕很难再找到像我这样在 JDK 1.4/Servlet 2.3/JSP 1.2 下用 Struts2 的了) 部署的第一个 Struts2 的应用没有出什么问题。可是在另一个 WAS 下部署的 Struts2 应用却有些问题(说明：Struts2 的版本都是 struts-2.0.11.1)，所有用了 &lt;s:url url=…/&gt; 或 &lt;s:form action=…/&gt; 来生成的 URL 都带了个 ;jsessionid=xxx，如：</p>
+<br/>
+&lt;script src="/unmi/js/sys_cal.js;jsessionid=0001bosAgxaO_kxlHCbjS1AMxTu:11mijgptm"&gt;<br/><br/>
+&lt;img src="/unmi/images/img_btn.gif;jsessionid=0001bosAgxaO_kxlHCbjS1AMxTu:11mijgptm"/&gt;<br/><br/>
+&lt;a href="/unmi/storeSubinvRelate!toUpdate.action;jsessionid=0001bosAgxaO_kxlHCbjS1AMxTu:11mijgptm?model.id=162"&gt;<!--more--><br/><br/>
+&lt;form action="storeSubinvRelate!search.action;jsessionid=0001bosAgxaO_kxlHCbjS1AMxTu:11mijgptm"&gt;<br />
+对于图片和Script 和链接倒不打紧，不影响显示和引用，但是对于form 那样的 action 属性，一提交就会出现 404 Not Found 的错误，找不到页面。<br/><br/>
+这是 Struts2 的一个 Bug，解决办法，可直接看<a href="#solution">解决办法</a>，中间是我解决问题的过程(乐在过程)，可不必浪费时间在这些文字上。<br/><br/>
+其实根据以往的经验，在 URL 后跟个 ;jsessionid 也不是很奇怪的，在客户端禁用了 cookie 时 Servlet 就会在 URL 后附加 ;jsessionid 来跟踪会话，有时候甚至会在因弹出窗口时丢失 Session 的情况下，手工在 URL 后加上 ;jsessionid 参数。<br/><br/>
+可现在放在 Struts2 的应用中却带来大麻烦了，像这种情况直接裁定应用不可用。很明显是 Struts2 的 FilterDispatcher 在处理这种请求 URL 时有些不知所措造成的。但为什么前一个 Struts2 应用没有问题呢？打开第一个 Struts2 应用的页面，用 &lt;s:url url=…/&gt;、&lt;s:form action=…/&gt; 标签生成的 URL 后很干净的，没让 ;jsessionid 上身。<br/><br/>
+哦，想起来了，应用服务器设置的不同，记得 WAS 下有一个是否启用 URL 重写的选项。第二个 Struts2 应用所在服务器的这个选项是启用的，Struts 的这两个标签发现启用了 URL 重写选项(还不知道 Struts2 哪来这么聪明)就会在它生成的 URL 后加上 ;jsessionid。<br/><br/>
+注意，此 URL 重写非彼 URL 重写，一般现在所说的 URL Rewrite 都是指静态地址映射到动态地址，如 /unmi/thread/1234.html 映射到 /unmi/thread.do?id=1234。这里的，也就是 WAS 里的 URL 重写如果启用了就意味着，如果客户端开启了 Cookie 就用 Cookie 中的 jsessionid 来跟踪会话，但要是禁用了 Cookie 的话，就会改写 URL，在原来的 URL 后附加 ;jsessionid 参数来跟踪会话。<br/><br/>
+但 Struts2 对这一选项的开启的反应有些过了头，它认为只有打开了 URL 重写，就保险起见把在它处理范围内的 URL 都加上 ;jsessionid 参数，本来一桩好事，可它偏不能好好收场，反误了事。<br/><br/>
+<a name="solution"></a><br />
+<br />
+说白了，也就是 Struts2 在 URL 的 ;jsessionid 问题上产生了 Bug。网上查了一下，Struts 也把这个 Bug 提出来了，见 <a href="https://issues.apache.org/struts/browse/WW-2328">https://issues.apache.org/struts/browse/WW-2328</a>。<br/><br/>
+所以对于上面问题的解决办法有二：<br/><br/>
+1. 关闭 WAS 的URL 重写的功能，URL 后就不会有 ;jsessionid 了。但这很难说会不会影响到其他的功能(我用的 WAS 的这个选项也不是我设置的)。但是对于其他应用服务器又该如何处理，在客户端禁用了 Cookie 时真要 ;jsessionid=xxx 时又该如何呢？所以推荐第二种方法。<br/><br/>
+2. 按照 <a href="https://issues.apache.org/struts/browse/WW-2328">https://issues.apache.org/struts/browse/WW-2328</a> 页面的指示，修正这一 Bug。需要修改两个源代码。<br />
+1) core/src/main/java/org/apache/struts2/dispatcher/mapper/DefaultActionMapper.java，在方法 getMapping() 方法中的 <br/><br/>
+<span style="color: #800080;">        ActionMapping mapping = new ActionMapping();<br />
+        String uri = getUri(request);</span><br/><br/>
+代码后加上以下两行：<br/><br/>
+<span style="color: #800080;">        int indexOfSemicolon = uri.indexOf(";");<br />
+        uri = (indexOfSemicolon &gt; -1) ? uri.substring(0, indexOfSemicolon) : uri;</span><br/><br/>
+2) core/src/main/java/org/apache/struts2/RequestUtils.java，在方法 getServletPath() 中的代码块<br/><br/>
+<span style="color: #800080;">        if (null != servletPath &amp;&amp; !"".equals(servletPath)) {<br />
+            return servletPath;<br />
+        }</span><br/><br/>
+的前面加上：<br/><br/>
+<span style="color: #800080;">        String requestUri = request.getRequestURI();<br />
+        // Detecting other characters that the servlet container cut off (like anything after ';')<br />
+        if (requestUri != null &amp;&amp; servletPath != null &amp;&amp; !requestUri.endsWith(servletPath)) {<br />
+            int pos = requestUri.indexOf(servletPath);<br />
+            if (pos &gt; -1) {<br />
+                servletPath = requestUri.substring(requestUri.indexOf(servletPath));<br />
+            }<br />
+        }</span><br/><br/>
+再去掉后面的：<br/><br/>
+        <span style="color: #800080;">String requestUri = request.getRequestURI();</span><br/><br/>
+OK，编译这两个类，把生成的所有 class 文件替换掉 struts2-core-2.0.x.x.jar 包中相应的 class 文件即可。<br/><br/>
+上面方法若表述不清，或做来麻烦的话，我也顺便提供了改好的源代码和编译好的 class 文件的打包下载：<a href="/Files/Unmi/Struts2jsessionidBug.rar">Struts2jsessionidBug.rar</a>。下载到直接拿出其中的 class 文件覆盖到你的 struts2-core-2.0.x.x.jar 相应目录中即可。<br/><br/>
+最后，如果还有功夫的话，也可以把 DefaultActionMapper.java 的测试代码 DefaultActionMapperTest.java 按照 <a href="https://issues.apache.org/struts/browse/WW-2328">https://issues.apache.org/struts/browse/WW-2328</a> 修正一下，这里就不累述了。<br/><br/>
+恰值前几天Struts-2.1.2 Beta 版悄无声息的发布了，想来应该修正了这个 Bug，看看 Struts-2.1.2 Beta 的源代码，果然。新版的 RequestUtils.java 就只是作了如上的修正，但 DefaultActionMapper 除此之外还添加了其他许多额外的代码。<br/><br/>
+因此，你解决这个 ;jsessionid 造成 404 Not Found问题还有一个办法就是升级到 Struts-2.1.2 版，但我一直对 Beta 这个字眼有点忌意，自己考虑吧，或是先过渡，再等相应的 Release 版出来也不迟。

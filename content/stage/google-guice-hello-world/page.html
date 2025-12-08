@@ -1,0 +1,63 @@
+---
+title: Google Guice 轻装上阵
+url: /google-guice-hello-world/
+date: 2016-04-26T23:24:48-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Guice
+  - DI
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7239 
+wpStatus: publish
+views: 607
+lastmod: 2016-04-27T01:13:29-05:00
+---
+
+<p>PlayFramework 已全面向 <a href="https://github.com/google/guice">Google Guice</a> 演进, 由于我们的项目是从 Play 2.0 开始搭建, 现虽已升级到了 2.4.6, 但对 Guice 的还没抱得那么的紧, 有点积重而慢步前挪. Google Guice 也是一个依赖注入(DI) 容器, 据说它比 Spring 快了很多很多, 是轻量级项目或框架首选, Google 出品俱是精品.</p><p>既然它是轻量级的 DI, 那么必须呈上一个最轻量级的入门, 官方的 <a href="https://github.com/google/guice/wiki/GettingStarted">Get Started</a> 文档其实啰嗦了点, 对于 BillingService 依赖的 CreditCardProcess, TransactionLog, 和 Receipt 都未有交待, 算不上一个完整项目. 所以我这里尽量简化, 又不偏离一个最简单的项目模型. 那就是下面那个例子, 它实现了在不同时间发出不同的问候.</p><p>项目需要依赖 Guice 及它的子依赖, 这得看你是用什么来管理依赖的, 依照 <a href="http://mvnrepository.com/artifact/com.google.inject/guice/4.0">http://mvnrepository.com/artifact/com.google.inject/guice/4.0</a> 根据实际情况加上依赖配置, 前面这个链接默认为 sbt 的, 我还真偏爱了 sbt, 若是 Maven 就配置 Maven 的 pom.xml 吧. Guice 的引入带上以下几个依赖包</p><blockquote><p>   +-com.google.inject:guice:4.0<br />     +-aopalliance:aopalliance:1.0<br />     +-com.google.guava:guava:16.0.1<br />     +-javax.inject:javax.inject:1</p></blockquote><p>Guice 目前是 4.0.<!--more--></p><p>然后在这个 Hello World 项目中有以下几个类</p><blockquote><p>├── Client.java<br />├── HelloModule.java<br />├── TimeWindow.java<br />├── Morning.java<br />└── HelloService.java</p></blockquote><p>它们的内容分别如下:</p><p><strong>TimeWindow.java</strong></p><pre class="brush:java">public interface TimeWindow {<br/>
+  String message();<br/>
+}</pre><p><strong>Morning.java</strong></p><pre class="brush:java">public class Morning  implements TimeWindow {<br/>
+<br/>
+  @Override<br/>
+  public String message() {<br/>
+    return "Morning";<br/>
+  }<br/>
+}</pre><p><strong>service/HelloService.java</strong></p><pre class="brush:java">import com.google.inject.Inject;<br/>
+<br/>
+public class HelloService {<br/>
+<br/>
+  private final TimeWindow timeWindow;<br/>
+<br/>
+  @Inject<br/>
+  public HelloService(TimeWindow timeWindow) {<br/>
+    this.timeWindow = timeWindow;<br/>
+  }<br/>
+<br/>
+  public String sayHello() {<br/>
+    return "Good " + timeWindow.message();<br/>
+  }<br/>
+}</pre><p><code>@Inject</code> 注明了这是一个注入依赖(初始化该实例的入口). 这里是通过构造函数来注入的, 也可以通过 setter 方法注入属性, 或直接注入属性.</p><p>好了, 脚手架已准备就位, 现在看怎么撮合上面那些类, 首先用来初始化 DI 容器的</p><p><strong>HelloModule.java</strong></p><pre class="brush:java">import com.google.inject.AbstractModule;<br/>
+<br/>
+public class HelloModule extends AbstractModule {<br/>
+<br/>
+  @Override<br/>
+  protected void configure() {<br/>
+    bind(TimeWindow.class).to(Morning.class);<br/>
+  }<br/>
+}</pre><p>粗略能明白上面的意图, 即要 TimeWindow 类型的地方给个 Morning 实例. 它是一个继承自 <code>AbstractModuel</code> 的类.</p><p>最后的最后就是运行起来</p><p><strong>Client.java</strong></p><pre class="brush:java">import com.google.inject.*;<br/>
+<br/>
+public class Client {<br/>
+<br/>
+  public static void main(String[] args) {<br/>
+    Injector injector = Guice.createInjector(new HelloModule());<br/>
+    HelloService helloService = injector.getInstance(HelloService.class);<br/>
+    System.out.println(helloService.sayHello());<br/>
+  }<br/>
+}</pre><p>三步, 1) 加载模块, 按照模块中的绑定关系来创建 Guice 容器, 即 <code>Injector</code>, <code>creteInjector()</code> 是一个可变参方法, 所以它可以同时加载多个模块; 2) 根据类型从容器中查找到想要的实例; 3) 使用它</p><p>执行上面的 <code>Client</code> 能打印出 <code>Good Morning</code>, 说明 HelloService 能顺利被初始化, 并且  <code>Morning</code> 也成功被注入到 HelloService. HelloService 的构造函数因为有 <code>@Inject</code> 注解, 所以也可由 Guice 构造出来, 这是自动的.</p><p>到此 Google Guice 的 Hello World 便全部完成, 基础框架如此, 剩下就是一些实用性的技巧了. 实际运用中势必要遇到各种问题, Hello World 只是个雏形, 离实际应用还远着呢, 所以碰到问题应该可以从官方的 <a href="https://github.com/google/guice/wiki/Motivation">user's guide</a> 找到答案.</p><p>不妨列出几个来备忘, 不作展开:</p><ol><li>用自定义标签和 @Named 指定属性绑定</li><li>直接绑定属性值, 这样就不用借助于接口去绑定实现</li><li>@Provides 标注的方或 Provider 实现类的返回值注入给相应的类型</li><li>in(Singleton.class)/@Singleton 标明是单例类, asEagerSingleton() 立即初始化类</li><li>指定构造方法来初始化实例</li><li>即时绑定, 这条很强大. 如果具体类有默认构造, 或非默认构造用 @Inject 标注了, 不写绑定, Guice 的  injector.getInstance(AnyClass.class) 就能为你提供实例</li><li>@ImplementedBy,  @ProvideBy 为类型指定具体实现类或提供者</li><li>等等......</li></ol><p>&nbsp;</p>

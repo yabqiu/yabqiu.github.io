@@ -1,0 +1,63 @@
+---
+title: PHP 中回调函数是全局的或是类实例时不同写法
+url: /php-callback-function-deference/
+date: 2010-08-19T07:00:31-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PHP
+tags: 
+  - wordpress
+  - php
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 1157 
+wpStatus: publish
+views: 997
+lastmod: 2021-09-03T11:01:50-05:00
+---
+
+PHP 像 JavaScript 一样，很方便使用回调函数，函数名就像一个普通的变量名一样可作为其他函数的参数，即成为一个让宿主函数调用的回调函数。但回调函数的用法依据回调函数是否是全局函数还是一个类中的函数是有区别的。比如 PHP 的preg_replace_callback — 用回调函数执行正则表达式的搜索和替换函数可以接受一个回调函数，我们来看这种区别。</p>
+<br/>
+如果是全局的回调函数，那容易，只要写上函数名作为字符串的形式传入就行的，看：<br/><br/>
+<pre class="brush:php">/**@author Unmi*/
+function inverse($matches) {
+    return $matches[2].":".$matches[1];
+}<br/><br/>
+$text = preg_replace_callback ("/(\d{7}):(.+)/", 'inverse' , '1125535:fantasia@sina.com');
+echo $text;    //Output result: fantasia@sina.com:1125535</pre>
+<br/>
+而如果 preg_replace_callback 函数是在类成员函数中被调用，同时 inverse 回调函数也是该类的成员函数，写法就不一样了。要是仍然写成下面这种方式的话：<!--more--><br/><br/>
+<pre class="lang:default decode:true ">/**@author Unmi*/
+class ReplaceClass{
+    function inverse($matches) {
+        return $matches[2].':'.$matches[1];
+    }<br/><br/>
+    function replace($src_str){
+        $text = preg_replace_callback ("/(.+?):(.+)/", 'inverse', $src_str);
+        return $text;
+    }
+}<br/><br/>
+$rc = new ReplaceClass();
+echo $rc-&gt;replace('Unmi:fantasia@sina.com');</pre>
+<br/>
+你将会被提示：Warning: preg_replace_callback(): Requires argument 2, 'inverse', to be a valid callback，也就是找不到类里的这个 inverse() 方法，除非在类外部有一个全局的 inverse() 方法。但总是存在把回调函数写到类里的必要性的，这时候必须清楚的指明这个回调函数是属于哪个类或是实例的。<br/><br/>
+PHP 像 C++  一样的方式指写类成员函数，如果给 ReplaceClass 类的 inverse() 函数加个 static 关键字，是否能用<br/><br/>
+$text = preg_replace_callback("/(.+?):(.+)/", 'ReplaceClass::inverse', $src_str) 呢？没错，确实可以这样写，就是要注意此时的回调函数一定要有 static 修饰，是个静态函数(方法)。当然 inverse 也可是其他类的成员函数，那么就是 'AnotherClass::inverse'，此时 inverse 必须是非 private 的。<br/><br/>
+除此之外，还可以用另外一种办法，就是在 'inverse' 参数位置上代之以数组，数组的第一个元素指明回调函数从哪里来，第二个元素指定回调函数名。可使用的两种形式是：<br/><br/>
+<pre class="lang:default decode:true ">//第一种写法
+$text = preg_replace_callback ("/(.+?):(.+)/", array($this,'inverse'), $src_str);<br/><br/>
+//第二种写法,如果 inverse 函数是声明在 InverseHome 类中的
+$inverse_home = new InverseHome();
+$text = preg_replace_callback ("/(.+?):(.+)/", array($inverse_home,'inverse'), $src_str);<br/><br/>
+//第三种写法
+$text = preg_replace_callback ("/(.+?):(.+)/", array('ReplaceClass','inverse'), $src_str);</pre>
+<br/>
+可能蒙其他较为规范的面向对象语方的影响，你会认为第一、二种写法时，inverse() 函数必须非静态的，作为实例成员；而第二种用法时，inverse() 函数必须是静态的，是一个类成员。可是套用到这里就有些牵强，实际上 PHP 对 inverse() 函数是否为静态没有任何要求的。只是要受到 inverse() 函数是否为 private 的限制，如果 inverse() 函数是 private 的，第二、三种写法是不合法的。<br/><br/>
+理解了上面的回调函数所处位置的用法要求时，如果在 WordPress 的源代码看到下面这样的代码时:<br/><br/>
+add_action('init', array($custom_url_rewriter,'redirect'), 1);<br/><br/>
+就不会觉得奇怪了，这里的回调函数是定义在实例 $custom_url_rewriter 所在类中，且是非 private 的。

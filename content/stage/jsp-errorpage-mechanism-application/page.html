@@ -1,0 +1,106 @@
+---
+title: JSP 的 errorPage 指令异常转向错误页的实现机制及应用
+url: /jsp-errorpage-mechanism-application/
+date: 2008-05-16T11:42:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - JSP
+  - ErrorPage
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 395 
+wpStatus: publish
+views: 884
+lastmod: 2021-09-04T09:37:38-05:00
+---
+
+如有 index.jsp 页，当出现后服务器端异异常时要转向到 errorPage.jsp，并在 errorPage.jsp 中把对应错误信息显示出来。我们需要在这两个页面分别加上指令 <span style="color: #800080;">errorPage="errorPage.jsp"</span> 和 <span style="color: #800080;">isErrorPage="true"</span>。</p>
+<br/>
+<strong>index.jsp</strong><br/><br/>
+<pre class="lang:default decode:true">&lt;%@page errorPage="errorPage.jsp" %&gt;<br/><br/>
+&lt;%
+    throw new Exception("exception from jsp");
+%&gt;</pre>
+<br/>
+<strong><!--more-->errorPage.jsp</strong><br/><br/>
+<pre class="lang:default decode:true">&lt;%@page isErrorPage="true" %&gt;
+&lt;%
+    out.println(exception);<br/><br/>
+    //根据 Exception 类型及描述显示可理解的信息
+%&gt;</pre>
+<br/>
+errorPage.jsp 中必须加上 <span style="color: #800080;">isErrorPage="true"</span> 指令，才会存在内置变量 <span style="color: #800080;">exception</span>。直接访问 errorPage.jsp 没有异常时，<span style="color: #800080;">exception</span> 为 null。<br/><br/>
+浏览器中用 URL <a href="http://localhost:8080/test/index.jsp">http://localhost:8080/test/index.jsp</a> 访问，页面输出<br/><br/>
+<span style="color: #000000;">java.lang.Exception: exception from index.jsp.</span><br/><br/>
+那实现机制是什么呢？仍在常见的 Tomcat 容器中运行结果来分析<br/><br/>
+查看 Tomcat 编译出的 <span style="color: #800080;">index_jsp.java</span> 进而追溯到(代码片断)<br/><br/>
+<span style="color: #800080;">org.apache.jasper.runtime.PageContextImpl.doHandlePageException(Throwable t)() </span><span style="color: #000000;">中的部分代码</span><br/><br/>
+<pre class="lang:default decode:true ">request.setAttribute("javax.servlet.jsp.jspException", t);
+request.setAttribute("javax.servlet.error.request_uri",
+        ((HttpServletRequest) request).getRequestURI());
+forward(errorPageURL);<br/><br/>
+Object newException = request.getAttribute("javax.servlet.error.exception");<br/><br/>
+// t==null means the attribute was not set.
+if( (newException!= null) &amp;&amp; (newException==t) ) {
+     request.removeAttribute("javax.servlet.error.exception");
+}<br/><br/>
+request.removeAttribute("javax.servlet.error.exception");
+request.removeAttribute("javax.servlet.jsp.jspException");</pre>
+<br/>
+同样要翻看 Tomcat 编译出的 <span style="color: #800080;">errorPage_jsp.java</span> 可看到(代码片断)<br/><br/>
+<span style="color: #800080;">Throwable exception = org.apache.jasper.runtime.JspRuntimeLibrary.getThrowable(request); </span><span style="color: #000000;">// JSP 中</span><br/><br/>
+<span style="color: #800080;">org.apache.jasper.runtime.JspRuntimeLibrary.getThrowable(request)</span> 中的部分代码<br/><br/>
+<pre class="brush:java">Throwable error = (Throwable) request.getAttribute(SERVLET_EXCEPTION);
+if (error == null) {
+    error = (Throwable) request.getAttribute(JSP_EXCEPTION);
+if (error != null) {
+    request.setAttribute(SERVLET_EXCEPTION, error);</pre>
+<br/>
+最终都是以 <span style="color: #800080;">SERVLET_EXCEPTION</span> 把异常设置到 request 中<br/><br/>
+在 <span style="color: #800080;">JspRuntimeLibrary</span> 定义了这两个常量字符串<br/><br/>
+<span style="color: #800080;">private static final String SERVLET_EXCEPTION = "javax.servlet.error.exception";<br />
+private static final String JSP_EXCEPTION = "javax.servlet.jsp.jspException";</span><br/><br/>
+如果要在自己的代码中，如 Servlet、Filter、Struts 的 RequestProcessor 或 Struts Action 中出现异常也能转向到 errorPage.jsp，并能复用原来的 errorPage.jsp 中显示错误信息的代码，该如何应用上面的分析成果呢？<br/><br/>
+下面以 Struts Action 为例来说明，应用于其他地方可借鉴。为什么用了 Struts 却不用 Struts 提供的异常处理模型呢？也是无奈的，维护的旧系统，框上了 Struts，其他各处只能慢慢来换。<br/><br/>
+只要在 Struts Action 中的 <span style="color: #800080;">execute()</span> 方法中写上<br/><br/>
+<pre class="brush:java ">Throwable t = new Exception("exception from Struts Action.");
+request.setAttribute("javax.servlet.error.jspException", t);<br/><br/>
+//或者在 struts-config.xml 中配置一个全局错误页
+return new ActionForward("/errorPage.jsp");</pre>
+<br/>
+进一步深入你可以自定义一个 Struts 的异常处理类来做这个事情。<br />
+这时候还需要自已在 errorPage.jsp 的最后一行加上 java 代码：<br/><br/>
+<span style="color: #800080;">request.removeAttribute("javax.servlet.error.exception");</span><br/><br/>
+去除 request 中的异常属性，不然没法用 errorPage.jsp 显示错误，而代之为的是那个常见的<br/><br/>
+HTTP Status 500 -<br/><br/>
+description The server encountered an internal error () that prevented it from fulfilling this request.<br/><br/>
+这时候浏览器中通过 URL <a href="http://localhost:8080/test/test.do">http://localhost:8080/test/test.do</a> 访问，页面输出<br/><br/>
+java.lang.Exception: exception from Struts Action.<br/><br/>
+最后尝试把这个项目发布到 Websphere Application Server (WAS) 5.1 下，访问 <a href="http://localhost:9080/test/test.do">http://localhost:9080/test/test.do</a>，页面输出 null，没取到异常！<br/><br/>
+没什么好办法，还是反编译 WAS 生成的 JSP 代码中，发现到　WAS 5.1 的 PageContext 的实现类也是 <span style="color: #800080;">org.apache.jasper.runtime.PageContextImpl</span>，在 <span style="color: #800080;">WAS_HOME/lib/webcontainer.jar</span> 包中。在这个 PageContextImpl 类中也是设置<br/><br/>
+<span style="color: #800080;">request.setAttribute("javax.servlet.jsp.jspException", t);</span><br/><br/>
+但是WAS 5.1 下 errorPage.jsp 直接通过 request 来取异常：<br/><br/>
+<span style="color: #800080;">throwable = (Throwable)httpservletrequest.getAttribute("javax.servlet.jsp.jspException");</span><br/><br/>
+不再理会 request 中的 <span style="color: #800080;">javax.servlet.error.exception</span> 属性值的。<br/><br/>
+因此只要注意一点，在 Tomcat 中，Action 里既可以设置<br/><br/>
+<span style="color: #800080;">request.setAttribute("javax.servlet.error.exception", t);</span><br/><br/>
+也可以是<br/><br/>
+<span style="color: #800080;">request.setAttribute("javax.servlet.jsp.jspException", t);</span><br/><br/>
+当然在 WAS 5.1 下的 errorPage.jsp 中就不需要<br/><br/>
+<span style="color: #800080;">request.removeAttribute("javax.servlet.error.exception");</span><br/><br/>
+那要不要用<br/><br/>
+<span style="color: #800080;">request.removeAttribute("javax.servlet.jsp.jspException");</span><br/><br/>
+移除 request 中的 <span style="color: #800080;">javax.servlet.jsp.jspException</span> 属性呢？也用不着啦。<br/><br/>
+Tomcat 下和 WAS 下的 jsp 页面的主要差别是在它们的基类不同，Tomcat 下的 JSP 页是继承自 <span style="color: #800080;">org.apache.jasper.runtime.HttpJspBase</span>，而 WAS 5.1 下的 JSP 页是继承自 <span style="color: #800080;">com.ibm.ws.webcontainer.jsp.runtime.HttpJspBase</span>。<br />
+考虑在能兼容两种平台的做法应该是，在 Action 中统一用<br/><br/>
+<span style="color: #800080;">request.setAttribute("javax.servlet.jsp.jspException", t);</span><br/><br/>
+设置异常，然后在 errorPage.jsp 补上一行<br/><br/>
+<span style="color: #800080;">request.removeAttribute("javax.servlet.error.exception");</span><br/><br/>
+就 OK 啦。

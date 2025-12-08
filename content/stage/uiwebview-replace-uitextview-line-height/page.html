@@ -1,0 +1,62 @@
+---
+title: 有时候可用 UIWebView 代替 UITextView，解决行间距问题
+url: /uiwebview-replace-uitextview-line-height/
+date: 2011-12-10T09:13:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - ios
+  - WebView
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4083 
+wpStatus: publish
+views: 5594
+lastmod: 2021-09-03T15:37:36-05:00
+---
+
+我们在使用 UILabel 或是 UITextView 时，如果文字出现了换行，目前我还不知道如何去控制行间距，固定的 Label 文字 可以折成两个 Label 上下显示，但是对应大段显示的段落要多行显示时该如何呢，多行单独控制就变得不现实了。</p>
+<br/>
+由于 UILabel 或 UITextView 并不提供对行间距 line-height 的设置，要达成所愿指定行间距的方法，我可以想到三种方式：<br/><br/>
+1. 自定义相应的控件，在控件内部方法中去做文章，未实践，可能是个好方法<br />
+2. 修改字体，由于默认行间距是由字体本身特性决定的，所以可以修改字体来满足有限的需求，不是很现实<br />
+3. 用    UIWebView 来代替 UITextView，这是本文的思想<br/><br/>
+先看个图片，看看在使用某些字体时失控的行间距是什么样的效果：<!--more--><br/><br/>
+<img class="aligncenter" src="/wp-content/uploads/2011/12/textview_webview.png" alt="UIWebView replace UITextView" width="667" height="235" /><br />
+说明：上图左边是用 UITextView 来显示一段文字，由于行间距不可控，不是我们想要的。右边就是用 UIWebView 来显示的同一段文它，它的行间距我们可以随意控制。<br/><br/>
+思才过程是这样的，对于 UITextView 多行文字显示时行间距不能直接用代码来设置，特别是对于某些字体来说行间距确有些夸张。然后首先想到的解决方式是创建自己的 UITextView 子类，重新实现某些方法，似乎不那么容易。<br/><br/>
+进而也不能不研究，这默认的行间距内部是由什么控制着的，是字体，看用 FontCreator 打开的一个字体文件中的字符：<br/><br/>
+<img class="alignleft" style="margin-left: 10px; margin-right: 20px;" src="/wp-content/uploads/2011/12/font_property.png" alt="fontcreator font line height" width="270" height="303" />看字体的 WinAscent, WinDescent 在上下决定了字符上下间的距离了，所以你当然可以修改字体文件的属性了，存成新的字体文件，那如果一个应用中会有多种行间距的话那就痛苦了，且不说中文字体文件都不算小的。<br/><br/>
+再就是想到 Web 中的 CSS   对字体什么想怎么就怎么，所以想到用 UIWebView 来代替 UITextView，而且 iOS 下的 Safari 对 HTML5 也支持的不错，那就尝试吧，不过首先得解决下面几个问题：<br/><br/>
+1. 可以使用本地字体，因为自己的应用中可能会加入自定义的字体，不仅仅是用系统字体，HTML5 可以支持服务器端字体，用 @font-face<br/><br/>
+2. 像 UITextView 那样背景要能透明化，HTML5 支持 rgba 附加 Alpha 通道来指定颜色，且可设置 opacity, transparent 样式<br/><br/>
+下面贴下我的解决办法及步骤，如果在设置样式上还有新方法，可继续发掘。<br/><br/>
+第一步：引入自定义字体，一个 ttf 文件<br/><br/>
+把你的字体文件添加到项目中去，然后在项目的 Target 的 Info 标签页中，添加到 Fonts provided by application 属性中，如图：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter" src="/wp-content/uploads/2011/12/iOS_use_custom_font.png" alt="Xcode use custom font" width="630" height="237" /></p>
+<br/>
+在 Fonts provided by application 中添加一项 Item 0，并指定字体文件，可添加多个，每个字体文件的 Font-Family 名称你应要知道。<br/><br/>
+第二步：添加 UIWebView，并对 WebView 应用如下代码：<br/><br/>
+<pre class="lang:default decode:true ">//下面两行协助 UIWebView 背景透明化，这两属性可以在 xib 中进行设置
+webview.backgroundColor = [UIColor clearColor];  //但是这个属性必须用代码设置，光 xib 设置不行
+webview.opaque = NO;<br/><br/>
+//这行能在模拟器下明下加快 loadHTMLString 后显示的速度，其实在真机上没有下句也感觉不到加载过程
+webview.dataDetectorTypes = UIDataDetectorTypeNone;<br/><br/>
+//下面的 backgroud-color:transparent 结合最前面的两行代码指定的属性就真正使得 WebView 的背景透明了
+//而后的 font:16px/18px 就是设置字体大小为 16px, 行间距为 18px，也可用  line-height: 18px 单独设置行间距
+//最后的 Custom-Font-Name 就是前面在项目中加上的字体文件所对应的字体名称了
+NSString *webviewText = @"&lt;style&gt;body{margin:0;background-color:transparent;font:16px/18px Custom-Font-Name}&lt;/style&gt;";
+NSString *htmlString = [webviewText stringByAppendingFormat:@"%@", textview.text];
+[webview loadHTMLString:htmlString baseURL:nil]; //在 WebView 中显示本地的字符串</pre>
+<br/>
+执行之后显示的就是第一个图中的效果了。<span style="color: #800000;">有可能出现在 iOS4 下背景未能透明化的问题，是可能，我有碰到过，也许哪里设置的问题。</span><br/><br/>
+<strong>注意，很重要的一点，上面 iOS4 下背景可能不透明的情况是因为：虽然可以在 xib 中对 UIWebView 设置它的 backgroundColor 为 clearColor，但是 Xcode 似乎不怎么认账，所以必须在代码中用 webview.backgroundColor = [UIColor clearColor]; 设置 UIWebView 的背景才成，opaque 在 xib 还是在代码中设置都行。</strong><br/><br/>
+另外，也可以用  background-color: rgba(0,0,0,0) 样式，最后一个 0 表示 Alpha 值，即完全透明，甚至是用 background-color:hsla(120,50%,50%,0) 也是可行的。<br/><br/>
+对于 UIWebView 来说，你能够应用 HTML5 很多特性，所以不要求有很规范的 HTML 格式，像无需写成 &lt;html&gt;&lt;head&gt;....... 那样。<br/><br/>
+尝试了用 @font-face 来使用自定义字体，未能成功，再就是对 UIWebView 的用户交互及滚动条风格调一调，可让它更像是个 UITextView，完全的代替 UITextView 来显示一段文字某些地方有可能仍需作微调。

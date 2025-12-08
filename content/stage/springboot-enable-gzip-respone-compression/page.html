@@ -1,0 +1,177 @@
+---
+title: SpringBoot 启用 GZIP 对响应进行压缩
+url: /springboot-enable-gzip-respone-compression/
+date: 2022-08-30T09:52:57-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - http
+  - gzip
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12714 
+wpStatus: publish
+views: 2512
+lastmod: 2022-08-30T09:54:17-05:00
+---
+
+SpringBoot Web 应用默认是不启用响应数据的压缩，对大的文本类型的响应数据进行压缩是十分必要的，如 JSON, XML 等应用数据，甚至是 JS, CSS 等。<br/><br/>
+早先的 Web 应用基本是要配置一个叫做 <code>GzipFilter</code> 之类的东西，然后判断请求的 <code>Accept-Encoding</code> 是否含有 <code>gzip</code>, 再对需要的 <code>Content-Type</code> 响应类型的数据进行压缩。<br/><br/>
+在使用了 SpringBoot 之后，在碰到有压缩响应的需求的时候，第一件事情应该要想到是否能通过在 <code>application.properties</code>(或 application.yml) 配置就行。于是查阅 SpringBoot 2.7.x 的帮助文档 <a href="https://docs.spring.io/spring-boot/docs/2.7.x/reference/htmlsingle/">Spring Boot Reference Document</a>, 搜索关键字 <code>compression</code>，翻几页就能找到 17.3.6. <a href="https://docs.spring.io/spring-boot/docs/2.7.x/reference/htmlsingle/#howto.webserver.enable-response-compression">Enable HTTP Response Compression</a>, 介绍了三个配置项<!--more--><br/><br/>
+<ol>
+    <li>server.compression.enable=true            (默认为 false, 不启用压缩)</li>
+    <li>server.compression.min-response-size=2048  (默认至少 2K 字节以及以上大小的响应数据才被压缩, 要在网络带宽与 CPU 消耗上找到一个平衡)</li>
+    <li>server.compression.mim-types=text/html,text/xml,text/plain,text/css,text/javascript,application/json,application/xml (默认压缩的响应类型)</li>
+</ol>
+<br/>
+再往下找到 <a href="https://docs.spring.io/spring-boot/docs/2.7.x/reference/htmlsingle/#appendix.application-properties.server">.A.11.Server Properties</a>, 还有一个相关的选项<br/><br/>
+<ul>
+    <li>server.compression.exclude-user-agents=  (默认为空，逗号分隔的 user-agent, 针对什么 user-agent 不启用压缩，可能给测试用的)</li>
+</ul><br/><br/>
+如果是 SpringBoot 1.2.x 的话，启用压缩的方法是不一样的，详情同样是参考官方的文档 <a href="https://docs.spring.io/spring-boot/docs/1.2.x/reference/htmlsingle/#how-to-enable-http-response-compression">64.18 Enable HTTP response compression</a><br/><br/>
+这里我们再回到当前的 SpringBoot 2.7.x 版本，其实只要是 SpringBoot 1.3+ 的版本，唯一要做的就是配置<br/><br/>
+<blockquote>
+<span style="font-size: 18pt;">server.compression.enable=true</span>
+</blockquote>
+<br/>
+其他三个选项根据基本满足我们的日常要求了，或者按需稍加调节。<br/><br/>
+下面进行一些实战烟训，默认未配置 server.compression.enable 时，即默认为 false, 不启用响应压缩，写一个 controller 方法<br/><br/>
+<pre class="lang:default decode:true">@GetMapping(value = "/hello")
+public String hello(@RequestParam int length) {
+    return StringUtils.repeat("0", length);
+}</pre>
+<br/>
+curl 测试<br/><br/>
+<blockquote>
+bash-3.2$ curl -I http://localhost:8080/hello?length=2047<br />
+HTTP/1.1 200<br />
+Content-Type: text/plain;charset=UTF-8<br />
+Content-Length: 2047<br />
+Date: Tue, 30 Aug 2022 03:01:53 GMT
+bash-3.2$ curl -I http://localhost:8080/hello?length=2048<br />
+HTTP/1.1 200<br />
+Content-Type: text/plain;charset=UTF-8<br />
+Content-Length: 2048<br />
+Date: Tue, 30 Aug 2022 03:01:56 GMT
+bash-3.2$ curl -I -H "Accept-Encoding:gzip" http://localhost:8080/hello?length=2049<br />
+HTTP/1.1 200<br />
+Content-Type: text/plain;charset=UTF-8<br />
+Content-Length: 2049<br />
+Date: Tue, 30 Aug 2022 03:02:20 GMT
+</blockquote>
+<br/>
+怎么都不会对响应进行压缩，现在我们在 <code>application.properties</code> 中加上<br/><br/>
+<pre class="lang:default decode:true">server.compression.enabled = true</pre>
+<br/>
+重新测试<br/><br/>
+<blockquote>
+bash-3.2$ curl -I -H "Accept-Encoding:gzip" http://localhost:8080/hello?length=2047<br />
+HTTP/1.1 200<br />
+Content-Type: text/plain;charset=UTF-8<br />
+Content-Length: 2047<br />
+Date: Tue, 30 Aug 2022 13:22:14 GMT
+bash-3.2$ curl -I http://localhost:8080/hello?length=2048<br />
+HTTP/1.1 200<br />
+vary: accept-encoding<br />
+Content-Type: text/plain;charset=UTF-8<br />
+Content-Length: 2048<br />
+Date: Tue, 30 Aug 2022 13:22:16 GMT
+bash-3.2$ curl -I -H "Accept-Encoding:gzip" http://localhost:8080/hello?length=2048<br />
+HTTP/1.1 200<br />
+vary: accept-encoding<br />
+Content-Encoding: gzip<br />
+Content-Type: text/plain;charset=UTF-8<br />
+Transfer-Encoding: chunked<br />
+Date: Tue, 30 Aug 2022 13:22:18 GMT
+</blockquote>
+<br/>
+响应长度为 2048 及以上会采用压缩，并且这时不管有没有 <code>Accept-Encoding:gzip</code> 都会加上 <code>vary: accept-encoding</code> 用以区分不同的响应数据，像 Varnish 就要考虑 Accept-Encoding 作为 Key 的一部分缓存是否压缩的数据。<br/><br/>
+<h3>关于 server.compression.mime-types</h3><br/><br/>
+前面提过它的默认值是 text/html,text/xml,text/plain,text/css,text/javascript,application/json,application/xml, 即只对这些 Content-Type 类型的数据进行压缩，不该压缩的类型注意不要重复压缩，如 image/jpg, application/octet-stream 等.<br/><br/>
+text/plain 对 <code>Content-Type:text/plain;charset=UTF-8</code> 同样是适用的<br/><br/>
+不支持通配符配置，如不能用 text/* 来涵盖所有以 text/ 开头的类型，像 test/html, test/xml, text/plain 等。必须一个个罗列出来<br/><br/>
+server.compression.mime-types 中的配置是区分大小写的，如<br/><br/>
+<pre class="lang:default decode:true">server.compression.mime-types=TEXT/PLAIN</pre>
+<br/>
+对 Content-Type:text/plain 是不启作用的<br/><br/>
+<blockquote>
+bash-3.2$ curl -I -H "Accept-Encoding:gzip" http://localhost:8080/hello?length=2049<br />
+HTTP/1.1 200<br />
+Content-Type: text/plain;charset=UTF-8<br />
+Content-Length: 2049<br />
+Date: Tue, 30 Aug 2022 14:20:21 GMT
+</blockquote>
+<br/>
+如果我们把 API 的 Content-Type 也设置为 <code>TEXT/PLAIN</code> 就能被压缩了<br/><br/>
+<pre class="lang:default decode:true ">@GetMapping(value = "/hello")
+public ResponseEntity&lt;String&gt; hello(HttpServletResponse response, @RequestParam int length) {
+    MultiValueMap&lt;String, String&gt; headers = new LinkedMultiValueMap&lt;&gt;();
+    headers.add("Content-Type", "TEXT/PLAIN");
+    return new ResponseEntity&lt;&gt;(StringUtils.repeat("0", length), headers,  HttpStatus.OK);
+}
+</pre>
+<br/>
+<blockquote>
+bash-3.2$ curl -I -H "Accept-Encoding:gzip" http://localhost:8080/hello?length=2049<br />
+HTTP/1.1 200<br />
+vary: accept-encoding<br />
+Content-Encoding: gzip<br />
+Content-Type: TEXT/PLAIN<br />
+Transfer-Encoding: chunked<br />
+Date: Tue, 30 Aug 2022 14:22:20 GMT
+</blockquote>
+<br/>
+注意在 Spring Web controller 方法中，对于标准的 Content-Type 是无法通过 @GetMapping 注解的 produces 和 HttpServletResponse 来改变的<br/><br/>
+<pre class="lang:default decode:true">@GetMapping(value = "/hello", produces = "TEXT/PLAIN")
+public String hello(HttpServletResponse response, @RequestParam int length) {
+    response.setHeader("Content-Type", "TEXT/PLAIN");
+    return StringUtils.repeat("0", length);
+}
+</pre>
+<br/>
+以上代码最终的 <code>Content-Type</code> 仍然为 <code>text/plain;charset=UTF-8</code><br/><br/>
+<h3>其他相关的内容</h3><br/><br/>
+SpringBoot 1.2.2 - &lt;1.3 之间启用压缩的配置<br/><br/>
+<pre class="lang:default decode:true ">server.tomcat.compression=on
+server.tomcat.compressableMimeTypes=application/json,application/xml,text/html,text/xml,text/plain,application/javascript,text/css</pre>
+<br/>
+SpringBoot 1.2.2 之前，在使用 Tomcat 作为内嵌应用服务器时，通过  TomcatConnectorCustomizer<br/><br/>
+<pre class="lang:default decode:true ">@Component
+public class TomcatCustomizer implements TomcatConnectorCustomizer {<br/><br/>
+  @Override
+  public void customize(Connector connector) {
+    connector.setProperty("compression", "on");
+    // Add json and xml mime types, as they're not in the mimetype list by default
+    connector.setProperty("compressableMimeType", "text/html,text/xml,text/plain,application/json,application/xml");
+  }
+}</pre>
+<br/>
+Tomcat 本身可配置 server.xml 中的 connector 自动实现对响应数据的压缩，在 Apache Tomcat 10 Configuration Reference - <a href="https://tomcat.apache.org/tomcat-10.0-doc/config/http.html">The HTTP Connector</a> 一章中查找 <code>compression</code> 就能找到下面这几个属性<br/><br/>
+<ul>
+    <li>compression: off|on|force (默认为 off)</li>
+    <li>compressibleMimeType: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json,application/xml</li>
+    <li>compressionMinSize: 2048</li>
+    <li>noCompressionUserAgents: 默认为空，可使用正则表达式</li>
+</ul><br/><br/>
+HTTP/2 connector 也继承了以上几个属性配置<br/><br/>
+<h3>Apache HTTP Server 的压缩模块</h3><br/><br/>
+如果部署时在应用服务器(如  Tomcat) 前端配置了 Apache HTTP Server 的话，可以由 Apache 完成对数据的压缩，要使用到的模块是 <code>mod_defalte</code><br/><br/>
+比如在 Debian 系的 OS 中 a2enmod deflate, 或在 httpd.conf 中用 <code>LoadModule deflate_module modules/mod_deflate.so</code> 启用。然后在 http.conf 或是应用的 .htaccess 文件中<br/><br/>
+<pre class="lang:default decode:true ">AddOutputFilterByType DEFLATE text/plain
+AddOutputFilterByType DEFLATE text/html
+......</pre>
+<br/>
+逐项加入要支持压缩的响应类型<br/><br/>
+具体使用方式请参照 <a href="https://httpd.apache.org/docs/2.4/mod/mod_deflate.html">Apache Module mod_deflate</a> 的文档。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://stackoverflow.com/questions/21410317/using-gzip-compression-with-spring-boot-mvc-javaconfig-with-restful">Using GZIP compression with Spring Boot/MVC/JavaConfig with RESTful</a></li>
+    <li><a href="https://www.modb.pro/db/221157">Tomcat中的compression压缩属性</a></li>
+</ol>

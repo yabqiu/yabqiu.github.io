@@ -1,0 +1,97 @@
+---
+title: Struts2 使用 xslt 结果类型如何把字符串直接作为 Document 内容
+url: /struts2-xsltresult-string-to-document/
+date: 2011-04-10T05:58:39-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Struts
+tags: 
+  - xslt
+  - Struts2
+  - Struts
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3419 
+wpStatus: publish
+views: 732
+lastmod: 2021-09-03T13:21:50-05:00
+---
+
+在上一篇: <a href="http://unmi.cc/struts2-xsltresult-details" target="_blank" rel="noopener">Struts2 使用 XSLTResult 输出页面内容详解</a> 中说到了，如果在 Action 中送给 xstl 的是一个字符串，例如 String user = "&lt;user&gt;&lt;name&gt;Unmi&lt;/name&gt;&lt;/user&gt;"，那么 xslt result 输出的将是:</p>
+<br/>
+&lt;result&gt;<br />
+&amp;lt;user&amp;gt;&amp;lt;name&amp;gt;Unmi&amp;lt;/name&amp;gt;&amp;lt;/user&amp;gt;<br />
+&lt;/result&gt;<br/><br/>
+而不我们期望的<br/><br/>
+&lt;user&gt;<br />
+&lt;name&gt;Unmi&lt;/name&gt;<br />
+&lt;/user&gt;<br/><br/>
+那么怎么才能做到这一点呢？在 XSLTResult 有 adapterFactory 以及相应的 setter/getter 方法，但它们是 protected，所以也无法定制自己的 AdapterFactory 来判断是字符串就作为 Document 的内容。<!--more--><br/><br/>
+我们再看 <a href="http://oss.org.cn/ossdocs/framework/struts/2.0.0/core-apidocs/org/apache/struts2/views/xslt/AdapterFactory.html" target="_blank" rel="noopener">org.apache.struts2.views.xslt.AdapterFactory</a> 的 API，里面说可以定义一个自己的 Adapter，然后调用 AdapterFactory 的 registerAdapterType(Class type, Class adapterType)  方法来注册，但问题是这是个实例方法，如何去调用，而且每次页页请求时，XSLTResult 的 AdapterFactory 都是不同的实例，更是无从定位。<br/><br/>
+其实 Struts2 为 XSLTResult 准备了几个 Adapter，见图：<br/><br/>
+<img class="alignleft" style="margin-left: 3px; margin-right: 3px; border: 1px solid rgba(160, 1, 0, 0);" src="/wp-content/uploads/2011/04/struts2-xslt-adapter.png" alt="struts2 xslt adapter" width="235" height="340" /> 9 个，看看它们的源代码就能明白，为什么我们的 Map 会输出为 &lt;key&gt;..&lt;value&gt;，List 和数组会是一个个的 &lt;item&gt;。<br/><br/>
+根据什么数据类型分别应用哪一个 Adapter 是在 AdapterFactory 的 adaptNode() 方法中决定的。<br/><br/>
+先说明一下这个方法:<br/><br/>
+1. 如果在 adapterTypes 为该类型注册过了 adapter，则直接取用。问题仍然是 registerAdapterType() 怎么去调用。<br/><br/>
+2.  如果是 org.w3c.dom.Document，则取它的根据节点。Document 继承自 Node<br/><br/>
+3.  如果本身是个 org.w3c.dom.Node 的话，代理一下，也就是判断下节点类型，可能要外加一个根节点给它。<br/><br/>
+4. 类型是数组、集合、Map 则应用相应的 Adapter<br/><br/>
+5. 如果类型是 String、Number、Boolean 或是原始类型，则应用 StringAdpter<br/><br/>
+6. 余下情况则视为 Bean，应用 BeanAdapter<br/><br/>
+每种类型的 Adapter 最后是通过调用默认构造方法或 Class.newInstance() 方法实例化出来的，而且是多例的。<br/><br/>
+<pre class="lang:default decode:true">public Node adaptNode(AdapterNode parent, String propertyName, Object value) {
+    Class adapterClass = getAdapterForValue(value);
+    if (adapterClass != null)
+        return constructAdapterInstance(adapterClass, parent, propertyName, value);<br/><br/>
+    // If the property is a Document, "unwrap" it to the root element
+    if (value instanceof Document)
+        value = ((Document) value).getDocumentElement();<br/><br/>
+    // If the property is already a Node, proxy it
+    if (value instanceof Node)
+        return proxyNode(parent, (Node) value);<br/><br/>
+    // Check other supported types or default to generic JavaBean introspecting adapter
+    Class valueType = value.getClass();<br/><br/>
+    if (valueType.isArray())
+        adapterClass = ArrayAdapter.class;
+    else if (value instanceof String || value instanceof Number || value instanceof Boolean || valueType.isPrimitive())
+        adapterClass = StringAdapter.class;
+    else if (value instanceof Collection)
+        adapterClass = CollectionAdapter.class;
+    else if (value instanceof Map)
+        adapterClass = MapAdapter.class;
+    else
+        adapterClass = BeanAdapter.class;<br/><br/>
+    return constructAdapterInstance(adapterClass, parent, propertyName, value);
+}</pre>
+<br/>
+上面很明白的告诉我们 Struts2 有一个 StringAdapter 来处理我们送给 xslt 的字符串内容，那它应该是个突破口。来见识一下 <a href="http://oss.org.cn/ossdocs/framework/struts/2.0.0/core-apidocs/org/apache/struts2/views/xslt/StringAdapter.html#StringAdapter(org.apache.struts2.views.xslt.AdapterFactory, org.apache.struts2.views.xslt.AdapterNode, java.lang.String, java.lang.String)" target="_blank" rel="noopener">org.apache.struts2.views.xslt.StringAdapter</a>, 关键是 buildChildAdapters() 方法：<br/><br/>
+<pre class="lang:default decode:true">protected List&lt;Node&gt; buildChildAdapters() {
+    Node node;
+    if (getParseStringAsXML()) {
+        log.debug("parsing string as xml: " + getStringValue());
+        // Parse the String to a DOM, then proxy that as our child
+        node = DomHelper.parse(new InputSource(new StringReader(getStringValue())));
+        node = getAdapterFactory().proxyNode(this, node);
+    } else {
+        log.debug("using string as is: " + getStringValue());
+        // Create a Text node as our child
+        node = new SimpleTextNode(getAdapterFactory(), this, "text", getStringValue());
+    }<br/><br/>
+    List&lt;Node&gt; children = new ArrayList&lt;Node&gt;();
+    children.add(node);
+    return children;
+}</pre>
+<br/>
+说是它有一个 parseStringAsXML 属性(有相应的 getter/setter 方法)，如果为 true 将会把你的字符串直接转换为 Document 的内容，否则作为一个文本节点。欣喜！这不正是我们想要的吗？赶紧，把这个 parseStringAsXML 属性设置为 true 问题就解决了。我也想啊，可以怎么设置啊，怎么去调用它的 setParseStringAsXML() 方法，也没办通过在 Struts2 的配置文件中去设置它。<br/><br/>
+看似能通的路又遇到险阻了，除非改写这个 StringAdapter，把它的 parseStringAsXML 默认为 true，作为 StringAdapter.class 放在 classes 目录中优先加载，想要它能在不同的 xslt Result 中可单独配置都不容易做到。<br/><br/>
+要不还是在把 String 送往 xslt 之前主动转换成 org.w3c.dom.Document 类型，用下面的代码：<br/><br/>
+<pre class="lang:default decode:true ">DocumentBuilder builder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+Document doc = builder.parse(new InputSource(new StringReader(YOUR_STRING));</pre>
+<br/>
+地球都自转了一圈去找解决办法，痛苦却再次回到了原点。<br/><br/>
+再次思考下，最好的办法应该还是自定义自己的 XSLTResult 类，继承自 org.apache.struts2.views.xslt.XSLTResult，注册成新的 customXslt 结果类型。由它暴露出 parseStringAsXML 属性，在 execute() 方法中调用 AdapterFactory 的 registerAdapterType() 方法注册自己新的 CustomStringAdapter(StringAdapter 也得重写)。最后 parseStringAsXML 要经由 XSLTResult -&gt; AdapterFactory -&gt; CustomStringAdapter 的默认构造函数来注入了。这仍然是需要些小技巧的。

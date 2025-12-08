@@ -1,0 +1,54 @@
+---
+title: JDK 8 的 Lambda 表达式 -- 写法
+url: /jdk-8-lambda-2-expression/
+date: 2013-10-12T11:00:53-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - jdk8
+  - lambda
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5739 
+wpStatus: publish
+views: 610
+lastmod: 2021-05-05T16:12:52-05:00
+---
+
+过去，我们使用匿名类的实现像  ActionListener 这样的接口，即使最简单的情景都需要写上五六行代码，这就显得有些累赘了。因为其实我们在 new ActionListener {} 时就是在创建一个 ActionListener 子类型，重载了方法，并初始化一个实例出来。现在我们手上有了 Lambda 表达式这一武器的话，就变得简单明了了，所以说  Lambda 是一种轻量级的实现机制。</p>
+<br/>
+这里是几个 Lambda 表达式的样子：<br/><br/>
+<pre class="lang:default decode:true">(int x, int y) -&gt; x + y    //两整形参数，返回它们的和
+() -&gt; 42                   //无参数，直接返回 42
+x -&gt; 100;                  //可推断出参数 x 的类型
+(String s) -&gt; { System.out.println(s); } //传入一个字符，只执行一个操作，无返回值</pre>
+<br/>
+Lambda 的格式就是三部分：参数列表，-&gt; 分隔符，执行体。其他语方的 Lambda 格式都这样的，可能就是分隔符不一样，如 Ruby 的 |，Scala 的 =&gt; 等。<br/><br/>
+执行体里的 return 只是标明返回到匿名方法的调用者，不是返回值的意思； 最上层是不能用 break 和 continue 关键字的，可用在循环中； 如果 Lambda 表达式有返回值，那么在每一条路径上都要有返回值或是抛出异常。路径上最后一条语句的返回值即为 Lambda 表达的返回值。<!--more--><br/><br/>
+Lambda 尽力的保持最简洁，如果执行体中有多行的代码用大括号括起来，下面是一些 Lambda 表达式的完整例子：<br/><br/>
+<pre class="lang:default decode:true">FileFilter java = (File f) -&gt; f.getName().endsWith(".java");<br/><br/>
+String user = doPrivileged(() -&gt; System.getProperty("user.name"));<br/><br/>
+new Thread(() -&gt; {
+    connectToService();
+    sendNotification();
+}).start();</pre>
+<br/>
+说到这里，应该都知道怎么去写 Lambda 表达式了。Lambda 旨在简化功能性接口(即 SAM 单一抽象方法的接口)的实现，稍具体一点就是干了原来匿名类的事情。再次重复一次，只有功能性接口才能运用于 Lambda 表达式中。官方的文档说到此仍然未交代如果用 Lambda 来实现 ActionListener 应该如何写，只要一行：<br/><br/>
+<pre class="lang:default decode:true">button.addActionListener((ActionEvent e) -&gt; ui.dazzle(e.getModifiers()));</pre>
+<br/>
+该是深入的时候了。我们来分析一下，button.addActionListener() 方法是要接收一个 ActionListener 实例，也就是说这里的 <span style="color: #800000;">(ActionEvent e) -&gt; ui.dazzle(e.getModifiers())</span> 就是一个 ActionListener 实例。 ActionListener 接口定义是<br/><br/>
+<pre class="lang:default decode:true ">public interface ActionListener extends EventListener {
+    public void actionPerformed(ActionEvent e);
+}</pre>
+<br/>
+它就是一个功能性接口(只有一个抽象方法的接口)，所以编译器会让我们的 Lambda 表达式 <span style="color: #800000;">(ActionEvent e) -&gt; ui.dazzle(e.getModifiers())</span> 明确的映射为对那个唯一方法 <span style="color: #800000;">public void actionPerformed(ActionEvent e)</span> 的实现，注意它们的参数和返回值必须是完全一致的。如果那个 SAM 是无参数的，就写成 () -&gt; /* do something */。<br/><br/>
+最能说明问题的也唯有看看分别使用匿名类和 Lambda (匿名方法) 时所产生的字节码，本想在本篇中说明下 Lambda 实现的原理，但会使得此文主题太多，所以另开新篇，这里不妨继续说些 Lambda 其他些事情。<br/><br/>
+又一个话题，Lambda 对本地变量的访问。我们知道在匿名类中只能访问 final 类型的本地变量，而在 Lambda 表达式中则可以捕获所有的本地变量。可以理解为 Lambda 表达式没有引入新的作用域，但这样理解恐怕有时候也无好处。<br/><br/>
+同样的，匿名类中的 this 指向匿名类实例，而 Lambda 表达式中的 this 仍然是指向使用它的实例。说实在的，JavaScript 中的 this 更容易把人搞晕了头。<br/><br/>
+小结：进一步明白 Lambda 只能应用在功能性接口的 SAM(Single Abstract Method) 上，并且要理解 Lambda 表达式的每一部分，包括参数列表，返回值是怎么与 SAM 方法签名相对应的。下一篇打算继续深化 Lambda 表达式的类型推断，也是进一步加强 SAM 与 Lambda 之间的映射。

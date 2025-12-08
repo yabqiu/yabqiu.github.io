@@ -1,0 +1,536 @@
+---
+title: Java 的方法签名与字段类型表示-[Ljava.lang.String;
+url: /java-signatures-data-types/
+date: 2011-01-10T11:19:39-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - JVM
+tags: 
+  - Java
+  - JVM
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3040 
+wpStatus: publish
+views: 8916
+lastmod: 2011-01-10T11:21:44-06:00
+---
+
+我们什么时候会接触到 Java 的方法签名呢？在进行 JNI 调用时，还有在看方法重载时。重载的方法是有不同的方法签名的，而是不区分返回值，而实际方法签名还揉入了返回值类型的，还有就是 javap -s 查看方法签名时，如 javap -s java.util.Date。<br/>
+<br/>
+看来方法签名与我们实际工作的关系还真的不大。倒是有次遇着了，事出于 Struts2 应用中提交表单时报出了下面的错误：<br/>
+<br/>
+00:43:59.716 [http-8080-4] WARN  com.opensymphony.xwork2.ognl.OgnlValueStack - Error setting expression 'version' with value <span style="color: #993300;">'[Ljava.lang.String;@e18a9a'<br/>
+</span>ognl.MethodFailedException: Method "<span style="color: #993300;">setVersion</span>" failed for object <a href="mailto:cc.unmi.model.Post@ed0cd7">cc.unmi.model.Post@ed0cd7</a><br/>
+ at ognl.OgnlRuntime.callAppropriateMethod(OgnlRuntime.java:1285) ~[ognl-3.0.jar:na]<br/>
+ at ognl.OgnlRuntime.setMethodValue(OgnlRuntime.java:1474) ~[ognl-3.0.jar:na]<br/>
+ at ognl.ObjectPropertyAccessor.setPossibleProperty(ObjectPropertyAccessor.java:85<!--more-->) ~[ognl-3.0.jar:na]<br/>
+ at ognl.ObjectPropertyAccessor.setProperty(ObjectPropertyAccessor.java:162) ~[ognl-3.0.jar:na]<br/>
+ at com.opensymphony.xwork2.ognl.accessor.ObjectAccessor.setProperty(ObjectAccessor.java:27) ~[xwork-core-2.2.1.jar:2.2.1]<br/>
+ at ognl.OgnlRuntime.setProperty(OgnlRuntime.java:2245) ~[ognl-3.0.jar:na]<br/>
+ at com.opensymphony.xwork2.ognl.accessor.CompoundRootAccessor.setProperty(CompoundRootAccessor.java:77) ~[xwork-core-2.2.1.jar:2.2.1]<br/>
+ at ognl.OgnlRuntime.setProperty(OgnlRuntime.java:2245) ~[ognl-3.0.jar:na]<br/>
+ at ognl.ASTProperty.setValueBody(ASTProperty.java:127) ~[ognl-3.0.jar:na]<br/>
+ at ognl.SimpleNode.evaluateSetValueBody(SimpleNode.java:220) ~[ognl-3.0.jar:na]<br/>
+ at ognl.SimpleNode.setValue(SimpleNode.java:301) ~[ognl-3.0.jar:na]<br/>
+ at ognl.Ognl.setValue(Ognl.java:737) ~[ognl-3.0.jar:na]<br/>
+ at com.opensymphony.xwork2.ognl.OgnlUtil.setValue(OgnlUtil.java:209) ~[xwork-core-2.2.1.jar:2.2.1]<br/>
+ at com.opensymphony.xwork2.ognl.OgnlValueStack.trySetValue(OgnlValueStack.java:173) [xwork-core-2.2.1.jar:2.2.1]<br/>
+<br/>
+...........................................................<br/>
+<br/>
+ at org.apache.coyote.http11.Http11Protocol$Http11ConnectionHandler.process(Http11Protocol.java:583) [tomcat-coyote.jar:na]<br/>
+ at org.apache.tomcat.util.net.JIoEndpoint$Worker.run(JIoEndpoint.java:454) [tomcat-coyote.jar:na]<br/>
+ at java.lang.Thread.run(Thread.java:619) [na:1.6.0_20]<br/>
+<span style="color: #993300;">Caused by: java.lang.NoSuchMethodException: cc.unmi.model.Post.setVersion([Ljava.lang.String;)<br/>
+</span> at ognl.OgnlRuntime.callAppropriateMethod(OgnlRuntime.java:1226) ~[ognl-3.0.jar:na]<br/>
+ ... 111 common frames omitted<br/>
+<br/>
+缺少 setVersion() 方法，看看 Post.java 中确实有啊。注意啦，看那参数是  [Ljava.lang.String;，要是不明白 [L 的用意的话，就很难明白是说不存在 setVersion(String[] args) 方法的。Lxxx; 用来表示对象类型，[ 用来表示数组的。<br/>
+<br/>
+具体原因是请求中有两个 version 参数，可能是表单中两个，也可能是 url 中一个，表单中也一个；就是用 request.getParameterValue("version") 返回一个数组。其实对于 HttpServletRequest 来说，无论提交的是一个 version 还是多个 version 值，用 request.getParameter("version") 总是取到第一个提交的 version 值，所以这在 struts1 似乎不会出类似的错误。一个或是多个 version 影响的总是 getParameterValue("version") 是否为 null。<br/>
+<br/>
+解决办法是只留下一个 version 请求参数，这个问题警示了我们要去 JVM 中的数据类型表示法有一定的嗅觉。<br/>
+<br/>
+下出列出一下 Java 的类型与虚拟机中的表示法：<br/>
+<br/>
+<strong>字节码助记符的前缀</strong><br/>
+<table border="1">
+
+<tbody>
+
+<tr>
+
+<td>类型</td>
+
+<td>代码</td>
+
+<td>示例</td>
+
+<td>描述</td>
+
+</tr>
+
+<tr>
+
+<td>byte</td>
+
+<td>b</td>
+
+<td>baload</td>
+
+<td>从数组装载 byte 类型</td>
+
+</tr>
+
+<tr>
+
+<td>short</td>
+
+<td>s</td>
+
+<td>sastore</td>
+
+<td>将 short 类型存入数组中</td>
+
+</tr>
+
+<tr>
+
+<td>int</td>
+
+<td>i</td>
+
+<td>iload_1</td>
+
+<td>从局部变量 1 中装载 int 类型</td>
+
+</tr>
+
+<tr>
+
+<td>long</td>
+
+<td>l</td>
+
+<td>lcmp</td>
+
+<td>比较 long 类型值</td>
+
+</tr>
+
+<tr>
+
+<td>char</td>
+
+<td>c</td>
+
+<td>i2c</td>
+
+<td>把 int 类型数据转换为 char 类型</td>
+
+</tr>
+
+<tr>
+
+<td>float</td>
+
+<td>f</td>
+
+<td>fload</td>
+
+<td>从局部变量中装载 float 类型</td>
+
+</tr>
+
+<tr>
+
+<td>double</td>
+
+<td>d</td>
+
+<td>dconst_1</td>
+
+<td>将 double 类型常量 1.0 压入栈</td>
+
+</tr>
+
+<tr>
+
+<td>reference</td>
+
+<td>a</td>
+
+<td>aaload</td>
+
+<td>从数组装载引用类型</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<strong>Java 虚拟机中的保存类型和计算类型</strong><br/>
+<table border="1">
+
+<tbody>
+
+<tr>
+
+<td>保存类型</td>
+
+<td>堆或者方法区中的最小比特数</td>
+
+<td>计算类型</td>
+
+<td>Java 栈帧中的字长</td>
+
+</tr>
+
+<tr>
+
+<td>byte</td>
+
+<td>8</td>
+
+<td>int</td>
+
+<td>1</td>
+
+</tr>
+
+<tr>
+
+<td>short</td>
+
+<td>16</td>
+
+<td>int</td>
+
+<td>1</td>
+
+</tr>
+
+<tr>
+
+<td>int</td>
+
+<td>32</td>
+
+<td>int</td>
+
+<td>1</td>
+
+</tr>
+
+<tr>
+
+<td>long</td>
+
+<td>64</td>
+
+<td>long</td>
+
+<td>2</td>
+
+</tr>
+
+<tr>
+
+<td>char</td>
+
+<td>16</td>
+
+<td>int</td>
+
+<td>1</td>
+
+</tr>
+
+<tr>
+
+<td>float</td>
+
+<td>32</td>
+
+<td>float</td>
+
+<td>1</td>
+
+</tr>
+
+<tr>
+
+<td>double</td>
+
+<td>64</td>
+
+<td>double</td>
+
+<td>2</td>
+
+</tr>
+
+<tr>
+
+<td>reference</td>
+
+<td>32</td>
+
+<td>reference</td>
+
+<td>1</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<strong>基本类型终结符</strong>(这个与方法签名就比较亲近了)<br/>
+<table border="1">
+
+<tbody>
+
+<tr>
+
+<td>终结符</td>
+
+<td>类型</td>
+
+</tr>
+
+<tr>
+
+<td>B</td>
+
+<td>byte</td>
+
+</tr>
+
+<tr>
+
+<td>C</td>
+
+<td>char</td>
+
+</tr>
+
+<tr>
+
+<td>D</td>
+
+<td>double</td>
+
+</tr>
+
+<tr>
+
+<td>F</td>
+
+<td>float</td>
+
+</tr>
+
+<tr>
+
+<td>I</td>
+
+<td>int</td>
+
+</tr>
+
+<tr>
+
+<td>J</td>
+
+<td>long</td>
+
+</tr>
+
+<tr>
+
+<td>S</td>
+
+<td>short</td>
+
+</tr>
+
+<tr>
+
+<td>Z</td>
+
+<td>boolean</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+boolean 的终结符不为 B 是让 byte 占用了，long 的终结符不是 L 也是因为让对象终结符占用了。返回值为 void 类型的终结符是 V，对象类型终结符为 L 和 ;，数组类型终结符 [<br/>
+<br/>
+<strong>字段描述符示例</strong><br/>
+<table border="1">
+
+<tbody>
+
+<tr>
+
+<td>描述符</td>
+
+<td>字段声明</td>
+
+</tr>
+
+<tr>
+
+<td>I</td>
+
+<td>int i</td>
+
+</tr>
+
+<tr>
+
+<td>[[J</td>
+
+<td>long[][] windingRoad</td>
+
+</tr>
+
+<tr>
+
+<td>[Ljava/lang/Object;</td>
+
+<td>Object[] stuff</td>
+
+</tr>
+
+<tr>
+
+<td>Ljava/util.Hashtable;</td>
+
+<td>java.util.Hashtable ht</td>
+
+</tr>
+
+<tr>
+
+<td>[[[Z</td>
+
+<td>boolean[][][] isReady</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<strong>方法描述符示例</strong><br/>
+<table border="1">
+
+<tbody>
+
+<tr>
+
+<td>描述符</td>
+
+<td>方法声明</td>
+
+</tr>
+
+<tr>
+
+<td>()I</td>
+
+<td>int getSize()</td>
+
+</tr>
+
+<tr>
+
+<td>()Ljava/lang/String;</td>
+
+<td>String toString()</td>
+
+</tr>
+
+<tr>
+
+<td>([Ljava/lang/String;)V</td>
+
+<td>void main(String[] args)</td>
+
+</tr>
+
+<tr>
+
+<td>()V</td>
+
+<td>void wait()</td>
+
+</tr>
+
+<tr>
+
+<td>(JI)V</td>
+
+<td>void wait(long timeout, int nanos)</td>
+
+</tr>
+
+<tr>
+
+<td>(Z[Ljava/lang/String;II)Z</td>
+
+<td>boolean regionMatches(boolean ignoreCase, int toOffset, String other, in oooffset, int len</td>
+
+</tr>
+
+<tr>
+
+<td>([BII)I</td>
+
+<td>int read(byte[] b, int off, int len)</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+执行一下 javap -s java.util.Date 来看看 java.util.Date 的所有方法签名，下面列出一个片断：<br/>
+<br/>
+<span style="color: #ffffff;"><span style="background-color: #000000;">C:\Documents and Settings\Administrator&gt;javap -s java.util.Date<br/>
+Compiled from "Date.java"<br/>
+public class java.util.Date extends java.lang.Object implements java............<br/>
+public java.util.Date();<br/>
+  Signature: ()V<br/>
+public java.util.Date(long);<br/>
+  Signature: (J)V<br/>
+public java.util.Date(int, int, int);<br/>
+  Signature: (III)V<br/>
+public java.util.Date(int, int, int, int, int);<br/>
+  Signature: (IIIII)V<br/>
+public java.util.Date(int, int, int, int, int, int);<br/>
+  Signature: (IIIIII)V<br/>
+public java.util.Date(java.lang.String);<br/>
+  Signature: (Ljava/lang/String;)V<br/>
+public java.lang.Object clone();<br/>
+  Signature: ()Ljava/lang/Object;<br/>
+public static long UTC(int, int, int, int, int, int);<br/>
+  Signature: (IIIIII)J<br/>
+public static long parse(java.lang.String);<br/>
+  Signature: (Ljava/lang/String;)J<br/>
+public int getYear();</span></span><br/>
+<br/>
+<span style="color: #ffffff;"><span style="background-color: #000000;">.....................................</span></span><br/>
+<br/>
+<span style="color: #ffffff;"><span style="background-color: #ffffff;"><span style="color: #000000;">表格中的数据来自 《深入 Java 虚拟机》</span></span></span>

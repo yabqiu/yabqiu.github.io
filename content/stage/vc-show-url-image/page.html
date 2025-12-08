@@ -1,0 +1,95 @@
+---
+title: VC窗口(控件)中显示指定 URL 对应图片
+url: /vc-show-url-image/
+date: 2007-12-01T21:04:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2006/05/cpp-logo.png"
+categories:
+  - C++/VB
+tags: 
+  - VC
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 463 
+wpStatus: publish
+views: 450
+lastmod: 2021-09-02T21:09:36-05:00
+---
+
+在上篇 <a href="http://unmi.cc/vc-ipicture-show-picture/">VC 中用 IPicture 在窗口中显示图片文件</a> 讲到的是 VC 窗口(或控件)中显示本地图片文件，本文延伸这一话题，来演示如何显示网上的图片，即提供图片的 HTTP URL 地址，把它显示到 VC 的界面中来。<br/><br/>
+本文参考我原来写的一篇日志 <a href="http://unmi.cc/vc-cinternetsession-catch-web-page/">VC中使用CInternetSession抓取网页内容</a> 来修改上篇代码中用来显示图片的函数：HRESULT ShowPic(<span class="datatypes">char</span> *lpstrFile,<span class="datatypes">HWND</span> hWnd)。把研究过的东西整理记下来总是好处多多，瞧，至少现在展开其他话题，可参考时便能信手拈来。<br />
+<br />
+重新实现的函数 HRESULT ShowPic(<span class="datatypes">char</span> *lpstrFile,<span class="datatypes">HWND</span> hWnd) 代码如下：<!--more--><br/><br/>
+<pre class="lang:default decode:true">// 显示图片, lpstrImgUrl 为图片URL地址，hWnd 为窗口句柄
+HRESULT Utils::ShowPic(char *lpstrImgUrl,HWND hWnd)
+{
+    HDC hDC_Temp=GetDC(hWnd);    <br/><br/>
+    IPicture *pPic;
+    IStream *pStm;    <br/><br/>
+    BOOL bResult;    <br/><br/>
+    DWORD dwFileSize,dwByteRead;    <br/><br/>
+    //读取网页上图片文件，实际是个CHttpFile指针
+    CInternetSession session("HttpClient");
+    CFile* httpFile = (CFile*)session.OpenURL(lpstrImgUrl);<br/><br/>
+    if (httpFile!=INVALID_HANDLE_VALUE)
+    {
+        dwFileSize=  httpFile-&gt;GetLength();//获取文件字节数    <br/><br/>
+        if (dwFileSize==0xFFFFFFFF)
+            return E_FAIL;
+    }
+    else
+    {
+        return E_FAIL;
+    }    <br/><br/>
+    //分配全局存储空间
+    HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, dwFileSize);
+    LPVOID pvData = NULL;    <br/><br/>
+    if (hGlobal == NULL)
+        return E_FAIL;    <br/><br/>
+    if ((pvData = GlobalLock(hGlobal)) == NULL)//锁定分配内存块
+        return E_FAIL;    <br/><br/>
+    //把文件读入内存缓冲区
+    dwByteRead = httpFile-&gt;Read(pvData,dwFileSize);<br/><br/>
+    GlobalUnlock(hGlobal);    <br/><br/>
+    CreateStreamOnHGlobal(hGlobal, TRUE, &amp;pStm);    <br/><br/>
+    //装入图形文件
+    bResult=OleLoadPicture(pStm,dwFileSize,TRUE,IID_IPicture,(LPVOID*)&amp;pPic);    <br/><br/>
+    if(FAILED(bResult))
+        return E_FAIL;    <br/><br/>
+    OLE_XSIZE_HIMETRIC hmWidth; //图片的真实宽度, 单位为英寸
+    OLE_YSIZE_HIMETRIC hmHeight; //图片的真实高度, 单位为英寸
+    pPic-&gt;get_Width(&amp;hmWidth);
+    pPic-&gt;get_Height(&amp;hmHeight);    <br/><br/>
+    //转换hmWidth和hmHeight为pixels距离，1英寸=25.4毫米
+    int nWidth = MulDiv(hmWidth,GetDeviceCaps(hDC_Temp,LOGPIXELSX),2540);
+    int nHeight = MulDiv(hmHeight,GetDeviceCaps(hDC_Temp,LOGPIXELSY),2540);   <br/><br/>
+    //将图形输出到屏幕上（有点像BitBlt）
+    bResult=pPic-&gt;Render(hDC_Temp,0,0,nWidth,nHeight,
+        0,hmHeight,hmWidth,-hmHeight,NULL);    <br/><br/>
+    pPic-&gt;Release();    <br/><br/>
+    httpFile-&gt;Close();//关闭打开的文件    <br/><br/>
+    if (SUCCEEDED(bResult))
+    {
+        return S_OK;
+    }
+    else
+    {
+        return E_FAIL;
+    }
+}</pre>
+<br/>
+代码说明：与上篇 <a href="http://unmi.cc/vc-ipicture-show-picture/">VC 中用 IPicture 在窗口中显示图片文件</a> 中函数HRESULT ShowPic(<span class="datatypes">char</span> *lpstrFile,<span class="datatypes">HWND</span> hWnd) 的比较<br />
+<br />
+1. 参数 lpstrFile 改为了 lpstrImgUrl，切合实际，这里是传入的一个网上图片的 URL 地址<br />
+2. 得到文件的句柄不是通过 CreateFile 函数，而是改为了用 CInternetSession 网络读取，得到的是一个 httpFile<br />
+    CInternetSession session("HttpClient");  <br />
+    CFile* httpFile = (CFile*)session.OpenURL(lpstrImgUrl);<br />
+3. 获取文件的大小方式有变，GetFileSize() 改为用 CFile 的 GetLength()<br />
+4. 把文件读入缓冲区的方式也变了，不使用 Windows API 函数 ReadFile()，而是直接调用 CFile 的 Read()函数。<br/><br/>
+其余都一样的。把这个函数替换上一篇的同名函数，给它传递图片的 URL，将会在窗口中显示出对应图片来，尚不支持 GIF 动画，只显示第一帧，完整代码不在此列出，朋友们根据实际实现自己的需求。<br/><br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

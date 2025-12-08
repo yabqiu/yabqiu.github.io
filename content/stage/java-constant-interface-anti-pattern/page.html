@@ -1,0 +1,46 @@
+---
+title: Java 接口常量反模式及如何定义 Java 常量
+url: /java-constant-interface-anti-pattern/
+date: 2015-07-13T16:13:46-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - Constant
+  - 模式
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6970 
+wpStatus: publish
+views: 1293
+lastmod: 2015-07-14T02:11:29-05:00
+---
+
+<p>初学 Java 的人很不经意间就会把常量定义在接口中，大概唯一的理由是接口不能实例化，而使用接口中定义的常量也是不用附着在实例上的。这主要还是 JDK 本身给我们做了很多这样的榜样, 如  <a href="http://docs.oracle.com/javase/7/docs/api/java/io/ObjectStreamConstants.html" target="_blank">java.io.ObjectStreamConstans</a>，多是出现在 Enum 类型到来之前。</p><p>其实 Java 的接口常量是一种反模式，理由如下：</p><p>1. 接口是不能阻止被实现或继承的，也就是说子接口或实现中是能够覆盖掉常量的定义(重名)，这样通过父，子接口(或实现) 去引用常量是可能不一致的<br />2. 同样的，由于被实现或继承，造成在继承树中可以用大量的接口, 类 或实例去引用 同一个常量，从而造成接口中定义的常量污染了命名空间。(Java 编译器竟然允许使用实例去引用类变量)<br />3. 接口暗含的意思是：它是需被实现的，代表着一种类型，它的公有成员是要被暴露的 API。而在接口中定义的常量说不上是 API</p><p>4. 这点有些重复，Java 允许通过子类去引用父类中定义的常量，各级对像实例去引用父类的常量，所以这会造成相当的混乱不堪。定义的常量不能保证单一的引用方式。</p><p>参见： <a href="http://blog.csdn.net/hosterzhu/article/details/9833665" target="_blank">Effective java 第 19 条: 接口只用于定义类型</a></p><p>既然接口中不适于定义常量，那么该在何处为常量安家呢？接口为 实现/继承 而生，如果放在类中，并且这个类是 final，且封闭掉构造方法就行。于是我们先前的接口常量定义<!--more--></p><pre class="brush:java">public interface Gender {<br/>
+  public static final int MALE = 1;<br/>
+  public static final int FEMALE = 0;<br/>
+}</pre><p>就变成了</p><pre class="brush:java">public final class Gender {<br/>
+  private Gender() {<br/>
+  }<br/>
+<br/>
+  public static final int MALE = 1;<br/>
+  public static final int FEMALE = 0;<br/>
+}</pre><p>这就是 JDK 的 <a href="http://grepcode.com/file/repository.grepcode.com/java/root/jdk/openjdk/7-b147/java/nio/charset/StandardCharsets.java" target="_blank">java.nio.charset.StandardCharsets</a> 的写法。</p><p>在封闭的 final 类中定义常量确实是前进了一大步。但上面那样定义变量还有个致命缺陷，假如某个方法希望接收 Gender 的 MALE 或 FEMALE，所以类型是 int，而实际你可以传入一个 3，于是这个方法可能傻眼了。也就是说这样定义常量没有边界限制。</p><p>如果是为了定义一些松散的常量值，是可以使用 final 型封闭的类，如</p><pre class="brush:java">public final class ConfigConstants {<br/>
+  private ConfigConstants() {<br/>
+  }<br/>
+<br/>
+  public static final String FILE_PATH = "/data/credentials.conf";<br/>
+  public static final int MAX_LIMIT = 100;<br/>
+}</pre><p>如果要定义的多个常量值是同质的，那么最好的定义常量的方式应该是枚举(上面的例子是没理由用枚举了)</p><pre class="brush:java">public enum Gender {<br/>
+  MALE, <br/>
+  FEMALE<br/>
+}</pre><p>上面的定义实质就是一个继承了 <a href="http://docs.oracle.com/javase/7/docs/api/java/lang/Enum.html" target="_blank">java.lang.Enum</a> 的 final 类，获得了 java.lang.Enum 中有用方法，并且直接被编译器禁止被实例化，它有有限的两个 Gender 型成员  MALE 和 FEMALE。Java 枚举原理详见： <a href="http://unmi.cc/understand-java-enum-with-bytecode/" target="_blank">通过反编译字节码来理解 Java 枚举</a></p><p>最简表述上面的 Gender  枚举是</p><pre class="brush:java">public final class Gender extends java.lang.Enum {<br/>
+  public static final Gender MALE;<br/>
+  public static final Gender FEMALE;<br/>
+}</pre><p>我们也能看到 JDK 也倾向于用枚举来定义常量了，如 <a href="http://docs.oracle.com/javase/7/docs/api/java/nio/file/StandardOpenOption.html" target="_blank">java.nio.file.StandardOpenOption</a>。</p><p>这样对于接受 Gender 类型参数的方法就只能传入 MALE 或 FEMALE 了，不再有其他选项，这就是枚举的意义。</p><p>附：1. <a href="http://clchiou.github.io/notes-effective-java/2015-02-25/constant-interface-anti-pattern/" target="_blank">Constant Interface Anti-Pattern</a><br />        2. <a href="https://en.wikipedia.org/wiki/Constant_interface" target="_blank">Constant interface</a></p>

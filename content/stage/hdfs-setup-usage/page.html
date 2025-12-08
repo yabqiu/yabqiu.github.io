@@ -1,0 +1,547 @@
+---
+title: HDFS 分布式文件系统的搭建与使用
+url: /hdfs-setup-usage/
+date: 2022-10-10T00:32:43-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2022/10/hadoop_logo.jpeg"
+categories:
+  - Uncategorized
+tags: 
+  - Hadoop
+  - HDFS
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12799 
+wpStatus: publish
+views: 1142
+lastmod: 2022-10-11T12:09:18-05:00
+---
+
+HDFS(Hadoop Distributed File System) 是 Hadoop 的一个重要的模块，有点像磁盘阵列一样，不过它构建的是分布式网络文件系统。由于数据块从多个节上存取，也就能突破单点的网络带宽和硬件资源的限制而获得更好的性能; 能处理更大的数据，和克服单点故障的问题。许多公司正在使用 HDFS 构建自己的分布式文件系统，还比支持它的应用有 <a href="https://aws.amazon.com/big-data/what-is-spark/">Spark</a>, <a href="https://aws.amazon.com/big-data/what-is-presto/">Presto</a>, <a href="https://aws.amazon.com/big-data/what-is-hive/">Hive</a>, <a href="https://aws.amazon.com/big-data/what-is-hbase/">HBase</a>, <a href="https://zeppelin.apache.org/">Zeppelin</a> 等。<br/><br/>
+本文将实战自己搭建一个 HDFS 分布式文件系统，体验最基本的 HDFS 文件操作，看看它是如何分布文件块，以及如何进行冗余容错的。<br/><br/>
+本次实战环境:<br/><br/>
+<ol>
+    <li>macOS Big Sur 11.7, VirtualBox 6.1.32 r149290, Vagrant 2.2.19</li>
+    <li>Vagrant Ubuntu 22.04 LTS 虚拟机</li>
+    <li>Open JDK 8</li>
+    <li>Hadoop 3.3.4</li>
+</ol>
+<br/>
+我们将使用 4 个 Vagrant 虚拟机，其中一个为 NameNode, 其余为 DataNode。HDFS 沿袭了传统的 Master/Slave 系统架构，但因目前像传统的计算机名词 PC, CRT 被恶意使用的当下，Master/Slave 相应的更名为 NameNode 和 DataNode。在通常的系统中, Master 兼具协调与数据存储的功能，而 Slave 只存储数据，而 HDFS 的 NameNode 仅保管文件的元信息，数据块存储在 DataNode 中。<br/><br/>
+<!--more--><br/><br/>
+我们在虚拟机中的所采用的系统为 Ubuntu 22.04 LTS 版, 它们全部定义在同一个 Vagrantfile 文件中，使用固定的私有 IP 地址。所以虚拟机之间，虚拟机与宿主机之间是互通的，我们从宿主机发起的访问即模拟了远程访问 HDFS 集群的效果。<br/><br/>
+<blockquote>
+注：关于 Vagrant 的日常基本操作请参考 <a href="https://yanbin.blog/vagrant-intro-config-commands/">Vagrant 简介与常用操作及配置</a>。另外，HDFS 还可配置更多功能的 Secondary NameNode, Checkpoint Node, Backup Node, 这些是对 HDFS 集群的增强，不在本文的研究范围。我们本着不提供傻瓜教程，不一次做对的原则，凭着直觉去蹚浑水才能积累到真正属于自己的实战经验。
+</blockquote>
+<br/>
+所以虚拟机启动后所有的系统如下<br/><br/>
+<table style="border-collapse: collapse; width: 100%; height: 120px;">
+<tbody>
+<tr style="height: 24px;">
+<td style="width: 50%; text-align: center; height: 24px;">IP</td>
+<td style="width: 50%; text-align: center; height: 24px;">Hostname</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 50%; height: 24px; text-align: center;">192.168.56.100</td>
+<td style="width: 50%; height: 24px; text-align: center;">hdfs-nn01</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 50%; height: 24px; text-align: center;">192.168.56.101</td>
+<td style="width: 50%; height: 24px; text-align: center;">hdfs-dn01</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 50%; height: 24px; text-align: center;">192.168.56.102</td>
+<td style="width: 50%; height: 24px; text-align: center;">hdfs-dn02</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 50%; height: 24px; text-align: center;">192.168.56.103</td>
+<td style="width: 50%; height: 24px; text-align: center;">hdfs-dn03</td>
+</tr>
+</tbody>
+</table>
+<br/>
+Vagrantfile 文件内容<br/><br/>
+<pre class="lang:default decode:true ">Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"<br/><br/>
+  config.vm.define "hdfs-nn01" do |nn01|
+    nn01.vm.network "private_network", ip: "192.168.56.100"
+    nn01.vm.hostname = "hdfs-nn01"
+  end<br/><br/>
+  config.vm.define "hdfs-dn01" do |dn01|
+    dn01.vm.network "private_network", ip: "192.168.56.101"
+    dn01.vm.hostname = "hdfs-dn01"
+  end
+  config.vm.define "hdfs-dn02" do |dn02|
+    dn02.vm.network "private_network", ip: "192.168.56.102"
+    dn02.vm.hostname = "hdfs-dn02"
+  end
+  config.vm.define "hdfs-dn03" do |dn03|
+    dn03.vm.network "private_network", ip: "192.168.56.103"
+    dn03.vm.hostname = "hdfs-dn03"
+  end<br/><br/>
+end</pre>
+<br/>
+然后启动所有的虚拟机<br/><br/>
+<blockquote>
+vagrant up
+</blockquote>
+<br/>
+查看虚拟机状态<br/><br/>
+<blockquote>
+<pre class="lang:default decode:true">➜  vagrant vagrant global-status
+id       name      provider   state   directory
+--------------------------------------------------------------------------
+4d40803  hdfs-nn01 virtualbox running /Users/yanbin/Workspaces/vagrant
+c76ef1d  hdfs-dn01 virtualbox running /Users/yanbin/Workspaces/vagrant
+21a8194  hdfs-dn02 virtualbox running /Users/yanbin/Workspaces/vagrant
+7f52954  hdfs-dn03 virtualbox running /Users/yanbin/Workspaces/vagrant</pre>
+</blockquote>
+<br/>
+这时候从宿主机上也可 ping 通以上四个虚拟机的 IP 地址 192.168.56.xxx。需要 ssh  进入某一个虚拟机的话，只要运行命令 <code>vagrant ssh &lt;name&gt;</code>, 如要进入 hdfs-nn01 虚拟机，命令是<br/><br/>
+<blockquote>
+vagrant ssh hdfs-nn01
+</blockquote>
+<br/>
+以上的 /Users/yanbin/Workspaces/vagrant 是用来在宿主机与虚拟机之间共享文件的目录，它映射到虚拟机的 <code>/vagrant</code> 目录，所以以上四个虚拟机的 <code>/vagrant</code> 都是指向宿主机的同一个目录。<br/><br/>
+Hadoop 当前(2022-10-08)版本为 3.3.4, 于 2022 年  8 月 8 日发布，源码需用 Java 8 来编译，但编译后可运行在 Java 11 下。官方的 <a href="https://cwiki.apache.org/confluence/display/HADOOP/Hadoop+Java+Versions">Hadoop Java Versions</a> 中说的是 <code>Apache Hadoop 3.3 and upper supports Java 8 and Java 11 (runtime only)</code>， 目前有一个 Ticket 是关于支持用 Java 11 编译 Hadoop 3.3 的。所以最后还是选择用 Java 8。<br/><br/>
+<h3>从 hdfs-nn01 节点开始</h3><br/><br/>
+先以 hdfs-nn01 为起点逐步配置，启动一个 NameNode，再尝试在 hdfs-nn01 起动 DataNode，再体验 HDFS 文件的存取。然后再渐进的使用，配置，添加真正的 DataNode，并查看文件块是如何分布的。<br/><br/>
+因此我们先 ssh 登陆 hdfs-nn01，安装 JDK  和 Hadoop<br/><br/>
+<blockquote>
+$ vagrant ssh hdfs-nn01
+</blockquote>
+<br/>
+进到 hdfs-nn01 虚拟机的 shell, 以下命令在 hdfs-nn01 虚拟机中执行<br/><br/>
+<hr /><br/><br/>
+<blockquote>
+vagrant@hdfs-nn01:~$ sudo apt update<br />
+vagrant@hdfs-nn01:~$ sudo apt install openjdk-8-jdk -y<br />
+vagrant@hdfs-nn01:~$ wget https://dlcdn.apache.org/hadoop/common/hadoop-3.3.4/hadoop-3.3.4.tar.gz<br />
+vagrant@hdfs-nn01:~$ sudo tar xzvf hadoop-3.3.4.tar.gz -C /opt<br />
+vagrant@hdfs-nn01:~$ sudo mkdir -p /data/hadoop<br />
+vagrant@hdfs-nn01:~$ sudo chown -R vagrant:vagrant /data/hadoop /opt/hadoop-3.3.4
+</blockquote>
+<br/>
+编辑 hdfs-nn01 中的 /etc/profile 文件，并加上以下两行<br/><br/>
+<blockquote>
+export PATH=/opt/hadoop-3.3.4/bin:$PATH
+</blockquote>
+<br/>
+source /etc/profile 或重新用 vagrant ssh 登陆后就能使用 hdfs 命令了。<br/><br/>
+除了会用到 $HADOOP_HOME/bin 下的命令外，在 $HADOOP_HOME/sbin 目录中还有许多有用的脚本，比如启动单机的 HDFS 只要在格式化 HDFS 文件系统后执行 $HADOOP_HOME/sbin/start-dfs.sh 命令，还包括 yarn 等的操作。<br/><br/>
+如果总是用 vagrant 用户来启动, hadoop 的 PATH 也可以配置在用户目录中的 .bashrc 或 .bash_profile 当中<br/><br/>
+编辑  /opt/hadoop-3.3.4/etc/hadoop/hadoop-env.sh, 添加导出 JAVA_HOME 的代码<br/><br/>
+<blockquote>
+export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+</blockquote>
+<br/>
+JAVA_HOME 也可以像前面 PATH  一样配置在全局或用户的 profile 文件中。还可以配置一个辅助的 HADOOP_HOME 指向 /opt/hadoop-3.3.4 目录，我们随后用 $HADOOP_HOME 指代该实际的目录。<br/><br/>
+<h4>配置 core-site.xml 文件</h4><br/><br/>
+编辑文件 $HADOOP_HOME/etc/hadoop/core-site.xml, 内容如下<br/><br/>
+<pre class="lang:default decode:true">&lt;configuration&gt;
+    &lt;property&gt;
+        &lt;name&gt;fs.defaultFS&lt;/name&gt;
+        &lt;value&gt;hdfs://192.168.56.100:8020&lt;/value&gt;
+    &lt;/property&gt;<br/><br/>
+    &lt;property&gt;
+        &lt;name&gt;hadoop.tmp.dir&lt;/name&gt;
+        &lt;value&gt;/data/hadoop&lt;/value&gt;
+    &lt;/property&gt;
+&lt;/configuration&gt;</pre>
+<br/>
+该文件默认为空的 &lt;configuration&gt; 内容，这里我们配置 fs.defaultFS 先用 IP 地址，后面加入 DataNode 时必须用 hostname，随后再说明。<br/><br/>
+<hr /><br/><br/>
+<blockquote>
+注：以上水平线之间的操作在后面的每个 DataNode 节点中都是相同的
+</blockquote>
+<br/>
+在 $HADOOP_HOME/etc/hadoop/hdfs-site.xml 中可配置每个文件块副本的个数(默认为 3), 和相应的 Secondary NameNode 的地址。Secondary NameNode 节点的作用并非 NameNode 的镜像，而是协助 NameNode 完成 fsimage 和 edit logs 的合并操作。<br/><br/>
+然后执行<br/><br/>
+<blockquote>
+vagrant@hdfs-nn01:~$ hdfs namenode -format hdfs-cluster<br />
+vagrant@hdfs-nn01:~$ hdfs --daemon start namenode<br />
+WARNING: /opt/hadoop-3.3.4/logs does not exist. Creating.
+</blockquote>
+<br/>
+第一次启动 namenode 或 datanode 都会提示创建日志目录，它同时告诉了我们日志信息要去哪里查看，只要感觉到哪里不对劲就到  /opt/hadoop-3.3.4/logs 目录下去查日志。<br/><br/>
+查看启动的进程与端口号(需先用 sudo apt install net-tools 安装才能使用 netstat 命令)<br/><br/>
+<pre class="lang:default decode:true">vagrant@hdfs-nn01:~$ netstat -ltnp |grep java
+(Not all processes could be identified, non-owned process info
+ will not be shown, you would have to be root to see it all.)
+tcp        0      0 192.168.56.100:8020     0.0.0.0:*               LISTEN      6295/java
+tcp        0      0 0.0.0.0:9870            0.0.0.0:*               LISTEN      6295/java</pre>
+<br/>
+9870 是 web-ui 的端口号，用 http://192.168.56.100:9870 就能在浏览器中打开管理界面, 8020 用于标识一个 hdfs 文件系统。打开 http://192.168.56.100:9870/dfshealth.html#tab-datanode<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-01.png"><img class="aligncenter wp-image-12818" src="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-01-800x570.png" alt="" width="850" height="606" /></a><br/><br/>
+现在还没有 DataNode，现在 hdhs-nn01 节点上尝试一下 <code>hdfs dfs</code> 命令<br/><br/>
+<blockquote>
+vagrant@hdfs-nn01:~$ hdfs dfs -df<br />
+Filesystem Size Used Available Use%<br />
+hdfs://192.168.56.100:8020 0 0 0 NaN%<br />
+vagrant@hdfs-nn01:~$ hdfs dfs -mkdir -p /user/vagrant<br />
+vagrant@hdfs-nn01:~$ echo "Hello HDFS" &gt; test.txt<br />
+vagrant@hdfs-nn01:~$ hdfs dfs -put test.txt /user/vagrant<br />
+2022-10-10 02:11:24,282 WARN hdfs.DataStreamer: DataStreamer Exception<br />
+org.apache.hadoop.ipc.RemoteException(java.io.IOException): File /user/vagrant/test.txt._COPYING_ could only be written to 0 of the 1 minReplication nodes. There are 0 datanode(s) running and 0 node(s) are excluded in this operation.<br />
+    at org.apache.hadoop.hdfs.server.blockmanagement.BlockManager.chooseTarget4NewBlock(BlockManager.java:2315)<br />
+    at org.apache.hadoop.hdfs.server.namenode.FSDirWriteFileOp.chooseTargetForNewBlock(FSDirWriteFileOp.java:294)<br />
+    at org.apache.hadoop.hdfs.server.namenode.FSNamesystem.getAdditionalBlock(FSNamesystem.java:2960)<br />
+    .......
+</blockquote>
+<br/>
+在只有 NameNode 的情况下可以创建目录，但无法存储文件。这也就证明了文件元信息是存储在 NameNode 中，数据块存在别处。我们随后把 /user/vagrant 目录删除掉<br/><br/>
+<blockquote>
+vagrant@hdfs-nn01:~$ hdfs dfs -rm -R /user<br />
+Deleted /user
+</blockquote>
+<br/>
+在 hdfs-nn01 节点中直接启动 datanode, 在不涉到其他节点的情况下实现一个伪集群的 HDFS, 命令如下<br/><br/>
+<blockquote>
+vagrant@hdfs-nn01:~$ hdfs --daemon start datanode
+</blockquote>
+<br/>
+再查看启动的里程与端口号<br/><br/>
+<pre class="lang:default decode:true">vagrant@hdfs-nn01:~$ netstat -ltnp |grep java
+(Not all processes could be identified, non-owned process info
+ will not be shown, you would have to be root to see it all.)
+tcp        0      0 192.168.56.100:8020     0.0.0.0:*               LISTEN      6295/java
+tcp        0      0 0.0.0.0:9867            0.0.0.0:*               LISTEN      6993/java
+tcp        0      0 0.0.0.0:9866            0.0.0.0:*               LISTEN      6993/java
+tcp        0      0 0.0.0.0:9864            0.0.0.0:*               LISTEN      6993/java
+tcp        0      0 0.0.0.0:9870            0.0.0.0:*               LISTEN      6295/java
+tcp        0      0 127.0.0.1:46129         0.0.0.0:*               LISTEN      6993/java</pre>
+<br/>
+这时候浏览器中访问 http://192.168.56.100:9870/dfshealth.html#tab-datanode， 将能看到在 master 节点时同时启动的 datanode<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-02.png"><img class="aligncenter wp-image-12819" src="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-02-800x578.png" alt="" width="850" height="614" /></a><br/><br/>
+也可以访问 DataNode 的 web-ui 界面，这里显示的是 http://hdfs-master:9864(这是第一个要使用 hostname 的地方), 但由于我们未配置 DNS 或 /etc/hosts 文件，所以需要用 IP 地址来访问，如 http://192.168.56.100:9864/, 看到的是 <br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-03.png"><img class="aligncenter wp-image-12820" src="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-03-800x558.png" alt="" width="850" height="593" /></a><br/><br/>
+现在作为一个单节点的 HDFS 系统，我们可以上传文件，可用命令或 web-ui http://192.168.56.100:9870/explorer.html#, 界面如下<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-20.png"><img class="aligncenter wp-image-12867" src="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-20-800x393.png" alt="" width="850" height="418" /></a><br/><br/>
+目前为空。本文我们用基本的 <code>hdfs dfs</code> 命令来操作。<code>hdfs dfs</code> 后面的参数基本就是我们在 Linux shell 的常用命令前加个 <code>-</code> 参数化，如<br/><br/>
+<ol>
+    <li>hdfs dfs -rm: 删除一个目录</li>
+    <li>hdfs dfs -ls: 显示目录中的内容</li>
+    <li>hdfs dfs -mkdir: 创建目录</li>
+    <li>hdfs dfs -rmdir: 删除目录</li>
+    <li>hdfs dfs -put: 上传本地文件或目录到 HDFS 文件系统中</li>
+    <li>hdfs dfs -get: 从 HDFS 文件系统中下载文件或目录到本地</li>
+    <li>hdfs -df: 显示磁盘空间 </li>
+</ol>
+<br/>
+等等，<code>hdfs dfs</code> 能显示出所有支持的命令，命令的参数也可以参考 Linux shell 相应命令的参数，如  hdfs dfs -df -h, hdfs dfs -mkdir -r /a/b/c 等<br/><br/>
+<code>hdfs dfs</code> 操作的起始目录是 <code>/user/&lt;yourName&gt;</code>, 不然会出现下面的错误<br/><br/>
+<blockquote>
+vagrant@hdfs-nn01:~$ hdfs dfs -ls .<br />
+ls: `.': No such file or directory
+vagrant@hdfs-nn01:~$ hdfs dfs -mkdir a<br />
+mkdir: `hdfs://192.168.56.100:8020/user/vagrant': No such file or directory
+</blockquote>
+<br/>
+这就是为什么我们前面测试在没有 DataNode 节点的情况下先创建了 /user/vagrant 目录的缘故。<br/><br/>
+因此我们需先创建好 <code>/user/&lt;yourName&gt;</code> 目录，用 <code>whoami</code> 命令找到 Vagrant 虚拟机中当前用户名是 <code>vagrant</code>, 所以先执行<br/><br/>
+<blockquote>
+vagrant@hdfs-nn01:~$ hdfs dfs -mkdir -p /user/vagrant<br />
+vagrant@hdfs-nn01:~$ hdfs dfs -ls .<br />
+vagrant@hdfs-nn01:~$
+</blockquote>
+<br/>
+这样就没问题了，现在来创建一目录，再上传一个文件<br/><br/>
+<blockquote>
+vagrant@hdfs-nn01:~$ hdfs dfs -mkdir testFolder<br />
+vagrant@hdfs-nn01:~$ echo "Hello HDFS" &gt; test.txt<br />
+vagrant@hdfs-nn01:~$ hdfs dfs -put test.txt testFolder/<br />
+vagrant@hdfs-nn01:~$ hdfs dfs -ls testFolder<br />
+Found 1 items<br />
+-rw-r--r-- 3 vagrant supergroup 11 2022-10-09 04:02 testFolder/test.txt<br />
+vagrant@hdfs-nn01:~$ hdfs dfs -cat testFolder/test.txt<br />
+Hello HDFS
+</blockquote>
+<br/>
+这里我们是在 hdfs-nn01 节点的 shell 操作的，能把文件上传到 HDFS 文件系统中，那么 <code>hdfs dfs</code> 是如何知道与哪个 HDFS 集群交互呢？<br/><br/>
+注意到我们执行 <code>hdfs dfs</code> 显示出来的帮助后面部分有<br/><br/>
+<pre class="lang:default decode:true">Generic options supported are:
+-conf &lt;configuration file&gt;        specify an application configuration file
+-D &lt;property=value&gt;               define a value for a given property
+-fs &lt;file:///|hdfs://namenode:port&gt; specify default filesystem URL to use, overrides 'fs.defaultFS' property from configurations.
+</pre>
+<br/>
+还记得我们之前在 $HADOOP_HOME/etc/hadoop/core-site.xml 中配置了 fs.defaultFS 吗？因而在 master 节点中默认就是对 hdfs://192.168.56.100:8020 文件系统进行的操作。<br/><br/>
+明白了如何指定远程 HDFS 集群后，我们就能够在任意安装了 Hadoop 的机器上执行 <code>hdfs dfs</code> 命令来存取 HDFS 文件系统中的数据了。下面我在自己的 macOS 上下载了 hadoop-3.3.4 后，执行 hdfs dfs 命令的效果<br/><br/>
+<blockquote>
+➜ ~ export HADOOP_USER_NAME=vagrant<br />
+➜ ~ hdfs --loglevel ERROR dfs -fs hdfs://192.168.56.100:8020 -ls testFolder<br />
+Found 1 items<br />
+-rw-r--r-- 3 vagrant supergroup 11 2022-10-09 21:33 testFolder/test.txt
+</blockquote>
+<br/>
+配置 HADOOP_USER_NAME=vagrant 就能使用 hdfs dfs 命令访问到先前在 master 节点中上传到 <code>/user/vagrant</code> 目录中的文件，否则会试图访问 <code>/user/&lt;whoami&gt;</code> 目录, 在 macOS 下 whoami 不再是 vagrant 了。<br/><br/>
+试着在 hdfs-nn01 节点中停掉 datanode, 命令<br/><br/>
+<blockquote>
+vagrant@hdfs-master:~$ hdfs --daemon stop datanode
+</blockquote>
+<br/>
+然后试图显示文件列表与内容<br/><br/>
+<blockquote>
+➜ ~ hdfs --loglevel ERROR dfs -fs hdfs://192.168.56.100:8020 -ls testFolder<br />
+Found 1 items<br />
+-rw-r--r-- 3 vagrant supergroup 11 2022-10-09 21:33 testFolder/test.txt<br />
+➜ ~ hdfs --loglevel ERROR dfs -fs hdfs://192.168.56.100:8020 -cat testFolder/test.txt<br />
+cat: Could not obtain block: BP-267695701-127.0.2.1-1665367434904:blk_1073741825_1001 file=/user/vagrant/testFolder/test.txt No live nodes contain current block Block locations: DatanodeInfoWithStorage[192.168.56.100:9866,DS-96a93755-07c8-4ec9-a171-ea0e77c51335,DISK] Dead nodes: DatanodeInfoWithStorage[192.168.56.100:9866,DS-96a93755-07c8-4ec9-a171-ea0e77c51335,DISK]
+</blockquote>
+<br/>
+显示文件列表是没问题，证明文件元信息是保存在 NameNode 上的，而数据内容是在 DataNode 上的。重新启动 master 节点上的 DataNode 后又可以看到文件的内容<br/><br/>
+<h3>加入一个实际的 DataNode</h3><br/><br/>
+在进入该步测试之前，先对当前的 HDFS 集群作一个清理，在 hdfs-nn01 节点上运行如下命令<br/><br/>
+<blockquote>
+vagrant@hdfs-nn01:~$ hdfs --daemon stop datanode<br />
+vagrant@hdfs-nn01:~$ rm -R /data/hadoop/*                                # 可选<br />
+vagrant@hdfs-nn01:~$ hdfs namenode -format hdfs-cluster<br />
+vagrant@hdfs-nn01:~$ hdfs --daemon start namenode
+</blockquote>
+<br/>
+这样能确保有 HDFS 文件系统是干净的，而且在 HDFS 集群中也不再有死了的 DataNode<br/><br/>
+进到第一个 DataNode 节点，现在用 <code>vagrant ssh hdfs-dn01</code> 进到该节点的 shell，与在 hdfs-nn01 上节点的相同的基本操作包括<br/><br/>
+<ol>
+    <li>安装 JDK 8, 下载解压 Hadoop</li>
+    <li>配置 JAVA_HOME 和指向到 /opt/hadoop-3.3.4/bin 目录的 PATH 环境变量</li>
+    <li>创建目录 /data/hadoop 和修改 /data/hadoop 和 /opt/hadoop-3.3.4 的目录所有者</li>
+    <li>配置 core0-site.xml 文件</li>
+</ol>
+<br/>
+现在尝试在 hdfs-dn01 节点上启动 DataNode<br/><br/>
+<blockquote>
+vagrant@hdfs-dn01:~$ hdfs --daemon start datanode
+</blockquote>
+<br/>
+这时候用 netstat 查看到的 Java 进程<br/><br/>
+<pre class="lang:default decode:true ">vagrant@hdfs-dn01:~$ netstat -ltnp |grep java
+(Not all processes could be identified, non-owned process info
+ will not be shown, you would have to be root to see it all.)
+tcp        0      0 0.0.0.0:9864            0.0.0.0:*               LISTEN      5513/java
+tcp        0      0 0.0.0.0:9867            0.0.0.0:*               LISTEN      5513/java
+tcp        0      0 0.0.0.0:9866            0.0.0.0:*               LISTEN      5513/java
+tcp        0      0 127.0.0.1:41141         0.0.0.0:*               LISTEN      5513/java</pre>
+<br/>
+但是在 http://192.168.56.100:9870/dfshealth.html#tab-datanode 没有显示出任何 DataNode 信息。<br/><br/>
+这时候就要查看日志文件了，打开<br/><br/>
+<blockquote>
+/opt/hadoop-3.3.4/logs/hadoop-vagrant-datanode-hdfs-dn01.log
+</blockquote>
+<br/>
+看到类似下方的错误信息<br/><br/>
+<blockquote>
+2022-10-10 03:14:58,097 ERROR org.apache.hadoop.hdfs.server.datanode.DataNode: Initialization failed for Block pool BP-757515962-127.0.2.1-1665370138516 (Datanode Uuid bd84394d-4384-4d81-82b8-727baa03cb94) service to /192.168.56.100:8020 Datanode denied communication with namenode because hostname cannot be resolved (ip=192.168.56.101, hostname=192.168.56.101): DatanodeRegistration(0.0.0.0:9866, datanodeUuid=bd84394d-4384-4d81-82b8-727baa03cb94, infoPort=9864, infoSecurePort=0, ipcPort=9867, storageInfo=lv=-57;cid=CID-a1f2d5ae-b46f-4b96-b0e1-22b518f89676;nsid=643369223;c=1665370138516)<br />
+    at org.apache.hadoop.hdfs.server.blockmanagement.DatanodeManager.registerDatanode(DatanodeManager.java:1147)<br />
+    at org.apache.hadoop.hdfs.server.blockmanagement.BlockManager.registerDatanode(BlockManager.java:2566)<br />
+    at org.apache.hadoop.hdfs.server.namenode.FSNamesystem.registerDatanode(FSNamesystem.java:4235)
+</blockquote>
+<br/>
+原来是 NameNode hdfs-nn01 中无法解析 IP 192.168.56.101 成 hostname, 所以要让 hdfs-dn01 作为 datanode 加入到 namenode 中去的话，必须让 NameNode 能反向解析出该 DataNode 的 IP 地址，于是只要在 hdfs-nn01 节点的 /etc/hosts 中加上一条<br/><br/>
+<blockquote>
+192.168.56.101     hdfs-dn01
+</blockquote>
+<br/>
+再回到 hdfs-dn01 上重启 DataNode, 需执行的命令是<br/><br/>
+<blockquote>
+vagrant@hdfs-dn01:~$ hdfs --daemon stop datanode<br />
+vagrant@hdfs-dn01:~$ hdfs --daemon start datanode
+</blockquote>
+<br/>
+再查看 http://192.168.56.100:9870/dfshealth.html#tab-datanode，就有了 hdfs-dn01 这个数据节点了<br/><br/>
+<img class="aligncenter wp-image-12824" src="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-04-800x579.png" alt="" width="850" height="615" /><br/><br/>
+<h3>观察数据在集群中的分布</h3><br/><br/>
+目前有了一个接近实际意义上的 HDFS 集群 -- 一个 NameNode 和一个 DataNode, 接下来上传一个文件看它的数据块是如何在 HDFS 的 DataNode 中分布的，其间会往集群中逐步添加更多的数据节点。<br/><br/>
+我们在 macOS 宿主机下对 HDFS 进行远程操作，先把 hdfs dfs 命令简化一下<br/><br/>
+修改 $HADOOP/etc/hadoop/log4j.properties, 添加一行<br/><br/>
+<blockquote>
+log4j.logger.org.apache.hadoop.util.NativeCodeLoader=ERROR
+</blockquote>
+<br/>
+把执行 hdfs 时的<br/><br/>
+<blockquote>
+WARN util.NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+</blockquote>
+<br/>
+警告信息去掉，也不用加 --loglevel ERROR 参数。因为从官方下载的 Hadoop 二进制版本地库是 32 位的，而  brew install hadoop 安装的 Hadoop 不带本地库，除非下载源码自行编译。<br/><br/>
+再修改 $HADOOP/etc/hadoop/core-site.xml，改成<br/><br/>
+<pre class="lang:default decode:true ">&lt;configuration&gt;
+    &lt;property&gt;
+        &lt;name&gt;fs.defaultFS&lt;/name&gt;
+        &lt;value&gt;hdfs://192.168.56.100:8020&lt;/value&gt;
+    &lt;/property&gt;
+&lt;/configuration&gt;
+</pre>
+<br/>
+检查一下是否连接<br/><br/>
+<blockquote>
+➜ ~ hdfs dfs -df<br />
+Filesystem Size Used Available Use%<br />
+hdfs://192.168.56.100:8020 41555521536 32768 37984940032 0%
+</blockquote>
+<br/>
+上传一个测试文件<br/><br/>
+<blockquote>
+➜ ~ export HADOOP_USER_NAME=vagrant<br />
+➜ ~ hdfs dfs -mkdir -p /user/vagrant<br />
+➜ ~ hdfs dfs -mkdir testFolder<br />
+➜ ~ echo "Hello HDFS" &gt; test.txt<br />
+➜ ~ hdfs dfs -put test.txt testFolder/<br />
+➜ ~ hdfs dfs -cat testFolder/test.txt<br />
+Hello HDFS
+</blockquote>
+<br/>
+查看文件信息 http://192.168.56.100:9870/explorer.html#/user/vagrant/testFolder<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-05.png"><img class="aligncenter wp-image-12827" src="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-05-800x403.png" alt="" width="850" height="428" /></a><br/><br/>
+查看 hdfs-dn01 上的数据文件信息<br/><br/>
+<blockquote>
+vagrant@hdfs-dn01:~$ cat /data/hadoop/dfs/data/current/BP-757515962-127.0.2.1-1665370138516/current/finalized/subdir0/subdir0/blk_1073741825<br />
+Hello HDFS
+</blockquote>
+<br/>
+在 hdfs-nn01 上没有  /data/hadoop/dfs/data 目录，因为它不存数据<br/><br/>
+再上一个 DataNode hdfs-dn02, 还是相同的操作与配置，还要在 hdfs-nn01 上的 /etc/hosts 中加一条<br/><br/>
+<blockquote>
+192.168.56.102  hdfs-dn02
+</blockquote>
+<br/>
+再用命令 hdfs dfs --daemon start datanode 启动 datanode 就行<br/><br/>
+现在上来两个 DataNode 了<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-06.png"><img class="aligncenter wp-image-12829" src="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-06-800x245.png" alt="" width="687" height="210" /></a><br/><br/>
+数据分布到了两个节点上了<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-07.png"><img class="aligncenter wp-image-12830" src="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-07-800x560.png" alt="" width="583" height="408" /></a><br/><br/>
+在 hdfs-dn02 上查看文件<br/><br/>
+<blockquote>
+vagrant@hdfs-dn02:~$ cat /data/hadoop/dfs/data/current/BP-757515962-127.0.2.1-1665370138516/current/finalized/subdir0/subdir0/blk_1073741825<br />
+Hello HDFS
+</blockquote>
+<br/>
+再上一个 hdfs-dn03 节点<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-08.png"><img class="aligncenter wp-image-12831" src="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-08-800x313.png" alt="" width="690" height="270" /></a><br/><br/>
+文件信息<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-09.png"><img class="aligncenter wp-image-12832" src="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-09-800x594.png" alt="" width="587" height="436" /></a><br/><br/>
+数据块分布到了三个节点<br/><br/>
+<blockquote>
+vagrant@hdfs-dn03:~$ cat /data/hadoop/dfs/data/current/BP-757515962-127.0.2.1-1665370138516/current/finalized/subdir0/subdir0/blk_1073741825<br />
+Hello HDFS
+</blockquote>
+<br/>
+仍然看不出数据在冗余到什么程度，还得来一个大杀器 -- 再加一个 hdfs-dn04 数据节点<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-10.png"><img class="aligncenter wp-image-12833" src="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-10-800x350.png" alt="" width="750" height="328" /></a><br/><br/>
+文件内容分布<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-11.png"><img class="aligncenter wp-image-12834" src="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-11-800x591.png" alt="" width="590" height="436" /></a><br/><br/>
+终于不再扩散，默认的冗余存储方式是三份<br/><br/>
+再创建一个新文件<br/><br/>
+<blockquote>
+➜ ~ echo "Hello Test1" &gt; test1.txt<br />
+➜ ~ hdfs dfs -put test1.txt testFolder/
+</blockquote>
+<br/>
+数据分布<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-12.png"><img class="aligncenter wp-image-12835" src="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-12-800x595.png" alt="" width="588" height="437" /></a><br/><br/>
+分布在不同的三个数据节点上<br/><br/>
+测试一个大文件,  也不用太大，1.2 GB 的 CSV 文件<br/><br/>
+<pre class="lang:default decode:true">➜  Downloads ls -lh big_file.csv
+-rw-r--r--  1 yanbin  staff   1.2G Sep 26 15:44 big_file.csv
+➜  Downloads hdfs dfs -mkdir testFolder2
+➜  Downloads hdfs dfs -put big_file.csv testFolder2/</pre>
+<br/>
+上传完后<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-16.png"><img class="aligncenter wp-image-12841" src="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-16-800x346.png" alt="" width="750" height="324" /></a><br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-17.png"><img class="aligncenter wp-image-12842" src="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-17-800x89.png" alt="" width="727" height="81" /></a><br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/10/hdf-18.png"><img class="aligncenter wp-image-12843" src="https://yanbin.blog/wp-content/uploads/2022/10/hdf-18-800x594.png" alt="" width="583" height="433" /></a><br/><br/>
+数据块大小为 128M, 数据分布在三个数据节点上，而实际上在所有的四他数据节点上都占用了 2-3 百M的数据大小，似乎每个节点上都有 big_file.csv 的数据文件<br/><br/>
+<pre class="lang:default decode:true">vagrant@hdfs-dn02:~$ ls -l /data/hadoop/dfs/data/current/BP-757515962-127.0.2.1-1665370138516/current/finalized/subdir0/subdir0
+total 709692
+-rw-rw-r-- 1 vagrant vagrant        11 Oct 10 04:31 blk_1073741825
+-rw-rw-r-- 1 vagrant vagrant        11 Oct 10 04:31 blk_1073741825_1001.meta
+-rw-rw-r-- 1 vagrant vagrant        12 Oct 10 04:51 blk_1073741826
+-rw-rw-r-- 1 vagrant vagrant        11 Oct 10 04:51 blk_1073741826_1002.meta
+-rw-rw-r-- 1 vagrant vagrant 134217728 Oct 10 05:20 blk_1073741867
+-rw-rw-r-- 1 vagrant vagrant   1048583 Oct 10 05:20 blk_1073741867_1043.meta
+-rw-rw-r-- 1 vagrant vagrant 134217728 Oct 10 05:20 blk_1073741868
+-rw-rw-r-- 1 vagrant vagrant   1048583 Oct 10 05:20 blk_1073741868_1044.meta
+......</pre>
+<br/>
+四个节点上都有许多的数据块文件，每个数据块大小限制为 128M。文件信息中说的在 hdfs-dn04 上没有数据，那就专门窥探一下 hdfs-dn04 的数据目录<br/><br/>
+<pre class="lang:default decode:true ">vagrant@hdfs-dn04:~$ ls -l /data/hadoop/dfs/data/current/BP-757515962-127.0.2.1-1665370138516/current/finalized/subdir0/subdir0
+total 1105980
+-rw-rw-r-- 1 vagrant vagrant        12 Oct 10 04:51 blk_1073741826
+-rw-rw-r-- 1 vagrant vagrant        11 Oct 10 04:51 blk_1073741826_1002.meta
+-rw-rw-r-- 1 vagrant vagrant 134217728 Oct 10 05:20 blk_1073741868
+-rw-rw-r-- 1 vagrant vagrant   1048583 Oct 10 05:20 blk_1073741868_1044.meta
+-rw-rw-r-- 1 vagrant vagrant 134217728 Oct 10 05:20 blk_1073741869
+-rw-rw-r-- 1 vagrant vagrant   1048583 Oct 10 05:20 blk_1073741869_1045.meta
+........</pre>
+<br/>
+这是一个 csv 纯文本文件，所以可以直接查看一下它在 hdfs-dn04 节点中的数据块文件的内容<br/><br/>
+<blockquote>
+cat /data/hadoop/dfs/data/current/BP-757515962-127.0.2.1-1665370138516/current/finalized/subdir0/subdir0/blk_1073741868<br />
+.........
+</blockquote>
+<br/>
+显示的又确实是 big_file.csv 文件的内容, 这该如何作出解释呢？实际存储与上面显示的文件信息有点不相符，我们来查看每个 DataNode 的 /data/hadoop/dfs/data/current/BP-757515962-127.0.2.1-1665370138516/current/finalized/subdir0/subdir0 目录来看数据块的分布<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-19.png"><img class="aligncenter wp-image-12850" src="https://yanbin.blog/wp-content/uploads/2022/10/hdfs-19-800x321.png" alt="" width="850" height="341" /></a><br/><br/>
+128M 的数据块是属于大文件的，其中<br/><br/>
+<table style="border-collapse: collapse; width: 100%; height: 96px;">
+<tbody>
+<tr style="height: 24px;">
+<td style="width: 20%; height: 24px; text-align: center;">数据块</td>
+<td style="width: 20%; height: 24px; text-align: center;">hdfs-dn01</td>
+<td style="width: 20%; height: 24px;">hdfs-dn02</td>
+<td style="width: 20%; height: 24px; text-align: center;">hdfs-dn03</td>
+<td style="width: 20%; height: 24px; text-align: center;">hdfs-dn04</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 20%; height: 24px;">blk_1073741867</td>
+<td style="width: 20%; height: 24px;">✔️</td>
+<td style="width: 20%; height: 24px;">✔️</td>
+<td style="width: 20%; height: 24px;">✔️</td>
+<td style="width: 20%; height: 24px;"> </td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 20%; height: 24px;">blk_1073741868</td>
+<td style="width: 20%; height: 24px;"> </td>
+<td style="width: 20%; height: 24px;">✔️</td>
+<td style="width: 20%; height: 24px;">✔️</td>
+<td style="width: 20%; height: 24px;">✔️</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 20%; height: 24px;">blk_1073741869</td>
+<td style="width: 20%; height: 24px;">✔️</td>
+<td style="width: 20%; height: 24px;"> </td>
+<td style="width: 20%; height: 24px;">✔️</td>
+<td style="width: 20%; height: 24px;">✔️</td>
+</tr>
+</tbody>
+</table>
+<br/>
+这涉及到文件块分布的负载均衡的算法，从现在 4 个数据节点，副本数为 3 的情况，从任何两个数据节点都能拼凑出完整的 big_file.csv 文件，换句话说就是数据节点坏一，坏两个都没问题，文件还能正确读取出来，这就是 HDFS 的容错性。<br/><br/>
+从 <a href="https://www.softwaretestinghelp.com/hadoop-distributed-file-system/">Hadoop HDFS - Hadoop Distributed File System</a> 一文中找了一张图<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/10/HDFS-Block-Replication.jpeg"><img class="aligncenter wp-image-12853 size-full" src="https://yanbin.blog/wp-content/uploads/2022/10/HDFS-Block-Replication.jpeg" alt="" width="630" height="369" /></a><br/><br/>
+HDFS 的均衡策略和副本个数实现了磁盘阵列的效果，他们实际用途也差不多。<br/><br/>
+如果在 HDFS 集群中缩减了 DataNode 的数目，先前该节点上的数据应该会转移到别的节点上去。后又扩充了更多的 DataNode, 基于访问性能的考虑，HDFS 应该会优化数据块的分布，对数据块进行 Rebalance 操作移动数据。<br/><br/>
+关于 /etc/hosts  在 Vagrant 中有更好的解决办法<br/><br/>
+vagrant plugin install vagrant-hostsupdater 可以使用 host 的 /etc/hosts  中的配置，并且每个  vagrant 虚拟机都会向 /etc/hosts 中注册自己，这样就不需要在 NameNode 中编辑 /etc/hosts 文件。<br/><br/>
+另外，刚看到一个  <a href="https://www.juicefs.com/en/">JuiceFS</a> 文件系统也很好玩，比如挂载一个 redis 缓存，以文件系统的方式来访问<br/><br/>
+<blockquote>
+$ juicefs format redis://your-redis-host:6379/1 myjfs<br />
+$ juicefs mount -d redis://your-redis-host:6379/1 /mnt/juicefs<br />
+$ cp -r ~/dataset /mnt/juicefs/
+</blockquote>
+<br/>
+HDFS 文件系统也是有办法 mount 到本地目录中来，其后只要以操作本地文件的方式来操作 HDFS 中的文件，比如用 NFS gateway 的方式，NFS -&gt; FUSE -&gt; HDFS。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://www.databricks.com/glossary/hadoop-distributed-file-system-hdfs">Hadoop Distributed File Sytem(HDFS)</a></li>
+    <li><a href="https://blog.csdn.net/qq_35246620/article/details/88576800">快速搭建 HDFS 系统 (超详细版)</a></li>
+    <li><a href="https://www.cnblogs.com/sddai/p/9281235.html">Secondary NameNode 的作用</a></li>
+    <li><a href="https://zhuanlan.zhihu.com/p/61107372">Hadoop之SecondaryNameNode</a></li>
+    <li><a href="https://www.cnblogs.com/shoufeng/p/14940245.html">Hadoop - 彻底解决 WARN util.NativeCodeLoader: Unable to load native-hadoop library...</a></li>
+    <li><a href="https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-common/SingleCluster.html">Hadoop: Setting up a Single Node Cluster.</a></li>
+    <li><a href="https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-common/ClusterSetup.html">Hadoop Cluster Setup</a></li>
+</ol>

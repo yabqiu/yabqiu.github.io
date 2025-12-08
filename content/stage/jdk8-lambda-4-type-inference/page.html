@@ -1,0 +1,96 @@
+---
+title: JDK8 的 Lambda 表达式 -- 类型推断
+url: /jdk8-lambda-4-type-inference/
+date: 2013-10-15T09:00:43-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - jdk8
+  - lambda
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5764 
+wpStatus: publish
+views: 690
+lastmod: 2013-10-15T09:00:43-05:00
+---
+
+现在我们来看看 JDK8 是怎么对 Lambda 表达式进行类型推断的，Lambda 的实际类型叫做它的目标类型(target type)，因为 JDK8 沿承了已有的类型系统，所以象这样的写法：<br/>
+<br/>
+<span style="color: #800000;">button.addActionListener(<span style="color: #0000ff;">(ActionEvent e) -&gt; foo()</span>);</span><br/>
+<br/>
+addActionListener() 方法接收的是一个 ActionListener 类型的参数，所以这里的 Lambda 表达式<span style="color: #800000;"> (ActionEvent e) -&gt; foo()</span> 代表的就是一个 ActionListener 实例，编译器是怎么知道这一点的，而且相同的 Lambda 是可以表示不同的类型的，见：<br/>
+<br/>
+<span style="color: #800000;">Callable&lt;String&gt; c = <span style="color: #0000ff;">() -&gt; "done"</span>;</span>&nbsp;&nbsp;&nbsp;&nbsp; <span style="color: #800000;">//这个 () -&gt; "done" 是 Callable&lt;String&gt; 类型</span><br/>
+<span style="color: #800000;">PrivilegedAction&lt;String&gt; a = <span style="color: #0000ff;">() -&gt; "done"</span>;&nbsp; //同样的 () -&gt; "done" 却是 PrivilegedAction&lt;String&gt; 类型</span><br/>
+<br/>
+答曰，根据 Lambda 表达式所处的上下文去感知。上下文决定了 Lambda 所期盼的类型，比如说变量声明类型，方法要求的输入参数类型，所以它必须是明确，不能模棱两可。所以一个 Lambda 表达式能否放在某处需要满足以下几个条件：<br/>
+<ol>
+
+	<li><span style="color: #ff0000;"><strong>期盼的类型必须是一个功能性接口，这样就能唯一定位到那个抽象方法上去，确定方法签名</strong></span>，接下来就是<!--more--></li>
+
+	<li>Lambda 表达式的参数和类型要与那个 SAM 相匹配</li>
+
+	<li>Lambda 表达式的返回类型也要与那个 SAM 相匹配</li>
+
+	<li>Lambda 表达式抛出的异常也是那个 SAM 所允许的</li>
+
+</ol>
+
+说是四个条件，其实归根结底就是满足第一个条件。<br/>
+<br/>
+由于能应用于 Lambda 表达式的功能性接口只有一个抽象方法，不存在重载的情况，所以它的参数类型和个数就是确定的了，所以我们的 Lambda 表达式可以进一步省略参数类型说明而简化为：<br/>
+<br/>
+<span style="color: #800000;">Comparator&lt;String&gt; c = (s1, s2) -&gt; s1.compareToIgnoreCase(s2);</span><br/>
+<br/>
+再往前一步，如果参那个 SAM 只有一个参数，连括号参数两边的括号也可以省去，变为：<br/>
+<br/>
+<span style="color: #800000;">FileFilter java = f -&gt; f.getName().endsWith(".java");</span><br/>
+<span style="color: #800000;">button.addActionListener(e -&gt; foo());</span><br/>
+<br/>
+这个挺赞的，我喜欢这样的条种约定，像在 Scala 里诸多约定一样，使语法更加简洁明快。<br/>
+<br/>
+什么可以作为 Lambda 表达式类型推断的上下文呢？<a href="http://cr.openjdk.java.net/~briangoetz/lambda/lambda-state-final.html" target="_blank">State of the Lambda</a> 表出 8 个所在：<br/>
+<ol>
+
+	<li>变量声明</li>
+
+	<li>赋值</li>
+
+	<li>返回语句</li>
+
+	<li>数组初始化</li>
+
+	<li>方法或构造器的参数</li>
+
+	<li>Lambda 表达式的内容体</li>
+
+	<li>三元操作的条件语句 （?:）</li>
+
+	<li>转型表达式处</li>
+
+</ol>
+
+我不喜欢官方对 Lambda 上下文的表述，原本 Lambda 类型推断和某些约定就是希望尽可能代码短小精悍；而此处对 Lambda 上文的列举更会令人迷惑不堪，应该就一句话：<span style="color: #ff0000;"><strong>Lambda 表达式所处被期待什么类型就是它的上下文</strong></span>。<br/>
+<br/>
+如果说一种复杂的上下文就是作为重载方法的参数时，其实这也没什么特别之处，就是采用现有的规则，编译器会以一种最为接近的方式去 "猜测" Lambda 表达式实际表达的类型，尽可能的去消除二义性。同样的，你可在 IDE 中编译出错时，不断修正中进行体会，不须多说。<br/>
+<br/>
+见识一下 JDK 以及 Scala 中的类型推断：<br/>
+<br/>
+聪明的类型系统就要涉及到类型的推断，JDK5，6 中泛型的写法有点画蛇添足的意味，声明并初始化一个泛型实例要这么写：<br/>
+<br/>
+<span style="color: #800000;">List&lt;Map&lt;String, Integer&gt;&gt; properties&nbsp; = new ArrayList&lt;Map&lt;String, Integer&gt;&gt;();</span><br/>
+<br/>
+JDK7 聪明了一些，它认为后面那上 String 是多余的，所以在 JDK7 中相应的这么写：<br/>
+<br/>
+<span style="color: #800000;">List&lt;Map&lt;String, Integer&gt;&gt; properties = new ArrayList&lt;&gt;();</span><br/>
+<br/>
+这已经很不错了，在泛型多层嵌套的时候更能体现出来，但是 Scala 觉得这样还不够好，它的体系里需要编译器更加智能，所以只要用个 var 或是 val 来声明变量，编译器就能推断出实际的类型，它是这样的：<br/>
+<br/>
+<span style="color: #800000;">var properties = List[Map[String, Int]]();</span>

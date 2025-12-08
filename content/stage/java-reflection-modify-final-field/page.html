@@ -1,0 +1,126 @@
+---
+title: Java 反射有效的修改 final 属性值
+url: /java-reflection-modify-final-field/
+date: 2017-08-27T12:20:47-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Reflect
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8231 
+wpStatus: publish
+views: 4161
+lastmod: 2021-09-10T12:58:29-05:00
+---
+
+两年前写过一篇 <a href="/java-reflection-modify-final-field-value/">Java 反射修改 final 属性值</a>, 在这里重新温习一下，假设有个类</p>
+<br/>
+<blockquote>
+class Person {<br />
+    public final String name = "Mike";<br />
+}
+</blockquote>
+<br/>
+这里声明 name 为非静态的属性只是为了说明反射修改 final 属性无关乎静态不静态，静态只是表现在它是一个类属性，在一个类加载器空间只会有一份拷贝，仅此而已。<br/><br/>
+创建一个通用方法进行反射修改属性值<br/><br/>
+<pre class="lang:default decode:true ">public static void modify(Object object, String fieldName, Object newFieldValue) throws Exception {
+    Field field = object.getClass().getDeclaredField(fieldName);<br/><br/>
+    Field modifiersField = Field.class.getDeclaredField("modifiers");
+    modifiersField.setAccessible(true); //Field 的 modifiers 是私有的
+    modifiersField.setInt(field, field.getModifiers() &amp; ~Modifier.FINAL);<br/><br/>
+    if(!field.isAccessible()) {
+        field.setAccessible(true);
+    }<br/><br/>
+    field.set(object, newFieldValue);
+}
+</pre>
+<br/>
+调用 modify(...) 方法试图修改 person 的 name 属性<!--more--><br/><br/>
+<pre class="brush:java">Person person = new Person();
+modify(person, "name", "Michael");
+System.out.println(person.name);  //输出仍然是 Mike</pre>
+<br/>
+为什么代码执行下来没问题，但输出又还是原来的值呢？但总是可以通过反射方式获取到修改后的新值。这就是 Java  编译器对 final 属型的内联优化，即编译时把该 final 的值直接放到了引用它的地方。即使是反射修改了该属性，但这种事后处理于事无补。<br/><br/>
+所以我在标题中所说如何有效的修改 final 属性值是指：反射修改了 final 属性值后能够在后续代码中使用修改后的值。<br/><br/>
+如果 Person 有个方法<br/><br/>
+<blockquote>
+public String getName() {<br />
+    return name;<br />
+}
+</blockquote>
+<br/>
+在前面代码反射修改了 name 属性后，getName() 方法也仍然是返回 "Mike"。<br/><br/>
+那么 Java 会对什么类型的 final 值进行内联编译呢？它们基本类型 byte, char, short, int, long, float, double, boolean; 再加上 Literal String 类型(直接双引号字符串)。只要是不被编译器内联优化的 final 属性都可以通过反射有效的进行修改(修改后能使用到新的值)<br/><br/>
+String 类型比较特殊， 如果把 Person 类 name 属性改成用 new String("Mike")<br/><br/>
+<blockquote>
+public final String name = new String("Mike");
+</blockquote>
+<br/>
+就能够有效的使用上面的反射代码修改 name 的值，最后<br/><br/>
+<blockquote>
+modify(person, "name", "Michael");<br />
+System.out.println(person.name) //输出就是 Michael 了
+</blockquote>
+<br/>
+正如基本类型有相应的包装类型，可以把 new String("Mike") 想像为 "Mike" 的包装类型。也确实是基本类型的 final 包装类型可以被反射有效的修改，new String("Mike") 也可以。<br/><br/>
+但我们要是在 IDE 中写成 new String("Mike"), 可能被告知  <code>new String("")</code> 这种格式是冗余的，IDE 又会把它改成 "Mike"，重而反射行为变得不正确。<br/><br/>
+还有，如果 final 属性值是通过构造函数传入的能不能有效的被修改，当然可以，因为它也不会被编译器内联优化。<br/><br/>
+总之一句话：<strong><span style="color: #0000ff;">只要不会被编译器内联优化的 final 属性就可以通过反射有效的进行修改 --  修改后代码中可使用到新的值</span></strong><br/><br/>
+为加深印象，我们最后作一个较全面的测试<br/><br/>
+<pre class="brush:java">public class TestFinal {
+    public static void main(String[] args) throws Exception {
+        Person jordan = new Person("Chicago");<br/><br/>
+        modify(jordan , "firstName", "Michael");
+        System.out.println(jordan .firstName);  //Mike<br/><br/>
+        modify(jordan , "lastName", "Michael");
+        System.out.println(jordan.lastName);  //Michael<br/><br/>
+        modify(jordan , "age", 51f);
+        System.out.println(jordan .age);    //50.5<br/><br/>
+        modify(jordan , "height", 1.98f);
+        System.out.println(jordan.height); //1.98<br/><br/>
+        modify(jordan, "address", new Address("ccc", "ddd"));
+        System.out.println(jordan.address.line1);  //ccc<br/><br/>
+        modify(jordan , "city", "Miami");
+        System.out.println(jordan.city);  //Miami
+    }
+}<br/><br/>
+class Person {
+    public final String firstName = "Mike";
+    public final String lastName = new String("Jordan"); //可被有效修改
+    public final float age = 50.5f;
+    public final Float height = 1.99f; //可被有效修改
+    public final Address address = new Address("aaa", "bbb"); //可被有效修改<br/><br/>
+    public final String city; //可被有效修改<br/><br/>
+    public Person(String city) {
+        this.city = city;
+    }
+}<br/><br/>
+final class Address {
+    public final String line1;
+    public final String line2;<br/><br/>
+    public Address(String line1, String line2) {
+        this.line1 = line1;
+        this.line2 = line2;
+    }
+}
+</pre>
+<br/>
+我以前也有一人误区: 就是总以为加了 final 关键值，该属性就会被编译器内联优化，就不能用反射有效的进行修改。通过今天的梳理终于清晰的明白了：final 属性，只要不是基本类型和字面 String，就可以正常使用反射修改它的值。以前曾为了想反射修改某个 final 值还特意把  <code>final</code>  关键字给去掉，完全不用这么做。所以对于基本类型和字面 String, final 只是预示着它的值不能被正常的代码修改。<br/><br/>
+因此我们在声明 log 时<br/><br/>
+<blockquote>
+private static Logger log = LoggerFactory.getLogger(TestFinal.class);
+</blockquote>
+<br/>
+和<br/><br/>
+<blockquote>
+private static <strong>final</strong> Logger log = LoggerFactory.getLogger(TestFinal.class);
+</blockquote>
+<br/>
+性能上不会有什么差异，也不会因为多一个 final 而在任何使用到了 log 的地方内联它。只要留意基本类型和字面 String 就行了。

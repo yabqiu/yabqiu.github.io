@@ -1,0 +1,142 @@
+---
+title: 使用 Javassist 运行时生成泛型子类
+url: /leverage-javassist-generate-generic-subclass/
+date: 2017-02-01T01:30:35-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - javassist
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7789 
+wpStatus: publish
+views: 3890
+lastmod: 2021-06-22T15:09:27-05:00
+---
+
+越是复杂的项目希望使用者能愉快的编码的话，可能就要使用到字节码增强工具来暗地里做些手脚。这方面的工具有 JDK 的 Instrumentation, <a href="http://asm.ow2.org/">ASM</a>, <a href="http://commons.apache.org/proper/commons-bcel/">BCEL</a>, <a href="https://github.com/cglib/cglib/wiki">CGLib</a>, <a href="http://jboss-javassist.github.io/javassist/">Javassist</a>, 还有 <a href="http://bytebuddy.net/#/">Byte Buddy</a>. Javassist 和 Byte Buddy 更贴近我们编码中的概念，使用起来也简单，而其他几个工具需要我们更多的了解字节码指令，以及常量池等概念。所以我着重去了解怎么运用 Javassist 和 Byte Buddy 来动态修改来生成类文件。</p>
+<br/>
+所以本文是系列中的第一篇，旨在以一个 Javassist 的例子来了解它的基本使用方法。本例中在运行时动态生成一个类的子类，并且是泛型的，实现了一个方法，给类加上了一个注解，最终生成一个类文件。总之尽可能的让这个例子具有代表性，同时又需控制它的复杂性。最后通过加载类文件的方式来验证前面生成的类是否是正确的，也可以直接反编译生成的类文件来查看源代码，不过实际操作中我们可能会被反编译出来的源代码欺骗。<br/><br/>
+本例所使用的 Javassist 的版本是 3.21.0-GA, 是在一个 Maven 项目中测试的，所以 Maven 的依赖是<br/><br/>
+<blockquote>
+&lt;dependency&gt;<br />
+    &lt;groupId&gt;org.javassist&lt;/groupId&gt;<br />
+    &lt;artifactId&gt;javassist&lt;/artifactId&gt;<br />
+    &lt;version&gt;3.21.0-GA&lt;/version&gt;<br />
+&lt;/dependency&gt;
+</blockquote>
+<br/>
+<!--more--><br/><br/>
+接着创建好基类 Repository 和注解 Scope, 它们的内容分别如下<br/><br/>
+<strong>泛型的 Repository 类</strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+public abstract class Repository&lt;T&gt; {
+    abstract T findOne();
+}</pre>
+<br/>
+<strong>注解 Scope</strong><br/><br/>
+<pre class="brush:java">package cc.unmi;<br/><br/>
+import java.lang.annotation.Retention;
+import static java.lang.annotation.RetentionPolicy.RUNTIME;<br/><br/>
+@Retention(RUNTIME)
+public @interface Scope {
+    String value();
+}</pre>
+<br/>
+<strong>下面是动态生成子类以及测试的代码</strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import javassist.ClassPool;
+import javassist.CtClass;
+import javassist.CtConstructor;
+import javassist.CtMethod;
+import javassist.CtNewConstructor;
+import javassist.CtNewMethod;
+import javassist.bytecode.AnnotationsAttribute;
+import javassist.bytecode.ConstPool;
+import javassist.bytecode.SignatureAttribute;
+import javassist.bytecode.annotation.Annotation;
+import javassist.bytecode.annotation.StringMemberValue;<br/><br/>
+public class Main {<br/><br/>
+    @SuppressWarnings("unchecked")
+    public static void main(String[] args) throws Exception {
+        ClassPool pool = ClassPool.getDefault();
+        CtClass subClass = pool.makeClass("cc.unmi.UserRepository"); //类的全限名称
+        subClass.setSuperclass(pool.get(Repository.class.getName())); //指定父类，也可以在 makeClass() 的第二个参数指定<br/><br/>
+        //Javassist 对泛型的支持不甚友好，实现方法中还是会把类型擦除
+        subClass.setGenericSignature(new SignatureAttribute.TypeVariable("Repository&lt;String&gt;").encode());<br/><br/>
+        //即使隐式行为默认的构造函数调用父类的构造函数也必须说明
+        CtClass[] params = new CtClass[]{ };
+        CtConstructor ctor = CtNewConstructor.make( params, null, CtNewConstructor.PASS_PARAMS, null, null, subClass );
+        subClass.addConstructor(ctor);<br/><br/>
+        //使用了源代码的方式来实现一个方法，注意这里的类型是被擦除的, 把 Object 改成 String 反而有问题，见后面的解释
+        CtMethod findOneMethod = CtNewMethod.make("public Object findOne(){return \"Yanbin\";}", subClass);
+        subClass.addMethod(findOneMethod);<br/><br/>
+        //加个注解确实复杂，如果想一步创建 Annotation 用 new Annotation("Scope(value=\"Request\")", constPool)
+        //产生成类文件反编译后看起来也对的，但可能用反射 API 就是看不到它
+        ConstPool constPool = subClass.getClassFile().getConstPool();
+        AnnotationsAttribute annotationsAttribute = new AnnotationsAttribute(constPool, AnnotationsAttribute.visibleTag);
+        Annotation scopeAnnotation = new Annotation(Scope.class.getName(), constPool);
+        scopeAnnotation.addMemberValue("value", new StringMemberValue("Request", constPool));
+        annotationsAttribute.addAnnotation(scopeAnnotation);
+        subClass.getClassFile().addAttribute(annotationsAttribute);<br/><br/>
+        //由于是 Maven 项目，所以写入到这个目录中，最后的类文件是 target/classes/cc/unmi/UserRepository.class
+        subClass.writeFile("target/classes");<br/><br/>
+        Class&lt;Repository&lt;String&gt;&gt; repositoryClass = (Class&lt;Repository&lt;String&gt;&gt;) Class.forName("cc.unmi.UserRepository");
+        System.out.println(repositoryClass.getAnnotation(Scope.class).value()); //输出 Request<br/><br/>
+        Repository&lt;String&gt; repository = repositoryClass.newInstance();
+        System.out.println(repository.findOne()); //输出 Yanbin<br/><br/>
+    }
+}</pre>
+<br/>
+从控制台的输出可以说明动态生成的类是我们期望的结果。详情请参考源代码中的注释。<br/><br/>
+代码中我们想要生成的类原型是 <code>class UserRepository extends Repository&lt;String&gt;{}</code>, 那么应该实现的就是<br/><br/>
+<blockquote>
+public String findOne() { ... }
+</blockquote>
+<br/>
+但要是把生成方法的那行代码改成如下<br/><br/>
+<blockquote>
+CtNewMethod.make("public String findOne(){return \"Yanbin\";}, subClass);
+</blockquote>
+<br/>
+这时候你要是查看生成类文件经反编译的源代码也很漂亮，显示为返回类型是 <code>String</code>, 可是一加载调用 <code>fineOne()</code> 方法时就悲剧了，控制台的输出就成了<br/><br/>
+<blockquote>
+Request<br />
+Exception in thread "main" java.lang.AbstractMethodError: cc.unmi.Repository.findOne()Ljava/lang/Object;<br />
+    at cc.unmi.Main.main(Main.java:45)
+</blockquote>
+<br/>
+对于如何为类指定泛型，可参考 <a href="https://jboss-javassist.github.io/javassist/html/javassist/CtClass.html#setGenericSignature-java.lang.String-">CtClass.setGenericSignature API</a>。<br/><br/>
+最后我们可以看一下生成的 <code>target/classes/cc/unmi/UserRepository.class</code> 文件在 IntelliJ IDEA 中反编译后的样子<br/><br/>
+<pre class="lang:default decode:true ">//
+// Source code recreated from a .class file by IntelliJ IDEA
+// (powered by Fernflower decompiler)
+//<br/><br/>
+package cc.unmi;<br/><br/>
+import cc.unmi.Scope;<br/><br/>
+@Scope("Request")
+public class UserRepository extends Repository&lt;String&gt; {
+    public UserRepository() {
+    }<br/><br/>
+    public Object findOne() {
+        return "Yanbin";
+    }
+}</pre>
+<br/>
+<strong>应用延伸：</strong><br/><br/>
+<ol>
+    <li>复杂的泛型，如 &lt;List&lt;User&gt;&gt;, class UserRepository&lt;T extend User&gt; extends Repository&lt;T&gt; 等，或是方法中的泛型参数</li>
+    <li>定义新的方法，较少情况，因为基本上我们用以生成字节码的话是基于接口来编程</li>
+    <li>实现接口，或生成子接口, 相应的就是 makeInterface(...)</li>
+    <li>是否能更多使用 Java 代码的方式来生成类各种部件</li>
+    <li>除了生成 Class 文件，我们也可以得到所生成类的引用; 或字节码的内容，可用自定义的类加载器进行加载</li>
+    <li>是否能同时生成相应的源代码到 Maven 项目的 <code>generated-sources</code> 目录中？未曾试过，找到两个相关的库 <a href="https://github.com/forge/roaster">Roaster</a> 和 <a href="http://www.fuin.org/srcgen4javassist/index.html">SrcGen4Javassist</a>.</li>
+</ol>
+<br/>
+相关链接: <a href="http://jboss-javassist.github.io/javassist/tutorial/tutorial.html">Javassist 官方指南</a>, 进去有几页内容。

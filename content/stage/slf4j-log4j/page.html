@@ -1,0 +1,152 @@
+---
+title: SLF4J 的几种实际应用模式--之一：SLF4J+Log4J
+url: /slf4j-log4j/
+date: 2010-04-07T05:06:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - SLF4J
+  - Logger
+  - Log4J
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 205 
+wpStatus: publish
+views: 11094
+lastmod: 2010-08-09T11:54:41-05:00
+---
+
+SLF4J(Simple Logging Facade for Java) 是一个通用的日志框架，不能何以谓之 Facade(门面)，所扮眼的角色相当于 Jakarta Commons Logging。就像 JCL 需要底层的日志实现，如 Log4J、java.util.logging、Simple Logger 等来完成具体的信息输出，事实上基本总是 JCL+Log4J 那么一个绝配。SLF4J 的原旨也是能支持多种下层日志框架实现，但最好的日志实现仍然是 Log4J，所以本篇讲述 SLF4J 的第一种用法 SLF4J+Log4J。<br/>
+<br/>
+需要的配置文件和组件包，下面三个 jar 文件和一个 properties 文件都是要放在项目的 ClassPath 上。<br/>
+<br/>
+1. slf4j-api-1.5.11.jar<br/>
+2. slf4j-log4j12-1.5.11.jar<br/>
+3. log4j-1.2.15.jar<br/>
+4. log4j.properties(也可以是 log4j.xml，本例中用 log4j.propertes)<!--more--><br/>
+<br/>
+前两个包在 <a href="http://www.slf4j.org/download.html">http://www.slf4j.org/download.html</a> 处下载，后一个包在 <a href="http://logging.apache.org/log4j/1.2/download.html">http://logging.apache.org/log4j/1.2/download.html</a> 下载，可能包文件名中的版本号有些差，不要紧。<br/>
+<br/>
+log4j.properties 以前该是怎么写，现在还是怎么写，比如一个最简单的内容，只向控制台输出日志信息，如下：<br/>
+<pre class="brush:xml">log4j.rootLogger=DEBUG,console<br/>
+log4j.appender.console=org.apache.log4j.ConsoleAppender<br/>
+log4j.appender.console.layout=org.apache.log4j.PatternLayout<br/>
+log4j.appender.console.layout.ConversionPattern=%d{yyyy-MM-dd HH:mm:ss,SSS} [%c]-[%p] %m%n</pre>
+
+使用 SLF4J  的代码：<br/>
+<pre class="brush:java">package com.unmi;<br/>
+<br/>
+import org.slf4j.Logger;<br/>
+import org.slf4j.LoggerFactory;<br/>
+<br/>
+public class TestSlf4j {<br/>
+	private static final Logger logger = LoggerFactory.getLogger(TestSlf4j.class);<br/>
+<br/>
+	public static void main(String[] args) {<br/>
+		logger.info("Hello {}","SLF4J");<br/>
+	}<br/>
+}</pre>
+
+执行它，控制台输出：<br/>
+<br/>
+2010-04-07 17:14:51,390 [com.unmi.TestSlf4j]-[INFO] Hello SLF4J<br/>
+<br/>
+把这种 SLF4J+Log4J 的使用模式与曾为霸主地位的 JCL+Log4J 的用法进行一下对比(请忽略掉包文件中的版本号)：<br/>
+<table border="1" width="750" align="center">
+
+<tbody>
+
+<tr>
+
+<td><strong>SLF4J+Log4j 组合</strong></td>
+
+<td><strong>对比</strong></td>
+
+<td><strong>JCL+Log4J 组合</strong></td>
+
+</tr>
+
+<tr>
+
+<td>slf4j-api-1.5.11.jar</td>
+
+<td>相当，定义高层 API</td>
+
+<td>commons-logging-1.1.jar</td>
+
+</tr>
+
+<tr>
+
+<td>slf4j-log4j12-1.5.11.jar</td>
+
+<td>相当，左边是用绑定包，右边<br/>
+是用配置文件来指定日志实现</td>
+
+<td>commons-logging.properties，内容为：<br/>
+org.apache.commons.logging.LogFactory=<br/>
+org.apache.commons.logging.impl.LogFactoryImpl<br/>
+或者<br/>
+org.apache.commons.logging.Log=<br/>
+org.apache.commons.logging.impl.Log4JLogger</td>
+
+</tr>
+
+<tr>
+
+<td>log4j-1.2.15.jar</td>
+
+<td>一样</td>
+
+<td>log4j-1.2.15.jar</td>
+
+</tr>
+
+<tr>
+
+<td>log4j.properties</td>
+
+<td>一样，原来怎么配置现在也是</td>
+
+<td>log4j.properties</td>
+
+</tr>
+
+<tr>
+
+<td>程序代码中：<br/>
+import org.slf4j.Logger;<br/>
+import org.slf4j.LoggerFactory;<br/>
+<br/>
+Logger logger = LoggerFactory.getLogger(TestSlf4j.class);<br/>
+logger.info("Hello {}","SLF4J");</td>
+
+<td>左边侵入的是 SLF4J API，右边是被 JCL 的 API 污染了<br/>
+<br/>
+SLF4J 支持参数化，而 JCL 不能</td>
+
+<td>程序代码中：<br/>
+import org.apache.commons.logging.Log;<br/>
+import org.apache.commons.logging.LogFactory;<br/>
+<br/>
+Log log = LogFactory.getLog(TestJCL.class);<br/>
+<br/>
+log.info("Hello JCL");</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+从上面的对比来看，SLF4j+Log4j 与 JCL+Log4J 的使用方式差不多，主要差异就在 SLF4J 用 jar 来告知用哪种日志实现，而 JCL 是通过配置文件来获得该选择哪个日志实现。<br/>
+<br/>
+为什么会兴起 SLF4J，看看我们原来哪一个框架中，大的如 SSH 三雄(Spring、Struts、Hibernate)，还有 WAS 应用服务器，小的就不计其数以前用的通用日志框架都清一色的 Jakarta Commons Logging(JCL)，日志实现会选用 Log4j，为何现在 Hibernate、Tapesty、DbUnit、Jetty V6 等纷纷变节，都采用了 SLF4J 了呢？SLF4J 与 JCL 相比，定然是有其可表之处。而其中 SLF4J 受类加载器的影响较小，不易产生内存溢出的问题，性能得到了改善，更主要是顺应了潮流的发展--可方便部署到 OSGI 环境中。<br/>
+<br/>
+关于当前有哪些项目改用了 SLF4J，请参看页面 <a href="http://www.slf4j.org/">http://www.slf4j.org/</a>。

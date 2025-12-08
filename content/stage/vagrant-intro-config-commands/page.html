@@ -1,0 +1,490 @@
+---
+title: Vagrant 简介与常用操作及配置
+url: /vagrant-intro-config-commands/
+date: 2021-04-30T12:24:06-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2021/04/vagrant_logo.png"
+categories:
+  - Uncategorized
+tags: 
+  - Docker
+  - Vagrant
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10710 
+wpStatus: publish
+views: 1360
+lastmod: 2025-07-10T23:51:10-05:00
+---
+
+前方许多有关于 Kafka, Docker, Python 和 Kubernates 的文章都是在 Vagrant 虚拟机中做的 Demo，经常用到的一些 Vagrant 命令是时候有必要写篇日志记录下来。Vagrant 是 HashiCorp 家族中的一员，HashiCorp 旗下著名的工具还有  <a href="https://learn.hashicorp.com/terraform">Terraform</a>, <a href="https://learn.hashicorp.com/consul">Consul</a>,  <a href="https://learn.hashicorp.com/vault">Vault</a>, <a href="https://learn.hashicorp.com/boundary">Boundary</a>, <a href="https://learn.hashicorp.com/packer">Packer</a>, <a href="https://learn.hashicorp.com/nomad">Nomad</a> 和 <a href="https://learn.hashicorp.com/waypoint">Waypoint</a>. <br/><br/>
+说起 Vagrant，不得不提起与之仿佛类似的 Docker，其实它们相差还是比较大的，只因它们给人的外在感觉都是命令行控制 Linux。Vagrant 实质是一个虚拟机的外挂，让我们更方便的用 Vagrant 命令与虚拟机交互，而不用在宿主机与虚拟机间来回切换，管理多个虚拟机就更得心应手了; 而 Docker 是一个容器，容器的本质是宿主机上的一个进程，只是用命名空间与该进程的文件系统，进程，网络等进行了隔离，使得该容器进程看似一个虚拟  OS。<br/><br/>
+Vagrant 是开发环境的部署工具, 而 Docker 是运行环境的部署工具; Vagrant 操作的是一个标准的 Linux 或  Windows 操作系统，而 Docker 的镜像考虑到发布服务的个头，通常是一个裁剪的系统，去除了服务器非必要的命令。既然 Vagrant 对应的是虚拟机，那么在 Vagrant 中的操作，安装的软件在 Vagrant 退出后都会保留下来，而 Docker 中操作的都是当前容器(copy-on-write)，并不影响所对应的镜像, 除非用 docker commit 固化为新的镜像.<br/><br/>
+明白了 Vagrant 只是一个虚拟机的皮，那他在不同的硬件平台或操作系统下需要与不同的 Provider, 如 VirtualBox, Hyper-V, VMware 等配合工作，还能用 Vagrant 来操作 Docker。<br/><br/>
+有了 Vagrant, 从此不再需要下载不同操作系统的 ISO 安装镜像文件，耗时的逐步安装操作系统，也不用手工的下载别人安装好并导出的虚拟机文件，一切有点类似 Docker 一样从远程公共仓库中选择系统即可。<br/><br/>
+<!--more--><br/><br/>
+因此在 Mac OS X 下要能使用 Vagrant 的话，我们先安装免费的 Virtualbox, 然后是 Vagrant，可用 brew 进行安装<br/><br/>
+<blockquote>
+$ brew install --cask virtualbox<br />
+$ brew install vagrant
+</blockquote>
+<br/>
+安装好后就能使用 Vagrant 命令了，当前版本是<br/><br/>
+<blockquote>
+$ VirtualBoxVM --help<br />
+Oracle VM VirtualBox VM Runner v6.1.20
+$ vagrant --version<br />
+Vagrant 2.2.15
+</blockquote>
+<br/>
+这时候用 vagrant 的 up, halt 等子命令就可以看作是在和 VirtualBoxVM, VBoxManage 等命令通信。下面来看一下 vagrant 命令 如何创建, 启动, ssh 及关闭一个虚拟机。<br/><br/>
+Docker 有 Dockerfile, 与 Vagrant 相应的是 Vagrantfile，在同一个宿主机上我们要创立多个虚拟机的话，通常为每一个 Vagrantfile  创建一个独立的目录。比如我们想创建一个 Ubuntu 20.04 LTS 的虚拟机，首先创建一个目录 <code>ubuntu-20.04</code>, 然后在其下创建文件 Vagrantfile<br/><br/>
+执行 <code>vagrant</code> 命令时定位 <code>Vagrantfile</code> 文件的顺序是从当前一直上升到根目录下, 如 ./Vagrantfile, ../Vagrantfile, ../../Vagrantfile, ... 一直到  /Vagrantfile。可通过修改环境变量 <code>VAGRANT_CWD</code> 改变起始搜索位置。一个 Vagrantfile 文件中还能定义多个虚拟机，下面有说明。<br/><br/>
+再搜索到官方的 ubuntu 20.04 的 box(不再叫做镜像了) https://app.vagrantup.com/boxes/search?utf8=%E2%9C%93&amp;sort=downloads&amp;provider=virtualbox&amp;q=ubuntu+20.04， 进到 https://app.vagrantup.com/ubuntu/boxes/focal64 页面拷贝<br/><br/>
+<pre class="lang:default decode:true ">Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/focal64"
+end</pre>
+<br/>
+为 Vagrantfile 的内容，演示前面操作的命令系列如下<br/><br/>
+<blockquote>
+~$ mkdir ubuntu-20.04 &amp;&amp; cd ubuntu-20.04<br />
+ubuntu-20.04$ cat &lt;&lt; EOF &gt; Vagrantfile<br />
+Vagrant.configure("2") do |config|<br />
+    config.vm.box = "ubuntu/focal64"<br />
+end<br />
+EOF
+</blockquote>
+<br/>
+也可用下面的 <code>vagrant init</code> 命令<br/><br/>
+<blockquote>
+ubuntu-20.04$ vagrant init ubuntu/focal64
+</blockquote>
+<br/>
+达成与前面的 cat 命令的基本等价的结果，只不过 <code>vagrant init</code> 生成的 <code>Vagrantfile</code> 文件中有详细的注释说明。Vagrantfile 是一个采用了 ruby 语法的文件, 因为 Vagrant 是用 ruby 写成的。<br/><br/>
+接下来介绍的 vagrant 虚拟机的操作指令默认都是针对当前目录下的 Vagrantfile 文件所指引的虚拟机。如果想在任意目录下针对某个虚拟机进行操作，需要指定虚拟机的名称或 ID, 在 Vagrantfile 中不指定名称的话所有虚拟机的名称都是 default, ID 是不一样的。如何获得虚拟机的 Name 或  ID 可用 <code>vagrant global-status</code> 命令，后面会讲到。<br/><br/>
+现在开始用 up, ssh, halt 等命令来启动虚拟机，ssh 连接到虚拟，以及关闭虚拟机<br/><br/>
+下面从命令行提示符可识别出当前是在宿主机还是虚拟机中的 shell, 类似的 $ 或 ubuntu-20.04$ 是在宿主机上，vagrant@ubuntu-focal:~$ 是在虚拟机中。<code>vagrant ssh</code> 的用户名是 <code>vagrant</code><br/><br/>
+<h3>vagrant up 启动一个虚拟机</h3><br/><br/>
+<pre class="lang:default decode:true">ubuntu-20.04$ vagrant up
+Bringing machine 'default' up with 'virtualbox' provider...
+==&gt; default: Importing base box 'ubuntu/focal64'...
+==&gt; default: Matching MAC address for NAT networking...
+==&gt; default: Checking if box 'ubuntu/focal64' version '20210415.0.0' is up to date...
+==&gt; default: A newer version of the box 'ubuntu/focal64' for provider 'virtualbox' is
+==&gt; default: available! You currently have version '20210415.0.0'. The latest is version
+==&gt; default: '20210429.0.0'. Run `vagrant box update` to update.
+==&gt; default: Setting the name of the VM: ubuntu-2004_default_1619755398798_4656
+==&gt; default: Clearing any previously set network interfaces...
+==&gt; default: Preparing network interfaces based on configuration...
+    default: Adapter 1: nat
+==&gt; default: Forwarding ports...
+    default: 22 (guest) =&gt; 2222 (host) (adapter 1)
+==&gt; default: Running 'pre-boot' VM customizations...
+==&gt; default: Booting VM...
+==&gt; default: Waiting for machine to boot. This may take a few minutes...
+    default: SSH address: 127.0.0.1:2222
+    default: SSH username: vagrant
+    default: SSH auth method: private key
+    default: Warning: Connection reset. Retrying...
+    default: Warning: Remote connection disconnect. Retrying...
+    default:
+    default: Vagrant insecure key detected. Vagrant will automatically replace
+    default: this with a newly generated keypair for better security.
+    default:
+    default: Inserting generated public key within guest...
+    default: Removing insecure key from the guest if it's present...
+    default: Key inserted! Disconnecting and reconnecting using new SSH key...
+==&gt; default: Machine booted and ready!
+==&gt; default: Checking for guest additions in VM...
+==&gt; default: Mounting shared folders...
+    default: /vagrant =&gt; /Users/yanbin/vagrant/ubuntu-20.04</pre>
+<br/>
+启动后直接对应到 VirtualBox 中一个虚拟机<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-1-1.png"><img class="aligncenter wp-image-10714" src="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-1-1-800x307.png" alt="" width="850" height="326" /></a><br/><br/>
+如果创建一个新的目录，放个  Vagrantfile 文件再用 vagrant up 启动又会在 VirtualBox 中看到对应的新虚拟机。同时注意 Vagrant 所创建的虚拟机内存只有 1024 MB, 它的 Settings 中可看到其他的配置，如网络是 NAT 等，这些都可以通过 Vagrantfile 来配置，尽量不要在 VirtualBox 中直接修改虚拟机的设置。<br/><br/>
+<h3>虚拟机与宿主机间文件共享</h3><br/><br/>
+注意到 vagrant  启动过程中显示了挂载共享目录，如上面的<br/><br/>
+<pre class="lang:default decode:true">==&gt; default: Mounting shared folders... 
+    default: /vagrant =&gt; /Users/yanbin/vagrant/ubuntu-20.04</pre>
+<br/>
+也就是在虚拟机上进到 /vagrant 目录，内容就是宿主机上 /Users/yanbin/vagrant/ubuntu-20.04 目录，也就是 Vagrantfile 文件所在的目录。在虚拟机中挂载的是可读写的文件系统，通过这个连接就能在虚拟机与宿主机之间共享文件了。<br/><br/>
+<h3>vagrant ssh 登陆虚拟机</h3><br/><br/>
+<pre class="lang:default decode:true">ubuntu-20.04$ vagrant ssh
+Welcome to Ubuntu 20.04.2 LTS (GNU/Linux 5.4.0-72-generic x86_64)<br/><br/>
+.......<br/><br/>
+  System information as of Fri Apr 30 04:19:44 UTC 2021<br/><br/>
+  System load:  0.02              Processes:               113
+  Usage of /:   3.2% of 38.71GB   Users logged in:         1
+  Memory usage: 20%               IPv4 address for enp0s3: 10.0.2.15
+  Swap usage:   0%<br/><br/>
+.......<br/><br/>
+Last login: Fri Apr 30 04:06:24 2021 from 10.0.2.2
+vagrant@ubuntu-focal:~$ free
+              total        used        free      shared  buff/cache   available
+Mem:        1004584      143788      500384         940      360412      706680
+Swap:             0           0           0
+vagrant@ubuntu-focal:~$ hostname
+ubuntu-focal</pre>
+<br/>
+此时进入了那个 VirtualBox 虚拟机 ubuntu-2004_default_1619...中，现在可以做任何 ssh 可做的事情。<br/><br/>
+<code>vagrant halt</code>: 关闭当前虚拟机，在 VirtualBox 中该虚拟机的状态变为 Powered Off<br/><br/>
+<code>vagrant status</code>: 查看当前虚拟机的状态, running, poweroff, not created(从未 up 过),saved(执行了 vagrant suspend 后的状态)<br/><br/>
+<h3>vagrant destroy 销毁虚拟机</h3><br/><br/>
+<blockquote>
+ubuntu-20.04$ vagrant destroy<br />
+default: Are you sure you want to destroy the 'default' VM? [y/N] y<br />
+==&gt; default: Forcing shutdown of VM...<br />
+==&gt; default: Destroying VM and associated drives..
+</blockquote>
+<br/>
+vagrant destroy 操作会把对应的虚拟机从 VirutalBox 中删除掉。<br/><br/>
+vagrant 的命令可以用 vagrant --help 列出来, 下面列一些其他 vagrant 常用的操作<br/><br/>
+<h3>vagrant global-status -- 列出所有虚拟机的状态</h3><br/><br/>
+<pre class="lang:default decode:true">$ vagrant global-status
+id       name    provider   state    directory
+--------------------------------------------------------------------------
+cef6e15  default virtualbox poweroff /Users/yanbin/vagrant/ubuntu-18.04
+b9988a1  default virtualbox running  /Users/yanbin/vagrant/fedora30
+5888413  default virtualbox running  /Users/yanbin/vagrant/ubuntu-20.04</pre>
+<br/>
+有了以上的内容，前面的 vagrant 虚拟机相关命令就可以带上 id 或 name 作针对性操作, 当 name 不是唯一时只会作用到第一可用的虚拟上<br/><br/>
+<code>vagrant up cef6e15</code> 会启动 ubuntu-18.04 的虚拟机<br/><br/>
+<code>vagrant ssh b9988a1</code> 会 ssh 连接到 fedora30 虚拟机<br/><br/>
+有了 id 或 name, 每次 vagrant  操作就不必跑到 Vagrantfile 所在的目录去执行命令。<br/><br/>
+<h3>vagrant cloud search -- 搜索 box</h3><br/><br/>
+除了打开 https://app.vagrantup.com/boxes/search 网页搜索外，我们也可以用命令来搜索<br/><br/>
+<pre class="lang:default decode:true">ubuntu-20.04$ vagrant cloud search fedora
+| NAME                 | VERSION | DOWNLOADS | PROVIDERS                                              |
++----------------------+---------+-----------+--------------------------------------------------------+
+| generic/fedora28     | 3.2.18  |   267,894 | vmware_desktop, virtualbox, parallels, libvirt, hyperv |
+| generic/fedora27     | 3.2.18  |   171,412 | vmware_desktop, virtualbox, parallels, libvirt, hyperv |
+| generic/fedora32     | 3.2.18  |   116,801 | vmware_desktop, virtualbox, parallels, libvirt, hyperv |
+| generic/fedora33     | 3.2.18  |   114,666 | vmware_desktop, virtualbox, parallels, libvirt, hyperv |
+| generic/fedora26     | 3.2.18  |   111,408 | vmware_desktop, virtualbox, parallels, libvirt, hyperv |
+| generic/fedora25     | 3.2.18  |   102,329 | virtualbox, vmware_desktop, parallels, libvirt, hyperv |
+| generic/fedora29     | 3.2.18  |    88,640 | vmware_desktop, virtualbox, parallels, libvirt, hyperv |
+| generic/fedora30     | 3.2.18  |    83,148 | vmware_desktop, virtualbox, parallels, libvirt, hyperv |
+| roboxes/fedora28     | 3.2.18  |    55,764 | vmware_desktop, virtualbox, parallels, libvirt, hyperv |
+| lavabit/magma-fedora | 3.2.18  |    53,727 | vmware_desktop, virtualbox, libvirt, hyperv            |
++----------------------+---------+-----------+--------------------------------------------------------+</pre>
+<br/>
+会列出关键字对应的所有 box, 及版本和 providers, 本人用这个命令搜索比网页中还来得慢，倒不如在网页中找到相应的 box 再加到 Vagrantfile 中或 vagrant init, 或 vagrant box add。<br/><br/>
+<h3>vagrant box add -- 添加 box 到本地仓库</h3><br/><br/>
+<blockquote>
+$ vagrant box add generic/fedora30 --provider virtualbox
+</blockquote>
+<br/>
+如果没有指定 provider 会列出可用的 provider 进行选择。vagrant box add 还能从一个 url 或文件路径中添加一个 box. 在 Mac OS X 下 vagrant box add 的 box 存储在 <code>~/.vagrant.d/boxes</code> 目录中<br/><br/>
+<pre class="lang:default decode:true">$ ls -l ~/.vagrant.d/boxes
+total 0
+drwxr-xr-x  4 yanbin  staff  128 Apr 29 23:45 generic-VAGRANTSLASH-fedora30
+drwxr-xr-x  4 yanbin  staff  128 Apr 30 00:29 hashicorp-VAGRANTSLASH-vagrant-share
+drwxr-xr-x  4 yanbin  staff  128 Apr 29 23:53 ubuntu-VAGRANTSLASH-bionic64
+drwxr-xr-x  4 yanbin  staff  128 Apr 29 19:15 ubuntu-VAGRANTSLASH-focal64</pre>
+<br/>
+<h3>vagrant box list -- 列出本地的 box</h3><br/><br/>
+<blockquote>
+$ vagrant box list<br />
+generic/fedora30 (virtualbox, 3.2.18)<br />
+ubuntu/bionic64 (virtualbox, 20210415.0.0)<br />
+ubuntu/focal64 (virtualbox, 20210415.0.0)
+</blockquote>
+<br/>
+<h3>vagrant box remove -- 移除相应的 box</h3><br/><br/>
+<blockquote>
+$ vagrant box remove ubuntu/bionic64<br />
+Removing box 'ubuntu/bionic64' (v20210415.0.0) with provider 'virtualbox'...
+</blockquote>
+<br/>
+当然它会从 <code>~/.vagrant.d/boxes</code> 目录中清除掉。<br/><br/>
+其他的 vagrant box 命令还有<br/><br/>
+vagrant box outdated: 检查所有的 box 是否有更新<br/><br/>
+vagrant box update: 更新 box<br/><br/>
+<h3>vagrant 的 share 命令</h3><br/><br/>
+vagrant 不能直接使用 vagrant share 命令，需要先安装 vagrant-share 插件和 ngrok 组件<br/><br/>
+<blockquote>
+$ vagrant plugin install vagrant-share<br />
+$ brew install ngrok
+</blockquote>
+<br/>
+vagrant share --ssh, vagrant share --http 80 等命令使用起来没觉得有多大的意义。<br/><br/>
+以下是关于 Vagrantfile 配置的一些知识，包括机器名, 内存, CPU, 网络, 及端口的配置, 还能初始化虚拟机时预装软件。<br/><br/>
+查看我们用像 <code>vagrant init ubuntu/focal64</code> 命令生成的 Vagrantfile 文件，可以看到非常详尽的 Vagranfile 配置说明。官方说明文档在这里 <a href="https://www.vagrantup.com/docs/vagrantfile">https://www.vagrantup.com/docs/vagrantfile</a>, 本人一直很喜欢 HashiCorp 的在线文档，其中数 Terraform 的在线文档查阅的最多。<br/><br/>
+<h3>配置虚拟机的 hostname</h3><br/><br/>
+默认的话, 虚拟机的 hostname 是不太确定的，来自 box 中预设的机器名。当我们配置多个 Vagrant 虚拟机进行集群的时候，就有必要为每个虚拟机指定一个有意义的机器名，这时需要配置 Vagrantfile 如下<br/><br/>
+<pre class="lang:default mark:2 decode:true">Vagrant.configure("2") do |config|
+  config.vm.hostname = "k8s-master"
+  config.vm.box = "ubuntu/focal64"
+end </pre>
+<br/>
+然后用命令 <code>vagrant reload</code> 重新启动虚拟机(相当于 vagrant halt; vagrant up)，再 <code>vagrant ssh</code> 登陆后看到 hostname 变成了 k8s-master<br/><br/>
+<blockquote>
+ubuntu-20.04$ vagrant ssh<br />
+vagrant@k8s-master:~$ hostname<br />
+k8s-master 
+</blockquote>
+<br/>
+<h3>配置虚拟机的标识名</h3><br/><br/>
+此处所说的虚拟机标识名和上面虚拟机的 hostname 是不同的概念，而是指在 <code>vagrant global-status</code> 中看到的 name<br/><br/>
+<pre class="lang:default decode:true">$ vagrant global-status
+id       name    provider   state   directory
+-----------------------------------------------------------------------
+f284d36  default virtualbox running /Users/yanbin/vagrant/ubuntu-20.04
+def48b8  default virtualbox running /Users/yanbin/vagrant/fedora30</pre>
+<br/>
+记得前面的与虚拟机操作相关的命令都可以带个参数 [id|name], 就是上面的 id 或 name，但因为 name 默认总是 <code>default</code>，所以只能用 <code>id</code> 来标识虚拟机，如<br/><br/>
+<blockquote>
+$ vagrant ssh f284d36<br />
+$ vagrant halt d3f48b8
+</blockquote>
+<br/>
+如果我们给虚拟机一个 name, 比如 <code>ubuntu-server-1</code>, 那么操作时可以是<br/><br/>
+<blockquote>
+$ vagrant up ubuntu-server-1
+</blockquote>
+<br/>
+要配置虚拟机的 name， <code>Vagrantfile</code> 要调用 config.vm.define 函数，并传入一个 name<br/><br/>
+<pre class="lang:default mark:2 decode:true">Vagrant.configure("2") do |config|
+  config.vm.define "ubuntu-server-1"
+  config.vm.box = "ubuntu/focal64"
+end</pre>
+<br/>
+再重启虚拟机，用 vagrant global-status 看到的就是<br/><br/>
+<pre class="lang:default decode:true">$ vagrant global-status
+id       name            provider   state   directory
+------------------------------------------------------------------------------
+def48b8  default         virtualbox running /Users/yanbin/vagrant/fedora30
+6dc44cb  ubuntu-server-1 virtualbox running /Users/yanbin/vagrant/ubuntu-20.04</pre>
+<br/>
+这里就能使用 name 来操作了。不过本人认为能用 id 操作就足够了，从 vagrant global-status 中的 directory 可知操作的是哪个虚拟机，不管是用 id 还是 name, 总需频繁的用 <code>vagrant global-status</code> 来查看所有虚拟机的 id 和 name。所以这里的 name 的实际意义并不大。<br/><br/>
+注：在更新的虚拟机 name 后，需要用 <code>vagrant global-status --prune</code> 清理掉垃圾条目。<br/><br/>
+<h3>配置虚拟机的名称</h3><br/><br/>
+怎么又来了一个名称，我们这里之所以说虚拟机名称是因为......，先配置再看运行后的效果<br/><br/>
+<pre class="lang:default mark:4-6 decode:true">Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/focal64"<br/><br/>
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "ubuntu-server-x"
+  end
+end</pre>
+<br/>
+vagrant destroy 掉再 vagrant up 重新启动，这时候配置的虚拟机名称对应到 VirtualBox 中的<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-2.png"><img class="aligncenter wp-image-10722" src="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-2-800x421.png" alt="" width="697" height="367" /></a><br/><br/>
+ubuntu-server-x, 而不是 xxx_default 后面跟一串带纳秒的时间戳。当我们选择使用 vagrant 后大概很少会去查看 VirtualBox 中对应虚拟机长什么样了。<br/><br/>
+<h3>配置虚拟机内存和 CPU</h3><br/><br/>
+对虚拟机内存的配置显然是很重要的，试想我们能拿默认的 1G 内存做什么开发工作？前面我们已经来到了 config.vm.provider 块的配置，对内存和 CPU 的配置也在当中进行，比如我们配置 2G 内存和 3 个 CPU<br/><br/>
+<pre class="lang:default mark:4-7 decode:true">Vagrant.configure("2") do |config|
+  config.vb.box = "ubuntu/focal64"<br/><br/>
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = 2048
+    vb.cpus = 3
+  end
+end</pre>
+<br/>
+vagrant reload 后，vagrant ssh 进到虚拟机，查看内存和 CPU<br/><br/>
+<pre class="lang:default decode:true">vagrant@ubuntu-focal:~$ cat /proc/meminfo | grep MemTotal
+MemTotal:        2035020 kB
+vagrant@ubuntu-focal:~$ cat /proc/cpuinfo | grep processor
+processor   : 0
+processor   : 1
+processor   : 2</pre>
+<br/>
+内存从默认的 1G 变成了 2G, 并且 CPU 有了 3 个。<br/><br/>
+<h3>网络的配置</h3><br/><br/>
+Vagrant 虚拟机默认的网络配置是 NAT, 它允许虚拟机访问外部网络，并与宿主机或本地其他虚拟机之间通信，但外部无法直接访问虚拟机。我们可以配置从 DHCP 上获得 IP(它将与宿主机处于同一个网络，相当于 VirutalBox 中的 bridge 方式), 或用静态 IP 地址，这样更方便与外部机器交互。<br/><br/>
+<pre class="lang:default mark:3-4 decode:true">Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/"
+  config.vm.network "public_network"
+# config.vm.network "private_network", type: "dhcp"  # 与上等价
+# config.vm.network "private_network", ip: "172.28.1.100" # 配置静态私有 IP  
+  config.vm.network "forwarded_port", guest: 80, host: 8080
+end</pre>
+<br/>
+再执行 <code>vagrant reload</code> 时就会询问桥接到哪个网络接口(只会询问一次)，选择本机连接外部网络的接口就行，或者配置 public_network 时指定外部网络接口，像<br/><br/>
+<pre class="lang:default decode:true">config.vm.network "public_network", bridge: "enp0s31f6"</pre>
+<br/>
+如此 <code>vagrant up</code> 或 <code>vagrant reload</code> 就不会提示选择外部网络接口<br/><br/>
+再 <code>vagrant ssh</code> 连接后就能看到<br/><br/>
+<pre class="lang:default decode:true ">vagrant ssh
+Welcome to Ubuntu 20.04.2 LTS (GNU/Linux 5.4.0-72-generic x86_64)<br/><br/>
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage<br/><br/>
+  System information as of Fri Apr 30 14:06:34 UTC 2021<br/><br/>
+  System load:  0.21              Processes:               131
+  Usage of /:   3.2% of 38.71GB   Users logged in:         0
+  Memory usage: 9%                IPv4 address for enp0s3: 10.0.2.15
+  Swap usage:   0%                IPv4 address for enp0s8: 192.168.86.47</pre>
+<br/>
+其中 <code>192.168.86.47</code> 是从我的 wifi 路由器上分配的 IP 地址, 而不仅仅是 NAT 上分配的 10.0.2.15 这个地址。<br/><br/>
+<blockquote>
+config.vm.network "private_network", ip: "172.28.1.100"
+</blockquote>
+<br/>
+以上静态 IP 地址的方式会促使 VirtualBox 的 OS 上创建一个虚拟网络 172.28.1.1/24，比如 vboxnet1, 或  vboxnet2(如果  vboxnet1 已使用)。所以在虚拟机中分配的静态 IP 总是可以宿主机和该宿主机上的其他虚拟机访问。<br/><br/>
+如果在 Vagrantfile 中配置了太多的静态 IP 段会在宿主机操作系统中产生太多的 vboxnet1, vboxnet2, vboxnet3... 那样的网络设备。用 ifconfig 可以看到它们<br/><br/>
+<pre class="lang:default decode:true ">$ ifconfig
+....
+vboxnet0: flags=8843&lt;UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST&gt; mtu 1500
+    ether 0a:00:27:00:00:00
+    inet 127.0.0.1 netmask 0xffffff00 broadcast 127.0.0.255
+vboxnet1: flags=8843&lt;UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST&gt; mtu 1500
+    ether 0a:00:27:00:00:01
+    inet 10.0.2.1 netmask 0xffffff00 broadcast 10.0.2.255
+vboxnet2: flags=8943&lt;UP,BROADCAST,RUNNING,PROMISC,SIMPLEX,MULTICAST&gt; mtu 1500
+    ether 0a:00:27:00:00:02
+    inet 172.28.1.1 netmask 0xffffff00 broadcast 172.28.1.255</pre>
+<br/>
+如果因为在 Vagrantfile 中配置静态 IP 产生太多的 vboxnetX 网络接口的话，需用 VBoxMange 进行清理<br/><br/>
+<blockquote>
+$ VBoxManage hostonlyif remove vboxnet1<br />
+$ VBoxManage hostonlyif remove vboxnet2
+</blockquote>
+<br/>
+给 config.vm.network 加上 auto_config: false 参数将不再自动配置 vboxnetX，需手工创建，可避免产生一大堆垃圾，完整的配置如下<br/><br/>
+<blockquote>
+config.vm.network "private_network", ip: "172.28.1.100", auto_config: false
+</blockquote>
+<br/>
+比如可用 VBoxManger 来创建一个网络<br/><br/>
+<blockquote>
+$ VBoxManage natnetwork add --netname myvboxnet1 --network "172.28.1.100/24" --enable --dhcp on
+</blockquote>
+<br/>
+在 VirtualBox 中会是这样<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-5.png"><img class="aligncenter wp-image-10732" src="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-5-800x529.png" alt="" width="550" height="364" /></a><br/><br/>
+<h3>端口转发配置</h3><br/><br/>
+特别是配置为默认 NAT 的网络或静态 IP 时，外部机器(非宿主机或其上的其他虚拟机)无法直接访问，这时候就要用到端口转发的功能，由宿主机上一个端口指向到虚拟机内部的服务端口。<br/><br/>
+<pre class="lang:default decode:true">Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/"
+  config.vm.network "forwarded_port", guest: 80, host: 8080
+end</pre>
+<br/>
+然后 <code>vagrant reload</code>, 启动的时候我们可以看到输出<br/><br/>
+<pre class="lang:default decode:true">==&gt; default: Forwarding ports...
+    default: 80 (guest) =&gt; 8080 (host) (adapter 1)
+    default: 22 (guest) =&gt; 2200 (host) (adapter 1)</pre>
+<br/>
+或用 <code>vagrant port</code> 列出当前的端口映射<br/><br/>
+<blockquote>
+$ vagrant port<br />
+22 (guest) =&gt; 2200 (host)<br />
+80 (guest) =&gt; 8080 (host)
+</blockquote>
+<br/>
+宿主机上看到由 VBoxHead1 启动的 8080 监听端口<br/><br/>
+<pre class="lang:default decode:true">$ netstat -na|grep 8080
+tcp4       0      0  *.8080                 *.*                    LISTEN
+$ lsof -i :8080
+COMMAND     PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME
+VBoxHeadl 33617 yanbin   20u  IPv4 0xd679f7ee9be9755d      0t0  TCP *:http-alt (LISTEN)</pre>
+<br/>
+测试它之前，需要 <code>vagrant ssh</code> 进到虚拟机安装一个 apache 启动虚拟机中的 80 服务，然后访问宿主机的 8080 端口<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-3.png"><img class="aligncenter wp-image-10726" src="https://yanbin.blog/wp-content/uploads/2021/04/vagrant-virtualbox-3-800x362.png" alt="" width="829" height="375" /></a><br/><br/>
+config.vm.network "forward_port", guest: &lt;port&gt;, host: &lt;port&gt; 可以在 Vagrantfile 中出现多次用以配置多个端口映射，所以它是一个 ruby 函数调用，而赋值语名。<br/><br/>
+<h3>预安装软件(provision)</h3><br/><br/>
+如果我们需要在虚拟机安装应用的话，在第一次 <code>vagrant up</code> (创建虚拟机后) 用 <code>vagrant ssh</code> 进行安装，而后在 <code>vagrant destroy</code> 了再 <code>vagrant up</code> 时又得相同的操作。欲避免重复安装相同软件的操作，可以使用别人已安装相应软件的 box，或者在手动安装软件后用 <code>vagrant package --base name --output /path/to/name.box</code> 命令保存为新的 box, <code>--base name</code> 中的 <code>name</code> 可用 <code>VBoxManage list vms</code> 列出来。<br/><br/>
+vagrant package 不指定 --output 的话会保存在当前目录中，文件名为 package.box, 以后想要用本地保存的 box 就可用  <code>vagrant box add /path/to/name.box</code> 来添加。<br/><br/>
+除以上两种办法外，就是这里要说的  provision, 先看配置<br/><br/>
+<pre class="lang:default mark:4-7 decode:true ">Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/focal64"<br/><br/>
+  config.vm.provision "shell", inline: &lt;&lt;-SHELL
+    apt update
+    apt install -y apache2
+  SHELL
+end</pre>
+<br/>
+这里配置的 <code>config.vm.provision</code> 只在第一次创建虚拟机的时候执行，以后 <code>vagrant up</code> 不会再执行它，所以用 <code>vagrant destroy</code> 后也不怕，下回用 <code>vagrant up</code> 时又会重新创建新的虚拟机并安装上 Apache2。当然在虚拟机已创建好后，再修改 <code>config.vm.provision</code> 中的内容后只单纯用 <code>vagrant up</code> 是不会发生作用的。<br/><br/>
+除非用  <code>vagrant provision</code> 对已启动的虚拟机强制执行 <code>config.vm.provision</code> 中的内容。或 <code>vagrant [up|reload] --provision</code> 启动/重载时强制执行 provision.<br/><br/>
+provision 除了可用 inline 执行脚本的方式，还能执行外部脚本文件，或调用 Ansible, Chef, puppet 等，详情请见 <a href="https://www.vagrantup.com/docs/provisioning">https://www.vagrantup.com/docs/provisioning</a>。<br/><br/>
+<h3>一个  Vagrantfile 中配置多个虚拟机</h3><br/><br/>
+每创建一个虚拟机都新建一个 Vagrantfile 文件，还要把它们安置到不同的目录下也有点儿麻烦，特别是一组相关的虚拟机，有些配置还是共享的情况下。单文件多个虚拟机帮我们解决了这一问题，如<br/><br/>
+<pre class="lang:default decode:true ">Vagrant.configure("2") do |config|
+  config.vm.provision "shell", inline: "echo Hello"
+  config.vm.box = "ubuntu/focal64"<br/><br/>
+  config.vm.define "web" do |web|
+    web.vm.box = "generic/fedora33"
+    web.vm.hostname = "web"
+    web.vm.provision :shell, inline: "dnf install httpd -y; systemctl start httpd.service"
+  end<br/><br/>
+  config.vm.define "db" do |db|
+    db.vm.provision :shell, inline: "apt install -y mysql-server"
+    db.vm.provider :virtualbox do |vb|
+        vb.memory = 4096
+    end
+  end
+end</pre>
+<br/>
+然后 <code>vagrant up</code> 就会启动这两个虚拟机，分别显示 <code>web</code> 和 <code>db</code> 的启动过程, 查看状态<br/><br/>
+<pre class="lang:default decode:true">$ vagrant global-status
+id       name    provider   state    directory
+----------------------------------------------------------
+b638892  web     virtualbox running  /Users/yanbin/vagrant
+d5a0845  db      virtualbox running  /Users/yanbin/vagrant</pre>
+<br/>
+要单独控制的话加上 id 或 name, 如 <code>vagrant up web</code>, <code>vagrant ssh db</code> 等, 共同的配置用 <code>config.vm.xxx</code>.<br/><br/>
+<h3>不使用默认的 Vagrantfile 配置文件</h3><br/><br/>
+前面无论是配置一个还是多个虚拟机都是在 Vagrantfile 文件中进行的，如果需要更多的 Vagrant 虚拟机的话，不得不创建多个目录来存放 Vagrantfile 文件，那些目录显得有些多余。那能不能用不同的文件名来定义 Vagrant 虚拟机呢，既然提到了，答案就是肯定的, 比如 Vagrantfile-Redis, Vagrantfile-Jenkins。这样我们就能把所有的 Vagrant 配置文件放在同一个工作目录中。<br/><br/>
+那么接下来就要告诉 Vagrant 命令使用非默认的 Vagrantfile 文件，要用到环境变量 <code>VAGRANT_VAGRANTFILE</code><br/><br/>
+<blockquote>
+VAGRANT_VAGRANTFILE=Vagrantfile-redis vagrant up
+</blockquote>
+<br/>
+或用 export VAGRANT_VAGRANTFILE=Vagrantfile-redis 给当前窗口设置好环境变量，再 vagrant up<br/><br/>
+假设 Vagrantfile-redis 文件内容为<br/><br/>
+<pre class="lang:default decode:true ">Vagrant.configure("2") do |config|
+  config.vm.provision "shell", inline: "echo initialized by Vagrantfile-redis"
+  config.vm.box = "ubuntu/xenial64"
+end</pre>
+<br/>
+用 <code>vagrant up</code> 第一次启动就能看到 provision shell 的输出<br/><br/>
+<blockquote>
+test $ VAGRANT_VAGRANTFILE=Vagrantfile-redis vagrant up<br />
+......<br />
+==&gt; default: Mounting shared folders...<br />
+default: /vagrant =&gt; /Users/yanbin/test<br />
+==&gt; default: Running provisioner: shell...<br />
+default: Running: inline script<br />
+default: initialized by Vagrantfile-redis
+</blockquote>
+<br/>
+用 <code>vagrant global-status</code>  看下<br/><br/>
+<pre class="lang:default decode:true">test $ vagrant global-status
+id       name    provider   state   directory
+------------------------------------------------------
+52e37b8  default virtualbox running /Users/yanbin/test</pre>
+<br/>
+在 <code>vagrant global-status</code> 中只能看到 <code>Vagrantfile-redis</code> 所在的目录，而不知道配置文件的名称。这样做有一个好处就是同一个目录中的不同 Vagrantfile-xxx 配置的虚拟机能够共享同一个 /vagrant 目录。<br/><br/>
+<h3>ZSH 的 Vagrant 插件</h3><br/><br/>
+Zsh 有对 <a href="https://github.com/ohmyzsh/ohmyzsh/tree/master/plugins/vagrant">Vagrant 的插件</a>，需要在 <code>~/.zshrc</code> 中加到  plugins 列表中<br/><br/>
+<blockquote>
+plugins=(git docker <span style="color: #ff0000;"><strong>vagrant</strong></span>)
+</blockquote>
+<br/>
+它对 vagrant 的常用命令定义了别名，如<br/><br/>
+<ol>
+    <li>vup: vagrant up</li>
+    <li>vgs: vagrant global-status</li>
+    <li>vssh: vagrant ssh</li>
+    <li>......</li>
+</ol>
+<br/>
+更多命令别名请查看 <a href="https://github.com/ohmyzsh/ohmyzsh/tree/master/plugins/vagrant">https://github.com/ohmyzsh/ohmyzsh/tree/master/plugins/vagrant</a><br/><br/>
+<h3>所遇见的问题</h3><br/><br/>
+<ol>
+    <li>没有挂载共享目录 /vagrant<br />
+在配置文件中加了 <code>config.vm.synced_folder ".", "/vagrant"</code>, 启动时报 "Vagrant was unable to mount VirtualBox shared folders. This is usually<br />
+because the filesystem "vboxsf" is not available...."  错误<br />
+解决办法，对  VirtualBox 6.1.xx 安装插件 "vagrant plugin install vagrant-vbguest"，解决。或有说降级到 VirtualBox 5.1.18。</li>
+    <li>多个虚拟机只获得一个相同的 IP 地址 "10.0.2.15", 造成彼此之间不能通信，配置中加上 <code>config.vm.network "private_network", type: "dhcp"</code> 解决，必要时检查 VirtualBox 的网络。</li>
+</ol>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://zhuanlan.zhihu.com/p/259833884">超详细的 Vagrant 上手指南</a></li>
+    <li><a href="https://stackoverflow.com/questions/17845637/how-to-change-vagrant-default-machine-name">How to change Vagrant 'default' machine name?</a></li>
+</ol>

@@ -1,0 +1,140 @@
+---
+title: AWS Batch 是如何向 Docker 容器传递参数
+url: /how-aws-batch-pass-parameters-to-docker-container/
+date: 2018-04-01T19:26:42-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - Docker
+  - batch
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8605 
+wpStatus: publish
+views: 929
+lastmod: 2021-09-10T13:05:22-05:00
+---
+
+AWS Batch 提供了简单有效的方式来运行 Docker 镜像，在单纯执行一个计算任务时比 ECS 使用起来要方便许多。AWS Batch 在提交任务时可以执行 <code>command</code>, <code>environment</code> 和 <code>parameters</code>, 那么它将如何传递那些参数给 Docker 容器呢？</p>
+<br/>
+首先看一下提交任务的脚本<br/><br/>
+<pre class="lang:default decode:true">aws batch submit-job \
+  --job-name test-job \
+  --job-queue test-job-queue \
+  --job-definition test-job-definition \
+  --container-overrides='command=echo,hello,environment=[{name=JAVA_OPTS,value=-Xmx4G}]'</pre>
+<br/>
+注：aws cli 命令参数中有 <code>-</code> 时需要用  --parameters='--name=Spring' 等号的格式<br/><br/>
+我们将用上面的脚本提交一个任务，然后用 <code>docker inspect &lt;container-id&gt;</code> 观察 Docker 容器收到了什么参数<br/><br/>
+也没什么意外的，inspect 容器后我们看到<!--more--><br/><br/>
+<pre class="lang:default decode:true">    "Config": {
+        .......
+        "Env": [
+            ......
+            "JAVA_OPTS=-Xmx4G",
+        ],
+        "Cmd": [
+            "echo",
+            "hello"
+        ],
+</pre>
+<br/>
+这个 Cmd 将与我们定义的 ENTRYPOINT 构成完整的执行入口，也可以从容器的 inspect 中看到<br/><br/>
+<pre class="lang:default decode:true">    "Path": "/bin/sh",
+    "Args": [
+        "-c",
+        "java $JAVA_OPTS -jar /app.jar $0 $@",
+        "echo",
+        "hello"
+    ],</pre>
+<br/>
+基于我们在 Dockerfile 中是下面那么定义的 ENTRYPOINT<br/><br/>
+<blockquote>
+ENTRYPOINT java $JAVA_OPTS -jar /app.jar $0 $@
+</blockquote>
+<br/>
+很明显，虽然 AWS Batch submitJob 有一个  <code>--parameters</code> 那样的参数(后面会讲到)，但实际要向应用传递参数的办法还是必须依赖于 Job definition 的 Environment 中的 Command<br/><br/>
+<a href="/wp-content/uploads/2018/04/aws-batch-1.png"><img class="aligncenter size-full wp-image-8631" src="/wp-content/uploads/2018/04/aws-batch-1.png" alt="" width="500" height="315" /></a><br/><br/>
+或者是提交任务时定义在  <code>--container-overrides='command=param1,param2</code>  进 Job definition 中的 Command 进行覆盖。<br/><br/>
+那么提交任务的 <code>--parameters</code> 是什么呢？它其实与 Docker 容器本身没有关系，只是用来替换 Job definition 中的占位符，所以 <code>--parameters</code> 后的参数是一个 map。<br/><br/>
+关于 <code>--parameters</code>  的用法应该看官方的这两篇文章：<a href="https://docs.aws.amazon.com/batch/latest/userguide/example-job-definitions.html#example-use-parameters">Using Parameter Substitution</a> 和  <a href="https://docs.aws.amazon.com/batch/latest/userguide/job_definition_parameters.html#parameters">AWS Batch Parameters</a>。大致介绍的是在 command 中使用  <code>Ref::codec</code> 作为占位符，然后传参的时候用<br/><br/>
+<blockquote>
+"parameters": {"codec": "mp4"}
+</blockquote>
+<br/>
+用下面的脚本提交任务后<br/><br/>
+<pre class="lang:default decode:true">aws batch submit-job \
+  --job-name test-job \
+  --job-queue test-queue \
+  --job-definition test-definition \
+  --parameters='app_name=default_app,is_debug=false' \
+  --container-overrides='command=[Ref::app_name,debug=Ref::is_debug],environment=[{name=JAVA_OPTS,value=-Xmx4G}]'</pre>
+<br/>
+<code>docker inspect &lt;container-id&gt;</code> 看到片断<br/><br/>
+<pre class="lang:default decode:true">    "Path": "/bin/sh",
+    "Args": [
+        "-c",
+        "java $JAVA_OPTS -jar /app.jar $0 $@",
+        "default_app",
+        "debug=Ref::is_debug"
+    ],
+    .......<br/><br/>
+        "Cmd": [
+            "default_app",
+            "debug=Ref::is_debug"
+        ],</pre>
+<br/>
+从上面看到 Ref::app_name 被替换成了 default_app, 而 <code>debug=Ref::is_debug</code> 未被替换，所以参数的替换必须是 command 中的一个完整参数，而不能为局部。<br/><br/>
+都不奏效，把 command 部分移到 Job 定义中也没有用。不过初步来看，有 command 来向 ENTRYPOINT 传递参数就足够了。<br/><br/>
+或是在 Job Definition 中预定好  Command 为 <code>--name= Ref::app_name debug=Ref::is_debug</code><br/><br/>
+<a href="/wp-content/uploads/2018/04/aws-batch-3.png"><img class="aligncenter wp-image-8640" src="/wp-content/uploads/2018/04/aws-batch-3-800x515.png" alt="" width="600" height="386" /></a><br/><br/>
+注意 <code>--name= Ref::app_name</code> 等号后的空格会把 <code>--name=</code> 和 <code>Ref::app_name</code> 分割成两个独立的参数，<code>--parameters</code> 只针对一个完整参数的替换。<br/><br/>
+然后只覆盖 <code>parameters</code><br/><br/>
+<pre class="lang:default decode:true ">aws batch submit-job \
+  --job-name yanbin-test-job \
+  --job-queue yanbin-test-queue \
+  --job-definition yanbin-test-definition \
+  --parameters='app_name=my_app_name,is_debug=false' \
+  --container-overrides='environment=[{name=JAVA_OPTS,value=-Xmx4G}]'</pre>
+<br/>
+Docker 容器启动后 inspect 它，看到的 Cmd 替换后的结果<br/><br/>
+<blockquote>
+"Cmd": [<br />
+    "--name=",<br />
+    "my_app_name",<br />
+    "debug=Ref::is_debug"<br />
+],
+</blockquote>
+<br/>
+<h3>总结：</h3><br/><br/>
+AWS Batch 任务的参数还是要靠 Cmd(command) 来传递， Dockerfile 的  ENTRYPOINT 可以写成 shell 或 exec 两种格式<br/><br/>
+<blockquote>
+ENTRYPOINT java $JAVA_OPTS -jar /app.jar $0 $@
+</blockquote>
+<br/>
+或者<br/><br/>
+<blockquote>
+ENTRYPOINT ["java", "-jar", "/app.jar"]
+</blockquote>
+<br/>
+提交任务时通过<br/><br/>
+<blockquote>
+--container-overrides='command=param1,param2,param3'
+</blockquote>
+<br/>
+来向 ENTRYPOINT 提供附加的参数，或是用  $0, $@ 来拾取全部的 command 作为参数。<br/><br/>
+而 <code>--parameters</code> 并不是真正干这个事的，它是启动容器之前的替换行为。<br/><br/>
+<h3>补充(2018-04-06)</h3><br/><br/>
+更为严格的的 <code>$0</code> 和 <code>$@</code> 使用方式是就应该用引号括起来，即最终效果是<br/><br/>
+<blockquote>
+ENTRYPOINT java $JAVA_OPTS -jar /app.jar "$0" "$@"
+</blockquote>
+<br/>
+这参避免参数中含空格的问题，详细的解释请参见上一篇 <a href="/pass-arguments-to-docker-container/#h32sjfoux11b1rd72fi17si5nmem9szt">如何向 Docker 容器传递参数 - 补充部分</a>

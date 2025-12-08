@@ -1,0 +1,188 @@
+---
+title: Java 里把 InputStream 转换成 String 的几种方法
+url: /java-convert-inputstream-to-string/
+date: 2013-02-01T05:35:57-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - string
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5509 
+wpStatus: publish
+views: 19532
+lastmod: 2021-05-13T15:27:00-05:00
+---
+
+我们在 Java 中经常会碰到如何把 InputStream 转换成 String 的情形，比如从文件或网络得到一个 InputStream，需要转换成字符串输出或赋给别的变量。</p>
+<br/>
+未真正关注这个问题之前我常用的办法就是按字节一次次读到缓冲区，或是建立 BufferedReader 逐行读取。其实大可不必费此周折，我们可以用 Apache commons IOUtils，或者是 JDK 1.5 后的 Scanner，还可用 Google  Guava 库的 CharStreams。到了 JDK7，若要从文件中直接得到字符串还能用 java.nio.file.Files#readAllLines 和 java.nio.file.Files#readAllBytes 方法。<br/><br/>
+下面看各个例子，为能够实际用运，例子写在 main 方法里，并从文件获得一个 InputStream，代码中把可能要捕获的异常抛出来。再就是注意处理输入输出流时有涉及到字符集，字符集乱了就乱码了，默认字符集是 System.getProperty("file.encoding")，通常我们都用 UTF-8，异常 UnsupportedEncodingException 继承自 IOException。<br/><br/>
+下面的 6 个方法中应该有一个你能看得上的吧，用 Groovy，Scala 的除外，若未找到一个遂意的，告诉我，你有好办法更应该告诉我。<br/><br/>
+<strong>1. 使用 JDK 5 的 Scanner<!--more--></strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.test;<br/><br/>
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.InputStream;
+import java.util.Scanner;<br/><br/>
+/**
+ * 
+ * @author Unmi
+ * @Creation date: 2013-02-01
+ */
+public class Test {<br/><br/>
+    /**
+     * @param args
+     * @throws FileNotFoundException 
+     */
+    public static void main(String[] args) throws FileNotFoundException {
+        InputStream inputStream = new FileInputStream("d:/sample.txt");
+        Scanner scanner = new Scanner(inputStream, "UTF-8");
+        String text = scanner.useDelimiter("\\A").next();
+        System.out.println(text);
+        scanner.close();
+    }
+}
+</pre>
+<br/>
+<strong>2. JDK1.4 及之前的 BufferedReader 法</strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.test;<br/><br/>
+import java.io.BufferedReader;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;<br/><br/>
+/**
+ * 
+ * @author Unmi
+ * @Creation date: 2013-02-01
+ */
+public class Test {<br/><br/>
+    /**
+     * @param args
+     * @throws IOException 
+     */
+    public static void main(String[] args) throws IOException {
+        InputStream inputStream = new FileInputStream("d:/sample.txt");
+        StringBuilder stringBuilder = new StringBuilder();
+        BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
+        boolean firstLine = true;
+        String line = null; ;
+        while((line = bufferedReader.readLine()) != null){
+            if(!firstLine){
+                stringBuilder.append(System.getProperty("line.separator"));
+            }else{
+                firstLine = false;
+            }
+            stringBuilder.append(line);
+        }
+        System.out.println(stringBuilder.toString());
+    }
+}
+</pre>
+<br/>
+中间那些判断是不是第一行来决定是否加换行符是些杂音。<br/><br/>
+<strong>3. JDK1.4 及之前的 readBytes 法</strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.test;<br/><br/>
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;<br/><br/>
+/**
+ * 
+ * @author Unmi
+ * @Creation date: 2013-02-01
+ */
+public class Test {<br/><br/>
+    /**
+     * @throws IOException 
+     */
+    public static void main(String[] args) throws IOException {
+        InputStream inputStream = new FileInputStream("d:/sample.txt");
+        
+        byte[] buffer = new byte[2048];
+        int readBytes = 0;
+        StringBuilder stringBuilder = new StringBuilder();
+        while((readBytes = inputStream.read(buffer)) &gt; 0){
+            stringBuilder.append(new String(buffer, 0, readBytes));
+        }
+        
+        System.out.println(stringBuilder.toString());
+    }
+}
+</pre>
+<br/>
+缓冲区的大小自己根据实际来调，比 BufferedReader 还简洁些，不需管换行符的事情。<br/><br/>
+<strong>4. Apache commons IOUtils.toString 法</strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.test;<br/><br/>
+import java.io.*;<br/><br/>
+import org.apache.commons.io.IOUtils;<br/><br/>
+/**
+ * 
+ * @author Unmi
+ * @Creation date: 2013-02-01
+ */
+public class Test {<br/><br/>
+    /**
+     * @throws IOException 
+     */
+    public static void main(String[] args) throws IOException {
+        InputStream inputStream = new FileInputStream("d:/sample.txt");
+        String text = IOUtils.toString(inputStream);
+        System.out.println(text);
+    }
+}
+</pre>
+<br/>
+第三方库就是第三方库，人家充分考虑到了你的感受，你对 JDK 库的抱怨，多简洁，一行搞定。IOUtils 还能把内容拷入其他的 Writer 中，如 IOUtils.copy(inputStream, new StringWriter())。<br/><br/>
+<strong>5. Google guava 的  CharStreams 方法</strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.test;<br/><br/>
+import java.io.*;<br/><br/>
+import com.google.common.io.CharStreams;<br/><br/>
+/**
+ * 
+ * @author Unmi
+ * @Creation date: 2013-02-01
+ */
+public class Test {<br/><br/>
+    /**
+     * @throws IOException 
+     */
+    public static void main(String[] args) throws IOException {
+        InputStream inputStream = new FileInputStream("d:/sample.txt");
+        String text = CharStreams.toString(new InputStreamReader(inputStream, "UTF-8"));
+        System.out.println(text);
+    }
+}
+</pre>
+<br/>
+CharSteams 不是直接作用在 InputSteam 上的，还要靠 InputStreamReader 拱个桥。<br/><br/>
+<strong>6. JDK 7 的 NIO readAllBytes</strong><br/><br/>
+<pre class="lang:default decode:true ">package cc.unmi.test;<br/><br/>
+import java.io.IOException;
+import java.nio.file.*;<br/><br/>
+/**
+ * 
+ * @author Unmi
+ * @Creation date: 2013-02-01
+ */
+public class Test {<br/><br/>
+    /**
+     * @throws IOException 
+     */
+    public static void main(String[] args) throws IOException {
+        byte[] bytes = Files.readAllBytes(Paths.get("d:/sample.txt"));
+        String text = new String(bytes);
+        System.out.println(text);
+    }
+}
+</pre>
+<br/>
+这让我们相信 JDK  一直还有人在管，虽然不可能象动态语言的方法那么快捷，上面的  readAllBytes 在处理大文件时肯定会很被动的。而 Files.readAllLines 会把文件的内容读入一个 List&lt;String&gt; 对象中，往内存不断放东西就得掂量下内存会不会被爆。在 java.nio.file.* 还有很多新事物可供发掘。<br/><br/>
+参考： 1. <a href="http://javarevisited.blogspot.com/2012/08/convert-inputstream-to-string-java-example-tutorial.html" target="_blank" rel="noopener">5 ways to convert InputStream to String in Java</a>

@@ -1,0 +1,77 @@
+---
+title: JSON.stringify(obj) 时 TypeError: cyclic object value 异常
+url: /json-stringifyobj-raise-typeerror/
+date: 2013-12-31T15:12:39-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Web/JS
+tags: 
+  - javascript
+  - cyclic
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5857 
+wpStatus: publish
+views: 11288
+lastmod: 2014-01-01T00:24:33-06:00
+---
+
+从 ECMAScript 5th Edition 开始，JavaScript 内建了 JSON 对象，用来处理 JSON 的序列化和反序列化，有以下几个方法原型<br/>
+<br/>
+JSON.stringify(obj [,filter] &nbsp;[,indent])<br/>
+JSON.parse(text [,reviver])<br/>
+<br/>
+jQuery 也提供了&nbsp;jQuery.parseJSON 方法，但是没有相应的序列化方法。<br/>
+<br/>
+如果用 &nbsp;JSON.stringify() 来对一个有循环引用的 JSON 对象进行序列化，会产生&nbsp;<span style="color: #800000;">TypeError: cyclic object value</span> 异常，类似下面的代码<br/>
+<pre class="brush:js">var a = {}<br/>
+a.b = a;<br/>
+try{<br/>
+    JSON.stringify(a)<br/>
+}catch(e){<br/>
+    document.write(e);<br/>
+}</pre>
+
+点击链接 <a href="http://jsfiddle.net/Unmi/6eLFF/" target="_blank">http://jsfiddle.net/Unmi/6eLFF/</a>&nbsp;运行上面的代码&nbsp;<!--more--><br/>
+<br/>
+在 Chrome/Opera 下异常描述是&nbsp;TypeError: Converting circular structure to JSON<br/>
+<br/>
+Safari 是这么说的 &nbsp;TypeError: JSON.stringify cannot serialize cyclic structures.<br/>
+<br/>
+总之就是不能正确序列化 JSON, 于是我们要启用 JSON.stringify() 方法的第二个参数 filter 来巡视中间处理的每一个 JSON 对象是否曾经出现过，再次出现的标记起来，到此为止，不继续往下拆解。<br/>
+<br/>
+大致的代码如下：<br/>
+<pre class="brush:js">obj = {<br/>
+    x: 555,<br/>
+    y: "hi"<br/>
+}<br/>
+obj.myself = obj<br/>
+<br/>
+var jsonify = function(obj){<br/>
+    var seen = [];<br/>
+    var json = JSON.stringify(obj, function(key, value){<br/>
+        if (typeof value === 'object') {<br/>
+            if ( !seen.indexOf(value) ) {<br/>
+                return '__cycle__' + (typeof value) + '[' + key + ']'; <br/>
+            }<br/>
+            seen.push(value);<br/>
+        }<br/>
+        return value;<br/>
+    }, 4);<br/>
+    return json;<br/>
+};<br/>
+<br/>
+alert(jsonify(obj));</pre>
+
+点击链接&nbsp;<a href="http://jsfiddle.net/Unmi/A96tA/" target="_blank">http://jsfiddle.net/Unmi/A96tA/</a>&nbsp;运行上面的代码<br/>
+<br/>
+上面判断了了值类型是否是 object 或 [object Object]，并且在 seen 数组中已存在的话则就此打住。<br/>
+<br/>
+对于 JSON.stringify() 产生的循环引用异常，可能有人会想到 for(property in object) 的方式来枚举属性，但这要自己来处理递归，并且是个数组的话就有些怪异。<br/>
+<br/>
+听说 <a href="http://phantomjs.org/" target="_blank">PhantomJS</a> 来优雅的处理有循环引用的 JSON 序列化部题，PhantomJS 为何物，我未曾深究，它离我们的 Web 浏览器编程的话题好象有点儿远了。

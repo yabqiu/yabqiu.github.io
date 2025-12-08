@@ -1,0 +1,128 @@
+---
+title: 两个非常实用的获取 Spring Bean 的 Struts Action 基类方法
+url: /two-useful-getbean/
+date: 2010-12-28T09:30:16-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Spring
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2969 
+wpStatus: publish
+views: 2495
+lastmod: 2021-09-03T12:05:52-05:00
+---
+
+我们在实际的 Spring+Struts 的项目中一般都会定义一个 Struts Action 基类。基类中当然是提供一些公共的方法了，用上了 Spring 的话，里面放几个 getBean() 方法就会方便许多。Web 项目多数时候我想还是在 Action 中有经常性的获取 Bean 实例，如果有用在别处的话，也可以借鉴。</p>
+<br/>
+在没有泛型支持下，我们从 Spring Context 中获取 Bean 要强型转换类型，如：<br/><br/>
+SomeClass some = (SomeClass)context.getBean("someClass");<br/><br/>
+上面对应的方法原型是 Object getBean(String beanName);<br/><br/>
+从 jdk 1.5 开始有泛型了，可以加一个泛型,省却了转型步骤，看起来要舒服一些，如：<!--more--><br/><br/>
+SomeClass some = getBean("someClass", SomeClass.class);<br/><br/>
+上面对应的方法原型是 &lt;T&gt; T getBean(String beanName, Class&lt;T&gt; requiredType);<br/><br/>
+再进一步，像 Struts2、Rails、Grails 那样我们讲求约定优于配置，假如我们在 Spring 配置文件中声明 Bean 时约定用首字母小写的短类名(如 SomeClass 类定义 BeanName 为 someClass) 的话，我们同样只需一个参数就可得到我们想要的 Bean 实例。这时候获取 Bean 实例的方式就如下：<br/><br/>
+SomeClass some = getBean(SomeClass.class);<br/><br/>
+上面对应的方未能原型是 &lt;T&gt; T getBean(Class&lt;T&gt; requiredType);<br/><br/>
+是不让代码更好写了，不用像很多项目中把所有的 Spring 的 BeanName 全定义成常量值，可以保证不会写错了。而且这也很通用，完全有理由在书写 Spring 配置时这样规范 Bean Name 定义，好像也没有太多的理由让一个 Class 在 Spring 中声明两次。而且 Spring 的注解方式也是这么取名的，见类：org.springframework.context.annotation.AnnotationBeanNameGenerator, 给类加个注解 @Component、@Controller、@Repository 或 @Service 时默认就这么取名的。<br/><br/>
+所以综合起来，我们在 Struts(1 或 2) 的基类 Action 中可以写这么两个实用的 getBean() 方法，完整代码如下：<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.test.web.action;<br/><br/>
+import java.beans.Introspector;<br/><br/>
+import org.apache.struts2.ServletActionContext;
+import org.springframework.context.ApplicationContext;
+import org.springframework.util.ClassUtils;
+import org.springframework.web.context.support.WebApplicationContextUtils;<br/><br/>
+import com.opensymphony.xwork2.ActionSupport;<br/><br/>
+/**
+ * Two more convenient methods to get Spring-initialized beans
+ *
+ * @author Unmi
+ *
+ */
+public class TestBaseAction/* &lt;M&gt; */extends ActionSupport
+/* implements ModelDriven&lt;M&gt; */{<br/><br/>
+    /**
+     * Convenient method to get Spring-initialized beans
+     *
+     * @param name Bean name
+     * @param requiredType Bean class type
+     * @return Object bean from ApplicationContext
+     */
+    protected &lt;T&gt; T getBean(String name, Class&lt;T&gt; requiredType) {
+        ApplicationContext ctx = WebApplicationContextUtils
+                .getRequiredWebApplicationContext(ServletActionContext.getServletContext());
+        return ctx.getBean(name, requiredType);
+    }<br/><br/>
+    /**
+     * More convenient method to get Spring-initialized beans with the default bean name
+     *
+     * @param requiredType Bean class type
+     * @return Object bean from ApplicationContext
+     */
+    protected &lt;T&gt; T getBean(Class&lt;T&gt; requiredType) {
+        //get the default conventional bean name
+        String shortClassName = ClassUtils.getShortName(requiredType);
+        String beanName = Introspector.decapitalize(shortClassName);<br/><br/>
+        return getBean(beanName, requiredType);
+    }
+}</pre>
+<br/>
+注释中 /* &lt;M&gt; */ 和 /* implements ModelDriven&lt;M&gt; */ 是 Action 的 ModelDriven 泛型写法。如果来得精悍一点你尽可以只保留第二个方法，需稍加改动，且当然要保证它的前提就是了，即规范的 BeanName。<br/><br/>
+前面获得 BeanName 的代码你完全可以自己来写，这里两行：<br/><br/>
+        String shortClassName = ClassUtils.getShortName(requiredType);<br />
+        String beanName = Introspector.decapitalize(shortClassName);<br/><br/>
+是借用自：org.springframework.context.annotation.AnnotationBeanNameGenerator 的 String buildDefaultBeanName(BeanDefinition definition) 方法里的代码。<br/><br/>
+改造完原来的基类 Action 之后，忽然又觉得，Spring 本身该有提供 &lt;T&gt; T getBean(Class&lt;T&gt; requiredType) 这个方法的吧。翻了下 API, 果如其然。那就是：org.springframework.beans.factory.BeanFactory 接口中就定义了该方法：<br/><br/>
+ &lt;T&gt; T getBean(Class&lt;T&gt; requiredType) throws BeansException;<br/><br/>
+那就应该在各种 BeanFactory 的某个实现类中有相应的 getBean(requiredType) 方法实现。我们继续找到一个实现来看看：<br/><br/>
+org.springframework.beans.factory.support.DefaultListableBeanFactory 类中有：<br/><br/>
+<pre class="lang:default decode:true ">public &lt;T&gt; T getBean(Class&lt;T&gt; requiredType) throws BeansException {
+    Assert.notNull(requiredType, "Required type must not be null");
+    String[] beanNames = getBeanNamesForType(requiredType);
+    if (beanNames.length &gt; 1) {
+        ArrayList&lt;String&gt; autowireCandidates = new ArrayList&lt;String&gt;();
+        for (String beanName : beanNames) {
+            if (getBeanDefinition(beanName).isAutowireCandidate()) {
+                autowireCandidates.add(beanName);
+            }
+        }
+        if (autowireCandidates.size() &gt; 0) {
+            beanNames = autowireCandidates.toArray(new String[autowireCandidates.size()]);
+        }
+    }
+    if (beanNames.length == 1) {
+        return getBean(beanNames[0], requiredType);
+    }
+    else if (beanNames.length == 0 &amp;&amp; getParentBeanFactory() != null) {
+        return getParentBeanFactory().getBean(requiredType);
+    }
+    else {
+        throw new NoSuchBeanDefinitionException(requiredType, "expected single bean but found " +
+                beanNames.length + ": " + StringUtils.arrayToCommaDelimitedString(beanNames));
+    }
+}</pre>
+<br/>
+它的实现原理大概也看出来了，先从 Spring 配置中遍历出所有类型相符的 BeanName，然后定位到确定的 BeanName，再调用一次<br/><br/>
+&lt;T&gt; T getBean(String beanName, Class&lt;T&gt; requiredType);<br/><br/>
+方法，显然效率上没有完全依照约定直接通过 BeanName 获取 Bean 实例的效率高<br/><br/>
+，还是继续走自己的路吧。<br/><br/>
+但是：有一个问题要提请注意一下了，前面我在 Spring 中定义的 Bean 类未使用接口，对于面向接口的编程就更要保持良好的习惯了。比如 Spring 里这样的配置：<br/><br/>
+&lt;bean id="userService" autowire="byName"/&gt;<br/><br/>
+正常获取该 Bean 是：<br/><br/>
+UserService userService = getBean("userService", UserService.class);<br/><br/>
+如果按照上面的办法还是：<br/><br/>
+UserService userService = getBean(UserService.class);<br/><br/>
+没问题，因为依据传入的 UserService.class，依然可以用同样的规则得到 BeanName 是 userService。如果写成：<br/><br/>
+UserService userService = getBean(UserServiceImpl.class);<br/><br/>
+就爱莫能助了，不存在 userServiceImpl 这样的 BeanName，你要是使用 Spring BeanFactory 的<br/><br/>
+&lt;T&gt; T getBean(Class&lt;T&gt; requiredType)<br/><br/>
+比如 beanFactory.getBean(UserServiceImpl.class) 没问题，可以得到你想要的 Bean，因为它是判断类型的，子类型当然成立的。但是为何要写成 getBean(UserServiceImpl.class); 呢，就像回到从前也不会写成：<br/><br/>
+UserService userService = (UserServiceImpl)getBean("userService");<br/><br/>
+一样，这等于是把接口与实现绑定了。所以再次论证前面定义的那两个 getBean() 方法更强的通用性。

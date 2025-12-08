@@ -1,0 +1,114 @@
+---
+title: JMockit 如何 mock 异常
+url: /jmockit-how-to-mock-excepction/
+date: 2014-04-22T23:51:40-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Unit Test
+  - jMockit
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6381 
+wpStatus: publish
+views: 6214
+lastmod: 2021-09-03T18:20:04-05:00
+---
+
+2014-07-26 修改本文</p>
+<br/>
+后来发现用 JMockit 来 mock 异常根本没有之前文中描述的那么复杂，其实还是在那个 result 上，给它赋个异常实例就轻而易举的解决了，只需如此<br/><br/>
+<blockquote>
+<pre class="lang:default decode:true"> new Expectations(MyService.class, ExternalService.class) {
+     {
+         ExternalService.fetchData();
+         result =  new NetworkException("No IPAddress ");
+     }
+ };</pre>
+</blockquote>
+<br/>
+原文可不用看下去了。<br/><br/>
+<hr /><br/><br/>
+做过几篇 JMockit 使用 Expectations 来 Mock 方法，私有方法，私有属性的的日志，今天工作上突然有个需求是要 Mock 异常。现在再也不能为了跑个单元测试而去拔下网线了，也不该人为的去制造其他混乱来测试。开始是想能不能用 Expectations 来 Mock 异常，尚未发现相关的属性可以设置，没有类似 result 那样的属性，比如想像中有个 exception/throwable 属性：<!--more--><br/><br/>
+<blockquote>
+<pre class="lang:default decode:true">new Expectations(MyService.class, ExternalService.class) {
+     {
+         ExternalService.fetchData();
+         throwable = new NetworkException("No IPAddress ");
+     }
+ };</pre>
+</blockquote>
+<br/>
+可是没有 throwable 个属性，至少我还不知道如何用 Expectations 来 Mock 异常，此路不通，所以只得另辟溪径。我们可以直接 new MockUp 来创建类，这比创建一个 MockClass 来得轻量级些。<br/><br/>
+下面是一个完整例子，由四个类构成，今次列出<br/><br/>
+<strong>1. 要抛出的异常类 NetworkException.java</strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+public class NetworkException extends RuntimeException {
+    public NetworkException(String message) {
+        super(message);
+    }
+}</pre>
+<br/>
+<strong>2. 被测试类 MyService.java</strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+public class MyService {
+    public static String fetchData(String name) {
+        return ExternalService.fetchByHttp(name);
+    }
+}</pre>
+<br/>
+调用 ExternalService.fetchByHttp() 方法，我们的测试用例将要 Mock 住这个方法，并抛出 NetworkException 异常。<br/><br/>
+<strong>3. 外部类，待 Mock 的 ExternalService.java</strong><br/><br/>
+<pre class="lang:default decode:true ">package cc.unmi;<br/><br/>
+public class ExternalService {
+    public static String fetchByHttp(String name) {
+        String result = null;
+        try {
+            // do something
+        } catch (Exception ex) {
+            throw new NetworkException(ex.getMessage());
+        }
+        return result;
+    }
+}</pre>
+<br/>
+这是个示例方法，就上面的代码正常执行时肯定不会抛出 NetworkException 异常。我们假定在 //do something 的代码可能会抛出 NetworkException 异常，但我们可以在 Mock 方法中立即呈现出这个异常来。<br/><br/>
+<strong>4. 测试类 MyService.java，并完成异常的 Mock</strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import mockit.Mock;
+import mockit.MockUp;<br/><br/>
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.ExpectedException;<br/><br/>
+public class MyServiceTest {<br/><br/>
+    @Rule
+    public ExpectedException expectedEx = ExpectedException.none();<br/><br/>
+    @Test
+    public void testFetchData() {
+        new MockUp&lt;ExternalService&gt;() {
+            @Mock
+            public String fetchByHttp(String name) {
+                throw new NetworkException("No IPAddress");
+            }
+        };<br/><br/>
+        expectedEx.expect(NetworkException.class);
+        expectedEx.expectMessage("No IPAddress");<br/><br/>
+        MyService.fetchData("Yanbin");
+    }
+}</pre>
+<br/>
+这里用 <code>new MockUp&lt;&gt;(){@Mock...}</code> 的方式来 Mock 方法，我们也可以用 <code>@MockClass..@Mock</code> 的方式来创建 Mock 类/方法，但要笨重些。目前我们项目中基本摒弃了用 @MockClass 创建外部 Mock 类的做法，因为一般 Mock 类一般是与某一个测试方法紧密联系着的。<br/><br/>
+也要注意到 fetchByHttp() 本是个静态方法，但此处不能写成 public String static fetchByHttp(), 但去掉 static 也不会影响到 Mock 的效果。<br/><br/>
+JUnit 关于异常的测试可以参考 <a title="JUnit 4 如何正确测试异常" href="http://unmi.cc/junit-4-how-to-test-exceptions/" target="_blank" rel="noopener">JUnit 4 如何正确测试异常</a>。<br/><br/>
+测试运行成功，能够断言到所期待的异常类型和消息。<br/><br/>
+下面为演示 Mock 异常的正确而有效性，故意把 <span style="color: #800000;">expectedEx.epectMessage("No IPAddress")</span> 改成 <span style="color: #800000;">expectedEx.epectMessage("NoNo IPAddress")</span>，这样 JUnit  更能爆出有助于理解的错误信息来<br/><br/>
+<a href="/wp-content/uploads/2014/04/JMockit_mock_exception.png"><img class="aligncenter wp-image-6386 size-large" src="/wp-content/uploads/2014/04/JMockit_mock_exception-800x556.png" alt="JMockit_mock_exception" width="800" height="556" /></a><br/><br/>
+上面的错误信息告诉我们<br/><br/>
+第一个断言 <span style="color: #800000;">expectedEx.expect(NetworkException.class)</span> 是成功的<br />
+期待错误消息 <span style="color: #800000;">NoNo IPAddress</span>，但得到的是 <span style="color: #800000;">No IPAddress</span>，这正好从反面说明了我们 Mock 异常是成功的。

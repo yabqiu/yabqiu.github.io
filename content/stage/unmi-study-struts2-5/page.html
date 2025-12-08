@@ -1,0 +1,57 @@
+---
+title: Unmi 的 Struts2 学习笔记(五)
+url: /unmi-study-struts2-5/
+date: 2008-02-24T00:30:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/05/struts-logo.jpeg"
+categories:
+  - Struts
+tags: 
+  - Struts2
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 437 
+wpStatus: publish
+views: 506
+lastmod: 2019-12-11T19:00:32-06:00
+---
+
+常有这样的梦：不知何来一本似乎是无字天书，而其中的字句却是慢慢地、渐显可辨。同时现实中的自己完全能察觉这是一个梦，极怕即刻醒来，想多记取那些天外之语。但总不能如愿，醒来时还留有某些字句痕迹，再过后就全然忘却。仿佛进入的是一个太虚幻境。</p>
+<br/>
+1. 动态 Action：&lt;action ../&gt; 元素的一个前所未有的特性是，name 属性可以用通配符，class 和 method 属性中可以用 name 中的匹配参数，{0}/{1} 的形式。举两个例子说明：<br />
+    ① &lt;action name="*Action" class="com.unmi.LoginRegistAction" method="{1}"&gt;<br />
+         URL 是 registAction.action 时，会执行 LoginRegistAction 类实例的 regist() 方法<br />
+    ② &lt;action name="*_*" class="actions.{1}Action" method="{2}"&gt;<br />
+         URL 是 Book_save.action 时，会执行 actions.BookAction 类实例的 save() 方法<!--more--><br />
+   说明：{1},{2}是用来匹配 name 属性中的 *，这和正则表达式一样的，{0} 表示的完整的 name 属性值。这也是托 Struts2 的每请求产生新的 Action 的实例才能这么用的，试想一下，Struts1 是没法针对通配符来预先加载好所有的 Action 实例的。<br />
+    可由此定义一个能用的 Action，&lt;result&gt; 里也能用参数。<br />
+    &lt;action name="*"&gt;<br />
+        &lt;result&gt;/{1}.jsp&lt;/result&gt;<br />
+    &lt;/action&gt;<br/><br/>
+2. 关于在 &lt;action .../&gt; 中使用通配符时的校验文件命名规则。校验文件的搜索规则是：<br />
+    ① &lt;ActionClassName&gt;-&lt;ActionAliasName&gt;-validation.xml              &lt;ActionAliasName&gt; 为 name 属性值<br />
+    ② &lt;ActionClassName&gt;-validation.xml<br />
+    同时有这两个文件时，后面的规则能与前面的规则叠加或覆盖，例如 ① 中有name域的校验，② 中有password域的校验，这两个文件同时存在 &lt;ActionClassName&gt;所在路径时，会同时校验name和password域。<br />
+    例如对于 &lt;action name="*Action" class="com.unmi.LoginRegistAction" method="{1}"&gt;<br />
+    URL 是 registAction.action 时，会搜索校验文件 LoginRegistAction-registAction-validation.xml 和 LoginRegistAction-validation.xml。<br/><br/>
+3. 使用通配符就会涉及到 URL 与哪个 Action 匹配的问题。例如匹配有name为 "*"、"*Action"、"LoginAction" 的 &lt;action .../&gt;，如果 URL 与某个 Action 的 name 完全相同（如 LoginAction.action），否则按顺序来匹配，而不是按匹配度来对应。如 abcAction.action 会匹配到 "*"，而不是 "*Action"。<br/><br/>
+4. 可配置默认的 Action，URL 匹配不到对应的 Action 时就用它，用 &lt;default-action-ref ../&gt; 配置在 &lt;package .../&gt; 中。<br/><br/>
+5. Struts2 支持两种 &lt;result ../&gt;，配置在 &lt;action .../&gt; 中的局部 result，配置在 &lt;global-results .../&gt; 中的全局 result。&lt;result .../&gt; 默认的 name 属性是 "success"；默认的 type 属性是 "dispatcher"，即使 JSP 类型。<br/><br/>
+6. &lt;result .../&gt; type="plaintext" 的 &lt;result .../&gt; 会显示页面的源文件，如果其中有中文一般会产生乱码，这时候可设置它的 charSet 属性为 "GBK"，用 &lt;param .../&gt; 标记。<br/><br/>
+7. &lt;result .../&gt; 的 dispatcher 和 redirect 类型的区别就是一个是转发(带请求参数、属性、址址栏不变)和重定向(丢失请求参数、属性、重新产生请求，所以地址栏会变)。<br/><br/>
+8. redirect-action 类型是重定(不是转发)向到一个 Action 上，那么要为 &lt;result .../&gt; 指定两个参数 actionName 和 namespace。简写为 &lt;result name="..." rediect-action"&gt;actionName&lt;/result&gt;。这种类型相当于在 Struts1 中的   &lt;forward name="..." redirect="true"&gt;/anotherAction.do&lt;/forward&gt; 写法。当然在 Struts2 中也可以用 redirect 类型写成相同的形式。<br/><br/>
+9. 动态结果资源有两种，根据 &lt;action .../&gt; 的 name 属性的模式匹配后的参数和请求参数决定结果。<br />
+    ① &lt;action name="crud_*" class="com.unmi.CrudAction" method="{1}"&gt;<br />
+            &lt;result&gt;/{1}.jsp&lt;/result&gt;<br />
+         &lt;/action&gt;<br />
+     URL 为 crud_delete.action 处理成功后会转到 delete.jsp 页。<br />
+    ② &lt;action name="..." class="com.unmi.ShowAction"&gt;<br />
+            &lt;result&gt;/show${user.type}&lt;/result&gt;<br />
+        &lt;/action&gt;<br />
+       要在 ShowAction 的设置了属性 ${user.type}。例如 ${user.type} 设置为 "admin"，就会转到 showadmin.jsp 页。<br/><br/>
+10. Struts2 的 &lt;result .../&gt;、&lt;global-result .../&gt; 意义与效果完全对应于 Struts1 的 &lt;forward .../&gt;、&lt;global-forward .../&gt; 。

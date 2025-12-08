@@ -1,0 +1,321 @@
+---
+title: 学习 Airflow 第一篇章
+url: /learning-airflow-get-started/
+date: 2022-08-09T14:50:49-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2022/08/airflow-logo.png"
+categories:
+  - Python
+tags: 
+  - workflow
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12486 
+wpStatus: publish
+views: 1572
+lastmod: 2024-12-01T23:59:14-06:00
+---
+
+Airflow 起初是由 Airbnb 开发的, 用于调度和监控工作流的平台，后来开源了, 并于 2019 年 1 月成为了 Apache 的顶级项目。它是用 Python 编写的，管理的工作流是有向无环图(DAG - Directed Acyclic Graph), 这能满足绝大多数情况下的需求。<br/><br/>
+顺带插一句，Airflow 用了与 Google Photos 极其相似的 Logo，不知算不算侵权。<br/><br/>
+说到工作调度，头脑中很快会掠过 Cron, 计划任务, Quartz, Spring Schedule, 和 Control-M。除了商业的 Control-M 有调度和监控工作流的功能外，其他的基本只用来调度任务，监控全靠自己的日志。<br/><br/>
+还有一个类似的工具是由<a href="https://www.analysys.cn/">易观</a>贡献给 Apache 的 <a href="https://dolphinscheduler.apache.org/">DolphinScheduler</a>, 它处理的也是 DAG 工作流，用 Java 实现的，所以体量大，硬件要求会高些。它的工作流的创建是通过 Web UI 可视化界面完成的，对程序员来说不那么友好。奇怪的是, 作为 Apache 旗下的项目，项目首页面是中文的，启动后控制台默认界面也是中文的。<br/><br/>
+而 Airflow 功能就厉害了， 它可动态管理工作流，易于扩展，可集群化进行伸缩，更有一个漂亮的 UI 用于实时监控任务。基于以上特性 Airflow 是很适于执行数据的 ETL(Extract, Transform, Load) 操作的。<br/><br/>
+这么好的开源产品, 免不了又被 AWS 盯上了, 以 <a href="https://aws.amazon.com/managed-workflows-for-apache-airflow/">Amazon Managed Workflows for Apache Airflow(MWAA)</a> 服务进行出售，费用还真不菲。AWS 创造性的以 vCPU 数量，DAG 数量限制进行分层次进行收费，远比自己启动一两个 EC2 实例部署 Airflow 贵的多。但 MWAA 有个方便的特性就是 DAG 文件可以放到 S3 中自动部署，相信自己部署的 Airflow 也能进行扩展而从 S3 加载 DAG。<!--more--><br/><br/>
+暂且不往下深入 Airflow 的概念，需要快速体验，先在本地安装一个  Airflow，启动，并用 Python 编写部署一个简单的工作流。<br/><br/>
+<h3>Airflow 的安装与启动</h3><br/><br/>
+当前的 Airflow 版本是 2.3.3。Airflow 提供有<a href="https://airflow.apache.org/docs/docker-stack/index.html">官方 Airflow Docker 镜像</a>来启动服务，为体验更原滋原味的 Airflow，我们在一个干净的 Python 虚拟环境中安装使用 Airflow。<br/><br/>
+Airflow 2.3.0 在以下环境中测试过：<br/><br/>
+<ol>
+    <li>Python 3.7 ~ 3.10</li>
+    <li>数据库:<br/><br/>
+<ol>
+    <li style="list-style-type: none;">
+<ul>
+    <li>PostgreSQL 10 ~ 14</li>
+    <li>MySQL 5.7 ~ 8</li>
+    <li>SQLite 3.15.0+</li>
+    <li>MSSQL(试验性): 2017, 2017</li>
+</ul>
+</li>
+</ol>
+</li>
+    <li>Kubernetes: 1.20.2, 1.20.1, 1.22.0, 1.23.0, 1.24.0</li>
+</ol>
+<br/>
+这里使用 Python 3.9, 并使用默认的 SQLite 数据库(产品环境中勿用)。<br/><br/>
+<h4>创建一个 Python 虚拟环境</h4><br/><br/>
+<blockquote>
+$ python3.9 -m venv airflow-venv<br />
+$ source airflow-venv/bin/activate<br />
+(airflow-venv) $
+</blockquote>
+<br/>
+<h4>安装 apache-airflow</h4><br/><br/>
+<blockquote>
+$ pip install apache-airflow
+</blockquote>
+<br/>
+官方文档中说直接安装 apche-airflow 可能出现莫名的问题，建议是用以下命令来安装<br/><br/>
+<blockquote>
+$ pip install apache-airflow==2.3.3 --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.3.3/constraints-3.9.txt
+</blockquote>
+<br/>
+注：以上的 2.3.3 和 3.9 分别是 apache-airflow 版本号和当前 Python 的主次版本号，安装时请根据实际进行调整。<br/><br/>
+安装好 Airflow 后，就有了强大的 <code>airflow</code> 命令。<code>airflow --help</code> 显示 airflow 的帮助, 可通过 airflow 来启动服务，几乎所有的 Airflow 管理功能都能通过 airflow 命令来完成。子级命令的帮助继续用 --help, 如 <code>airflow scheduler --help</code>。<br/><br/>
+<h4>启动 Airflow -- 使用命令 airflow standalone</h4><br/><br/>
+<blockquote>
+$ airflow standalone<br />
+standalone | Starting Airflow Standalone<br />
+standalone | Checking database is initialized<br />
+INFO [alembic.runtime.migration] Context impl SQLiteImpl.<br />
+INFO [alembic.runtime.migration] Will assume non-transactional DDL.<br />
+INFO [alembic.runtime.migration] Running upgrade -&gt; e3a246e0dc1, current schema<br />
+.......<br />
+triggerer | [2022-08-08 23:41:29,886] {triggerer_job.py:100} INFO - Starting the triggerer<br />
+.......<br />
+scheduler | [2022-08-08 23:41:29,975] {scheduler_job.py:708} INFO - Starting the scheduler<br />
+........<br />
+scheduler | [2022-08-08 23:41:30 -0500] [7114] [INFO] Starting gunicorn 20.1.0<br />
+scheduler | [2022-08-08 23:41:30 -0500] [7114] [INFO] Listening at: http://0.0.0.0:8793 (7114)<br />
+scheduler | [2022-08-08 23:41:30 -0500] [7114] [INFO] Using worker: sync<br />
+scheduler | [2022-08-08 23:41:30 -0500] [7117] [INFO] Booting worker with pid: 7117<br />
+.........<br />
+webserver | [2022-08-08 23:41:31 -0500] [7115] [INFO] Listening at: http://0.0.0.0:8080 (7115)<br />
+webserver | [2022-08-08 23:41:31 -0500] [7115] [INFO] Using worker: sync<br />
+webserver | [2022-08-08 23:41:31 -0500] [7120] [INFO] Booting worker with pid: 7120<br />
+webserver | [2022-08-08 23:41:31 -0500] [7121] [INFO] Booting worker with pid: 7121<br />
+.........<br />
+standalone |<br />
+standalone | Airflow is ready<br />
+standalone | Login with username: admin password: dFAqpaEf88f7wYvF<br />
+standalone | Airflow Standalone is for development purposes only. Do not use this in production!
+</blockquote>
+<br/>
+控制台会输出一大堆信息，以上节选了部分信息。从上可知它初始化了 SQLite 数据, 启动了 webserver 和 scheduler，并且告知 admin 和密码是什么，最后说 Airflow Standalone 只为开发为目的。<br/><br/>
+ 至此我们可以访问 http://localhost:8080 来到 Apache Airflow 的管理界面了。<br/><br/>
+启动后在主目录中创建了 <code>airflow</code> 目录，其中有 airflow.db 数据库文件，可用 SQLite 客户端打开查询。还有 airflow.cfg 配置文件, logs 目录，和 standalone_admin_password.txt 存放密码的文件，控制台不见密码了回来这里找。<br/><br/>
+<blockquote>
+<pre class="lang:default decode:true">ls$ ls ~/airflow
+airflow-webserver.pid         airflow.db                    standalone_admin_password.txt
+airflow.cfg                   logs                          webserver_config.py</pre>
+</blockquote>
+<br/>
+<h3>逐个启动服务的方法</h3><br/><br/>
+如果不用 <code>airflow standalone</code> 命令启动，也可采用逐个启动 airflow 的 triggerer, scheduler, webserver 这几个服务。<br/><br/>
+airflow 目录的位置可通过环境变量 AIRFLOW_HOME 进行修改，比如我们修改 AIRFLOW_HOME 再分步进行启动 Airflow 的各部件服务<br/><br/>
+<blockquote>
+$ export AIRFLOW_HOME=~/opt/airflow<br />
+$ airflow triggerer --daemon<br />
+$ airflow scheduler --daemon<br />
+$ airflow webserver --daemon
+</blockquote>
+<br/>
+参数 <code>--daemon</code> 是把对应服务在后台启动，这时会生成 <code>~/opt/airflow</code> 目录，每个进程会产生相应的 *.err, *.log, *.out, *.pid，想要杀掉以上命令启动的所有进程可用命令<br/><br/>
+<blockquote>
+$ cat *.pid | xargs kill
+</blockquote>
+<br/>
+kill -9 的话还需手工清理相应的 *.pid 文件。或者用 <code>pkill "airflow scheduler"</code> 命令杀。<br/><br/>
+注意，第一次执行 <code>airflow triggerer</code> 提示初始化数据库的时候一定要快速回答 <code>y</code><br/><br/>
+<blockquote>
+Please confirm database initialize (or wait 4 seconds to skip it). Are you sure? [y/N]
+</blockquote>
+<br/>
+否则会被跳过，启动会失败，除非在启动服务前显式的执行<br/><br/>
+<blockquote>
+$ airflow db init
+</blockquote>
+<br/>
+来初始化数据库。<br/><br/>
+分步启动服务也不会自动创建 admin 用户，要能登陆 Airflow 控制台的话还需创建一个 admin 用户<br/><br/>
+<blockquote>
+$ airflow users create --role Admin --username admin --email admin@example.com --firstname Yanbin --lastname Qiu --password password
+</blockquote>
+<br/>
+另外：airflow 所用数据库可由 <code>airflow db shell</code> 进到数据库的 shell 进行访问<br/><br/>
+<blockquote>
+$ airflow db shell<br />
+......<br />
+sqlite&gt; .tables<br />
+sqlite&gt;. PRAGMA table_info(dag)
+</blockquote>
+<br/>
+<h3>浏览 Airflow UI 界面</h3><br/><br/>
+假设我们前面是直接用 <code>airflow standalone</code> 启动的，这时候 admin 用户是已创建好了的。打开 http://localhost:8080, 输入 admin 帐户及控制台下提示的密码登陆，我们看到<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/08/airflow-ui-1.png"><img class="aligncenter wp-image-12489" src="https://yanbin.blog/wp-content/uploads/2022/08/airflow-ui-1-800x565.png" alt="" width="850" height="600" /></a><br/><br/>
+这里罗列了一大堆的示例 DAG(示例 DAG 是存放在虚拟来环境中 airflow 安装目录下，如 ~/airflow-venv/lib/python3.9/site-packages/airflow/example_dags )，并且时区是 UTC，是否显示例子 DAG 和时区是可以通过 <code>~/airflow/airflow.cfg</code> 进行修改的。在修改配置之前不妨看下 example_nested_branch_dag 的图形<br/><br/>
+<a href="http://localhost:8080/dags/example_nested_branch_dag/graph">http://localhost:8080/dags/example_nested_branch_dag/graph</a><br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/08/airflow-ui-3.png"><img class="aligncenter wp-image-12491" src="https://yanbin.blog/wp-content/uploads/2022/08/airflow-ui-3-800x422.png" alt="" width="850" height="448" /></a><br/><br/>
+每个 DAG 有设定了 Schedule 的，想要立即触执行也没问题，在右端点击三角播放按钮会提示两种方式立即触发该流程。<br/><br/>
+再来欣赏一下该 DAG 的代码，这有助于我们理解, 仿照并编写自己的 DAG<br/><br/>
+<pre class="lang:default decode:true">import pendulum<br/><br/>
+from airflow.models import DAG
+from airflow.operators.empty import EmptyOperator
+from airflow.operators.python import BranchPythonOperator
+from airflow.utils.trigger_rule import TriggerRule<br/><br/>
+with DAG(
+    dag_id="example_nested_branch_dag",
+    start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
+    catchup=False,
+    schedule_interval="@daily",
+    tags=["example"],
+) as dag:
+    branch_1 = BranchPythonOperator(task_id="branch_1", python_callable=lambda: "true_1")
+    join_1 = EmptyOperator(task_id="join_1", trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS)
+    true_1 = EmptyOperator(task_id="true_1")
+    false_1 = EmptyOperator(task_id="false_1")
+    branch_2 = BranchPythonOperator(task_id="branch_2", python_callable=lambda: "true_2")
+    join_2 = EmptyOperator(task_id="join_2", trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS)
+    true_2 = EmptyOperator(task_id="true_2")
+    false_2 = EmptyOperator(task_id="false_2")
+    false_3 = EmptyOperator(task_id="false_3")<br/><br/>
+    branch_1 &gt;&gt; true_1 &gt;&gt; join_1
+    branch_1 &gt;&gt; false_1 &gt;&gt; branch_2 &gt;&gt; [true_2, false_2] &gt;&gt; join_2 &gt;&gt; false_3 &gt;&gt; join_1</pre>
+<br/>
+<h3>配置 airflow.cfg</h3><br/><br/>
+打开 $AIRFLOW_HOME/airflow.cfg 文件，其中的所有配置项都值得仔细阅读一番，像<br/><br/>
+<pre class="lang:default decode:true ">dags_folder = /Users/yanbin/airflow/dags
+default_timezone = utc
+executor = SequentialExecutor
+load_examples = True
+base_log_folder = /Users/yanbin/airflow/logs<br/><br/>
+# 可以用 s3, cloudwatch 等保存 log
+remote_logging = False
+remote_base_log_folder = </pre>
+<br/>
+修改 default_timezone 为 <code>America/Chicago</code>, load_examples 改为 <code>False</code>, 重新启动 <code>airflow standalone</code> 试试。<br/><br/>
+<h3>创建第一个 DAG</h3><br/><br/>
+由 airflow.cfg 配置文件中了解到 DAG 的目录为 <code>~/airflow/dags</code>, 现在我们来创建自己的第一个 DAG, 只要把 Python 文件丢到 <code>~/airflow/dags</code> 目录中就能动态加载。选择 Airflow 所用的虚拟环境，然后在 IDE 中编写 DAG，如此可清楚在 Airflow 中有哪些 Operator 可用。<br/><br/>
+Airflow 中所谓的 DAG 就是一个工作流，工作流中基本概念有<br/><br/>
+<ol>
+    <li>Operator: 描述一个 Task 要做的事情。Airflow 默认为我们提供了 BashOperator, EmailOperator, PythonOperator, SimpleHttpOperator 等</li>
+    <li>Task: Task 是 Operator 的一个实例，是构成一个 DAG 工作流的顶点</li>
+    <li>Task Relationship: DAG 中 Task 间的依赖关系，构成工作流的边。上下流关系用 <code>&gt;&gt;</code> 和 <code>&lt;&lt;</code> 进行连接。</li>
+</ol>
+<br/>
+我们可以定义自己的 Operator, 或下载第三方的 Operator, 如 <a href="https://airflow.apache.org/docs/apache-airflow-providers-amazon/stable/index.html">apache-airflow-providers-amazon</a> 的 <a href="https://airflow.apache.org/docs/apache-airflow-providers-amazon/stable/operators/index.html">Amazon AWS Operators</a>，安装命令<br/><br/>
+<blockquote>
+$ pip install 'apache-airflow[amazon]'
+</blockquote>
+<br/>
+然后有许多 AWS 资源相关的 Operators 可用，如 S3, SQS, AWS Lambda 等。<br/><br/>
+Airflow 的 Connection types 和 Operators 现在由第三方的 <a href="https://airflow.apache.org/docs/">airflow providers</a> 来提供，如 <code>pip install apache-airflow-providers-mysql</code> 安装后就能使用 <code>MySqlOperator</code>。<br/><br/>
+其实我们有 PythonOperator, 再结合 boto3 库就能直接操作 AWS 的资源了，比使用 AWS 相关 Operator 还要方便。当然第三方 Provider 实现避免了不断的重复发明轮子。<br/><br/>
+扯了上面那么多，开始进入正题，下面创建单个 Python 文件 hello_dag.py，并定义一个简单的工作流<br/><br/>
+<pre class="lang:default decode:true">import time<br/><br/>
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.operators.bash import BashOperator
+from airflow.providers.http.operators.http import SimpleHttpOperator
+from datetime import timedelta, datetime
+import json<br/><br/>
+
+DAG_DEFAULT_ARGS = {
+    'owner': 'Yanbin',
+    'depends_on_past': False,
+    'retries': 1,
+    'retry_delay': timedelta(minutes=1)
+}<br/><br/>
+
+def sleep_python(duration: int):
+    print(f"sleep for {duration} seconds")
+    time.sleep(duration)<br/><br/>
+
+with DAG('hello_dag',
+         start_date=datetime(2020, 8, 9),
+         schedule_interval="0/5 * * * *",
+         description="My first DAG",
+         default_args=DAG_DEFAULT_ARGS, catchup=False) as dag:<br/><br/>
+    start_task = BashOperator(task_id="Start", bash_command="echo 'start task at {{ds}}'")<br/><br/>
+    sleep_task = PythonOperator(task_id="sleep", python_callable=sleep_python, op_args=(2,))<br/><br/>
+    get_ip_task = SimpleHttpOperator(
+        task_id="get_ip",
+        http_conn_id='opsgenie_default',
+        method='GET',
+        endpoint='ip-api.com/json',
+        response_filter=lambda response: json.loads(response.text)['query']
+    )<br/><br/>
+    end_task = BashOperator(task_id="End",
+                            bash_command="echo ip: {{ task_instance.xcom_pull(task_ids='get_ip') }}")<br/><br/>
+    start_task &gt;&gt; [sleep_task, get_ip_task] &gt;&gt; end_task </pre>
+<br/>
+PythonOperator 指定 python_callable 为一个 Callable 对象，所以理论上只要一个 PythonOperator 就能走遍天下<br/><br/>
+使用 SimpleHttpOperator 指定了 http_conn_id='opsgenie_default', 可在 Airflow Web UI, Admin/Connections 中看到该配置，只指定了 http, 未指定 Host。SimpleHttpOperator 默认使用 http_default, 所有请求均发向 https://www.httpbin.org/，这不符合我们的需求<br/><br/>
+在 <code>end_task</code> 中用 <code>{{ task_instance.xcom_pull(tasks_ids='get_ip') }}</code> 获得 get_id task 的输出，这里涉及到了 Task 之间共享数据的主题 <a href="https://airflow.apache.org/docs/apache-airflow/stable/concepts/xcoms.html">XComs(cross-communications)</a>。<br/><br/>
+<code>{{ abc }}</code> 应用到了 Python 的 Jinja 模板，其中 <code>{{ ds }}</code> 得到当前的 datestamp。<br/><br/>
+完后用 python 命令作初步验证<br/><br/>
+<blockquote>
+$ python hello_dag.py
+</blockquote>
+<br/>
+没有语法错误就把它拷贝到目录 $AIRFLOW_HOME/dags 中, 该目录不存在则创建它。默认最多等 5 分钟(在  airflow.cfg 中的配置 dag_dir_list_interval = 300), 就能在 Airflow 的 Web UI 上看到它<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/08/airflow-ui-4.png"><img class="aligncenter wp-image-12494" src="https://yanbin.blog/wp-content/uploads/2022/08/airflow-ui-4-800x207.png" alt="" width="850" height="220" /></a><br/><br/>
+从 $AIRFLOW_HOME/dags 目录中删除 DAG 相应的 Python 文件，过一会儿该 DAG 也将从系统中移除。所以，增删改 DAG 是动态的，无需重启任何服务。<br/><br/>
+查看流程图<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/08/airflow-ui-9.png"><img class="aligncenter wp-image-12501" src="https://yanbin.blog/wp-content/uploads/2022/08/airflow-ui-9-800x296.png" alt="" width="850" height="315" /></a><br/><br/>
+点击右上方的播放键触发该工作流的执行<br/><br/>
+执行后，在 Graph 页中，点击某一个 Task 后弹出 Task Instance: get_ip 面板，再点击 <code>Log</code> 按钮可查看任务的执行日志<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/08/airflow-ui-7.png"><img class="aligncenter wp-image-12497" src="https://yanbin.blog/wp-content/uploads/2022/08/airflow-ui-7-800x805.png" alt="" width="603" height="607" /></a><br/><br/>
+我们也能用 <code>airflow</code> 命令来管理, 触发任务的执行<br/><br/>
+<pre class="lang:default decode:true">$ airflow dags list
+dag_id    | filepath     | owner  | paused
+==========+==============+========+=======
+hello_dag | hello_dag.py | Yanbin | False<br/><br/>
+$ airflow tasks list hello_dag
+Start
+End
+get_ip
+sleep
+$ airflow tasks list hello_dag --tree
+&lt;Task(BashOperator): Start&gt;
+    &lt;Task(SimpleHttpOperator): get_ip&gt;
+        &lt;Task(BashOperator): End&gt;
+    &lt;Task(PythonOperator): sleep&gt;
+        &lt;Task(BashOperator): End&gt;
+$ airflow dags trigger hello_dag
+[2022-08-09 13:33:54,117] {__init__.py:40} INFO - Loaded API auth backend: airflow.api.auth.backend.session
+Created &lt;DagRun hello_dag @ 2022-08-09T18:33:54+00:00: manual__2022-08-09T18:33:54+00:00, externally triggered: True&gt;
+$ airflow tasks run hello_dag get_ip manual__2022-08-09T19:00:17+00:00
+[2022-08-09 14:08:58,602] {dagbag.py:508} INFO - Filling up the DagBag from /Users/yanbin/airflow/dags
+[2022-08-09 14:08:59,247] {task_command.py:371} INFO - Running &lt;TaskInstance: hello_dag.get_ip manual__2022-08-09T19:00:17+00:00 [success]&gt; on host xyz
+[2022-08-09 14:09:03,500] {dagbag.py:508} INFO - Filling up the DagBag from /Users/yanbin/airflow/dags/hello_dag.py
+[2022-08-09 14:09:04,001] {task_command.py:371} INFO - Running &lt;TaskInstance: hello_dag.get_ip manual__2022-08-09T19:00:17+00:00 [success]&gt; on host xyz</pre>
+<br/>
+测试一个 DAG<br/><br/>
+<blockquote>
+$ airflow dags test hello_dag 2022-08-09
+</blockquote>
+<br/>
+会同步的执行一个 DAG, 并在控制台下显示全部任务的输出<br/><br/>
+执行 DAG 下的一个任务<br/><br/>
+<blockquote>
+$ airflow tasks test hello_dag get_ip 2022-08-09
+</blockquote>
+<br/>
+<h3>其他高级话题</h3><br/><br/>
+<ol>
+    <li>Sensors 是一个特殊的 Operator, 它可以监控外部的环境来实施任务的触发，例如 FileSensor 当某个文件存在时才触发</li>
+    <li>Airflow 2.0 新引入了 <a href="https://airflow.apache.org/docs/apache-airflow/stable/concepts/taskflow.html">TaskFlow</a> 相关的装饰器，如 @dag, @task, 这让定义 DAG 和 Task 变得更简单</li>
+    <li>生产环境中推荐使用 PostgreSQL 或 MySQL 数据库，executor 不应使用默认的 SequentialExecutor, 可尝试 LocalExecutor, DaskExecutor 或 CeleryExecutor, 后两种又要配置一个大的环境</li>
+    <li> 触发 DAG 时可传递参数，Task 中获得参数的方式是用 Jinja 模板语法 <code>{{ dag_run.conf['conf1']}}</code>, 通过 Web UI 触发 <code>Trigger DAG w/ config</code>, 或命令 <code>airflow dags trigger --conf '{"conf1": "value1"}' hello_dag</code>. Task 中 <code>{{ params }}</code> 参数会被 <code>{{ dag_run.conf }}</code> 所覆盖。</li>
+    <li>Airflow 的 Provider, Plugin, Hook 等扩展方式值得以后需要时深究</li>
+    <li>在 Airflow 中可定义全局变量，可由 Web UI 或代码配置或取得，在模板中使用 <code>{{ var.value.&lt;variable_name&gt; }}</code>, 详情请见 <a href="https://airflow.apache.org/docs/apache-airflow/stable/concepts/variables.html">Airflow Variables</a></li>
+    <li>如果在 AWS 开 EC2 来自己安装管理 Airflow, 把 DAG 文件放到 S3 的 Bucket 的也能曲折实现的。比如内置一个 DAG 扫描 S3 Bucket 是否有文件更新，有则拷贝到本地的 $AIRFLOW_HOME/dags 目录中去，或配置 S3 Event -&gt; SQS queue, 内置的 DAG 监听 SQS queue, 有消息则处理相应的事件更新本地目录 $AIRFLOW_HOME/dags</li>
+    <li>如果把 dags, 日志，数据库从 Airflow 服务器分离了开来，那么 Airflow 完全可以 Docker 的方式来运行</li>
+    <li>hello_dag 是一个单文件定义的工作流，如果有复杂的工作流需多个文件协同时，考虑打成一个 zip 包来发布 DAG</li>
+    <li>官方的 <a href="https://airflow.apache.org/docs/apache-airflow/stable/best-practices.html">Best Practices</a> 一定要看，很重要, 命令 <code>airflow cheat-sheet</code> 清楚的分类展示出所有常用命令</li>
+    <li>airflow webserver 本身提供了 Swagger-UI 文档 <a href="http://localhost:8080/api/v1/ui/">http://localhost:8080/api/v1/ui/</a></li>
+</ol>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://segmentfault.com/a/1190000039923621">Airflow快速学习入门</a></li>
+    <li><a href="https://segmentfault.com/a/1190000040645726">Airflow 从入门到精通-03-完整 ETL 实例</a></li>
+    <li><a href="https://www.modb.pro/db/106690">10分钟入门代码控的调度平台Apache Airflow</a></li>
+</ol>

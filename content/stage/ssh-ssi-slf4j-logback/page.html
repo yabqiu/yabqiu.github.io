@@ -1,0 +1,123 @@
+---
+title: Java 流行框架(Spring/Struts2/Hibernate/iBatis)都在使用什么日志组件
+url: /ssh-ssi-slf4j-logback/
+date: 2010-10-16T06:28:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - iBatis
+  - SSH
+  - Spring
+  - Hibernate
+  - Struts
+  - ssi
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2743 
+wpStatus: publish
+views: 3480
+lastmod: 2010-10-16T08:51:22-05:00
+---
+
+做 Java Web 应用我想多会采用这两种框架组合，SSH 和 SSI，其实我是不太喜欢用这两种缩写方式：<br/>
+<br/>
+SSH = Spring + Struts + Hibernate，SSH 由久已久所代表的是 Secure Shell，像 https<br/>
+SSI = Spring + Struts + iBatis，SSI 在很久以前就是 Server Side Include，像 shtml，而 iBatis 已更名为 MyBatis 了。<br/>
+<br/>
+要是在以往做这样的 Java 项目都会用 Commons-Logging + Log4J 来作为日志框架，因为多数组件用的是 Common-Logging 通用组件，而那时 Log4J 控制实际的日志输出也是最强的。<br/>
+<!--more--><br/>
+<br/>
+现在的情况可有些不同了，所以为 SSH 和 SSI 选用哪种日志框架组合还得看最新的核心组件用的是什么日志。所以要分析下 Spring(最新版 3.0.4)、Struts2(最新版 2.2.1，不讨论 Struts1了)、Hibernate(最新版 3.6.0 Final)、iBatis(应该考虑 MyBatis，iBatis 最后版为 3.0，MyBatis 的最新版是 3.0.2)，它们用的是什么通用日志实现，其他的外围组件一般就跟着转了，无外乎就是 Commons-Logging 或 Slf4J 了。下面逐一来看看：<br/>
+<br/>
+<strong>Spring 3.0.4：</strong>走的还是它的一贯路线，坚持使用 Commons-Logging，它的类中的代码是：<br/>
+<br/>
+<span style="color: #800040;">import org.apache.commons.logging.Log;<br/>
+import org.apache.commons.logging.LogFactory;<br/>
+<br/>
+protected transient Log logger = LogFactory.getLog(getClass());</span><br/>
+<br/>
+<strong>Struts 2.2.1</strong>：它承袭的是 WebWork 的衣钵，它从代码中希望做到与 Commons-Logging 解耦，所以在包中声明了自己的 Logger 和 LoggerFactory，且看：<br/>
+<br/>
+<span style="color: #800040;">import com.opensymphony.xwork2.util.logging.Logger;<br/>
+import com.opensymphony.xwork2.util.logging.LoggerFactory;<br/>
+<br/>
+Logger log = LoggerFactory.getLogger(FilterDispatcher.class);</span><br/>
+<br/>
+而在 com.opensymphony.xwork2.util.logging.LoggerFactory 中，首先会使用 Commons-Logging 的实现：<br/>
+<br/>
+<span style="color: #800040;">Class.forName("org.apache.commons.logging.LogFactory");<br/>
+factory = new com.opensymphony.xwork2.util.logging.commons.CommonsLoggerFactory();</span><br/>
+<br/>
+这样的写法，从代码上不会依赖于 Commons-Logging 了。<br/>
+<br/>
+<strong>Hibernate 3.6.0</strong>：Hibernate 是 Slf4J 的追随者，从 3.3 开始直接改用 Slf4J 了，代码中：<br/>
+<br/>
+<span style="color: #800040;">import org.slf4j.Logger;<br/>
+import org.slf4j.LoggerFactory;<br/>
+<br/>
+private static final Logger log = LoggerFactory.getLogger(ConfigHelper.class);</span><br/>
+<br/>
+<strong>iBatis，以 MyBatis 3.0.2 为例</strong>：它与 Struts2 的做法如出一辙，对照一下代码：<br/>
+<br/>
+<span style="color: #800040;">import org.apache.ibatis.logging.Log;<br/>
+import org.apache.ibatis.logging.LogFactory;<br/>
+<br/>
+private static final Log log = LogFactory.getLog(LoggingCache.class);</span><br/>
+<br/>
+也是把 Log 和 LogFactory 写到自己的类中来，再看 org.apache.ibatis.logging.LogFactory 的实现：<br/>
+<br/>
+它优先考虑的也是 Slf4J，显然它看重的也是 Slf4J。<br/>
+<pre><span style="color: #800040;">static {<br/>
+    tryImplementation(new Runnable() {<br/>
+        public void run() {<br/>
+            useSlf4jLogging();<br/>
+        }<br/>
+    });<br/>
+        ...下面代码类似的，依次是...<br/>
+        useCommonsLogging();<br/>
+        useLog4JLogging();<br/>
+        useJdkLogging();<br/>
+        useNoLogging();<br/>
+}</span></pre>
+
+本来起草是本文的标题是：在 SSH 或 SSI 项目中应该选用 Slf4J+Logback 作为日志框架，可是写到这里似乎不那么妥了，所以改成了 Java 流行框架(Spring/Struts2/Hibernate/iBatis)都在使用什么日志组件。因为再继续具体的说怎么在这样的项目中使用 Slf4j+LogBack 还是 JCL + Log4J 就找不到重点了。<br/>
+<br/>
+前面从代码中分析了当前最流行的四种 Java 框架分别用的是什么日志组件，再小结一下：<br/>
+<br/>
+<span style="color: #993366;">Spring 3.0.4：Commons-Logging<br/>
+Struts 2.2.1：间接的优先支持 Commons-Logging<br/>
+Hibernate 3.6.0：直接的使用 Slf4J<br/>
+iBatis/MyBatis 3.0.2：间接的优先使用 Slf4J</span><br/>
+<br/>
+从中我们可以隐约的感觉到 Slf4J 是一种向前发展的趋势，Log4J 的作者开发了与 Slf4J 对接的，作为 Log4J 替代品的 Logback。在我看来要用 Slf4J 就应该考虑 Slf4J + Logback 的组合，再用 jcl-over-slf4j 把 Commons-Logging 与 Slf4J 桥接起来。用 Logback 取代 Log4J 的实际日志输出功能，即有 Commons-Logging 和 Slf4J 混杂的情况下用：<br/>
+<br/>
+<span style="color: #993366;">Slf4J + Logback<br/>
+jcl-over-slf4j + Logback</span><br/>
+<br/>
+把 Java Commons-Logging 也转到 slf4J 最终也用 Logback 输出日志。<br/>
+<br/>
+而不是用<br/>
+<br/>
+<span style="color: #993366;">JCL + Log4J<br/>
+Slf4J + Log4J</span><br/>
+<br/>
+全部直接转到 Log4J 来输出日志，看起来似乎要简单些，但实际上是两种通用日志框架在各行其事，JCL 那部分是体验不到 Slf4J 新的快感的。也无法明白 Log4J 的作者为何会重新开出一个 Logback 来替换 Log4J。<br/>
+<br/>
+看我前面写过的一篇：<a href="http://unmi.cc/slf4j-logback" target="_blank">SLF4J 的几种实际应用模式--之二：SLF4J+Logback</a>，其中提到了下面的理由：<br/>
+<br/>
+Logback 替代 Log4J 的十几个理由：<a href="http://logback.qos.ch/reasonsToSwitch.html" target="_blank">Reasons to prefer logback over log4j</a>，说的大至是更快；好测试；与 SLF4J 关系紧；文档丰富；能自动加载配置文件；多个 JVM 写一个日志文件，或其他 I/O 错误时不影响程序执行；配置文件中加入条件控制；强大的日志过滤；更强的日志切分功能；自动压缩、删除日志文件；异常栈中更多的数据信息。<br/>
+<br/>
+下一篇写个如何在 SSH/SSI 项目中使用 Slf4J + Logback。<br/>
+<br/>
+参考我之前发表过的几篇：<br/>
+<br/>
+1. <a href="http://unmi.cc/new-common-logging-slf4j-guide" target="_blank">新一代通用日志框架 SLF4J 用户指南</a><br/>
+2. <a href="http://unmi.cc/slf4j-log4j" target="_blank">SLF4J 的几种实际应用模式--之一：SLF4J+Log4J</a><br/>
+3. <a href="http://unmi.cc/slf4j-logback" target="_blank">SLF4J 的几种实际应用模式--之二：SLF4J+Logback<br/>
+</a>4. <a href="http://unmi.cc/jcl-over-slf4j-slf4j" target="_blank">SLF4J 的几种实际应用模式--之三：JCL-Over-SLF4J+SLF4J</a>

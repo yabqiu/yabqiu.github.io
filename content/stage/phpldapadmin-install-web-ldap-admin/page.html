@@ -1,0 +1,234 @@
+---
+title: phpLDAPadmin 安装配置讲解，通过 Web 端来管理您的 LDAP 服务器
+url: /phpldapadmin-install-web-ldap-admin/
+date: 2008-09-11T06:51:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Uncategorized
+tags: 
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 333 
+wpStatus: publish
+views: 2505
+lastmod: 2021-09-02T14:20:43-05:00
+---
+
+做企业应用的也不时要与 LDAP 打交道的，例如组织架构、人员的管理，权限的分级控制等。以前管理 LDAP 都是用客户端工具 LDAP Browser 什么的，有时不甚方便。幸运的是，网上有一个现成的、功能完备的 LDAP Web 管理工具，那就是赫赫有名的 phpMyAdmin 的姊妹 phpLDAPadmin。</p>
+<br/>
+Web 方式的 phpLDAPadmin 利于发布，随处使用，基本上它有 LDAP Browser 客户端工具的所有功能，诸如条目管理、属性管理、导入导出、条件搜索等。还有比 LDAP Browser 所没有的 Schema 信息明细展示功能。<br/><br/>
+phpLDAPadmin 的界面截图请见：<a href="http://phpldapadmin.sourceforge.net/screenshots.php">http://phpldapadmin.sourceforge.net/screenshots.php</a><br />
+您也可以进到 phpLDAPadmin 的 Demo 站点：<a href="http://thesmithfam.org/phpldapadmin-demo/htdocs/index.php">http://thesmithfam.org/phpldapadmin-demo/htdocs/index.php</a> 先睹为快。<!--more--><br/><br/>
+本篇就来介绍 phpLDAPadmin 的安装及体验，读者最好是对 Apache、PHP、LDAP 有一定的了解。因未涉及非常具体的安装细节，只拣关键之处说明，所以如若对以上几个太过陌生的，可能中间稍有差池就要费些思量了。<br/><br/>
+<strong><u><span style="font-size: 18px; color: #ff0000;">一：软件准备</span></u></strong><br/><br/>
+1. <a href="http://httpd.apache.org/" target="_blank" rel="noopener">Apache HTTP Server</a>，版本可选择 1.x 或 2.x，到 <a href="http://httpd.apache.org/">http://httpd.apache.org/</a> 下载。本文测试用的是 Apache 1.3.28。我偷了一下懒，直接用了安装 WAS 5.1 装上的 IBM HTTP Server。<br/><br/>
+2. <a href="http://www.openldap.org/" target="_blank" rel="noopener">OpenLDAP</a> for Windows，文中版本是 2.2.29，可从 <a href="http://download.bergmans.us/openldap/openldap-2.2.29/openldap-2.2.29-db-4.3.29-openssl-0.9.8a-win32_Setup.exe">http://download.bergmans.us/openldap/openldap-2.2.29/openldap-2.2.29-db-4.3.29-openssl-0.9.8a-win32_Setup.exe</a> 下载。当然你也可以选择其他的版本。<br/><br/>
+3. <a href="http://www.php.net/" target="_blank" rel="noopener">PHP</a> 5，本文所用版本为 5.2.6，从 <a href="http://cn.php.net/distributions/php-5.2.6-Win32.zip">http://cn.php.net/distributions/php-5.2.6-Win32.zip</a> 下载。因为这里的 phpLDAPadmin-1.1.0.5 要求是 PHP 5。<br/><br/>
+4. <a href="http://phpldapadmin.sourceforge.net/" target="_blank" rel="noopener">phpLDAPadmin</a>，目前版本是 1.1.0.5，不过本文仍使用 1.1.0 版本，因为 1.1.0.5 我使用中有些问题，可从 <a href="http://nchc.dl.sourceforge.net/sourceforge/phpldapadmin/phpldapadmin-1.1.0.zip">http://nchc.dl.sourceforge.net/sourceforge/phpldapadmin/phpldapadmin-1.1.0.zip</a> 下载。<br/><br/>
+<strong><u><span style="font-size: 18px; color: #ff0000;">二：软件安装</span></u></strong><br/><br/>
+<em>1. Apache 的安装</em><br/><br/>
+这个东西的安装、启动和停止就不多说了，用 %APACHE_HOME% 表示 Apache 的安装目录。<br/><br/>
+<strong><em>2. OpenLDAP 的安装配置</em></strong><br/><br/>
+请参考之前写过的一篇日志：<a href="http://unmi.cc/windows-install-openldap/" target="_blank" rel="noopener">Windows下安装使用openldap</a>。<span style="color: #006400;">当然，你也可以藉此连接到一个已有的 LDAP 服务器，那么这一步就可以直接跳过。</span><br/><br/>
+只是我们将使用 OpenLDAP Samples(<a href="http://www.zytrax.com/books/ldap/ch5/index.html">http://www.zytrax.com/books/ldap/ch5/index.html</a>) 中的目录结构。所以与前面不同的是要把 OpenLDAP 安装目录下的 slapd.conf 中的 suffix、rootdn 和 rootpw 分别改为如下：<br />
+        <br />
+<span style="color: #0000ff;">        suffix "dc=example,dc=com"<br />
+        rootdn "cn=jimbob,dc=example,dc=com"<br />
+        rootpw dirtysecret　</span><br/><br/>
+然后拷贝下面文本框中的内容保存为 example.ldif  文件，比如放在 C 盘根目录下。<br/><br/>
+<pre class="lang:default decode:true ">version: 1<br/><br/>
+# 为： dc=example,dc=com，导出LDIF
+# 由phpLDAPadmin ( http://phpldapadmin.sourceforge.net/ ) 在 September 11, 2008 8:33 am上生成的
+# 服务器: My LDAP Server (10.128.12.16)
+# 搜索范围: sub
+# 搜索过滤器: (objectClass=*)
+# 条目总数: 15<br/><br/>
+dn: dc=example,dc=com
+dc: example
+description: My wonderful company as much text as you want to place in this 
+ line up to 32K continuation data for the line above must have  or &lt;
+ LF&gt; i.e. ENTER works on both Windows and *nix system - new line MUST begin 
+ with ONE SPACE
+objectClass: dcObject
+objectClass: organization
+o: Example, Inc.<br/><br/>
+dn: ou=customers,dc=example,dc=com
+objectClass: organizationalUnit
+ou: customers
+description: customer address book branch<br/><br/>
+dn: ou=equipment,dc=example,dc=com
+objectClass: organizationalUnit
+ou: equipment
+description: IT assets branch <br/><br/>
+dn: cn=LP1,ou=equipment,dc=example,dc=com
+objectClass: device
+cn: LP1
+description: Some brand of printer
+serialNumber: 1-77-23-15
+l: Room 17
+owner: cn=John Smith,ou=people,dc=example,dc=com
+ou: printers<br/><br/>
+dn: ou=groups,dc=example,dc=com
+objectClass: organizationalUnit
+ou: groups
+description: generic groups branch<br/><br/>
+dn: cn=hrpeople,ou=groups,dc=example,dc=com
+objectClass: groupOfNames
+cn: hrpeople
+description: Human Resources group
+member: cn=Robert Smith,ou=people,dc=example,dc=com<br/><br/>
+dn: cn=itpeople,ou=groups,dc=example,dc=com
+objectClass: groupOfNames
+cn: itpeople
+description: IT security group
+member: cn=William Smith,ou=people,dc=example,dc=com<br/><br/>
+dn: cn=salespeople,ou=groups,dc=example,dc=com
+objectClass: groupOfNames
+cn: salespeople
+description: Sales group
+member: cn=John Smith,ou=people,dc=example,dc=com<br/><br/>
+dn: ou=people,dc=example,dc=com
+ou: people
+description: All people in organisation
+objectClass: organizationalUnit<br/><br/>
+dn: cn=John Smith,ou=people,dc=example,dc=com
+objectClass: inetOrgPerson
+cn: John Smith
+cn: John J Smith
+sn: Smith
+uid: jsmith
+userPassword: jSmitH
+carLicense: HISCAR 124
+homePhone: 555-111-2223
+mail: j.smith@example.com
+mail: jsmith@example.com
+mail: john.smith@example.com
+ou: Sales<br/><br/>
+dn: ou=addressbook,cn=John Smith,ou=people,dc=example,dc=com
+objectClass: organizationalUnit
+ou: addressbook
+description: Personal Address Book<br/><br/>
+dn: cn=Robert Smith,ou=people,dc=example,dc=com
+objectClass: inetOrgPerson
+cn: Robert Smith
+cn: Robert J Smith
+cn: bob smith
+sn: smith
+uid: rjsmith
+userPassword: rJsmitH
+carLicense: HISCAR 123
+homePhone: 555-111-2222
+mail: r.smith@example.com
+mail: rsmith@example.com
+mail: bob.smith@example.com
+description: swell guy
+ou: Human Resources<br/><br/>
+dn: ou=addressbook,cn=Robert Smith,ou=people,dc=example,dc=com
+objectClass: organizationalUnit
+ou: addressbook
+description: Personal Address Book<br/><br/>
+dn: cn=Sheri Smith,ou=people,dc=example,dc=com
+objectClass: inetOrgPerson
+cn: Sheri Smith
+sn: smith
+uid: ssmith
+userPassword: sSmitH
+carLicense: HERCAR 125
+homePhone: 555-111-2225
+mail: s.smith@example.com
+mail: ssmith@example.com
+mail: sheri.smith@example.com
+ou: IT<br/><br/>
+dn: ou=addressbook,cn=Sheri Smith,ou=people,dc=example,dc=com
+objectClass: organizationalUnit
+ou: addressbook
+description: Personal Address Book</pre>
+<br/>
+接着在 slapd -d 1 启动了 OpenLDAP 后，再用命令<br/><br/>
+<span style="color: #0000ff;">ldapadd -x -D "cn=jimbob,dc=example,dc=com" -w dirtysecret -f c:/example.ldif<br />
+</span><br />
+导入到 OpenLDAP 中。导入后 LDAP 的目录结构如下图所示：<br/><br/>
+<div align="center"><img src="/wp-content/uploads/2008/09/LdapBrowserSample.jpg" alt="LdapBrowserSample.jpg" width="600" height="400" border="0" /></div>
+<br/>
+<strong><em>3. PHP 的配置</em> </strong><br/><br/>
+下载的 PHP 解压到某个目录下，用 %PHP_HOME% 表示这个目录。<br/><br/>
+关于 PHP 与 Apache 的结合，参考 %PHP_HOME% 目录下的 install.txt 文件。简单说就是：<br/><br/>
+    1) 修改 %APACHE_HOME%/conf/httpd.conf  文件，我们以 Apache module 模块方式配置，在末尾加上下面三行<br />
+    <br />
+<span style="color: #0000ff;">            LoadModule php5_module "%PHP_HOME%/php5apache.dll" <br />
+           #对于 Apache 2 则加载 php5apache2.dll，写成<br />
+           #LoadModule php5_module "%PHP_HOME%/php5apache2.dll"<br />
+            <br />
+           AddType application/x-httpd-php .php<br />
+            <br />
+            #指定 php.ini 文件的置，默认是在 %windir% 目录下<br />
+            PHPIniDir "%PHP_HOME%/"<br />
+</span><br />
+        <span style="color: #ff0000;">说明：%PHP_HOME% 替换为实际的路径<br />
+</span><br />
+    2) 把 %PHPE_HOME%/php.ini-recommended 文件更名为 php.ini，然后修改其中的<br/><br/>
+            <span style="color: #0000ff;">extension_dir = "%PHP_HOME%/ext"<br />
+</span><br />
+        然后把 extension=php_gettext.dll 和 extension=php_ldap.dll 前面的分号(;) 注释符去掉，保存。明显我们的 php 要用到 ldap 库，还有在 phpLDAPadmin 中使用了 GETTEXT 来实现国际化。<br/><br/>
+    3) 还要使得 Apache 启动时能加载到 %PHP_HOME% 下的 libeay32.dll 和 ssleay32.dll 这两个文件，我们不妨把这两个文件拷到 %APACHE_HOME% 目录下即可。<br/><br/>
+    4) 最后我们来测试一下 PHP 安装是否成功，在 %APACHE_HOME%/conf/httpd.conf 的 DocumentRoot  所指向的站点主目录中新建一个 phpinfo.php，在里面写上：<br/><br/>
+       &lt;?php  phpinfo(); ?&gt;<br/><br/>
+      启动 Apache，在浏览器中用 <a href="http://localhost/phpinfo.php">http://localhost/phpinfo.php</a> 看看是不是显示了 php 的相关信息，并且能找到启用了 LDAP 和 GETTEXT，OK，到这一步就完成一大半了。<br/><br/>
+<strong><em>4, phpLDAPadmin 的安装配置</em></strong><br/><br/>
+    1) 把下载的 phpLDAPadmin 解压到 Apache 的站点主目录中，目录命名为 phpldapadmin，如 %APACHE_HOME%/htdocs/phpldapadmin，用 %PHP_LDAP_ADMIN_HOME% 来表示这个目录。<br/><br/>
+    2) 把 %PHP_LDAP_ADMIN_HOME% /config/config.php.example 更名为 config.php，这个文件中对于各项的配置有很详细的说明。<br/><br/>
+    3) 修改以上的 config.php 文件<br/><br/>
+<span style="color: #ff0000;">注意，如果是连接用来连接到本机的 389 端口上的 LDAP 服务，不用修改此文件都行，到时在界面上直接输入登录用户的 DN 和密码即可。</span><br/><br/>
+在该文件中找到行<br />
+ <br />
+        <span style="color: #0000ff;">$ldapservers-&gt;SetValue($i,'server','name','My LDAP Server');</span><br/><br/>
+        并把这一行随后的 <br/><br/>
+<span style="color: #0000ff;">        // $ldapservers-&gt;SetValue($i,'server','host','127.0.0.1');<br />
+        // $ldapservers-&gt;SetValue($i,'server','port','389');<br />
+        // $ldapservers-&gt;SetValue($i,'server','base',array(''));<br />
+        // $ldapservers-&gt;SetValue($i,'server','auth_type','cookie');<br />
+        #  $ldapservers-&gt;SetValue($i,'login','dn','cn=Manager,dc=example,dc=com');<br />
+        #  $ldapservers-&gt;SetValue($i,'login','pass','secret');<br />
+</span><br />
+       去掉注释符(// 或 #)，再依据前面的 OpenLDAP 配置依次改为<br/><br/>
+<span style="color: #0000ff;">        $ldapservers-&gt;SetValue($i,'server','host','localhost');<br />
+        $ldapservers-&gt;SetValue($i,'server','port','389');<br />
+        $ldapservers-&gt;SetValue($i,'server','base',array('dc=example,dc=com'));<br />
+        $ldapservers-&gt;SetValue($i,'server','auth_type','cookie');<br />
+        $ldapservers-&gt;SetValue($i,'login','dn','cn=jimbob,dc=example,dc=com');<br />
+        $ldapservers-&gt;SetValue($i,'login','pass','dirtysceret');</span><br/><br/>
+       以上那个属性不设置，则取默认值，如默认 host 为 localhost，port 为 389，base 为空则自动检测，auth_type 为 cookie，dn 和 pass 不设值则要求界面输入。<br/><br/>
+    3) 如果要同时管多个 LDAP 服务器，则可在这个 config.php 文件中参照 $i++; 所在的注释块配置其他的 LDAP 服务器参数，配置了多个可以在 WEB 界面上通过下拉选择当前的的 LDAP 服务器。<br/><br/>
+<strong><u><span style="font-size: 18px; color: #ff0000;">三. 体验 phpLDAPadmin</span></u></strong> 在浏览器上访问 <a href="http://localhost/phpldapadmin/index.php">http://localhost/phpldapadmin/index.php</a>, 点击左侧 My LDAP Server 下的 Login ...，输入 登录 DN 为 cn=jimbob,dc=example,dc=com 和密码为：dirtysecret，点击认证按钮就能连接上 LDAP 服务器进行管理了。这里挂上一个搜索的界面。<br/><br/>
+<div align="center"><img src="/wp-content/uploads/2008/09/phpLDAPadmin.jpg" alt="phpLDAPadmin.jpg" width="750" height="553" border="0" /></div>
+<br/>
+<strong><u><span style="font-size: 18px; color: #ff0000;">四. 一些问题</span></u></strong><br/><br/>
+1. 为什么用 phpLDAPadmin 1.1.0，而不用目前最新版 1.1.0.5，因为 1.1.0.5 主要有两个问题：<br />
+     <br />
+        1) 经常页面出现乱码，每次需手工选择网页编码为 UTF-8，1.1.0 下正常。<br />
+ <br />
+        2) 即使在 config.php 中提供了登录 DN 和 密码，auth-type 是 cookie，也是不能自己登录的，一定要输入密码手工点一点认证按钮，1.1.0 下正常<br/><br/>
+2. 注意 PHP 的版本，以及是否开启了 LDAP 和 GETTEXT 支持。我首先拿到的 phpLDAPadmin 版本是 1.1.0-alpha3，看其中的 INSTALL 文件里写着的是：<br/><br/>
+        PHP 4.1.0 or newer (with LDAP support)<br/><br/>
+其实我还是比较大方的，直接用了 PHP 4.4.9 来伺候它，LDAP 也开了，结果它不领情。出现了这样的错误：<br/><br/>
+        <span style="color: #0000ff;">php unexpected T_STRING, expecting T_OLD_FUNCTION or T_FUNCTION or T_VAR or '}'<br />
+</span><br />
+定位在 PHP 类的变量声明上，如 public、private 和 clone 操作上，原因是 PHP 4 不支持这个，只能用 var，所以要换 PHP 5 才行。<br/><br/>
+        还有 phpLDAPadmin 绝口未提要 GETTEXT 来支持它的国际化，害我从源代码中才翻出这一底细，即使是后续版本也对此默声不语。况且 PHP 4 本身就没有内置对 GETTEXT 的支持，尝试着安装 gettext for Win32 也不奏效，那就顺手移到 PHP5 上吧，在 php.ini 中把 GETTEXT 也打开，一切解决。<br/><br/>
+       在 phpldapadmin/htdocs/index.php 中有这么一段代码：<br/><br/>
+<span style="color: #0000ff;">        # Make sure this PHP install has gettext, we use it for language translation<br />
+        if (! extension_loaded('gettext'))<br />
+             pla_error('&lt;p&gt;Your install of PHP appears to be missing GETTEXT support.&lt;/p&gt;&lt;p&gt;GETTEXT is used for language translation.&lt;/p&gt;&lt;p&gt;Please install GETTEXT support before using phpLDAPadmin.&lt;br /&gt;&lt;small&gt;(Dont forget to restart your web server afterwards)&lt;/small&gt;&lt;/p&gt;');<br />
+</span><br />
+3. 有关 php.ini 和 config.php 的详细配置见这两文件本身吧，它们是自文档的，例如可以适当的裁剪一些 PHP 的功能。以及 PHP 和 Apache 的搭配也应见 PHP 的 install.txt。最后为方便访问，在 Apache 的 httpd.conf 中为<br />
+ <br />
+        <span style="color: #0000ff;">DirectoryIndex index.html index.php<br />
+</span><br />
+把 index.php 也加上，如上形式。<br/><br/>
+本篇只关注如何配置 phpLDAPadmin 使用，碰到问题实际解决而已。旨在为我们开发中使用 LDAP 提供一个便利的工具而已，或有些用处。不用在 PHP 上纠缠，毕竟 PHP 太久没用过了，也不清楚现在演化成什么样子了。<br/><br/>
+4. 另外，若是你的 phpLDAPadmin 页面要加载的数据信息过于庞大时，建议用 FireFox，因为 FireFox 与 IE 的机制不一样，FireFox 首先会申请一大块内存，所以显示大量数据信息的页面时不会像 IE 那样拖不动。用 FireFox 和 IE 分别试着访问一下 Blogjava 首页面的，更多博客连接 <a href="http://blog.csdn.net/AllBloggers.aspx">http://www.blogjava.net/AllBloggers.aspx</a> 就知道了。

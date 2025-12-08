@@ -1,0 +1,49 @@
+---
+title: Unmi 的 Struts2 学习笔记(六)
+url: /unmi-study-struts2-6/
+date: 2008-02-27T10:06:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/05/struts-logo.jpeg"
+categories:
+  - Struts
+tags: 
+  - Struts2
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 434 
+wpStatus: publish
+views: 376
+lastmod: 2019-12-11T18:57:08-06:00
+---
+
+米洗毕，水适量，盖合上，心摇摆，总觉水多了一分或是少了几点，于是重又加上或倒出少许，其实这丁点份量完全无碍煮出香喷喷的饭来。及至将熟之际，亦有犹豫，心中默数至少10，如再有不定辄至20，掐火，20对最终质量来说或有所损。</p>
+<br/>
+1. Struts2 的 Action 中可直接用属性来封装请求参数和处理结果，此谓之属性驱动。也可以像 Struts1 那样使用专门的 ActionForm 来处理请求参数和结果，只不过 Struts2 用的是一个更单纯的 POJO，这就做模型驱动；此时的 Action 需要实现 ModelDriven 接口，并实现其 getModel() 方法将 Action 与对应 Model 相关联。<br/><br/>
+2. 例子说明采用模型驱动的 Action (UserBean 是一个普通 JavaBean，其中定义了 username 和 password 两个属性)：<!--more--><br />
+    public class LoginAction implments Action, ModelDriven&lt;UserBean&gt;{<br />
+        UserBean model = new UserBean();<br />
+        public UserBean getModel(){<br />
+            return model;<br />
+       }<br />
+    }<br />
+    上面例子使用了泛型，Struts2 的 Action 要使用一个模型不需要在配置文件中作额外的配置。<br/><br/>
+3. 请求参数自动封装到模型中是由配置 struts-default.xml 中的 ModelDrivenIntercepter 来完成的。要输出模型中值时用标记 &lt;s:property value="model.username"/&gt;。而倘若写成了&lt;s:property value="username"/&gt;，Struts2 也会作智能处理，要是这个 Action 中未定义 username 属性，并且彩用了模型驱动模式，也会输出模型 model.username 属性，就像 Struts1 显示 ActionForm 一样可不写 name 属性。<br/><br/>
+4. Struts2 的异常处理，基本和 Struts1 一样的思维，都提供了声明式异常处理方式，在 struts.xml 中配置。Struts2 的 &lt;global-exception-mappings .../&gt;、&lt;exception-mapping .../&gt; 分别与 Struts1 的 &lt;global-exceptions .../&gt;、&lt;exception .../&gt; 对应，作用都是声明 Action 中出现何种类型的异常，转到对应页面，你的 Action 的 execute() 方法只管 throws Exception 就行，剩下的事框架帮你处理。<br/><br/>
+5. 异常信息的输出，&lt;s:property value="exception"/&gt; 输出异常对象本身；&lt;s:property value="exceptionStack"/&gt; 输出异常堆栈信息，这是 Struts1 没有的功能；&lt;s:property value="exception.message"/&gt; 输出异常的 message 属性。至于标签输出异常国际化消息，可就要借鉴前面的知识稍加斟酌一番，其实就是：如 execute() throw new Exception("name.error")，要输出 name.error 对应消息用 &lt;s:property value="%{getText(exception.message)}"/&gt; 即可，如果找不到 name.error 对应消息，会直接把 "name.error" 原本输出。<br/><br/>
+6. 页面请求数据或待显示的结果(它们总是字符串)与Java对象之间要一个类型转换器，例如，"2007-01-01" 提交后就是一个 Date 对象，"Unmi,000" 一提交就是一个 UserBean 对象("Unmi"和"000"分别对应 UserBean 的用户名和密码)，用 &lt;s:property value="userbean"/&gt; 显示这个 UserBean 对象形式为 "Unmi,000"。可想而知，Struts2 肯定为我们内置了不少类型转换器。<br/><br/>
+7. 可以自定义类型转换器，实现 TypeConverter 接口或继承 DefaultTypeConverter 类。一般采用继承的方法。注意 DefaultTypeConverter 的 Object convertValue(map context, Object value, Class toType) 方法的写法，了解该方法的参数及返回值的类型与意义；该方法中依据 toType 的类型分别实现两个方向的转换逻辑，如果是从请求到 Java 对象的转换时，value 参数是一个字符串数组，实质是用 request.getParameterValues(name) 获取的值。<br/><br/>
+8. 自定义的类型转换器可注册为局部的(为某些个 Action 所用)或全局的(为所有 Action 所用)。局部类型转换器的注册方式是提供一个名为 <em><span style="color: #0000ff;">ActionName</span></em>-conversion.properties 放在该 Action 的 class 所在路径下(记得校验文件也是放在同样的位置)。这个文件的内容格式为：<br/><br/>
+     <em>Action中的属性名</em>=<em>类型转换器的全限类名</em><br/><br/>
+例如：<br/><br/>
+   user=com.unmi.struts2.converter.UserConverter<br/><br/>
+   user 该 Action 中的属性的名称，对该 Action 中的 user 属性用 UserConverter 转换。可有多行，分别为不同的属性设置转换器。<br/><br/>
+ 9. 注册为全局的类型转换器的方法。提供一个 xwork-conversion.property 放在 classpath 下(基本就是 WEB-INF/classes 下)，然后里面可加多个 "属性类型=类型转换器的全限类名"。如<br/><br/>
+   com.unmi.vo.User=com.unmi.struts2.converter.UserConverter<br/><br/>
+   com.unmi.vo.User 为 Action 中的属性类型，碰到 User 类型属性就用 UserConverter 转换。可有多行，分别用于转换不同的属性类型。<br/><br/>
+10. 再回过头来与 Struts1 作个对比，Struts1 的类型转换器只能注册全局的，而不能只为个别 Action 服务，并且要通过编写代码来注册，注册代码如下：<br />
+        ConvertUtils.register(new DateConverter(), Date.class);

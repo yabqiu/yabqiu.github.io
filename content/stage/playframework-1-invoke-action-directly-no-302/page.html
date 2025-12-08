@@ -1,0 +1,197 @@
+---
+title: Play1 直接调用 Action 方法，不作 302 跳转
+url: /playframework-1-invoke-action-directly-no-302/
+date: 2014-05-02T02:12:36-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PlayFramework
+tags: 
+  - playframewok
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6449 
+wpStatus: publish
+views: 1018
+lastmod: 2023-12-13T00:08:35-06:00
+---
+
+用过 PlayFramework 的同学们应该都知道，Action 方法间的调用是进行的  302 重定向操作。<br/><br/>
+简单例子说明一下，当基于下面的 r1, r2 路由配置时，如果 Application.f1() 方法中调用了 f2() 方法，实际运作是 f1() 在调用 f2() 时，会先反向出 f2() 方法对应的路由  GET /r2，然后向 /r2 发出的一个 302 跳转.<br/><br/>
+上面也算是绕个弯形成了对 f2() 方法的调用，这也是非常合理，在 Action 中很容易理解的。<br/><br/>
+<blockquote>
+GET     /r1                                                                     Application.f1<br />
+GET     /r2                                                                    Application.f2<br />
+GET     /r3                                                                    Application.f3
+</blockquote>
+<br/>
+为什么说会反向出 f2() 方法对应的路由，可以反证一下。<br/><br/>
+例如说在 f1() 中调用了一个<code> public static void f4()</code> 方法，但是 f4() 并未出现在 routes 配置中，也就是 f4() 没有对应的路由配置，我们将会看到这样一个异常<!--more--><br/><br/>
+<blockquote>
+<strong><span style="font-size: 18pt;">No route found</span></strong><br />
+No route able to invoke action <strong>Application.f4</strong> with arguments <strong>{}</strong> was found.
+</blockquote>
+<br/>
+我们可以用 curl 在命令行下对 f1() 调用 f2() 方法具体验证下 从 /r1 到  /r2 的 302 跳转：<br/><br/>
+<blockquote>
+yanbin@localhost ~&gt; curl -i http://localhost:9000/r1<br />
+HTTP/1.1 302 Found<br />
+Content-Type: text/plain; charset=utf-8<br />
+Location: http://localhost:9000/r2<br />
+Content-Length: 0
+</blockquote>
+<br/>
+因为 302 跳转关系，所以 f1() 和  f2() 方法间不存在实际的方法调用关系，也就是在  f2() 的调用栈上不存在 f1() 方法。<br/><br/>
+那我们怎么才知道达到 f1() 对 f2() 的直接调用，而不是反向出路由来进行 302  转向呢？<br/><br/>
+针对如下的代码<br/><br/>
+<pre class="lang:default decode:true">package controllers;<br/><br/>
+public class Application extends BaseController {<br/><br/>
+    public static void f1() {
+        f2();
+        f3();
+        renderJSON(f2 和 f3 的结果组合);
+    }<br/><br/>
+    public static void f2() {
+        renderJSON("from f2");
+    }<br/><br/>
+    public static void f3() {
+        renderJSON("from f3");
+    }
+}</pre>
+<br/>
+在 routes 中有 f1, f2, f3 三个方法相应的路由配置，它们可以被单独访问。想像一个这样的需求，当访问 /r1 时，想要把 f2() 和 f3() 的响应结果组合起来作为新的响应。<br/><br/>
+这是一个我们项目中现实的需求，现在我们清楚了，f1() 在进行 f2() 调用式就重定向到了对就的  /r2 路由，得到 "from f2" 的响应，f2() 之后的代码是多余的。我们怎么样才能避免这种默认行为呢，并且还能够取得  f2(), f3() 的结果数据。<br/><br/>
+我们还应该知道 Play1 中 Action 在 renderXxx() 时，其实是抛出的一个异常，对于 renderJSON() 是<br/><br/>
+<pre class="lang:default decode:true">protected static void renderJSON(String jsonString) {
+    throw new RenderJson(jsonString);
+}</pre>
+<br/>
+各种 Result 就是个异常，继承自 FastRuntimeException。所以对于 renderJSON() 我们也试图 catch(RenderJson rj) 异常来获得 Action 方法的渲染数据。还必须<span style="color: #0000ff;"><strong>利用 ControllerInstrumentation 的两个方法来避免 302 跳转</strong></span>，理想中的代码是这样的<br/><br/>
+我们可以使用 ControllerInstrumentation 的两个方法，应用如下：<br/><br/>
+<pre class="lang:default decode:true">public static void f1() {
+    ControllerInstrumentation.initActionCall();
+    String json = null;
+    try{
+        f2();
+    }catch(RenderJson rj){
+        try {
+            Field jsonField = RenderJson.class.getDeclaredField("json");
+            jsonField.setAccessible(true);
+            json = (String)jsonField.get(rj);
+        } catch (Exception e) {
+        }
+    }
+    ControllerInstrumentation.stopActionCall();
+    renderJSON("New Json from f1: " + json);
+}</pre>
+<br/>
+再来看一下调用关系<br/><br/>
+<img class="aligncenter size-large wp-image-6457" src="/wp-content/uploads/2014/05/play_action_call_2-800x681.png" alt="play_action_call_2" width="800" height="681" /><br/><br/>
+在方法调用栈上 f1() 和 f2() 形成了毗邻的关系，并且也不再是 302 跳转，而是 200 OK 了，所以地址栏中的 /r1 不会变成 r2，但仍然是只有 f2() 的输出结果，响应数据与以前还是一样的。<br/><br/>
+也就是我们在 catch(RenderJson rj) 中并没有捕捉到异常，难道会是别的异常，不会，还是在我之前就有人把这一异常偷偷的截了去，需再度研究下。再次打开 RenderJson 类，它有个 apply(Request, Response) 方法，可以探索下这个方法是什么时候被调用的，打个断点追踪：<br/><br/>
+<img class="aligncenter size-large wp-image-6458" src="/wp-content/uploads/2014/05/play_action_call_5-800x581.png" alt="play_action_call_5" width="800" height="581" /><br/><br/>
+这时看到了 ActionInvoker.invoke(Request, Response) 时拦截了 Result 异常，并且还没把该异常吐出来，调用了 Result 的 apply 方法直接就输出到 response 中去了，并且结束本次请求的处理。<br/><br/>
+怎么样才能避免 Result 异常被 ActionInvoker 拦截掉呢，要<span style="color: #0000ff;"><strong>用 ActionInvoker.invokeControllerMethod(actionMethod) 来调用 Action 方法来避免 Result 被 ActionInvoker  先拦截掉</strong></span>。<br/><br/>
+最后的 f1 方法这么写<br/><br/>
+<pre class="lang:default decode:true">public static void f1() {
+    ControllerInstrumentation.initActionCall();
+    String json = null;
+    try{
+        Method f2Method = Application.class.getDeclaredMethod("f2");
+        ActionInvoker.invokeControllerMethod(f2Method);
+    }
+    catch(InvocationTargetException ite){
+        if(ite.getTargetException() instanceof RenderJson){
+            RenderJson renderJson = (RenderJson)ite.getTargetException();
+            try {
+                Field jsonField = RenderJson.class.getDeclaredField("json");
+                jsonField.setAccessible(true);
+                json = (String)jsonField.get(renderJson);
+            } catch (Exception e) {
+            }
+        }
+    }
+    catch(Exception ex){
+        ex.printStackTrace();
+    }finally{
+        ControllerInstrumentation.stopActionCall();
+    }
+    renderJSON("New Json from f1: " + json);
+}</pre>
+<br/>
+用 ActionInvoker.invokeControllerMethod() 调用 Action 方法时要捕获的是 InvocationTargetException 异常，它的 target 是 RenderJson 异常，再取得 json 数据。这时候 f2() 在得到调用时就不会触发 RenderJson 的 apply 方法，只有 f1() 会触发该方法。如果没有先执行 ControllerInstrumentation.initActionCall() 的话，它的 target 就是个 Redirect 的结果异常。<br/><br/>
+现在我们来浏览 http://localhost:9000/r1，结果是<br/><br/>
+<img class="aligncenter wp-image-6459" src="/wp-content/uploads/2014/05/play_action_call_6-300x68.png" alt="play_action_call_6" width="400" height="91" /><br/><br/>
+最后，形成一个工具类方法 directActionCall<br/><br/>
+<pre class="lang:default decode:true">public static void f1() {
+    String json = directActionCall(Application.class, "f2");
+    renderJSON("New json from f1: " +json);
+}<br/><br/>
+public static String directActionCall(Class&lt;? extends Controller&gt; controllerClass, String methodName, Object...parameters){
+    String json = null;
+    Class[] parameterClasses = new Class[parameters.length];
+    for(int i=0; i&lt;parameters.length; i++){
+        parameterClasses[i] = parameters[i].getClass();
+    }
+    ControllerInstrumentation.initActionCall();
+    try{
+        Method actionMethod = controllerClass.getDeclaredMethod(methodName, parameterClasses);
+        ActionInvoker.invokeControllerMethod(actionMethod);
+    }
+    catch(InvocationTargetException ite){
+        if(ite.getTargetException() instanceof RenderJson){
+            RenderJson renderJson = (RenderJson)ite.getTargetException();
+            try {
+                Field jsonField = RenderJson.class.getDeclaredField("json");
+                jsonField.setAccessible(true);
+                json = (String)jsonField.get(renderJson);
+            } catch (Exception e) {
+            }
+        }
+    }
+    catch(Exception ex){
+    }finally{
+        ControllerInstrumentation.stopActionCall();
+    }
+    return json;
+}</pre>
+<br/>
+总结一下，<br/><br/>
+1. ControllerInstrumentation.initActionCall() 宣告后面的 Action 方法不要进行 302 跳转，否则即使是用 ActionInvoker.invokeControllerMethod 调用 Action 方法，始终捕获到的是 Redirect 异常，而不是具体的 RenderJson, RenderHtml, RenderText 等具体的结果类型异常。<br />
+2. ActionInvoker.invokeControllerMethod 告诉它自己不要去中途拦截掉 Result 异常，放马出去<br/><br/>
+这个 <a href="http://stackoverflow.com/questions/3899670/how-can-i-influence-the-redirect-behavior-in-a-play-controller">http://stackoverflow.com/questions/3899670/how-can-i-influence-the-redirect-behavior-in-a-play-controller</a> 告诉了我可以 initActionCall，必要时多留意 <code>play.classloading.enhancers.ControllersEnhancer</code> 类的实现及功能。<br/><br/>
+补充一下，如果是通过新线程来调用其他的 Action 方法，还能把当前的 Request 带过去，像这样：<br/><br/>
+<pre class="lang:default decode:true">final Request currentRequest = Request.current();<br/><br/>
+callables.add(new Callable&lt;String&gt;(){
+    public String call() throws Exception {
+        return directActionCall(currentRequest, Application.class, "foo", params);
+    }
+});</pre>
+<br/>
+然后在 directActionCall() 方法中第一行加上<br/><br/>
+<pre class="lang:default decode:true">Request.current.set(curentRequest);</pre>
+<br/>
+在还要注意一点就是在 Controller 中 Controller.params 和 Controller.request.params 的数据可能不一样的，我碰过前者为 null，前者是有值的。<br/><br/>
+接着补充：我们把对 Action 方法的调用关在<br/><br/>
+ControllerInstrumentation.initActionCall()<br />
+ControllerInstrumentation.stopActionCall()<br/><br/>
+中，虽然上面两个方法是静态的，但它们不会影响到其他线程默认行为，因为它们是在 ThreadLocal 上作的标记，原代码是这样的<br/><br/>
+<pre class="lang:default decode:true ">/**
+ * Runtime part needed by the instrumentation
+ */
+public static class ControllerInstrumentation {<br/><br/>
+    public static boolean isActionCallAllowed() {
+        return allow.get();
+    }<br/><br/>
+    public static void initActionCall() {
+        allow.set(true);
+    }<br/><br/>
+    public static void stopActionCall() {
+        allow.set(false);
+    }
+    static ThreadLocal&lt;Boolean&gt; allow = new ThreadLocal&lt;Boolean&gt;();
+}</pre>

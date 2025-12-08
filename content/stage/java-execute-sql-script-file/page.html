@@ -1,0 +1,120 @@
+---
+title: Java 执行 SQL 脚本文件
+url: /java-execute-sql-script-file/
+date: 2008-01-22T01:21:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - Sql
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 447 
+wpStatus: publish
+views: 3582
+lastmod: 2021-09-02T20:54:37-05:00
+---
+
+假定Java 程序中要定期执行 SQL 语句，因需求变更应修改原有 SQL 语句或者加上更多的语句时，不得不修改源代码，然后再次编译。要是把 SQL 语句写在单独的 SQL 脚本文件中，由 Java 程序来定时加载执行，那么每次改动时仅仅修改 SQL 脚本文件就行了。</p>
+<br/>
+Java 没有提供现成的东西，所以自己写了一个这样的 SQL 脚本执行类 SqlFileExecutor。支持通用的 SQL 脚本文件，"--" 作为注释前导符，分号 ";" 分隔语句。不支持 MySQL 的 /*...*/ 形式的注释格式。对于 Windows 和 Linux/Unix 下编辑的脚本文件都测试通过。这两个系统文件中的换行符不一样，Windows 是 "\r\n"，Linux/Unix 是 "\n"。<!--more--><br/><br/>
+<pre class="lang:default decode:true ">package com.unmi.db;<br/><br/>
+import java.io.FileInputStream;
+import java.io.InputStream;
+import java.sql.Connection;
+import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;<br/><br/>
+/**
+ * 读取 SQL 脚本并执行
+ * @author Unmi
+ */
+public class SqlFileExecutor {<br/><br/>
+    /**
+     * 读取 SQL 文件，获取 SQL 语句
+     * @param sqlFile SQL 脚本文件
+     * @return List&lt;sql&gt; 返回所有 SQL 语句的 List
+     * @throws Exception
+     */
+    private List&lt;String&gt; loadSql(String sqlFile) throws Exception {
+        List&lt;String&gt; sqlList = new ArrayList&lt;String&gt;();<br/><br/>
+        try {
+            InputStream sqlFileIn = new FileInputStream(sqlFile);<br/><br/>
+            StringBuffer sqlSb = new StringBuffer();
+            byte[] buff = new byte[1024];
+            int byteRead = 0;
+            while ((byteRead = sqlFileIn.read(buff)) != -1) {
+                sqlSb.append(new String(buff, 0, byteRead));
+            }<br/><br/>
+            // Windows 下换行是 \r\n, Linux 下是 \n
+            String[] sqlArr = sqlSb.toString().split("(;\\s*\\r\\n)|(;\\s*\\n)");
+            for (int i = 0; i &lt; sqlArr.length; i++) {
+                String sql = sqlArr[i].replaceAll("--.*", "").trim();
+                if (!sql.equals("")) {
+                    sqlList.add(sql);
+                }
+            }
+            return sqlList;
+        } catch (Exception ex) {
+            throw new Exception(ex.getMessage());
+        }
+    } <br/><br/>
+    /**
+     * 传入连接来执行 SQL 脚本文件，这样可与其外的数据库操作同处一个事物中
+     * @param conn 传入数据库连接
+     * @param sqlFile SQL 脚本文件
+     * @throws Exception
+     */
+    public void execute(Connection conn, String sqlFile) throws Exception {
+        Statement stmt = null;
+        List&lt;String&gt; sqlList = loadSql(sqlFile);
+        stmt = conn.createStatement();
+        for (String sql : sqlList) {
+            stmt.addBatch(sql);
+        }
+        int[] rows = stmt.executeBatch();
+        System.out.println("Row count:" + Arrays.toString(rows));
+    }<br/><br/>
+    /**
+     * 自建连接，独立事物中执行 SQL 文件
+     * @param sqlFile SQL 脚本文件
+     * @throws Exception
+     */
+    public void execute(String sqlFile) throws Exception {
+        Connection conn = DBCenter.getConnection();
+        Statement stmt = null;
+        List&lt;String&gt; sqlList = loadSql(sqlFile);
+        try {
+            conn.setAutoCommit(false);
+            stmt = conn.createStatement();
+            for (String sql : sqlList) {
+                stmt.addBatch(sql);
+            }
+            int[] rows = stmt.executeBatch();
+            System.out.println("Row count:" + Arrays.toString(rows));
+            DBCenter.commit(conn);
+        } catch (Exception ex) {
+            DBCenter.rollback(conn);
+            throw ex;
+        } finally {
+            DBCenter.close(null, stmt, conn);
+        }
+    }<br/><br/>
+    public static void main(String[] args) throws Exception {
+        List&lt;String&gt; sqlList = new SqlFileExecutor().loadSql(args[0]);
+        System.out.println("size:" + sqlList.size());
+        for (String sql : sqlList) {
+            System.out.println(sql);
+        }
+    }
+}</pre>
+<br/>
+程序功能：加载 SQL 脚本文件，去除注释行，分离出 SQL 语句；提供两个 execute() 执行方法，分别是传数据库连接与不传连接的。传入连接的方法可以让它与外部数据库操作同处一个事物中，当然如果能用其他机制保证事物的原子性也行。另一个是自己管理数据库资源，例子中的 DBCenter 类留给读者自己来实现，包括获取、关闭连接，提交、回滚事物方法。

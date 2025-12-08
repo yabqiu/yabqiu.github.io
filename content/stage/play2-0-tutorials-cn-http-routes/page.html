@@ -1,0 +1,161 @@
+---
+title: Play 2.0 中文资料 - HTTP 路由
+url: /play2-0-tutorials-cn-http-routes/
+date: 2012-10-08T01:04:18-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PlayFramework
+tags: 
+  - 翻译
+  - Scala
+  - PlayFramework
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4872 
+wpStatus: publish
+views: 1698
+lastmod: 2021-06-01T16:31:49-05:00
+---
+
+<strong><span style="font-size: medium;">内建的 HTTP 路由器</span></strong><br/><br/>
+路由器组件掌管把传入的 HTTP 请求转发到 Action.<br/><br/>
+一个HTTP 请求可被 MVC 框架看成是一个事件. 这个事主要包含两方面的信息:<br/><br/>
+<ul>
+    <li>请求路径 (如 <code>/clients/1542</code>, <code>/photos/list</code>), 包括查询字符串</li>
+    <li>HTTP 方法 (像 GET, POST, …).</li>
+</ul><br/><br/>
+路由定义在 <code>conf/routes</code> 文件中, 它会被编译. 这表明你可以直接在浏览器上看到路由错误信息:<!--more--><br/><br/>
+<p style="text-align: center;"><a href="http://www.playframework.org/documentation/2.0.4/resources/manual/scalaGuide/main/http/images/routesError.png"><img class="aligncenter" src="http://www.playframework.org/documentation/2.0.4/resources/manual/scalaGuide/main/http/images/routesError.png" alt="" width="750" /></a></p>
+<br/>
+<strong><span style="font-size: medium;">路由文件的语法</span></strong><br/><br/>
+<code>conf/routes</code> 是路由器的配置文件. 这个文件列出了应用所需的所有路由. 每条路由由 HTTP 方法和 URI 模式构成, 它们和一个 <code>Action</code> 发生器的调用相关联.<br/><br/>
+让我们来看看路由定义是什么样子:<br/><br/>
+<pre class="brush:scala">GET   /clients/:id          controllers.Clients.show(id: Long)</pre>
+<br/>
+路由以 HTTP 方法开始, 后面跟着 URI. 最后的元素是调用定义.<br/><br/>
+你还可以在路由文件中以 # 字符开头添加注释.<br/><br/>
+<pre class="brush:scala"># Display a client.
+GET   /clients/:id          controllers.Clients.show(id: Long)</pre>
+<br/>
+<strong><span style="font-size: medium;">HTTP 方法</span></strong><br/><br/>
+HTTP 方法可以另何被 HTTP 支持的有效方法 (<code>GET</code>, <code>POST</code>, <code>PUT</code>, <code>DELETE</code>, <code>HEAD</code>).<br/><br/>
+<strong><span style="font-size: medium;">URI 模式</span></strong><br/><br/>
+URI 模式定义了路由的请求路径. 请求路径的部分可以是动态的.<br/><br/>
+<strong><span style="font-size: small;">静态路径</span></strong><br/><br/>
+例如, 为精确的匹配传入的 <code>GET /clients/all</code> 请求, 你要这么定义路由:<br/><br/>
+<pre class="brush:scala">GET   /clients/all              controllers.Clients.list()</pre>
+<br/>
+<strong><span style="font-size: small;">动态部分</span></strong><br/><br/>
+如果你想要定义一个接收客户端 ID 的路由, 你需要添加动态的部分:<br/><br/>
+<pre class="brush:scala">GET   /clients/:id          controllers.Clients.show(id: Long)</pre>
+<br/>
+<blockquote>
+注: 一个 URI 模式可能有不止一个动态的部分.
+</blockquote>
+<br/>
+动态部分默认的匹配策略用正则表达式写的话是 <code>[^/]+</code>, 这意味着任何定义为 <code>:id 的动态部分只会精确的匹配一个</code> URI 部分.<br/><br/>
+<span style="color: #0000ff;">Unmi 注: 这个模式  /clients/:id 意味着 id 值从 /clients/ 到下一个 / 斜杠之间的字符串，把上面的模式里的 id 类型改为字符串来测试一下：</span><br/><br/>
+<pre class="lang:default decode:true">GET     /clients/:id                controllers.Application.show(id: String)
+</pre>
+<br/>
+<span style="color: #0000ff;">然后对应的 controllers.Application.show(id: String) 实现如下：</span><br/><br/>
+<pre class="lang:default decode:true">def show(id: String) = Action {
+  Ok("It works! id: " + id)
+}</pre>
+<br/>
+<span style="color: #0000ff;">当访问的 URL 是 <span style="color: #800000;">http://localhost/clients/100-abc</span> 时，页面显示 <span style="color: #800000;">It works! id: 100-abc</span></span><br/><br/>
+<span style="color: #0000ff;">当访问的 URL 是 <span style="color: #800000;">http://localhost/clients/100abc/</span> 时，页面显示为：</span><br/><br/>
+<p style="text-align: center;"><a href="http://unmi.cc/wp-content/uploads/2012/10/play2.0-routes-id.png"><img class="aligncenter wp-image-4880" title="play2.0-routes-id" src="http://unmi.cc/wp-content/uploads/2012/10/play2.0-routes-id.png" alt="" width="750" /></a></p>
+<br/>
+<span style="color: #0000ff;">从上图中可看出 routes 文件被转换后的结果，<span style="color: #800000;">/clients/:id</span> 就成了 <span style="color: #800000;">/clients/$id&lt;[^/]+</span>，也就是 $id 变量取的是它后面尖括号里的正则表达式 <span style="color: #800000;">[/]+</span> 代表的部分。</span><br/><br/>
+<span style="color: #0000ff;">这儿还有一点与 Play 1.x 的 routes 不同的是，Play 1.x 中的 controllers 默认的包省略掉，Play 2.x 中不能省，即 Play 1.x 中可写成：</span><br/><br/>
+<pre class="lang:default decode:true">GET     /clients/{id}                Application.show</pre>
+<br/>
+<span style="font-size: small;"><strong>动态部分跨越多个 /</strong></span><br/><br/>
+如果你想要一个动态部分能捕获多个以斜杠 "/" 分开的URI 路径段, 你可以用 <code>*id</code> 的语法定义一个动态部分, 它用了 <code>.*</code> 正则表达式:<br/><br/>
+<pre class="brush:scala">GET   /files/*name          controllers.Application.download(name)</pre>
+<br/>
+这样如果请求是 <code>GET /files/images/logo.png</code>, <code>name</code> 的动态部分捕获到的值就是 <code>images/logo.png</code> value.<br/><br/>
+<span style="color: #0000ff;">Unmi 注: 比如前面那个路由写成：</span><br/><br/>
+<pre class="lang:default decode:true">GET     /clients/*id                controllers.Application.show(id: String)</pre>
+<br/>
+<span style="color: #0000ff;">那么访问 URL  <span style="color: #800000;">http://localhost/clients/100/abc</span> 时，页面显示 <span style="color: #800000;">It works! id: 100/abc</span>，就是说斜杠也阻断不了 id。</span><br/><br/>
+<strong><span style="font-size: small;">动态部分使用自定义的正则表达式</span></strong><br/><br/>
+你可以用自己的正则表达式来定义动态的部分, 语法是 <code>$id&lt;regex&gt;</code> :<br/><br/>
+<pre class="lang:default decode:true">GET   /clients/$id&lt;[0-9]+&gt;  controllers.Clients.show(id: Long)</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 其实前面的 :id 还是 *name 都会被 Play 转换成正则表达式的形式，如：</span><br/><br/>
+<span style="color: #0000ff;">:id          转换成    $id&lt;[^/]&gt;+</span><br />
+<span style="color: #0000ff;">*name   转换成    $name&lt;.+&gt;</span><br/><br/>
+<strong><span style="font-size: medium;">指定到 Action 发生器方法的调用</span></strong><br/><br/>
+路由定义的最后部分是方法调用. 这一部分必须定义对返回值为 <code>play.api.mvc.Action</code> 类型的有效的方法调用, 很典型的说就是一个 Controller 的 Action 方法.<br/><br/>
+如果方法没有定义参数, 只需给出方法的全限名称<span style="color: #0000ff;">(Unmi 注: 其实这时候，方法后的空括号也可以省去，写成 controllers.Application.homePage)</span>:<br/><br/>
+<pre class="brush:scala">GET   /                     controllers.Application.homePage()</pre>
+<br/>
+如果 Action 方法定义了参数, 所有的参数都要能从请求的 URI 上搜寻到, 可以是从 URI 路径本身上抽取到，或是从查询字符串上抽取.<br/><br/>
+<pre class="brush:scala"># Extract the page parameter from the path.
+GET   /:page                controllers.Application.show(page)</pre>
+<br/>
+或者:<br/><br/>
+<pre class="brush:scala"># Extract the page parameter from the query string.
+GET   /                     controllers.Application.show(page)</pre>
+<br/>
+这是定义在 <code>controllers.Application</code> Controller 中对应的 <code>show</code> 方法:<br/><br/>
+<pre class="lang:default decode:true">def show(page: String) = Action {
+    loadContentFromDatabase(page).map { htmlContent =&gt;
+        Ok(htmlContent).as("text/html")
+    }.getOrElse(NotFound)
+}</pre>
+<br/>
+<strong><span style="font-size: small;">参数类型</span></strong><br/><br/>
+如果参数是 <code>String 类型</code>, 那么参数的指定的可选的. 假如你想 Play 转换传入的参数为某种指定的 Scala 类型, 你可以显式的指定参数的类型:<br/><br/>
+<pre class="lang:default decode:true">GET   /client/:id           controllers.Clients.show(id: Long)</pre>
+<br/>
+同时对应的 <code>show</code> 方法, 在<code>controllers.Clients</code> Controller 中的定义如下:<br/><br/>
+<pre class="lang:default decode:true">def show(id: Long) = Action {
+    Client.findById(id).map { client =&gt;
+        Ok(views.html.Clients.display(client))
+    }.getOrElse(NotFound)
+}</pre>
+<br/>
+<strong><span style="font-size: small;">固定值参数</span></strong><br/><br/>
+有时候你想要使用一个固定的值作为参数:<br/><br/>
+<pre class="lang:default decode:true"># Extract the page parameter from the path, or fix the value for /
+GET   /                     controllers.Application.show(page = "home")
+GET   /:page                controllers.Application.show(page)</pre>
+<br/>
+<strong><span style="font-size: small;">默认值参数</span></strong><br/><br/>
+你也可以给参数提供一个默认值, 当在传入的请求中未找到值时就使用默认值:<br/><br/>
+<pre class="lang:default decode:true"># Pagination links, like /clients?page=3
+GET   /clients              controllers.Clients.list(page: Int ?= 1)</pre>
+<br/>
+<strong><span style="font-size: medium;">路由优先级</span></strong><br/><br/>
+多个路由可能会匹配到同一个请求. 如果存在冲突时, 第一个路由 (依定义的顺序) 将被采用.<br/><br/>
+<strong><span style="font-size: medium;">反向路由</span></strong><br/><br/>
+路由也会被用于在 Scala 调用中产生一个 URL. 这使得在一个配置文件中中心化你的 URI 模式成为可能, 因此你可以在重构建应用的时候更充满自信.<br/><br/>
+对于 routes 文件中定义的每一 Controller, 路由器都会在路由包中产生一个 ‘反向 Controller’, 它具相同的 Action 方法, 相同的签名, 但是返回值类型是 <code>play.api.mvc.Call</code>，而不是 <code>play.api.mvc.Action 类型</code>.<br/><br/>
+<code>play.api.mvc.Call</code> 定义了一个 HTTP 调用, 并提供了 HTTP 方法和 URI.<br/><br/>
+例如, 你要是创建一个如下的 Controller:<br/><br/>
+<pre class="lang:default decode:true">package controllers<br/><br/>
+import play.api._
+import play.api.mvc._<br/><br/>
+object Application extends Controller {<br/><br/>
+  def hello(name: String) = Action {
+      Ok("Hello " + name + "!")
+  }<br/><br/>
+}</pre>
+<br/>
+同时若你在 <code>conf/routes</code> 文件中的映射是:<br/><br/>
+<pre class="lang:default decode:true "># Hello action
+GET   /hello/:name          controllers.Application.hello(name)</pre>
+<br/>
+你可以通过 <code>hello</code> Action 方法反向得到 URL, 需要使用到 <code>controllers.routes.Application</code> 反向 Controller:<br/><br/>
+<pre class="lang:default decode:true">// Redirect to /hello/Bob
+def helloBob = Action {
+    Redirect(routes.Application.hello("Bob"))    
+}</pre>

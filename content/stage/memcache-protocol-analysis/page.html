@@ -1,0 +1,457 @@
+---
+title: Memcache的使用和协议分析详解[转]
+url: /memcache-protocol-analysis/
+date: 2009-05-04T20:47:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Mid-Ware
+tags: 
+  - Memcache
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 277 
+wpStatus: publish
+views: 271
+lastmod: 2012-03-09T22:52:17-06:00
+---
+
+作者：heiyeluren<br/>
+博客：<a href="http://blog.csdn.net/heiyeshuwu"><span style="color: #336699;">http://blog.csdn.net/heiyeshuwu</span></a><br/>
+时间：2006-11-12<br/>
+关键字：PHP Memcache Linux 缓存<br/>
+<br/>
+Memcache是danga.com的一个项目，最早是为 LiveJournal 服务的，目前全世界不少人使用这个缓存项目来构建自己大负载的网站，来分担数据库的压力。（关于Memcache的更多信息请Google）<br/>
+Memcache官方网站：<a href="http://www.danga.com/memcached"><span style="color: #336699;">http://www.danga.com/memcached</span></a><br/>
+<br/>
+<strong><span style="font-size: medium;">【安装Memcache服务器端】</span></strong><br/>
+<br/>
+我目前的平台，服务器是Fedora Core 1（内核：2.4.22），客户端是Windows XP SP2，需要安装的就是服务器的Memcached的守护进程和客户端的PHP扩展php_memcache两个东西。现在我分别来讲。<br/>
+<br/>
+服务器端主要是安装memcache服务器端，目前的最新版本是 memcached-1.2.0 。<!--more--><br/>
+下载：<a href="http://www.danga.com/memcached/dist/memcached-1.2.0.tar.gz"><span style="color: #336699;">http://www.danga.com/memcached/dist/memcached-1.2.0.tar.gz</span></a><br/>
+另外，Memcache用到了libevent这个库用于Socket的处理，所以还需要安装libevent，libevent的最新版本是libevent-1.2。（如果你的系统已经安装了libevent，可以不用安装）<br/>
+官网：<a href="http://www.monkey.org/~provos/libevent/"><span style="color: #336699;">http://www.monkey.org/~provos/libevent/</span></a><br/>
+下载：<a href="http://www.monkey.org/~provos/libevent-1.2.tar.gz"><span style="color: #336699;">http://www.monkey.org/~provos/libevent-1.2.tar.gz</span></a><br/>
+<br/>
+我分别把两个东东下载回来，放到 /tmp 目录下：<br/>
+<span style="color: #0000ff;"># cd /tmp<br/>
+# wget </span><a href="http://www.danga.com/memcached/dist/memcached-1.2.0.tar.gz"><span style="color: #0000ff;">http://www.danga.com/memcached/dist/memcached-1.2.0.tar.gz</span></a><br/>
+<span style="color: #0000ff;"># wget </span><a href="http://www.monkey.org/~provos/libevent-1.2.tar.gz"><span style="color: #0000ff;">http://www.monkey.org/~provos/libevent-1.2.tar.gz</span></a><br/>
+<br/>
+先安装libevent：<br/>
+<span style="color: #0000ff;"># tar zxvf libevent-1.2.tar.gz<br/>
+# cd libevent-1.2<br/>
+# ./configure --prefix=/usr<br/>
+# make<br/>
+# make install</span><br/>
+<br/>
+然后看看我们的libevent是否安装成功：<br/>
+<span style="color: #0000ff;"># ls -al /usr/lib | grep libevent</span><br/>
+<span style="color: #993300;">lrwxrwxrwx    1 root     root          21 11?? 12 17:38 libevent-1.2.so.1 -&gt; libevent-1.2.so.1.0.3<br/>
+-rwxr-xr-x       1 root     root          263546 11?? 12 17:38 libevent-1.2.so.1.0.3<br/>
+-rw-r--r--        1 root     root          454156 11?? 12 17:38 libevent.a<br/>
+-rwxr-xr-x       1 root     root          811 11?? 12 17:38 libevent.la<br/>
+lrwxrwxrwx    1 root     root          21 11?? 12 17:38 libevent.so -&gt; libevent-1.2.so.1.0.3</span><br/>
+<br/>
+还不错，都安装上了，再来安装memcache，同时需要安装中指定libevent的安装位置：<br/>
+<br/>
+<span style="color: #0000ff;"># cd /tmp<br/>
+# tar zxvf memcached-1.2.0.tar.gz<br/>
+# cd memcached-1.2.0<br/>
+# ./configure --with-libevent=/usr<br/>
+# make<br/>
+# make install</span><br/>
+<br/>
+如果中间出现报错，请仔细检查错误信息，按照错误信息来配置或者增加相应的库或者路径。<br/>
+安装完成后会把memcached放到 /usr/local/bin/memcached ，我们看以下是否安装了：<br/>
+<br/>
+<span style="color: #0000ff;"># ls -al /usr/local/bin/mem*</span><br/>
+<span style="color: #993300;">-rwxr-xr-x    1 root     root       137986 11?? 12 17:39 /usr/local/bin/memcached<br/>
+-rwxr-xr-x    1 root     root       140179 11?? 12 17:39 /usr/local/bin/memcached-debug</span><br/>
+<br/>
+恩，安装完成了，现在我们看以下memcache的帮助：<br/>
+<br/>
+<span style="color: #0000ff;"># /usr/local/bin/memecached -h</span><br/>
+<span style="color: #993300;">memcached 1.2.0<br/>
+-p &lt;num&gt;            port number to listen on<br/>
+-s &lt;file&gt;               unix socket path to listen on (disables network support)<br/>
+-l &lt;ip_addr&gt;        interface to listen on, default is INDRR_ANY<br/>
+-d                          run as a daemon<br/>
+-r                           maximize core file limit<br/>
+-u &lt;username&gt; assume identity of &lt;username&gt; (only when run as root)<br/>
+-m &lt;num&gt;          max memory to use for items in megabytes, default is 64 MB<br/>
+-M                         return error on memory exhausted (rather than removing items)<br/>
+-c &lt;num&gt;            max simultaneous connections, default is 1024<br/>
+-k                          lock down all paged memory<br/>
+-v                          verbose (print errors/warnings while in event loop)<br/>
+-vv                        very verbose (also print client commands/reponses)<br/>
+-h                         print this help and exit<br/>
+-i                          print memcached and libevent license<br/>
+-b                         run a managed instanced (mnemonic: buckets)<br/>
+-P &lt;file&gt;             save PID in &lt;file&gt;, only used with -d option<br/>
+-f &lt;factor&gt;          chunk size growth factor, default 1.25<br/>
+-n &lt;bytes&gt;         minimum space allocated for key+value+flags, default 48</span><br/>
+<br/>
+参数不算多，我们来启动一个Memcache的服务器端：<br/>
+<span style="color: #0000ff;"># /usr/local/bin/memcached -d -m 10  -u root -l 192.168.0.200 -p 12000 -c 256 -P /tmp/memcached.pid</span><br/>
+<br/>
+-d选项是启动一个守护进程，-m是分配给Memcache使用的内存数量，单位是MB，我这里是10MB，-u是运行Memcache的用户，我这里是root，-l是监听的服务器IP地址，如果有多个地址的话，我这里指定了服务器的IP地址192.168.0.200，-p是设置Memcache监听的端口，我这里设置了12000，最好是1024以上的端口，-c选项是最大运行的并发连接数，默认是1024，我这里设置了256，按照你服务器的负载量来设定，-P是设置保存Memcache的pid文件，我这里是保存在 /tmp/memcached.pid，如果要结束Memcache进程，执行：<br/>
+<span style="color: #0000ff;"># kill `cat /tmp/memcached.pid`</span><br/>
+<br/>
+也可以启动多个守护进程，不过端口不能重复。<br/>
+<br/>
+<span style="font-size: medium;"><strong>【安装Memcache的PHP扩展】</strong></span><br/>
+<br/>
+Memcache就是在服务器监听端口，通过一定的协议交互来写入数据到服务器内存中，或者获取一些值。如果你了解Memcache的交互协议，完全可以自己构建Memcache的客户端，目前网上也有很多构建好的Memcache客户端的PHP Class，可以直接用，不过我这里为了效率，还是决定使用PECL中Memcache的专用扩展，因为毕竟是用C写的，效率比较高，而且安装部署比较方便。<br/>
+<br/>
+下载PECL中的Memcache，因为我的客户端是Windows XP，所以需要下载dll版，我的PHP版本是PHP 5.1.4，必须下载PHP 5.1专用的扩展。<br/>
+PECL官网：<a href="http://pecl.php.net/"><span style="color: #336699;">http://pecl.php.net</span></a> （For Linux）<br/>
+                       <a href="http://pecl4win.php.net/"><span style="color: #336699;">http://pecl4win.php.net</span></a>（For Windows）<br/>
+扩展下载： <a href="http://pecl4win.php.net/download.php/ext/5_1/5.1.2/php_memcache.dll"><span style="color: #336699;">http://pecl4win.php.net/download.php/ext/5_1/5.1.2/php_memcache.dll</span></a><br/>
+<br/>
+如果你的PHP是其他版本，请到 <a href="http://pecl4win.php.net/ext.php/php_memcache.dll"><span style="color: #336699;">http://pecl4win.php.net/ext.php/php_memcache.dll</span></a> 选择你相应的版本，如果是Linux下的PHP，请到 <a href="http://pecl.php.net/package/memcache"><span style="color: #336699;">http://pecl.php.net/package/memcache</span></a> 选择相应想要下载的版本。<br/>
+<br/>
+下载完了以后，我把php_memcache.dll 拷贝到 <span style="color: #993300;">c:\php5\ext</span> 目录下，如果你的扩展目录是在是缺省路径，（就是没有修改过php.ini中的扩展路径） 请拷贝到 <span style="color: #993300;">c:\windows\</span> 目录下，如果是Linux平台，请自己编译安装，可以在程序中使用dl()函数加载，或者在编译php的时候加载进去。最后重启Web服务器，IIS/Apache。<br/>
+<br/>
+我的网站目录是在：<span style="color: #993300;">d:\mysite</span> 目录下，现在建立一个 <span style="color: #993300;">phpinfo.php</span> 文件在网站根目录下，代码是：<br/>
+<span style="color: #0000ff;">&lt;?phpinfo()?&gt;</span><br/>
+看有没有成功加载 <span style="color: #993300;">php_memcache.dll</span> 扩展。如果显示了 Memcache 选项和相应的版本信息，则说明成功加载了，否则请仔细检查上面的步骤。<br/>
+<br/>
+如果一切正确无误，那么说明安装成功。<br/>
+<br/>
+<span style="font-size: medium;"><strong>【Memcache初试】</strong></span><br/>
+<br/>
+<strong><span style="font-size: x-small;">[ 接口介绍 ]</span></strong><br/>
+服务器端和客户端都安装配置好了，现在我们就来测试以下我们的成果。Memcache客户端包含两组接口，一组是面向过程的接口，一组是面向对象的接口，具体可以参考PHP手册 “LXXV. Memcache Functions” 这章。我们为了简单方便，就使用面向对象的方式，也便于维护和编写代码。Memcache面向对象的常用接口包括：<br/>
+<br/>
+<span style="color: #993300;">Memcache::connect -- 打开一个到Memcache的连接<br/>
+Memcache::pconnect -- 打开一个到Memcache的长连接<br/>
+Memcache::close -- 关闭一个Memcache的连接<br/>
+Memcache::set -- 保存数据到Memcache服务器上<br/>
+Memcache::get -- 提取一个保存在Memcache服务器上的数据<br/>
+Memcache::replace -- 替换一个已经存在Memcache服务器上的项目（功能类似Memcache::set）<br/>
+Memcache::delete -- 从Memcache服务器上删除一个保存的项目<br/>
+Memcache::flush -- 刷新所有Memcache服务器上保存的项目（类似于删除所有的保存的项目）<br/>
+Memcache::getStats -- 获取当前Memcache服务器运行的状态</span><br/>
+<br/>
+<strong><span style="font-size: x-small;">[ 测试代码 ]</span></strong><br/>
+现在我们开始一段测试代码：<br/>
+<div style="padding-bottom: 4px; padding-left: 5.4pt; width: 95%; padding-right: 5.4pt; background: #e6e6e6; word-break: break-all; padding-top: 4px; border: windowtext 0.5pt solid;">
+
+<div><span style="color: #000000;">&lt;?</span><span style="color: #000000;">php<br/>
+</span><span style="color: #008000;">//</span><span style="color: #008000;">连接</span><span style="color: #008000;"><br/>
+</span><span style="color: #800080;">$mem</span><span style="color: #000000;"> </span><span style="color: #000000;">=</span><span style="color: #000000;"> </span><span style="color: #0000ff;">new</span><span style="color: #000000;"> Memcache;<br/>
+</span><span style="color: #800080;">$mem</span><span style="color: #000000;">-&gt;</span><span style="color: #000000;">connect(</span><span style="color: #000000;">"</span><span style="color: #000000;">192.168.0.200</span><span style="color: #000000;">"</span><span style="color: #000000;">,</span><span style="color: #000000;"> </span><span style="color: #000000;">12000</span><span style="color: #000000;">);</span><span style="color: #000000;"><span style="color: #008000;">//</span><span style="color: #008000;">替换数据</span><span style="color: #008000;"><br/>
+</span><span style="color: #800080;">$mem</span><span style="color: #000000;">-&gt;</span><span style="color: #000000;">replace(</span><span style="color: #000000;">'</span><span style="color: #000000;">key1</span><span style="color: #000000;">'</span><span style="color: #000000;">,</span><span style="color: #000000;"> </span><span style="color: #000000;">'</span><span style="color: #000000;">This is replace value</span><span style="color: #000000;">'</span><span style="color: #000000;">,</span><span style="color: #000000;"> </span><span style="color: #000000;">0</span><span style="color: #000000;">,</span><span style="color: #000000;"> </span><span style="color: #000000;">60</span><span style="color: #000000;">);<br/>
+</span><span style="color: #800080;">$val</span><span style="color: #000000;"> </span><span style="color: #000000;">=</span><span style="color: #000000;"> </span><span style="color: #800080;">$mem</span><span style="color: #000000;">-&gt;</span><span style="color: #000000;">get(</span><span style="color: #000000;">'</span><span style="color: #000000;">key1</span><span style="color: #000000;">'</span><span style="color: #000000;">);<br/>
+</span><span style="color: #0000ff;">echo</span><span style="color: #000000;"> </span><span style="color: #000000;">"</span><span style="color: #000000;">Get key1 value: </span><span style="color: #000000;">"</span><span style="color: #000000;"> </span><span style="color: #000000;">.</span><span style="color: #000000;"> </span><span style="color: #800080;">$val</span><span style="color: #000000;"> </span><span style="color: #000000;">.</span><span style="color: #000000;"> </span><span style="color: #000000;">"</span><span style="color: #000000;">&lt;br&gt;</span><span style="color: #000000;">"</span><br/>
+<div><span style="color: #000000;">;</span></div>
+
+</span><span style="color: #000000;"><span style="color: #008000;">//</span><span style="color: #008000;">保存数组</span><span style="color: #008000;"><br/>
+</span><span style="color: #800080;">$arr</span><span style="color: #000000;"> </span><span style="color: #000000;">=</span><span style="color: #000000;"> </span><span style="color: #0000ff;">array</span><span style="color: #000000;">(</span><span style="color: #000000;">'</span><span style="color: #000000;">aaa</span><span style="color: #000000;">'</span><span style="color: #000000;">,</span><span style="color: #000000;"> </span><span style="color: #000000;">'</span><span style="color: #000000;">bbb</span><span style="color: #000000;">'</span><span style="color: #000000;">,</span><span style="color: #000000;"> </span><span style="color: #000000;">'</span><span style="color: #000000;">ccc</span><span style="color: #000000;">'</span><span style="color: #000000;">,</span><span style="color: #000000;"> </span><span style="color: #000000;">'</span><span style="color: #000000;">ddd</span><span style="color: #000000;">'</span><span style="color: #000000;">);<br/>
+</span><span style="color: #800080;">$mem</span><span style="color: #000000;">-&gt;</span><span style="color: #000000;">set(</span><span style="color: #000000;">'</span><span style="color: #000000;">key2</span><span style="color: #000000;">'</span><span style="color: #000000;">,</span><span style="color: #000000;"> </span><span style="color: #800080;">$arr</span><span style="color: #000000;">,</span><span style="color: #000000;"> </span><span style="color: #000000;">0</span><span style="color: #000000;">,</span><span style="color: #000000;"> </span><span style="color: #000000;">60</span><span style="color: #000000;">);<br/>
+</span><span style="color: #800080;">$val2</span><span style="color: #000000;"> </span><span style="color: #000000;">=</span><span style="color: #000000;"> </span><span style="color: #800080;">$mem</span><span style="color: #000000;">-&gt;</span><span style="color: #000000;">get(</span><span style="color: #000000;">'</span><span style="color: #000000;">key2</span><span style="color: #000000;">'</span><span style="color: #000000;">);<br/>
+</span><span style="color: #0000ff;">echo</span><span style="color: #000000;"> </span><span style="color: #000000;">"</span><span style="color: #000000;">Get key2 value: </span><span style="color: #000000;">"</span><span style="color: #000000;">;<br/>
+</span><span style="color: #008080;">print_r</span><span style="color: #000000;">(</span><span style="color: #800080;">$val2</span><span style="color: #000000;">);<br/>
+</span><span style="color: #0000ff;">echo</span><span style="color: #000000;"> </span><span style="color: #000000;">"</span><span style="color: #000000;">&lt;br&gt;</span><span style="color: #000000;">"</span><br/>
+<div><span style="color: #000000;">;</span></div>
+
+</span><span style="color: #000000;"><span style="color: #008000;">//</span><span style="color: #008000;">删除数据</span><span style="color: #008000;"><br/>
+</span><span style="color: #800080;">$mem</span><span style="color: #000000;">-&gt;</span><span style="color: #000000;">delete(</span><span style="color: #000000;">'</span><span style="color: #000000;">key1</span><span style="color: #000000;">'</span><span style="color: #000000;">);<br/>
+</span><span style="color: #800080;">$val</span><span style="color: #000000;"> </span><span style="color: #000000;">=</span><span style="color: #000000;"> </span><span style="color: #800080;">$mem</span><span style="color: #000000;">-&gt;</span><span style="color: #000000;">get(</span><span style="color: #000000;">'</span><span style="color: #000000;">key1</span><span style="color: #000000;">'</span><span style="color: #000000;">);<br/>
+</span><span style="color: #0000ff;">echo</span><span style="color: #000000;"> </span><span style="color: #000000;">"</span><span style="color: #000000;">Get key1 value: </span><span style="color: #000000;">"</span><span style="color: #000000;"> </span><span style="color: #000000;">.</span><span style="color: #000000;"> </span><span style="color: #800080;">$val</span><span style="color: #000000;"> </span><span style="color: #000000;">.</span><span style="color: #000000;"> </span><span style="color: #000000;">"</span><span style="color: #000000;">&lt;br&gt;</span><span style="color: #000000;">"</span><br/>
+<div><span style="color: #000000;">;</span></div>
+
+</span><span style="color: #000000;"><span style="color: #008000;">//</span><span style="color: #008000;">清除所有数据</span><span style="color: #008000;"><br/>
+</span><span style="color: #800080;">$mem</span><span style="color: #000000;">-&gt;</span><span style="color: #008080;">flush</span><span style="color: #000000;">();<br/>
+</span><span style="color: #800080;">$val2</span><span style="color: #000000;"> </span><span style="color: #000000;">=</span><span style="color: #000000;"> </span><span style="color: #800080;">$mem</span><span style="color: #000000;">-&gt;</span><span style="color: #000000;">get(</span><span style="color: #000000;">'</span><span style="color: #000000;">key2</span><span style="color: #000000;">'</span><span style="color: #000000;">);<br/>
+</span><span style="color: #0000ff;">echo</span><span style="color: #000000;"> </span><span style="color: #000000;">"</span><span style="color: #000000;">Get key2 value: </span><span style="color: #000000;">"</span><span style="color: #000000;">;<br/>
+</span><span style="color: #008080;">print_r</span><span style="color: #000000;">(</span><span style="color: #800080;">$val2</span><span style="color: #000000;">);<br/>
+</span><span style="color: #0000ff;">echo</span><span style="color: #000000;"> </span><span style="color: #000000;">"</span><span style="color: #000000;">&lt;br&gt;</span><span style="color: #000000;">"</span><br/>
+<div><span style="color: #000000;">;</span></div>
+
+</span><span style="color: #000000;"><span style="color: #008000;">//</span><span style="color: #008000;">关闭连接</span><span style="color: #008000;"><br/>
+</span><span style="color: #800080;">$mem</span><span style="color: #000000;">-&gt;</span><span style="color: #000000;">close();<br/>
+</span><span style="color: #000000;">?&gt;</span><br/>
+<div><span style="color: #000000;"></span></div>
+
+</span><span style="color: #000000;"> <br/>
+<br/>
+</span></div>
+
+<span style="color: #008000;">//</span><span style="color: #008000;">保存数据</span><span style="color: #008000;"><br/>
+</span><span style="color: #800080;">$mem</span><span style="color: #000000;">-&gt;</span><span style="color: #000000;">set(</span><span style="color: #000000;">'</span><span style="color: #000000;">key1</span><span style="color: #000000;">'</span><span style="color: #000000;">,</span><span style="color: #000000;"> </span><span style="color: #000000;">'</span><span style="color: #000000;">This is first value</span><span style="color: #000000;">'</span><span style="color: #000000;">,</span><span style="color: #000000;"> </span><span style="color: #000000;">0</span><span style="color: #000000;">,</span><span style="color: #000000;"> </span><span style="color: #000000;">60</span><span style="color: #000000;">);<br/>
+</span><span style="color: #800080;">$val</span><span style="color: #000000;"> </span><span style="color: #000000;">=</span><span style="color: #000000;"> </span><span style="color: #800080;">$mem</span><span style="color: #000000;">-&gt;</span><span style="color: #000000;">get(</span><span style="color: #000000;">'</span><span style="color: #000000;">key1</span><span style="color: #000000;">'</span><span style="color: #000000;">);<br/>
+</span><span style="color: #0000ff;">echo</span><span style="color: #000000;"> </span><span style="color: #000000;">"</span><span style="color: #000000;">Get key1 value: </span><span style="color: #000000;">"</span><span style="color: #000000;"> </span><span style="color: #000000;">.</span><span style="color: #000000;"> </span><span style="color: #800080;">$val</span><span style="color: #000000;"> </span><span style="color: #000000;">.</span><span style="color: #000000;">"</span><span style="color: #000000;">&lt;br&gt;</span><span style="color: #000000;">"</span><br/>
+<div><span style="color: #000000;">;</span></div>
+
+</div>
+
+如果正常的话，浏览器将输出：<br/>
+<span style="color: #993300;">Get key1 value: This is first value<br/>
+Get key1 value: This is replace value<br/>
+Get key2 value: Array ( [0] =&gt; aaa [1] =&gt; bbb [2] =&gt; ccc [3] =&gt; ddd )<br/>
+Get key1 value:<br/>
+Get key2 value:</span><br/>
+<br/>
+基本说明我们的Memcache安装成功，我们再来分析以下上面的这段程序。<br/>
+<br/>
+<strong><span style="font-size: x-small;">[ 程序分析 ]</span></strong><br/>
+<br/>
+初始化一个Memcache的对象：<br/>
+<span style="color: #0000ff;"><span style="color: #993300;">$mem</span> = new <span style="color: #000000;">Memcache</span>;</span><br/>
+<br/>
+连接到我们的Memcache服务器端，第一个参数是服务器的IP地址，也可以是主机名，第二个参数是Memcache的开放的端口：<br/>
+<span style="color: #0000ff;"><span style="color: #993300;">$mem-&gt;</span>connect(<span style="color: #339966;">"192.168.0.200"</span>, <span style="color: #ff0000;">12000</span>);</span><br/>
+<br/>
+保存一个数据到Memcache服务器上，第一个参数是数据的key，用来定位一个数据，第二个参数是需要保存的数据内容，这里是一个字符串，第三个参数是一个标记，一般设置为0或者MEMCACHE_COMPRESSED就行了，第四个参数是数据的有效期，就是说数据在这个时间内是有效的，如果过去这个时间，那么会被Memcache服务器端清除掉这个数据，单位是秒，如果设置为0，则是永远有效，我们这里设置了60，就是一分钟有效时间：<br/>
+<span style="color: #0000ff;"><span style="color: #993300;">$mem</span>-&gt;set(<span style="color: #339966;">'key1</span>', <span style="color: #339966;">'This is first value'</span>, <span style="color: #ff0000;">0</span>, <span style="color: #ff0000;">60</span>);</span><br/>
+<br/>
+从Memcache服务器端获取一条数据，它只有一个参数，就是需要获取数据的key，我们这里是上一步设置的key1，现在获取这个数据后输出输出：<br/>
+<span style="color: #0000ff;"><span style="color: #993300;">$val</span> = <span style="color: #993300;">$mem</span>-&gt;get('<span style="color: #339966;">key1'</span>);<br/>
+echo <span style="color: #339966;">"Get key1 value: "</span> . </span><span style="color: #993300;">$val;</span><br/>
+<br/>
+现在是使用replace方法来替换掉上面key1的值，replace方法的参数跟set是一样的，不过第一个参数key1是必须是要替换数据内容的key，最后输出了：<br/>
+<span style="color: #0000ff;"><span style="color: #993300;">$mem</span>-&gt;replace(<span style="color: #339966;">'key1'</span>, <span style="color: #339966;">'This is replace value'</span>, <span style="color: #ff0000;">0</span>, <span style="color: #ff0000;">60</span>);<br/>
+<span style="color: #993300;">$val</span> = <span style="color: #993300;">$mem</span>-&gt;get(<span style="color: #339966;">'key1'</span>);<br/>
+echo "<span style="color: #339966;">Get key1 value:</span> " . <span style="color: #993300;">$val</span>;</span><br/>
+<br/>
+同样的，Memcache也是可以保存数组的，下面是在Memcache上面保存了一个数组，然后获取回来并输出<br/>
+<span style="color: #0000ff;"><span style="color: #993300;">$arr</span> = array(<span style="color: #339966;">'aaa',</span><span style="color: #339966;">'bbb',</span><span style="color: #339966;">'ccc'</span>, <span style="color: #339966;">'ddd'</span>);<br/>
+<span style="color: #993300;">$mem</span>-&gt;set(<span style="color: #339966;">'key2'</span>, <span style="color: #ff0000;">$arr</span>, <span style="color: #ff0000;">0</span>, <span style="color: #ff0000;">60</span>);<br/>
+<span style="color: #993300;">$val2</span> = <span style="color: #993300;">$mem</span>-&gt;get(<span style="color: #339966;">'key2'</span>);<br/>
+print_r(<span style="color: #993300;">$val2</span>);</span><br/>
+<br/>
+现在删除一个数据，使用delte接口，参数就是一个key，然后就能够把Memcache服务器这个key的数据删除，最后输出的时候没有结果<br/>
+<span style="color: #0000ff;">$<span style="color: #993300;">mem</span>-&gt;delete(<span style="color: #339966;">'key1'</span>);<br/>
+$<span style="color: #993300;">val</span> = $<span style="color: #993300;">mem</span>-&gt;get(<span style="color: #339966;">'key1'</span>);<br/>
+echo "<span style="color: #339966;">Get key1 value:</span> " . $<span style="color: #993300;">val</span> . </span><span style="color: #339966;">"&lt;br&gt;";</span><br/>
+<br/>
+最后我们把所有的保存在Memcache服务器上的数据都清除，会发现数据都没有了，最后输出key2的数据为空，最后关闭连接<br/>
+<span style="color: #0000ff;">$<span style="color: #993300;">mem</span>-&gt;flush();<br/>
+$<span style="color: #993300;">val2</span> = $<span style="color: #993300;">mem</span>-&gt;get(<span style="color: #339966;">'key2'</span>);<br/>
+echo "<span style="color: #339966;">Get key2 value:</span> ";<br/>
+print_r(<span style="color: #993300;">$val2</span>);<br/>
+echo </span><span style="color: #339966;">"&lt;br&gt;";</span><br/>
+<br/>
+<strong><span style="font-size: medium;">【Memcache协议分析】</span></strong><br/>
+<br/>
+如果你不喜欢 <span style="color: #993300;">php_memcache.dll </span>扩展或者服务器器目前不支持这个扩展，那么就可以考虑自己构建，需要构建Memcahe的客户端，要先了解Memcache协议的交互，这样才能开发自己的客户端，我这里就简单的分析以下Memcache的协议。<br/>
+（更详细的协议内容请在Memcache服务器端的源码的 doc/protocol.txt 文件中，本文基本来源于此）<br/>
+<br/>
+Memcache既支持TCP协议，也支持UDP协议，不过我们这里是以TCP协议的协议作为主要考虑对象，想了解UDP协议的过程，请参考 doc/protocol.txt 文件。<br/>
+<br/>
+<strong><span style="font-size: x-small;">[ 错误指令]</span></strong><br/>
+Memcache的协议的错误部分主要是三个错误提示之提示指令：<br/>
+普通错误信息，比如指令错误之类的<br/>
+<span style="color: #0000ff;">ERROR</span><span style="color: #000000;">\r\n</span><br/>
+<br/>
+客户端错误<br/>
+<span style="color: #0000ff;">CLIENT_ERROR</span><span style="color: #993300;">&lt;错误信息&gt;</span>\r\n<br/>
+<br/>
+服务器端错误<br/>
+<span style="color: #0000ff;">SERVER_ERROR</span><span style="color: #993300;">&lt;错误信息&gt;</span>\r\n<br/>
+<br/>
+<strong><span style="font-size: x-small;">[ 数据保存指令]</span></strong><br/>
+数据保存是基本的功能，就是客户端通过命令把数据返回过来，服务器端接收后进行处理。<br/>
+指令格式：<br/>
+<span style="color: #993300;">&lt;命令&gt; &lt;键&gt; &lt;标记&gt; &lt;有效期&gt; &lt;数据长度&gt;</span>\r\n<br/>
+<br/>
+<strong>&lt;命令&gt;</strong> - <span style="color: #993300;">command name<br/>
+</span>主要是三个储存数据的三个命令， set, add, replace<br/>
+<span style="color: #0000ff;">set</span> 命令是保存一个叫做key的数据到服务器上<br/>
+<span style="color: #0000ff;">add</span> 命令是添加一个数据到服务器，但是服务器必须这个key是不存在的，能够保证数据不会被覆盖<br/>
+<span style="color: #0000ff;">replace</span> 命令是替换一个已经存在的数据，如果数据不存在，就是类似set功能<br/>
+<br/>
+<strong>&lt;键&gt;</strong> - <span style="color: #993300;">key</span><br/>
+就是保存在服务器上唯一的一个表示符，必须是跟其他的key不冲突，否则会覆盖掉原来的数据，这个key是为了能够准确的存取一个数据项目<br/>
+<br/>
+<strong>&lt;标记&gt;</strong> - <span style="color: #993300;">flag</span><br/>
+标记是一个16位的无符号整形数据，用来设置服务器端跟客户端一些交互的操作<br/>
+<br/>
+<strong>&lt;有效期&gt;</strong> - <span style="color: #993300;">expiration time</span><br/>
+是数据在服务器上的有效期限，如果是0，则数据永远有效，单位是秒，Memcache服务器端会把一个数据的有效期设置为当前Unix时间+设置的有效时间<br/>
+<br/>
+<strong>&lt;数据长度&gt;</strong> - <span style="color: #993300;">bytes</span><br/>
+数据的长度，block data 块数据的长度，一般在这个个长度结束以后下一行跟着block data数据内容，发送完数据以后，客户端一般等待服务器端的返回，服务器端的返回：<br/>
+<br/>
+数据保存成功<br/>
+<span style="color: #0000ff;">STORED</span>\r\n<br/>
+<br/>
+数据保存失败，一般是因为服务器端这个数据key已经存在了<br/>
+<span style="color: #0000ff;">NOT_STORED</span>\r\n<br/>
+<br/>
+<strong><span style="font-size: x-small;">[ 数据提取命令]</span></strong><br/>
+从服务器端提取数据主要是使用get指令，格式是：<br/>
+<span style="color: #0000ff;">get</span><span style="color: #993300;">&lt;键&gt;*</span>\r\n<br/>
+<br/>
+<strong>&lt;键&gt;*</strong> - <span style="color: #993300;">key</span><br/>
+<span style="color: #993300;">key</span>是是一个不为空的字符串组合，发送这个指令以后，等待服务器的返回。如果服务器端没有任何数据，则是返回：<br/>
+<span style="color: #0000ff;">END</span>\r\n<br/>
+<br/>
+证明没有不存在这个key，没有任何数据，如果存在数据，则返回指定格式：<br/>
+<span style="color: #0000ff;">VALUE</span> &lt;<span style="color: #993300;">键</span>&gt; &lt;<span style="color: #993300;">标记</span>&gt; &lt;<span style="color: #993300;">数据长度</span>&gt;\r\n<br/>
+<strong>&lt;数据块&gt;</strong>\r\n<br/>
+<br/>
+返回的数据是以<span style="color: #993300;">VALUE</span>开始的，后面跟着key和flags，以及数据长度，第二行跟着数据块。<br/>
+<br/>
+<strong>&lt;键&gt;</strong> -key<br/>
+是发送过来指令的key内容<br/>
+<br/>
+<strong>&lt;标记&gt;</strong> - flags<br/>
+是调用set指令保存数据时候的flags标记<br/>
+<br/>
+<strong>&lt;数据长度&gt;</strong> - bytes<br/>
+是保存数据时候定位的长度<br/>
+<br/>
+<strong>&lt;数据块&gt;</strong> - data block<br/>
+数据长度下一行就是提取的数据块内容<br/>
+<br/>
+<span style="font-size: x-small;"><strong>[ 数据删除指令]</strong></span><br/>
+数据删除指令也是比较简单的，使用get指令，格式是：<br/>
+delete &lt;键&gt; &lt;超时时间&gt;\r\n<br/>
+<br/>
+<strong>&lt;键&gt;</strong> - key<br/>
+key是你希望在服务器上删除数据的key键<br/>
+<br/>
+<strong>&lt;超时时间&gt;</strong> - timeout<br/>
+按照秒为单位，这个是个可选项，如果你没有指定这个值，那么服务器上key数据将马上被删除，如果设置了这个值，那么数据将在超时时间后把数据清除，该项缺省值是0，就是马上被删除<br/>
+<br/>
+删除数据后，服务器端会返回：<br/>
+<span style="color: #0000ff;">DELETED</span>\r\n<br/>
+删除数据成功<br/>
+<span style="color: #0000ff;">NOT_FOUND</span>\r\n<br/>
+这个key没有在服务器上找到<br/>
+<br/>
+如果要删除所有服务器上的数据，可以使用flash_all指令，格式：<br/>
+<span style="color: #0000ff;">flush_all</span>\r\n<br/>
+<br/>
+这个指令执行后，服务器上所有缓存的数据都被删除，并且返回：<br/>
+<span style="color: #0000ff;">OK</span>\r\n<br/>
+<br/>
+这个指令一般不要轻易使，除非你却是想把所有数据都干掉，删除完以后可以无法恢复的。<br/>
+<br/>
+<span style="font-size: x-small;"><strong>[其他指令]</strong></span><br/>
+如果想了解当前Memcache服务器的状态和版本等信息，可以使用状态查询指令和版本查询指令。<br/>
+<br/>
+如果想了解当前所有Memcache服务器运行的状态信息，可以使用stats指令，格式<br/>
+<span style="color: #0000ff;">stats</span>\r\n<br/>
+服务器将返回每行按照 STAT 开始的状态信息，包括20行，20项左右的信息，包括守护进程的pid、版本、保存的项目数量、内存占用、最大内存限制等等信息。<br/>
+<br/>
+如果只是想获取部分项目的信息，可以指定参数，格式：<br/>
+<span style="color: #0000ff;">stats</span> &lt;<span style="color: #993300;">参数</span>&gt;\r\n<br/>
+这个指令将只返回指定参数的项目状态信息。<br/>
+<br/>
+如果只是想单独了解当前版本信息，可以使用version指令，格式：<br/>
+<span style="color: #0000ff;">version</span>\r\n<br/>
+将返回以 VERSION 开头的版本信息<br/>
+<br/>
+如果想结束当前连接，使用quit指令，格式：<br/>
+<span style="color: #0000ff;">quit</span>\r\n<br/>
+<br/>
+将断开当前连接<br/>
+<br/>
+另外还有其他指令，包括<span style="color: #993300;">incr</span>, <span style="color: #993300;">decr</span> 等，我也不太了解作用，就不做介绍了，如果感兴趣，可以自己去研究。<br/>
+<br/>
+<span style="font-size: medium;"><strong>【Memcache在中型网站的使用】</strong></span><br/>
+<br/>
+使用Memcache的网站一般流量都是比较大的，为了缓解数据库的压力，让Memcache作为一个缓存区域，把部分信息保存在内存中，在前端能够迅速的进行存取。那么一般的焦点就是集中在如何分担数据库压力和进行分布式，毕竟单台Memcache的内存容量的有限的。我这里简单提出我的个人看法，未经实践，权当参考。<br/>
+<br/>
+<strong><span style="font-size: x-small;">[ 分布式应用]</span></strong><br/>
+Memcache本来支持分布式，我们客户端稍加改造，更好的支持。我们的key可以适当进行有规律的封装，比如以user为主的网站来说，每个用户都有User ID，那么可以按照固定的ID来进行提取和存取，比如1开头的用户保存在第一台Memcache服务器上，以2开头的用户的数据保存在第二胎Mecache服务器上，存取数据都先按照User ID来进行相应的转换和存取。<br/>
+<br/>
+但是这个有缺点，就是需要对User ID进行判断，如果业务不一致，或者其他类型的应用，可能不是那么合适，那么可以根据自己的实际业务来进行考虑，或者去想更合适的方法。<br/>
+<br/>
+<span style="font-size: x-small;"><strong>[ 减少数据库压力]</strong></span><br/>
+这个算是比较重要的，所有的数据基本上都是保存在数据库当中的，每次频繁的存取数据库，导致数据库性能极具下降，无法同时服务更多的用户，比如MySQL，特别频繁的锁表，那么让Memcache来分担数据库的压力吧。我们需要一种改动比较小，并且能够不会大规模改变前端的方式来进行改变目前的架构。<br/>
+<br/>
+我考虑的一种简单方法：<br/>
+后端的数据库操作模块，把所有的Select操作提取出来（update/delete/insert不管），然后把对应的SQL进行相应的hash算法计算得出一个hash数据key（比如MD5或者SHA），然后把这个key去Memcache中查找数据，如果这个数据不存在，说明还没写入到缓存中，那么从数据库把数据提取出来，一个是数组类格式，然后把数据在set到Memcache中，key就是这个SQL的hash值，然后相应的设置一个失效时间，比如一个小时，那么一个小时中的数据都是从缓存中提取的，有效减少数据库的压力。<br/>
+<br/>
+缺点是数据不实时，当数据做了修改以后，无法实时到前端显示，并且还有可能对内存占用比较大，毕竟每次select出来的数据数量可能比较巨大，这个是需要考虑的因素。<br/>
+<br/>
+上面只是我两点没有经过深思熟虑的简单想法，也许有用，那就最好了。<br/>
+<br/>
+<span style="font-size: medium;"><strong>【Memcache的安全】</strong></span><br/>
+<br/>
+我们上面的Memcache服务器端都是直接通过客户端连接后直接操作，没有任何的验证过程，这样如果服务器是直接暴露在互联网上的话是比较危险，轻则数据泄露被其他无关人员查看，重则服务器被入侵，因为Mecache是以root权限运行的，况且里面可能存在一些我们未知的bug或者是缓冲区溢出的情况，这些都是我们未知的，所以危险性是可以预见的。<br/>
+<br/>
+为了安全起见，我做两点建议，能够稍微的防止黑客的入侵或者数据的泄露。<br/>
+<br/>
+<span style="font-size: x-small;"><strong>[ 内网访问]</strong></span><br/>
+最好把两台服务器之间的访问是内网形态的，一般是Web服务器跟Memcache服务器之间。普遍的服务器都是有两块网卡，一块指向互联网，一块指向内网，那么就让Web服务器通过内网的网卡来访问Memcache服务器，我们Memcache的服务器上启动的时候就监听内网的IP地址和端口，内网间的访问能够有效阻止其他非法的访问。<br/>
+<br/>
+<span style="color: #0000ff;"># memcached -d -m 1024  -u root -l 192.168.0.200 -p 11211 -c 1024 -P /tmp/memcached.pid</span><br/>
+<br/>
+Memcache服务器端设置监听通过内网的192.168.0.200的ip的11211端口，占用1024MB内存，并且允许最大1024个并发连接<br/>
+<br/>
+<span style="font-size: x-small;"><strong>[ 设置防火墙]</strong></span><br/>
+防火墙是简单有效的方式，如果却是两台服务器都是挂在网的，并且需要通过外网IP来访问Memcache的话，那么可以考虑使用防火墙或者代理程序来过滤非法访问。<br/>
+一般我们在Linux下可以使用iptables或者FreeBSD下的ipfw来指定一些规则防止一些非法的访问，比如我们可以设置只允许我们的Web服务器来访问我们Memcache服务器，同时阻止其他的访问。<br/>
+<br/>
+<span style="color: #0000ff;"># iptables -F<br/>
+# iptables -P INPUT DROP<br/>
+# iptables -A INPUT -p tcp -s 192.168.0.2 --dport 11211 -j ACCEPT<br/>
+# iptables -A INPUT -p udp -s 192.168.0.2 --dport 11211 -j ACCEPT</span><br/>
+<br/>
+上面的iptables规则就是只允许192.168.0.2这台Web服务器对Memcache服务器的访问，能够有效的阻止一些非法访问，相应的也可以增加一些其他的规则来加强安全性，这个可以根据自己的需要来做。<br/>
+<br/>
+<span style="font-size: medium;"><strong>【Memcache的扩展性】</strong></span><br/>
+<br/>
+Memcache算是比较简洁高效的程序，Memcache 1.2.0 的源代码大小才139K，在Windows平台上是不可想象的，但是在开源世界来说，这是比较正常合理的。<br/>
+Memcache目前都只是比较简单的功能，简单的数据存取功能，我个人希望如果有识之士，能够在下面两方面进行扩展。<br/>
+<br/>
+<strong><span style="font-size: x-small;">1. 日志功能</span></strong><br/>
+目前Memcache没有日志功能，只有一些命令在服务器端进行回显，这样是很不利于对一个服务器的稳定性和负载等等进行监控的，最好能够相应的加上日志的等功能，便于监控。<br/>
+<br/>
+<strong><span style="font-size: x-small;">2. 存储结构</span></strong><br/>
+目前的数据形式就是: key =&gt; data 的形式，特别单一，只能够存储单一的一维数据，如果能够扩展的话，变成类似数据库的格式，能够存储二维数据，那样会让可以用性更强，使用面更广，当然相应的可能代码效率和存取效率更差一些。<br/>
+<br/>
+<strong><span style="font-size: x-small;">3. 同步功能</span></strong><br/>
+数据同步是个比较重要的技术，因为谁都不能保证一台服务器是持久正常的运行的，如果能够具有类似MySQL的 Master/Slave 的功能，那么将使得Memcache的数据更加稳定，那么相应的就可以考虑存储持久一点的数据，并且不用害怕Memcache的down掉，因为有同步的备份服务器，这个问题就不是问题了。<br/>
+<br/>
+以上三点只是个人拙见，有识之士和技术高手可以考虑。<br/>
+<br/>
+<span style="font-size: medium;"><strong>【结束语】</strong></span><br/>
+<br/>
+我上面的内容都只是自己安装和使用的一些想法，不能保证绝对正确，只是给需要的人一个参考，一个推广Memcache的文章，希望更多的人能够认识和了解这个技术，并且为自己所用。<br/>
+<br/>
+我花费了整整一个晚上的时间洋洋洒洒的写了这么长，无非是对于这项开源技术的热爱，我想开源世界能够繁荣起来，就是源于大家的热爱并且愿意做出贡献，开源世界才这么精彩。<br/>
+<br/>
+希望本文能够给需要的人一些帮助，希望不会误导他们，呵呵。<br/>
+<br/>
+<strong><span style="font-size: medium;"> </span></strong><br/>
+<br/>
+<strong><span style="font-size: medium;">附加</span>：（我操作Memcache相应对应上面文章内容的图片） </strong><br/>
+<div><strong>[ 启动Memcache]</strong></div>
+
+<strong><img src="http://p.blog.csdn.net/images/p_blog_csdn_net/heiyeshuwu/mem_start1.JPG" alt="Memcache启动" /><br/>
+<br/>
+</strong><br/>
+<br/>
+<strong><br/>
+[ Memcache的PHP测试代码]</strong><br/>
+<br/>
+<img src="http://p.blog.csdn.net/images/p_blog_csdn_net/heiyeshuwu/mem_code.JPG" alt="代码" /><br/>
+<br/>
+<strong>[测试代码执行效果]</strong><br/>
+<br/>
+<img src="http://p.blog.csdn.net/images/p_blog_csdn_net/heiyeshuwu/mem_browser.JPG" alt="浏览器效果" /><br/>
+<br/>
+<strong>[ 通过Telnet连接到Memcache ]</strong><br/>
+<br/>
+<img src="http://p.blog.csdn.net/images/p_blog_csdn_net/heiyeshuwu/mem_cmd.JPG" alt="连接Memcache" /><br/>
+<br/>
+<strong><br/>
+[ 基本的Memcache的数据存取协议交互]</strong><br/>
+<br/>
+<img src="http://p.blog.csdn.net/images/p_blog_csdn_net/heiyeshuwu/mem_cmd1.JPG" alt="存取Memcache指令" /><br/>
+<br/>
+<strong>[ Memcache状态信息协议交互]</strong><br/>
+<br/>
+<img src="http://p.blog.csdn.net/images/p_blog_csdn_net/heiyeshuwu/mem_cmd2.JPG" alt="获取Memcache信息" />

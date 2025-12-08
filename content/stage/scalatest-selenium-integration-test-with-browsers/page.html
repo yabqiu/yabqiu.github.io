@@ -1,0 +1,106 @@
+---
+title: ScalaTest + Selenium 集成测试
+url: /scalatest-selenium-integration-test-with-browsers/
+date: 2016-04-20T02:28:49-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - Scala
+  - test
+  - selenium
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7214 
+wpStatus: publish
+views: 726
+lastmod: 2023-12-13T00:03:44-06:00
+---
+
+在 Play 1 和 Play 2 中都内置了 Selenium 集成测试工具, 这里自己尝试自己单独测试用 <a href="http://www.scalatest.org/">ScalaTest</a> + <a href="http://www.seleniumhq.org/">Selenium</a> 来做简单的集成测试. Selenium 可以支持内置的无界面 Java 实现的浏览器, 也可以用外部浏览器, 如 Safari, Firefox, Chrome, IE, Opera 或移动设备的浏览器. 使用不同外部浏览的方式或用插件(Safari/Firefox 等) 或是像借助于 Chromium 来驾驭 Chrome 浏览器.</p>
+<br/>
+而我们这里要用的 ScalaTest 2.2.6 在包 <a href="http://doc.scalatest.org/2.2.6/index.html#org.scalatest.selenium.package">org.scalatest.selenium</a> 有以下几个特质 Chrome, Driver, Firefox, HtmlUnit, InternetExplorer, Page, Safari 和  WebBrowser. 由此可以看出 ScalaTest 默认支持的浏览器. 若单论 Selenium 本身, 它可强大的暂时超乎我的想像, 可以自建服务器, 选择浏览器分发测试任务. 我们知道使用 Selenium 的好处是不光可以像通常那样断言页面静态文本, 还能执行 Javascript 脚本, 所以可断言动态内容.<br/><br/>
+本人开发环境为 Mac OS, 可以成功让 Selenium 测试跑在内置 Java 浏览器, 和外置的  Safari, Chrome 浏览器中, Firefox 的插件未安装成功.<br/><br/>
+让事实说话, 仍然让一个最简单的例子自己说话, 创建的是一个 sbt 项目, 尽量把目录最简化, 只有 <code>build.sbt</code> 文件和 <code>test/IntegrationTest.scala</code> 测试代码, 内容分别为<!--more--><br/><br/>
+<strong>build.sbt</strong><br/><br/>
+<pre class="brush:scala">libraryDependencies ++= Seq(
+    "org.scalatest" %% "scalatest" % "2.2.6" % "test",
+    "org.seleniumhq.selenium" % "selenium-java" % "2.35.0" % "test"
+)<br/><br/>
+scalaSource in Test := baseDirectory.value / "test"</pre>
+<br/>
+上面引入了必须的 scalatest 和 selenium-java 包, 并且只关心 Scala 测试代码在 test 目录中, 其他目录随意.<br/><br/>
+<strong>test/IntegrationTest.scala</strong><br/><br/>
+<pre class="brush:scala">import java.util.concurrent.TimeUnit<br/><br/>
+import org.openqa.selenium.By
+import org.scalatest.selenium._
+import org.scalatest.{BeforeAndAfterAll, FlatSpec, ShouldMatchers}<br/><br/>
+class IntegrationTest extends FlatSpec with ShouldMatchers with Chrome with BeforeAndAfterAll {<br/><br/>
+  override def afterAll() {
+    webDriver.quit()
+  }<br/><br/>
+  "Short google url" should "redirect to www subdomain" in {
+     go to "http://google.com"
+     currentUrl should startWith ("https://www.google.com/")
+  }<br/><br/>
+  "My Blog pages" should "have different titles" in {
+    go to "http://unmi.cc"
+    webDriver.getTitle should equal("隔叶黄莺 Unmi Blog - 软件编程实践")
+    webDriver.manage().timeouts().implicitlyWait(5, TimeUnit.SECONDS)
+    webDriver.findElement(By.partialLinkText("一样的目录布局")).click()
+    webDriver.getTitle should include("建立 Play 2 框架一样的目录布局")
+  }<br/><br/>
+  it should "contain archive dropdown list" in {
+    go to "http://unmi.cc"
+    find(xpath("//select[@name='archive-dropdown']")).isDefined shouldBe true 
+  }
+}</pre>
+<br/>
+上面 <code>with Chrome</code> 部分想用什么浏览器就 <code>with</code> 什么, 当然是从 ScalaTest 已支持的 Firefox, InternetExplorer, Safari, HtmlUnit 中选. HtmlUnit 的功能很弱, 就是用它来跑上面的代码都有问题, 因我的博客中还是很多的 Javascript, 还有 Ajax 的请求.<br/><br/>
+我们这里来测试外部的  Chrome 和  Safari<br/><br/>
+<strong>Chrome 中跑 Selenium 测试</strong><br/><br/>
+如果直接 <code>sbt test</code> 跑上面的测试, 将会收到消息<br/><br/>
+<blockquote>
+[info] Exception encountered when attempting to run a suite with class name: org.scalatest.DeferredAbortedSuite *** ABORTED ***<br />
+[info]   java.lang.IllegalStateException: The path to the driver executable must be set by the webdriver.chrome.driver system property; for more information, see http://code.google.com/p/selenium/wiki/ChromeDriver. The latest version can be downloaded from http://code.google.com/p/chromedriver/downloads/list
+</blockquote>
+<br/>
+它告诉我们要下载 ChromeDriver 并用 webdriver.chrome.driver 系统属性指定 ChromeDriver. 可以从这个页面 <a href="https://sites.google.com/a/chromium.org/chromedriver/">https://sites.google.com/a/chromium.org/chromedriver/</a> 找到当前最新版 <a href="http://chromedriver.storage.googleapis.com/2.21/chromedriver_mac32.zip">chromedriver_mac32.zip</a> 下载, 居然还只是 32 位的, 下载后假设解压在 /opt/chromedriver 目录, 那么就可以用 <code>sbt -Dwebdriver.chrome.driver=/opt/chromedriver test</code> 运行上面的测试.<br/><br/>
+执行效果这里用一个视频展示出来, 为方便更多的国内的同学观看还是把视频放在了 Youku 上, 如果你是肉身在外的话可以直接访问这个 <a href="https://youtu.be/DaFNN7xoza0">Youtube 上的 chrome selenium 视频</a>.<br/><br/>
+<div align="center"><embed src="http://player.youku.com/player.php/sid/XMTU0MTc3MjI4OA==/v.swf" type="application/x-shockwave-flash" width="800" height="550" align="middle"></embed></div>
+<br/>
+命令行信息如下<br/><br/>
+<blockquote>
+➜  ✗ sbt -Dwebdriver.chrome.driver=/Users/yanbin/Downloads/chromedriver<br />
+[info] Set current project to test_selenium (in build file:/Users/yanbin/Workspaces/test_selenium/)<br />
+> test<br />
+Starting ChromeDriver 2.21.371459 (36d3d07f660ff2bc1bf28a75d1cdabed0983e7c4) on port 15045<br />
+Only local connections are allowed.<br />
+[info] IntegrationTest:<br />
+[info] Short google url<br />
+[info] - should redirect to www subdomain<br />
+[info] My Blog pages<br />
+[info] - should have different titles<br />
+[info] - should contain archive dropdown list<br />
+[info] Run completed in 12 seconds, 253 milliseconds.<br />
+[info] Total number of tests run: 3<br />
+[info] Suites: completed 1, aborted 0<br />
+[info] Tests: succeeded 3, failed 0, canceled 0, ignored 0, pending 0<br />
+[info] All tests passed.<br />
+[success] Total time: 13 s, completed Apr 20, 2016 1:41:32 AM
+</blockquote>
+<br/>
+Safari 上跑 Selenium 测试<br/><br/>
+把前面代码的  <code>with Chrome</code> 部分改为 <code>with Safari</code> 尝试跑一下测试, 如果 Safari 尚未安装相应的扩展的话, 能看到它打开一个 Safari 浏览器, 但无法通信<br/><br/>
+<img class="aligncenter size-large wp-image-7215" src="http://unmi.cc/wp-content/uploads/2016/04/Safari_Selenium-800x328.png" alt="Safari_Selenium" width="800" height="328" /><br/><br/>
+因为需要给 Safari 安装 WebDriver 扩展, 也可以从这个页面 <a href="http://www.seleniumhq.org/download/">http://www.seleniumhq.org/download/</a> 找到当前版本的下载链接 <a href="http://selenium-release.storage.googleapis.com/2.48/SafariDriver.safariextz">http://selenium-release.storage.googleapis.com/2.48/SafariDriver.safariextz</a>, 下载后打开即关联用 Safari 来安装. 并提示该扩展非经官方, 是否信任<br/><br/>
+<img class="aligncenter wp-image-7216" src="http://unmi.cc/wp-content/uploads/2016/04/Safari_trust_extention-800x325.png" alt="Safari_trust_extention" width="700" height="285" /><br/><br/>
+这里可能要点技巧了, 如果直接用鼠标点击 <code>Trust</code> 按钮可能什么也不会发生, 可以试用用 <code>Tab</code> 聚焦到 <code>Trust</code> 按钮, 然后按空格来信任, 安装好后就像我的 Safari 扩展里会显示出 WebDriver 了.<br/><br/>
+再次执行下 sbt 的 <code>test</code> 就能看到像操作  Chrome 那样打开 Safari 测试完后关闭, 执行结果未必和使用 Chrome 是一样的, 因为浏览器的行为是有差异, 也是为什么我们需要选择多种浏览器进行集成测试的原因.<br/><br/>
+另外尝试安装 Firefox 的  Selenium IDE 插件未能成功, 在 Firefox 为未验证的插件, 被强迫禁用. 不知为何这种类型的 Firefox 插件都不能发布到 Firefox 的官方插件库中. 应该可以尝试打开 Firefox<br/><br/>
+再其他就是 Selenium 的 API 的使用技巧了, 如何操作事件, 输入, 定位元素等. 而且 Selenium 还有截屏的功能, 或把访问数据保存, 甚至是可以把整个测试过程录制下来.

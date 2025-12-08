@@ -1,0 +1,617 @@
+---
+title: Struts2-Json-Plugin 的使用(翻译自官方文档)
+url: /struts2-json-plugin-guide/
+date: 2011-02-13T04:40:43-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Struts
+tags: 
+  - 翻译
+  - plugin
+  - json
+  - Struts2
+  - Struts
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3133 
+wpStatus: publish
+views: 9423
+lastmod: 2021-09-03T12:51:28-05:00
+---
+
+在 Struts2 中要使用 Ajax 获得 Json 数据我认为目前还是 struts2-json-plugin 了。当然你你可以用手工用像 <a href="http://xstream.codehaus.org/" target="_blank" rel="noopener">XStream</a>、<a href="http://code.google.com/p/google-gson/" target="_blank" rel="noopener">Google Gson</a>、<a href="http://jackson.codehaus.org/" target="_blank" rel="noopener">Jackson</a> 这样的工具手工把 Java 对象转换成 Json 字符串再写往 Response 去，要写的代码自然多不了，还得留心字符集与 content type。而 struts2-json-plugin 毫无疑问是与 Struts2 最亲近了，只需你配置一些属性就能得到你想的结果。<br/><br/>
+本想分几篇逐步介绍如何使用 struts2-json-plugin 的，然而就在现在发现官方的 struts2-json-plugin 指南已经很详细了，所以干脆翻译一下 <a href="http://struts.apache.org/2.2.1.1/docs/json-plugin.html">http://struts.apache.org/2.2.1.1/docs/json-plugin.html</a>，同时自己加深对它的理解。<!--more--><br/><br/>
+JSON 插件提供了一个 "json" 结果类型来把 action 序列化成 JSON. 这一序列化的过程是递归的, 意即整个对象图，从 action 类开始 (未包括基类) 将会被序列化 (可以用 "root" 属性来指定自己的根对象). 如果使用了 json 拦截器, action 将可通过请求中的 JSON 内容组装出来, 该拦截器遵循以下几条规则:<br/><br/>
+<ol>
+    <li>"content-type" 必须为 "application/json"</li>
+    <li>JSON 内容必须是格式良好的, 参考 <a href="http://www.json.org/" target="_blank" rel="noopener">json.org</a> 中的语法.</li>
+    <li>Action 里必须有欲获取值的属性的相应 public 的 "setter" 方法.</li>
+    <li>所支持的类型有: 原始类型 (int,long...String), Date, List, Map, 原始类型数组, 其他的类 (将会支持更多), 和其他类型的数组.</li>
+    <li>JSON 中的任何将要被填入到 list 或 map 中的对象会是 Map 类型(属性映射到值), 任何整数都是 Long 类型, 任何小数会是 Double 类型, 任何数组会是 List 类型.</li>
+</ol>
+<br/>
+给定下面的 JSON 字符串:<br/><br/>
+<div>
+<pre class="lang:default decode:true">{
+   "doubleValue": 10.10,
+   "nestedBean": {
+      "name": "Mr Bean"
+   },
+   "list": ["A", 10, 20.20, {
+      "firstName": "El Zorro"
+   }],
+   "array": [10, 20]
+}</pre>
+</div>
+<br/>
+<div> action 中必须有一个 "setDoubleValue" 方法, 参数为 "float" 或者 "double"(拦截器将会把值转换为相应的类型). 还必须有一个 "setNestedBean" 方法，它的参数类型可以为任何类类型, 其中含有参数为 "String" 的 "setName" 方法. 还必须有一个参数为 "List" 的 "setList" 方法, 这个 List 中将会包含: "A" (String), 10 (Long), 20.20 (Double), Map ("firstName" -&gt; "El Zorro"). "setArray" 方法可以是 "List", 或任何数字类型数组作参数的.</div>
+<br/>
+<div>
+<table>
+<colgroup span="1"> 
+<col span="1" width="24" /> 
+<col span="1" /> </colgroup>
+<tbody>
+<tr>
+<td valign="top"><img src="https://cwiki.apache.org/confluence/images/icons/emoticons/check.gif" alt="" width="16" height="16" align="absMiddle" border="0" /></td>
+<td>序列化你的对象成 javascript 的 JSON, 参考 <a href="http://json.org/json2.js" target="_blank" rel="noopener">json2</a></td>
+</tr>
+</tbody>
+</table>
+</div>
+<br/>
+<h2><a name="JSONPlugin-Installation"></a>安装</h2><br/><br/>
+本插件可通过把插件  jar 包到你的应用的 <tt>/WEB-INF/lib</tt> 目录来完成安装. 没有别的文件需要拷贝或被创建.<br/><br/>
+使用 maven 的话, 加入下列到你的 pom 中:<br/><br/>
+<div>
+<pre class="lang:default decode:true">&lt;dependencies&gt;
+   ...
+   &lt;dependency&gt;
+       &lt;groupId&gt;org.apache.struts&lt;/groupId&gt;
+       &lt;artifactId&gt;struts2-json-plugin&lt;/artifactId&gt;
+       &lt;version&gt;STRUTS_VERSION&lt;/version&gt;
+   &lt;/dependency&gt;
+   ...
+&lt;/dependencies&gt;</pre>
+</div>
+<br/>
+<div><a name="JSONPlugin-CustomizingSerializationandDeserialization"></a> </div>
+<br/>
+<h2><strong>定制化序列化和反序列化</strong></h2><br/><br/>
+使用 JSON 注解来达到定制序列化和反序列化过程. 可用的 JSON 注解如下:<br/><br/>
+<table>
+<tbody>
+<tr>
+<th>名称</th>
+<th>描述</th>
+<th>默认值</th>
+<th>序列化</th>
+<th>反序列化</th>
+</tr>
+<tr>
+<td>name</td>
+<td>定制字段名</td>
+<td>empty</td>
+<td>yes</td>
+<td>no</td>
+</tr>
+<tr>
+<td>serialize</td>
+<td>标识为可被序列化</td>
+<td>true</td>
+<td>yes</td>
+<td>no</td>
+</tr>
+<tr>
+<td>deserialize</td>
+<td>标识为可被反序列化</td>
+<td>true</td>
+<td>no</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>format</td>
+<td>用于格式化或解析 Date 字段的格式</td>
+<td>"yyyy-MM-dd'T'HH:mm:ss"</td>
+<td>yes</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<a name="JSONPlugin-Excludingproperties"></a><strong>排除属性</strong><br/><br/>
+逗号分隔的正则表达式列表可传递给 JSON Result 和 Interceptor(拦截器), 被任何 一个正则表达式匹配的属性将会在序列化过程时忽略掉:<br/><br/>
+<div>
+<pre class="lang:default decode:true">&lt;!-- Result fragment --&gt;
+&lt;result type="json"&gt;
+  &lt;param name="excludeProperties"&gt;
+    login.password,
+    studentList.*\.sin
+  &lt;/param&gt;
+&lt;/result&gt;<br/><br/>
+&lt;!-- Interceptor fragment --&gt;
+&lt;interceptor-ref name="json"&gt;
+  &lt;param name="enableSMD"&gt;true&lt;/param&gt;
+  &lt;param name="excludeProperties"&gt;
+    login.password,
+    studentList.*\.sin
+  &lt;/param&gt;
+&lt;/interceptor-ref&gt;</pre>
+</div>
+<br/>
+<div><a name="JSONPlugin-Includingproperties"></a><strong>包含属性</strong></div>
+<br/>
+逗号分隔的正则表达式列表可被传递给 JSON Result, 用于限制哪些属性可用于序列化. 只有当能够匹配任何一个正则表达式的属性才会包含在序列化输出中.<br/><br/>
+<div>
+<table>
+<colgroup span="1"> 
+<col span="1" width="24" /> 
+<col span="1" /> </colgroup>
+<tbody>
+<tr>
+<td valign="top"><img src="https://cwiki.apache.org/confluence/images/icons/emoticons/warning.gif" alt="" width="16" height="16" align="absMiddle" border="0" /></td>
+<td>注：<br />
+排除属性表达式优先于包含属性的表达式.  那就是说, 如果包含和排除表达式应用于同一个结果, 包含表达式对于被排除表达式匹配到的属性是不起作用的.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<br/>
+<div>
+<div> </div>
+<div>
+<pre class="lang:default decode:true">&lt;!-- Result fragment --&gt;
+&lt;result type="json"&gt;
+  &lt;param name="includeProperties"&gt;
+    ^entries\[\d+\]\.clientNumber,
+    ^entries\[\d+\]\.scheduleNumber,
+    ^entries\[\d+\]\.createUserId
+  &lt;/param&gt;
+&lt;/result&gt;</pre>
+</div>
+<div><a name="JSONPlugin-RootObject"></a><strong>根对象</strong></div>
+</div>
+<br/>
+使用 "root" 属性(OGNL 表达式) 指定被用于序列化的根对象.<br/><br/>
+<div>
+<pre class="lang:default decode:true">&lt;result type="json"&gt;
+  &lt;param name="root"&gt;
+    person.job
+  &lt;/param&gt;
+&lt;/result&gt;</pre>
+</div>
+<br/>
+<div>"root" 属性(OGNL 表达式) 也可以用于拦截器来指定被组装的对象, 确保这个对象不会是<strong> null</strong>.</div>
+<br/>
+<div>
+<div>
+<pre class="lang:default decode:true">&lt;interceptor-ref name="json"&gt;
+  &lt;param name="root"&gt;bean1.bean2&lt;/param&gt;
+&lt;/interceptor-ref&gt;</pre>
+</div>
+<div><a name="JSONPlugin-Wrapping"></a><strong>包装</strong></div>
+</div>
+<br/>
+可能会有某些原因，你想要用些文本对 JSON 输出包装一下, 像用注释包裹, 加上前缀, 或使用文件上载让结果显示在 textarea 之中. 用 <em>wrapPrefix</em> 在开始处加上内容，<em>wrapPostfix</em> 添加内容在尾端. 这两个参数优先使用，而  "wrapWithComments" 和 "prefix" 自从 0.34 后就不推荐使用. 例子:<br/><br/>
+进行注释:<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">&lt;result type="json"&gt;
+  &lt;param name="wrapPrefix"&gt;/*&lt;/param&gt;
+  &lt;param name="wrapSuffix"&gt;*/&lt;/param&gt;
+&lt;/result&gt;</pre>
+</div>
+</div>
+<br/>
+添加前缀:<br/><br/>
+<div>
+<pre class="lang:default decode:true">&lt;result type="json"&gt;
+  &lt;param name="wrapPrefix"&gt;{}&amp;&amp;&lt;/param&gt;
+&lt;/result&gt;</pre>
+</div>
+<br/>
+<div> 包裹上传的文件内容:</div>
+<br/>
+<div>
+<div>
+<pre class="lang:default decode:true">&lt;result type="json"&gt;
+  &lt;param name="wrapPrefix"&gt;&lt;![CDATA[&lt;html&gt;&lt;body&gt;&lt;textarea&gt;]]&gt;&lt;/param&gt;
+  &lt;param name="wrapSuffix"&gt;&lt;![CDATA[&lt;/textarea&gt;&lt;/body&gt;&lt;/html&gt;]]&gt;&lt;/param&gt;
+&lt;/result&gt;</pre>
+</div>
+</div>
+<br/>
+<h3><a name="JSONPlugin-WrapwithComments"></a>包裹以注释</h3><br/><br/>
+<div>
+<table>
+<colgroup span="1"> 
+<col span="1" width="24" /> 
+<col span="1" /> </colgroup>
+<tbody>
+<tr>
+<td valign="top"><img src="https://cwiki.apache.org/confluence/images/icons/emoticons/forbidden.gif" alt="" width="16" height="16" align="absMiddle" border="0" /></td>
+<td><em>wrapWithComments</em> 自 0.34 不推荐使用, 建议用 <em>wrapPrefix</em> 和 <em>wrapSuffix</em>.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<br/>
+<div>
+<table>
+<colgroup span="1"> 
+<col span="1" width="24" /> 
+<col span="1" /> </colgroup>
+<tbody>
+<tr>
+<td valign="top"><img src="https://cwiki.apache.org/confluence/images/icons/emoticons/forbidden.gif" alt="" width="16" height="16" align="absMiddle" border="0" /></td>
+<td>
+<em>wrapWithComments</em> 可使得安全的 JSON 文本变得不安全. 例如,
+["*/ alert('XSS'); /*"]
+谢谢 Douglas Crockford 的提示! 应考虑用 <strong>prefix</strong>.
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<br/>
+假如被序列化的 JSON 是 <em>{name: 'El Zorro'}</em>. 那么此时输出就会是: <em>{}&amp;&amp; ({name: 'El Zorro'}</em><br/><br/>
+假如 "wrapWithComments" (默认为 false) 属性被设为 true, 生成的被包裹上注释的 JSON 就如下:<br/><br/>
+<div>
+<pre class="lang:default decode:true">/* {
+   "doubleVal": 10.10,
+   "nestedBean": {
+      "name": "Mr Bean"
+   },
+   "list": ["A", 10, 20.20, {
+      "firstName": "El Zorro"
+   }],
+   "array": [10, 20]
+} */</pre>
+</div>
+<br/>
+<div> 欲取消上面的注释，可用:</div>
+<br/>
+<div>
+<div>var responseObject = eval("("+data.substring(data.indexOf("\/\*")+2, data.lastIndexOf("\*\/"))+")");</div>
+</div>
+<br/>
+<h3><a name="JSONPlugin-Prefix"></a>前缀</h3><br/><br/>
+<div>
+<table>
+<colgroup span="1"> 
+<col span="1" width="24" /> 
+<col span="1" /> </colgroup>
+<tbody>
+<tr>
+<td valign="top"><img src="https://cwiki.apache.org/confluence/images/icons/emoticons/forbidden.gif" alt="" width="16" height="16" align="absMiddle" border="0" /></td>
+<td><em>prefix</em> 从 0.34 后不建议用, 请用 <em>wrapPrefix</em> 和 <em>wrapSuffix</em>.</td>
+</tr>
+</tbody>
+</table>
+</div>
+<br/>
+假如参数 <em>prefix</em> 被设置为 true, 生成的 JSON 将被附上前缀 "{}&amp;&amp; ". 这有助于防止被劫持. 详细内容请看 <a href="http://trac.dojotoolkit.org/ticket/6380" target="_blank" rel="noopener">this Dojo Ticket</a>:<br/><br/>
+<div>
+<pre class="lang:default decode:true">&lt;result type="json"&gt;
+  &lt;param name="prefix"&gt;true&lt;/param&gt;
+&lt;/result&gt;</pre>
+</div>
+<br/>
+<div><a name="JSONPlugin-BaseClasses"></a><strong>基类</strong></div>
+<br/>
+默认时，定义在 "root" 对象的基类中的属性不会被序列化, 要序列化来自于所有基类(直到 Object) 中的属性，需在 JSON result 里设置 "ignoreHierarchy" 为 false:<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">&lt;result type="json"&gt;
+  &lt;param name="ignoreHierarchy"&gt;false&lt;/param&gt;
+&lt;/result&gt;</pre>
+</div>
+</div>
+<br/>
+<h3><a name="JSONPlugin-Enumerations"></a>枚举类型</h3><br/><br/>
+默认的, Enum 被序列化为 name=value 对，这里的 value = name().<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">public enum AnEnum {
+  ValueA,
+  ValueB
+}</pre>
+ JSON: "myEnum":"ValueA"
+</div>
+</div>
+<br/>
+使用 result 的参数 "enumAsBean" 可使得 Enum 像一个 bean 一样的被序列化，特定的属性为 _name，值为 name().  所有的枚举属性都会被序列化. <br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">public enum AnEnum {
+   ValueA("A"),
+   ValueB("B");<br/><br/>
+   private String val;<br/><br/>
+   public AnEnum(val) { this.val = val; } public getVal() {
+      return val;
+   }
+}</pre>
+</div>
+<div> JSON: myEnum: { "_name": "ValueA", "val": "A" }</div>
+</div>
+<br/>
+在 struts.xml 中启用该参数:<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">&lt;result type="json"&gt;
+  &lt;param name="enumAsBean"&gt;true&lt;/param&gt;
+&lt;/result&gt;</pre>
+</div>
+</div>
+<br/>
+<h3><a name="JSONPlugin-Compressingtheoutput."></a>压缩输出.</h3><br/><br/>
+设置 <em>enableGZIP</em> 属性为 true 可用 gzip 压缩响应输出. 在请求后 "Accept-Encoding" 头中必须包含  "gzip" 才能正常工作.<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">&lt;result type="json"&gt;
+  &lt;param name="enableGZIP"&gt;true&lt;/param&gt;
+&lt;/result&gt;</pre>
+</div>
+</div>
+<br/>
+<h3><a name="JSONPlugin-Preventingthebrowserfromcachingtheresponse"></a>防止浏览器缓存响应数据</h3><br/><br/>
+<em>noCache</em> 设置为 true(默认为 false) 会设置如下响应头:<br/><br/>
+<ul>
+    <li>Cache-Control: no-cache</li>
+    <li>Expires: 0</li>
+    <li>Pragma: No-cache</li>
+</ul><br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">&lt;result type="json"&gt;
+  &lt;param name="noCache"&gt;true&lt;/param&gt;
+&lt;/result&gt;</pre>
+</div>
+</div>
+<br/>
+<h3><a name="JSONPlugin-Excludingpropertieswithnullvalues"></a>排除值为 null 的属性</h3><br/><br/>
+默认的，为 null 的字段也被序列化，生成像 {property_name: null}. 这能够通过设置 <em>excludeNullProperties</em> 为 true 来防止.<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">&lt;result type="json"&gt;
+  &lt;param name="excludeNullProperties"&gt;true&lt;/param&gt;
+&lt;/result&gt;</pre>
+</div>
+</div>
+<br/>
+<h3><a name="JSONPlugin-StatusandErrorcode"></a>状态和错误代码</h3><br/><br/>
+使用 <em>statusCode</em> 来设置响应状态代码:<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true ">&lt;result type="json"&gt;
+  &lt;param name="statusCode"&gt;304&lt;/param&gt;
+&lt;/result&gt;</pre>
+</div>
+</div>
+<br/>
+同时可用 <em>errorCode</em> 来发送一个错误(the server might end up sending something to the client which is not the serialized JSON):<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">&lt;result type="json"&gt;
+  &lt;param name="errorCode"&gt;404&lt;/param&gt;
+&lt;/result&gt;</pre>
+</div>
+</div>
+<br/>
+<h3><a name="JSONPlugin-JSONP"></a>JSONP</h3><br/><br/>
+To enable JSONP, set the parameter <em>callbackParameter</em> in either the JSON Result or the Interceptor. A parameter with that name will be read from the request, and it value will be used as the JSONP function. Assuming that a request is made with the parameter "callback"="exec":<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">&lt;result type="json"&gt;
+  &lt;param name="callbackParameter"&gt;callback&lt;/param&gt;
+&lt;/result&gt;</pre>
+</div>
+</div>
+<br/>
+And that the serialized JSON is <em>{name: 'El Zorro'}</em>. Then the output will be: <em>exec({name: 'El Zorro'})</em><br/><br/>
+<h3><a name="JSONPlugin-ContentType"></a>Content Type</h3><br/><br/>
+Content type will be set to <em>application/json-rpc</em> by default if SMD is being used, or <em>application/json</em> otherwise. Sometimes it is necessary to set the content type to something else, like when uploading files with Dojo and YUI. Use the <em>contentType</em> parameter in those cases.<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">&lt;result type="json"&gt;
+  &lt;param name="contentType"&gt;text/html&lt;/param&gt;
+&lt;/result&gt;</pre>
+</div>
+</div>
+<br/>
+<h2><a name="JSONPlugin-Example"></a>Example</h2><br/><br/>
+<h3><a name="JSONPlugin-SetupAction"></a>Setup Action</h3><br/><br/>
+This simple action has some fields:<br/><br/>
+Example:<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">import java.util.HashMap;
+import java.util.Map;<br/><br/>
+import com.opensymphony.xwork2.Action;<br/><br/>
+public class JSONExample {
+    private String field1 = "str";
+    private int[] ints = {10, 20};
+    private Map map = new HashMap();
+    private String customName = "custom";<br/><br/>
+    //'transient' fields are not serialized
+    private transient String field2;<br/><br/>
+    //fields without getter method are not serialized
+    private String field3;<br/><br/>
+    public String execute() {
+        map.put("John", "Galt");
+        return Action.SUCCESS;
+    }<br/><br/>
+    public String getField1() {
+        return field1;
+    }<br/><br/>
+    public void setField1(String field1) {
+        this.field1 = field1;
+    }<br/><br/>
+    public int[] getInts() {
+        return ints;
+    }<br/><br/>
+    public void setInts(int[] ints) {
+        this.ints = ints;
+    }<br/><br/>
+    public Map getMap() {
+        return map;
+    }<br/><br/>
+    public void setMap(Map map) {
+        this.map = map;
+    }<br/><br/>
+    @JSON(name="newName")
+    public String getCustomName() {
+        return this.customName;
+    }
+}</pre>
+</div>
+</div>
+<br/>
+<h3><a name="JSONPlugin-Writethemappingfortheaction"></a>Write the mapping for the action</h3><br/><br/>
+<ol>
+    <li>Add the map inside a package that extends "json-default"</li>
+    <li>Add a result of type "json"</li>
+</ol>
+<br/>
+Example:<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8" ?&gt;
+&lt;!DOCTYPE struts PUBLIC
+    "-//Apache Software Foundation//DTD Struts Configuration 2.0//EN"
+    "http://struts.apache.org/dtds/struts-2.0.dtd"&gt;<br/><br/>
+&lt;struts&gt;<br/><br/>
+  &lt;package name="example"  extends="json-default"&gt;
+     &lt;action name="JSONExample"&gt;
+        &lt;result type="json"/&gt;
+     &lt;/action&gt;
+  &lt;/package&gt;<br/><br/>
+&lt;/struts&gt;</pre>
+</div>
+</div>
+<br/>
+<h4><a name="JSONPlugin-JSONexampleoutput"></a>JSON example output</h4><br/><br/>
+<div>
+<div>
+<pre class="brush:js">{ 
+   "field1" : "str",
+   "ints": [10, 20],
+   "map": {
+       "John":"Galt"
+   },
+   "newName": "custom"
+}</pre>
+</div>
+</div>
+<br/>
+<h2><a name="JSONPlugin-JSONRPC"></a>JSON RPC</h2><br/><br/>
+The json plugin can be used to execute action methods from javascript and return the output. This feature was developed with Dojo in mind, so it uses Simple Method Definition to advertise the remote service. Let's work it out with an example(useless as most examples).<br/><br/>
+First write the action:<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">package smd;<br/><br/>
+import com.googlecode.jsonplugin.annotations.SMDMethod;
+import com.opensymphony.xwork2.Action;<br/><br/>
+public class SMDAction {
+    public String smd() {
+        return Action.SUCCESS;
+    }<br/><br/>
+    @SMDMethod
+    public Bean doSomething(Bean bean, int quantity) {
+        bean.setPrice(quantity * 10);
+        return bean;
+    }
+}</pre>
+</div>
+</div>
+<br/>
+Methods that will be called remotely <strong>must</strong> be annotated with the <em>SMDMethod</em> annotation, for security reasons. The method will take a bean object, modify its price and return it. The action can be annotated with the <em>SMD</em> annotation to customize the generated SMD (more on that soon), and parameters can be annotated with <em>SMDMethodParameter</em>. As you can see, we have a "dummy", <em>smd</em> method. This method will be used to generate the Simple Method Definition (a definition of all the services provided by this class), using the "json" result.<br/><br/>
+The bean class:<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">package smd;<br/><br/>
+public class Bean {
+    private String type;
+    private int price;<br/><br/>
+    public String getType() {
+        return type;
+    }<br/><br/>
+    public void setType(String type) {
+        this.type = type;
+    }<br/><br/>
+    public int getPrice() {
+        return price;
+    }<br/><br/>
+    public void setPrice(int price) {
+        this.price = price;
+    }<br/><br/>
+}</pre>
+</div>
+</div>
+<br/>
+The mapping:<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">&lt;package name="RPC" namespace="/nodecorate" extends="json-default"&gt;
+    &lt;action name="SMDAction" method="smd"&gt;
+        &lt;interceptor-ref name="json"&gt;
+            &lt;param name="enableSMD"&gt;true&lt;/param&gt;
+        &lt;/interceptor-ref&gt;
+        &lt;result type="json"&gt;
+             &lt;param name="enableSMD"&gt;true&lt;/param&gt;
+        &lt;/result&gt;
+    &lt;/action&gt;
+&lt;/package&gt;</pre>
+</div>
+</div>
+<br/>
+Nothing special here, except that <strong>both</strong> the interceptor and the result must be applied to the action, and "enableSMD" must be enabled for both.<br/><br/>
+Now the javascript code:<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">&lt;s:url id="smdUrl" namespace="/nodecorate" action="SMDAction" /&gt;
+&lt;script type="text/javascript"&gt;
+    //load dojo RPC
+    dojo.require("dojo.rpc.*");<br/><br/>
+    //create service object(proxy) using SMD (generated by the json result)
+    var service = new dojo.rpc.JsonService("${smdUrl}");<br/><br/>
+    //function called when remote method returns
+    var callback = function(bean) {
+        alert("Price for " + bean.type + " is " + bean.price);
+    };<br/><br/>
+    //parameter
+    var bean = {type: "Mocca"};<br/><br/>
+    //execute remote method
+    var defered = service.doSomething(bean, 5);<br/><br/>
+    //attach callback to defered object
+    defered.addCallback(callback);
+&lt;/script&gt;</pre>
+</div>
+</div>
+<br/>
+Dojo's JsonService will make a request to the action to load the SMD, which will return a JSON object with the definition of the available remote methods, using that information Dojo creates a "proxy" for those methods. Because of the asynchronous nature of the request, when the method is executed, a deferred object is returned, to which a callback function can be attached. The callback function will receive as a parameter the object returned from your action. That's it.<br/><br/>
+<h2><a name="JSONPlugin-Proxiedobjects"></a>Proxied objects</h2><br/><br/>
+As annotations are not inherited in Java, some user might experience problems while trying to serialize objects that are proxied. eg. when you have attached AOP interceptors to your action.<br/><br/>
+In this situation, the plugin will not detect the annotations on methods in your action.<br/><br/>
+To overcome this, set the "ignoreInterfaces" result parameter to false (true by default) to request that the plugin inspects all interfaces and superclasses of the action for annotations on the action's methods.<br/><br/>
+NOTE: This parameter should only be set to false if your action could be a proxy as there is a performance cost caused by recursion through the interfaces.<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true ">&lt;action name="contact" method="smd"&gt;
+   &lt;interceptor-ref name="json"&gt;
+      &lt;param name="enableSMD"&gt;true&lt;/param&gt;
+      &lt;param name="ignoreSMDMethodInterfaces"&gt;false&lt;/param&gt;
+   &lt;/interceptor-ref&gt;
+   &lt;result type="json"&gt;
+      &lt;param name="enableSMD"&gt;true&lt;/param&gt;
+      &lt;param name="ignoreInterfaces"&gt;false&lt;/param&gt;
+   &lt;/result&gt;
+   &lt;interceptor-ref name="default"/&gt;
+&lt;/action&gt;</pre>
+</div>
+</div>

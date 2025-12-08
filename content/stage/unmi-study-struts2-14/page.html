@@ -1,0 +1,80 @@
+---
+title: Unmi 的 Struts2 学习笔记(十四)
+url: /unmi-study-struts2-14/
+date: 2008-05-22T08:39:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/05/struts-logo.jpeg"
+categories:
+  - Struts
+tags: 
+  - Struts2
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 390 
+wpStatus: publish
+views: 307
+lastmod: 2021-09-02T14:37:43-05:00
+---
+
+生活中常为一些无伤大体之事优柔寡断，譬如买羽毛球拍是方头的还是圆头的呢？电子产品是这款好还是那款好呢？拿此又放下，举彼又放下，最后靠概率来决定。取其一，少段时间内总有些戚戚然，而后全然无所谓。小事无碍，大事可就会后悔不及，无疑亦会让许多机会径直溜去。</p>
+<br/>
+1. 从此开始学习 Struts2 对 Ajax 的支持。这也是 Struts2 新注入的元素。Struts2 的 Ajax 支持是建立在 Dojo 和 DWR 基础之上的。提供了 Ajax 的输入检验，表单提交；pub-sub 事件模型、自动完成以及与 JSON 的使用等功能。<br/><br/>
+2. 在 Struts2.0.6 和 Struts2.0.11 的 apps/struts-showcase-2.x.x.war 中的 dwr 包都还是 dwr-1.1-beta-3.jar，当前 DWR 最新版是 2.0，前一个稳定版是 1.1.4，所以正式应用可用 1.1.4 版，若用 2.0 DWR 需做充分的测试。Struts2 的 Ajax 支持是建立在 ajax 主题上的，ajax 是扩展了 xhtml 主题。<!--more--><br/><br/>
+3. 用 Ajax 进行输入校验有以下几个步骤(当然项目中要引入 dwr 的 jar 包)：<br />
+  1) web.xml 中声明 uk.ltd.getahead.dwr.DWRServlet 对 /dwr/* 请求进行处理。<br />
+  2) 增加 WEB-INF/dwr.xml 文件，内容为：<br/><br/>
+<pre class="lang:default decode:true">&lt;!DOCTYPE dwr PUBLIC
+    "-//GetAhead Limited//DTD Direct Web Remoting 1.0//EN"
+    "http://www.getahead.ltd.uk/dwr/dwr10.dtd"&gt;<br/><br/>
+&lt;dwr&gt;
+    &lt;allow&gt;
+        &lt;create javascript="validator" creator="new"&gt;
+            &lt;param name="class" value="org.apache.struts2.validators.DWRValidator"/&gt;
+        &lt;/create&gt;
+        &lt;convert match="com.opensymphony.xwork2.ValidationAwareSupport" converter="bean"/&gt;
+    &lt;/allow&gt;
+    &lt;signatures&gt;
+        &lt;![CDATA[
+            import java.util.Map;
+            import org.apache.struts2.validators.DWRValidator;
+            DWRValidator.doPost(String,String,Map&lt;String,String&gt;);
+        ]]&gt;
+    &lt;/signatures&gt;
+&lt;/dwr&gt;</pre>
+<br/>
+注意 Map&lt;String,String&gt; 的写法其实与泛型关系不大，DWR 里的写法，在 JVM 1.4 下照样能运行。<br/><br/>
+3) &lt;s:head theme="ajax"&gt; 导入 Ajax 主题的 controlheader.ftl；&lt;s:form.../&gt; 要设置 ajax 主题，并且设置 validate="true" 就会在输入组件失去焦点时，将输入发到服务器进行校验。<br/><br/>
+<pre class="lang:default decode:true">&lt;s:head theme="ajax"/&gt;
+&lt;s:form action="Login" method="post" theme="ajax" validate="true"&gt;
+    &lt;s:textfield name="name" label="姓名"/&gt;
+    &lt;s:textfield name="pass" label="密码"/&gt;
+    &lt;s:submit label="登陆"/&gt;
+&lt;/s:form&gt;</pre>
+<br/>
+注：没有 &lt;s:head theme="ajax"/&gt; 也能完成校验，提示信息，但有 'dojo 未定义' 错误，且提示信息不会是红色的。&lt;s:form.../&gt; 一定要是 theme="ajax" validate="true"，否则不能作 ajax 校验。<br/><br/>
+4) 校验规则文件，规则文件的命名与提交到后端校验是一样的，所以此时 ajax 会用 LoginAction-validation.xml 中定义的规则来校验输入。<br/><br/>
+4. 试过一下把 xwork-2.0.1.jar 换成了 xwork-2.0.4.jar，结果进行 Ajax 校验时，老报 java.lang.NoClassDefFoundError: Could not initialize class com.opensymphony.xwork2.validator.ValidatorFactory，原因还不明，但 ValidatorFactory 一直都的的确确是存在，以后用时先要注意到这一点，暂用 xwork-2.0.1.jar，有时间再去查明原因。<br/><br/>
+5. 表单的 Ajax 校验未通过之前，是不能提交的，点提交按钮没反应。但是真正的表单提交后的后台校验也是必不可少的，因为 Ajax 校验并不一定可靠，在页面上总有办法改变值后不触发 onblur 事件的，幸好，Ajax 校验和提交后的检验本来用的就是同一个校验规则文件，Ajax 校验之后还会有一次更可靠的校验。<br/><br/>
+6. 使用这种 Ajax 输入校验，一旦给 &lt;s:form.../&gt; 加上了 theme="ajax" validate="true" 属性后就会给每个输入组件加上 onblur 事件，那要是某个输入组件不需要 ajax 校验，该如何做呢？连自己给组件加的 onblur 属性也覆盖不了 Struts2 生成的 onblur="validate(this);"，处理办法有二：<br />
+  1) 在校验规则文件中不加对该字段的配置，但中间的 XMLHttpRequest 请求是少不了<br />
+  2) 单独给输入组件指定 theme="xhtml"，这样风格也可以保持一致，因为 ajax 主题扩展自 xhtml 主题的。<br/><br/>
+7. 使用 Ajax 表单，如果给 &lt;s:form.../&gt; 指定了 theme="ajax"，如果点击了 &lt;s:submit targets="show"/&gt; 将会以 Ajax 方式提交数据，当前页面不刷新，然后 Struts2 处理后的 result 页面的内容将会作为当前页中 ID 为 "show" 的 HTML 元素(如 &lt;div id="show"&gt;&lt;/div&gt;)的 innerHTML。targets 可以指定多个 ID，用逗号分隔，意味着同时更新多处。<br/><br/>
+8. 使用了 ajax 主题的 form 中，&lt;s:submit executeScripts="true" targets="show"/&gt;，点击这个按钮以 Ajax 提交表单，并以转向页的内容填充 ID 为 "show" 元素的 innerHTML，还能执行结果页中的 JavaScript(vbscript不执行)。最后那个结果应该只输出需要数据，不用完整的 HTML 标签。碰到一个问题是，在结果页里加了 &lt;s:debug/&gt; 点击提交按钮执行不到其中的 javascript 脚本。<br/><br/>
+9. 考虑一个问题，当我们要用 Ajax 对表单校验，&lt;s:submit.../&gt; 就会以 Ajax 方式提交数据。那如果我们的需求只是用 Ajax 对输入校验，仍以传统方式对表单提交，该如何处理呢？问题关键其实就在那个提交按钮上，&lt;s:submit .../&gt; 未指定 theme 属性是继承自 &lt;s:form.../&gt; 的 ajax 主题，只要给 &lt;s:submit .../&gt; 指定 theme="xhtml" 的话，风格不变，却可以用传统方式提交，这个问题和第六点是一样的。<br/><br/>
+10. 是关于 pub-sub 的理解，有些书写的模模糊糊，我会把我对此的理解记录下来，这几天有点事情太多，太累了，先占住这点，会补充的。<br/><br/>
+<hr /><br/><br/>
+补充：<br />
+2008-05-27　dwr.xml 中的<br />
+    &lt;signatures&gt;<br />
+        &lt;![CDATA[<br />
+            import java.util.Map;<br />
+            import org.apache.struts2.validators.DWRValidator;<br />
+            DWRValidator.doPost(String,String,Map&lt;String,String&gt;);<br />
+        ]]&gt;<br />
+    &lt;/signatures&gt;<br />
+是为了说明，DWRValidator 的　doPost 方法的参数 Map 集合中的类型，有了这个 DWR 才知道怎么处理这个参数，这是一种泛型的写法。因为 DWR 本身提供了对这种泛型写法的解析器，所以可不依赖于 JDK 1.5 开始的泛型特性。在实际使用中，如果集合 List/Map 中的元素类型(包括 Map 的 Key) 都是字符串的话，可以不配置相应的 signatures。

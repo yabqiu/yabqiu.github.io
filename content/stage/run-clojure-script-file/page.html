@@ -1,0 +1,143 @@
+---
+title: 如何直接运行 Clojure 脚本文件
+url: /run-clojure-script-file/
+date: 2016-07-19T01:03:02-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/07/clojure-logo-120b.png"
+categories:
+  - Clojure
+tags: 
+  - Clojure
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7380 
+wpStatus: publish
+views: 1378
+lastmod: 2021-09-03T17:16:58-05:00
+---
+
+对于大多数的脚本编程语言来说, 提供有现成的分别进入控制台与执行脚本文件的命令. 例如 Scala, Python 默认进入控制台(REPL), 接文件路径为参数则执行脚本文件. 还有分别进入控制台和执行脚本的命令是: irb 与 ruby, groovsh 与 groovy, php -a 与 php, perl -de1 和 perl. 可以 Clojure 本身就没有 clojure 这样的命令. 当我们试图在 Mac 下用 brew install clojure 安装时, 得到的提示是没有 clojure, 应该用 <code>brew install leiningen</code> 去安装 leiningen, 它是一个类似于 Scala sbt 的工具.</p>
+<br/>
+所以启动 Clojure REPL 的命令就是 <code>lein repl</code>, 其实还有一个办法来启动 Clojure 的控制台, 因为 Clojure 也是构筑于 JVM 之上的, 所以也能像启 Groovy/Scala 一样通过  <code>java</code> 指令加载 jar 文件来启动. 去官网 <a href="http://clojure.org/">http://clojure.org/</a> 下载 Clojure 安装包(例如: ), 解压, 假定它的 jar 文件是 <code>~/Developers/clojure-1.8.0/clojure-1.8.0.jar</code>, 那么也可以用命令 <code>java -jar ~/Developers/clojure-1.8.0/clojure-1.8.0.jar</code> 进到 Clojure 控制台.<br/><br/>
+进到 Clojure 的提示符 <code>user=&gt;</code> 下就可以测试 Clojure 代码了, 那么如何加载一个写在 <code>clj</code> 文件里的代码呢? 我们可以在 Clojure 控制台下用方法 <code>load-file</code>. 假定 ~/hello.clj 文件的内容是<!--more--><br/><br/>
+<pre class="brush:clj">(+ 1 2)</pre>
+<br/>
+在 Clojure 控制台下<br/><br/>
+<blockquote>
+user=&gt; (load-file "~/hello.clj")<br />
+3
+</blockquote>
+<br/>
+这只是相当于我们在控制台输入 <code>(+ 1 2)</code>, 也看到了 3, 其实我们在 <code>~/hello.clj</code> 中并没有打印输出结果. 所以如果真正是执行 <code>~/hello.clj</code> 应该是什么也看不到了, 我们需要准确的执行 clojure 脚本文件的方法.<br/><br/>
+在此我们也顺道温习一下 Clojure 与 Java 的简单互操作, 创建了文件 <code>~/interop.clj</code>, 内容如下:<br/><br/>
+<pre class="brush:clj">(+ 1 2 3)<br/><br/>
+(println (. Math PI))
+(println (. Math abs -3))
+(println (. "foo" toUpperCase))<br/><br/>
+(println Math/PI)
+(println (Math/abs -5))<br/><br/>
+(println (.toUpperCase "bar"))<br/><br/>
+(def n1 (new Integer "42"))
+(println n1)<br/><br/>
+(let [n2 (Integer. "53")]
+ (println n2))</pre>
+<br/>
+针对启动 Clojure 控制台的不同我们同样有两种方式执行 Clojure 脚本文件<br/><br/>
+<span style="color: #0000ff;"><strong>一: 通过 clojure-x.x.x.jar 来执行 Clojure 脚本</strong></span><br/><br/>
+<blockquote>
+➜ ~ java -jar ~/Developers/clojure-1.8.0/clojure-1.8.0.jar ~/interop.clj<br />
+3.141592653589793<br />
+3<br />
+FOO<br />
+3.141592653589793<br />
+5<br />
+BAR<br />
+42<br />
+53
+</blockquote>
+<br/>
+上面的执行效果才是正确的, 其中 <code>(+ 1 2 3)</code> 没有 print 是不会有输出的.<br/><br/>
+把它编制成一个 bash 脚本 <code>clojure</code> 就是<br/><br/>
+<pre class="brush:bash">#!/bin/bash<br/><br/>
+java -jar ~/Developers/clojure-1.8.0/clojure-1.8.0.jar $@</pre>
+<br/>
+<code>$@</code> 的意思是传什么给这个 <code>clojure</code> 脚本, 它就原原本本的送到 <code>clojure-1.8.0.jar</code> 的主程序. 然后把 <code>clojure</code> 用<code>chmod +x clojure</code> 改成可执行. 再来看下<br/><br/>
+<blockquote>
+➜ ~ vi clojure<br />
+➜ ~ ./clojure<br />
+Clojure 1.8.0<br />
+user=&gt; ^D<br />
+➜ ~ ./clojure ~/interop.clj<br />
+3.141592653589793<br />
+3<br />
+FOO<br />
+3.141592653589793<br />
+5<br />
+BAR<br />
+42<br />
+53
+</blockquote>
+<br/>
+没参数时进入控制台, 有参数时当成文件加载执行<br/><br/>
+<span style="color: #0000ff;"><strong>二: lein 通过 exec 插件执行 clojure 脚本</strong></span><br/><br/>
+lein 的插件安装可以参考 <a href="https://github.com/kumarshantanu/lein-exec">lein-exec</a>. 全局安装的话只要在 <code>~/.lein/profiles.clj</code> 中添加一行<br/><br/>
+<pre class="brush:clj">{:user {:plugins [[lein-exec "0.3.6"]]}}</pre>
+<br/>
+再次启动 <code>lein</code> 就会自动下载相应的插件依赖, 并加入了 <code>exec</code> 任务, 用 <code>lein help exec</code> 查看这个插件的具体命令使用方法. 简单的用来加载外部 <code>clj</code> 文件的指令是<br/><br/>
+<blockquote>
+➜ ~ lein exec ~/interop.clj<br />
+3.141592653589793<br />
+3<br />
+FOO<br />
+3.141592653589793<br />
+5<br />
+BAR<br />
+42<br />
+53
+</blockquote>
+<br/>
+执行结果是一致的.<br/><br/>
+不仅如此, Clojure 也能用作系统脚本语言, 像其他脚本语言一样. 下载 <a href="https://raw.github.com/kumarshantanu/lein-exec/master/lein-exec">https://raw.github.com/kumarshantanu/lein-exec/master/lein-exec</a> 放在 PATH 下, 并改成可执行.<br/><br/>
+之后只要在 <code>clj</code> 脚本第一行写上<br/><br/>
+<blockquote>
+#!/usr/bin/env lein-exec 
+</blockquote>
+<br/>
+或<br/><br/>
+<blockquote>
+#!/bin/bash lein-exec
+</blockquote>
+<br/>
+就可以用 Clojure 快乐的写系统脚本了.<br/><br/>
+另外, 如果 <code>clj</code> 文件是放在一个  <code>lein</code> 项目中, 应该是可以通过 <code>lein</code> 任务来执行主函数中的代码的, 下面是一个简单的 lein 项目<br/><br/>
+<blockquote>
+lein new myapp; cd myapp
+</blockquote>
+<br/>
+使用默认模板创建了一个 lein 项目 myapp, 并进到项目目录. 在当前项目的  <code>project.clj</code> 中加上<br/><br/>
+<blockquote>
+:main myapp.core
+</blockquote>
+<br/>
+编辑 <code>src/core.clj</code> 文件, 内容如下:<br/><br/>
+<pre class="lang:default decode:true ">(ns myapp.core)<br/><br/>
+(defn -main [&amp; args]
+  (println "Hello, World!"))</pre>
+<br/>
+可以运行 <code>lein run</code> 了<br/><br/>
+<blockquote>
+➜ myapp lein run<br />
+Hello, World!
+</blockquote>
+<br/>
+附: 在我目前的  <code>~/.lein/profiles.clj</code> 文件中已用到了三个插件<br/><br/>
+<pre class="brush:clj">{:user {:plugins [[venantius/ultra "0.4.1"]
+                  [lein-iclojure "1.2"]
+                  [lein-exec "0.3.6"] ]}}</pre>
+<br/>
+分别是 控制台着色, 代码提示, 和执行插件.

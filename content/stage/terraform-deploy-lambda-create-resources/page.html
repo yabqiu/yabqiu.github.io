@@ -1,0 +1,144 @@
+---
+title: Terraform 进阶 - 部署 Lambda 并创建相关资源
+url: /terraform-deploy-lambda-create-resources/
+date: 2017-08-28T02:46:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2017/08/terraform_logo.png"
+categories:
+  - AWS
+tags: 
+  - lambda
+  - Terraform
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8235 
+wpStatus: publish
+views: 3007
+lastmod: 2021-09-10T12:58:43-05:00
+---
+
+昨日刚刚体验了 Terraform 是一个什么鬼东西 <a href="/terraform-get-started-with-first-sample/">Terraform 使用 - 从最简单例子开始</a>，今天再进一步。将来尝试的是使用 Terraform 来部署一个 Lambda 应用，并创建相关的资源。</p>
+<br/>
+本例中的 Lambda 要由 Kinesis 来触发，并写数据到 S3 Bucket 中去，所以需要做的事情大致如下：<br/><br/>
+<ol>
+    <li>创建 IAM Role, 该 Role 要能访问 S3, Kinesis 和 CloudWatch</li>
+    <li>创建一个 Kinesis Stream (指定 Shard 数目)</li>
+    <li>创建一个 S3 Bucket</li>
+    <li>部署 Lambda (要指定能访问 S3 Bucket 的 Role, 并其他参数，如环境变量)</li>
+    <li>设置 Lambda 的 Kinesis 触发器 (指定源 Kinesis Stream 和  batchSize)</li>
+</ol>
+<br/>
+以下是 Lambda 的实现代码，从 Kinesis 读出字符串，逗号分割，第一部分作为 S3 Key, 第二部分作为文件内容写入到 S3 Bucket 中去。S3 Bucket 名称从环境变量中读取。<!--more--><br/><br/>
+<pre class="lang:default decode:true ">public class Handler implements RequestHandler&lt;KinesisEvent, String&gt; {<br/><br/>
+    @Override
+    public String handleRequest(KinesisEvent event, Context context) {
+        LambdaLogger logger = context.getLogger();
+        event.getRecords().forEach(record -&gt; {
+            String data = new String(record.getKinesis().getData().array());
+            logger.log("Received data: " + data);<br/><br/>
+            String[] keyAndContent = data.split(",");
+            ObjectMetadata objectMetadata = new ObjectMetadata();
+            objectMetadata.setContentLength(keyAndContent[1].getBytes().length);
+            AmazonS3 s3Client = AmazonS3ClientBuilder.defaultClient();
+            s3Client.putObject(System.getenv("BUCKET_NAME"), keyAndContent[0],
+                new ByteArrayInputStream(keyAndContent[1].getBytes()), objectMetadata);
+        });
+        return null;
+    }
+}
+</pre>
+<br/>
+接下来的事情全部要交给 Terraform 来完成了，在于怎么写那个 tf 文件，为方便起见我们直接在这个 Java 项目根目录下创建一个  <code>main.tf</code> 文件。<br/><br/>
+<pre class="lang:js decode:true ">provider "aws" {
+  region                  = "us-east-1"
+  shared_credentials_file = "/Users/Yanbin/.aws/credentials" //默认就是 ~/.aws/credentials
+  profile                 = "yanbin"                         //默认是 default
+}<br/><br/>
+resource "aws_s3_bucket" "test-bucket" {
+  bucket = "yanbin-test-bucket"
+  acl    = "private"<br/><br/>
+  tags {
+    Environment = "test"
+  }
+}<br/><br/>
+//resource 后第二个字符串 name "test-stream" 还是很有用的，后面引用就靠它
+resource "aws_kinesis_stream" "test-stream" {
+  name        = "yanbin-test-stream"
+  shard_count = 2<br/><br/>
+  tags {
+    Environment = "test"
+  }
+}<br/><br/>
+resource "aws_iam_role" "role_for_lambda" {
+  name = "yanbin_lambda_role"<br/><br/>
+  //特别要注意这里的格式 &lt;&lt;EOF 是一整体，其中的 JSON 在下行一定要顶格写
+  assume_role_policy = &lt;&lt;EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": ""
+    }
+  ]
+}
+EOF
+}<br/><br/>
+resource "aws_iam_role_policy_attachment" "s3-access-policy-attachment" {
+  role       = "${aws_iam_role.role_for_lambda.name}"
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+}<br/><br/>
+resource "aws_iam_role_policy_attachment" "kinesis-access-policy-attachment" {
+  role       = "${aws_iam_role.role_for_lambda.name}"
+  policy_arn = "arn:aws:iam::aws:policy/AmazonKinesisFullAccess"
+}<br/><br/>
+resource "aws_iam_role_policy_attachment" "cloudWatch-access-policy-attachment" {
+  role       = "${aws_iam_role.role_for_lambda.name}"
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchLogsFullAccess"
+}<br/><br/>
+resource "aws_lambda_function" "yanbin-test-lambda" {
+  filename         = "target/hello-1.0.jar"
+  function_name    = "yanbin-test-lambda"
+  role             = "${aws_iam_role.role_for_lambda.arn}"
+  handler          = "cc.unmi.Handler"
+  source_code_hash = "${base64sha256(file("target/hello-1.0.jar"))}"
+  runtime          = "java8"
+  timeout          = 300
+  memory_size      = 512
+  description      = "Test Lambda created by Terraform"<br/><br/>
+  environment {
+    variables = {
+      BUCKET_NAME = "yanbin-test-bucket"
+    }
+  }
+}<br/><br/>
+resource "aws_lambda_event_source_mapping" "kinesis_trigger" {
+  batch_size        = 3
+  event_source_arn  = "${aws_kinesis_stream.test-stream.arn}"
+  enabled           = true
+  function_name     = "${aws_lambda_function.yanbin-test-lambda.arn}"
+  starting_position = "LATEST"
+}</pre>
+<br/>
+&nbsp;<br/><br/>
+由于贴代码有些问题，所以直接截的图。<code>main.tf</code> 文件创建好，照例要在当前目录中运行 <code>terraform init</code> 先初始，而后才能执行 <code>terraform plan|apply</code> 等命令。编写好的 <code>mail.tf</code> 文件可以用 <code>terraform fmt</code> 帮我们格式化，在运行 <code>terraform apply</code> 之前最好运行一下  <code>terraform plan</code>， 好知道将要发生什么事。<br/><br/>
+<code>terraform apply</code> 执行上面的配置，Terraform 将会做以下事情<br/><br/>
+<ol>
+    <li>创建 Bucket <code>yanbin-test-bucket</code>, 访问规则是 private, 设定 Tag <code>Environment = "test"</code></li>
+    <li>创建 Kinesis Stream <code>yanbin-test-stream</code>, Shard 数目是 2，设定 Tag <code>Environment = "test"</code></li>
+    <li>创建 IAM Role <code>yanbin-lambda_role</code>, 并赋予 S3, Kinesis, CloudWatch 的完全访问权限</li>
+    <li>上传程序包部署 Lambda <code>yanbin-test-lambda</code>, 并设置 role 为上一步创建的 role, 设置其他属性，及环境变量 <code>BUCKET</code>. 以后运行 <code>terraform plan</code> 只有发现 <code>hello-1.0.jar</code> 包的哈稀值变了才会更新 Lambda 程序包</li>
+    <li>为上面的 Lambda 创建一个 Kinesis Trigger, batchSize 为 3， 监听第 2 步创建的 Kinesis Stream</li>
+</ol>
+<br/>
+现在一切准备就绪，可以登陆到 AWS 的控制台看下 Terraform 是不是为我们创建好了应有的东西。一切正常的就可以发送 Kinesis 消息到我们新创建的 Kinesis Stream 了，看看在 Bucket 里是不是有了 Lambda 生成的文件。<br/><br/>
+上面创建的东西不想要了，想统统干掉，那就更简单了 <code>terraform destroy</code> 就行了，简值是键删除。

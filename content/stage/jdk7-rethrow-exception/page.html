@@ -1,0 +1,129 @@
+---
+title: JDK 7 代码中对捕获再抛出异常时的处理--即异常类型推断
+url: /jdk7-rethrow-exception/
+date: 2013-10-04T10:13:24-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - jdk7
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5727 
+wpStatus: publish
+views: 1528
+lastmod: 2021-05-05T16:15:59-05:00
+---
+
+JDK 发展过程中，第一次变化最大数 JDK1.5，加入了变长参数，泛型。泛型的最大的受益者是集合。JDK7 虽说引进了同时捕获多个异常(Multi-Catch)，更聪明一点类型推断，资源的释放等，但我觉得变化还不大。接下来众人期望的 JDK8 的 Lambda 表达式才是激动人心的，恐怕这一特性的大赢家仍是集合。</p>
+<br/>
+这样 JDK 才不至于离 C# 太远，纯粹语言上讲，我更景仰 C#，比如它的匿名类型，更不论人家的 Lambda 了。<br/><br/>
+<span style="font-family: Menlo;"> var person = new { Name = "Unmi", Website = "http://unmi.cc" };<br />
+Console.WriteLine(person.Name);</span><br/><br/>
+这要到 Scala 中才能见到这种影子。<br/><br/>
+<blockquote>
+注: JDK 从 1.5 起就加入了象 Chrome, Firefox 那样的版本党了，所以这个版本也叫做 JDK5，不管是后来的 JDK6, JDK7 等等，其实在命令行下 java -version 显示出来的也还是 1.5.0, 1.7.0_40 这种理智的版本号的。
+</blockquote>
+<br/>
+回过神来，我们要说的是 JDK7 对异常的处理，不讲同时捕获多个异常和 try-with-resource 的处理，而要说的是捕获异常再次抛出时进步，这在某方面得益于 JDK7 类型推断。JDK7 类型推断对于泛型来说，它可以不用这么写<!--more--><br/><br/>
+List&lt;String&gt; result = new ArrayList&lt;String&gt;();<br/><br/>
+而代之以<br/><br/>
+List&lt;String&gt; result = new ArrayList&lt;&gt;();<br/><br/>
+JDK7 认为既然前面有 List&lt;String&gt;, 后面何必再重复一遍 &lt;String&gt; 呢。这时 Scala 和 C# 就会笑而不语了，会觉得这样的类型推断还不够彻底，它们能搬出更聪明的 <strong><span style="color: #800000;">var</span></strong> 关键字。<br/><br/>
+发散性思维的可怕之处在于一直在做前戏，都快睡着了。切入正题吧。看看 JDK7 是怎么进行异常类型的推断<br/><br/>
+<strong>1. 同一个方法中的代码</strong><br/><br/>
+在 JDK7 之前下面的代码是可以编译通过的，但 JDK7 编译器不认可<br/><br/>
+<pre class="lang:default decode:true">    class SubException1 extends Exception {}
+    class SubException2 extends Exception {}
+    
+    public void testThrow() throws Exception {
+        try{
+            throw new SubException1();
+        }catch(Exception e){
+            try{
+                throw e; //1
+            }catch(SubException2 e2){ //JDK6 可编译通过，JDK7 下无法通过编译
+            }
+        }
+    }
+</pre>
+<br/>
+在 JDK7 下报错为：Unreachable catch block for App.SubException2. This exception is never thrown from the try statement body<br/><br/>
+JDK7 编译器在 <strong>1</strong> 处能推断出抛出的异常类型是 SubException1, 底下的 catch(SubException2 e2) 就别白费心思啦。<br/><br/>
+<strong>2. 调用抛出异常的方法时</strong><br/><br/>
+下面的代码在 JDK7 这前是无法通过编译，JDK7 下通过<br/><br/>
+<pre class="lang:default decode:true">    public void doSomething() /*throws Exception*/{
+        try {
+            doSomethingElse();
+        } catch (Exception e) {
+            throw e; //JDK6 下报 Unhandled exception type Exception 错误，必须声明抛出 Exception
+        }
+    }
+    
+    public void doSomethingElse(){
+       throw new RuntimeException(); 
+    }
+</pre>
+<br/>
+在 JDK6 下 doSomething() 方法必须声明 throws Exception 抛出 Exception 类型的异常才成，因为它只简单的看到像是在  throw e:Exeption。而 JDK7 编译器在 try doSomethingElse() 推断出 catch(Exception e) 就是一个 RuntimeException 非检测异常类型，所以 doSomething() 方法中可以省去 throws Exception<br/><br/>
+3. 进一步测试 JDK7 处理异常时到底有多聪明<br/><br/>
+下面的代码对 JDK7 来说可以通过，糊弄不了它的，也无须为 doSomething() 方法声明 throws Exception<br/><br/>
+<pre class="lang:default decode:true">    public void doSomething() {
+        try {
+            doSomethingElse();
+        } catch (Exception e) {
+            throw e; 
+        }
+    }
+    
+    public void doSomethingElse(){
+       doAnotherThing();
+    }
+    
+    public void doAnotherThing(){
+        throw new RuntimeException();
+    }
+</pre>
+<br/>
+这一段也没问题：<br/><br/>
+<pre class="lang:default decode:true">    public void doSomething() {
+        try {
+            doSomethingElse();
+        } catch (Exception e) {
+            throw e;
+        }
+    }<br/><br/>
+    public void doSomethingElse() {
+        try {
+            doAnotherThing();
+        } catch (Exception e) {
+            throw e;
+        }
+    }<br/><br/>
+    public void doAnotherThing() {
+        throw new RuntimeException();
+    }
+</pre>
+<br/>
+所以可以相信 JDK7 对异常类型的推断还是有一定深度的。<br/><br/>
+但 JDK7 看到如下的代码同样会傻眼<br/><br/>
+<pre class="lang:default decode:true ">    public void doSomething() /*JDK7 下也必须加上 throws Exception*/{
+        try {
+            doSomethingElse();
+        } catch (Exception e) {
+            throw e;
+        }
+    }<br/><br/>
+    public void doSomethingElse() throws Exception{
+        throw new RuntimeException();
+    }
+</pre>
+<br/>
+在 JDK7 下也必须为 doSomething() 加上  throws Exception 声明，只看到 doSomethingElse() 方法的 throws Exception 声明就认定它抛出的是 Exception 类型，而跳过的 throw new RuntimeException() 内容的具体推断。<br/><br/>
+因此当你在为 catch(Exception e) { throw e; } 后要不要为所在方法加上 throws 声明时，可以查查 try 块中调用的方法有没有声明抛出需检测的异常。当然，有现代化的 IDE 根本不担心这个，按错误提示来办事，通常只需一个简单的快捷键就帮你做好了，但任何时候理解是万岁。<br/><br/>
+参考：<a href="https://weblogs.java.net/blog/manningpubs/archive/2013/06/13/using-throws-and-throw-statements-java" target="_blank" rel="noopener">Using Throws and Throw Statements in Java</a>

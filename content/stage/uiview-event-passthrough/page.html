@@ -1,0 +1,171 @@
+---
+title: UIView 中的控件事件穿透 Passthrough 的实现
+url: /uiview-event-passthrough/
+date: 2012-02-19T09:08:08-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - UIView
+  - popover
+  - passthrough
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4085 
+wpStatus: publish
+views: 14612
+lastmod: 2021-09-03T15:36:49-05:00
+---
+
+我们在有多个 UIView 层叠时，比如一个按钮被一个 UIView 遮盖时，想要在点击最上层的 UIView 时能触发按钮的相应事件，我们该如何实现呢，初步可以想到几种办法：</p>
+<br/>
+1. 把按钮上层的所有 UIView 的 userInteractionEnabled 属性设置为 NO，要是 UIView 有自己的交互事件该如何办呢？而且这个 userInteractionEnabled 不能动态设置，等到点击后决定设置它的 NO 是没用的<br/><br/>
+2. UIView 接受到点击事件后主动去触发下面按钮的点击，这时的关题有三，按钮没有点击过程中的交换效果、多层 UIView 时不切实际，逐层下传吗、还有就是其他双击、三击或别的手势如何处理<br/><br/>
+我也一直被前面两种方式纠缠着，同时也让 UIPopoverController 的 NSArray *passthroughViews 属性提醒着，因为对于 UIPopoverController，设置到它的 passthoughViews 属性中的控件事件可以完全从 UIDimmingView 下透出来。但苦于不可能看到 UIPopoverController 的源码，还是后面一而再的 Google 终于发现了 UIView 的方法：<br/><br/>
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event;   // recursively calls -pointInside:withEvent:. point is in the receiver's coordinate system<!--more--><br/><br/>
+只要实现了最顶层的 UIView 的 hitTest 方法，在某些情况返回下层的某个按钮实例，即相当于把那个按钮的事件透出来了，比如在点击落在该按钮上时，不管这个按钮在 UIView 下多少层都可以把它挖出来。<br/><br/>
+先看效果图：<br/><br/>
+<div align="center">
+<table border="0" align="center">
+<tbody>
+<tr>
+<td><img class="aligncenter wp-image-4242" title="passthrough1" src="/wp-content/uploads/2012/02/passthrough1.png" alt="" /></td>
+<td>  </td>
+<td><img class="aligncenter wp-image-4242" title="passthrough1" src="/wp-content/uploads/2012/02/passthrough2.png" alt="" /></td>
+</tr>
+</tbody>
+</table>
+</div>
+<br/>
+<p style="text-align: center;"><img class="aligncenter wp-image-4242" title="passthrough1" src="http://unmi.cc/wp-content/uploads/2012/02/passthrough3.png" alt="" /></p>
+<br/>
+三个图分别是：<br/><br/>
+1. 所见到的，按钮被半透明红色 View 遮住了一部分<br />
+2. 可点击未遮住的按钮部分，可看到按钮被点下未抬起的效果<br />
+3. 在红色的 View 中点击按钮被遮住部分，同样触发了按钮的相应事件，且有中间效果，也就是说按钮穿透出来了<br/><br/>
+再看代码实现，有两部分代码，分别是 ViewController 和  CustomController<br/><br/>
+ViewController.h<br/><br/>
+<pre class="lang:default decode:true ">//
+//  ViewController.h<br/><br/>
+//
+//  Created by Unmi on 11/15/11.
+//  Copyright (c) 2011 http://unmi.cc. All rights reserved.
+//<br/><br/>
+#import &lt;UIKit/UIKit.h&gt;<br/><br/>
+@interface ViewController : UIViewController{
+}<br/><br/>
+@end</pre>
+<br/>
+ViewController.h<br/><br/>
+<pre class="lang:default decode:true">//
+//  ViewController.m
+//
+//  Created by Unmi on 11/15/11.
+//  Copyright (c) 2011 http://unmi.cc. All rights reserved.
+//<br/><br/>
+#import "ViewController.h"
+#import "CustomView.h"<br/><br/>
+@implementation ViewController{
+    UIButton *passthroughButton;
+}<br/><br/>
+#pragma mark - View lifecycle<br/><br/>
+- (void)viewDidLoad
+{
+    [super viewDidLoad];<br/><br/>
+    passthroughButton = [UIButton buttonWithType:UIButtonTypeRoundedRect];
+    [passthroughButton setTitle:@"Passthrough" forState:UIControlStateNormal];
+    [self.view addSubview:passthroughButton];
+    passthroughButton.frame = CGRectMake(20, 50, 120, 28);
+    [passthroughButton release];
+    
+    CustomView *customView = [[CustomView alloc] initWithFrame:CGRectMake(80, 10, 300, 200)];
+    customView.backgroundColor = [UIColor colorWithRed:1 green:0 blue:0 alpha:.5];
+    customView.passthroughViews = [NSArray arrayWithObject:passthroughButton];
+    [self.view addSubview:customView];
+    [customView release];
+}<br/><br/>
+- (void)dealloc {
+    [super dealloc];
+}
+@end</pre>
+<br/>
+CustomView.h<br/><br/>
+<pre class="lang:default decode:true">//
+//  CustomView.h
+//  TestPopover
+//
+//  Created by Unmi on 2/19/12.
+//  Copyright (c) 2012 http://unmi.cc. All rights reserved.
+//<br/><br/>
+#import &lt;UIKit/UIKit.h&gt;<br/><br/>
+@interface CustomView : UIView
+@property (nonatomic, copy) NSArray *passthroughViews;
+@end</pre>
+<br/>
+CustomView.m<br/><br/>
+<pre class="lang:default decode:true ">//
+//  CustomView.m
+//
+//  Created by Unmi on 2/19/12.
+//  Copyright (c) 2012 http://unmi.cc. All rights reserved.
+//<br/><br/>
+#import "CustomView.h"<br/><br/>
+@interface CustomView()
+-(BOOL) isPassthroughView: (UIView*) view;
+@end<br/><br/>
+@implementation CustomView{
+    BOOL testHits; 
+}<br/><br/>
+@synthesize passthroughViews=_passthroughViews;<br/><br/>
+-(UIView*) hitTest:(CGPoint)point withEvent:(UIEvent *)event{
+    if(testHits){
+        return nil;
+    }
+    
+    if(!self.passthroughViews
+        || (self.passthroughViews &amp;&amp; self.passthroughViews.count == 0)){
+        return self;
+    } else {
+        
+        UIView *hitView = [super hitTest:point withEvent:event];
+        
+        if (hitView == self) {
+            //Test whether any of the passthrough views would handle this touch
+            testHits = YES;
+            CGPoint superPoint = [self.superview convertPoint:point fromView:self];
+            UIView *superHitView = [self.superview hitTest:superPoint withEvent:event];
+            testHits = NO;
+            
+            if ([self isPassthroughView:superHitView]) {
+                hitView = superHitView;
+            }
+        }
+        
+        return hitView;
+    }
+}<br/><br/>
+- (BOOL)isPassthroughView:(UIView *)view {
+    
+    if (view == nil) {
+        return NO;
+    }
+    
+    if ([self.passthroughViews containsObject:view]) {
+        return YES;
+    }
+    
+    return [self isPassthroughView:view.superview];
+}             <br/><br/>
+-(void) dealloc{
+    self.passthroughViews = nil;
+}<br/><br/>
+@end</pre>
+<br/>
+关键要理解 hitTest 方法的作用，可参考：<br/><br/>
+1. <a href="http://blog.sina.com.cn/s/blog_677089db01012wpg.html">http://blog.sina.com.cn/s/blog_677089db01012wpg.html</a><br />
+2. <a href="https://github.com/werner77/WEPopover" target="_blank" rel="noopener">https://github.com/werner77/WEPopover</a>

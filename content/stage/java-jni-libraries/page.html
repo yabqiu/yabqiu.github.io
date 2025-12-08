@@ -1,0 +1,290 @@
+---
+title: Java 调用本地动态库的组件(javah, JNA, JNR-FFI)
+url: /java-jni-libraries/
+date: 2022-06-20T16:20:13-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - JNI
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12414 
+wpStatus: publish
+views: 1686
+lastmod: 2022-11-11T10:01:47-06:00
+---
+
+还是很 久很久以前，当初有 Java 调用本地动态库需求的时候，尝试过用 javah/native 原生的方式在 Java 中使用动态库，再就是小试了 <a href="https://sourceforge.net/projects/jnative/">JNative</a>，它调用动态库只需 Java 端的动作, 它最后的更新日期是 9 年前 2013-04-26，基本是应该选择放弃了。<br/><br/>
+关于 JNative 的使用写过两篇<br/><br/>
+<ol>
+    <li><a href="https://yanbin.blog/java-jnative-dll-concise/">Java调用动态库最简便方法和最好用的组件</a></li>
+    <li><a href="https://yanbin.blog/jnative-java-pass-struct/">使用JNative,在Java中传递一个C/C++结构参数到动态库中</a></li>
+</ol>
+<br/>
+如今想继续发掘下是否有别的更好的调用本地库的 JNI 组件，找到有<br/><br/>
+<ol>
+    <li><a href="https://www.teamdev.com/jniwrapper">JNIWrapper</a>：居然是一个收费的，而且价格不菲，不作绍</li>
+    <li><a href="https://github.com/nativelibs4java/BridJ">BridJ</a>：也是 7 年前才有过代码的更新</li>
+    <li><a href="https://github.com/java-native-access/jna">JNA</a>(Java Native Access): 也就它稍为活跃一点点</li>
+    <li><a href="https://github.com/jnr/jnr-ffi">JNR-FFI</a>：最近几个月也有更新，不知道使用体验如何</li>
+</ol>
+<br/>
+<!--more--><br/><br/>
+对比而言，JNA 和 JNR-FFI 值得一试。在先体验它们之前回忆一下 javah 如何调用本地动态库，以最简单快速的方式感触一翻，在进入 JNA 和 JNR-FFI 有所对比<br/><br/>
+<h3>原生方式使用 JNI</h3><br/><br/>
+以 Mac OS X 下用 gcc 编译器为例，JDK 为 11<br/><br/>
+HelloJNI.java<br/><br/>
+<pre class="lang:default decode:true">package example;<br/><br/>
+public class HelloJNI {
+  static {
+    System.loadLibrary("hello");
+  }<br/><br/>
+  private static native void sayHello();<br/><br/>
+  public static void main(String[] args) {
+    sayHello();
+  }
+}</pre>
+<br/>
+编译并生成 JNI C/C++ 头文件<br/><br/>
+<blockquote>
+$ javac -d ./ -h ./ HelloJNI.java
+</blockquote>
+<br/>
+会生成 example/HelloJNI.class 和 example_HelloJNI.h 文件<br/><br/>
+注：javah 在 Java 9 中不推荐使用，并从 Java 10 中移除了，如果分 javac 和 javah 两步操作，总是看到以下错误的话<br/><br/>
+<blockquote>
+Error: Could not find class file for 'example.HelloJNI'.
+</blockquote>
+<br/>
+大概是编译 example.HelloJNI 用的 javac 和 javah 来自不同的 JDK，比如 javac 是 JDK 11 的，javah 是 JDK 8 中的。<br/><br/>
+example_HelloJNI.h 中声明的方法是<br/><br/>
+<pre class="lang:default decode:true">JNIEXPORT void JNICALL Java_example_HelloJNI_sayHello
+  (JNIEnv *, jclass);</pre>
+<br/>
+<h3>实现本地方法并生成动态库</h3><br/><br/>
+创建 <code>example_HelloJNI.c</code>, 内容为<br/><br/>
+<pre class="lang:default decode:true">#include &lt;jni.h&gt;
+#include &lt;stdio.h&gt;
+#include "example_HelloJNI.h"<br/><br/>
+JNIEXPORT void JNICALL Java_example_HelloJNI_sayHello(JNIEnv *env, jobject thisObj) {
+   printf("Hello World!\n");
+   return;
+}</pre>
+<br/>
+生成动态库<br/><br/>
+<blockquote>
+$ gcc -fPIC -I $JAVA_HOME/include -I $JAVA_HOME/include/darwin -shared -o libhello.dylib example_HelloJNI.c
+</blockquote>
+<br/>
+这会在当前目录下生成 <code>hello.so</code> 文件。可用 <code>nm</code> 命令查看其中本地函数<br/><br/>
+<blockquote>
+$ nm hello.so|grep say<br />
+0000000000003f60 T _Java_example_HelloJNI_sayHello
+</blockquote>
+<br/>
+执行 example.HelloJNI<br/><br/>
+<blockquote>
+$ java -Djava.library.path=./ example.HelloJNI<br />
+Hello World!
+</blockquote>
+<br/>
+实际在 Mac OS X 下顺利走完上面的流程经历了一些磕磕绊绊。在 Mac OS X 下<br/><br/>
+<blockquote>
+System.loadLibrary("hello");
+</blockquote>
+<br/>
+对应的动态库文件是 <code>libhello.dylib</code>, 所以在用 <code>gcc</code> 编译生成的动态库文件名必须是 <code>libhello.dylib</code>，否则无论如何设置 <code>java.library.path</code> 系统属性还是环境变量 <code>LD_LIBRARY_PATH</code> 都会摆脱不掉 <code>java.lang.UnsatisfiedLinkError</code> 的错误。<br/><br/>
+更直接的加载动态库文件的方法是指定动态库文件名调用 System.load() 方法 <br/><br/>
+<blockquote>
+System.load("/Users/yanbin/workspace/test/hello.so");
+</blockquote>
+<br/>
+都不用管 java.library.path 和 LD_LIBRARY_PATH 的值。<br/><br/>
+注意：用 System.loadLibrary("hello"); 在 Linux 和 Windows 下会分别查找 <code>hello.so</code> 和 <code>hello.dll</code> 文件。<br/><br/>
+欲知晓 <code>System.loadLibrary("hello")</code> 实际会加载哪个文件，可用 <code>System.mapLibraryName("hello");</code> 查看, 比如它在 Mac OS X 下输出为 <code>libhello.dylib</code>。<br/><br/>
+小结：原生的使用 JNI 方式需要 Java 和 C/C++ 两方互动，即使是已经有现成的动态库，也需要从 Java 的 native 方法出发，javah(或 javac -h) 生成头文件，编写实现来使用现成的动态库，或单独为 Java 应用构建单独的 JNI 用的动态库文件。<br/><br/>
+<h3>使用 JNA 调用本地动态库</h3><br/><br/>
+有了前面原生的使用 JNI 方式作铺垫后，我们过度到更为便捷的使用动态库的方式，不需要写任何 C/C++ 代码，现成的动态库文件拿来即可用。JNative 也是允许我们直接使用别人生成好的动态库，这里来了解 JNA 和接下来的 JNR-FFI。<br/><br/>
+重新制做一个动态库文件作为演示用，如果有现成的动态库，知道其中导出的方法可以跳过这一步，直接使用第三方的动态库<br/><br/>
+演示用的 C 代码 hello.c<br/><br/>
+<pre class="lang:default decode:true">#include &lt;stdio.h&gt;
+ 
+void sayHello(char* name)
+{
+    printf("hello %s\n", name);
+}
+</pre>
+<br/>
+编译生成  libhello.dylib 文件<br/><br/>
+<blockquote>
+$ gcc -fPIC -shared -o libhello.dylib hello.c
+</blockquote>
+<br/>
+会在当前目录下产生 libhello.dylib 文件。<br/><br/>
+注：在 Linux 和 Windows 文件名应为 hello.dll 和 libhello.so。<br/><br/>
+真正需要自己编写的 Java 代码 JNADemo.java<br/><br/>
+<pre class="lang:default decode:true">package example;<br/><br/>
+import com.sun.jna.Library;
+import com.sun.jna.Native;<br/><br/>
+public class JNADemo {
+  public interface CLibrary extends Library {
+    CLibrary clib = Native.load("hello", CLibrary.class);<br/><br/>
+    void sayHello(String name); // 映射到 hello.c 中的 sayHello 函数
+  }<br/><br/>
+  public static void main(String[] args) {
+    CLibrary.clib.sayHello("world");
+  }
+}
+</pre>
+<br/>
+上面代码用到 <code>com.sun.jna.{Library,Native}</code>, 看来 JNA 还是出生名门 sun.com，不过已是没落贵族。引入该 JNA 库的 Maven 依赖是<br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;net.java.dev.jna&lt;/groupId&gt;
+    &lt;artifactId&gt;jna&lt;/artifactId&gt;
+    &lt;version&gt;5.11.0&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+jna:5.11.0 是 2022-3-27 发布到 Maven 中央仓库当前最新版，比从 github 上看到的更活跃。用 <code>maven dependency:tree</code> 显示来看它没有带其他依赖，也就是说使用 JNA 只需用到一个 jna-5.11.0.jar 文件, 大小 1.8M, 很干净。它囊括了多数平台下使用动态库的代码，实现原理是由它为平台提供的中间动态库去加载调用实际的用户动态库。<br/><br/>
+不使用 Maven 的话只需把下载 jna-5.11.0.jar 并放到项目的 lib 目录中(也可以其他目录名)。<br/><br/>
+然后编译<br/><br/>
+<blockquote>
+$ javac -cp lib/jna-5.11.0.jar -d ./ JNADemo.java
+</blockquote>
+<br/>
+在当前目录下会产生 example/JNADemo.class 文件，我们再把前面生成的 libhello.dylib 也拷入到 lib 目录中<br/><br/>
+执行<br/><br/>
+<blockquote>
+$ java -cp .:./lib:lib/jna-5.11.0.jar example.JNADemo<br />
+hello world
+</blockquote>
+<br/>
+说明：从代码 <a href="https://github.com/java-native-access/jna/blob/master/src/com/sun/jna/NativeLibrary.java">NativeLibrary</a> 可知 JNA Native.load("hello", ...) 加载动态库的方式有<br/><br/>
+<ol>
+    <li style="list-style-type: none;">
+<ol>
+    <li>依据系统属性 <code>jna.library.path</code>, 或 <code>jna.platform.library.path</code>, 或 <code>java.library.path</code> 配置的路径中查找</li>
+    <li>或环境变量 <code>LD_LIBRARY_PATH</code> 查找动态库</li>
+    <li>动态库文件路径，如写成 CLibrary clib = Native.load("/Users/yanbin/JNADemo/lib/libhello.dylib", CLibrary.class);</li>
+    <li>从 classpath 下去找 <code>libhello.dylib</code> 文件的，所以这里用了 -cp 中的 <code>lib</code> 指示 JNA 去定位到 <code>lib</code> 目录中的 <code>libhello.dylib</code> 文件</li>
+    <li>以及 Mac OSX 平台下如从 <code>~/Library/Frameworks /System/Library/Frameworks</code> 等处查找</li>
+</ol>
+</li>
+</ol>
+<br/>
+配置系统属性 <code>jna.debug_load=true</code> 可打印出查找动态库的步骤。<br/><br/>
+另外, 加载动态库的操作是同步的，并且会缓存已加载的动态库，因此再执行一次 <code>CLibrary.clib.sayHello("world")</code> 无需加载动态库了<br/><br/>
+JNA 大大简化了 JNI 应用，其他的主要内容就是要清楚在 C/Java 之间的类型映射了，参见 <a href="https://github.com/java-native-access/jna/blob/master/www/Mappings.md">JNA Default Type Mappings</a>。大致列出就是<br/><br/>
+<ol>
+    <li>char               &lt;-&gt;  byte</li>
+    <li>short             &lt;-&gt;  short</li>
+    <li>wchar_t        &lt;-&gt;  char</li>
+    <li>int(integer)  &lt;-&gt;  int</li>
+    <li>int(boolean) &lt;-&gt;  boolean</li>
+    <li>long                &lt;-&gt;  NativeLong</li>
+    <li>long long       &lt;-&gt;  long</li>
+    <li>flot                  &lt;-&gt;  float</li>
+    <li>double            &lt;-&gt;  double</li>
+    <li>char*               &lt;-&gt;  String</li>
+    <li>void*               &lt;-&gt;  Pointer</li>
+</ol>
+<br/>
+再有就是更复杂的类型映射，如结构，联合体，类类型等，这里不细说，使用到的话再研究。<br/><br/>
+还可用 JNA 来调用 C 的标准库，如 printf, scanf 等函数<br/><br/>
+<pre class="lang:default decode:true">public interface StandardAccess extends Library {
+    StandardAccess INSTANCE = Native.load("c", StandardAccess.class);<br/><br/>
+    void printf(String format, Object ... args);
+    int scanf(String format, Object ... args);
+}</pre>
+<br/>
+<h3>使用 JNR-FFI 调用本地动态库</h3><br/><br/>
+使用 JNR-FFI 的 Maven 依赖配置<br/><br/>
+<pre class="lang:default decode:true ">&lt;dependency&gt;
+    &lt;groupId&gt;com.github.jnr&lt;/groupId&gt;
+    &lt;artifactId&gt;jnr-ffi&lt;/artifactId&gt;
+    &lt;version&gt;2.2.12&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+<code>mvn dependency:tree</code> 显示的就有许多传递依赖了<br/><br/>
+<blockquote>
+<pre class="lang:default decode:true">[INFO] \- com.github.jnr:jnr-ffi:jar:2.2.12:compile
+[INFO]    +- com.github.jnr:jffi:jar:1.3.9:compile
+[INFO]    +- com.github.jnr:jffi:jar:native:1.3.9:runtime
+[INFO]    +- org.ow2.asm:asm:jar:9.2:compile
+[INFO]    +- org.ow2.asm:asm-commons:jar:9.2:compile
+[INFO]    +- org.ow2.asm:asm-analysis:jar:9.2:compile
+[INFO]    +- org.ow2.asm:asm-tree:jar:9.2:compile
+[INFO]    +- org.ow2.asm:asm-util:jar:9.2:compile
+[INFO]    +- com.github.jnr:jnr-a64asm:jar:1.0.0:compile
+[INFO]    \- com.github.jnr:jnr-x86asm:jar:1.0.2:compile</pre>
+</blockquote>
+<br/>
+看得出来它在字节码生成优化上进行发力，所以性能上会比 JNA 要好。参见 <a href="https://github.com/zakgof/java-native-benchmark">java-native-benchmark</a>, 基本上就是直接用 JNI 比较快，JNR 差得不是很远，但 JNA 总是最慢，它们在相对时间上的几个参考值，越小越好<br/><br/>
+<blockquote>
+JNI         JNR       JNA <br />
+2.239      3.560    173.064<br />
+0.255      3.558     8.909
+</blockquote>
+<br/>
+使用方式与 JNA 类似，官方文档 <a href="https://github.com/jnr/jnr-ffi/blob/master/docs/README.md">JNR-FFI User Documentation</a><br/><br/>
+简单应用，利用前面 JNA 的 libhello.dylib 动态库文件，Java 代码 (JNRDemo.java) 如下<br/><br/>
+<pre class="lang:default decode:true">package example;<br/><br/>
+import jnr.ffi.LibraryLoader;<br/><br/>
+public class JNRDemo {
+  public interface CLibrary {
+    void sayHello(String name);
+  }<br/><br/>
+  public static void main(String[] args) {
+    CLibrary clib = LibraryLoader.create(CLibrary.class).load("hello");
+    clib.sayHello("World!");
+  }
+}</pre>
+<br/>
+编译，用 mvn compile 编译，由 Maven 管理依赖，或把上面 <code>mvn dependency:tree</code> 显示的所有依赖拷入到 lib 目录中，然后用 java 命令编译<br/><br/>
+<blockquote>
+$ javac -d ./ -cp .:lib/jffi-1.3.9.jar:lib/jffi-1.3.9-native.jar:&lt;其他的 jar 包&gt; JNRDemo.java
+</blockquote>
+<br/>
+然后执行用<br/><br/>
+<blockquote>
+$ java -cp .:lib/jffi-1.3.9.jar:lib/jffi-1.3.9-native.jar:&lt;其他的 jar 包&gt; -Djava.library.path=lib example.JNRDemo<br />
+hello World!
+</blockquote>
+<br/>
+与 JNA 不同的是，JNR 是从 -Djava.library.path 指定的路径上加载动态库，与直接使用 JNI 是一样的。所以设置 LD_LIBRARY_PATH 环境变量指向 <code>libhello.dylib</code> 所在目录也没问题。<br/><br/>
+另外，同样的 LibraryLoader.create(CLibrary.class).load(...) 还能通过文件路径去加载动态库，如上面的 load() 调用行改成如下也行<br/><br/>
+<pre class="lang:default decode:true">CLibrary clib = LibraryLoader.create(CLibrary.class).load("/Users/yanbin/jnrdemo/libhello.dylib");</pre>
+<br/>
+从 jnr-ffi 的源代码 <a href="https://github.com/jnr/jnr-ffi/blob/master/src/main/java/jnr/ffi/LibraryLoader.java#L500">LibraryLoader</a>, 可发现它加载动态库的方式有<br/><br/>
+<ol>
+    <li>可通过 <code>jnr.ffi.library.path</code>, <code>jaffl.library.path</code>, <code>jna.library.path</code>, <code>java.library.path</code> 等系统属性配置搜索目录</li>
+    <li>环境变量 <code>LD_LIBRARY_PATH</code> 中搜索</li>
+    <li>Unix 族系统还会依序从 <code>/usr/local/lib</code>, <code>/usr/lib</code>, <code>/lib</code> 中搜索动态库</li>
+    <li>动态库文件路径</li>
+</ol>
+<br/>
+但不支持 classpath 下查找动态库，JNR-FFI 也实现了同步加载并缓存动态库。<br/><br/>
+<h3>JNA 与 JNR-FFI 的简单对比</h3><br/><br/>
+<ol>
+    <li>它们都实现了从系统属性及环境变量 <code>LD_LIBRARY_PATH</code> 配置的路径中查找动态库</li>
+    <li>都能以动态库文件路径加载</li>
+    <li>加载动态库都是同步的操作，并缓存加载的动态库</li>
+    <li>JNA 还能从 classpath 中加载动态库，JNR 不能</li>
+    <li>JNR 能从 <code>/usr/local/lib</code>，<code>/usr/lib</code>, <code>/lib</code> 中加载动态库，JNA 不能</li>
+    <li>JNR 所需的依赖比 JNA 多，JNA 仅有它自身一个 jar 包</li>
+    <li>JNR 通过字节码相关的优化性能上比 JNA 要高，自己斟酌性能需求</li>
+    <li>它们的使用方式基本一样，详细的内容就是如何进行参数，返回值在 C/C++ 与 Java 之间的映射</li>
+</ol>
+<br/>
+因为一致的编程方式，所以在这两者中切换也不难。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://blog.csdn.net/createchance/article/details/53783490">Java Native Interface(JNI)从零开始详细教程</a></li>
+    <li><a href="https://levelup.gitconnected.com/java-native-access-a-cleaner-alternative-to-jni-954b53b77398">Java Native Access: A Cleaner Alternative to JNI?</a></li>
+</ol>

@@ -1,0 +1,92 @@
+---
+title: 使用Lucene的两段精要代码
+url: /lucene-two-code/
+date: 2006-06-19T21:16:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2006/06/lucene-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Lucene
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 568 
+wpStatus: publish
+views: 373
+lastmod: 2021-09-03T10:41:57-05:00
+---
+
+Lucene简介：<br />
+Lucene是一个基于Java的全文索引工具包。Lucene的发展历程：早先发布在作者自己的<a href="http://www.lucene.com">www.lucene.com</a>，后来发布在SourceForge，2001年年底成为APACHE基金会jakarta的一个子项目：<a href="http://jakarta.apache.org/lucene/">http://jakarta.apache.org/lucene/</a>.<br />
+Jive,Eyebrows,Cocoon,Eclipse中都使用了Lucene<br />
+全文检索和数据库应用最大的不同在于：让最相关的头100条结果满足98%以上用户的需求</p>
+<br/>
+索引过程中可以看到：<br />
+    * 语言分析器提供了抽象的接口，因此语言分析(Analyser)是可以定制的，虽然lucene缺省提供了2个比较通用的分析器 SimpleAnalyser和StandardAnalyser，这2个分析器缺省都不支持中文，所以要加入对中文语言的切分规则，需要修改这2个分析器。或者建立自己的语言分析器<!--more--><br />
+    * Lucene并没有规定数据源的格式，而只提供了一个通用的结构（Document对象）来接受索引的输入，因此输入的数据源可以是：数据库，WORD文档，PDF文档，HTML文档……只要能够设计相应的解析转换器将数据源构造成成Docuement对象即可进行索引。<br />
+    * 对于大批量的数据索引，还可以通过调整IndexerWrite的文件合并频率属性（mergeFactor）来提高批量索引的效率。<br />
+查询分析器支持逻辑包括and or + - &amp;&amp;||等符号<br/><br/>
+Hacking Lucene<br />
+1.简化的查询分析器　2.添加修改删除指定记录（Document）3.根据某个字段值的排序功能　4.更通用的输入输出接口　5.索引过程优化　6.搜索过程优化<br/><br/>
+第一个类IndexFields.java(省略了import部分)，建立索引<br/><br/>
+<pre class="lang:default decode:true">/**
+ * 为指定文件的内容建立索引文件，存储索引到指定的目录中
+ */
+public class IndexFields {<br/><br/>
+//  使用方法：: IndexFiles [索引输出目录] [索引的文件列表] ...
+//  执行成功后会在 indexPath 下产生索引文件，如_4.cfs，deletable，segments
+    public static void main(String[] args) throw* **ception {
+      String indexPath = args[0];
+      IndexWriter writer;<br/><br/>
+      //用指定的语言分析器构造一个新的写索引器（第3个参数表示是否为追加索引）
+      //初次建立索引是第三个参数必须为true,因为不存在索引文件还不能追加
+      writer = new IndexWriter(indexPath, new SimpleAnalyze*(), **lse);<br/><br/>
+      for (int i=1; i&lt;args.length; i++) {
+        System.out.println("Indexing file " + args[i]);
+        InputStream is = new FileInputStream(args[i]);<br/><br/>
+        //构造包含2个字段Field的Document对象
+        //一个是路径path字段，不索引，只存储
+        //一个是内容body字段，进行全文索引，并存储
+        Document doc = new Document();
+        doc.add(Field.UnIndexed("path", args[i]));
+        doc.add(Field.Text("body", (Reader) new InputStreamReader(is)));<br/><br/>
+        //将文档写入索引
+        writer.addDocument(doc);
+        is.close();
+      };<br/><br/>
+      //关闭写索引器
+      writer.close();
+    }
+}</pre>
+<br/>
+第二个类Search.java(省略了import部分)，按关键字在索引中搜索<br/><br/>
+<pre class="lang:default decode:true ">/**
+ * 在索引中搜索关键词，并输出结果，包含所在路径及出现频度
+ */
+public class Search {<br/><br/>
+    //  使用方法：: IndexFiles [索引所在目录] [关键词]
+    public static void main(String[] args) throw* **ception {
+        String indexPath = args[0], queryString = args[1];<br/><br/>
+        //指向索引目录的搜索器
+        Searcher searcher = new IndexSearcher(indexPath);<br/><br/>
+        //查询解析器：使用和索引同样的语言分析器
+        Query query = QueryParser.parse(queryString, "body", new SimpleAnalyzer());
+        //搜索结果使用Hit*存储
+        **** ***s = searcher.search(query);<br/><br/>
+        //通过hits可以访问到相应字段的数据和查询的匹配度
+        for (int i = 0; i &lt; hits.length(); i++) {
+            System.out.println(hits.doc(i).get("path") + "; Score: " + hits.score(i));
+        }
+    }
+}</pre>
+<br/>
+主要参考自：<br />
+<a href="http://www.chedong.com/tech/lucene.html">基于Java的全文索引引擎Lucene简介</a><br />
+<a href="http://www.google.com/search?sourceid=navclient&amp;hl=zh-CN&amp;q=chinese+word+segment">中文语言的切分词</a><br />
+<a href="http://china.nikkeibp.co.jp/cgi-bin/china/news/int/int200302100112.html">关于基于词表和N-Gram的切分词比较</a><br />
+<a href="http://lucene.sourceforge.net/talks/pisa/">Utting在Pisa大学做的关于Lucene的讲座：非常详细的Lucene架构解说</a>

@@ -1,0 +1,49 @@
+---
+title: 在VB中进行条件编译
+url: /vb-conditional-compile/
+date: 2006-09-13T11:26:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - C++/VB
+tags: 
+  - vb
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 550 
+wpStatus: publish
+views: 813
+lastmod: 2019-11-06T23:22:16-06:00
+---
+
+因为工作的需要，在某些时候又要拣一拣令我生厌的VB，是要在别人代码的基础上进行修改。看人家代码都是写连接字符串、用户名和密码都写两套，开发时用一套，注释另一套，发布时反过来，更加了VB还只能行注释。我一看就嫌这麻烦，宁愿多思考思考，看看有啥好办法能偷偷懒，当这事，条件编译了。</p>
+<br/>
+以前就没怎么用过VB，更别提VB中条件编译了，Goole搜，发现VB中可以用几个预编译指令： #Const、#If .Then ...#ElseIf.Then...#Else...#End If<br/><br/>
+#Const 声明一个常量，相当于宏定义，用#Const定义的只能被当前模块识别。例如定义常 DebugVer =1，标明是调试版本：<br/><br/>
+#Const DebugVer = 1<br/><br/>
+然后，数据库连接串写成<br/><br/>
+#If DebugVer = 1 Then  '或者是#If DebugVer Then VB和C、C++也一样，非零为真<br />
+connStr = "Provider=OraOLEDB.Oracle;Data Source=Fraud-Test;User Id=Unmi;Password=testpwd;"<br />
+#Else<br />
+connStr = "Provider=OraOLEDB.Oracle;Data Source=Fraud;User Id=user;Password=pwd";<br />
+#End If<br/><br/>
+要发布到正式环境时编译前只需要把 #Const DebugVer = 1 改为 #Const DebugVer = 1 就 OK 了。<!--more--><br/><br/>
+朋友能看到这儿来，我可就告您了，我是不支持用 #Const来定义常量来进行条件编译，一则 #Const 只被当前模块认得，换着别地儿又要再写上，切换个编译条件得同步着改好几处，万一哪一处忘改了，可能就会生出个怪胎来；二则#Const 穿插在代码里头就不高明，切换编译条件要找代码。<br/><br/>
+虽然VB并不提供象VC和VS.NET中那样预设有 DEBUG 和 RELEASE 版，但也有Project Properties让您去设置编译条件，就在打开的Project Properties窗口的 Make 页的 Conditional Compilation Arguments中输入，比如输入 DebugVer = 1，如果要定义多个条件就用冒号隔开，如： OSVer=98 : DebugVer=1 (好象只能定义数值哦!，用#Const就没这个限制，可以是#Const OSVer=Win98, 用数字也足够表达意义)。在Project Properties中定义的编译条件是项目全局的，省了每个模块都用#Const，而且改起来也特方便，又不侵入代码。<br/><br/>
+在VC中我一般用 #ifdef DEBUG 来判断，可是在 VB 中 DEBUG 已经被占用，偶一次输入 debug_version ，然后一回车，VB把 debug_version 变成了全大写 DEBUG_VERSION, 说明 VB 认可了 DEBUG_VERSION，但并未为您预先定义好，还是需要在 Project Properties中加上 DEBUG_VERSION条件，如 DEBUG_VERSION = 1。另外，在Project Properties中定义的条件能立即被VB认出来，体现在代码自动格式化成定义的形式。<br/><br/>
+再列举一个较为完整的用法，演示依据定义编译何种平台下的二进制码：<br/><br/>
+#If OSVer = 95 Then<br />
+'WIN95 Code here<br />
+#ElseIf OSVer = 98 Then<br />
+'WIN98 Code here<br />
+#ElseIF OSVer = XP Then<br />
+'WINXP Code here<br />
+#Else<br />
+'Non-specific OS here<br />
+#End if<br/><br/>
+需要在之前用#Const或在Project Properties中定义OSVer，当然如果不定义，也不会错，编译器会认为OSVer的值为零或者是 False。<br/><br/>
+参考：<a href="http://blanksoft.com/article/default.asp?url=/article/files/1.asp">VB中的条件编译</a>(注意该文中提到定义OSVer=WINXP: DebugVer=True在Project Properties中应该通不过，只能定义数值)，还有MSDN关于VB条件编译的内容。

@@ -1,0 +1,149 @@
+---
+title: Python 函数重载实现
+url: /python-overload/
+date: 2022-06-15T10:18:29-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - Overload
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12423 
+wpStatus: publish
+views: 388
+lastmod: 2022-06-15T10:18:29-05:00
+---
+
+Python 不支持函数重载，在同一个模块中声明同名方法不会报错，只会不停的覆盖，无论参数个数是否不同，最终只会保留最后一个函数<br/><br/>
+<pre class="lang:default decode:true">foo = 100<br/><br/>
+def foo(a):
+    print('foo(a)')<br/><br/>
+def foo(a, b):
+    print('foo(a, b)')<br/><br/>
+def foo(a: str):
+    print('foo(a: str)')<br/><br/>
+foo([8])
+print(globals()['foo'])
+foo(3, 5)</pre>
+<br/>
+输出<!--more--><br/><br/>
+<blockquote>
+foo(a: str)<br />
+&lt;function foo at 0x107e74c10&gt;<br />
+Traceback (most recent call last):<br />
+File ".../scratches/scratch_1.py", line 12, in &lt;module&gt;<br />
+foo(3, 5)<br />
+TypeError: foo() takes 1 positional argument but 2 were given
+</blockquote>
+<br/>
+只有最后一个 <code>foo</code> 函数是存在的，在 globals() 只有一个 <code>foo</code><br/><br/>
+那么 Python 要怎么实现函数重载呢？Python 3.4 在 functools 下添加了 singledispatch, Python 3.8 又继续加入了 singledispatchmethod。Python 的文档 <a href="https://docs.python.org/3/glossary.html#term-generic-function">https://docs.python.org/3/glossary.html#term-generic-function</a> 和 <a href="https://peps.python.org/pep-0443/">PEP443</a> 说它们的功用是支持单一分派的泛型函数。但本人觉得更像是函数重载。<br/><br/>
+为什么说是单分派(single dispatch)呢? 因为它只能根据第一个参数的类型选择要实际执行的函数。看下面的实例<br/><br/>
+<pre class="lang:default decode:true">from functools import singledispatch<br/><br/>
+
+@singledispatch
+def foo(a):
+    print(f"main {a}")<br/><br/>
+print(hex(id(foo)))<br/><br/>
+@foo.register(int)
+def _foo(a):
+    print(f"{a} - 1")<br/><br/>
+print(hex(id(_foo)))<br/><br/>
+
+@foo.register(str)
+def _foo(a):
+    print(f"{a} - 2")<br/><br/>
+print(hex(id(_foo)))<br/><br/>
+
+foo(1)
+foo('str')
+foo([])
+breakpoint()</pre>
+<br/>
+在 IDE 中我们可以在 <code> breakpoint()</code> 处打个断点来调试，或者运行直接进入  <code>pdb</code> 控制台查看运行状态<br/><br/>
+输出为<br/><br/>
+<blockquote>
+0x103dbd790<br />
+0x103dbd8b0<br />
+0x103dbd940<br />
+1 - 1<br />
+str - 2<br />
+main []
+</blockquote>
+<br/>
+pdb<br/><br/>
+<blockquote>
+(Pdb) foo.registry<br />
+mappingproxy({&lt;class 'object'&gt;: &lt;function foo at 0x103da2c10&gt;, &lt;class 'int'&gt;: &lt;function _foo at 0x103dbd8b0&gt;, &lt;class 'str'&gt;: &lt;function _foo at 0x103dbd940&gt;})<br />
+(Pdb) foo<br />
+&lt;function foo at 0x103dbd790&gt;<br />
+(Pdb) _foo<br />
+&lt;function _foo at 0x103dbd940&gt;
+</blockquote>
+<br/>
+从这里我们就能发现它的实现方式，singledispatch 装饰的函数 foo 用 @foo.register(cls) 来注册声明的方法，并存储在 foo.registry 属性中，调用 foo(x) 时便根据第一个参数的类型进行分派，默认会调用在 foo.registry 中的 <code>&lt;class 'object'&gt;</code> 对应的实现上，即代理到被 @singledispatch 装饰的函数的实现<br/><br/>
+singledispatchmethod 的用法<br/><br/>
+参考 Python 官方文档的实例<br/><br/>
+<pre class="lang:default decode:true ">class Negator:
+    @singledispatchmethod
+    def neg(self, arg):
+        raise NotImplementedError("Cannot negate a")<br/><br/>
+    @neg.register
+    def _(self, arg: int):
+        return -arg<br/><br/>
+    @neg.register
+    def _(self, arg: bool):
+        return not arg<br/><br/>
+
+negator = Negator()
+print(negator.neg(1))
+print(negator.neg(True))</pre>
+<br/>
+执行后输出为 <br/><br/>
+<blockquote>
+-1<br />
+False
+</blockquote>
+<br/>
+那能不能根据构造实例时的类型来判断调用哪个 neg() 方法呢？大概想要实现的是<br/><br/>
+<blockquote>
+Negator(1).neg()  -&gt; 得到 -1<br />
+negator(True).neg()  -&gt; 得到 False
+</blockquote>
+<br/>
+尝试写成下面那样<br/><br/>
+<pre class="lang:default decode:true ">from functools import singledispatchmethod<br/><br/>
+class Negator:
+    def __init__(self, arg):
+        self.arg = arg<br/><br/>
+    @singledispatchmethod
+    def neg(self, arg):
+        raise NotImplementedError("Cannot negate a")<br/><br/>
+    @neg.register(int)
+    def _(self):
+        return -self.arg<br/><br/>
+    @neg.register(bool)
+    def _(self):
+        return not self.arg<br/><br/>
+print(Negator(1).neg())
+print(Negator(True).neg())
+</pre>
+<br/>
+执行后出错<br/><br/>
+<blockquote>
+method = self.dispatcher.dispatch(args[0].__class__)<br />
+IndexError: tuple index out of range
+</blockquote>
+<br/>
+所以函数还是必须要有至少一个参数才能代理到正确的方法实现上去，虽然注册方法是没有问题的<br/><br/>
+<blockquote>
+result = {function} &lt;function Negator.neg at 0x107a82700&gt;<br />
+registry = {mappingproxy: 3} {&lt;class 'object'&gt;: &lt;function Negator.neg at 0x107a82430&gt;, &lt;class 'int'&gt;: &lt;function Negator._ at 0x107a82820&gt;, &lt;class 'bool'&gt;: &lt;function Negator._ at 0x107a828b0&gt;}
+</blockquote>

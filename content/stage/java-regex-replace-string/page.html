@@ -1,0 +1,88 @@
+---
+title: 在 Java 中使用正则表达式进行后向引用($1,$2...)
+url: /java-regex-replace-string/
+date: 2012-04-25T06:02:32-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - javascript
+  - Java
+  - jregex
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4552 
+wpStatus: publish
+views: 2510
+lastmod: 2021-09-03T14:59:54-05:00
+---
+
+自 JDK1.4 引入正则表达式的支持可称得上是次大改变，<del>可 Java 的正则表达式的能力还是很弱，别说和 Perl 比了，就是和 C# 和 JavaScript 的正则表达式比较来也逊色不少</del>，不过现在 JVM 上有其他语言对正则表达式有所增强，像 Groovy, jRuby 和 Scala。</p>
+<br/>
+<span style="color: #ff0000;">[修正一下] 第一句话的说法是有误的，其实 JDK 本身的正则表达式就支持替换时用 $1, $2 那样的后向分组引用，例如：</span><br />
+<span style="color: #ff0000;"> String s = "abc def".replaceAll("(\\w+)\\s+(\\w+)", "$2 $1");  //s 就是  "def abc"，replaceFirst 也可以用 $1, $2 的替换。</span><br/><br/>
+<del>比如在 Java 中要实现正则表达式的分组，后向引用的方式进行替换挺复杂的</del>，像 JavaScript 完成两个分组的调换：<br/><br/>
+<pre class="lang:default decode:true">&lt;script&gt;
+    var src = "abc def";
+    var des = src.replace(/(\w+)\s+(\w+)/, "$2 $1");
+    document.write(des);
+    //输出为： def abc
+&lt;/script&gt;</pre>
+<br/>
+在 Java 中可得用上 Pattern, Matcher，还要 find()/group() 等操作，于是我就会考虑在 Java 中完成类似的功能有没有曲线的方法，有的。你可以调用 JVM 上其他语言的功能，我这里用列了两种实现方式<br/><br/>
+JDK1.6 起可借助 ScriptEngineManager 使用 JavaScript 相应的函数，除此之外还可用第三方的库 <a href="http://jregex.sourceforge.net/" target="_blank" rel="noopener">JRegex</a>，具体实现，请参见如下代码，还带了测试用例：<br/><br/>
+<pre class="lang:default decode:true ">package cc.unmi.utils;
+import javax.script.Invocable;
+import javax.script.ScriptEngine;
+import javax.script.ScriptEngineManager;<br/><br/>
+import jregex.Pattern;
+import jregex.Replacer;<br/><br/>
+public class StringUtils {
+    public static String replaceStringByJS(String src, String jsRegex, String replacement) {
+        ScriptEngineManager manager = new ScriptEngineManager();
+        ScriptEngine engine = manager.getEngineByName("JavaScript");
+        String script =
+                "function rep(target, regex, replacement){\n"
+              + "    var patt = new RegExp(regex,'g');\n"
+              + "    return target.replace(patt, replacement);\n"
+              + "}";<br/><br/>
+        try {
+            engine.eval(script);
+            Invocable inv = (Invocable) engine;
+            String result = (String) inv.invokeFunction("rep", src, jsRegex,
+                    replacement);
+            return result;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }<br/><br/>
+    public static String replaceStringByJRegex(String src, String regex, String replacement) {
+        Pattern pattern = new Pattern(regex);
+        Replacer replacer = pattern.replacer(replacement);
+        String result = replacer.replace(src);
+        return result;
+    }<br/><br/>
+    public static void main(String[] args) {
+        String link="&lt;link url=\"http://unmi.cc\" &gt;\"Home\"&lt;/link&gt;"
+                +"&lt;link url=\"http://unmi.cc/tag/java\" &gt;\"Java\"&lt;/link&gt;";
+        String jsString = StringUtils.replaceStringByJS(link,
+                "&lt;link\\s+url=\\\"(.+?)\\\".[^/]*?&gt;\\\"(.+?)\\\"&lt;/link&gt;", "&lt;a href=\"$1\"&gt;$2&lt;/a&gt;");
+        System.out.println(jsString);<br/><br/>
+        String jregexString = StringUtils.replaceStringByJRegex(link,
+                "&lt;link\\s+url=\\\"(.+?)\\\".[^/]*?&gt;\\\"(.+?)\\\"&lt;/link&gt;", "&lt;a href=\"$1\"&gt;$2&lt;/a&gt;");
+        System.out.println(jregexString);
+    }
+    
+    /*
+     * 程序输出
+     * &lt;a href="http://unmi.cc"&gt;Home&lt;/a&gt;&lt;a href="http://unmi.cc/tag/java"&gt;Java&lt;/a&gt;
+     * &lt;a href="http://unmi.cc"&gt;Home&lt;/a&gt;&lt;a href="http://unmi.cc/tag/java"&gt;Java&lt;/a&gt;
+     */
+}</pre>
+<br/>
+起初我是用的第一种方法，后来找到了第二种方式，感觉用 JRegex 更优雅些。

@@ -1,0 +1,204 @@
+---
+title: Oracle SQL优化［转］
+url: /oracle-sql-tuning/
+date: 2008-06-30T21:47:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Database
+tags: 
+  - Oracle
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 377 
+wpStatus: publish
+views: 414
+lastmod: 2014-01-28T00:51:41-06:00
+---
+
+     Oracle SQL的优化规则：<br/>
+<ul><br/>
+	<li><span style="font-weight: bold; color: #0000ff;">尽量少用IN操作符，基本上所有的IN操作符都可以用EXISTS代替</span></li>
+
+</ul><br/>
+        用IN写出来的SQL的优点是比较容易写及清晰易懂，但是用IN的SQL性能总是比较低的，从ORACLE执行的步骤来分析用IN的SQL与不用IN的SQL有以下区别：<br/>
+       ORACLE 试图将其转换成多个表的连接，如果转换不成功则先执行IN里面的子查询，再查询外层的表记录，如果转换成功则直接采用多个表的连接方式查询。由此可见用 IN的SQL至少多了一个转换的过程。一般的SQL都可以转换成功，但对于含有分组统计等方面的SQL就不能转换了。<!--more--><br/>
+<br/>
+        Oracle在执行IN子查询时，首先执行子查询，将查询结果放入临时表再执行主查询。而EXIST则是首先检查主查询，然后运行子查询直到找到第一个匹配项。NOT EXISTS比NOT IN效率稍高。但具体在选择IN或EXIST操作时，要根据主子表数据量大小来具体考虑。<br/>
+<br/>
+        推荐方案：在业务密集的SQL当中尽量不采用IN操作符。<br/>
+<ul style="font-weight: bold; color: #0000ff;"><br/>
+	<li>不用NOT IN操作符，可以用NOT EXISTS或者外连接+替代</li>
+
+</ul><br/>
+        此操作是强列推荐不使用的，因为它不能应用表的索引。<br/>
+<br/>
+        推荐方案：用NOT EXISTS 或（外连接+判断为空）方案代替<br/>
+<ul><br/>
+	<li><span style="font-weight: bold; color: #0000ff;">不用“&lt;&gt;”或者“!=”操作符。对不等于操作符的处理会造成全表扫描，可以用“&lt;” or “&gt;”代替</span></li>
+
+</ul><br/>
+        不等于操作符是永远不会用到索引的，因此对它的处理只会产生全表扫描。<br/>
+<br/>
+        推荐方案：用其它相同功能的操作运算代替，如：<br/>
+        1）a&lt;&gt;0 改为 a&gt;0 or a&lt;0<br/>
+        2）a&lt;&gt;’’ 改为 a&gt;’’<br/>
+<ul style="font-weight: bold; color: #0000ff;"><br/>
+	<li>Where子句中出现IS NULL或者IS NOT NULL时，Oracle会停止使用索引而执行全表扫描。可以考虑在设计表时，对索引列设置为NOT NULL。这样就可以用其他操作来取代判断NULL的操作</li>
+
+</ul><br/>
+        IS NULL 或IS NOT NULL操作（判断字段是否为空）<br/>
+        判断字段是否为空一般是不会应用索引的，因为B树索引是不索引空值的。<br/>
+<br/>
+        推荐方案：<br/>
+        用其它相同功能的操作运算代替，如：<br/>
+        1）a is not null 改为 a&gt;0 或a&gt;’’等。<br/>
+        2）不允许字段为空，而用一个缺省值代替空值，如业扩申请中状态字段不允许为空，缺省为申请。<br/>
+       3） 建立位图索引（有分区的表不能建，位图索引比较难控制，如字段值太多索引会使性能下降，多人更新操作会增加数据块锁的现象）<br/>
+<ul><br/>
+	<li> <span style="font-weight: bold; color: #0000ff;">当通配符“%”或者“_”作为查询字符串的第一个字符时，索引不会被使用</span></li>
+
+	<li>对于有连接的列“||”，最后一个连接列索引会无效。尽量避免连接，可以分开连接或者使用不作用在列上的函数替代。</li>
+
+	<li>如果索引不是基于函数的，那么当在Where子句中对索引列使用函数时，索引不再起作用。</li>
+
+	<li>Where子句中避免在索引列上使用计算，否则将导致索引失效而进行全表扫描。</li>
+
+	<li>对数据类型不同的列进行比较时，会使索引失效。</li>
+
+	<li style="font-weight: bold; color: #0000ff;">&gt; 及 &lt; 操作符（大于或小于操作符）</li>
+
+</ul><br/>
+       大于或小于操作符一般情况下是不用调整的，因为它有索引就会采用索引查找，但有的情况下可以对它进行优化，如一个表有100万记录，一个数值型字段A， 30万记录的A=0，30万记录的A=1，39万记录的A=2，1万记录的A=3。那么执行A&gt;2与A&gt;=3的效果就有很大的区别了，因为 A&gt;2时ORACLE会先找出为2的记录索引再进行比较，而A&gt;=3时ORACLE则直接找到=3的记录索引。<br/>
+<br/>
+       推荐方案：用“&gt;=”替代“&gt;”。<br/>
+<ul style="font-weight: bold; color: #0000ff;"><br/>
+	<li>UNION操作符</li>
+
+</ul><br/>
+       UNION在进行表链接后会筛选掉重复的记录，所以在表链接后会对所产生的结果集进行排序运算，删除重复的记录再返回结果。实际大部分应用中是不会产生重复的记录，最常见的是过程表与历史表UNION。如：<br/>
+<br/>
+    select * from gc_dfys<br/>
+    union<br/>
+    select * from ls_jg_dfys<br/>
+<br/>
+    这个SQL在运行时先取出两个表的结果，再用排序空间进行排序删除重复的记录，最后返回结果集，如果表数据量大的话可能会导致用磁盘进行排序。<br/>
+<br/>
+    推荐方案：采用UNION ALL操作符替代UNION，因为UNION ALL操作只是简单的将两个结果合并后就返回。<br/>
+<br/>
+    select * from gc_dfys<br/>
+    union all<br/>
+    select * from ls_jg_dfys<br/>
+<ul style="font-weight: bold; color: #0000ff;"><br/>
+	<li>LIKE操作符</li>
+
+</ul><br/>
+        LIKE 操作符可以应用通配符查询，里面的通配符组合可能达到几乎是任意的查询，但是如果用得不好则会产生性能上的问题，如LIKE ‘%5400%’ 这种查询不会引用索引，而LIKE ‘X5400%’则会引用范围索引。一个实际例子：用YW_YHJBQK表中营业编号后面的户标识号可来查询营业编号 YY_BH LIKE ‘%5400%’ 这个条件会产生全表扫描，如果改成YY_BH LIKE ’X5400%’ OR YY_BH LIKE ’B5400%’ 则会利用YY_BH的索引进行两个范围的查询，性能肯定大大提高。<br/>
+<ul style="font-weight: bold; color: #0000ff;"><br/>
+	<li>SQL书写的影响（共享SQL语句可以提高操作效率）</li>
+
+</ul><br/>
+    同一功能同一性能不同写法SQL的影响<br/>
+<br/>
+    如一个SQL在A程序员写的为<br/>
+    Select * from zl_yhjbqk<br/>
+<br/>
+    B程序员写的为<br/>
+    Select * from dlyx.zl_yhjbqk（带表所有者的前缀）<br/>
+<br/>
+    C程序员写的为<br/>
+    Select * from DLYX.ZLYHJBQK（大写表名）<br/>
+<br/>
+    D程序员写的为<br/>
+    Select *  from DLYX.ZLYHJBQK（中间多了空格）<br/>
+<br/>
+     以上四个SQL在ORACLE分析整理之后产生的结果及执行的时间是一样的，但是从ORACLE共享内存SGA的原理，可以得出ORACLE对每个SQL 都会对其进行一次分析，并且占用共享内存，如果将SQL的字符串及格式写得完全相同则ORACLE只会分析一次，共享内存也只会留下一次的分析结果，这不仅可以减少分析SQL的时间，而且可以减少共享内存重复的信息，ORACLE也可以准确统计SQL的执行频率。<br/>
+<br/>
+    推荐方案：不同区域出现的相同的Sql语句，要保证查询字符完全相同，以利用SGA共享池，防止相同的Sql语句被多次分析。<br/>
+<ul style="font-weight: bold; color: #0000ff;"><br/>
+	<li>WHERE后面的条件顺序影响</li>
+
+</ul><br/>
+       Oracle从下到上处理Where子句中多个查询条件，所以表连接语句应写在其他Where条件前，可以过滤掉最大数量记录的条件必须写在Where子句的末尾。<br/>
+      <br/>
+       WHERE子句后面的条件顺序对大数据量表的查询会产生直接的影响，如<br/>
+<br/>
+    Select * from zl_yhjbqk where dy_dj = '1KV以下' and xh_bz=1<br/>
+<br/>
+    Select * from zl_yhjbqk where xh_bz=1  and dy_dj = '1KV以下'<br/>
+<br/>
+    以上两个SQL中dy_dj（电压等级）及xh_bz（销户标志）两个字段都没进行索引，所以执行的时候都是全表扫描，第一条SQL的dy_dj = '1KV以下'条件在记录集内比率为99%，而xh_bz=1的比率只为0.5%，在进行第一条SQL的时候99%条记录都进行dy_dj及xh_bz的比较，而在进行第二条SQL的时候0.5%条记录都进行dy_dj及xh_bz的比较，以此可以得出第二条SQL的CPU占用率明显比第一条低。<br/>
+<ul style="font-weight: bold; color: #0000ff;"><br/>
+	<li>查询表顺序的影响</li>
+
+</ul><br/>
+       Oracle从右到左处理From子句中的表名，所以在From子句中包含多个表的情况下，将记录最少的表放在最后。（只在采用RBO优化时有效)<br/>
+<br/>
+       在FROM后面的表中的列表顺序会对SQL执行性能影响，在没有索引及ORACLE没有对表进行统计分析的情况下ORACLE会按表出现的顺序进行链接，由此因为表的顺序不对会产生十分耗服务器资源的数据交叉。（注：如果对表进行了统计分析， ORACLE会自动先进小表的链接，再进行大表的链接）。<br/>
+<ul><br/>
+	<li>Order By语句中的非索引列会降低性能，可以通过添加索引的方式处理。严格控制在Order By语句中使用表达式</li>
+
+	<li>当在Sql语句中连接多个表时，使用表的别名，并将之作为每列的前缀。这样可以减少解析时间</li>
+
+	<li>多利用内部函数提高Sql效率</li>
+
+	<li> SQL语句索引的利用<br/>
+<ul><br/>
+	<li>对操作符的优化（见前面）</li>
+
+	<li>对条件字段的一些优化<br/>
+<ul><br/>
+	<li>采用函数处理的字段不能利用索引</li>
+
+</ul><br/>
+      如：<br/>
+    substr(hbs_bh,1,4)=’5400’，优化处理：hbs_bh like ‘5400%’<br/>
+<br/>
+    trunc(sk_rq)=trunc(sysdate)， 优化处理：sk_rq&gt;=trunc(sysdate) and sk_rq&lt;trunc(sysdate+1)<br/>
+<ul><br/>
+	<li>进行了显式或隐式的运算的字段不能进行索引</li>
+
+</ul><br/>
+      如：<br/>
+<br/>
+    ss_df+20&gt;50，优化处理：ss_df&gt;30<br/>
+<br/>
+    ‘X’||hbs_bh&gt;’X5400021452’，优化处理：hbs_bh&gt;’5400021542’<br/>
+<br/>
+    sk_rq+5=sysdate，优化处理：sk_rq=sysdate-5<br/>
+<br/>
+    hbs_bh=5401002554，优化处理：hbs_bh=’ 5401002554’，注：此条件对hbs_bh 进行隐式的to_number转换，因为hbs_bh字段是字符型。<br/>
+<ul><br/>
+	<li>条件内包括了多个本表的字段运算时不能进行索引</li>
+
+</ul><br/>
+      ys_df&gt;cx_df，无法进行优化<br/>
+<br/>
+      qc_bh||kh_bh=’5400250000’，优化处理：qc_bh=’5400’ and kh_bh=’250000’</li>
+
+</ul><br/>
+</li>
+
+</ul><br/>
+    可能引起全表扫描的操作<br/>
+<ul><br/>
+	<li>在索引列上使用NOT或者“&lt;&gt;”</li>
+
+	<li>对索引列使用函数或者计算</li>
+
+	<li>NOT IN操作</li>
+
+	<li>通配符位于查询字符串的第一个字符</li>
+
+	<li>IS NULL或者IS NOT NULL</li>
+
+	<li>多列索引，但它的第一个列并没有被Where子句引用</li>
+
+</ul><br/>
+       ORACLE在SQL执行分析方面已经比较成熟，如果分析执行的路径不对首先应在数据库结构（主要是索引）、服务器当前性能（共享内存、磁盘文件碎片）、数据库对象（表、索引）统计信息是否正确这几方面分析。<br/>
+<br/>
+转自：<a href="http://aofengblog.blog.163.com/blog/static/631702120083222117768/">http://aofengblog.blog.163.com/blog/static/631702120083222117768/</a>

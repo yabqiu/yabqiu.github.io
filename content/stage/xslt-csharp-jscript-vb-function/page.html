@@ -1,0 +1,176 @@
+---
+title: XSLT 文件中使用 C#/JScript/VB 自定义函数
+url: /xslt-csharp-jscript-vb-function/
+date: 2010-06-12T13:28:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - XML/DOM
+tags: 
+  - C#
+  - js
+  - xslt
+  - vb
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 173 
+wpStatus: publish
+views: 1050
+lastmod: 2021-09-02T10:46:28-05:00
+---
+
+在用 XSLT 转换 XML 到其他格式时，不光是原数据搬到别处，还可能需要对数据进行一定的处理，比如一个标志位要 XSLT 转换为表义字符串(1-&gt;True; 0-&gt;False)，或者日期类型格式的转换等等。所以这时候我们在 XSLT 中要用到函数来处理这些细节上的转换。<br/><br/>
+XSLT 含有超过 100 个内建的函数，XQuery 1.0、XPath 2.0 以及 XSLT 2.0 共享相同的函数库。<br />
+这些函数用于字符串值、数值、日期和时间比较、节点和 QName 操作、序列操作、逻辑值，等等。<br/><br/>
+关于 XSLT 的内置函数请参数：<a href="http://www.w3school.com.cn/xsl/xsl_functions.asp" target="_blank" rel="noopener">XSLT 函数参考手册</a> 和 <a href="http://www.w3school.com.cn/xpath/xpath_functions.asp" target="_blank" rel="noopener">XPath、XQuery 以及 XSLT 函数</a>。<!--more--><br/><br/>
+而我在这里介绍的是，如果你觉得内置函数用起来还有点麻烦的话，还可以用 C# 或 JavaScript 等语言在 XSLT  中定义自己的函数，使用方便的数据类型、语法让你更娴熟的完成数据的转换。<br/><br/>
+比如，一个比较实际的应用，要用 XSLT 从某个 rss 内容中获得标题和发布日期显示在 Html Table 中，需要把 &lt;pubDate&gt;Wed, 09 Jun 2010 02:52:00 GMT&lt;/pubDate&gt; 日期显示格式显示为 Jun 01, 2010 这样的形式。<br/><br/>
+从 <a href="http://www.blogjava.net/Unmi/rss">http://www.blogjava.net/Unmi/rss</a> 抽取出的一个 &lt;item&gt; 节点片段如下：<br/><br/>
+<span style="color: #800080;">&lt;rss&gt;<br />
+    &lt;channel&gt;<br />
+        &lt;item&gt;<br />
+           &lt;title&gt;写第一个 Wordpress 插件程序&lt;/title&gt;<br />
+           &lt;link&gt;http://www.blogjava.net/Unmi/archive/2010/04/27/319398.html&lt;/link&gt;<br />
+           &lt;dc:creator&gt;隔叶黄莺&lt;/dc:creator&gt;<br />
+           &lt;author&gt;隔叶黄莺&lt;/author&gt;<br />
+           &lt;pubDate&gt;Mon, 26 Apr 2010 17:06:00 GMT&lt;/pubDate&gt;<br />
+           ..............................................<br />
+        &lt;/item&gt;<br />
+          ...............................................<br />
+</span><br />
+我们可以写这么一个 XSLT 文件，假如保存为 c:\\Unmi_Rss_List.xslt，内容如下：<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="utf-8"?&gt;
+&lt;xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+    xmlns:msxsl="urn:schemas-microsoft-com:xslt"
+    xmlns:unmi="http://unmi.blogjava.net" exclude-result-prefixes="msxsl"&gt;<br/><br/>
+    &lt;!-- User defined function with C# language --&gt;
+    &lt;msxsl:script implements-prefix="unmi" language="C#"&gt;
+    &lt;![CDATA[
+        public string FormatDate(string dateString)
+        {
+           System.Globalization.CultureInfo usCulture = new System.Globalization.CultureInfo("en-US");
+           return DateTime.Parse(dateString).ToString("MMM dd, yyyy",usCulture);
+        }
+    ]]&gt;
+    &lt;/msxsl:script&gt;<br/><br/>
+    &lt;xsl:output method="html" indent="yes"/&gt;&lt;!--output html--&gt;<br/><br/>
+    &lt;xsl:template match="/rss/channel"&gt;
+      &lt;table  style="border-collapse:collapse;border-color:black" border="1" &gt;
+        &lt;tr style="font-weight:bold"&gt;&lt;td&gt;标题&lt;/td&gt;&lt;td&gt;日期&lt;/td&gt;&lt;/tr&gt;
+          &lt;xsl:for-each select="item"&gt;
+            &lt;tr&gt;
+              &lt;td&gt;&lt;xsl:value-of select="title"/&gt;&lt;/td&gt;
+              &lt;td&gt;&lt;xsl:value-of select="unmi:FormatDate(pubDate)"/&gt;&lt;/td&gt;
+            &lt;/tr&gt;
+          &lt;/xsl:for-each&gt;
+        &lt;/table&gt;
+      &lt;/xsl:template&gt;
+&lt;/xsl:stylesheet&gt;</pre>
+<br/>
+这里说明一点，函数必须为 public 的，否则会提示： <span style="color: #800080;">Method 'FormatDate' of extension object 'http://www.detabis.com/busrules' cannot be called because it is not public.<span style="color: #800080;"><span style="color: #800080;"><span style="color: #000000;">在 FormatDate 中可以使用你能在 C# 中的任何东西。</span></span></span></span><br/><br/>
+xmlns:unmi="<a href="http://unmi.blogjava.net">http://unmi.blogjava.net</a>" 定义了一个前缀 unmi 而已，也就是命名空间，没有什么特别的意义，可随你所愿用别的前缀，但必须与其他用到这个前缀的地方保持一致。如果不定义这么一个命名空间的话，直接不带前缀的调用 FormatDate() 函数时，默认为的命名空间是 fn，而 fn 中是不存这个函数的。<br/><br/>
+执行转换的代码这里放在一个 aspx 页面的后端文件中的，这样你直接浏览这个页面就会显示在网页上。你也可以让转换出的结果存成文件或输出在屏幕上。Test_Xslt.aspx.cs 中的代码如下：<br/><br/>
+<pre class="brush:c# ">using System;
+using System.Xml.Xsl;
+using System.Xml;<br/><br/>
+public partial class TestXslt : System.Web.UI.Page
+{
+    protected void Page_Load(object sender, EventArgs e)
+    {
+        XslCompiledTransform xslTrans = new XslCompiledTransform();<br/><br/>
+        //enableDocumentFunction and enable script
+        XsltSettings settings = new XsltSettings(true, true);
+        xslTrans.Load("c:\\Unmi_Rss_List.xslt",settings, null);<br/><br/>
+        //Write to Response directly
+        XmlTextWriter responseWriter = new XmlTextWriter(Response.Output);
+        xslTrans.Transform("http://www.blogjava.net/Unmi/rss", responseWriter);
+    }
+}</pre>
+<br/>
+说明：XslCompiledTransform.Load()  时，必须设置 XsltSettings 中的第二个参数 enable script 为 true。<br />
+Transform(string inputUri, XmlWriter results)，第一个参数可以为一个网页的 URL，第二个参数直接借助于 Response，输出到页面。<br />
+Transform() 有许多重载的方法，可输出内容到流、文件，还可以传入 XSLT 要求的参数(&lt;xsl:param name="param1"/&gt;)<br/><br/>
+浏览网页 Test_Xslt.aspx 得到的效果是：<br/><br/>
+<table style="border-collapse: collapse; border-color: black;" border="1" align="center">
+<tbody>
+<tr style="font-weight: bold;">
+<td style="height: 24px;">标题</td>
+<td style="height: 24px;">日期</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">XSLT 文件中使用 C# 定义的函数</td>
+<td style="height: 24px;">Jun 13, 2010</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">VS 2008中的jQuery Intellisense[转]</td>
+<td style="height: 24px;">Jun 09, 2010</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">使用 NAnt 构建 asp.net 项目并生成一个固定名字的动态库</td>
+<td style="height: 24px;">Jun 06, 2010</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">C# 使用 iTextSharp(5.0.2) 生成 PDF 文档</td>
+<td style="height: 24px;">May 22, 2010</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">C# 使用 iTextSharp(4.1.2) 生成 PDF 文档</td>
+<td style="height: 24px;">May 22, 2010</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">C# 使用 ExcelLibrary 读写 Excel 文件</td>
+<td style="height: 24px;">May 20, 2010</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">掌握一种 C#/.Net 模板技术 -- Velocity</td>
+<td style="height: 24px;">May 19, 2010</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">VS2008 发布网站时如何产生固定命名的 Dll 文件</td>
+<td style="height: 24px;">May 14, 2010</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">Asp.Net 中一个控件关联多个验证器时，如何同时只出一个验证器的错误信息</td>
+<td style="height: 24px;">May 14, 2010</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">C# 程序中使用 SQLite 数据库</td>
+<td style="height: 24px;">May 06, 2010</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">PHP 异步执行方法，模拟多线程</td>
+<td style="height: 24px;">Apr 29, 2010</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">打造自己的WordPress侧边栏[转]</td>
+<td style="height: 24px;">Apr 28, 2010</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">写第一个 Wordpress 插件程序</td>
+<td style="height: 24px;">Apr 27, 2010</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">雅虎JavaScript架构师：网页开发技术安全优先</td>
+<td style="height: 24px;">Apr 26, 2010</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">那些相见恨晚的 JavaScript 技巧</td>
+<td style="height: 24px;">Apr 26, 2010</td>
+</tr>
+</tbody>
+</table>
+<br/>
+当然，上面的 XSLT 中用 C# 来定义函数，执行时肯定要依赖于 .Net 环境的，如果是 .Net 环境下的应用不失为一种好办法。其他运行环境下要定义自己的 XSLT 函数就得想别的办法了，比如用 JavaScript 来定义函数。应该说见到 &lt;msxsl:script&gt; 它大概就是个 MS Only 的东西。关于 Java 应用 XSLT 时，用 Java 定义  XSLT 函数请参考：<a href="http://www.mulu001.com/html/en/read/162/read-162-17346.html" target="_blank" rel="noopener">用Java增加一个XSLT功能</a>。<br/><br/>
+从 <a href="http://msdn.microsoft.com/en-us/library/533texsx%28VS.71%29.aspx" target="_blank" rel="noopener">XSLT Stylesheet Scripting using &lt;msxsl:script&gt;</a> 可以看到定义函数的 language 可选值有：C#, VB, JScript, JavaScript, VisualBasic, CSharp，如果未指定该属性，默认为 JScript。也就是说你可以用以上的语言(也就是 C#、VB、JScript/JavaScript，通常 JScript 和 JavaScript 被认为是一样的)来自定义函数，这个链接里也说明了默认导入的命名空间。<br/><br/>
+因此，在标题中标示了可用三种语言来自定义函数，只需用 C# 来说明用法，其他语言只语法不同而已，读者一望便知。<br/><br/>
+参考：<br/><br/>
+<ul>
+    <li><a href="http://msdn.microsoft.com/en-us/library/533texsx%28VS.71%29.aspx" target="_blank" rel="noopener">XSLT Stylesheet Scripting using &lt;msxsl:script&gt;</a></li>
+    <li><a href="http://www.svn8.com/dotnet/Csharp/2010011618004.html" target="_blank" rel="noopener">用C#或JavaScript扩展XSLT</a></li>
+    <li><a href="http://blog.chinaunix.net/u/884/showart_219452.html" target="_blank" rel="noopener">xslt自定义函数</a></li>
+    <li><a href="http://www.mulu001.com/html/en/read/162/read-162-17346.html" target="_blank" rel="noopener">用Java增加一个XSLT功能</a>(用 Apache Xalan XSL 时，如何用 Java 自定义 XSLT 函数)</li>
+</ul>

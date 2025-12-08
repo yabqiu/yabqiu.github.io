@@ -1,0 +1,70 @@
+---
+title: 如何确保一个 Linux Shell 只有一个运行实例
+url: /only-one-shell-running/
+date: 2006-10-12T01:59:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/linux-logo.png"
+categories:
+  - Linux/Unix
+tags: 
+  - Linux
+  - Shell
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 543 
+wpStatus: publish
+views: 1255
+lastmod: 2020-03-21T21:34:46-05:00
+---
+
+当我们在 Linux 下写了一个 Shell 做某些操作时，可能在一个终端运行了该脚本还没停止，然而又可能在另一个终端再一次执行了它，会有两个或多个实例在运行。或者是把这个 Shell 安排在 Cron 中，想让它每隔5分钟执行一次，有可能执行时间较长，正在执行当中，下一个5分钟的时刻到了，又在启动一次，这同样也会造成同一个 Shell会同时跑出多个实例来。<br/><br/>
+同时跑的多个实例就有可能对同一资源的操作造成数据的不可思异。这就要有一种方法来保证同一时刻同一脚本只能有一个实例在运行，借用很多软件的做法，比如 MySQL、Apache 等，在启动的时候生成一个临时的文件向后来者明确指示：有一个实例正在执行，不能执行第二个实例了。等到执行结束(可能被 Kill掉，被 Shutdown等)，就把临时文件删除，以后可以运行新的实例了。<br/><br/>
+可以把某个 Shell 的执行权当作一个独占资源，只有获取锁(没有临时文件，并且建立它)时才有权执行它，执行完后释放锁(把临时文件删除)。<!--more--><br/><br/>
+具体实现可在您有这种需求的 Shell 中执行任务之前加上下面这段代码，其中有详尽的注释，很容易体会的。<br/><br/>
+<pre class="brush:csharp">#定义一个标识脚本正在执行的文件名，尽量让这个临时文件名独特
+#避免与他处指定重名，可借鉴C/C++防止重复包含头文件的宏命名法
+TMPFILE=/tmp/unmi/backup_oracle_orcl_database.sh.tmp<br/><br/>
+# BEGIN--检查是否有别的实例在运行，保证同时只能运行一个实例<br/><br/>
+if[ -e $TMPFILE ]  #判断临时文件是否存在
+then                
+   echo "Other instance is running!" #存在表明有一个实例在运行
+   exit 0           #退出本脚本的执行
+else
+   touch $TMPFILE   #监时文件若不存在,就用 touch 新建一个
+   chmod 600 $TMPFILE #把临时文件属性改为只建立者可读写
+fi<br/><br/>
+#用 trap 命令设置一个对信号的监听器
+#程序运行中当监听到信号 0,1,2,3,9,15就会删除临时文件，并退出脚本执行
+#比如说，当脚本自行运行结束、被用户 Ctrl+C 掉、被 Kill 掉、终端被关闭
+#系统关机或重启的情况下，都需将临时文件删除，否则脚本以后都没机会执行
+#在 Linux 的 shell 下可以运行 trap -l 查看到所以信号
+trap "rm -f ${TMPFILE}; exit" 0 1 2 3 9 15<br/><br/>
+# END--检查是否有别的实例在运行，保证同时只能运行一个实例<br/><br/>
+#下面是这支 Shell 要完成的任务的代码了</pre>
+<br/>
+<br />
+附：在 Red Hat Linux 下执行 trap -l 显示出的所有信号，不同的 Shell 类型显示方式可能不一样。<br/><br/>
+<blockquote>
+[root@Linux Home]$ trap -l<br />
+ 1) SIGHUP      2) SIGINT       3) SIGQUIT       4) SIGILL<br />
+ 5) SIGTRAP     6) SIGABRT      7) SIGBUS        8) SIGFPE<br />
+ 9) SIGKILL     10) SIGUSR1     11) SIGSEGV      12) SIGUSR2<br />
+13) SIGPIPE     14) SIGALRM     15) SIGTERM      17) SIGCHLD<br />
+18) SIGCONT     19) SIGSTOP     20) SIGTSTP      21) SIGTTIN<br />
+22) SIGTTOU     23) SIGURG      24) SIGXCPU      25) SIGXFSZ<br />
+26) SIGVTALRM   27) SIGPROF     28) SIGWINCH     29) SIGIO<br />
+30) SIGPWR      31) SIGSYS      33) SIGRTMIN     34) SIGRTMIN+1<br />
+35) SIGRTMIN+2  36) SIGRTMIN+3  37) SIGRTMIN+4   38) SIGRTMIN+5<br />
+39) SIGRTMIN+6  40) SIGRTMIN+7  41) SIGRTMIN+8   42) SIGRTMIN+9<br />
+43) SIGRTMIN+10 44) SIGRTMIN+11 45) SIGRTMIN+12  46) SIGRTMIN+13<br />
+47) SIGRTMIN+14 48) SIGRTMIN+15 49) SIGRTMAX-15  50) SIGRTMAX-14<br />
+51) SIGRTMAX-13 52) SIGRTMAX-12 53) SIGRTMAX-11  54) SIGRTMAX-10<br />
+55) SIGRTMAX-9  56) SIGRTMAX-8  57) SIGRTMAX-7   58) SIGRTMAX-6<br />
+59) SIGRTMAX-5  60) SIGRTMAX-4  61) SIGRTMAX-3   62) SIGRTMAX-2<br />
+63) SIGRTMAX-1  64) SIGRTMAX
+</blockquote>

@@ -1,0 +1,150 @@
+---
+title: Unmi 学习 Groovy 之文件操作
+url: /unmi-study-groovy-file/
+date: 2008-09-21T19:47:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Groovy
+tags: 
+  - Groovy
+  - File
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 330 
+wpStatus: publish
+views: 1191
+lastmod: 2021-05-03T00:03:49-05:00
+---
+
+<strong>一：Java 与 Groovy 读文件操作比较</strong><br/><br/>
+Groovy 对 java.io.File 进行了扩展，增加了一些接受闭包参数和简化文件操作的方法。作为对比，我们还是先来看看 java 中读取文件的两种常方法，分别是行读取和字节缓冲区读取：<br/><br/>
+<table id="table1" style="border-collapse: collapse;" border="1" width="75%" align="center">
+<tbody>
+<tr valign="top">
+<td width="50%">
+<pre class="lang:default decode:true">//--BufferedReader 行读取
+BufferedReader br = null;
+try {
+    br = new BufferedReader(new FileReader("foo.txt"));
+    List&lt;String&gt; content = new ArrayList&lt;String&gt;();
+    String line = null;
+    while((line=br.readLine())!=null){
+        content.add(line);
+    }
+} catch (FileNotFoundException e) {
+} catch(IOException e){
+} finally{
+    if(br != null){
+        try {
+            br.close();
+        } catch (IOException e) {
+        }
+    }
+}
+</pre>
+</td>
+<td>
+<pre class="lang:default decode:true">//--借助于 buffer 缓冲区来读字节
+InputStream is = null;
+try {
+    is = new FileInputStream("foo.txt");
+    StringBuffer content = new StringBuffer();
+    int read = -1;
+    byte[] buffer = new byte[1024];
+    while((read=is.read(buffer))!=-1){
+        content.append(new String(buffer,0,read));
+    }
+} catch (FileNotFoundException e) {
+} catch(IOException e){
+} finally{
+    if(is != null){
+        try {
+            is.close();
+        } catch (IOException e) {
+        }
+    }
+}
+</pre>
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+从上面可看到，采用 Java 传统方式来读取文件内容，不仅代码行多，而且还必须自己用 try/catch/finally 来处理异常和资源的关闭。现在马上来看看 Groovy 完成以上工作的代码是怎么的，只要一行代码：<!--more--><br/><br/>
+<pre class="brush:groovy">text = new File("foo.txt").getText();</pre>
+<br/>
+不需要 Reader 或 Inputstream、不用关闭语名和异常处理。我们所要做的就是编写业务逻辑，剩下的工作 Groovy 会帮你料理的。当然，如果文件找不到，也是会出现 java.io.FileNotFoundException 异常的。你可以捕获这个要处理的异常，但仍然不必担心资源的释放。<br/><br/>
+<pre class="lang:default decode:true">try{
+    text = new File("foo.txt").getText();
+} catch(Exception e){
+}</pre>
+<br/>
+至于写文件，Groovy 的表现也比较抢眼。下面我们来体验一下 Groovy 对 java.io.File 扩展的几个方法的使用。关于 File 的所有扩展方法的使用请参考 Groovy JDK -- <a href="https://groovy-lang.org/gdk.html">https://groovy-lang.org/gdk.html</a>) 中 java.io.File(<a href="https://docs.groovy-lang.org/latest/html/groovy-jdk/java/io/File.html">https://docs.groovy-lang.org/latest/html/groovy-jdk/java/io/File.html</a>) 部分。<br/><br/>
+<strong>二：Groovy 对 java.io.File 扩展方法举例</strong><br/><br/>
+1. eachLine -- 打开和读取文件的每一行<br/><br/>
+<pre class="brush:groovy">new File("foo.txt").eachLine {
+    println it.toUpperCase();
+}</pre>
+<br/>
+2. readLines -- 其作用基本与 eachLine 相同，但它不接受闭包为参数，而是把文件行读到一个 List 中<br/><br/>
+<pre class="lang:default decode:true">lineList = new File("foo.txt").readLines();
+lineList.each {
+    println it.toUpperCase();
+}</pre>
+<br/>
+3. splitEachLine -- 读取文件的每一行，然后对行以指定分隔符分割成数组。不用再多说了，这个方法对处理 CSV 文件那可是相当的高效。<br/><br/>
+<pre class="lang:default decode:true">lineList = new File("foo.csv").splitEachLine(",") {
+    println "name=${it[0]} balance=${it[1]}";
+}</pre>
+<br/>
+4. eachByte -- 处理二进制文件，以字节级访问文件，这个方法相当于 eachLine() 方法。<br/><br/>
+<pre class="brush:groovy">new File("foo.bin").eachByte { print it; }</pre>
+<br/>
+5. readBytes -- 自然，处理二进制文件，以字节级访问文件，这个方法相当于 readLines() 方法了<br/><br/>
+<pre class="lang:default decode:true">byteList = new File("foo.bin").readBytes();
+byteList.each {
+    println it;
+}</pre>
+<br/>
+6. write -- Groovy 用这个方法写文件真是太直观了<br/><br/>
+<pre class="brush:groovy">new File("foo.txt").write("testing testing");<br/><br/>
+new File("foo.txt").write("""
+This is
+just a test file
+to play with
+""");</pre>
+<br/>
+以上使用了三重引用语法，其中的文本保留格式的写入到文件中。注意上面写法在文件首尾都会有一个空行，除非起始和结束字符都要紧贴 """；还有上面方法写的文件用词本打开会是挤在一行，用 editplus 打开是多行，因为它采用的是 linux 下的 \n 换行，而不是 windows 下的 \r\n 换行。、<br/><br/>
+7. append -- 与 write 覆写文件不同，append 是在文件后追加内容<br/><br/>
+<pre class="brush:groovy">new File("foo.txt").append("""\
+This is
+just a test file
+to play withff
+"""
+);</pre>
+<br/>
+8. eachFile -- 功能上类似 java.io.File 的 listFiles() 方法。用来列举路径中的每个文件(包括目录)，传给闭包处理<br/><br/>
+<pre class="lang:default decode:true">new File(".").eachFile {   //这里的 File 表示的是一个路径
+    println it.getName();  //eachFile() 列出的每一项是一个 File 实例
+}</pre>
+<br/>
+9. eachFileRecurse -- 以深度优先的方式递归遍历路径，列出文件(包括目录)，传给闭包处理<br/><br/>
+<pre class="lang:default decode:true ">new File(".").eachFileRecurse {   //这里的 File 表示的是一个路径
+    println it.getPath();  //eachFile() 列出的每一项是一个 File 实例
+}</pre>
+<br/>
+10. …… 再重复一下，其他 Groovy 对 java.io.File 的扩展方法请参考 <a href="https://docs.groovy-lang.org/latest/html/groovy-jdk/java/io/File.html">https://docs.groovy-lang.org/latest/html/groovy-jdk/java/io/File.html</a>。如 eachDir()、eachDirMatch()、eachDirRecurse()、eachFileMatch()、filterLine()、newInputStream()、newOutputStream()、newReader()、newPrintWriter()、withInputStream()、withOutputStream()、withReader()、withPrintWriter() 等等。还要留意一下有一些方法是可以指定字符集的。<br/><br/>
+参考：1. 《Java 脚本编程语言、框架与模式》第 4 章<br/><br/>
+&nbsp;<br/><br/>
+更新链接：2020-09-10<br/><br/>
+<hr /><br/><br/>
+由于 http://groovy.codehaus.org 不再使用，所以更新原文中的两个链接<br/><br/>
+<ul>
+    <li>http://groovy.codehaus.org/groovy-jdk/java/io/File.html 更新为 https://docs.groovy-lang.org/latest/html/groovy-jdk/java/io/File.html</li>
+    <li>http://groovy.codehaus.org/groovy-jdk/ 更新为 https://groovy-lang.org/gdk.html</li>
+</ul>

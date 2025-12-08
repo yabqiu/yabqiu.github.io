@@ -1,0 +1,188 @@
+---
+title: OpenVPN Windows 平台安装手记
+url: /openvpn-windows-installation/
+date: 2011-03-11T13:34:52-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Windows
+tags: 
+  - Windows
+  - openvpn
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3300 
+wpStatus: publish
+views: 6924
+lastmod: 2012-03-09T23:52:19-06:00
+---
+
+VPN 用途还是很广泛的，比如家里连接公司的网络解决紧急问题，安全因素考虑时两个分部间的互访。而且在兲朝 VPN 可能还承载着更大的功用，比如你在外面有个主机或是 VPS 就可以试下。OpenVPN 是免费的(Community 版免费)，它可以让你异地两个电脑组成一个局域网，可以是 client-to-client, 现 proxy 一下；或是 push 成 gateway，透明的进行 proxy -- 当然还需要更多的设置，像 NAT、Route 等。<br/>
+<br/>
+OpenVPN 是跨平台的，这里讲下 Windows 平台的 OpenVPN 如何安装设置。下载页面：<a href="http://openvpn.net/index.php/open-source/downloads.html">http://openvpn.net/index.php/open-source/downloads.html</a>，当前 Windows 平台下的版本是 <a href="http://swupdate.openvpn.net/community/releases/openvpn-2.1.4-install.exe" target="_blank">openvpn-2.1.4-install.exe</a>。<!--more--><br/>
+<br/>
+在服务端和客户端都需要安装它，安装的过程没必要讲了，就是下一步、下一步的机械的走。安装完了之后就分别是 Server 端和客户端的配置。我们假定你是安装在默认的目录中的：C: \Program File\OpenVPN 的。OpenVPN 安装之后会在电脑上多出一张网卡出来，名叫 TAP-Win32 Adapter V9，我们终及目标就是让分别在服务端和客户端的这两张网卡连起来，并能通过其上的 IP 互相访问。<br/>
+<br/>
+<span style="font-size: medium;"><strong>一. 服务端配置：</strong></span><br/>
+<br/>
+1) 运行 cmd 进到命令行窗口，cd 切到 C: \Program File\OpenVPN\easy-rsa 目录，这里有不少 .bat 脚本，然后依次运行以下三个命令：<br/>
+<pre class="brush:text">init-config<br/>
+vars<br/>
+clean-all</pre>
+
+其中 init-config 会把 vars.bat.sample 复制为 var.bat，正好是下个命令用的，还会把 openssl.cnf.sample 复制为 openssl.cnf。<br/>
+vars.bat 用来设置一些变量，主要就是设置下面那几个：<br/>
+<pre class="brush:text">set KEY_COUNTRY=US<br/>
+set KEY_PROVINCE=CA<br/>
+set KEY_CITY=SanFrancisco<br/>
+set KEY_ORG=OpenVPN<br/>
+set KEY_EMAIL=mail@host.domain</pre>
+
+根据自己的需要来改了，你也可以不用管它。<br/>
+<br/>
+clean-all 会清掉 C: \Program File\OpenVPN\easy-rsa\keys 目录，再把 index.txt 和 serial 文件放进来。<br/>
+<br/>
+上面是准备工作，下面要开始生成各种证书了。<br/>
+<br/>
+2) 生成根证书，还是在上面那个 Dos 窗口中执行。现在开始要注意以下每一步操作会在 C: \Program File\OpenVPN\easy-rsa\keys 目录生成什么文件了。<br/>
+<pre class="brush:powershell">build-ca</pre>
+
+这一步会在 keys 中生成 ca.key 和 ca.crt 文件，执行 build-ca 时会询问填些 Country、Organization 等一些信息，有些有默认值，关键是 Common Name 要填写的，其他的可忽略掉。<br/>
+<br/>
+3) 生成 dh1024.pem 文件，Server 使用 TLS(OpenSSL) 必须要有的文件，执行命令：<br/>
+<pre class="brush:powershell">build-dh.bat</pre>
+
+这一步不需要输入什么，时间稍长一些，屏幕上是一串的星星点点，持续时间大约要 30-40 秒， 完后在 keys 下生成文件 dh1024.pem<br/>
+<br/>
+4) 生成服务端密钥和证书，继续执行：<br/>
+<pre class="brush:powershell">build-key-server server01</pre>
+
+server01 是自己定义的参数名，与上相应的就会生成 server01.key、server01.csr 和 server01.crt，也都是在 keys 目录里。<br/>
+<br/>
+这一步像 build-dh.bat 一样有些东西要填写，之后就是该回答 y 的 y 一下，关键就一个：<br/>
+<br/>
+Common Name 必须填，且不能与执行 build-dh 时相同，否则会报：<br/>
+<br/>
+failed to update database<br/>
+TXT_DB error number 2<br/>
+找不到 C:\Program Files\OpenVPN\easy-rsa\keys\*.old<br/>
+<br/>
+三个文件 server01.key、server01.csr 和 server01.crt 也会生成，但文件 server01.crt 的大小是 0 字节，无效的，还得重新来过才行，看到 Data Base Updated 才能算数。<br/>
+<br/>
+你要生成多个服务端的密钥和证书则继续 build-key-server server02 ......<br/>
+<br/>
+5) 现在为客户端生成密钥和证书，仍然是在当前的 Dos 窗口的当前目录上，执行：<br/>
+<pre class="brush:powershell">build-key client01</pre>
+
+client01 名称自己定义，这一步成功时生成的文件相应的是 client01.key、client01.csr 和 client01.crt。<br/>
+<br/>
+和 build-ca 和 build-key-server 一样要输入一堆东西，这里注意的是 Common Name 不能与执行 build-key-server 时输入的一样，与 build-ca 的 Common Name 一样我试过没什么关系，否则也是报：<br/>
+<br/>
+failed to update database<br/>
+TXT_DB error number 2<br/>
+找不到 C:\Program Files\OpenVPN\easy-rsa\keys\*.old<br/>
+<br/>
+如果要生成其他的客户端密钥和证书，可以继续 build-key client02 ......<br/>
+<br/>
+6) 生成 ta.key 文件，我们仍然是 Dos 下，当前目录还是 C: \Program File\OpenVPN\easy-rsa，所以要执行的命令是：<br/>
+<pre class="brush:powershell">..\bin\openvpn --genkey --secret keys\ta.key</pre>
+
+这一步不罗嗦，很快，生成的文件就是 ta.key。<br/>
+<br/>
+至此我们要用命令生成的各个文件是完成了，而且我们让所有的文件都生成在 keys 目录中。现在就是要配置服务端和客户端使用的 .ovpn 文件以件分配好上面生成的文件。<br/>
+<br/>
+7) 服务端 server01.ovpn 文件，创建在 C: \Program File\OpenVPN\config\ 目录中，内容如下：<br/>
+<pre class="brush:text">port 1194<br/>
+proto udp<br/>
+<br/>
+dev tap<br/>
+ca ca.crt<br/>
+cert server01.crt<br/>
+key server01.key # This file should be kept secret<br/>
+;crl-verify vpncrl.pem<br/>
+dh dh1024.pem<br/>
+server 10.8.0.0 255.255.255.0<br/>
+ifconfig-pool-persist ipp.txt<br/>
+client-to-client<br/>
+;duplicate-cn<br/>
+keepalive 10 120<br/>
+tls-auth ta.key 0 # This file is secret<br/>
+comp-lzo<br/>
+;max-clients 100<br/>
+user nobody<br/>
+group nobody<br/>
+persist-key<br/>
+persist-tun<br/>
+status openvpn-status.log<br/>
+verb 3</pre>
+
+上面配置的是 client-to-client 方式，就是让异地的两台机器像局域网一样连接起来，IP 将在 10.8.0.x 内分配置。<br/>
+port 指定连接端口，proto 指定了传输层协议，当然也可以是 tcp，只是 udp 比 tcp 效率要高些。<br/>
+<br/>
+8 ) 拷贝服务器端要用的文件<br/>
+<br/>
+把之前生成在 C: \Program File\OpenVPN\easy-rsa\keys 中的 ca.crt、server01.key、server01.crt、ta.key 和 dh1024.pm 五个文件拷贝到 C: \Program File\OpenVPN\config\ 中。<br/>
+<br/>
+9) 启动 OpenVPN 服务端<br/>
+<br/>
+执行 OpenVPN GUI 程序，主窗口中点连接，或是在它的系统托盘图标的右键菜单里点连接，看到一顿细小的文字狂滚。如果一切正常的话，服务器上那块 TAP-Win32 Adapter V9 网卡就会就为已连接状态，并且自动获得 IP 应该是 10.8.0.1，可能是其他。 要是有问题的话，还能怎么样呢，View Log，Edit Config 了，或者再往前追溯找原因吧。<br/>
+<br/>
+<strong><span style="font-size: medium;">二. 客户端配置</span></strong><br/>
+<br/>
+确实，大部分的作业都要在服务器端先完成，客户端要用的一些文件也是来自于前面生成的。<br/>
+<br/>
+1) 客户端配置文件 client01.ovpn，放在客户端 OpenVPN 安装目录的 config 文件夹里，通常也是 C: \Program File\OpenVPN\config\，内空如下：<br/>
+<pre class="brush:text">client<br/>
+dev tap<br/>
+proto udp<br/>
+<br/>
+remote 74.125.235.50 1194<br/>
+;remote my-server-2 1194<br/>
+<br/>
+;remote-random<br/>
+<br/>
+resolv-retry infinite<br/>
+nobind<br/>
+user nobody<br/>
+group nobody<br/>
+route 192.168.0.0 255.255.252.0<br/>
+persist-key<br/>
+persist-tun<br/>
+<br/>
+;http-proxy-retry # retry on connection failures<br/>
+;http-proxy [proxy server] [proxy port #]<br/>
+<br/>
+ca ca.crt<br/>
+cert client01.crt<br/>
+key client01.key<br/>
+<br/>
+ns-cert-type server<br/>
+tls-auth ta.key 1<br/>
+comp-lzo<br/>
+# Set log file verbosity.<br/>
+verb 4</pre>
+
+remote 指定了前面那个 OpenVPN 服务器的 ip 和端口号，其他的像 route 之类的配置真要好生琢磨。<br/>
+<br/>
+2) 拷贝客户端要用的文件<br/>
+<br/>
+在服务端也算折腾了半天，现在要把服务端上生成的 ca.crt、client01.crt、client01.key 和 ta.key 放到客户端与 client01.ovpn 所在的目录里。<br/>
+<br/>
+3) 启动客户端进行连接<br/>
+<br/>
+在客户端上也是运行 OpenVPN GUI 程序，在它的主窗口中点连接或是系统托盘的右键菜单上的连接，窗口中会刷刷刷的，正常的话网卡会 TAP-Win32 Adapter V9  得到一个 IP 10.8.0.2，可能是其他了。<br/>
+<br/>
+客户端只要有密钥和证书文件就可以连接过来，所以要让更多的用户能连就给他们颁布证书和密钥，他们分别会是 client02，client03 ......<br/>
+<br/>
+到现在，VPN 是通了，你想用它来干什么就去发挥你的想像力了。<br/>
+<br/>
+参考：1. <a href="http://www.jianblog.com/2007/04/12/375/">http://www.jianblog.com/2007/04/12/375/</a><br/>
+             2. <a href="http://zouyi.rayyn.net/2010/06/windows-openvpn-how-to-use/">http://zouyi.rayyn.net/2010/06/windows-openvpn-how-to-use/</a><br/>
+             3. <a href="http://chding.blog.51cto.com/102388/15119">http://chding.blog.51cto.com/102388/15119</a><br/>
+             4. <a href="http://hi.baidu.com/hansel07/blog/item/afa5c8c341abde150ef47791.html" target="_blank">Openvpn 常见问题及其解决办法</a><br/>
+             5. <a href="http://www.xiaohui.com/dev/server/20070514-install-openvpn.htm" target="_blank">Linux 下 OpenVPN 安装和 Windows OpenVPN GUI 安装笔记</a><br/>
+<div id="_mcePaste" class="mcePaste" style="position: absolute; width: 1px; height: 1px; overflow: hidden; top: 0px; left: -10000px;">﻿</div>

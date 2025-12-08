@@ -1,0 +1,513 @@
+---
+title: PostgreSQL 函数与存储过程及调用
+url: /postgresql-function-procedure-application/
+date: 2024-04-10T00:57:21-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/postgresql-logo.png"
+categories:
+  - Database
+tags: 
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13570 
+wpStatus: publish
+views: 595
+lastmod: 2024-04-10T16:19:58-05:00
+---
+
+PostgreSQL 随着云服务的盛行，越发被广泛的应用，免费开源且有丰富的特性支持，加上性能也很不错，因而备受青睐。PostgreSQL 的函数与存储过程区别并不太大，不像某些数据库的函数与存储过程必须是无副作用或有副作用，在 PostgreSQL 的函数和存储过程中可以进行任何的 SQL 操作。简单列举下 PostgreSQL 的函数与存储过程的区别主要如下：</p>
+<br/>
+函数<br/><br/>
+<ol>
+    <li>return 或 out 参数返回值，return 可返回单个值或一系列值(return setof 或 return table), 或返回光标(cursor). 函数 return void 就和存储过程差不多了</li>
+    <li>函数因其有返回值，所以可通过 select, insert, updata 或 delete 语句来调用，如 select fn1(), delete * from test1 where fn2(c1)=0</li>
+    <li>可以用 execute 执行动态 sql, 如 execute 'delete * from ' || 't1'</li>
+</ol>
+<br/>
+存储过程<br/><br/>
+<ol>
+    <li>IN, OUT 或 INOUT 参数，但不直接返回值</li>
+    <li>不能用 select, insert 等语句使用</li>
+    <li>不能用 execute 执行动态 sql</li>
+</ol>
+<br/>
+接下来我们来体验一下 PostgreSQL 的函数与存储过程<!--more--><br/><br/>
+先用 docker 启动一个 PostgreSQL 数据库，我们使用下面的命令<br/><br/>
+<blockquote>
+$ mkdir pgdata<br />
+$ docker run -it -v $(PWD)/pgdata:/var/lib/postgresql/data -e POSTGRES_PASSWORD=mysecretpassword -p 5432:5432 postgres:15
+</blockquote>
+<br/>
+然后在有 psql 命令的终端执行 <code>$ PGPASSWORD=mysecretpassword psql -h localhost -U postgres</code> 就能连接到该数据库<br/><br/>
+<blockquote>
+$ PGPASSWORD=mysecretpassword psql -h localhost -U postgres<br />
+psql (16.2, server 15.6 (Debian 15.6-1.pgdg120+2))<br />
+Type "help" for help.
+postgres=# \c<br />
+psql (16.2, server 15.6 (Debian 15.6-1.pgdg120+2))<br />
+You are now connected to database "postgres" as user "postgres".<br />
+postgres=#
+</blockquote>
+<br/>
+或者用数据库客户端，如 DBeaver 来连接并操作<br/><br/>
+<h3>PostgreSQL 函数</h3><br/><br/>
+我们不叙述它的完整定义语法，只举几个例子<br/><br/>
+<h4>带 IN 参数和返回单个值</h4><br/><br/>
+<pre class="lang:default decode:true">create or replace function fn1(a1 integer, a2 numeric)
+    returns numeric
+    language plpgsql
+    as $$
+declare var_count integer;
+begin
+    select count(*) into var_count from pg_database;
+    if(a1&lt;5) then
+        return a1 + a2;
+    else
+        return var_count + a2;
+    end if;
+end;
+$$; </pre>
+<br/>
+调用<br/><br/>
+<pre class="lang:default decode:true ">select fn1(1,5);  -- 6
+select fn1(2,5);  -- 7
+select fn1(6,5);  -- 8
+select fn1(9,5);  -- 8</pre>
+<br/>
+不能通过 call 调用<br/><br/>
+<pre class="lang:default decode:true">postgres=# call fn1(1,3);
+ERROR:  fn1(integer, integer) is not a procedure
+LINE 1: call fn1(1,3);
+             ^
+HINT:  To call a function, use SELECT.</pre>
+<br/>
+<h4>函数返回一个游标</h4><br/><br/>
+<pre class="lang:default decode:true">create or replace function fn2()
+    returns refcursor
+    language plpgsql
+    as $$
+declare ref_cursor refcursor;
+begin
+    open ref_cursor for
+      select oid, datname from pg_database;
+    return ref_cursor;
+end;
+$$;
+</pre>
+<br/>
+现在用 select fn2() 得到的是一个 <br/><br/>
+<pre class="lang:default decode:true">postgres=# select fn2();
+fn2
+--------------------
+&lt;unnamed portal 1&gt;
+(1 row)<br/><br/>
+postgres=# select fn2();
+fn2
+--------------------
+&lt;unnamed portal 2&gt;
+(1 row)</pre>
+<br/>
+无法看到游标所代表的结果，需要用 fetch all in "&lt;unnamed portal 1&gt;" 来获得数据，但在 select fn2() 后之后得到游标名称后直接 fetch all 是不行的，如我们再 select fn2();<br/><br/>
+<pre class="lang:default decode:true">postgres=# select fn2();
+fn2
+--------------------
+&lt;unnamed portal 3&gt;
+(1 row)<br/><br/>
+postgres=# fetch all in "&lt;unnamed portal 3&gt;" ;
+ERROR: cursor "&lt;unnamed portal 3&gt;" does not exist</pre>
+<br/>
+原因是 select fn2() 之后事物便结束了，&lt;unnamed portal 3&gt; 只存在当前事物中，再次用 fetch all in "&lt;unnamed portal 3&gt;" 它已不存在，需要把 select 和 fetch 包裹在同一个事物当中<br/><br/>
+<pre class="lang:default decode:true ">postgres=# begin;
+BEGIN
+postgres=*# select fn2();
+        fn2
+--------------------
+ &lt;unnamed portal 6&gt;
+(1 row)<br/><br/>
+postgres=*# fetch all in "&lt;unnamed portal 6&gt;";
+ oid |  datname
+-----+-----------
+   5 | postgres
+   1 | template1
+   4 | template0
+(3 rows)<br/><br/>
+postgres=*# rollback;
+ROLLBACK</pre>
+<br/>
+<code>begin;</code> 能启动一个事物，在同一个事物中便可获得游标的记录，至于落后用 rollback 或 commit 结束事物都行<br/><br/>
+如果是用 DB 客户端，如 DBeaver 的话，可设置  Database/Transaction Mode 为 Manual Commit 可以执行  select fn2() 得到游标名后，接着 fetch 结果<br/><br/>
+<pre class="lang:default decode:true ">select fn2();
+fetch all in "&lt;unnamed portal 3&gt;"</pre>
+<br/>
+<h4>命名返回游标</h4><br/><br/>
+前面的函数返回 refcursor 时，在 select fn2() 时游标名称是依次递增的，如 &lt;unnamed portal 1&gt;, &lt;unnamed portal 2&gt;...., 在 fetch 时必须复制产生的游标名称。我们也可以让函数返回可预知的名称，比如通过参数<br/><br/>
+<pre class="lang:default decode:true">create or replace function fn3(cursor_name character varying)
+    returns refcursor
+    language plpgsql
+    as $$
+declare ref_cursor refcursor:= cursor_name;
+begin
+    open ref_cursor for
+      select oid, datname from pg_database;
+    return ref_cursor;
+end;
+$$;
+</pre>
+<br/>
+那么现在执行 fn3 的游标名称就是明确的，因此可以果断的连续执行下面两句<br/><br/>
+<pre class="lang:default decode:true">postgres=# begin; select fn3('mycur'); fetch all in mycur;
+BEGIN
+  fn3
+-------
+ mycur
+(1 row)<br/><br/>
+ oid |  datname
+-----+-----------
+   5 | postgres
+   1 | template1
+   4 | template0
+(3 rows)</pre>
+<br/>
+另一种方式，或者通过 $1 来引用参数<br/><br/>
+<pre class="lang:default decode:true">create or replace function fn4(refcursor)
+    returns refcursor
+    language plpgsql
+    as $$
+begin
+    open $1 for
+      select oid, datname from pg_database;
+    return $1;
+end;
+$$;
+</pre>
+<br/>
+同样的<br/><br/>
+<pre class="lang:default decode:true ">postgres=# begin; select fn4('mycur1'); fetch all in mycur1;
+BEGIN
+  fn4
+--------
+ mycur1
+(1 row)<br/><br/>
+ oid |  datname
+-----+-----------
+   5 | postgres
+   1 | template1
+   4 | template0
+(3 rows)</pre>
+<br/>
+<h4>返回 table 的函数</h4><br/><br/>
+<pre class="lang:default decode:true ">create or replace function fn5(p_datname varchar = 'temp')
+  returns table(col1 integer, col2 varchar)
+  language plpgsql as
+$func$
+begin
+   return query execute 
+     format($f$select cast(oid as integer) as col1, cast(datname as varchar) as col2 from pg_database where datname like '%s%%' $f$, p_datname);
+end
+$func$</pre>
+<br/>
+调用返回 table 的函数无需开启事物<br/><br/>
+<pre class="lang:default decode:true ">postgres=# select fn5();
+      fn5
+---------------
+ (1,template1)
+ (4,template0)
+(2 rows)<br/><br/>
+postgres=# select fn5('p');
+     fn5
+--------------
+ (5,postgres)
+(1 row)</pre>
+<br/>
+return setof 可以是 setof 任何类型或记录，如 setof varchar, setof record 或 setof refcursor. 像下面的例子<br/><br/>
+<pre class="lang:default decode:true">drop table t1;
+create table t1(c1 integer, c2 varchar(16));
+insert into t1 values (1, 'a'), (2, 'b');<br/><br/>
+create or replace function fn6()
+  returns setof record language sql as
+$$
+  insert into t1 values(3, 'c');
+  select * from t1;
+$$</pre>
+<br/>
+我们创建一个表 t1，然后在 fn6() 函数中返回 record, 并演示函数中的副作用操作(insert)<br/><br/>
+<pre class="lang:default decode:true ">postgres=# select fn6();
+  fn6
+-------
+ (1,a)
+ (2,b)
+ (3,c)
+(3 rows)</pre>
+<br/>
+也是不需要开启事物。<br/><br/>
+多个 return 返回一系列值的情况<br/><br/>
+<pre class="lang:default decode:true ">create or replace function fn7()
+  returns setof varchar
+  language plpgsql as $$
+begin 
+    return next 'hello';
+    return next 'world';
+    return next '!';
+end;
+$$</pre>
+<br/>
+查询<br/><br/>
+<pre class="lang:default decode:true">postgres=# select fn7();
+  fn7
+-------
+ hello
+ world
+ !
+(3 rows)</pre>
+<br/>
+<h4>函数的 OUT 参数</h4><br/><br/>
+函数除了 return 返回值外，可以像存储过程那样用 OUT 参数返回值。其实从最前面的 PostgreSQL 的函数与存储过程来看，功能上存储过程完全没有存在的必要，存储过程能做的函数都能干，函数还能有返回值，可用于 select 等操作，而且还能 execute 动态语句。如果说 PostgreSQL 还有存储过程的一席之地的话，那么只能按照数据库函数与存储过程的约定来选择创建函数还是存储过程<br/><br/>
+<ol>
+    <li>函数：有返回值，不应产生副作用，不推荐用 OUT 参数返回值</li>
+    <li>存储过程：应让它具有副作用，必要时用 OUT 参数返回值</li>
+</ol>
+<br/>
+函数的 OUT 参数与 returns 类型是有关联的<br/><br/>
+一个 OUT 参数时，returns 类型必须与 OUT 参数类型一致<br/><br/>
+<pre class="lang:default decode:true">create or replace function f8(x out integer)
+  returns varchar
+  language plpgsql as $$
+begin
+  return 'abc';
+end
+$$
+</pre>
+<br/>
+执行时会出错<br/><br/>
+<blockquote>
+SQL Error [42P13]: ERROR: function result type must be integer because of OUT parameters
+</blockquote>
+<br/>
+但改成 <code>o out varchar</code> 也不行<br/><br/>
+<pre class="lang:default decode:true">create or replace function fn8(x out varchar)
+  returns varchar
+  language plpgsql as $$
+begin
+   return 'abc';
+end
+$$
+</pre>
+<br/>
+仍然出错<br/><br/>
+<blockquote>
+SQL Error [42804]: ERROR: RETURN cannot have a parameter in function with OUT parameters<br />
+Position: 104
+</blockquote>
+<br/>
+解决的办法是去掉 OUT 参数或者保留 OUT  参数时，在函数体中只能给 OUT 参数赋值<br/><br/>
+<pre class="lang:default decode:true ">create or replace function fn8()
+  returns varchar
+  language plpgsql as $$
+begin
+    return 'abc';
+end
+$$</pre>
+<br/>
+或者<br/><br/>
+<pre class="lang:default decode:true">create or replace function fn8(x out varchar)
+  returns varchar
+  language plpgsql as $$
+begin
+  x := 'abc';
+end
+$$
+</pre>
+<br/>
+执行效果上都是一样的<br/><br/>
+<pre class="lang:default decode:true ">postgres=# select fn8();
+ fn8
+-----
+ abc
+(1 row)</pre>
+<br/>
+是不是感觉 PostgreSQL 的函数与存储过程越发统一起来的;  从某种意义来说，函数可以认为是第一个参数为 OUT 类型的存储过程。函数中返回值即是一个 OUT 参数，函数用 return 语句，存储过程则是为 OUT 类型参数赋值来返回值。<br/><br/>
+如果是多个 OUT 参数的函数，创建时 PostgreSQL 会要求函数的返回类型为 record, 由此可推断存储过程的 OUT 参数相当于转换成函数后的返回值<br/><br/>
+<h4>带 OUT 参数的存储过程</h4><br/><br/>
+<pre class="lang:default decode:true ">create or replace procedure pr1(x out varchar, y out varchar)
+  language plpgsql as $$
+begin
+   x := 'aa';
+   y := 'bb';
+end
+$$</pre>
+<br/>
+对存储过程不能用 select, insert 等语句调用了，需用 call<br/><br/>
+<pre class="lang:default decode:true ">postgres=# call pr1('k1', 'k2');
+ x  | y
+----+----
+ aa | bb
+(1 row)</pre>
+<br/>
+返回每一个 OUT 参数值，OUT 参数可以任何类型，比如 refcursor 游标类型，看下例<br/><br/>
+<h3>OUT 游标类型的参数存储过程</h3><br/><br/>
+<pre class="lang:default decode:true ">create or replace procedure pr2(out p_cursor1 refcursor, out p_cursor2 refcursor)
+   language plpgsql as $$
+begin
+    open p_cursor1 for select oid, datname from pg_database;
+    open p_cursor2 for select * from pg_database;
+end;
+$$</pre>
+<br/>
+和函数的使用方式差不多，只是改成了 call<br/><br/>
+<pre class="lang:default decode:true">postgres=# begin;
+BEGIN
+postgres=*# call pr2('k1', 'k2');
+     p_cursor1      |     p_cursor2
+--------------------+--------------------
+ &lt;unnamed portal 3&gt; | &lt;unnamed portal 4&gt;
+(1 row)<br/><br/>
+postgres=*# fetch all in "&lt;unnamed portal 3&gt;";
+ oid |  datname
+-----+-----------
+   5 | postgres
+   1 | template1
+   4 | template0
+(3 rows)</pre>
+<br/>
+<h4>返回 void 的函数</h4><br/><br/>
+我们再由存储过程退回到返回 void 类型的函数<br/><br/>
+<pre class="lang:default decode:true ">create or replace function fn10(p_id integer)
+  returns void
+  language plpgsql as $$
+begin
+  insert into t1 values(3, 'c');
+end
+$$
+</pre>
+<br/>
+我们要 return void 的函数作什么用呢，唯一的好处就是可以用 select/insert 等语句调用，不用 call<br/><br/>
+<pre class="lang:default decode:true ">postgres=# select fn10(2);
+ fn10
+------<br/><br/>
+(1 row)</pre>
+<br/>
+仅此而已。<br/><br/>
+PostgreSQL 的函数与存储过程那种你泥中有我，我泥中有你的关系，看似方便了用 select 等语句调用，其实却苦了 JDBC 来调用方式<br/><br/>
+JDBC 在使用函数时可以两种方式<br/><br/>
+<ol>
+    <li>用 Statement 或 PreparedStatement 像普通 SQL 语句那样 execute(), executeQuery(), executeUpdate(), 或 executeBatch(). 可以 executeBatch() 操作是胜过存储过程的地方</li>
+    <li>或用 CallableStatement, 通过 { ? = call fn(?, ?)}, 不关必返回值的话可以像调用存储过程一样 {call fn(?, ?)}</li>
+</ol>
+<br/>
+JDBC 使用存储过程要用 CallableStatement 的 call fn(?, ?) 来执行, 注意无需两边的大括号<br/><br/>
+由于 executeBatch() 是声明在 Statement 类中，executeBatch() 函数只返回受影响的行数，无法获得函数的返回值或存储过程的 OUT 参数。因些，在不关心返回值(函数的返回值或存储过程的 OUT 参数)时, 应该可以 batch 来执行函数和存储过程。<br/><br/>
+下面是 JDBC 以各种花式调用函数和存储过程的汇总代码, 请对照所调用的 PostgreSQL 函数与存储过程的代码。为完整演示，再补一个表和函数<br/><br/>
+<pre class="lang:default decode:true">create table t1(c1 integer, c2 varchar(16));<br/><br/>
+create or replace function fn11(p_c1 integer, p_c2 varchar)
+  returns void
+  language plpgsql
+  as $$
+begin
+    insert into t1(c1, c2) values(p_c1, p_c2);
+end
+$$</pre>
+<br/>
+若忽略该函数的返回值则可当作存储过程来调用<br/><br/>
+<pre class="lang:default decode:true ">public class TestPostgres {
+    public static void main(String[] args) throws SQLException {
+        selectFunctionGetReturnedSingleValue(createConnection());
+        selectFunctionGetReturnedCursor(createConnection());
+        callFunctionGetReturnedCursor(createConnection());
+        callProcedureGetReturnedPrimitiveValues(createConnection());
+        callProcedureGetReturnedCursor(createConnection());
+        callFunctionIgnoreReturn(createConnection());
+        batchCallFunctionOrProcedure(createConnection());
+    }<br/><br/>
+    private static Connection createConnection() throws SQLException {
+        return DriverManager.getConnection("jdbc:postgresql://localhost/postgres", "postgres", "mysecretpassword");
+    }<br/><br/>
+    private static void selectFunctionGetReturnedSingleValue(Connection conn) throws SQLException {
+        PreparedStatement pstmt = conn.prepareStatement("select fn1(?,?)");
+        pstmt.setInt(1, 100);
+        pstmt.setBigDecimal(2,  BigDecimal.valueOf(3.5));
+        ResultSet rs = pstmt.executeQuery();
+        while (rs.next()) {
+            System.out.println(rs.getObject(1));  // 6.5
+        }
+    }<br/><br/>
+    private static void selectFunctionGetReturnedCursor(Connection conn) throws SQLException {
+        conn.setAutoCommit(false);
+        PreparedStatement pstmt = conn.prepareStatement("select fn2()");
+        ResultSet rs = pstmt.executeQuery();
+        while (rs.next()) {
+            ResultSet rs1 = (ResultSet) rs.getObject(1);
+            while (rs1.next()) {
+                System.out.println(rs1.getObject(1)); // 5, 1, 4
+            }
+        }
+    }<br/><br/>
+    private static void callFunctionGetReturnedCursor(Connection conn) throws SQLException {
+        conn.setAutoCommit(false);
+        CallableStatement call = conn.prepareCall("{? = call fn2()}");
+        call.registerOutParameter(1, Types.REF_CURSOR);
+        call.execute();  // or call.executeUpdate();
+        ResultSet rs = call.getObject(1, ResultSet.class);
+        while (rs.next()) {
+            System.out.println(rs.getObject(1)); // 5, 1, 4
+        }
+    }<br/><br/>
+    private static void callProcedureGetReturnedPrimitiveValues(Connection conn) throws SQLException {
+        CallableStatement call = conn.prepareCall("call pr1(?, ?)");
+        //  调存储过程不能写成 {call pr1(?, ?)}, 否则出下面的错误
+        // org.postgresql.util.PSQLException: ERROR: pr1() is a procedure
+        //  Hint: To call a procedure, use CALL.<br/><br/>
+        call.registerOutParameter(1, Types.VARCHAR);
+        call.registerOutParameter(2, Types.VARCHAR);
+        call.execute();
+        System.out.println(call.getObject(1)); // aa
+        System.out.println(call.getObject(2)); // bb
+    }<br/><br/>
+    private static void callProcedureGetReturnedCursor(Connection conn) throws SQLException {
+        conn.setAutoCommit(false);
+        CallableStatement call = conn.prepareCall("call pr2(?, ?)");
+        call.registerOutParameter(1, Types.REF_CURSOR);
+        call.registerOutParameter(2, Types.REF_CURSOR);
+        call.execute();
+        ResultSet rs = call.getObject(1, ResultSet.class);
+        while (rs.next()) {
+            System.out.println(rs.getObject(1)); // 5, 1, 4
+        }
+    }<br/><br/>
+    private static void callFunctionIgnoreReturn(Connection conn) throws SQLException {
+        CallableStatement call = conn.prepareCall("{call fn2()}");
+        call.execute();
+    }<br/><br/>
+    private static void batchCallFunctionOrProcedure(Connection conn) throws SQLException {
+        CallableStatement call = conn.prepareCall("{call fn11(?, ?)}");<br/><br/>
+        call.setInt(1, 101);
+        call.setString(2, "aa");
+        call.addBatch();<br/><br/>
+        call.setInt(1, 102);
+        call.setString(2, "bb");
+        call.addBatch(); // 插入了 (101, 'aa'), (102, 'bb')<br/><br/>
+        call.executeBatch();<br/><br/>
+        call.clearBatch();<br/><br/>
+        call.setInt(1, 104);
+        call.setString(2, "dd");
+        call.addBatch();
+        call.executeBatch(); // 插入了 (104, 'dd')
+    }
+}</pre>
+<br/>
+总结几点<br/><br/>
+<ol>
+    <li>select fn() 调用可由 stmt.executeQuery()  得到结果，不管是函数还是存储过程</li>
+    <li>call.registerOutParameter() 注册的参数须由 call.getXxx() 获得输出值。用了 <code>call xxx</code> 的方式就不能由 stmt.executeQuery() 获得记录集</li>
+    <li>无论是调用函数还是存储过程，如果返回值或 OUT 参数是游标(REF_CURSOR) 的话，需开启事物(conn.setAutoCommit(false)</li>
+    <li>如果返回值或 OUT 参数不是游标(REF_CURROR)，无需开启事物即能获得结果</li>
+    <li>调用存储时不要写两边的大括号，即 <code>call pr2(?, ?)</code> ，不能写成 <code>{call pr2(?,?)}</code></li>
+    <li>如果把函数当作存储过程来调用，忽略它的返回值的话，也可以写成 <code>call fn2()</code>, 在用 prepareCall() 时，看是否有 {} 来区别函数还是存储过程</li>
+    <li>update/insert/delete 可以 batchUpdate, select fn() 也可以 batchUpdate, 如果忽略函数的返回值或调用存储过程时也可以 batchUpdate</li>
+</ol>
+<br/>
+如果是使用 JdbcTemplate 的系列 execute(), query(), update(), batchUpdate() 操作的话请参考原始的 JDBC 操作。

@@ -1,0 +1,79 @@
+---
+title: Slfj + Logback 时，基本的 logback.xml 配置
+url: /slfj-logback-xml-base-config/
+date: 2011-02-18T07:33:12-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Logback
+  - Log
+  - slfj
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3195 
+wpStatus: publish
+views: 6776
+lastmod: 2021-09-03T13:03:51-05:00
+---
+
+现在越来越多的项目用 Slfj，而与它结合最好的 Log4j 替代品就是 Logback，下面是 Logback 的一个可供参考的基本的配置文件 logback.xml，可以控制台和文件同时输出，文件可进行两种类型的归档，分天存储日志，或按文件大小压缩日志归档。</p>
+<br/>
+Logback 和 Log4J 同出一人之手，而作者的专注点也在 Logback，Logback 有更好的性能，特别是在现代 Java 程序中。<br/><br/>
+一般是 rollingPolicy 和 triggeringPolicy 搭配使用，rollingPolicy 负责做什么，triggeringPolicy 管理什么时候做，而 FixedWindowRollingPolicy 本身就实现了 TriggeringPolicy 接口，所以它能够自我管理，不需要别人来推动就会做的。<!--more--><br/><br/>
+<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="UTF-8"?&gt;<br/><br/>
+&lt;!-- Reference Manual http://logback.qos.ch/manual/index.html --&gt;<br/><br/>
+&lt;configuration&gt;<br/><br/>
+    &lt;appender name="stdout" class="ch.qos.logback.core.ConsoleAppender"&gt; 
+        &lt;encoder charset="UTF-8"&gt; &lt;!-- encoder 可以指定字符集，对于中文输出有意义 --&gt;
+            &lt;pattern&gt;%d{HH:mm:ss.SSS} [%thread] %-5level %logger - %msg%n&lt;/pattern&gt;
+        &lt;/encoder&gt;
+    &lt;/appender&gt; <br/><br/>
+    &lt;appender name="RollingFile" class="ch.qos.logback.core.rolling.RollingFileAppender"&gt;<br/><br/>
+        &lt;filter class="ch.qos.logback.classic.filter.ThresholdFilter"&gt;
+            &lt;level&gt;TRACE&lt;/level&gt;
+        &lt;/filter&gt;<br/><br/>
+        &lt;!-- 可让每天产生一个日志文件，最多 10 个，自动回滚 --&gt;
+        &lt;rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy"&gt;
+            &lt;fileNamePattern&gt;d:/log/Unmi-%d{yyyy-MM-dd}.log&lt;/fileNamePattern&gt;
+            &lt;maxHistory&gt;10&lt;/maxHistory&gt;
+        &lt;/rollingPolicy&gt;<br/><br/>
+        &lt;!-- 下面这段注释的代码可以在日志文件超过 5MB 时进行归档，并且归档文件后缀只要是 .zip 或 .gz 就会自动压缩日志归档 --&gt;
+        &lt;!--file&gt;d:/log/Unmi.log&lt;/file&gt;<br/><br/>
+        &lt;rollingPolicy class="ch.qos.logback.core.rolling.FixedWindowRollingPolicy"&gt;
+          &lt;fileNamePattern&gt;d:/log/Unmi.%i.log.zip&lt;/fileNamePattern&gt;
+          &lt;minIndex&gt;1&lt;/minIndex&gt;
+          &lt;maxIndex&gt;10&lt;/maxIndex&gt;
+        &lt;/rollingPolicy&gt;<br/><br/>
+        &lt;triggeringPolicy class="ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy"&gt;
+          &lt;maxFileSize&gt;5MB&lt;/maxFileSize&gt;
+        &lt;/triggeringPolicy--&gt;<br/><br/>
+        &lt;encoder&gt;
+            &lt;pattern&gt;%d{HH:mm:ss.SSS} [%thread] %-5level %logger - %msg%n&lt;/pattern&gt;
+        &lt;/encoder&gt;
+    &lt;/appender&gt;<br/><br/>
+    &lt;!-- 输出到控制台和文件，可定义更多的 Appender --&gt;<br/><br/>
+    &lt;root level="DEBUG"&gt;
+        &lt;appender-ref ref="stdout" /&gt;
+        &lt;appender-ref ref="RollingFile"/&gt;
+    &lt;/root&gt;<br/><br/>
+    &lt;!-- 下面配置一些第三方包的日志过滤级别，用于避免刷屏 --&gt;<br/><br/>
+    &lt;logger name="org.hibernate" level="WARN"/&gt;
+    &lt;logger name="org.springframework" level="WARN"/&gt;
+    &lt;logger name="com.opensymphony" level="WARN"/&gt;
+    &lt;logger name="org.apache" level="WARN"/&gt;<br/><br/>
+    &lt;!-- show parameters for hibernate sql 专为 Hibernate 定制 --&gt;
+    &lt;logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="TRACE"/&gt;
+    &lt;logger name="org.hibernate.type.descriptor.sql.BasicExtractor" level="DEBUG"/&gt;
+    &lt;logger name="org.hibernate.SQL" level="DEBUG"/&gt;
+    &lt;logger name="org.hibernate.engine.QueryParameters" level="DEBUG"/&gt;
+    &lt;logger name="org.hibernate.engine.query.HQLQueryPlan" level="DEBUG"/&gt;<br/><br/>
+&lt;/configuration&gt;</pre>
+<br/>
+参考：1. <a href="http://logback.qos.ch/manual/index.html" target="_blank" rel="noopener">The logback manual</a><br />
+         2. <a href="http://cat0425.popo.blog.163.com/blog/static/7959643920098177232182/" target="_blank" rel="noopener">logback.xml配置如何按天输出日志文件</a>

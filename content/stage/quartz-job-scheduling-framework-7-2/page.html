@@ -1,0 +1,204 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第七章. 实现 Quartz 监听器 (第二部分)
+url: /quartz-job-scheduling-framework-7-2/
+date: 2008-06-28T23:14:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/10/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 378 
+wpStatus: publish
+views: 850
+lastmod: 2020-03-22T11:55:40-05:00
+---
+
+<strong>三. 监听 Job 事件</strong><br/><br/>
+<span style="color: #800080;">org.quartz.JobListener</span> 接口包含一系列的方法，它们会由 Job 在其生命周期中产生的某些关键事件时被调用。<span style="color: #800080;">JobListener</span> 可用的方法显示在代码 7.1 中。<br/><br/>
+<strong>代码 7.1. <span style="color: #800080;">org.quartz.JobListener</span> 接口中的方法<br />
+</strong><br/><br/>
+<pre class="brush:java">public interface JobListener {
+   public String getName();
+   public void jobToBeExecuted(JobExecutionContext context);
+   public void jobExecutionVetoed(JobExecutionContext context);<br/><br/>
+   public void jobWasExecuted(JobExecutionContext context,
+           JobExecutionException jobException);
+}</pre>
+<br/>
+<!--more--><br />
+<span style="color: #800080;">JobListener</span> 接口中的方法用途是十分明了的。然后，我们还是要对他们加以简单说明。<br/><br/>
+<strong>·<span style="color: #800080;">getName()</span> 方法</strong><br/><br/>
+<span style="color: #800080;">getName()</span> 方法返回一个字符串用以说明 <span style="color: #800080;">JobListener</span> 的名称。对于注册为全局的监听器，<span style="color: #800080;">getName()</span> 主要用于记录日志，对于由特定 Job 引用的 <span style="color: #800080;">JobListener</span>，注册在 <span style="color: #800080;">JobDetail</span> 上的监听器名称必须匹配从监听器上 <span style="color: #800080;">getName()</span> 方法的返回值。在你看完一些例子之后就会很清楚了。<br/><br/>
+<strong>·<span style="color: #800080;">jobToBeExecuted()</span> 方法</strong><br/><br/>
+Scheduler 在 <span style="color: #800080;">JobDetail</span> 将要被执行时调用这个方法。<br/><br/>
+<strong>·<span style="color: #800080;">jobExecutionVetoed()</span> 方法</strong><br/><br/>
+Scheduler 在 JobDetail 即将被执行，但又被 TriggerListener 否决了时调用这个方法。<br/><br/>
+<strong>·<span style="color: #800080;">jobWasExecuted()</span> 方法</strong><br/><br/>
+Scheduler 在 <span style="color: #800080;">JobDetail</span> 被执行之后调用这个方法。<br/><br/>
+代码 7.2 展示了一个很简单的 <span style="color: #800080;">JobListener</span> 实现。<br/><br/>
+<strong>代码 7.2. 一个简单的 <span style="color: #800080;">JobListner</span> 实现<br />
+</strong><br/><br/>
+<pre class="brush:java">package org.cavaness.quartzbook.chapter7;<br/><br/>
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.quartz.JobExecutionContext;
+import org.quartz.JobExecutionException;
+import org.quartz.JobListener;<br/><br/>
+public class SimpleJobListener implements JobListener {
+     Log logger = LogFactory.getLog(SimpleJobListener.class);<br/><br/>
+     public String getName() {
+          return getClass().getSimpleName();
+     }<br/><br/>
+     public void jobToBeExecuted(JobExecutionContext context) {
+          String jobName = context.getJobDetail().getName();
+          logger.info(jobName + " is about to be executed");
+     }
+     public void jobExecutionVetoed(JobExecutionContext context) {
+          String jobName = context.getJobDetail().getName();
+          logger.info(jobName + " was vetoed and not executed()");
+     }
+     public void jobWasExecuted(JobExecutionContext context,
+               JobExecutionException jobException) {<br/><br/>
+          String jobName = context.getJobDetail().getName();
+          logger.info(jobName + " was executed");
+     }
+}</pre>
+<br/>
+代码 7.2 中的 <span style="color: #800080;">JobListener</span> 打印一个日志消息，很明显，只是监听器最基本的用法。你要实现的逻辑完全由你和你的应用需要而定。你也许想在 Job 成功完成后发送一个电子邮件，或者在 Job 被否决后部署另一个。你有在回调方法中执行几乎任何动作的自由。<br/><br/>
+前面，我们提到过 <span style="color: #800080;">JobListener</span> (和 <span style="color: #800080;">TriggerListener</span>) 能注册为全局或非全局的。注意了，我们并不需要事先知道在代码 7.2 中的 <span style="color: #800080;">JobListener</span> 是一个全局或是非全局的；我们仅仅是实现了接口和提供了监听器方法。代码 7.3 描绘了如何使用代码 7.2 中的 <span style="color: #800080;">SimpleJobListner</span> 使之注册为一个全局的 <span style="color: #800080;">JobListener</span>。<br/><br/>
+<strong>代码 7.3. 使用 <span style="color: #800080;">SimpleJobListener</span> 作为一个全局 <span style="color: #800080;">JobListener</span><br />
+</strong><br/><br/>
+<pre class="brush:java">package org.cavaness.quartzbook.chapter7;<br/><br/>
+import java.util.Date;<br/><br/>
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.cavaness.quartzbook.common.PrintInfoJob;
+import org.quartz.JobDetail;
+import org.quartz.JobListener;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.Trigger;
+import org.quartz.TriggerUtils;
+import org.quartz.impl.StdSchedulerFactory;<br/><br/>
+public class Listing_7_3 {
+     static Log logger = LogFactory.getLog(Listing_7_3.class);<br/><br/>
+     public static void main(String[] args) {
+          Listing_7_3 example = new Listing_7_3();<br/><br/>
+          try {
+              example.startScheduler();
+          } catch (SchedulerException ex) {
+              logger.error(ex);
+          }
+     }<br/><br/>
+     public void startScheduler() throws SchedulerException {<br/><br/>
+          // Create an instance of the factory
+          Scheduler scheduler = null;<br/><br/>
+          // Create the scheduler and JobDetail
+          scheduler = StdSchedulerFactory.getDefaultScheduler();
+          JobDetail jobDetail = new JobDetail("PrintInfoJob",
+                    Scheduler.DEFAULT_GROUP, PrintInfoJob.class);<br/><br/>
+         /*
+          * Set up a trigger to start firing now, with no end
+          * date/time, repeat forever and have
+          * 10 secs (10000 ms) between each firing.
+          */
+         Trigger trigger = TriggerUtils.makeSecondlyTrigger(10);
+         trigger.setName("SimpleTrigger");
+         trigger.setStartTime(new Date());<br/><br/>
+         // Register the JobDetail and Trigger
+         scheduler.scheduleJob(jobDetail, trigger);<br/><br/>
+         // Create and register the global job listener
+         JobListener jobListener =
+              new SimpleJobListener("SimpleJobListener");<br/><br/>
+         scheduler.addGlobalJobListener(jobListener);
+         // Start the scheduler
+         scheduler.start();
+         logger.info("Scheduler was started at " + new Date());
+    }
+}</pre>
+<br/>
+代码 7.3 中的代码现在看来是相当直截的。创建了一个 <span style="color: #800080;">JobDetail</span> 和 Trigger 并注册到了 Scheduler 实例上，这在前面我们已是做过许多次了。<br/><br/>
+代码 7.2 中的 <span style="color: #800080;">SimpleJobListener</span> 初始化后通过 Scheduler 调用 <span style="color: #800080;">addGlobalJobListener()</span> 方法注册为一个全局的 <span style="color: #800080;">JobListener</span>。最后，启动 Scheduler。<br/><br/>
+因为我们只配置了单个 Job (<span style="color: #800080;">PrintInfoJob</span>)，我们获得回调也只是那个 <span style="color: #800080;">JobDetail</span>。不过，假如我们部署了其他 Job，我们也能看到第二个 Job 的回调日志信息，因为这个监听顺是配置为全局的。<br/><br/>
+<strong>·注册非全局的 <span style="color: #800080;">JobListener</span><br />
+</strong><br />
+你还能使用代码 7.2 中的 <span style="color: #800080;">SimpleJobListener</span> 作为一个非全局的 <span style="color: #800080;">JobListener</span>。要做到这点，你仅需要修改代码 7.3 的 <span style="color: #800080;">startScheduler()</span> 方法中的代码。代码 7.4 显示了这一需要做的小小的改变。<br/><br/>
+<strong>代码 7.4. 使用 <span style="color: #800080;">SimpleJobListener</span> 作为非全局的 <span style="color: #800080;">JobListener</span><br />
+</strong><br/><br/>
+<pre class="brush:java">package org.cavaness.quartzbook.chapter7;<br/><br/>
+import java.util.Date;<br/><br/>
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.cavaness.quartzbook.common.PrintInfoJob;
+import org.quartz.JobDetail;
+import org.quartz.JobListener;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.Trigger;
+import org.quartz.TriggerUtils;
+import org.quartz.impl.StdSchedulerFactory;<br/><br/>
+public class Listing_7_4 {
+     static Log logger = LogFactory.getLog(Listing_7_4.class);<br/><br/>
+     public static void main(String[] args) {
+          Listing_7_4 example = new Listing_7_4();<br/><br/>
+          try {
+               example.startScheduler();
+          } catch (SchedulerException ex) {
+               logger.error(ex);
+         }
+     }<br/><br/>
+     public void startScheduler() throws SchedulerException {<br/><br/>
+          Scheduler scheduler = null;<br/><br/>
+          try {
+              // Create the scheduler and JobDetail
+              scheduler = StdSchedulerFactory.getDefaultScheduler();
+              JobDetail jobDetail =
+                        new JobDetail("PrintInfoJob",
+                        Scheduler.DEFAULT_GROUP,
+                        PrintInfoJob.class);<br/><br/>
+              /*
+               * Set up a trigger to start firing now, with no end
+               * date/time, repeat forever and have
+               * 10 secs (10000 ms) between each firing.
+               */
+              Trigger trigger =
+                   TriggerUtils.makeSecondlyTrigger(10);<br/><br/>
+              trigger.setName("SimpleTrigger");
+              trigger.setStartTime(new Date());<br/><br/>
+              // Create the job listener
+              JobListener jobListener =
+                   new SimpleJobListener("SimpleJobListener");<br/><br/>
+              // Register Listener as a nonglobal listener
+              scheduler.addJobListener(jobListener);<br/><br/>
+              // Listener set on JobDetail before scheduleJob()
+                   jobDetail.addJobListener(jobListener.getName());<br/><br/>
+              // Register the JobDetail and Trigger
+              scheduler.scheduleJob(jobDetail, trigger);<br/><br/>
+              // Start the scheduler
+              scheduler.start();
+              logger.info("Scheduler started at " + new Date());<br/><br/>
+         } catch (SchedulerException ex) {
+              logger.error(ex);
+         }
+    }
+}</pre>
+<br/>
+代码 7.4 很类似于代码 7.4 中的代码。因为 <span style="color: #800080;">JobListener</span> 是要注册为一个非全局的监听器，你就要调用 Scheduler 的 <span style="color: #800080;">addJobListener()</span> 方法而不是 <span style="color: #800080;">addGlobalJobListener()</span> 方法了。对于非全局的 <span style="color: #800080;">JobListener</span>，它应于任何引用到它的 <span style="color: #800080;">JobDetail</span> 使用 <span style="color: #800080;">schedulerJob()</span> 或 <span style="color: #800080;">addJob()</span> 方法注册之前被注册。<br/><br/>
+接下来，<span style="color: #800080;">JobListener</span> 的名字要设置给 <span style="color: #800080;">JobDetail</span>。注意，设置的不是 <span style="color: #800080;">JobListener</span> 实例，仅仅是它的名称。这是通过调用 <span style="color: #800080;">addJobListener()</span> 方法并传入名称来完成的。传递给 <span style="color: #800080;">addJobListener()</span> 方法的名称必须匹配从监听器的 getName() 方法返回的名称。如果 Scheduler 不能根据名称找到监听器，它会抛出一个 <span style="color: #800080;">SchedulerException</span> 异常。<br/><br/>
+最后，启动 Scheduler。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>非全局 <span style="color: #800080;">JobListener</span> 相关步骤的顺序</strong>加入一个非全局 <span style="color: #800080;">JobListener</span> 的步骤必须是依序完成。<span style="color: #800080;">JobListener</span> 必须首先加入到 Scheduler 中。接着，<span style="color: #800080;">JobListener</span> 才能够设置给 <span style="color: #800080;">JobDetail</span> 对象。之后，你就能使用 <span style="color: #800080;">scheduleJob()</span> 方法安全的把 <span style="color: #800080;">JobDetail</span> 加入到 Scheduler 中。</td>
+</tr>
+</tbody>
+</table>

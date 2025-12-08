@@ -1,0 +1,153 @@
+---
+title: 用 Python  定义 Schema  并生成 Parquet 文件
+url: /python-define-schema-generate-parquet-file/
+date: 2021-09-24T15:06:32-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2021/02/parquet-logo.jpeg"
+categories:
+  - Python
+tags: 
+  - Schema
+  - Parquet
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11750 
+wpStatus: publish
+views: 2256
+lastmod: 2021-11-05T13:29:42-05:00
+---
+
+原来用 Java 和 Python 实现过 Avro 转换成 Parquet 格式，所以 Schema 都是在 Avro 中定义的。这里要尝试的是如何定义 Parquet 的 Schema, 然后据此填充数据并生成 Parquet 文件。<br/><br/>
+本文将演示两个例子，一个是没有层级的两个字段，另一个是含于嵌套级别的字段，将要使用到的 Python 模块有 pandas 和 pyarrow<br/><br/>
+<h2>简单字段定义</h2><br/><br/>
+<h3>定义 Schema 并生成 Parquet 文件</h3><br/><br/>
+<!--more--><br/><br/>
+<pre class="lang:default decode:true">import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq<br/><br/>
+# 定义 Schema
+schema = pa.schema([
+    ('id', pa.int32()),
+    ('email', pa.string())
+])<br/><br/>
+# 准备数据
+ids = pa.array([1, 2], type = pa.int32())
+emails = pa.array(['first@example.com', 'second@example.com'], pa.string())<br/><br/>
+# 生成 Parquet 数据
+batch = pa.RecordBatch.from_arrays(
+    [ids, emails],
+    schema = schema
+)
+table = pa.Table.from_batches([batch])<br/><br/>
+# 写 Parquet 文件 plain.parquet
+pq.write_table(table, 'plain.parquet')</pre>
+<br/>
+<h3>验证 Parquet 数据文件</h3><br/><br/>
+我们可以用工具 <code>parquet-tools</code>  来查看 <code>plain.parquet</code> 文件的数据和 Schema<br/><br/>
+<blockquote>
+$ parquet-tools schema plain.parquet<br />
+message schema {<br />
+    optional int32 id;<br />
+    optional binary email (STRING);<br />
+}
+$ parquet-tools cat --json plain.parquet<br />
+{"id":1,"email":"first@example.com"}<br />
+{"id":2,"email":"second@example.com"}
+</blockquote>
+<br/>
+没问题，与我们期望的一致。也可以用 pyarrow 代码来获取其中的 Schema 和数据<br/><br/>
+<pre class="lang:default decode:true">schema = pq.read_schema('plain.parquet')
+print(schema)<br/><br/>
+df = pd.read_parquet('plain.parquet')
+print(df.to_json())</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+<pre class="">id: int32
+  -- field metadata --
+  PARQUET:field_id: '1'
+email: string
+  -- field metadata --
+  PARQUET:field_id: '2'
+{"id":{"0":1,"1":2},"email":{"0":"first@example.com","1":"second@example.com"}}</pre>
+</blockquote>
+<br/>
+<h2>含嵌套字段定义</h2><br/><br/>
+下面的 Schema 定义加入一个嵌套对象，在 address 下分 email_address 和 post_address，Schema 定义及生成 Parquet 文件的代码如下<br/><br/>
+<pre class="lang:default decode:true">import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq<br/><br/>
+# 内部字段
+address_fields = [
+    ('email_address', pa.string()),
+    ('post_address', pa.string()),
+]<br/><br/>
+# 定义 Parquet Schema，address 嵌套了 address_fields
+schema = pa.schema(j)<br/><br/>
+# 准备数据
+ids = pa.array([1, 2], type = pa.int32())
+addresses = pa.array(
+    [('first@example.com', 'city1'), ('second@example.com', 'city2')],
+    pa.struct(address_fields)
+)<br/><br/>
+# 生成 Parquet 数据
+batch = pa.RecordBatch.from_arrays(
+    [ids, addresses],
+    schema = schema
+)
+table = pa.Table.from_batches([batch])<br/><br/>
+# 写 Parquet 数据到文件
+pq.write_table(table, 'nested.parquet')</pre>
+<br/>
+<h3>验证 Parquet 数据文件</h3><br/><br/>
+同样用 <code>parquet-tools</code> 来查看下 <code>nested.parquet</code> 文件<br/><br/>
+<blockquote>
+$ parquet-tools schema nested.parquet<br />
+message schema {<br />
+    optional int32 id;<br />
+    optional group address {<br />
+        optional binary email_address (STRING);<br />
+        optional binary post_address (STRING);<br />
+    }<br />
+}
+$ parquet-tools cat --json nested.parquet<br />
+{"id":1,"address":{"email_address":"first@example.com","post_address":"city1"}}<br />
+{"id":2,"address":{"email_address":"second@example.com","post_address":"city2"}}
+</blockquote>
+<br/>
+用 <code>parquet-tools</code> 看到的 Schama 并没有 <code>struct</code> 的字样，但体现了它 address 与下级属性的嵌套关系。<br/><br/>
+用 pyarrow 代码来读取 <code>nested.parquet</code> 文件的 Schema 和数据是什么样子<br/><br/>
+<pre class="lang:default decode:true">schema = pq.read_schema("nested.parquet")
+print(schema)<br/><br/>
+df = pd.read_parquet('nested.parquet')
+print(df.to_json())</pre>
+<br/>
+<blockquote>
+<pre class="lang:default decode:true ">id: int32
+  -- field metadata --
+  PARQUET:field_id: '1'
+address: struct&lt;email_address: string, post_address: string&gt;
+  child 0, email_address: string
+    -- field metadata --
+    PARQUET:field_id: '3'
+  child 1, post_address: string
+    -- field metadata --
+    PARQUET:field_id: '4'
+  -- field metadata --
+  PARQUET:field_id: '2'
+{"id":{"0":1,"1":2},"address":{"0":{"email_address":"first@example.com","post_address":"city1"},"1":{"email_address":"second@example.com","post_address":"city2"}}}</pre>
+</blockquote>
+<br/>
+数据当然是一样的，有略微不同的是显示的 Schema 中, address 标识为 <code>struct&lt;email_address: string, post_address: string&gt;</code>, 明确的表明它是一个 <code>struct</code> 类型，而不是只展示嵌套层次。<br/><br/>
+最后留下一个问题，前面我们定义 Parquet Schema 都是在 Python 代码中完成了，Parquet 是否也能像 Avro 一样用外部文件来定义 Schema,  然后编译给 Python 用？<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://arrow.apache.org/docs/python/data.html">Data Types and In-Memory Data Model</a></li>
+    <li><a href="https://arrow.apache.org/docs/python/generated/pyarrow.struct.html#pyarrow.struct">pyarrow.struct</a></li>
+    <li><a href="https://www.mikulskibartosz.name/how-to-write-parquet-file-in-python/">How to write to a Parquet file in Python</a></li>
+</ol>

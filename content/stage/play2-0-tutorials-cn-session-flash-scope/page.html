@@ -1,0 +1,107 @@
+---
+title: Play 2.0 中文资料 - 会话和 Flash 域
+url: /play2-0-tutorials-cn-session-flash-scope/
+date: 2012-10-11T13:11:56-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+  - PlayFramework
+tags: 
+  - 翻译
+  - Scala
+  - PlayFramework
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4889 
+wpStatus: publish
+views: 952
+lastmod: 2021-06-01T16:26:45-05:00
+---
+
+<strong><span style="font-size: medium;">会话和 Flash 域在 Play 中有何不同</span></strong></p>
+<br/>
+如果你不得不要跨多个 HTTP 请求来保存数据, 你可以存在会话或是 Flash 域中. 存储在会话中的数据在整个会话期间可用, 而存储在 Flash 域中数据只对下一次请求有效.<br/><br/>
+理解到会话和 Flash 数据不是由服务器来存储，而是以 Cookie 机制添加到每一次后续的 HTTP 请求是很重要的. 这也就意味着数据的大小是很受限的 (不到 4 KB) ，而且你只能存储字符串.<br/><br/>
+当然了, Cookie 值是由密钥签名了的，这使得客户端不存修改 Cookie 数据(或者说这样做会让它失效).<br/><br/>
+Play 会话不能当成缓存来用.  假如你需要缓存与某一会话相关的数据, 你可以使用 Play 内置的缓存机制并存储一个唯一的 ID 在用户会话中与之关联.<br/><br/>
+<blockquote>
+会话没有技术上的超时控制. 它在用户关闭 Web 浏览器后就会过期. 如果你的应用需要一种功能性的超时控制, 那就在用户会话中存储一个时间戳，并在应用需要的时候用它 (例如: 最大的会话持续时间, 最大的非活动时间, 等等.).
+</blockquote>
+<br/>
+<strong><span style="font-size: medium;">读取会话值</span></strong><br/><br/>
+你可以从 HTTP 请求中获取传入的会话:<!--more--><br/><br/>
+<pre class="lang:default decode:true">def index = Action { request =&gt;
+  request.session.get("connected").map { user =&gt;
+    Ok("Hello " + user)
+  }.getOrElse {
+    Unauthorized("Oops, you are not connected")
+  }
+}</pre>
+<br/>
+另一种方式是，你能从请求中隐式的获取会话:<br/><br/>
+<pre class="lang:default decode:true">def index = Action { implicit request =&gt;
+  session.get("connected").map { user =&gt;
+    Ok("Hello " + user)
+  }.getOrElse {
+    Unauthorized("Oops, you are not connected")
+  }
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: <span style="color: #800000;">request.session</span> 的类型是  <span style="color: #800000;">Map[String, String]</span>，其中存放的就是一个个 Session 键值对，而 Map 的 <span style="color: #800000;">get(key:String)</span> 方法返回的是 <span style="color: #800000;">Option[String]</span>，即 <span style="color: #800000;">Some(value)</span> 或是 <span style="color: #800000;">None</span> 值(key不存在时取得的值)，<span style="color: #800000;">Some(value).map()</span> 方法能处理期中的 value 值。<span style="color: #800000;">.getOrElse()</span> 方法是在 session.get("connected") 为 <span style="color: #800000;">None</span> 时执行的操作。</span><br/><br/>
+<span style="color: #0000ff;">看一下 Play 存储的会话在 Cookie 中的样子：</span><br/><br/>
+<p style="text-align: center;"><img class="aligncenter  wp-image-4962" title="play_session_key" src="/wp-content/uploads/2012/10/play_session_key1.png" alt="" width="600" height="128" /></p>
+<br/>
+<span style="color: #0000ff;">可以看到存储 Cookie 时用的 Key 是 “PLAY_SESSION"。值用了密钥签名了，随意修改了值也是无效的。</span><br/><br/>
+<strong><span style="font-size: medium;">存储数据到会话中</span></strong><br/><br/>
+由于 Session 是个 Cookie, 也是个 HTTP 头，所以你可用操作其他 Result 属性那样的方式操作 Session 数据:<br/><br/>
+<pre class="lang:default decode:true">Ok("Welcome!").withSession(
+  "connected" -&gt; "user@gmail.com"
+)</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 上面的方法调用的是 <span style="color: #800000;">Results.scala</span> 中的 <span style="color: #800000;">def withSession(session: (String, String)*): A</span> 方法。</span><br/><br/>
+注: 这会替换掉整个 Session. 假如你需要添加元素到已有的 Session 中, 方法是先添加元素到传入的 Session 中, 接着把它作为新的Session:<br/><br/>
+<pre class="lang:default decode:true">Ok("Hello World!").withSession(
+  session + ("saidHello" -&gt; "yes")
+)</pre>
+<br/>
+你可以用同样的方式从传入的 Session 中移除任何值:<br/><br/>
+<pre class="brush:scala">Ok("Theme reset!").withSession(
+  session - "theme"
+)</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 上面两段代码调用的是 <span style="color: #800000;">Results.scala</span>  中的 <span style="color: #800000;">def withSession(session: Session): A</span> 方法。因为 session 是 <span style="color: #800000;">Map[String, String]</span> 类型，所以可以用 +/- 号来增减元素。</span><br/><br/>
+<span style="font-size: medium;">废弃整个 Session</span><br/><br/>
+有一个特殊的操作用来废弃整个 Session:<br/><br/>
+<pre class="brush:scala ">Ok("Bye").withNewSession</pre>
+<br/>
+<strong><span style="font-size: medium;">Flash 域</span></strong><br/><br/>
+Flash 域工作方式非常像 Session, 但有两点不同:<br/><br/>
+<ul>
+    <li>数据仅为一次请求而保留</li>
+    <li>Flash 的 Cookie 未被签名, 这留给了用户修改它的可能性.</li>
+</ul><br/><br/>
+<blockquote>
+<strong>重点:</strong> Flash 域仅能用于简单的非 Ajax 应用中在传送 成功/错误 的消息. 由于数据只保存给下一次请求，而且在复杂的 Web 应用中无法保证请求的顺序，所以在竞争条件下 Flash 可能不那么好使.
+</blockquote>
+<br/>
+下面是使用 Flash 域的例子:<br/><br/>
+<pre class="lang:default decode:true">def index = Action { implicit request =&gt;
+  Ok {
+    flash.get("success").getOrElse("Welcome!")
+  }
+}<br/><br/>
+def save = Action {
+  Redirect("/home").flashing(
+    "success" -&gt; "The item has been created"
+  )
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: Flash 域的数据可在服务端重定向到的下一个请求中可见。再来看一个 Flash 域的 Cookie 发生了什么，因为使用了 Redirect 转向，所以用浏览器捕捉不到这时候的 Cookie 值，但可以用 curl -v 命令来查看，见下图：</span><br/><br/>
+<p style="text-align: center;"><img class="aligncenter  wp-image-4968" title="play_flash_scope" src="/wp-content/uploads/2012/10/play_flash_scope.png" alt="" width="600" height="391" /></p>
+<br/>
+<span style="color: #0000ff;">上图中可以见到当转向到下个请求 /home 时用的 Cookie 的 Key 是 ”<span style="color: #800000;">PLAY_FLASH</span>“，并且值未被签名。</span>

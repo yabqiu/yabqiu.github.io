@@ -1,0 +1,80 @@
+---
+title: Lucene 索引、查询日期类型字段
+url: /lucene-index-date-field/
+date: 2011-03-15T05:59:38-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Lucene
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3320 
+wpStatus: publish
+views: 4790
+lastmod: 2011-03-15T05:59:38-05:00
+---
+
+Lucene 的 Field 在构造时内容参数可接受一个字符串或者字节数组，流等，不支持 Date 等类型。如果把 Date.toString() 转换成字符串来索引的话那么存储在索引中的样子就不确定(new Date().toString() 为 “Tue Mar 15 13:25:41 GMT+08:00 2011”)，也给下次还原来为 Date 类型带来不便。在以前的版本 Lucene 专门提供了 <a href="http://lucene.apache.org/java/3_0_3/api/all/org/apache/lucene/document/DateField.html" target="_blank">DateField</a> 来索引 Date 类型，但<br/>
+<br/>
+现在不推荐使用了，而且也无法用，因为 Lucene 的 Document 在 add(Fieldable field) 时接受的是一个 Fieldable 类，然而 DateField 并未实现 Fieldable 接口，保留它是用来读取老的索引文件。<br/>
+<br/>
+那 Lucene 要怎么索引日期类型呢？说到底，还是把它转换为字符串，搜索的时候从存储的字符串还原出来，辅助工具类是 <a href="http://lucene.apache.org/java/3_0_3/api/all/org/apache/lucene/document/DateTools.html" target="_blank">DateTools</a>, 它所提供的方法：<!--more--><br/>
+<pre class="brush:java"><br/>
+static String  dateToString(Date date, DateTools.Resolution resolution);<br/>
+static Date  round(Date date, DateTools.Resolution resolution);<br/>
+static long  round(long time, DateTools.Resolution resolution);<br/>
+static Date  stringToDate(String dateString);<br/>
+static long  stringToTime(String dateString);<br/>
+static String  timeToString(long time, DateTools.Resolution resolution);<br/>
+</pre>
+
+就是那些把对象转换为字符串，从字符串还原为对象的方法，Resolution 表示解析到哪个程度，有下面的取值：<br/>
+<br/>
+<span style="color: #800000;">DateTools.Resolution.DAY，*.HOUR, *.MILLISECOND，*.MINUTE，*.MONTH，*.SECOND，*.YEAR</span><br/>
+<br/>
+也就是 DateTools 为我们提供了转换日期为标准格式的方法，你想自己用 SimpleDateFormat 自己来 format() 和 parse() 也是一样的。比如执行以下两行：<br/>
+<br/>
+<span style="color: #800000;">String dateStr = DateTools.dateToString(new Date(), DateTools.Resolution.MILLISECOND);</span><br/>
+<span style="color: #800000;">System.out.println(dateStr);</span><br/>
+<br/>
+结果是：<br/>
+<br/>
+20110315052451376<br/>
+<br/>
+这样的话我们在索引 Date 类型时就这么写了：<br/>
+<pre class="brush:java"><br/>
+Document doc = new Document();<br/>
+Date pubdate = new Date();<br/>
+doc.add(new Field("pubdate", DateTools.dateToString(pubdate,DateTools.Resolution.MILLISECOND), <br/>
+        Field.Store.YES, Field.Index.NOT_ANALYZED));<br/>
+</pre>
+
+搜索到结果之后，再用 DateTools.stringToDate() 返还原 Date 类型即可。<br/>
+<br/>
+<span style="color: #800000;">Document targetDoc = indexSearcher.doc(scdoc.doc);</span><br/>
+<span style="color: #800000;">Date pubdate = DateTools.stringToDate(targetDoc.get("pubdate"));</span><br/>
+<br/>
+与 DateField 类似的，Lucene 用来索引 Number 类型有 NumericField 类，它是实现了 Fieldable 接口，相反的 NumberTools<br/>
+ 是不推荐使用的。<br/>
+<br/>
+Lucene 不推荐使用的是 DateField 和 NumberTools，应该使用的是 NumericField 和 DateTools，正好交叉了一下。实际上 Lucene 用于索引实现了 Fieldable 接口的类就只有 Field、NumericField 这两个。<br/>
+<br/>
+索引数字再参考一段代码：<br/>
+<pre class="brush:java"><br/>
+//创建索引<br/>
+doc.Add(new NumericField("if", Field.Store.YES, true).SetFloatValue(if));<br/>
+<br/>
+//获取范围 <br/>
+Query q = NumericRangeQuery.NewFloatRange("if", 1, 10, true, true);<br/>
+<br/>
+//排序<br/>
+mSearcher.Search(q, null, 100, new Sort(new SortField("if", SortField.FLOAT, true)));<br/>
+</pre>
+
+日期也可以用 RangeQuery 作范围查询的。

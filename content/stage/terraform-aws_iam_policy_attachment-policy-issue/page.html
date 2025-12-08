@@ -1,0 +1,358 @@
+---
+title: Terraform aws_iam_policy_attachment Policy 竞争问题
+url: /terraform-aws_iam_policy_attachment-policy-issue/
+date: 2025-11-13T22:40:29-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2017/08/terraform_logo.png"
+categories:
+  - AWS
+tags: 
+  - Terraform
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14479 
+wpStatus: publish
+views: 91
+lastmod: 2025-11-14T20:46:31-06:00
+---
+
+自从  Terraform  resource "aws_iam_role" 不推荐使用 "inline_policy" 和  "managed_policy_arns" 以后，就尝试了用 "aws_iam_policy_attachment" 来为 iam role 指定 AWS  内置和自定义的 IAM policy。因为在官方文档 <a href="https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role">aws_iam_role</a> 中最先看到的就是 aws_iam_policy_attachment, 其实仔细阅读该文档的话，建议是</p>
+<br/>
+<ol>
+    <li>用 "aws_iam_role_policy" 来代替 "inline_policy"</li>
+    <li>用  "aws_iam_role_policy_attachment"  来代替 "managed_policy_arns"</li>
+</ol>
+<br/>
+然后在项目中为避免 inline_policy 和 managed_policy_arns 的警告而选择了通用的 aws_iam_policy_attachment, 同时原来也用的 "aws_iam_policy"，而非 "aws_iam_role_policy。 所以才撞入到以前一直用 aws_iam_role(inline_policy, managed_policy_arns) + aws_iam_policy 就没出过问题。<!--more--><br/><br/>
+<h3>问题重现</h3><br/><br/>
+下面来重现一下问题，想要在独产的两个模块中(有各自的 terraform 状态文件)，分别创建一个 IAM role，分别赋予自定义的 Policy 和系统 Policy AWSLambdaBasicExecutionRole, 即<br/><br/>
+IAM Role: test1-lambda-role<a href="https://yanbin.blog/wp-content/uploads/2025/11/iam_role_policy-1.png"><img class="aligncenter wp-image-14480" src="https://yanbin.blog/wp-content/uploads/2025/11/iam_role_policy-1-800x154.png" alt="" width="639" height="123" /></a>IAM Role: test2-lambda-role                <a href="https://yanbin.blog/wp-content/uploads/2025/11/iam_role_policy-2.png"><img class="aligncenter wp-image-14481" src="https://yanbin.blog/wp-content/uploads/2025/11/iam_role_policy-2-800x158.png" alt="" width="639" height="126" /></a><br/><br/>
+它们的 Terraform 代码相似，分别是两个目录中 test1/main.tf 和  test2/main.tf<br/><br/>
+test1/main.tf 文件内容为<br/><br/>
+<pre class="lang:default decode:true">resource "aws_iam_role" "test1_lambda_role" {
+  name = "test1-lambda-role"
+  assume_role_policy = jsonencode(
+    {
+      Version = "2012-10-17",
+      Statement = [
+        {
+          Effect = "Allow",
+          Principal = {
+            Service = "lambda.amazonaws.com"
+          },
+          Action = "sts:AssumeRole"
+        }
+      ]
+  })
+}<br/><br/>
+resource "aws_iam_policy_attachment" "lambda-execution-role" {
+  name       = "test1-lambda-attach-lambda-execution-role"
+  roles      = [aws_iam_role.test1_lambda_role.name]
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}<br/><br/>
+resource "aws_iam_policy_attachment" "lambda-policy" {
+  name       = "test1-lambda-attach-lambda-policy"
+  roles      = [aws_iam_role.test1_lambda_role.name]
+  policy_arn = aws_iam_policy.test1-inline-policy.arn
+}<br/><br/>
+resource "aws_iam_policy" "test1-inline-policy" {
+  name = "test1-lambda-inline-policy"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        "Action" : [
+          "s3:GetObject"
+        ],
+        "Effect" : "Allow",
+        "Resource" : [
+          "arn:aws:s3:::test1/*"
+        ]
+      }
+    ]
+  })
+}
+</pre>
+<br/>
+test2/main.tf，文件内容与 test1/main.tf 基本一致，只是把所有出现的 "test1" 替换为  "test2"，所以此处不再列出来<br/><br/>
+第一次执行创建的 test1-lambda-role 和 test2-lambda-role 的权限都正常, 就是如最前面两张图所显示的那样<br/><br/>
+创建 test1-lambda-role<br/><br/>
+<blockquote>
+cd test1<br />
+terraform apply
+</blockquote>
+<br/>
+完后用命令 aws iam list-attached-role-policies --role-name test1-lambda-role 看到的<br/><br/>
+<pre class="lang:default decode:true ">{
+    "AttachedPolicies": [
+        {
+            "PolicyName": "test1-lambda-inline-policy",
+            "PolicyArn": "arn:aws:iam::069762108088:policy/test1-lambda-inline-policy"
+        },
+        {
+            "PolicyName": "AWSLambdaBasicExecutionRole",
+            "PolicyArn": "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        }
+    ]
+}</pre>
+<br/>
+创建 test2-lambda-role<br/><br/>
+<blockquote>
+cd ../test2<br />
+terraform apply
+</blockquote>
+<br/>
+完后用命令 aws iam list-attached-role-policies --role-name test2-lambda-role 看到的<br/><br/>
+<pre class="lang:default decode:true ">{
+    "AttachedPolicies": [
+        {
+            "PolicyName": "test2-lambda-inline-policy",
+            "PolicyArn": "arn:aws:iam::069762108088:policy/test2-lambda-inline-policy"
+        },
+        {
+            "PolicyName": "AWSLambdaBasicExecutionRole",
+            "PolicyArn": "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        }
+    ]
+}</pre>
+<br/>
+现在一切正常。但如果再回过头再执行 test1 的 terraform apply 时奇怪的事情就发生了<br/><br/>
+<blockquote>
+cd ../test1<br />
+terraform apply
+</blockquote>
+<br/>
+现在看到的 plan 是<br/><br/>
+<pre class="lang:default decode:true ">  # aws_iam_policy_attachment.lambda-execution-role will be updated in-place
+  ~ resource "aws_iam_policy_attachment" "lambda-execution-role" {
+        id         = "test1-lambda-attach-lambda-execution-role"
+        name       = "test1-lambda-attach-lambda-execution-role"
+      ~ roles      = [
+          - "AWSDeepRacerLambdaAccessRole",
+          - "test2-lambda-role",
+            # (1 unchanged element hidden)
+        ]
+        # (3 unchanged attributes hidden)
+    }<br/><br/>
+Plan: 0 to add, 1 to change, 0 to destroy.</pre>
+<br/>
+明明是在操作 test1 模块，却看到了 test2-lambda-role 的内容，而且 AWSDeepRacerLambdaAccessRole 也是凭空出现的。<br/><br/>
+输入  yes 应用更改，然后查看 test1-lambda-role 和 test2-lambda-role 是否有变化<br/><br/>
+<pre class="lang:default decode:true ">➜  ~ aws iam list-attached-role-policies --role-name test1-lambda-role
+{
+    "AttachedPolicies": [
+        {
+            "PolicyName": "test1-lambda-inline-policy",
+            "PolicyArn": "arn:aws:iam::069762108088:policy/test1-lambda-inline-policy"
+        },
+        {
+            "PolicyName": "AWSLambdaBasicExecutionRole",
+            "PolicyArn": "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        }
+    ]
+}
+➜  ~ aws iam list-attached-role-policies --role-name test2-lambda-role
+{
+    "AttachedPolicies": [
+        {
+            "PolicyName": "test2-lambda-inline-policy",
+            "PolicyArn": "arn:aws:iam::069762108088:policy/test2-lambda-inline-policy"
+        }
+    ]
+}</pre>
+<br/>
+test1-lambda-role 没问题，但 Terraform 在执行 test1 模块时却把 test2-lambda-role 给影响了，把它持有的 AWSLambdaBasicExecutionRole 给拿走了。<br/><br/>
+再执行 test2 的 Terraform 代码<br/><br/>
+<blockquote>
+cd ../test2<br />
+terraform apply
+</blockquote>
+<br/>
+plan 里的显示的内容更有意思了<br/><br/>
+<pre class="lang:default decode:true ">  # aws_iam_policy_attachment.lambda-execution-role will be updated in-place
+  ~ resource "aws_iam_policy_attachment" "lambda-execution-role" {
+        id         = "test2-lambda-attach-lambda-execution-role"
+        name       = "test2-lambda-attach-lambda-execution-role"
+      ~ roles      = [
+          - "test1-lambda-role",
+          + "test2-lambda-role",
+        ]
+        # (3 unchanged attributes hidden)
+    }</pre>
+<br/>
+输入 yes, 应用更改，再检查 test1-lambda-role 和 test2-lambda-role 的内容<br/><br/>
+<pre class="lang:default decode:true ">➜  ~ aws iam list-attached-role-policies --role-name test1-lambda-role
+{
+    "AttachedPolicies": [
+        {
+            "PolicyName": "test1-lambda-inline-policy",
+            "PolicyArn": "arn:aws:iam::069762108088:policy/test1-lambda-inline-policy"
+        }
+    ]
+}
+➜  ~ aws iam list-attached-role-policies --role-name test2-lambda-role
+{
+    "AttachedPolicies": [
+        {
+            "PolicyName": "test2-lambda-inline-policy",
+            "PolicyArn": "arn:aws:iam::069762108088:policy/test2-lambda-inline-policy"
+        },
+        {
+            "PolicyName": "AWSLambdaBasicExecutionRole",
+            "PolicyArn": "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        }
+    ]
+}</pre>
+<br/>
+看到应用 test2 时，把 test1-lambda-role 的 AWSLambdaBasicExecutionRole 给偷走了，相当于是因为 test1-lambda-role 和  test2-lambda-role 共享了 AWSLambdaBasicExeutionRole，执行 test1 和 test2 时会在这两个 role 之间移动 AWSLambdaBasicExecutionRole，都试图独占这个 Policy。<br/><br/>
+此时再回到 test1 去执行 terraform 脚本，那么  AWSLambdaBasicExecutionRole 又被移动到了 test1-lambda-role。如果在该  AWS 帐号下有其他更多的 IAM Role 使用了这种  Terraform 脚本来创建的话，那么会有更多的 IAM Role 加入到这种争夺 AWSLambdaBasicExecutionRole 的混战当中来。<br/><br/>
+<h3>初步怀疑(毫不相关)</h3><br/><br/>
+怀疑是不是因为  aws_iam_policy_attachment 后的标识有问题，把它们换成带特定前缀的标识<br/><br/>
+resource "aws_iam_policy_attachment" "lambda-execution-role" 换成 resource "aws_iam_policy_attachment" "test1-lambda-execution-role"<br/><br/>
+resource "aws_iam_policy_attachment" "lambda-policy" 换成 resource "aws_iam_policy_attachment" "test1-lambda-policy"<br/><br/>
+在 test2 中作相应用改动，用 test2 作为前缀，但故障依旧。也证明了以往的经验，resource 的标识作用域只在当前模块下的相同资源。<br/><br/>
+<h3>只尝试用 aws_iam_role_policy_attachment(故障依旧)</h3><br/><br/>
+后来又尝试了把 aws_iam_policy_attachment 替换成了特定的 aws_iam_role_policy_attachment<br/><br/>
+比如在  test1/main.tf 中的两个 aws_iam_role_policy_attachment 分别变为<br/><br/>
+<pre class="lang:default decode:true ">resource "aws_iam_role_policy_attachment" "lambda-execution-role" {
+  role      = aws_iam_role.test1_lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}<br/><br/>
+resource "aws_iam_role_policy_attachment" "lambda-policy" {
+  role      = aws_iam_role.test1_lambda_role.name
+  policy_arn = aws_iam_policy.test1-inline-policy.arn
+}</pre>
+<br/>
+使用  aws_iam_role_policy_attachment 不用指定 name 了，并且 role 是单数<br/><br/>
+在 test2/main.tf 中也作相应的修改，注意 test1 的地方换成 test2 就是<br/><br/>
+没有什么变化，还是一样的故障，互相争抢 AWSLambdaBasicExeutionRole<br/><br/>
+<h3>把 aws_iam_policy 替换成 aws_iam_role_policy(问题解决)</h3><br/><br/>
+由于 aws_iam_role_policy 自带  role 属性，所以就可以少写下面这个 aws_iam_policy_attachment<br/><br/>
+<blockquote>
+resource "aws_iam_policy_attachment" "lambda-policy" {
+</blockquote>
+<br/>
+所以整个  test1/main.tf 除了 aws_iam_role 外的内容就是<br/><br/>
+<pre class="lang:default decode:true ">resource "aws_iam_role_policy_attachment" "lambda-execution-role" {
+  role      = aws_iam_role.test1_lambda_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}<br/><br/>
+resource "aws_iam_role_policy" "test1-inline-policy" {
+  role = aws_iam_role.test1_lambda_role.name
+  name = "test1-lambda-inline-policy"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        "Action" : [
+          "s3:GetObject"
+        ],
+        "Effect" : "Allow",
+        "Resource" : [
+          "arn:aws:s3:::test1/*"
+        ]
+      }
+    ]
+  })
+}
+</pre>
+<br/>
+在 test2/main.tf 也作相应的修改<br/><br/>
+这种改法问题可以得到解决，test1-lamba-role 和  test2-lambda-role 不再相关了，此时 test1-lambda-inline-policy (或 test2-lambda-inline-policy)不再是作为 Customer managed policy 了, 而是真正的 Customer inline<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/11/iam_role_policy-3.png"><img class="aligncenter wp-image-14482" src="https://yanbin.blog/wp-content/uploads/2025/11/iam_role_policy-3-800x160.png" alt="" width="620" height="124" /></a><br/><br/>
+这样也更贴合 inline-policy 的初衷，原本就是特别为该 Role 创建的 policy 应该保持为私有  Customer inline, 而不该出现在 AWS IAM 的 Policies 列表中。<br/><br/>
+这里我们恰好用 aws_iam_role_policy_attachment 避开了一个问题，如果把这里的 aws_iam_role_policy_attachment 换回成 aws_iam_policy_attachment 依然会出现争夺 AWSLambdaBasicExecutionRole 的问题。稍为小结一下，出现故障的三种情况分别是<br/><br/>
+<ol>
+    <li>aws_iam_policy + aws_iam_policy_attachement</li>
+    <li>aws_iam_policy + aws_iam_role_policy_attachment</li>
+    <li>aws_iam_role_policy + aws_iam_policy_attachement</li>
+</ol>
+<br/>
+用 aws_iam_role_policy + aws_iam_policy_attachment 就正常了，所以 aws_iam_role_policy_attachement 严格来说不能算作 aws_iam_policy_attachment 的泛化。<br/><br/>
+<h3>另一种解法(aws_iam_policy + aws_iam_role_policy_attachment(for_each))</h3><br/><br/>
+看到上一节的 #2 简单用 aws_iam_policy 和 aws_iam_role_policy_attachment 还是有问题,  但是配合后者的 for_each 就不一样了，在 test1/main.tf 中除去 aws_iam_role 之外的代码可以写成<br/><br/>
+<pre class="lang:default decode:true">resource "aws_iam_role_policy_attachment" "lambda-execution-role" {
+  for_each = {
+    inline = aws_iam_policy.test1-inline-policy.arn,
+    lambda = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+  }<br/><br/>
+  role       = aws_iam_role.test1_lambda_role.name
+  policy_arn = each.value
+}<br/><br/>
+resource "aws_iam_policy" "test1-inline-policy" {
+  name = "test1-lambda-inline-policy"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        "Action" : [
+          "s3:GetObject"
+        ],
+        "Effect" : "Allow",
+        "Resource" : [
+          "arn:aws:s3:::test1/*"
+        ]
+      }
+    ]
+  })
+}</pre>
+<br/>
+test2/main.tf 中也作相应的更改，这样的话执行 test1 和 test2 的 terraform 后，test1-lambda-role 和 test2-lambda-role 也能互不相关<br/><br/>
+<pre class="lang:default decode:true ">➜  ~ aws iam list-attached-role-policies --role-name test1-lambda-role
+{
+    "AttachedPolicies": [
+        {
+            "PolicyName": "test1-lambda-inline-policy",
+            "PolicyArn": "arn:aws:iam::069762108088:policy/test1-lambda-inline-policy"
+        },
+        {
+            "PolicyName": "AWSLambdaBasicExecutionRole",
+            "PolicyArn": "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        }
+    ]
+}
+➜  ~ aws iam list-attached-role-policies --role-name test2-lambda-role
+{
+    "AttachedPolicies": [
+        {
+            "PolicyName": "terraform-20251114035130238700000001",
+            "PolicyArn": "arn:aws:iam::069762108088:policy/terraform-20251114035130238700000001"
+        },
+        {
+            "PolicyName": "AWSLambdaBasicExecutionRole",
+            "PolicyArn": "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        }
+    ]
+}</pre>
+<br/>
+<h3>重试 aws_iam_policy + aws_iam_policy_attachment(for_each)(仍然失败)</h3><br/><br/>
+但是对 aws_iam_policy_attachment 还存有一线希望的话，重新试下 aws_iam_policy + aws_iam_policy_attachment(for_each) 的组合<br/><br/>
+<pre class="lang:default decode:true">resource "aws_iam_policy_attachment" "lambda-execution-role" {
+  name = "test1-lambda-attach-policy"
+  for_each = {
+    inline = aws_iam_policy.test1-inline-policy.arn,
+    lambda = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+  }<br/><br/>
+  roles       = [aws_iam_role.test1_lambda_role.name]
+  policy_arn = each.value
+}<br/><br/>
+resource "aws_iam_policy" "test1-inline-policy" {
+    ......</pre>
+<br/>
+依然不奏效，问题依旧。<br/><br/>
+<h3>总结</h3><br/><br/>
+通过以上种种尝试，必须要总结一下有效的解决办法是<br/><br/>
+<ol>
+    <li><span style="color: #0000ff;"><strong>aws_iam_role_policy + aws_iam_role_policy_attachment: 在 aws_iam_role_policy 可以指定关联的 iam_role, 将此作为 Customer inline policy, 用 aws_iam_role_policy_attachment 挂载别的 policy。有了 aws_iam_role_policy 的加持，即使使用多个  aws_iam_role_policy_attachment 或是 for_each 都可以挂载上多个其他的  policy。</strong></span></li>
+    <li><span style="color: #0000ff;"><strong>aws_iam_policy 时, 只用一个 aws_iam_role_policy_attachment, 在其中用 for_each 可以同时挂载包括自定义的或系统定义的多个 policy</strong></span></li>
+</ol>
+<br/>
+以上第一种方法为首选，且保持专属的 Policy 为  Customer inline。<br/><br/>
+用 aws_iam_role_policy_attachment 关联的 policy 是 AWS managed 或 Customer managed.<br/><br/>
+请优先使用 role_policy 相关的资源，能用  aws_iam_role_policy 就不用  aws_iam_policy, 能用  aws_iam_role_policy_attachment 就不用 aws_iam_policy_attachment。从本文的情景来看使用 aws_iam_policy_attachment 总是会出现竞争共有 Policy 的问题。<br/><br/>
+最后，以上内容以供参考，实际表现也可能有所不同。

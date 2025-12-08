@@ -1,0 +1,200 @@
+---
+title: 实测 AWS Lambda 不同内存配置下的 CPU 核心数
+url: /get-aws-lambda-cpu-count-different-memory/
+date: 2023-05-25T15:49:24-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - AWS
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13152 
+wpStatus: publish
+views: 391
+lastmod: 2024-06-06T09:36:47-05:00
+---
+
+目前(2023-05-25) AWS Lambda 的内存选择区间是 128MB ~ 10240MB， 最长运行时间为 15 分钟，但没有 vCPU 个数的选择。vCPU 的数量是基于所选内存大小而有不同的，如果我们在 Lambda 中需使用多进程充分发挥 CPU 性能的话，有必要了解当前 Lambda 所在运行环境的 CPU 内核数，甚至是单核的频率。<br/><br/>
+CPU 个数可用如下 Python 内置的其中一个方法取得<br/><br/>
+<blockquote>
+multiprocessing.cpu_count()<br />
+os.cpu_count()
+</blockquote>
+<br/>
+要获得 CPU 频率或内存的话，将要用到 <code>psutil</code>  组件的方法，可把 psutil 做成 Lambda  层以引用，或与 Lambda 函数代码一同打成  zip 包。<br/><br/>
+安装方法 <code>psutil</code><br/><br/>
+<blockquote>
+pip install --target . psutil
+</blockquote>
+<br/>
+psutil 会安装到当前目录，然后在当前目录下再创建 lambda_function.py 文件，再打包<!--more--><br/><br/>
+<blockquote>
+zip -r lambda.zip *
+</blockquote>
+<br/>
+部署这个 lambda.zip 到 AWS Lambda  函数即可，指定相应的 Handler: lambda_function.lambda_handler<br/><br/>
+lambda_function.py 的内容为<br/><br/>
+<pre class="lang:default decode:true ">import psutil
+import os<br/><br/>
+
+def lambda_handler(event, context):
+    mem_usage = psutil.virtual_memory()
+    return {
+        "memory": f"{mem_usage.total/(1024**2):.0f}M",
+        "cpu_count": os.cpu_count(),
+        "cpu_freq": f"{int(psutil.cpu_freq()[0])}MHz"
+    }
+</pre>
+<br/>
+测试响应格式为<br/><br/>
+<pre class="lang:default decode:true ">{
+  "memory": "3166M",
+  "cpu_count": 2,
+  "cpu_freq": "2500MHz"
+}</pre>
+<br/>
+下面是通过朴素的方式不断修改 Lambda 内存数获得的数据，内存设置从 128M 起，每次翻倍，直至 10240M，如有发现 CPU 个数变化再找到临界值，CPU 的频率全都是 2500 MHz<br/><br/>
+<table style="border-collapse: collapse; width: 100%; height: 456px;">
+<tbody>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;">内存选择(M)</td>
+<td style="width: 33.3333%; height: 24px;">psutil 显示总内存(M)</td>
+<td style="width: 33.3333%; height: 24px;">CPU 个数</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;">128</td>
+<td style="width: 33.3333%; height: 24px;">188</td>
+<td style="width: 33.3333%; height: 24px;">2</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;">256</td>
+<td style="width: 33.3333%; height: 24px;">324</td>
+<td style="width: 33.3333%; height: 24px;">2</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;">512</td>
+<td style="width: 33.3333%; height: 24px;">634</td>
+<td style="width: 33.3333%; height: 24px;">2</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;">1024</td>
+<td style="width: 33.3333%; height: 24px;">1170</td>
+<td style="width: 33.3333%; height: 24px;">2</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;">2048</td>
+<td style="width: 33.3333%; height: 24px;">3166</td>
+<td style="width: 33.3333%; height: 24px;">2</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;">3008</td>
+<td style="width: 33.3333%; height: 24px;">3166</td>
+<td style="width: 33.3333%; height: 24px;">2</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;"><span style="color: #ff0000;">3009</span></td>
+<td style="width: 33.3333%; height: 24px;"><span style="color: #ff0000;">5521</span></td>
+<td style="width: 33.3333%; height: 24px;"><span style="color: #ff0000;">3</span></td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;">4096</td>
+<td style="width: 33.3333%; height: 24px;">5521</td>
+<td style="width: 33.3333%; height: 24px;">3</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;">5120</td>
+<td style="width: 33.3333%; height: 24px;">5521</td>
+<td style="width: 33.3333%; height: 24px;">3</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;">5307</td>
+<td style="width: 33.3333%; height: 24px;">5521</td>
+<td style="width: 33.3333%; height: 24px;">3</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;"><span style="color: #ff0000;">5308</span></td>
+<td style="width: 33.3333%; height: 24px;"><span style="color: #ff0000;">7299</span></td>
+<td style="width: 33.3333%; height: 24px;"><span style="color: #ff0000;">4</span></td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;">6144</td>
+<td style="width: 33.3333%; height: 24px;">7299</td>
+<td style="width: 33.3333%; height: 24px;">4</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;">7076</td>
+<td style="width: 33.3333%; height: 24px;">7299</td>
+<td style="width: 33.3333%; height: 24px;">4</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;"><span style="color: #ff0000;">7077</span></td>
+<td style="width: 33.3333%; height: 24px;"><span style="color: #ff0000;">9091</span></td>
+<td style="width: 33.3333%; height: 24px;"><span style="color: #ff0000;">5</span></td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;">8192</td>
+<td style="width: 33.3333%; height: 24px;">9091</td>
+<td style="width: 33.3333%; height: 24px;">5</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;">8845</td>
+<td style="width: 33.3333%; height: 24px;">9091</td>
+<td style="width: 33.3333%; height: 24px;">5</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;"><span style="color: #ff0000;">8846</span></td>
+<td style="width: 33.3333%; height: 24px;"><span style="color: #ff0000;">10492</span></td>
+<td style="width: 33.3333%; height: 24px;"><span style="color: #ff0000;">6</span></td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 33.3333%; height: 24px;">10240</td>
+<td style="width: 33.3333%; height: 24px;">10492</td>
+<td style="width: 33.3333%; height: 24px;">6</td>
+</tr>
+</tbody>
+</table>
+<br/>
+以上表格大概也只仅供参考，AWS 随时可能改变内存与 CPU 核心数的变化关系。<br/><br/>
+把内存选择与 vCPU 个数关系可以缩表如下：<br/><br/>
+<table style="border-collapse: collapse; width: 100%;">
+<tbody>
+<tr>
+<td style="width: 50%;">内存(M)</td>
+<td style="width: 50%;">vCPU</td>
+</tr>
+<tr>
+<td style="width: 50%;">128 - 3008</td>
+<td style="width: 50%;">2</td>
+</tr>
+<tr>
+<td style="width: 50%;">3009 - 5307</td>
+<td style="width: 50%;">3</td>
+</tr>
+<tr>
+<td style="width: 50%;">5308 - 7076</td>
+<td style="width: 50%;">4</td>
+</tr>
+<tr>
+<td style="width: 50%;">7077 - 8845</td>
+<td style="width: 50%;">5</td>
+</tr>
+<tr>
+<td style="width: 50%;">8846 - 10240</td>
+<td style="width: 50%;">6</td>
+</tr>
+</tbody>
+</table>
+<br/>
+Lambda 实际运行环境中的总内存大小也并非选择多少就多少，而是有一系列点位值，选择的内存落在哪个区间就用向上接近的那个点位上的值。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://www.educative.io/answers/what-is-the-psutilcpufreq-method">What is the psutil.cpu_freq() method?</a></li>
+    <li><a href="https://iq.opengenus.org/cpu-and-ram-usage-python/">Python script to get CPU and RAM Usage</a></li>
+</ol>

@@ -1,0 +1,249 @@
+---
+title: Java 的多行字符串 Here Document 的实现
+url: /java-implement-here-document/
+date: 2012-12-14T23:21:36-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - apt
+  - here document
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5267 
+wpStatus: publish
+views: 1274
+lastmod: 2021-09-03T14:55:43-05:00
+---
+
+寻求了很久关于如何在 Java 中实现多行字符串，即 <a href="http://en.wikipedia.org/wiki/Here_document" target="_blank" rel="noopener">Here Document</a>。因为在测试中准备大的字符串数据是不得不用加号去拼接，甚至是麻烦。稍好就是用 <a href="http://www.htmlescape.net/javaescape_tool.html" target="_blank" rel="noopener">http://www.htmlescape.net/javaescape_tool.html</a> 把你输入的大段文字生成 Java 的字符串。</p>
+<br/>
+找过一些介绍 Java 实现 Here Document 的方法，首先大家无一不是把这个多行字符串塞在注释里，有些实现在运行还在依赖于 Java 源文件中的注释，这不太可取。聪明的做法应该要去打编译器的主意，让编译后体现在 Class 文件中，变量就被赋上了多行字符串值，这就是 JDK1.5 引入的 APT(Annotation Processing Tool)，到 JDK1.6 后可操作性更强了，可以 javac 的时候带上 -processor 参数。<br/><br/>
+单单从语法特性上来讲，我觉得 Java 与现今流行的语言还是有差距，不过它一直在成长，像 JDK 1.5 和 1.7 这两个版本就带来了不少好东西。想要见识一下其他些个语言，如 Perl, PHP, Ruby, C++11 怎么实现 Here Document 还是请看 <a href="http://en.wikipedia.org/wiki/Here_document" target="_blank" rel="noopener">http://en.wikipedia.org/wiki/Here_document</a>。<br/><br/>
+就连 Java 最亲密的战友 C# 都早实现了 Here Document，用 @ 符号：<!--more--><br/><br/>
+<pre class="brush:cs">string miniTemplate = @"
+  Hello ""{0}"",
+  Your friend {1} sent you this message:
+     {2}
+  That's all!";</pre>
+<br/>
+现在正式来看 Java 应用 APT 如何实现 Here Document 的，会建立两个项目，分别是 HereDocument 和  HereDocumentTest，前者是实现，后者是对它的测试，必须分成两个项目，因为编译后者的时候，前者的 Class 文件必须先存在。<br/><br/>
+为方便起见，都做成 Maven 项目，下面来展示它们。<br/><br/>
+1. HereDocument 项目：<br/><br/>
+1) pom.xml：<br/><br/>
+<pre class="lang:default decode:true">&lt;project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"&gt;
+    &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+    &lt;groupId&gt;cc.unmi.apt&lt;/groupId&gt;
+    &lt;artifactId&gt;HereDocument&lt;/artifactId&gt;
+    &lt;version&gt;0.0.1-SNAPSHOT&lt;/version&gt;
+    &lt;profiles&gt;
+        &lt;profile&gt;
+            &lt;id&gt;default-tools.jar&lt;/id&gt;
+            &lt;activation&gt;
+                &lt;property&gt;
+                    &lt;name&gt;java.vendor&lt;/name&gt;
+                    &lt;value&gt;Sun Microsystems Inc.&lt;/value&gt;
+                &lt;/property&gt;
+            &lt;/activation&gt;
+            &lt;dependencies&gt;
+                &lt;dependency&gt;
+                    &lt;groupId&gt;com.sun&lt;/groupId&gt;
+                    &lt;artifactId&gt;tools&lt;/artifactId&gt;
+                    &lt;version&gt;1.6.0&lt;/version&gt;
+                    &lt;scope&gt;system&lt;/scope&gt;
+                    &lt;systemPath&gt;${java.home}/../lib/tools.jar&lt;/systemPath&gt;
+                &lt;/dependency&gt;
+            &lt;/dependencies&gt;
+        &lt;/profile&gt;
+    &lt;/profiles&gt;
+&lt;/project&gt;</pre>
+<br/>
+代码中要用到 tools.jar 中的实现类，所以必须引入，Mac OS 下的相应的类可能在 <code>${java.home}/../Classes/classes.jar</code> 中。<br/><br/>
+2) HereDocument 注解<br/><br/>
+<pre class="brush:java">package cc.unmi.apt;<br/><br/>
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;<br/><br/>
+@Target(ElementType.FIELD)
+@Retention(RetentionPolicy.SOURCE)
+public @interface HereDocument {
+}</pre>
+<br/>
+3) HereDocumentProcessor<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.apt;<br/><br/>
+import java.util.Set;<br/><br/>
+import javax.annotation.processing.AbstractProcessor;
+import javax.annotation.processing.ProcessingEnvironment;
+import javax.annotation.processing.RoundEnvironment;
+import javax.annotation.processing.SupportedAnnotationTypes;
+import javax.annotation.processing.SupportedSourceVersion;
+import javax.lang.model.SourceVersion;
+import javax.lang.model.element.Element;
+import javax.lang.model.element.TypeElement;<br/><br/>
+import com.sun.tools.javac.model.JavacElements;
+import com.sun.tools.javac.processing.JavacProcessingEnvironment;
+import com.sun.tools.javac.tree.JCTree;
+import com.sun.tools.javac.tree.TreeMaker;
+ 
+@SupportedAnnotationTypes({"cc.unmi.apt.HereDocument"})
+@SupportedSourceVersion(SourceVersion.RELEASE_6)
+public final class HereDocumentProcessor extends AbstractProcessor {
+ 
+  private JavacElements elementUtils;
+  private TreeMaker maker;
+ 
+  @Override
+  public void init(final ProcessingEnvironment procEnv) {
+    super.init(procEnv);
+    JavacProcessingEnvironment javacProcessingEnv = (JavacProcessingEnvironment) procEnv;
+    this.elementUtils = javacProcessingEnv.getElementUtils();
+    this.maker = TreeMaker.instance(javacProcessingEnv.getContext());
+  }
+ 
+  @Override
+  public boolean process(final Set&lt;? extends TypeElement&gt; annotations, final RoundEnvironment roundEnv) {
+ 
+    Set&lt;? extends Element&gt; fields = roundEnv.getElementsAnnotatedWith(HereDocument.class);
+    for (Element field : fields) {
+      String docComment = elementUtils.getDocComment(field);
+      if (null != docComment) {
+        JCTree.JCVariableDecl fieldNode = (JCTree.JCVariableDecl) elementUtils.getTree(field);
+        fieldNode.init = maker.Literal(docComment);
+      }
+    }
+ 
+    return true;
+  }
+}</pre>
+<br/>
+上面代码完成后运行 mvn clean install 把生成的 jar 包安装到本地库中，下面的 HereDocumentTest 要依赖于它。<br/><br/>
+2. HereDocumentTest 项目<br/><br/>
+1) pom.xml:<br/><br/>
+<pre class="lang:default decode:true">&lt;project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"&gt;
+    &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+    &lt;groupId&gt;cc.unmi.apt&lt;/groupId&gt;
+    &lt;artifactId&gt;HereDocumentTest&lt;/artifactId&gt;
+    &lt;version&gt;0.0.1-SNAPSHOT&lt;/version&gt;
+    &lt;dependencies&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;junit&lt;/groupId&gt;
+            &lt;artifactId&gt;junit&lt;/artifactId&gt;
+            &lt;version&gt;4.7&lt;/version&gt;
+        &lt;/dependency&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;cc.unmi.apt&lt;/groupId&gt;
+            &lt;artifactId&gt;HereDocument&lt;/artifactId&gt;
+            &lt;version&gt;0.0.1-SNAPSHOT&lt;/version&gt;
+        &lt;/dependency&gt;
+    &lt;/dependencies&gt;
+    &lt;build&gt;
+        &lt;plugins&gt;
+            &lt;plugin&gt;
+                &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;
+                &lt;artifactId&gt;maven-compiler-plugin&lt;/artifactId&gt;
+                &lt;version&gt;2.3.2&lt;/version&gt;
+                &lt;configuration&gt;
+                    &lt;source&gt;1.6&lt;/source&gt;
+                    &lt;target&gt;1.6&lt;/target&gt;
+                    &lt;annotationProcessors&gt;
+                        &lt;annotationProcessor&gt;cc.unmi.apt.HereDocumentProcessor&lt;/annotationProcessor&gt;
+                    &lt;/annotationProcessors&gt;
+                &lt;/configuration&gt;
+            &lt;/plugin&gt;
+            &lt;plugin&gt;
+                &lt;groupId&gt;org.codehaus.mojo&lt;/groupId&gt;
+                &lt;artifactId&gt;exec-maven-plugin&lt;/artifactId&gt;
+                &lt;version&gt;1.2.1&lt;/version&gt;
+                &lt;configuration&gt;
+                    &lt;mainClass&gt;cc.unmi.apt.Client&lt;/mainClass&gt;
+                &lt;/configuration&gt;
+            &lt;/plugin&gt;
+        &lt;/plugins&gt;
+    &lt;/build&gt;
+&lt;/project&gt;</pre>
+<br/>
+本项目引入了 HereDocument 生成的 jar 包，在插件中配置了 annotationProcessor 就是前面的 cc.unmi.apt.HereDocumentProcessor。<br/><br/>
+2) Client.java<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.apt;<br/><br/>
+public class Client {<br/><br/>
+    /**
+    &lt;html&gt;
+      &lt;head/&gt;
+      &lt;body&gt;
+        &lt;p&gt;
+          Hello
+          HereDocument
+          World
+        &lt;/p&gt;
+      &lt;/body&gt;
+    &lt;/html&gt;
+    */
+    @HereDocument
+    private static String html;<br/><br/>
+    public static void main(final String[] args) {
+        System.out.println(html);
+    }
+}</pre>
+<br/>
+3) HereDocumentTest.java<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.apt;<br/><br/>
+import org.junit.Test;<br/><br/>
+public class HereDocumentTest {<br/><br/>
+    /**
+    &lt;html&gt;
+      &lt;head/&gt;
+      &lt;body&gt;
+        &lt;p&gt;
+          Hello
+          HereDocument
+          World
+        &lt;/p&gt;
+      &lt;/body&gt;
+    &lt;/html&gt;
+    */
+    @HereDocument
+    private static String html;
+    
+    @Test
+    public void testHereDocument(){
+        System.out.println(html);
+    }
+}</pre>
+<br/>
+现在来看用 Maven 运行 HereDocumentTest 项目的效果，先命令行进到 HereDocumentTest 所在目录，为确保 Class 文件是由 Maven 编译出来的，先运行：<br/><br/>
+<span style="color: #800000;">mvn clean compile</span><br/><br/>
+然后执行<br/><br/>
+mvn exec:java, 输出：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter wp-image-5268" src="/wp-content/uploads/2012/12/heredoc_1.png" alt="heredoc_1" width="600" height="392" />用 mvn exec:java 运行的是 cc.unmi.apt.Client 代码，因为用到了 Maven 的 exec-maven-plugin 插件。</p>
+<br/>
+也可以运行<br/><br/>
+mvn test<br/><br/>
+执行的是 cc.unmi.apt.HereDocumentTest 中的测试用例，也看效果：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter wp-image-5269" src="http://unmi.cc/wp-content/uploads/2012/12/heredoc_2.png" alt="heredoc_2" /></p>
+<br/>
+那到底应用了 HereDocumentProcessor 发生了什么，查看一下生成的 Client.class 文件：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter wp-image-5270" src="http://unmi.cc/wp-content/uploads/2012/12/heredoc_3.png" alt="heredoc_3" /></p>
+<br/>
+只截了个屏，不完整，但发生的事情很简单，就是 HereDocumentProcessor 把代码中对 html 变量用它上头的注解内容给赋了值。<br/><br/>
+因为使用 APT 使你瞄上了 Java 编译器，所以有些时候用起来会麻烦些，特别是在使用 IDE 的时候。<br/><br/>
+像命令行编译时<br/><br/>
+<span style="color: #800000;">javac -processor &lt;annotation processor class1&gt;, [&lt;annotation processor class2&gt;] -processorpath &lt;path, processor 的 classpath&gt;</span><br/><br/>
+比如说以上的 HereDocument.class 和  HereDocumentProcessor.class 打包在 c:\heredoc.jar 包中，编译 Client.java 就用命令：<br/><br/>
+<span style="color: #800000;">javac -processor cc.unmi.apt.HereDocumentProcessor -processorpath c:\heredoc.jar -classpath .;c:\heredoc.jar Client.java</span><br/><br/>
+然后执行<br/><br/>
+<span style="color: #800000;">java Client</span><br/><br/>
+在 Eclipse 中配置 Project Properties 里的 Java compiler /  Annotation Processing<br/><br/>
+注：如果按照上面的方法在 Eclipse IDE 中配置来使用 Processor，那么 init() 方法中的 <span style="color: #800000;">procEnv</span> 的类型是 <span style="color: #800000;">org.eclipse.jdt.internal.apt.pluggable.core.dispatch.IdeBuildProcessingEnvImpl</span>，而不是  <span style="color: #800000;">JavacProcessingEnvironment</span>，并且它们之间不存在父子关系，无法进行转型，会有异常。<br/><br/>
+在 NetBeans 配置 Project Properties / Build / Compiling / Annotation Processors<br/><br/>
+参考： 1. <a href="http://www.adrianwalker.org/2011/12/java-multiline-string.html" target="_blank" rel="noopener">Java Multiline String</a><a href="http://www.adrianwalker.org/2011/12/java-multiline-string.html" target="_blank" rel="noopener"><br />
+</a>           2. <a href="http://kerebus.com/2011/02/using-java-6-processors-in-eclipse/" target="_blank" rel="noopener">Using Java 6 processors in Eclipse</a><br />
+           3. <a href="http://netbeans.org/kb/docs/java/annotations.html" target="_blank" rel="noopener">Annotation Processors Support in the NetBeans IDE</a>

@@ -1,0 +1,93 @@
+---
+title: Python 线程池使用有限大小的工作队列
+url: /python-thread-pool-using-bounded-working-queue/
+date: 2020-07-23T23:05:44-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - multithread
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10412 
+wpStatus: publish
+views: 2532
+lastmod: 2025-03-11T21:45:23-05:00
+---
+
+在去年的一篇 <a href="https://yanbin.blog/python-programming-with-threads/">Python 多线程编程</a> 中学习了 Python 中如何使用多线程来调度任务，工作中也不时从自己的博客中找来参考。在运用当中不时的碰到内存消耗殆尽情况，直接把命令行窗口打死，不得不强行关窗口或杀进程。之前一直未意识到问题所在，只知任务太多就必死无疑，现在要用 Python 来处理大量任务了，必须着手来解决一下它。其实原因很简单，和 Java 的 ThreadPoolExecutor 一样(看它们用的类名都是一样的)。Java 的  ThreadPoolExecutor 内部使用了一个 <code>Integer.MAX_VALUE</code> 的 LinkedBlockingQueue 来存放提交的待处理的任务，所以基本上就是一个无底洞，自然解决办法也是类似的，需要一个 Bounded Queue 来存放任务列表。<br/><br/>
+在解决该问题之前自己也不妨来温习一下 Python 中使用线程池的基本模式，下面的模板代码曾经是我的最爱：<br/><br/>
+<pre class="lang:default decode:true">import time
+from concurrent.futures import ThreadPoolExecutor<br/><br/>
+def perform(x):
+    time.sleep(2)
+    print(f'process {x}')
+    return x + 1<br/><br/>
+with ThreadPoolExecutor(5) as executor:
+    for i in range(3):
+        executor.submit(perform, i)<br/><br/>
+    executor.shutdown(wait=True)<br/><br/>
+print('done')
+</pre>
+<br/>
+在上面的 <code>with</code> 上下文中会进行以下几步<!--more--><br/><br/>
+<ol>
+    <li>创建线程池</li>
+    <li>提交任务到线程池</li>
+    <li>等待所有任务完成</li>
+    <li>最后关闭线程池，并执行后面的代码</li>
+</ol>
+<br/>
+所以执行后的输出大概如下：<br/><br/>
+<blockquote>
+process 2<br />
+process 0<br />
+process 1<br />
+done
+</blockquote>
+<br/>
+前三行的输出顺序不定，它们由线程池中的线程执行的，done 一定是在所有任务完成了最后输出的。<br/><br/>
+如果要收集子任务的输出，可以提交任务时放到 futures 列表中，如<br/><br/>
+<pre class="lang:default decode:true">futures.append(executor.submit(perform, i))
+for future in futures:
+    print(future.result)</pre>
+<br/>
+或是 <code>executor.map()</code> 一步提交多个任务并收集结果<br/><br/>
+<pre class="lang:default decode:true ">results = executor.submit(perform, [0, 1, 2])
+for result in results:
+    print(result)</pre>
+<br/>
+回顾完了我们重新回到正题上来，如果不停的向线程池提交任务，待执行的任务全部要积压在线程池的工作队列中，提交多了快了，远远超出了线程池的处理速度就会迅速把本地内存挤暴。来观察一下一个 ThreadPoolExecutor 的内部属性<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/07/python-ThreadPoolExecutor.png"><img class="aligncenter wp-image-10413" src="https://yanbin.blog/wp-content/uploads/2020/07/python-ThreadPoolExecutor-800x498.png" alt="" width="662" height="412" /></a><br/><br/>
+注意到它有一个 <code>_work_queue</code> 用来存放通过 <code>submit</code> 提交的待处理任务，默认实现为 <code>SimpleQueue</code>, 而 <code>queue.SimpleQueue</code> 是一个没有节制的队列，你可以一直往里面添加记录，只要计数没溢出并且内存充足。这就是简单使用 ThreadPoolExecutor 造成 OutOfMemory 的元凶，更可恶的是 Python 不坦诚的告诉我们内存不足，而是直接把系统拖死。<br/><br/>
+因此解决办法就是要想法设法在提交任务之前检查当前 <code>_work_queue</code> 大小是否超过某个限定值，是的话等降下来后再提交新任务。然而 <code>_work_queue</code> 是一个私有变量，不允许从外部访问，那么索性我们创造一个子类把 <code>_work_queue</code> 置换成一个有容量限制的 Queue, 那就是 <code>queue.Queue</code>. <code>BoundedThreadPoolExecutor</code> 并使用方式如下：<br/><br/>
+<pre class="lang:default mark:9-12,14 decode:true ">import time
+from concurrent.futures import ThreadPoolExecutor
+from queue import Queue<br/><br/>
+def perform(x):
+    time.sleep(2)
+    print(f'process {x}')<br/><br/>
+class BoundedThreadPoolExecutor(ThreadPoolExecutor):
+    def __init__(self, max_workers, max_waiting_tasks, *args, **kwargs):
+        super().__init__(max_workers=max_workers, *args, **kwargs)
+        self._work_queue = Queue(maxsize=max_waiting_tasks)<br/><br/>
+with BoundedThreadPoolExecutor(10, 100) as executor:
+    for i in range(999999999):
+        executor.submit(perform, i)<br/><br/>
+    executor.shutdown(wait=True)<br/><br/>
+print('done')
+</pre>
+<br/>
+现在操作系统再也不用担心过多的任务会把内存消耗干净了。再来看一下 <code>BoundedThreadPoolExecutor</code> 内部<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/07/python-ThreadPoolExecutor-1.png"><img class="aligncenter wp-image-10414" src="https://yanbin.blog/wp-content/uploads/2020/07/python-ThreadPoolExecutor-1-800x498.png" alt="" width="662" height="412" /></a><br/><br/>
+<code>_work_queue</code> 变成了 <code>queue.Queue</code> 实现，原理是借助于 Queue 可指定 <code>maxsize</code>，当 Queue 的大小达到这个值，提交任务时将被阻塞，直致工作线程从中取走待执行任务，Queue 的大小低于 <code>maxsize</code> 值，才能继续往里头提交任务，这达到了一种流量控制的效果。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://stackoverflow.com/questions/48263704/threadpoolexecutor-how-to-limit-the-queue-maxsize">ThreadPoolExecutor: how to limit the queue maxsize?</a></li>
+</ol>

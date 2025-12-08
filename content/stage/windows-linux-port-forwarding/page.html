@@ -1,0 +1,68 @@
+---
+title: Windows 和 Linux 平台下的端口转发工具
+url: /windows-linux-port-forwarding/
+date: 2010-12-04T23:57:35-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Linux/Unix
+tags: 
+  - Linux
+  - port forward
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2890 
+wpStatus: publish
+views: 8859
+lastmod: 2021-09-04T11:10:56-05:00
+---
+
+这里记录一下我曾经使用过的几个端口转发工具，即端口映射、端口重定向，和 NAT 也是差不多的概念。</p>
+<br/>
+Linux 下用过 iptables，<a href="http://www.boutell.com/rinetd/" target="_blank" rel="noopener">rinetd</a>；Windows 下用过某个防火墙的 NAT 功能、RemoteAnywhere 的端口重定向、<a href="http://www.foundstone.com/us/resources/proddesc/fpipe.htm" target="_blank" rel="noopener">FPipe</a>，还有最近刚找到的 <a href="http://sourceforge.net/projects/pjs-passport/" target="_blank" rel="noopener">PassPort</a>。试着去设置一下 Windows 2000 的 NAT  功能，但未成功，还是特定的软件简单易用，下面介绍逐一介绍下。<br/><br/>
+iptables 的功能当然强大，但理解与设置却有点抽象，曾用它进行过透明代理上网，见：<a href="http://unmi.cc/linux-iptables-transparent-proxy" target="_blank" rel="noopener">Linux 下仅用 iptables 实现为透明代理服务器</a>。真要用它进行端口重定向太麻烦，会用它当然很方便的，在 Linux  平台下是开箱即用的，很多机器都安装了它。<!--more--><br/><br/>
+rinetd，一直在用它，它可以多组端口映射写在配置文件里，好像只支持 TCP 协议。下载地址 <a href="http://www.boutell.com/rinetd/http/rinetd.tar.gz">http://www.boutell.com/rinetd/http/rinetd.tar.gz</a>，如何安装不细讲了，可以 apt-get install，或 yum install，或是 make/make install。<br/><br/>
+安装后，它默认使用 /etc/rinetd.conf 文件，比如通过入口机访问某台内网的远程桌面，或透过入口的 80 端口访问内网某机器的 8080 端口上的 Web 服务，可以这么写：<br/><br/>
+<pre class="brush:text">#通过 61.108.218.106:3389 进来的请求重定向给 10.80.10.7:3389
+61.108.218.106 3389 10.80.10.7 3389
+#任何接口进来请求80端口重定向给 10.80.10.8:8080
+0.0.0.0 80 10.80.10.8 8080</pre>
+<br/>
+格式是：【直接被访问的IP     端口号  重定向到机器IP  端口号】，中间用空格分开。<br/><br/>
+使用默认 /etc/rinited.conf 的话，直接执行 rinitd 就启用你所配置的端口重定向规则。如果不是用的默认文件就用参数 -c 指定配置文件，如 rinitd -c /home/unmi/rinitd.conf。另外还可以指定 allow 和 deny 规则，只需要 allow 关键字，可记录日志文件。只需在 rinited.conf 文件中再写上<br/><br/>
+<pre class="brush:text">#只允许 218.20.68.* 访问，未被允许的则视为禁止
+allow 218.20.68.*
+logfile /var/log/rinetd.log</pre>
+<br/>
+请参考：<a href="http://www.boutell.com/rinetd/">http://www.boutell.com/rinetd/</a>。<br/><br/>
+rinetd 还出了 Windows 的版本，相应的下载地址是：<a href="http://www.boutell.com/rinetd/http/rinetd.zip">http://www.boutell.com/rinetd/http/rinetd.zip</a>。使用方式也是一样的，命令方式。<br/><br/>
+那个防火墙软件的 NAT 功能没什么可说，一般人都用不到。RemoteAnywhere 是可以进行远程管理的，它带了 Port Forwarding 功能，通过 Web 就能设置，相信为了简单的端口重定向功能，谁也不愿意装上这个累赘，况且还不免费。<br/><br/>
+最初在 Windows 上我还是用的 FPipe，也是命令行式的，支持 TCP 和 UDP 协议。执行一个命令重定向一个端口，不能把重定向规则写在配置文件中。当然，你愿意用批处理逐行读配置一次次执行 fpipe 命令也行得通的，规则多了小心屏幕一片黑。<br/><br/>
+FPipe 的下载和帮助界面见：<a href="http://www.foundstone.com/us/resources/proddesc/fpipe.htm">http://www.foundstone.com/us/resources/proddesc/fpipe.htm</a>.<br/><br/>
+它就只有一个可执行文件 fpipe.exe。直接执行 fpipe 会显示出它的命令说明的：<br/><br/>
+<pre class="lang:default decode:true ">C:\Documents and Settings\unmi&gt;fpipe
+FPipe v2.1 - TCP/UDP port redirector.
+Copyright 2000 (c) by Foundstone, Inc.
+http://www.foundstone.com<br/><br/>
+FPipe [-hvu?] [-lrs &lt;port&gt;] [-i IP] IP<br/><br/>
+ -?/-h - shows this help text
+ -c    - maximum allowed simultaneous TCP connections. Default is 32
+ -i    - listening interface IP address
+ -l    - listening port number
+ -r    - remote port number
+ -s    - outbound source port number
+ -u    - UDP mode
+ -v    - verbose mode<br/><br/>
+Example:
+fpipe -l 53 -s 53 -r 80 192.168.1.101</pre>
+<br/>
+比如，要完成上面 web 服务的重定向，以执行：<br/><br/>
+fpipe -i 61.108.218.106 -l 80 -r 80 -s 8080 10.80.10.8<br/><br/>
+这里多了一层概念，就是端口，1. 请求哪个端口，2. 定向到它机的端口，3. 数据从哪个端口出<br/><br/>
+支持 UDP 加 -u 参数，执行后命令窗口不关闭，并会显示连接日志。<br/><br/>
+Windows 下还是希望有图形界面的，那就是 <a href="http://sourceforge.net/projects/pjs-passport/" target="_blank" rel="noopener">PassPort</a>，它是免费开源的，支持 TCP/UDP、可配置多组映射规则，修改规则后还无需重启，可作为 Windows 系统服务运行。好用的强力推荐的东西不能列在后头，还是另立一篇来说说它。<br/><br/>
+参考：1. <a href="http://www.pc-union.com/html/hack/net/2009/06/6114970540.html" target="_blank" rel="noopener">端口重定向Fpipe的用法</a>

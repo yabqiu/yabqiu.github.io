@@ -1,0 +1,105 @@
+---
+title: 早先为 Jackson 写的 Json-Path 支持
+url: /jackson-json-path-support-before/
+date: 2015-08-20T22:31:32-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - Scala
+  - json
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7002 
+wpStatus: publish
+views: 2865
+lastmod: 2021-09-03T17:46:28-05:00
+---
+
+今天才发现 Jackson 其实是支持 Json-Path 的，但以前一直不知道，关键是 Jackson 的文档也没见提到。所以很久以前是自己给 Jackson 写了一个简陋的 Json-Path 支持类，这个是为测试代码用的，所以基本够用。想要更全面的功能可使用 <a href="https://github.com/jayway/JsonPath" target="_blank" rel="noopener">https://github.com/jayway/JsonPath</a> 这个项目。对于 Jackson 中如何使用 Json-Path, 我还会进一步研究下。</p>
+<br/>
+我写的 RichJsonNode 类是一个 Scala 版本，最早也写过一个 Java 版本，还有一个基于 GSON 的 Java 版本的。这里只贴出 Scala 版源码。支持的基本方法及语法如下：<br/><br/>
+<span style="color: #800000;">a/b, a/b[2], a/b[1]/c, a[1]/b, $[0]</span><br/><br/>
+<span style="color: #800000;">selectNode(path), selectString(path), selectInt(path), selectDouble(path), selectBollean(path), hasField(path) 和  arrayLength(path)</span><br/><br/>
+源码如下：<!--more--><br/><br/>
+<pre class="lang:default decode:true ">package cc.unmi<br/><br/>
+import com.fasterxml.jackson.databind.JsonNode<br/><br/>
+/**
+ * JSON PATH， Inspired by XPath, need an exact path relative to root element
+ * Can't start with "/", of course, won't support "//" fuzzy query
+ * json-path examples:
+ * &lt;ul&gt;
+ * &lt;li&gt;a/b&lt;/li&gt;
+ * &lt;li&gt;a/b[2]&lt;/li&gt;
+ * &lt;li&gt;a/b[1]/c&lt;/li&gt;
+ * &lt;li&gt;a[1]/b&lt;/li&gt;
+ * &lt;li&gt;$[0] if root element is an Array, can't use [0]/a&lt;/li&gt;
+ * &lt;/ul&gt;
+ */
+class RichJsonNode(json: JsonNode) {<br/><br/>
+  def selectNode(jsonPath: String) = getTailElement(jsonPath)<br/><br/>
+  def selectString(jsonPath: String) =
+    getTailElement(jsonPath).ensuring(t=&gt;t.isNull||t.isTextual, "not a text node").textValue<br/><br/>
+  def selectInt(jsonPath: String) =
+    getTailElement(jsonPath).ensuring(_.isInt, "not an int node").intValue()<br/><br/>
+  def arrayLength(jsonPath: String) = getTailElement(jsonPath).size<br/><br/>
+  def selectDouble(jsonPath: String) =
+    getTailElement(jsonPath).ensuring(_.isNumber, "not a double node").doubleValue()<br/><br/>
+  def selectBoolean(jsonPath: String) =
+    getTailElement(jsonPath).ensuring(_.isBoolean, "not a boolean node").booleanValue<br/><br/>
+  def isJsonNull(jsonPath: String) = getTailElement(jsonPath).isNull<br/><br/>
+  def hasField(jsonPath: String): Boolean = {
+    try {
+      selectNode(jsonPath)
+      true
+    }
+    catch {
+      case _: Throwable =&gt; false
+    }
+  }<br/><br/>
+  private def getTailElement(jsonPath: String): JsonNode = {
+    assume(jsonPath != null &amp;&amp; jsonPath.trim.length &gt; 0)
+    assume(!jsonPath.startsWith("/"), "doesn't support /a/b, or //b, path is relative")<br/><br/>
+    jsonPath.split("/").foldLeft(json)((tmpJson, key) =&gt; {
+      if(key == "$"){
+        tmpJson
+      }else  if (key.contains("[")) {
+        val newKey = key.substring(0, key.indexOf('['))
+        val index = """\[\d+\]""".r.findFirstIn(key).get.replaceAll("""\[|\]""","").toInt
+        if (newKey == "$") {
+          tmpJson.get(index)
+        }
+        else {
+          tmpJson.get(newKey).get(index)
+        }
+      }
+      else {
+        tmpJson.get(key)
+      }
+    });<br/><br/>
+  } ensuring( _ != null)  <br/><br/>
+}<br/><br/>
+object RichJsonNode {
+  implicit def enrich(json: JsonNode):RichJsonNode = new RichJsonNode(json)
+}</pre>
+<br/>
+因为做成了一个用于隐式转型的类，所以在 Scala 中使用起来比较简单<br/><br/>
+<pre class="lang:default decode:true">import cc.unmi.RichJsonNode.enrich
+import com.fasterxml.jackson.databind.{JsonNode, ObjectMapper}<br/><br/>
+object TestClient {
+    val jsonString = """{ "a": { "b": 123, "c": [1, 2, { "d": "456" } ] } }"""
+    val json = new ObjectMapper().readValue(jsonString, classOf[JsonNode])
+    System.out.println(json.selectInt("a/c[1]")) //2
+    System.out.println(json.selectString("a/b/c[2]/d") //456
+}</pre>
+<br/>
+如果顶级是一个数组，如 [1, 2, {"a": 3}]，那么可以用<br/><br/>
+<pre class="lang:default decode:true ">json.selectInt("$[0]") //1
+json.selectint("$[2]/a") //3</pre>
+<br/>
+对于 Jackson 的 Json-Path 支持还正在研习当中，如果 Jackson 已足够好，我将摈弃这里的实现。

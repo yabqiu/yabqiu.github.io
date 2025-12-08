@@ -1,0 +1,101 @@
+---
+title: Spring MVC 初体验
+url: /spring-mvc-first/
+date: 2006-08-29T11:14:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - mvc
+  - Spring
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 552 
+wpStatus: publish
+views: 447
+lastmod: 2021-09-03T10:28:34-05:00
+---
+
+相信很多搞过Java的人都用过 Struts,或者转到用 Spring 框架后使用的仍然是Struts提供的MVC,那么是否想更多了解一下 Spring 本身的 MVC 呢，其实 Spring 的 MVC 还是很不错的，它×?Struts 中好的东西，还集 WebWork 的拦截器，下面来让我对 Spring MVC 作一个最简单的体验。 </p>
+<br/>
+称之谓简单是我觉得要去体验 Spring 的 MVC 的这个例子已经是精小到极致了，应用中没有配置ContextLoaderServlet或者ContextLoaderListener。借鉴于 Struts 的概念，这个实例中的的请求处理过程依次是/helloSpring.unmi-&gt;helloSpringController-&gt;helloSping.jsp)<!--more-->,比如通过地址 <a href="http://localhost:8080/spring/helloSpring.unmi">http://localhost:8080/spring/helloSpring.unmi</a> 访问，在基本Spring 的 Web容器收到这个请求，会通过 DispatcherServlet 根据配置的 Mapping 派发给 helloSpringController 处理，然后通知视图 helloSpring.jsp 显示结果。 <br/><br/>
+下面逐个介绍能演示这一过程的四个文件 <br/><br/>
+1. web.xml (不用说也知道是放在哪里的) <br/><br/>
+<pre class="lang:default decode:true">&lt;web-appversion="2.4" xmlns="http://java.sun.com/xml/ns/j2ee"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee
+       http://java.sun.com/xml/ns/j2ee/web-app_2_4.xsd"&gt;<br/><br/>
+   &lt;servlet&gt;
+      &lt;servlet-name&gt;UnmiServlet&lt;/servlet-name&gt;
+      &lt;servlet-class&gt;org.springframework.web.servlet.DispatcherServlet&lt;/servlet-class&gt;
+      &lt;load-on-startup&gt;1&lt;/load-on-startup&gt;
+   &lt;/servlet&gt;<br/><br/>
+   &lt;servlet-mapping&gt;
+      &lt;servlet-name&gt;UnmiServlet&lt;/servlet-name&gt;
+      &lt;url-pattern&gt;*.unmi&lt;/url-pattern&gt;
+   &lt;/servlet-mapping&gt;<br/><br/>
+   &lt;jsp-config&gt;
+      &lt;taglib&gt;
+         &lt;taglib-uri&gt;http://java.sun.com/jsp/jstl/core&lt;/taglib-uri&gt;
+         &lt;taglib-location&gt;/WEB-INF/tld/c.tld&lt;/taglib-location&gt;
+      &lt;/taglib&gt;
+   &lt;/jsp-config&gt;
+&lt;/web-app&gt;</pre>
+<br/>
+ 说明：配置了一个 DispatcherServlet 用来处理后缀为 unmi 的请求，后缀随便定义，如果想仿照着 Struts, 你也可以命作 *.do。还配置了要使用 jstl的核心标签库。 <br/><br/>
+2. UnmiServlet-servlet.xml(这个文件也是放在/WEB-INF/下的) <br/><br/>
+<pre class="lang:default decode:true">&lt;!DOCTYPE beans PUBLIC "-//SPRING//DTD BEAN//EN" "http://www.springframework.org/dtd/spring-beans.dtd"&gt;<br/><br/>
+&lt;beans&gt;<br/><br/>
+   &lt;beanid="viewResolver" class="org.springframework.web.servlet.view.InternalResourceViewResolver"&gt;
+      &lt;propertyname="prefix" value="/" /&gt;
+      &lt;propertyname="suffix" value=".jsp" /&gt;
+   &lt;/bean&gt;<br/><br/>
+   &lt;beanid="simpleUrlHandlerMapping" class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping"&gt;
+      &lt;propertyname="mappings"&gt;
+         &lt;props&gt;
+            &lt;propkey="/helloSpring.unmi"&gt;helloSpringController&lt;/prop&gt;
+         &lt;/props&gt;
+      &lt;/property&gt;
+   &lt;/bean&gt;<br/><br/>
+   &lt;beanid="helloSpringController" class="com.unmi.HelloSpringController"&gt;
+   &lt;/bean&gt;<br/><br/>
+&lt;/beans&gt;</pre>
+<br/>
+这个文件为什么要命作 UnmiServlet-servlet.xml 呢？因为 web.xml 中配置了 DispatcherServlet 查找的默认 Spring Bean 配置文件就是指定的 <strong><span style="color: #0000ff;"><span style="color: #ff0000;"><span style="color: #949400;"><span style="color: #949400;"><span style="color: #0000ff;"><span style="color: #804040;"><span style="color: #dc009c;"><span style="color: #0000ff;"><span style="color: #804040;"><span style="color: #ff0000;">servlet-name </span></span></span></span></span></span></span></span></span></span></strong>UnmiServlet + "-servlet.xml", 其中配置了最基本的三个 bean, 分别 <br/><br/>
+视图解析器：告诉从 Controller return 的 ModelAndView 去找哪个视图处理显示。这里的配置是在 WEB 应用路径下找相对应后缀为 jsp 的页面来处理，由下面的 HelloSpringController 可知道会要求 helloSpring.jsp 来显示内容。 <br/><br/>
+处理映射配置：标示匹配模式的 URL 将发给相应的控制器来处理，相当于 Struts 的 ActionMapping 配置项，也可配置多项。这里告诉 Web 容器，/helloSpring.unmi 的请求交给 helloSpringController 来处理。 <br/><br/>
+3. HelloSpringController.java (放到它该呆的 Package中) <br/><br/>
+<pre class="brush:java">package com.unmi;<br/><br/>
+importorg.springframework.web.servlet.mvc.Controller;
+importorg.springframework.web.servlet.ModelAndView;<br/><br/>
+importjavax.servlet.http.HttpServletRequest;
+importjavax.servlet.http.HttpServletResponse;<br/><br/>
+publicclassHelloSpringController implementsController {<br/><br/>
+   publicModelAndView handleRequest(HttpServletRequest request,
+         HttpServletResponse response)throwsException{<br/><br/>
+      request.setAttribute("helloSpring", "Hello, Spring!");<br/><br/>
+      returnnewModelAndView("helloSpring");
+   }<br/><br/>
+}</pre>
+<br/>
+说明：往 request 中设置属性待视图显示，最后返回一个 ModelAndView, 逻辑名为 helloSpring, 依据前面配置 UnmiServlet-servlet.xml 的视图解析器会找到 /helloSpring.jsp 来显示。 <br/><br/>
+4. helloSpring.jsp (放在 WEB 应用的根目录下) <br/><br/>
+<pre class="lang:default decode:true">&lt;html&gt;
+&lt;head&gt;
+   &lt;title&gt;Hello Spring!&lt;/title&gt;
+&lt;/head&gt;
+&lt;body&gt;<br/><br/>
+   &lt;h1&gt;${helloSpring}&lt;/h1&gt;<br/><br/>
+&lt;/body&gt;
+&lt;/html&gt;</pre>
+<br/>
+说明：JSP 使用 jstl 当成一个显示模板来用，用 EL 标记把 request 中的 helloSpring 属性显示出来。 <br/><br/>
+最后稍加几句，因为本文的读者群是对 Java 并且至少对一种 MVC 框架比较熟悉，对 Spring 稍有常识的人员，所以没解释的太细，比如上面用到的 spring, jstl库，以及tld文件应该要知道需加在什么地方。好啦，确定配置完妥无误时，部署到 Web 容器中，通过形如这样的地址 <a href="http://localhost:8080/spring/helloSpring.unmi">http://localhost:8080/spring/helloSpring.unmi</a>,你将会看到页面显示出 "Hello, Spring!"，祝好运! <br/><br/>
+参考：1. <a href="http://www.ideawu.net/ideablog/category4/article168.html">Spring MVC 入门</a><br />
+      2. 书籍《Spring框架高级编程》 -《Professional Java Development with the Spring Framework》

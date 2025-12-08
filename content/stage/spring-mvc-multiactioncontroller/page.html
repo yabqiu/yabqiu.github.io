@@ -1,0 +1,107 @@
+---
+title: Spring MVC 中的 MultiActionController 用法详解
+url: /spring-mvc-multiactioncontroller/
+date: 2008-10-06T01:54:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Spring
+tags: 
+  - mvc
+  - Spring
+  - MultiActionController
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 320 
+wpStatus: publish
+views: 539
+lastmod: 2021-09-02T14:08:10-05:00
+---
+
+Spring MVC 中 Controller 的层次实在是多，有些眼花缭乱了。在单个的基础上，再新加两三个叫做丰富，再多就未必是好事，反而会令人缩手新闻片脚，无从定夺。多数 Controller 都是只完成一个任务，不过也有一个像 Struts 的 DispatchAction 的那样的 Conntroller，org.springframework.web.servlet.mvc.multiaction.MultiActionController，意即在一个 Controller 中处理多个动作，如同一个业务的增、删、改可以放在一起了。不至于增、删、改各自为政，造成代码混乱、重复难以维护。</p>
+<br/>
+本文中的 web.xml 的 org.springframework.web.servlet.DispatcherServlet 所处理的 url-pattern 是 *.html，如何搭建 Spring MVC 项目不细加说明，可参考我前面同系列的文章。<br/><br/>
+例如，下面的 UserController，有两个签名一样的 updateUser() 和 deleteUser() 方法<!--more--><br/><br/>
+<pre class="lang:default decode:true">public class UserController extends MultiActionController {
+    public ModelAndView updateUser(HttpServletRequest request,
+            HttpServletResponse response) {
+        System.out.println("updateUser");//方便于跟踪执行了哪个方法
+        return new ModelAndView("userList","from","updateUser");
+    }<br/><br/>
+    public ModelAndView deleteUser(HttpServletRequest request,
+            HttpServletResponse response) {
+        System.out.println("deleteUser");//方便于跟踪执行了哪个方法
+        return new ModelAndView("userList","from","deleteUser");
+    }
+}</pre>
+<br/>
+用过 Struts 的 DispatchAction 的都知道，是通过 <a href="http://.../userAction.do?method=updateUser">http://.../userAction.do?method=updateUser</a> 的方式来指定执行哪个方法。那 Spring MVC中是如何定位到所需方法上呢？<br/><br/>
+Spring MVC 除了有一个叫做 HandlerMapping(把 URL 解析到 Controller) 的东西，还要把操作进一步解析到方法名上，即要找到的 Controller 上的哪个方法并执行之。缺省的方法名解析器是 InternalPathMethodNameResolver，它根据 URL 样式解析方法名。<br/><br/>
+在缺省的 BeanNameUrlHandlerMapping 和缺省的 <strong>InternalPathMethodNameResolver</strong> 协调之下，Bean 上下文可以这样配置：<br/><br/>
+<pre class="lang:default decode:true">&lt;bean name="/updateUser.html" class="com.unmi.UserController"/&gt;
+&lt;bean name="/deleteUser.html" class="com.unmi.UserController"/&gt;</pre>
+<br/>
+这样分别通过下面的 URL 就能执行到正确的方法上去了：<br/><br/>
+<a href="http://.../updateUser.html">http://.../updateUser.html</a>  --  将被 UserController.updateUser() 处理<br />
+<a href="http://.../deleteUser.html">http://.../deleteUser.html</a>   --   将被 UserController.deleteUser() 处理<br/><br/>
+但是，你应该注意到了，上面的 com.unmi.UserController 配置了两次，一来碍眼、二来原来只要 Singleton 的 UserController 实例不再是那么回事了。所以要引入 SimpleUrlHandlerMapping 对 Bean 配置进一步紧凑一下：<br/><br/>
+<pre class="lang:default decode:true">&lt;bean id="userController" class="com.unmi.UserController"/&gt;
+&lt;bean id="simpleUrlMapping" class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping"&gt;
+    &lt;property name="mappings"&gt;
+        &lt;props&gt;
+            &lt;prop key="/updateUser.html"&gt;userController&lt;/prop&gt;
+            &lt;prop key="/deleteUser.html"&gt;userController&lt;/prop&gt;
+        &lt;/props&gt;
+    &lt;/property&gt;
+&lt;/bean&gt;</pre>
+<br/>
+说是紧凑，倒不如说 Bean 配置复杂了，反正不用配置两个相同的 UserController 实例了。还是通过上面那两个 URL 来访问执行到相应的方法。<br/><br/>
+除了缺省的方法名解析器 InternalPathMethodNameResolver(注意了，Spring 中缺省的 XXX 很多用 InternalXXX 的命名)，还有两种其他类型的方法名解析器：<br/><br/>
+·ParameterMethodNameResolver -- 根据请求中的参数解析执行方法名，相当于 Struts 的 DispathAction<br />
+·PropertiesMethodNameResolver -- 根据查询一个 key/value 列表解析执行方法名，相当于 Struts 的 MappingDispatchAction(用得很少)<br/><br/>
+下面逐一介绍使用上面两种方法名解析器时的 Bean 配置及相应访问的 URL。<br/><br/>
+<strong>使用 ParameterMethodNameResolver</strong> 时的 Bean 配置(为简单起见，又用回了缺省的 HandlerMapping)：<br/><br/>
+<pre class="lang:default decode:true">&lt;bean name="/user.html" class="com.unmi.UserController"&gt;
+    &lt;property name="methodNameResolver"&gt;
+        &lt;ref bean="methodNameResolver"/&gt;
+    &lt;/property&gt;
+&lt;/bean&gt;
+&lt;bean name="methodNameResolver" class="org.springframework.web.servlet.mvc.multiaction.ParameterMethodNameResolver"&gt;
+    &lt;property name="paramName"&gt;
+        &lt;value&gt;method&lt;/value&gt;
+    &lt;/property&gt;
+&lt;/bean&gt;</pre>
+<br/>
+这时候分别用下面的 URL 就能访问到相应的方法<br/><br/>
+<a href="http://.../user.html?method=updateUser">http://.../user.html?method=updateUser</a> -- 将被 UserController.updateUser() 处理<br />
+<a href="http://.../user.html?method=deleteUser">http://.../user.html?method=deleteUser</a>  -- 将被 UserController.deleteUser() 处理<br/><br/>
+通过参数的方式使得 HTML 表单表现用户选择成为可能，例如把 method 参数可放在一个下拉框或隐藏域中。<br/><br/>
+<strong>使用 PropertiesMethodNameResolver 时</strong>的 Bean 配置<br/><br/>
+<pre class="lang:default decode:true ">&lt;bean id="userController" class="com.unmi.UserController" /&gt;
+&lt;bean id="simpleUrlMapping" class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping"&gt;
+    &lt;property name="mappings"&gt;
+        &lt;props&gt;
+            &lt;prop key="/updateUser.html"&gt;userController&lt;/prop&gt;
+            &lt;prop key="/deleteUser.html"&gt;userController&lt;/prop&gt;
+        &lt;/props&gt;
+    &lt;/property&gt;
+&lt;/bean&gt;
+&lt;bean id="methodNameResolver"    class="org.springframework.web.servlet.mvc.multiaction.PropertiesMethodNameResolver"&gt;
+    &lt;property name="mappings"&gt;
+        &lt;props&gt;
+            &lt;prop key="/updateUser.html"&gt;updateUser&lt;/prop&gt;
+            &lt;prop key="/deleteUser.html"&gt;deleteUser&lt;/prop&gt;
+        &lt;/props&gt;
+    &lt;/property&gt;
+&lt;/bean&gt;</pre>
+<br/>
+这种配置有点复杂，PropertiesMethodNameResolver 不仅与 SimpleUrlHandlerMapping 相仿又有重叠，而且必须把 SimpleUrlHandlerMapping  拉进来，无法使用默认的 HandlerMapping。从上面的配置我们可以明显的看出 HandlerMapping 和 MethodNameResolver 不同职责了，一个是定位 Controller，一个是定位 Method。<br/><br/>
+这时候分别用下面的 URL 来访问到相应 Controller 的方法<br/><br/>
+<a href="http://.../updateUser.html">http://.../updateUser.html</a>  --  将被 UserController.updateUser() 处理<br />
+<a href="http://.../deleteUser.html">http://.../deleteUser.html</a>   --   将被 UserController.deleteUser() 处理<br/><br/>
+这里的 URL 恰巧和使用 InternalPathMethodNameResolver  时是一样的，但一定要理解其实他们的机制是一样的。<br/><br/>
+PropertiesMethodNameResolver 把事性搞这么复杂，被誉为最复杂的方法名解析器。可我还真看不出它还有什么独到之处，或值得一用的理由，同时也不难理解 Struts 的 MappingDispatchAction 鲜为人知的缘由了。

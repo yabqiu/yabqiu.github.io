@@ -1,0 +1,77 @@
+---
+title: PHP 进程间内存共享
+url: /php-share-memory-cross-proces/
+date: 2010-04-24T15:31:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PHP
+tags: 
+  - php
+  - memory
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 192 
+wpStatus: publish
+views: 385
+lastmod: 2021-09-02T10:56:59-05:00
+---
+
+启用php的共享内存:<br/><br/>
+1).windows下，php.ini中取消 ;extension=php_shmop.dll 这行的行首分号，加载shmop扩展。<br />
+2) .linux/unix下,重新编译php,加入--enable--shmop 选项。<br/><br/>
+Shared Memory 的函数解释如下：<br/><br/>
+<ul>
+    <li><a href="http://php.net/manual/zh/function.shmop-close.php">shmop_close</a> — Close shared memory block</li>
+    <li><a href="http://php.net/manual/zh/function.shmop-delete.php">shmop_delete</a> — Delete shared memory block</li>
+    <li><a href="http://php.net/manual/zh/function.shmop-open.php">shmop_open</a> — Create or open shared memory block</li>
+    <li><a href="http://php.net/manual/zh/function.shmop-read.php">shmop_read</a> — Read data from shared memory block</li>
+    <li><a href="http://php.net/manual/zh/function.shmop-size.php">shmop_size</a> — Get size of shared memory block</li>
+    <li><a href="http://php.net/manual/zh/function.shmop-write.php">shmop_write</a> — Write data into shared memory block<!--more--></li>
+</ul><br/><br/>
+测试代码如下：<br/><br/>
+<pre class="lang:default decode:true">&lt;?php
+/*
+ * @文件: create.php
+ * @功能：将全局变量写入共享内存中
+*/<br/><br/>
+//定义全局变量
+$super = "hello world";<br/><br/>
+//申请100字节共享内存空间
+$shm_id = shmop_open(0xff3, "c", 0644, 100);
+if (!$shm_id) {
+    echo "申请空间失败&lt;br&gt;";
+}<br/><br/>
+//内容写入共享内存空间
+if (shmop_write($shm_id, $super, 0)) {
+    echo "全局变量已经写入共享内存&lt;br&gt;";
+}
+else {
+    echo "写入共享内存失败&lt;br&gt;";
+}<br/><br/>
+//关闭共享内存空间
+shmop_close($shm_id);
+?&gt;</pre>
+<br/>
+<pre class="lang:default decode:true ">&lt;?php
+/*
+ * @文件: read.php
+ * @功能：读取共享内存中的内容
+*/<br/><br/>
+//读100字节共享内存空间
+$shm_id = shmop_open(0xff3, "a", 0644, 100);<br/><br/>
+//获取共享内存空间中的前11个字节的内容
+//create.php中 $super 变量长度为11
+$share = shmop_read($shm_id, 0, 11);<br/><br/>
+echo $share;<br/><br/>
+//关闭
+shmop_close($shm_id);
+?&gt;</pre>
+<br/>
+测试方法：浏览过 create.php 页面，只要 HTTP 服务不关，以后每打开 read.php 就能读取到共享内存中的 "hello world"。还有一种测试办法，在 create.php 后加个 while(true){} 让脚本不会退出，第一个 dos 窗口执行 php create.php，然后在别的窗口中执行 php read.php 就能在控制台下输出 "hello world"。<br/><br/>
+参考：<a href="http://blog.csdn.net/johnpanq/archive/2005/12/29/564818.aspx">http://blog.csdn.net/johnpanq/archive/2005/12/29/564818.aspx</a><br/><br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

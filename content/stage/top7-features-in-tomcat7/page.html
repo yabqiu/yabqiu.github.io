@@ -1,0 +1,235 @@
+---
+title: Tomcat 7的七大特性：新特性与增强功能
+url: /top7-features-in-tomcat7/
+date: 2011-01-17T07:57:28-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - Mid-Ware
+tags: 
+  - Tomcat
+  - Tomcat7
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3057 
+wpStatus: publish
+views: 1037
+lastmod: 2021-09-03T12:13:17-05:00
+---
+
+Tomcat 7 在加强原有功能的同时也增加了一些新特性。有些文章列举了Tomcat 7的新特性，但大多数都没有对它们进行详细地解释、评价并给出可执行的示例。除了列举出新特性，这篇文章还对Tomcat 7的七个最值得注意的特性与增强部分进行分类、评定以及演示可执行代码以使你能够对每个特性/加强有个更好的理解。</p>
+<br/>
+我将下面列举的这些分类为“Tomcat 7 新特色：创新性改变”和“Tomcat 7 加强：进化性改变”：<br/><br/>
+<strong>Tomcat 7 新特性：创新性改变</strong><br/><br/>
+<ol>
+    <li>使用<em>随机数令牌(nonce)</em>防止跨站请求伪造（cross-site request forgery—CSRF）攻击</li>
+    <li>验证时改变 <em>jsessionid</em> 以防止固定会话攻击</li>
+    <li>内存泄露检测及预防</li>
+    <li>使用别名在<em>war</em>文件外存储静态内容<!--more--></li>
+</ol>
+<br/>
+<strong>Tomcat 7 加强：进化性改变</strong><br/><br/>
+<ol>
+    <li>Servlet 3.0, JSP 2.2 和 JSP-EL 2.2 支持</li>
+    <li>将Tomcat嵌入你的应用，例如JBoss中，会更加简单</li>
+    <li>异步日志</li>
+</ol>
+<br/>
+据 Mark Thomas（Tomcat 7的发布负责人及提交者）所言，<a href="http://www.tomcatexpert.com/blog/2010/08/02/interview-mark-thomas-tomcat-7-committer-release-manager">Tomcat 7最引人注目的三个特点</a> 是 Servlet 3.0, 内存泄露预防与检测，和提高的安全性。<br/><br/>
+随附的 <a href="http://unmi.cc/downloads/tomcat7demo.zip">Tomcat 7 演示</a> 文件包含了一个Eclipse攻城和一个Ant创建文件，你可以用其创建一个<em>war</em>包。Eclipse工程中的示例代码描述了Tomcat 7的两个新特性。<br/><br/>
+这篇文章的其余部分将详细阐述这七个最值得的关注新特性和增强功能。&amp;<br/><br/>
+<h3>Tomcat 7 新特性: 创新型改变</h3><br/><br/>
+这个部分讨论先前划定的四个新特性。<br/><br/>
+<h4>1. 使用 <em>随机数令牌（nonce）</em>来阻止跨站请求伪造(CSRF)攻击</h4><br/><br/>
+Webopedia(<a href="http://www.webopedia.com/">在线计算机字典</a>)这样定义<a href="http://webopedia.com/TERM/c/cross_site_request_forgery.html">跨站请求伪造(CSRF)</a>：“一种恶意攻击基于web的应用程序。一次典型的恶意攻击将迫使用户在登录可信任站点的时候执行一些不必要的操作。”对CSRF更形象的定义是 <em>session riding</em>(子乌注：好吧，这个“更形象”的定义我实在看不懂……可参看<a href="http://www.securenet.de/papers/Session_Riding.pdf">session riding</a>)。<br/><br/>
+阻止CSRF的典型做法就是使用<em>随机数令牌</em>，在wikipedia中对它的定义是“一个 <a href="http://en.wikipedia.org/wiki/Cryptographic_nonce" target="_blank" rel="noopener">用于认证协议的随机或伪随机数</a>，以确保老的通信不会在重播攻击中被复用。”<br/><br/>
+Tomcat 7 有一个servlet过滤器，用于在每次提交请求之后在用户的会话中保存一个随机数令牌。这个随机数令牌必须添加到后续的每一个请求中做为一个请求参数。这个servlet过滤器会检测这个请求参数是否与存储于用户会话中的随机数令牌一致。如果一致，请求就只能是来自指定站点。如果不同，这个请求会被认为是来自不同的站点并被拒绝。<br/><br/>
+servlet过滤器非常简单。这里有一个相关源码(来自 <a href="http://svn.apache.org/repos/asf/tomcat/tc7.0.x/tags/TOMCAT_7_0_0/java/org/apache/catalina/filters/CsrfPreventionFilter.java">Apache Software Foundation <code>CsrfPreventionFilter</code> 文档</a>)的片断:<br/><br/>
+<div>
+<pre class="lang:default decode:true">public class CsrfPreventionFilter extends FilterBase {<br/><br/>
+public void doFilter(ServletRequest request, ServletResponse response,
+   FilterChain chain) throws IOException, ServletException {<br/><br/>
+    String previousNonce = req.getParameter(Constants.CSRF_NONCE_REQUEST_PARAM);
+    String expectedNonce = (String) req.getSession(true).getAttribute(Constants.CSRF_NONCE_SESSION_ATTR_NAME);<br/><br/>
+    if (expectedNonce != null &amp;&amp; !expectedNonce.equals(previousNonce)) {
+          res.sendError(HttpServletResponse.SC_FORBIDDEN);
+    return;
+}<br/><br/>
+ String newNonce = generateNonce();<br/><br/>
+ req.getSession(true).setAttribute(Constants.CSRF_NONCE_SESSION_ATTR_NAME, newNonce);</pre>
+</div>
+<br/>
+所以每个URL都必须包含一个从用户会话中获取的随机数令牌。这是一个使用JSP-EL的示例：:<br/><br/>
+<strong>Before:</strong><br/><br/>
+<div>
+<pre class="lang:default decode:true">&lt;c:url var="url" value="/show" &gt;
+    &lt;c:param name="id" value="0" /&gt;
+&lt;/c:url&gt;
+&lt;a href="${show}" &gt;Show&lt;/a&gt;</pre>
+</div>
+<br/>
+<strong>After:</strong><br/><br/>
+<div>
+<div>
+<div>
+<pre class="lang:default decode:true">&lt;c:url var="url" value="/show"&gt;
+    &lt;c:param name="id" value="0" /&gt;
+    &lt;c:param name="org.apache.catalina.filters.CSRF_NONCE" value="${session.org.apache.catalina.filters.CSRF_NONCE}" /&gt;
+&lt;/c:url&gt;
+&lt;a href="${show}"&gt;Show&lt;/a&gt;</pre>
+</div>
+</div>
+</div>
+<br/>
+拿附件 <a href="http://unmi.cc/downloads/tomcat7demo.zip">Tomcat 7 示例</a>的样本工程作为示例。<em>web.xml</em> 文件中配置了过滤器，随着这个过滤器的到位，所有访问 <em>http://localhost:8080/tomcat7demo/csrf/</em> URL的请求如果没有将随机数令牌作为请求参数都会返回403错误 (“访问被拒绝”)。<br/><br/>
+一个非法请求（如在垃圾邮件中）不可能拥有随机数令牌。因此，一个session riding攻击无法奏效。即使如果用户点击了一个恶意链接或提交了一个恶意表单，请求也会被拒绝，因为没有随机数令牌。随机数令牌目前只会存在于web应用返回的web页面中。<br/><br/>
+这种方法的缺陷是<em>所有</em>的URL链接都必须带着这个随机数令牌做请求参数。<br/><br/>
+<h4>2. 验证时改变 <em>jsessionid</em> 以防止固定会话攻击</h4><br/><br/>
+一个固定会话攻击发生时可能像这样：<br/><br/>
+<ol>
+    <li>一个恶意用户访问一个站点后，浏览器会有一个cookie存放jsessionid————即使用户没有登录。然后他伪造一个带有jsessionid的URL并将它发送给受害者 (如 <em>http://example.com/login?JESSIONID=qwerty</em>).</li>
+    <li>受害者点击带有该jsessionid的URL并被提示输入验证信息。受害者登录。</li>
+    <li>恶意用户现在可以使用带着该jsessionid的URL来以受害者的身份登录网站。</li>
+</ol>
+<br/>
+攻击者将一个jsessionid加入URL中或通过一个恶意表单将其提交到http头中是很常见的。(如果需要一个固定会话攻击的完整描述，参看来自Acros Security的白皮书 “<a href="http://www.acros.si/papers/session_fixation.pdf">Session Fixation Vulnerability in Web-based Applications</a>“)。<br/><br/>
+Tomcat团队实现的解决方案是打个补丁：认证后改变jsessionid。这个补丁已经在Tomcat 7中起效并且向后兼容至Tomcat 5和6,只是有一些区别。<br/><br/>
+<a href="http://https//issues.apache.org/bugzilla/show_bug.cgi?id=45255#c21">Mark Thomas</a>关于Tomcat 7下这个补丁的效果的描述：<br/><br/>
+<ul>
+    <li>默认情况下由于会话ID在验证结束后会发生改变，Tomcat并不容易受到攻击。</li>
+    <li>如果默认配置被用户修改（如，因为程序不能处理不断变化的会话ID），那可以通过禁用URL会话跟踪（Servlet 3的新特性）来降低风险。</li>
+</ul><br/><br/>
+在Tomcat 5和6中，这个补丁的效果：<br/><br/>
+<ul>
+    <li>通过启用Tomcat在验证时改变会话ID可以避免固定会话攻击（如果足够的支持，这是默认启用的）。</li>
+    <li>如果应用程序无法处理一个不断变化的会话ID，那可以通过写一个自定义过滤器检测<code>request.isRequestedSessionIdFromURL()</code>并做出相应回应（例如拒绝请求）来降低风险。</li>
+</ul><br/><br/>
+上述变动会在幕后悄悄地进行，开发者无须做任何事情。用户会话（jsessionid）在登录后发生改变。这将会彻底杜绝固定会话攻击。<br/><br/>
+<h4>3. 内存泄露检测与预防</h4><br/><br/>
+程序员在他们的开发环境中部署更新版本的web应用程序时经常会遇到错误<em>Permgen space: OutOfMemoryError</em>。这是由内存泄露导致的。上一次部署的类并没有被完全地垃圾收集。开发人员一般通过增加内存<em>PermGen</em>的大小和重启Tomcat来解决这个问题。<br/><br/>
+Tomcat 7推出了一个新特性来解决由于PermGen空间中移除引用的对象没有被垃圾收集导致的内存泄露。该功能是用于程序员部署应用到开发环境的。在开发环境中，为了节约时间程序员会试着在不重启Tomcat的情况下重新部署新<em>war</em>文件。在产品部署时，比较好的方式是停止Tomcat，清空<em>work</em>目录，部署新应用。<br/><br/>
+但这个内存泄露检测与预防功能并不完美。依然存在Tomcat无法处理内存泄露并且也无法检测的情况。所以对于产品系统来说，最好还是停止Tomcat，清空<em>work</em>目录以及旧的web应用，然后部署新web应用再重启Tomcat。<br/><br/>
+<a href="http://java.dzone.com/articles/memory-leak-protection-tomcat">Mark Thomas</a>解释了哪些应用或者库代码可能触发这个情势：<br/><br/>
+<ul>
+    <li>JDBC驱动器注册</li>
+    <li>一些日志框架</li>
+    <li>保存对象到<em>ThreadLocals</em>并且不移除他们</li>
+    <li>启动线程而不停止他们</li>
+</ul><br/><br/>
+还有很多地方存在使用标准Java Api可能导致类似的问题。他们包括：<br/><br/>
+<ul>
+    <li>使用<em>javax.imageio</em> API (Google Web Toolkit会触发它)</li>
+    <li>使用<code>java.beans.Introspector.flushCaches()</code> (Tomcat使用这个来防止由于缓存导致的内存泄露。)</li>
+    <li>使用XML解析(根本原因未知，和JRE中的bug有关)</li>
+    <li>使用RMI (有点讽刺的是导致泄露的原因和垃圾收集器有关)</li>
+    <li>在JAR文件中读取资源</li>
+</ul><br/><br/>
+<h4>4. 使用别名在<em>War</em>文件外存储静态内容</h4><br/><br/>
+一个web应用可能需要静态资源，如CSS，JavaScript，以及视频和图像文件。这些通常是包含在包含在绑定的<em>war</em>文件中。这会增加<em>war</em>文件的大小并会导致静态资源的冗余。对这个的替代方案是使用Apache HTTP服务器来存放静态内容。这是从Apache <em>httpd.conf</em>中显示别名的相关片断：<br/><br/>
+<div>
+<div>
+<div>
+<pre class="lang:default decode:true">&lt;Directory "/home/avneet/temp/static"&gt;
+    Order allow,deny
+    Allow from all
+&lt;/Directory&gt;
+Alias /static "/home/avneet/temp/static"</pre>
+</div>
+</div>
+</div>
+<br/>
+上述的Apache指令将让目录<em>/home/avneet/temp/static</em>下的内容在URL<em>http://localhost/static/</em>下可见。<br/><br/>
+Tomcat 7 现在提供了一个替换方法。Tomcat 7允许<code>context</code>元素上有一个新的属性<code>aliases</code>。这个新属性可以指向一个静态的资源。你现在可以通过<code>Classloader.getResourceAsStream('/static/...')</code>来访问它或者在给它设一个link值，让Tomcat解析其绝对路径。下面是一个<em>context.xml</em>的示例：<br/><br/>
+<div>
+<div>
+<div>
+<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;context path="/tomcat7demo" aliases="/static=/home/avneet/temp/static"&gt;
+    ...
+    ...
+    ...
+&lt;/Context&gt;</pre>
+</div>
+</div>
+</div>
+<br/>
+假设目录 <em>/home/avneet/temp/static</em> 包含图片 <em>bg.png</em> 而且 <em>context.xml</em> 文件已经编辑为如上内容。<br/><br/>
+如果 <em>war</em> 文件部署为 <em>tomcat7demo</em>, 你现在可以通过下面的三种方式访问这个映射的图片资源：<br/><br/>
+<ol>
+    <li>直接访问: <em>http://localhost:8080/tomcat7demo/static/bg.png</em></li>
+    <li>在HTML页面中内嵌一个链接： <code>&lt; img src="/tomcat7demo/static/bg.png" / &gt;</code></li>
+    <li>在Java代码中访问： <code>ByteArrayInputStream bais = (ByteArrayInputStream)getServletContext().getResourceAsStream("/static/bg.png");</code>(子乌注：我不太喜欢这种方式，这意味着将你的应用程序与Tomcat绑定，如果需要更换web容器的话，会是一个有些麻烦的事情。)</li>
+</ol>
+<br/>
+使用这个别名而非<em>httpd.conf</em>中Apache别名的优势在于该映射资源可以从一个servlet中访问，而且这个别名能够被用于不是以Apache做前端服务器的应用程序。<br/><br/>
+<h3>Tomcat 7 加强：进化性改变</h3><br/><br/>
+这个部分将讨论前面定义的三个增强功能。<br/><br/>
+<h4>5. Servlet 3.0, JSP 2.2 和 JSP-EL 2.2 支持</h4><br/><br/>
+Servlet 3.0增强的部分：<br/><br/>
+<ul>
+    <li>能将添加注释的POJO作为servlet和（或）过滤器使用（不再需要<em>web.xml</em>）(子乌注：啊，我爱死这点了~~)</li>
+    <li>可以在<em>Web fragments</em>中解析部署————Web fragments是只包含部分部署信息的XML文件。Servlet引擎根据这些Web fragments构造最终的<em>web.xml</em>。这个可以用来降低<em>web.xml</em>文件的复杂度。<br />
+举例，<em>struts.jar</em>和<em>spring-mvc.jar</em>可以有一个<em>web-fragment.xml</em>。这个保存于JAR中的<em>web-fragment.xml</em>会被自动检测到而<em>struts/spring-mvc servlet</em>和过滤器会被自动配置。</li>
+    <li>异步处理Web请求（这个功能在Tomcat 6中已经生效不过现在在Servlet 3/Tomcat 7中成为了标准配置），用来建立跨web容器异步IO可移植的应用程序（子乌注：翻译的好拗口，原文：Web applications that use async I/O portable across Web containers）。它使用非锁定(non-blocking) I/O，而每个HTTP链接并不要求使用一个线程。更少的线程服务于更多的HTTP链接。这尤其利于那些触发运行长时间进程然后返回一个结果的HTTP请求（例如，报表生成，慢速数据库，Web service调用等）。</li>
+    <li>安全相关的改变————兼容Servlet 3.0的容器现在可以使用SSL和会话跟踪，而不是cookies和URL重写。</li>
+</ul><br/><br/>
+DevX 发布了一个很赞的关于 <a href="http://www.devx.com/Java/Article/43256/0" target="newFrame" rel="noopener">Servlet 3.0 变化</a>的解释。<br/><br/>
+<h4>6. 更容易将Tomcat内嵌入你的应用程序</h4><br/><br/>
+Tomcat现在可以内嵌进一个应用程序，而且它可以通过编程进行配置及启动。<em>CATALINA_HOME/conf/server.xml</em>中的大部分配置可以通过编程完成。 在TOmcat 7之前，Tomcat 6提供了一个<em>Embedd</em>类，提供了便利的方法来配置Tomcat。这个类现在已经不推荐使用。新的类<em>Tomcat</em>使用了一些配置单元的默认值并提供了更简单易用的方法来内嵌Tomcat。<br/><br/>
+这里是一些来自<em>CATALINA_HOME/conf/server.xml</em>的Tomcat配置单元的常用结构和一些相关属性：<br/><br/>
+<div>
+<div>
+<div>
+<pre class="lang:default decode:true ">&lt;Server&gt;
+    &lt;Service&gt;
+    &lt;Connector port="8080"&gt;
+        &lt;Engine&gt;
+            &lt;Host appBase="/home/avneet/work/tomcat7demo/dist" /&gt;
+        &lt;/Engine&gt;
+    &lt;/Connector&gt;
+    &lt;/Service&gt;
+&lt;/Server&gt;</pre>
+</div>
+</div>
+</div>
+<br/>
+为了程序化的配置这些，你必须建立所有上述对象并配置他们，下面是一份完成这个工作的Java代码：<br/><br/>
+<div>
+<div>
+<div>
+<pre class="brush:java">final String CATALINA_HOME = "/home/avneet/work/temp/tomcat7demo/";
+Tomcat tomcat = new Tomcat();
+tomcat.setBaseDir( CATALINA_HOME );
+tomcat.setPort( 8080 );
+tomcat.addWebapp("/tomcat7demo", CATALINA_HOME + "/webapps/tomcat7demo.war");
+tomcat.start();
+System.out.println("Started tomcat");
+tomcat.getServer().await(); //保持Tomcat一直运行，直到被关闭
+//Webapp tomcat7demo accessible at <a href="http://localhost:8080/tomcat7demo/">http://localhost:8080/tomcat7demo/</a></pre>
+</div>
+</div>
+</div>
+<br/>
+<h4>7. 异步日志</h4><br/><br/>
+Tomcat 7 现在包含了一个异步文件日志记录器(<a href="http://svn.apache.org/repos/asf/tomcat/tc7.0.x/tags/TOMCAT_7_0_2/java/org/apache/juli/AsyncFileHandler.java"><em>AsyncFileHandler</em></a>). AsyncFileHandler 扩展了 FileHandler 并能替换 FileHandler。要使用 AsyncFileHandler，只要简单地将<em>CATALINA_HOME/conf/logging.properties</em>文件中所有出现的<em>FileHandler</em>替换为<em>AsyncFileHandler</em>。应用程序必须使用 <em>java.util.Logging</em>; 因为Log4j还不支持异步日志记录。<br/><br/>
+当一个条日志信息发送给AsyncFileHandler时，日志信息会添加到一个 <code>queue(java.util.concurrent.LinkedBlockingDeque)</code>，然后这个调用记录信息的方法会立刻返回，无须等待I/O到磁盘。当AsyncFileHandler被class loader加载时一个独立的线程会启动。这个线程从队列中读取日志信息并将其写入到磁盘。<br/><br/>
+这个方法的优势在于当I/O输出磁盘很慢的时候（例如，日志文件存放在远程驱动器上），日志记录不会拖慢请求处理。<br/><br/>
+AsyncFileHandler与队列之间采用生产者/消费者的关系来处理日志信息储存。标准的队列大小为10000。当溢出的时候，默认的行为是丢掉最后一条信息。默认大小和溢出行为都可以通过修改启动系统属性来配置。<br/><br/>
+<h3>关于 Tomcat 7 演示程序</h3><br/><br/>
+附件 <a href="http://unmi.cc/downloads/tomcat7demo.zip">Tomcat 7 Demo</a> web应用程序有两个servlet。一个servlet演示如何使用随机数令牌来防止CSRF，第二个演示了别名的用法。更新 <em>web/META-INF/context.xml</em> 文件，指向images目录的绝对路径 (如 <em>./images</em>).<br/><br/>
+使用<em>build.xml</em>来编译<em>war</em>文件，并将其部署到Tomcat 7上。使用下列两个URL来查看CSRF过滤以及alias使用：<br/><br/>
+<ul>
+    <li><em>http://localhost:8080/tomcat7demo/csrf/</em></li>
+    <li><em>http://localhost:8080/tomcat7demo/alias/</em></li>
+</ul><br/><br/>
+<h3>总结</h3><br/><br/>
+Tomcat团队介绍了Tomcat 7中的一些变化，包括了新的特性和对现有功能的强化。当这篇文章写下的时候这些变化还没有时间在生产系统中测试（最新的稳定版是7.0.2）， team introduced several changes in Tomcat 7 in terms of both new features and enhancements to existing features. The changes had not been tested in production systems at time of writing (the latest stable release was 7.0.2), 但只要6-12个月，他们将成为主流并让程序员们更容易地部署更安全、高质量的基于Java的web应用。<br/><br/>
+<h3>关于作者</h3><br/><br/>
+<strong>Avneet Mangat</strong>拥有9年的Java/J2EE开发经验，目前是在伦敦工作的独立IT顾问。他拥有一个牛津大学的软件工程硕士学位，通过了（Sun-Certified Java Programmer）、SCWCD（Sun-Certified Web Component Developer）、SCEA（Sun-Certified Enterprise Architect）和ACFD（Adobe-certified Flash Designer）认证，以及Prince2认证（基金会）。他是开源工具DBBrowser的首席开发者。（子乌注：我一般不在这里写注释，不过……看到这位仁兄的认证，我觉得我过去的那么多年都活到狗身上去了……我不蛋定了&gt;_&lt;）<br/><br/>
+摘自：<a href="http://sheneyan.com/blog/2010/09/top-7-features-in-tomcat-7-the-new-and-the-improved/">http://sheneyan.com/blog/2010/09/top-7-features-in-tomcat-7-the-new-and-the-improved/</a><br />
+    英文原文：<a href="http://www.developer.com/java/web/article.php/3904871/article.htm">Top 7 Features in Tomcat 7: The New and the Improved</a>

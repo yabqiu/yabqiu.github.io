@@ -1,0 +1,127 @@
+---
+title: Spring 项目中把属性或 SQL 语句写在 .xml 文件中
+url: /spring-properties-sql-in-xml-file/
+date: 2017-05-03T00:55:32-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - Spring
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8023 
+wpStatus: publish
+views: 2358
+lastmod: 2021-09-10T13:01:01-05:00
+---
+
+Spring 项目中把大量的 SQL 分散在 Java 代码中，无 Here Doc 的情况下用加号来连接写着实在是不爽，于是之前思考这个 <a href="/spring-external-sql-statements/">Spring 项目中把 SQL 语句写在 .sql 文件中</a> --  把它们写在 *.sql 文件中，但是这个 *.sql 需要特定的格式来标识属性 Key<br/><br/>
+<blockquote>
+--!select.user<br />
+select id, firstname, lastname, address
+--!update.user<br />
+update ........
+</blockquote>
+<br/>
+而且还需要一个额外的类 SqlPropertySourceFactory 来解析上面的 *.sql 文件, 识别出 select.user 是 Key, 紧接着后面的块是相应的属性值，用注解引用它时还有点额外的 factory 属性来配置，如<br/><br/>
+<blockquote>
+@PropertySource(value = "classpath:sql/queries.sql", factory = SqlPropertySourceFactory.class)
+</blockquote>
+<br/>
+所以一直在思考是否能够再简单些，是否能用一个自定义的注解，如<br/><br/>
+<blockquote>
+@SqlPropertySource("classpath:sql/queries.sql")
+</blockquote>
+<br/>
+捉摸了很久，似乎有点难度，不过再不断发掘的过程中找到了这个类 <code>org.springframework.core.io.support.PropertiesLoaderUtils</code>, 有下面的代码片断<!--more--><br/><br/>
+<pre class="lang:default decode:true">public static Properties loadProperties(EncodedResource resource) throws IOException {
+    Properties props = new Properties();
+    fillProperties(props, resource);
+    return props;
+}
+......
+static void fillProperties(Properties props, EncodedResource resource, PropertiesPersister persister)
+   throws IOException {<br/><br/>
+    InputStream stream = null;
+    Reader reader = null;
+    try {
+        String filename = resource.getResource().getFilename();
+        if (filename != null &amp;&amp; filename.endsWith(XML_FILE_EXTENSION)) {
+            stream = resource.getInputStream();
+            persister.loadFromXml(props, stream);
+        }
+        else if (resource.requiresReader()) {
+......</pre>
+<br/>
+也就是说其实我们是可以用 XML 文件来定义属性的。<br/><br/>
+继续深挖到 <code>run.util.spi.XmlPropertiesProvider</code>, 这居然是来自于 rt.jar, 原来用 XML 定义属性由来已久。Spring 所用的一个实现同样是 rt.jar 中的 <code>sun.util.xml.PlatformXmlPropertiesProvider</code>, 看到这个类的前几行我瞬间就豁然开朗了<br/><br/>
+<pre class="lang:default decode:true">private static final String PROPS_DTD_URI = "http://java.sun.com/dtd/properties.dtd";
+private static final String PROPS_DTD = "&lt;?xml version=\"1.0\" encoding=\"UTF-8\"?&gt;&lt;!-- DTD for properties --&gt;&lt;!ELEMENT properties ( comment?, entry* ) &gt;&lt;!ATTLIST properties version CDATA #FIXED \"1.0\"&gt;&lt;!ELEMENT comment (#PCDATA) &gt;&lt;!ELEMENT entry (#PCDATA) &gt;&lt;!ATTLIST entry key CDATA #REQUIRED&gt;";
+private static final String EXTERNAL_XML_VERSION = "1.0";</pre>
+<br/>
+定义属性的 XML 该如何写已经一目了然了，关键是 http://java.sun.com/dtd/properties.dtd 给我们的定义，也可以直接抓下它的定义来<br/><br/>
+<blockquote>
+➜ / curl -L http://java.sun.com/dtd/properties.dtd<br />
+&lt;!--<br />
+Copyright 2006 Sun Microsystems, Inc. All rights reserved.<br />
+--&gt;
+&lt;!-- DTD for properties --&gt;
+&lt;!ELEMENT properties ( comment?, entry* ) &gt;
+&lt;!ATTLIST properties version CDATA #FIXED "1.0"&gt;
+&lt;!ELEMENT comment (#PCDATA) &gt;
+&lt;!ELEMENT entry (#PCDATA) &gt;
+&lt;!ATTLIST entry key CDATA #REQUIRED&gt;
+</blockquote>
+<br/>
+根节点是 <code>properties</code>, 其下是多个 <code>entry</code> 定义，entry 的 key 属性即属性的 Key, entry 中是 CDATA 文本内容就是属性值。下面是一个实际的属性 XML 文件<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!DOCTYPE properties PUBLIC "xml property dtd" "http://java.sun.com/dtd/properties.dtd"&gt;<br/><br/>
+&lt;properties&gt;
+    &lt;entry key="select.user"&gt;
+select id, firstname, lastname, address
+  from user
+  where id = ?
+    &lt;/entry&gt;
+    &lt;entry key="update.user"&gt;
+&lt;![CDATA[
+update user set address='&lt;where&gt;'
+  where id = ?
+]]&gt;
+    &lt;/entry&gt;
+&lt;/properties&gt;</pre>
+<br/>
+如果 entry 中有 XML 的特殊字符就用 <code>&lt;![CDATA[...]&gt;</code> 框起来，无 XML Entities 就无所谓了。<br/><br/>
+现在要引用定义在 XML 中的属性值就简单了，没有什么特别的，不需要额外的文件解析类，只是文件扩展名的不同而已。比如在你的 Spring 代码中使用如下注解<br/><br/>
+<pre class="brush:java">@PropertySource("sql/queries.sql.xml")   //由于默认是 classpath 所以无需写成 @PropertySource("classpath:sql/queries.sql.xml")
+public class JavaConfig {
+......
+}</pre>
+<br/>
+如此，定义在 <code>sql/queries.sql.xml</code> 便进到属性环境中去了，在任何一个 Spring Bean 中可以用 <code>@Value("${select.uer}")</code> 引用到了<br/><br/>
+<pre class="brush:java ">@Named
+public class UserRepository {<br/><br/>
+    @Value("${select.user}")
+    private String selectUserSql;<br/><br/>
+    ........</pre>
+<br/>
+从此再也不用那个 SqlPropertySourceFactory 了。<br/><br/>
+IDE 打开 queries.sql.xml 只会以 XML 文件格式来进行语法高亮，如果想要 IDE 对其中的 SQL 语法进行高亮显示，可以修改 IDE 的配置，让 SQL 文件类型也包含 <code>*.sql.xml</code> 这个模式的文件名，那么每次在 IDE 中打开后缀为 <code>*.sql.xml</code> 都会认成是 SQL 文件，更增添了可读性。<br/><br/>
+<hr /><br/><br/>
+2019-06-12<br/><br/>
+Spring 对 xml 写属性文件的支持其实是由 JDK 的 Properties 类自 JDK 1.5 开始提供的，见 <a href="https://docs.oracle.com/javase/7/docs/api/java/util/Properties.html">Properties 的 JavaDoc</a>。Properties 中新增了 <code>loadFromXML(Inputstream)</code> 和 <code>storeToXML(OutputStream, String, String)</code>， 来见识一下用 Properties 如何加载前方那个 <code>sql/queries.sql.xml</code> 配置的属性文件<br/><br/>
+<pre class="lang:default decode:true">Properties properties = new Properties();
+properties.loadFromXML(Thread.currentThread().getContextClassLoader().getResourceAsStream("sql/queries.sql.xml"));
+System.out.println(properties.getProperty(""));</pre>
+<br/>
+输出<br/><br/>
+<blockquote>
+select id, firstname, lastname, address<br />
+from user<br />
+where id = ?
+</blockquote>

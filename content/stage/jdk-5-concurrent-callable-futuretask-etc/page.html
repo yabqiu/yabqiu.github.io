@@ -1,0 +1,128 @@
+---
+title: 使用 JDK 5 后的线程并发，Callable, Future, ExecutorServie ...
+url: /jdk-5-concurrent-callable-futuretask-etc/
+date: 2013-04-10T23:53:19-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - multithread
+  - Thread
+  - JDK5
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5585 
+wpStatus: publish
+views: 1026
+lastmod: 2021-05-10T10:32:34-05:00
+---
+
+被问及 Java 多线程，多会想到 Thread, Runnable，更通常是用 new Thread(){public void run(){...}}.start() 来启动一个线程。那都是 JDK 1.5 之前的年代了，现在还这么回答就 Out 了。用用  JDK 1.5 给我们带来的  java.util.concurrent 吧，更酷了。这里不涉及它的并发集合类，同步互斥机制，只说线程及线程池的应用举例。</p>
+<br/>
+<span style="font-size: x-large; color: #ff0000;">1. </span>新的启动线程的方式：<br/><br/>
+<pre class="lang:default decode:true">public static void main(String[] args) throws Exception {
+    Callable&lt;Integer&gt; callable = new Callable&lt;Integer&gt;() {
+        public Integer call() throws Exception {
+            System.out.println("callable executed.");
+            return new Random().nextInt(100);
+        }
+    };
+    
+    FutureTask&lt;Integer&gt; future = new FutureTask&lt;Integer&gt;(callable);
+    new Thread(future).start();
+    
+    System.out.println("do your things here");
+    
+    System.out.println(future.get());
+}</pre>
+<br/>
+<!--more--><br/><br/>
+这里的 Callable，与曾经的 Runnable 很相似，只不过它的 call() 方法是有返回值的。因为 FutureTask 实现了  Runnable 和 Future，所以可以放在  new Thread(future) 中 start()。之后可随时获取线程执行的返回值，future.get() 时一定会等待线程执行完。<br/><br/>
+这就是 <a href="http://caterpillar.onlyfun.net/Gossip/DesignPattern/FuturePattern.htm" target="_blank" rel="noopener"><strong><span style="color: #0000ff;">Future 模式</span></strong></a>，在 PlayFramwork 中的异步就是这样使用的，F.Promise 和  Controller  的 await() 的处理方式。<br/><br/>
+显然既然是线程, call() 方法中的代码会在子线程中执行。<br/><br/>
+<strong>再请记住下面的 Callable.call() 方法都会在新的子线程中执行。</strong><br/><br/>
+<span style="font-size: x-large; color: #ff0000;">2.</span> 无法割舍的 ExecutorService，submit() 任务方式：<br/><br/>
+<pre class="lang:default decode:true">public static void main(String[] args) throws Exception {
+    ExecutorService threadPool = Executors.newSingleThreadExecutor();
+    Future&lt;Integer&gt; future = threadPool.submit(new Callable&lt;Integer&gt;(){
+        public Integer call() throws Exception {
+            System.out.println("callable executed.");
+            return new Random().nextInt(200);
+        }
+    });
+    
+    System.out.println("do your things");
+    
+    System.out.println(future.get());<br/><br/>
+    threadPool.shutdown();
+}</pre>
+<br/>
+Executors 中有多个方法可可返回 ExecutorService, 诸如：newSingleThreadExecutor(), newCachedThreadPool(), newFixedThreadPool, newScheduledThreadPool(), newSingleThreadScheduledExecutor()。由这些方法可知它可以用来使用线程池来执行任务，可以进行任务调度。<br/><br/>
+用完 ExecutorService 后，需调用它的  shutdown() 关掉，否则程序不会结束。<br/><br/>
+<span style="font-size: x-large; color: #ff0000;">3. </span>如果有一组任务，它们要被放在线程池中执行，待到全部任务执行完后再汇总结果，该怎么做呢，join 线程吗？那会显得有些高深了，但有了 ExecutorService 这一切便迎韧而解了，看吧：<br/><br/>
+<pre class="lang:default decode:true">public static void main(String[] args) throws Exception {
+    ExecutorService threadPool = Executors.newCachedThreadPool();
+    List&lt;Callable&lt;String&gt;&gt; callables = new ArrayList&lt;Callable&lt;String&gt;&gt;();
+    
+    for(int i = 1; i &lt; 5; i++){
+        final int id = i;
+        callables.add(new Callable&lt;String&gt;(){
+            public String call() throws Exception {
+                return "taskID" + id;
+            }
+        });
+    }
+    
+    List&lt;Future&lt;String&gt;&gt; futures = threadPool.invokeAll(callables);
+    for(Future&lt;String&gt; future: futures){
+        System.out.println(future.get());
+    }
+    threadPool.shutdown();
+}</pre>
+<br/>
+传统的线程方式，别说是线程池和等待所有线程结束，就是处理最终来处理线程执行得到的结果都不易。<br/><br/>
+我比较喜欢上面的 invokeAll() 后处理一个 Future 集合的方式。<br/><br/>
+<hr /><br/><br/>
+这里必须等待所有的线程全部执行完毕才去输出结果，倘若要在每个单独的线程执行完后立即输出自己的结果该怎么办呢？也就是不想长时间去等待，最后一大堆结果倒出来，而是希望一个个执行结果逐个飚出来。那就不用关心 Future 的内容，在 Callable  中输出，像<br/><br/>
+<pre class="lang:default decode:true">for(int i = 1; i &lt; 5; i++){
+    final int id = i;
+    callables.add(new Callable&lt;String&gt;(){
+        public String call() throws Exception {
+            System.out.println("taskID" + id);
+            return "taskID" + id; //这个返回值是装模作样的
+        }
+    });
+}<br/><br/>
+List&lt;Future&lt;String&gt;&gt; futures = threadPool.invokeAll(callables);
+</pre>
+<br/>
+<span style="color: #ff0000; font-size: x-large;">4. </span>还可以用 ExecutorCompletionService：<br/><br/>
+<pre class="lang:default decode:true ">public static void main(String[] args) throws Exception {
+    ExecutorService threadPool = Executors.newCachedThreadPool();
+    CompletionService&lt;Integer&gt; cs = new ExecutorCompletionService&lt;Integer&gt;(threadPool);
+    for(int i = 1; i &lt; 5; i++){
+        final int taskID = i;
+        cs.submit(new Callable&lt;Integer&gt;(){
+            public Integer call() throws Exception {
+                return taskID;
+            }
+        });
+    }
+    
+    for(int i=1; i&lt;5; i++){
+        System.out.println(cs.take().get());
+    }
+    
+    threadPool.shutdown();
+}</pre>
+<br/>
+上面, cs.take().get() 依次按序遍历前面相同顺序提交的任务结果，不能直接命中执行的结果。<br/><br/>
+有必要提一下 ScheduledExecutorService 这个接口，它的 schedule(task, initDelay), scheduleAtFixedRate() 和 scheduleWithFixedDelay() 让你做到比 Timer，TimerTask 更强的任务调度，当然替代不了 Quartz 的。<br/><br/>
+参考：1. <a href="http://blog.csdn.net/ghsau/article/details/7451464" target="_blank" rel="noopener">Java线程(六)：Callable和Future<br />
+</a>            2. <a href="http://blog.csdn.net/a999wt/article/details/8541217" target="_blank" rel="noopener">Java多线程之ExecutorService</a><br />
+            3. <a href="http://jovialjava.blogspot.com/2011/01/part-7-javautilconcurrent-invokeall-via.html" target="_blank" rel="noopener">java.util.concurrent - invokeAll via ExecutorService</a>

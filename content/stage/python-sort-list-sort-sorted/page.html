@@ -1,0 +1,171 @@
+---
+title: Python  列表的排序 - sort/sorted
+url: /python-sort-list-sort-sorted/
+date: 2020-06-21T21:13:22-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - Sort
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10281 
+wpStatus: publish
+views: 583
+lastmod: 2020-06-21T21:13:22-05:00
+---
+
+<a href="https://yanbin.blog/python-collection-map-reduce-operations/">Python 集合的遍历,推导及 filter/map/reduce 操作</a> 中讲了对集合的 filter, map 和 reduce 操作，那还有 sort 排序呢？像 Java 一样，Python  也提供了 sort() 和 sorted() 方法。<br/><br/>
+sort() 是 list 的实例方法， sorted() 是一个内置函数。Python 中也是只有 list 才有顺序。<br/><br/>
+<h3>list.sort() 方法</h3><br/><br/>
+查看 Python 3 中的 <code>list.sort()</code> 方法(help(list.sort))<br/><br/>
+<blockquote>
+Help on method_descriptor:<br />
+<br />
+sort(self, /, *, key=None, reverse=False)<br />
+Stable sort *IN PLACE*.
+</blockquote>
+<br/>
+Python 的 list.sort() 方法和 Java List.sort() 方法一样的，都是 <code>IN PLACE</code> 排序，没有返回值。实际看下各种排序场景<!--more--><br/><br/>
+<pre class="lang:default decode:true ">&gt;&gt;&gt; s1 = [2, 1, 5, 3, 4]
+>&gt;&gt; s1.sort()
+>&gt;&gt; s1
+[1, 2, 3, 4, 5]
+>&gt;&gt; s.sort(reverse=True)
+>&gt;&gt; s
+[5, 4, 3, 2, 1]
+>&gt;&gt; s2 = [('c', 2), ('a', 1), ('b', 5), ('e', 3), ('d', 4)]
+>&gt;&gt; s2.sort()
+>&gt;&gt; s2
+[('a', 1), ('b', 5), ('c', 2), ('d', 4), ('e', 3)]
+>&gt;&gt; s2.sort(key=lambda item: item[1])
+>&gt;&gt; s2
+[('a', 1), ('c', 2), ('e', 3), ('d', 4), ('b', 5)]
+>&gt;&gt; s2.sort(key=lambda item: item[1], reverse=True)
+>&gt;&gt; s2
+[('b', 5), ('d', 4), ('e', 3), ('c', 2), ('a', 1)]</pre>
+<br/>
+list.sort() 能直接对可比较比象进行排序，也就是两个对象间能用 <code>&lt;</code> 号相比较，映射到函数就是 <code>__lt__</code>。数字字符串都能比，从前面看到两个 tuple 也可以比较，<br/><br/>
+<pre class="lang:default decode:true ">&gt;&gt;&gt; ('c', 2) &lt; ('a', 1)
+False</pre>
+<br/>
+如果两个元素之间不能进行比较的话，可以指定 key 参数来取出相关值进行比较，如上面的 <code>key=lambda item: item[1]</code>, 取 tuple 的第二个元素进行 <code>&lt;</code> 对较<br/><br/>
+再来看自定义对象的比较<br/><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; class User:
+...     def __init__(self, name, email):
+...         self.name = name
+...         self.email = email
+...
+...     def get_name(self):
+...         return self.name
+...
+...     def __repr__(self):
+...         return f'User: name={self.name}, email={self.email}'
+...
+...
+...
+>&gt;&gt; users = [User('cc', 'hh@g.com'), User('aa', 'ii@g.com'), User('bb', 'ee@g.com')]
+>&gt;&gt; users.sort()
+Traceback (most recent call last):
+  File "&lt;input&gt;", line 1, in &lt;module&gt;
+    users.sort()
+TypeError: '&lt;' not supported between instances of 'User' and 'User'
+>&gt;&gt; users.sort(key=lambda user: user.get_name())
+>&gt;&gt; users
+[User: name=aa, email=ii@g.com, User: name=bb, email=ee@g.com, User: name=cc, email=hh@g.com]
+>&gt;&gt; users.sort(reverse=True)
+Traceback (most recent call last):
+  File "&lt;input&gt;", line 1, in &lt;module&gt;
+    users.sort(reverse=True)
+TypeError: '&lt;' not supported between instances of 'User' and 'User'</pre>
+<br/>
+<code>users.sort()</code> 不管 reverse 是 False 还是 True，始终是试图用 <code>&lt;</code> 去比较两个对象。由于 User 没有定义 <code>__lt__</code> 方法，所以不能直接对 User 进行排序，而必须指定 <code>key=lambda user: user.get_name()</code> 依照 <code>get_name()</code> 的返回值进行排序。<br/><br/>
+如何让对象是可比较的呢，或者直截说验证一下 Python 是否是调用了 <code>__lt__</code> 方法来比较函数。接下来动态的给 <code>User</code> 类添加一个  <code>__lt__</code> 方法，然后变 <code>users.sort()</code> 从不可能到可能<br/><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; def little(self, that):
+...     print(f'compare {self}, {that}')
+...     return self.email &lt; that.email
+...
+>&gt;&gt; setattr(User, '__lt__', little)
+>&gt;&gt; users.sort()
+compare User: name=cc, email=hh@g.com, User: name=bb, email=ee@g.com
+compare User: name=aa, email=ii@g.com, User: name=cc, email=hh@g.com
+>&gt;&gt; users
+[User: name=bb, email=ee@g.com, User: name=cc, email=hh@g.com, User: name=aa, email=ii@g.com]</pre>
+<br/>
+这时候发现不用指定 <code>key</code> 对 <code>users</code> 也可以排序了，比较时调用了 <code>__lt__</code> 方法。<br/><br/>
+前面提到过只能对 list 进行排序，也就是只有 list 才有 sort() 方法，这也不难理解，set, tuple, dict 是不存在顺序观念的。但有意思的是，在对 set, tuple 转换成 list 后便自动立马有了顺序。<br/><br/>
+<pre class="lang:default decode:true ">&gt;&gt;&gt; s = {2, 1, 3}
+>&gt;&gt; list(s)
+[1, 2, 3]
+>&gt;&gt; t = (2, 1, 3, 2)
+>&gt;&gt; list(t)
+[2, 1, 3, 2]</pre>
+<br/>
+这也为接下来要看到的 <code>sorted()</code> 函数作了一个铺垫。前面只有 list 才有 sort() 方法，然而内置的 <code>sorted()</code> 函数除了对 <code>list</code> 进行排序，对 <code>set</code> 和 <code>tuple</code> 也能排序，效果上相当于转换为 list，再对 list 排序，所以最终 <code>sorted()</code> 后得到的都是一个 <code>list</code>。<br/><br/>
+<h3>内置的 sorted() 函数</h3><br/><br/>
+同样，用 <code>help(sorted)</code> 看下它的原型<br/><br/>
+<blockquote>
+Help on built-in function sorted in module builtins:
+sorted(iterable, /, *, key=None, reverse=False)<br />
+    Return a new list containing all items from the iterable in ascending order.
+    A custom key function can be supplied to customize the sort order, and the<br />
+    reverse flag can be set to request the result in descending order.
+</blockquote>
+<br/>
+之于 list.sort() 方法，我们只需记住 <code>sorted()</code> 的几个不同之处<br/><br/>
+<ol>
+    <li>它是一个内置函数，所以第一个参数传入待排序的集合</li>
+    <li>待排序的集合不受限于 list, 它是 iterable, 根据鸭子类型的规则，只要该类实现了 <code>__iter__()</code> 方法就是 iterable。具体说来就是能使用 <code>for..in..</code> 进行遍历的都能排序，像 set, tuple, 或 dict.items() 等</li>
+    <li>排序不再是 <code>IN PLACE</code>, 也就是它的排序不改变原集合，而是生成一个新的 list 并返回</li>
+</ol>
+<br/>
+其他的排序行为与<code>list.sort()</code> 函数是一致的。<br/><br/>
+看下执行效果，对 list, tuple 和  set 进行排序 <br/><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; s = [2, 1, 5, 3,4]
+>&gt;&gt; nums = [2, 1, 5, 3, 4]
+>&gt;&gt; new_nums = sorted(nums)
+>&gt;&gt; nums
+[2, 1, 5, 3, 4]
+>&gt;&gt; new_nums
+[1, 2, 3, 4, 5]
+>&gt;&gt; t = (2, 1, 5, 3, 4)
+>&gt;&gt; t1 = sorted(t)
+>&gt;&gt; t
+(2, 1, 5, 3, 4)
+>&gt;&gt; t1
+[1, 2, 3, 4, 5]
+>&gt;&gt; type(t1)
+&lt;class 'list'&gt;
+>&gt;&gt; s = {2, 1, 5, 3, 4}
+>&gt;&gt; s1 = sorted(s)
+>&gt;&gt; s
+{1, 2, 3, 4, 5}
+>&gt;&gt; s1
+[1, 2, 3, 4, 5]
+>&gt;&gt; type(s1)
+&lt;class 'list'&gt;</pre>
+<br/>
+不用理会 Python 怎么显示 set 中的内容，因为 set 是不能用索引号访问的。无论是对 tuple 还是 set 排序后得到的结果都是 list，sorted() 对原集合是无副作用的。<br/><br/>
+<h3>对比一下 Java 的 sort()  与 sorted() 方法</h3><br/><br/>
+先看一下 Java 的这两个方法, Java 的 Collections 的类提供了两个 sort 方法<br/><br/>
+<pre class="lang:default decode:true">public static &lt;T extends Comparable&lt;? super T&gt;&gt; void sort(List&lt;T&gt; list) {
+    list.sort(null);
+}<br/><br/>
+public static &lt;T&gt; void sort(List&lt;T&gt; list, Comparator&lt;? super T&gt; c) {
+    list.sort(c);
+}</pre>
+<br/>
+它们接受的参数是 List, 所以也是只针对 List 进行排序，也是 <code>IN PLACE</code> 的, 也是无返回值的。sorted() 出现在 Java 的 Stream<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/06/java-stream-sorted.png"><img class="aligncenter wp-image-10286" src="https://yanbin.blog/wp-content/uploads/2020/06/java-stream-sorted-800x125.png" alt="" width="559" height="87" /></a><br/><br/>
+它得到的结果还是 Stream，因此它也是无副作用的，最后需要 collect(tolist()) 得到一个新的集合。<br/><br/>
+<h3>关于排序算法</h3><br/><br/>
+Python 和 Java 对 List 进行排序的算法都是 <a href="http://en.wikipedia.org/wiki/Timsort">Timsort</a>, 摘录一下中文维基百科中的内容<br/><br/>
+<blockquote>
+<b>Timsort</b> 是一种混合稳定的<a title="排序算法" href="https://zh.wikipedia.org/wiki/%E6%8E%92%E5%BA%8F%E7%AE%97%E6%B3%95">排序算法</a>，源自<a title="归并排序" href="https://zh.wikipedia.org/wiki/%E5%BD%92%E5%B9%B6%E6%8E%92%E5%BA%8F">合并排序</a>和<a title="插入排序" href="https://zh.wikipedia.org/wiki/%E6%8F%92%E5%85%A5%E6%8E%92%E5%BA%8F">插入排序</a>，旨在较好地处理真实世界中各种各样的数据。它使用了 <a class="new" title="彼得*麦克罗伊（页面不存在）" href="https://zh.wikipedia.org/w/index.php?title=%E5%BD%BC%E5%BE%97*%E9%BA%A6%E5%85%8B%E7%BD%97%E4%BC%8A&amp;action=edit&amp;redlink=1">Peter Mcllroy</a> 的"乐观排序和信息理论上复杂性"中的技术，参见 <i>第四届年度ACM-SIAM离散算法研讨会论文集</i>，第467-474页，1993年。 它由 Tim Peters 在2002年实现，并应用于 <a title="Python" href="https://zh.wikipedia.org/wiki/Python">Python编程语言</a>。该算法通过查找已经排好序的数据子序列，在此基础上对剩余部分更有效地排序。 该算法通过不断地将特定子序列（称为一个 run ）与现有的 run 合并，直到满足某些条件为止来达成的更有效的排序。 从 2.3 版本起，Timsort 一直是 Python 的标准排序算法。 它还被 <a title="Java版本歷史" href="https://zh.wikipedia.org/wiki/Java%E7%89%88%E6%9C%AC%E6%AD%B7%E5%8F%B2">Java SE7</a><sup id="cite_ref-4" class="reference"><a href="https://zh.wikipedia.org/wiki/Timsort#cite_note-4">[4]</a></sup>, <a title="Android" href="https://zh.wikipedia.org/wiki/Android">Android platform</a><sup id="cite_ref-5" class="reference"><a href="https://zh.wikipedia.org/wiki/Timsort#cite_note-5">[5]</a></sup>, <a title="GNU Octave" href="https://zh.wikipedia.org/wiki/GNU_Octave">GNU Octave</a>,<sup id="cite_ref-6" class="reference"><a href="https://zh.wikipedia.org/wiki/Timsort#cite_note-6">[6]</a></sup> <a title="Google Chrome" href="https://zh.wikipedia.org/wiki/Google_Chrome">谷歌浏览器</a>,<sup id="cite_ref-7" class="reference"><a href="https://zh.wikipedia.org/wiki/Timsort#cite_note-7">[7]</a></sup> 和 <a title="Swift (程式語言)" href="https://zh.wikipedia.org/wiki/Swift_(%E7%A8%8B%E5%BC%8F%E8%AA%9E%E8%A8%80)">Swift</a><sup id="cite_ref-8" class="reference"><a href="https://zh.wikipedia.org/wiki/Timsort#cite_note-8">[8]</a></sup> 用于对非原始类型的数组排序。
+</blockquote>

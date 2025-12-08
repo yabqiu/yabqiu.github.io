@@ -1,0 +1,52 @@
+---
+title: 如何让 Map 中的值按放入顺序输出
+url: /map-sorted-output-by-input/
+date: 2010-12-07T07:20:52-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - Map
+  - 顺序
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2924 
+wpStatus: publish
+views: 11678
+lastmod: 2021-09-03T12:03:08-05:00
+---
+
+<span style="color: #ff0000;">笔者致: 当你打开这个页面的时候, 基本就无需再看后面的内容了, 因为直接用 <code>LinkedHashMap</code> 就能满足您的需求.  文中对这个问题的探索只是不知道别人早已过河了, 仍然在河里摸着石头. <code>LinkedHashMap</code> 是 JDK 1.4 加进来的, 之所以有 <code>apache-commons ListOrderedMap</code> 大约是因为它最早所处的是 JDK 1.4 之前的年代.</span></p>
+<br/>
+<hr /><br/><br/>
+在使用 Java 的 Hashmap 时，输出 Map 中的值如何使之按放入的顺序输出来，像 List 那样保持顺序。这里的顺序不是说对集合中的数据进行的排序，要是的话用 TreeMap，像 TreeSet 一样就行。 我们看个例子：<br/><br/>
+<pre class="lang:default decode:true">Map&lt;String, Integer&gt; map = new HashMap&lt;String, Integer&gt;();
+map.put("a", 12);
+map.put("b", 11);
+map.put("c", 3);<br/><br/>
+for (String key : map.keySet()) {
+    System.out.println(map.get(key));
+}</pre>
+<br/>
+<!--more-->上面代码输出依次是 11   3   12，并非按我们期待的插入顺序 12   11   3 来输出。如果 debug 时可以看到加入到 Hashmap 中的值是较杂乱的放在 Map 的 table 变量/集合中的，应该也是有一定规则的，hashcode 吧，但这一般是不受我们所控的。<br/><br/>
+我们有时候的要求很简单，就像 List 一样，怎么放进去就怎么拉出来，很多时候这种顺序对于显示或处理也是很重要的，所以就必须找一种排序的 Map，仍然是指保持顺序的 Map。<br/><br/>
+在我的 Eclipse 项目里顺着这个思路，ctrl+shift+t，输入 OrderedMap，果然就有了，出自于 org.apache.commons.collections.OrderedMap。这是个接口，进到 commons-collections   的 JavaDoc 界面：<a href="http://commons.apache.org/collections/apidocs/index.html">http://commons.apache.org/collections/apidocs/index.html</a>，可以看到它的十几个实现子类。<br/><br/>
+一眼就相中了 ListOrderedMap，就是它了，因而把上面的代码改了：<br/><br/>
+<pre class="lang:default decode:true ">Map&lt;String, Integer&gt; map = (Map&lt;String, Integer&gt;)new ListOrderedMap();
+map.put("a", 12);
+map.put("b", 11);
+map.put("c", 3);
+ 
+for (String key : map.keySet()) {
+    System.out.println(map.get(key));
+}</pre>
+<br/>
+这一回乖乖，输出了 12   11  3 的顺序，可以多放些数据到这个 Map 中看看。我试过多次，没问题的，怎么顺序进什么顺序出来。你想要插入一个重复的键值呢，和其他 Map 是一样的，重复的 Key 加不进去。<br/><br/>
+你想用其他的 OrderedMap 实现类也无妨。稍有不足之处，当前的 commons-collections 3.2.1 尚不支持泛型，强型转一下了。<br/><br/>
+另一种方案：commons-collections 中还提供了 KeyValue 接口，有相应的多个实现类，如使用其中一个 DefaultKeyValue，把它放入 List 中也可做到 OrderedMap 那样的效果，稍稍麻烦了些。

@@ -1,0 +1,210 @@
+---
+title: JdbcTemplate 易被 Java 8 Lambda 带入的坑
+url: /jdbctemplate-java-8-lambda-trick/
+date: 2017-02-26T03:06:18-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+  - Java8
+tags: 
+  - java8
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7880 
+wpStatus: publish
+views: 2542
+lastmod: 2021-06-22T15:53:47-05:00
+---
+
+Spring 的 JdbcTemplate 为我们操作数据库提供非常大的便利，不需要显式的管理资源和处理异常。在我们进入到了 Java 8 后，JdbcTemplate 方法中的回调函数可以用 Lambda 表达式进行简化，而本文要说的正是这种 Lambda 简化容易给我们带来的一个 Bug, 这是我在一个实际项目中写的单元测试发现的。</p>
+<br/>
+下面就是我们的一个样板代码，在我们的 <code>UserRespository</code> 中有一个方法 findAll() 用于获得所有用户：<br/><br/>
+<pre class="lang:default decode:true">public List&lt;User&gt; findAll() {
+    List&lt;User&gt; users = new ArrayList&lt;&gt;();
+    jdbcTemplate.query("select id, name from user", rs -&gt; {
+        while (rs.next()) {
+            users.add(new User(rs.getInt("id"), rs.getString("name")));
+        }
+    });
+    return users;
+}</pre>
+<br/>
+<!--more-->初看上面的代码，好像也没问题啊，调用 jdbcTemplate.query(sql, callback) 方法执行 SQL 语句，接着在回调函数中拿到  ResultSet 循环获得每一行结果啊。<br/><br/>
+那么我们用事实来验证，下面是相应的测试代码<br/><br/>
+<pre class="lang:default decode:true">@Test
+@Sql(statements = {
+    "delete from user",
+    "INSERT INTO user(id, name) VALUES(1, 'user1'), (2, 'user2'), (3,'user3'), (4, 'user4'), (5, 'user5')"
+})
+public void findAllShouldFetchAllUsers() {
+    List&lt;User&gt; allUsers = userRepository.findAll();
+    allUsers.forEach(System.out::println);
+    assertEquals(5, allUsers.size());
+}</pre>
+<br/>
+用 @Sql 往数据库中只插入 5 条记录，可是上面的断言失败了<br/><br/>
+<blockquote>
+java.lang.AssertionError: <br />
+Expected :5<br />
+Actual   :4
+</blockquote>
+<br/>
+<code>findAll()</code>  返回的是 4 条记录，而不是我们所期望的 5 条记录，那么还有一条记录跑哪去了。上面的 <code>allUser.forEach(System.out::println)</code>  打印出来的结果是：<br/><br/>
+<blockquote>
+User{id=2, name='user2'}<br />
+User{id=3, name='user3'}<br />
+User{id=4, name='user4'}<br />
+User{id=5, name='user5'}
+</blockquote>
+<br/>
+是的，第一条记录不见了，如果我们反复针对数据库表中不同的记录数进行测试的的话，丢失的记录总是第一条。分析总是丢失第一条记录的原因肯定是有人帮我们做了一次 <code>rs.next()</code>  把光标跳了一下。<br/><br/>
+这是为何呢？这就是我要说的 JdbcTemplate 被 Java 8 的 Lambda 表达式带沟里去了，因为 Lambda，让我们忽略了方法原型是什么，Lambda 相对应的 <code>@FunctionalInterface</code>  是什么，同时 IDE 也是帮凶。因为当我们在 IDE 中写到<br/><br/>
+<blockquote>
+jdbcTemplate.query("select id, name from user", rs -&gt; {
+</blockquote>
+<br/>
+后，很容易仗着先前用原生 JDBC 操作 ResultSet 的惯性立即就会对 <code>rs</code> 变量用 <code>whilc (rs.next) {...}</code> 进行遍历，于是问题就发生了。<br/><br/>
+如果我们回归到从前，还是用匿名类的方式来写回调函数的时候，<code>findAll()</code> 相应的不正确的代码就是<br/><br/>
+<pre class="lang:default decode:true">public List&lt;User&gt; findAll() {
+    List&lt;User&gt; users = new ArrayList&lt;&gt;();
+    jdbcTemplate.query("select id, name from user", new RowCallbackHandler() {
+        @Override
+        public void processRow(ResultSet rs) throws SQLException {
+            while (rs.next()) {
+                users.add(new User(rs.getInt("id"), rs.getString("name")));
+            }
+        }
+    });
+    return users;
+}</pre>
+<br/>
+现在我们明明白白的能看到回调函数的类型是 <code>RowCallbackHandler</code>, 如类名所示，它就是处理 ResultSet 的当前行, 有人在帮我们遍历结果集，所以我们再次对 ResultSet 就跳过了第一行记录。<br/><br/>
+在应用 Java 8 之前的 JDK, 我们出现上面错误的概率应该很小的吧，会写成如下正确的代码<br/><br/>
+<pre class="lang:default decode:true">public List&lt;User&gt; findAll() {
+    List&lt;User&gt; users = new ArrayList&lt;&gt;();
+    jdbcTemplate.query("select id, name from user", new RowCallbackHandler() {
+        @Override
+        public void processRow(ResultSet rs) throws SQLException {
+           users.add(new User(rs.getInt("id"), rs.getString("name")));
+        }
+    });
+    return users;
+}</pre>
+<br/>
+因此再回到我们 Java 8 用 Lambda 简化后的版本就是<br/><br/>
+<pre class="lang:default decode:true">public List&lt;User&gt; findAll() {
+    List&lt;User&gt; users = new ArrayList&lt;&gt;();
+    jdbcTemplate.query("select id, name from user", rs -&gt; {
+        users.add(new User(rs.getInt("id"), rs.getString("name")));
+    });
+    return users;
+}</pre>
+<br/>
+这个才是正确的代码，相比于文中最开始出现的错误代码，我们做了一件吃力不讨好的事情，代码行多了反而引入了一个 Bug。<br/><br/>
+这真是被 Java 8 的 Lambda 和 IDE 惯坏了，当我们在享受 Lambda 给我们带来便利的同时，却忘记了自己是谁，方法原型是什么，以及Lambda 所代表的功能性接口是什么。<br/><br/>
+针对上面的 <code>findAll()</code>  方法的的意图，其实我们更应该调用<br/><br/>
+<blockquote>
+&lt;T&gt; List&lt;T&gt; query(String sql, RowMapper&lt;T&gt; rowMapper) throws DataAccessException;
+</blockquote>
+<br/>
+而不是现在的<br/><br/>
+<blockquote>
+void query(String sql, RowCallbackHandler rch) throws DataAccessException;
+</blockquote>
+<br/>
+对上面的方法再进一步简化就是<br/><br/>
+<pre class="lang:default decode:true">public List&lt;User&gt; findAll() {
+    return jdbcTemplate.query("select id, name from user",
+        (rs, index) -&gt; new User(rs.getInt("id"), rs.getString("name")));
+}</pre>
+<br/>
+为何我这么衷情于 JdbcTemplate 的各个 <code>query(...)</code> 的重载方法呢，而不是直接调用 <code>queryForList(...)</code>, 各种变体呢？因为有时候需要作流式处理，而是一下把所有结果全加载到内存中。当然这里的 <code>findAll()</code> 完全可以用 <code>queryForList(...)</code>  来简化<br/><br/>
+<pre class="lang:default decode:true">public List&lt;Map&lt;String, Object&gt;&gt; findAll() {
+    return jdbcTemplate.queryForList("select id, name from user", new BeanPropertyRowMapper&lt;&gt;(User.class));
+}</pre>
+<br/>
+话说到现在，我们还是有必要从 JdbcTemplate 的原代码来理解 <code>query(String sql, RowCallbackHandler rch)</code> 的实现原理。下面的代码来自于 JdbcTemplate 类<br/><br/>
+<pre class="lang:default decode:true">@Override
+public &lt;T&gt; T query(final String sql, final ResultSetExtractor&lt;T&gt; rse) throws DataAccessException {
+    Assert.notNull(sql, "SQL must not be null");
+    Assert.notNull(rse, "ResultSetExtractor must not be null");
+    if (logger.isDebugEnabled()) {
+        logger.debug("Executing SQL query [" + sql + "]");
+    }
+    class QueryStatementCallback implements StatementCallback&lt;T&gt;, SqlProvider {
+        @Override
+        public T doInStatement(Statement stmt) throws SQLException {
+            ResultSet rs = null;
+            try {
+                rs = stmt.executeQuery(sql);
+                ResultSet rsToUse = rs;
+                if (nativeJdbcExtractor != null) {
+                    rsToUse = nativeJdbcExtractor.getNativeResultSet(rs);
+                }
+                return rse.extractData(rsToUse);
+            }
+            finally {
+                JdbcUtils.closeResultSet(rs);
+            }
+        }
+        @Override
+        public String getSql() {
+            return sql;
+        }
+    }
+    return execute(new QueryStatementCallback());
+}<br/><br/>
+@Override
+public void query(String sql, RowCallbackHandler rch) throws DataAccessException {
+    query(sql, new RowCallbackHandlerResultSetExtractor(rch));
+}<br/><br/>
+private static class RowCallbackHandlerResultSetExtractor implements ResultSetExtractor&lt;Object&gt; {<br/><br/>
+    private final RowCallbackHandler rch;<br/><br/>
+    public RowCallbackHandlerResultSetExtractor(RowCallbackHandler rch) {
+        this.rch = rch;
+    }<br/><br/>
+    @Override
+    public Object extractData(ResultSet rs) throws SQLException {
+        while (rs.next()) {
+            this.rch.processRow(rs);
+        }
+        return null;
+    }
+}</pre>
+<br/>
+关键是类 <code>RowCallbackHandlerResultSetExtractor</code>, 它在遍历结果集，针对每一行调用我们传入的回调函数，所以它至少有一次机会作 <code>rs.next()</code>, 如果我们在 Lambda  也作一次 <code>rs.next()</code>  就成功的跳过了第一条记录。<br/><br/>
+这里还有一个要非常小心的地方，如果调用的是<br/><br/>
+<blockquote>
+&lt;T&gt; T query(String sql, ResultSetExtractor&lt;T&gt; rse)
+</blockquote>
+<br/>
+而不是<br/><br/>
+<blockquote>
+void query(String sql, RowCallbackHandler rch)
+</blockquote>
+<br/>
+的话，是可以在 Lambda 中进行自主 <code>while(rs.next())</code>  的，即下面的代码是下确的<br/><br/>
+<pre class="lang:default decode:true ">public List&lt;User&gt; findAll() {
+    return jdbcTemplate.query("select * from user", rs -&gt; {
+        List&lt;User&gt; users = new ArrayList&lt;&gt;();
+        while(rs.next()) {
+            users.add(new User(rs.getInt("id"), rs.getString("name")));
+        }
+        return users;
+    });
+}</pre>
+<br/>
+Lambda 的写法上与第一段代码毫无区别，唯一的不同是这个 query 方法有返回值。也就是说<br/><br/>
+<ol>
+    <li>有返回值的 JdbcTemplate.query(sql, rs -&gt; {....}) 要自己遍历结果集</li>
+    <li>无反回值的  JdbcTemplate.query(sql, rs -&gt; {....}) 不可自己遍历结果集，否则会丢失第一条记录，也就是在 Lambda 内部最后写上一句 <code>return null</code> 就行为大变了</li>
+</ol>
+<br/>
+<strong>Java 中是不能仅以返回值的不同来重载方法，但是转换为 Lambda 表达式制造出来的假象就是根据返回值的不同而调用了不同的方法。</strong><br/><br/>
+何时可以 <code>while(rs.next())</code>  何时不可以，真是极具隐蔽性，而且出问题了还不明显，真是一个事故多发地，一不小心就会踩上地雷。

@@ -1,0 +1,57 @@
+---
+title: Unmi 的 Struts2 学习笔记(十)
+url: /unmi-study-struts2-10/
+date: 2008-04-24T11:24:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/05/struts-logo.jpeg"
+categories:
+  - Struts
+tags: 
+  - Struts2
+  - Struts
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 411 
+wpStatus: publish
+views: 346
+lastmod: 2020-03-22T11:16:56-05:00
+---
+
+有一日，帮外公翻腾出他箱底的照片进行数字化留存，已是耄耋之年的外公端详起那些记忆来，看到都是一同革命的热情小伙，不时感慨：唉！好多人都不在啦！</p>
+<br/>
+1. &lt;s:action .../&gt; 可以用来在 JSP 页面直接调用 Action，用 name 指定 Action，executeResult(默认为 false) 指定是否包含那个 Action 转向视图的内容；executeResult 会把视图的所有内容输出在标签位置。ignoreContextParams(默认为 false)，是否将本页的请求参数传到那个 Action。<br/><br/>
+2. &lt;s:bean .../&gt; 用来实例化 JavaBean，标签内使用 &lt;s:param name="" value=""/&gt; 来指定属性。在标签内，bean 实例位于 ValueStack 顶端，标签结束则自动清除。如果指定的 id 属性，还会把该实例放到 Stack Context 中。name 属性必须，指定 Bean 类的全限名称。不知道复杂的属性该如何用 &lt;s:param .../&gt; 或其他方式来指定。<!--more--><br/><br/>
+3. &lt;s:date .../&gt; 用来格式化输出日期，还可计算指定日期与当前的时差。name 是必须的，指定要输出的 Date 类型实例，format 指定格式。如果指定了 nice(默认为false) 属性为 true，则输出指定日期与当前的时差(样式：<span style="color: #800080;">92 days, 9 hours ago</span>)，即使指定了 format 属性也如此。输出日期时若未指定 format 属性，则找资源文件中的 struts.date.format，不存在这个 key 就按 DateFormmat.MEDIUM 格式输出了，Struts1 也是采用一样的方式。<br />
+ &lt;% pageContext.setAttribute("now",new Date(107,12,23,13,23,24)); %&gt;<br />
+ &lt;s:date name="#attr.now" format="yyyy年MM月dd日" nice="false"/&gt;<br/><br/>
+再试试 &lt;s:date name="#attr.now" format="yyyy年MM月dd日" nice="true"/&gt; 的输出。<br/><br/>
+4. &lt;s:include .../&gt; 用来包含一个资源，JSP 或 Servlet 等，用 value 属性指定。标签内用 &lt;s:param .../&gt; 指定要向被包含资源传递的参数。<br />
+&lt;s:include value="include-file.jsp"&gt;<br />
+    &lt;s:param name="name" value="Unmi"/&gt;<br />
+&lt;/s:include&gt;<br/><br/>
+对照    &lt;jsp:include page="include-file.jsp?name=Unmi"/&gt; 和 &lt;bean:include id="" page=""/&gt;。想见一下，它们大概都是用 RequestDispatcher.include(request,response) 实现的？<br/><br/>
+5. &lt;s:param .../&gt; 是服务于外层标签来指定参数的，如 bean、include、url 等。&lt;s:url .../&gt; 用来生成一个 URL 地址，value 或 action 属性来指定 url 地址值，用了 action 会在属性后自动补上 .action，并可用 method 来指定 Action 的方法。value 和 action 都未指定就相当于 "#" 了。includeParams 说明是否把当前页面的参数也包含到这个 url 上。用例子说明：<br />
+假如当前 url 是 <a href="http://localhost/TestStruts2/index.jsp?name=unmi">http://localhost/TestStruts2/index.jsp?name=unmi</a>，以下不同写法的输出<br />
+1)  &lt;s:url value="Login.action"&gt;<br />
+        &lt;s:param name="pass"&gt;password&lt;/s:param&gt;<br />
+    &lt;/s:url&gt;<br />
+2)  &lt;s:url value="/Login.action" includeParams="none"&gt;<br />
+        &lt;s:param name="pass"&gt;中国&lt;/s:param&gt;<br />
+     &lt;/s:url&gt;<br />
+3)  &lt;s:url action="Login" includeContext="false" method="register"&gt;<br />
+        &lt;s:param name="pass"&gt;password&lt;/s:param&gt;<br />
+     &lt;/s:url&gt;<br/><br/>
+...1) Login.action?name=unmi&amp;pass=password<br />
+...2) /TestStruts2/Login.action?pass=%E4%B8%AD%E5%9B%BD<br />
+...3) /Login!register.action?name=unmi&amp;pass=password<br />
+其实可能无论 encode 属性是 true 或 false，都会对参数进行编码的。对比 Struts1 的 &lt;html:link&gt;。<br/><br/>
+6. 数据标签还有 &lt;s:i18n name=""/&gt; 用于指定国际化资源文件的 baseName；&lt;s:text name=""/&gt; 用于输出国际化信息。<br/><br/>
+7. 下面要介入 UI 标签的使用了，但事先不得不提到 Struts2 的主题和模板。Struts2 所有的 UI 标签都是基于主题和模板的，主题和模板是 Struts2 所有 UI 标签的核心。模板是 UI 标签的外在表现形式。例如，当我们使用 &lt;s:select .../&gt; 标签时，Struts2 会根据对应 select 模板来生成一个有模板特色的下位框。如果为所有的 UI 标签提供了对应的模板，那么这一系列的模板就形成了一个主题。<br/><br/>
+8. 相较而言，Struts1 的 UI 标签可没这些东西，因为它们是直接与 HTML 相应元素挂勾的，所有的 UI 标签的样式要用 style 或 styleClass 来指定。<br/><br/>
+9. 因为模板是以主题的形式组织在一起的，所以为了界面的统一，我们应该选择特定主题，由主题来负责加责相应的模板，而不是强制要求使用某个模板来表现一个 UI 标签。<br/><br/>
+10. 设置主题的方法按优先级依次为：UI 标签的 theme 属性、外围的 form 标签的 theme 属性、从 page/request/session/application 找 "theme" 的属性值、配置在 struts.properties 或 struts.xml 中指定的 struts.ui.theme 常量值(默认为 xhtml)。一个原则：表单的主题，设置 form 标签的 theme；用户会话的主题，在 session 中设置 theme 变量；整个应用的主题，就用 struts.ui.theme 常量来实现。

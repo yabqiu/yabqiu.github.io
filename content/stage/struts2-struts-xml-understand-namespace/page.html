@@ -1,0 +1,61 @@
+---
+title: Struts2 的 struts.xml 配置中 namespace 的使用
+url: /struts2-struts-xml-understand-namespace/
+date: 2008-05-26T07:03:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/05/struts-logo.jpeg"
+categories:
+  - Struts
+tags: 
+  - Struts2
+  - NameSpace
+  - Struts
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 387 
+wpStatus: publish
+views: 336
+lastmod: 2020-03-22T11:47:11-05:00
+---
+
+Struts2 的 struts.xml 中是分 package 配置的，可以为 package 设置 namespace 属性，如</p>
+<br/>
+&lt;package namespace="/secure"   ....&gt;<br />
+    ......<br />
+&lt;/package&gt;<br/><br/>
+如果没有指定 namespace 属性，默认 namespace 是 ""。使用 namespace 可以方便于按不同目的规划对应用的访问规则。比如不同 namespace 下配置了不同的拦截器就可以实现权限的控制，如 "/secure" 下已登陆用户才能访问，"/public" 下可公开访问的。<!--more--><br/><br/>
+配置了 namespace 直接就是反应在访问 URL 上，例如 namespace="/secure"  name="test" 的 action<br/><br/>
+ &lt;package namespace="/secure"   ....&gt;<br />
+       &lt;action name="test"  ....<br />
+&lt;/package&gt;<br/><br/>
+访问它的 URL 就是 <a href="http://ip:port/context/secure/test.action">http://ip:port/context/secure/test.action</a>，那如果在 namespace "/secure" 下没有 test action 会出现什么情况呢？Struts 还会尝试在默认 namespace，即 "" 下找 test。<br/><br/>
+再举个例子，URL 是 <a href="http://ip:port/context/some/path/test.action">http://ip:port/context/some/path/test.action</a> 时，如果在 "/some/path" namespace 下找不到 test action，也是到 "" (default namespace) 下找 test action，但不会去 "/some" 下找的。<br/><br/>
+用标签 &lt;s:url value="/secure/test.action"/&gt;  对应页面源文件是 /context/secure/test.action<br/><br/>
+稍有麻的就是 &lt;s:form action="/secure/test.action" .... 对应的源文件是 &lt;form action="/context/secure/test.action" ...<br/><br/>
+但是后台会有警告：<br/><br/>
+警告: No configuration found for the specified action: '/secure/test.action' in namespace: ''. Form action defaulting to 'action' attribute's literal value.<br/><br/>
+Struts2 把 action 属性值当整一个 Action Name 了，但这也不影响使用，这个 URL 正好能与 (package namespace) + (action name) 合上拍。<br/><br/>
+但是对于使用了动态方法调用（struts.enable.DynamicMethodInvocation = true）就没这么幸运了。很容易想当然的<br/><br/>
+&lt;s:form action="/secure/test!update.action" ....  生成的 HTML 源文件却是 action="/TestStruts2/om/test"<br/><br/>
+同时后台的警告信息是：<br/><br/>
+警告: No configuration found for the specified action: '/secure/test' in namespace: ''. Form action defaulting to 'action' attribute's literal value.<br/><br/>
+很显然对于这个 action="/TestStruts2/om/test"，提交时是会得到 HTTP Status 404 - /context/secure/test  错误。<br/><br/>
+正确的用法是 &lt;s:action...&gt; 也有一个 namespace 属性，对了，就是<br/><br/>
+&lt;s:form namespace="/secure" action="test!login"&gt;  生成的 HTML 源文件是：&lt;form action="/TestStruts2/om/test!login.action" ....&gt;<br/><br/>
+我们要的就是这个。<br/><br/>
+如果不配置 namespace 属性，我们能不能在访问 action 时也用上目录层次呢？可以，那是在 struts1 习惯的做法，配置 &lt;action name="secure/test" ....&gt; name 中使用斜杠，但在 Struts2 中 Action Name 中使用斜杠需要设置<br/><br/>
+struts.enable.SlashesInActionNames=true                      默认为 false<br/><br/>
+可是 Struts2 大概不赞同这种做法，力挺 namespace 的作用。<br/><br/>
+对于上面使用了斜框的 Action Name，&lt;s:form 中的写法要用<br/><br/>
+&lt;s:form action="secure/test"&gt;              　　 生成 HTML 源文件：&lt;form action="/context/secure/test.action" .....<br/><br/>
+&lt;s:form action="secure/test!update"&gt;            生成 HTML 源文件：&lt;form action="/context/secure/test!login.action" .....<br/><br/>
+<hr style="color: red;" /><br/><br/>
+上面的 action 后加不加 .action 无所谓，只是要保证 &lt;s:form&gt;  的 action 属性一定要与 struts.xml 中的 &lt;action&gt; 的 name 匹配上，如果你自作多情的在前面加个斜杠，如写成了<br/><br/>
+&lt;s:form action="/secure/test!update"&gt; 、 &lt;s:form action="/secure/test"&gt;  或者 &lt;s:form action="/secure/test!update.action"&gt;   生成的 HTML 源文件就都成了：&lt;form action="/context/secure/test" .....<br/><br/>
+这也是从 Struts1 带来的弊病，因为 Struts1 中 &lt;html:form&gt; action 属性对应的是 &lt;action&gt; 的 path，而 Struts2 中 &lt;s:form&gt; 的 action 属性对应的是 &lt;action&gt; 的 name；name 要完全匹配，path 可以加些层次。<br/><br/>
+我为何以费这么些功夫来搞清楚这个呢，也就是因为使用 &lt;s:form action=""&gt; 是时而行，时而不行，很似迷惑，一度怀疑是应用服务器在从中作梗。坦白的说，就是写本篇日志完成红线以上的内容时仍未能知晓就理，这也正好映证了写下来的意义。因为在这过程中你在试图让别人更好的理解，倘若自己都说不清，他人只能是云里雾里了。

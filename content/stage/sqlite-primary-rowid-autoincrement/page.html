@@ -1,0 +1,122 @@
+---
+title: SQLite 使用主键，ROWID 及自增列
+url: /sqlite-primary-rowid-autoincrement/
+date: 2014-01-28T00:10:10-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Database
+tags: 
+  - SQLite
+  - database
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6140 
+wpStatus: publish
+views: 9201
+lastmod: 2014-01-28T00:49:42-06:00
+---
+
+之前关注过一些嵌入式数据库，倒时 SQLite 风头更劲，在 Android 上被应用，在 HTML5 中一些浏览器的 Local Database 的实现也是 SQLite。因在 PhoneGap 中使用数据库存储的选择也期待着它的表现，首先要建个数据库，第一要义就是主键的选择，自增列是最有效更简单的。<br/>
+<br/>
+这里就看下 SQLite 怎么使用自动列，了解三个内容，ROWID, ROWID 的别名，自动列与序列表，归根结底它们都是 ROWID。<br/>
+<br/>
+<span style="color: #0000ff;"><strong>1. ROWID</strong></span><br/>
+<br/>
+每个表默认都有 rowid 列，除非创建表时指定了 WITHOUT ROWID, 它现在是 64 位长的。在查询时用 <code>select * from table1</code>&nbsp;里没有它，要显式的用 <code>select rowid, * from table1</code>&nbsp;就会列出它来。<br/>
+<br/>
+<span style="color: #0000ff;"><strong>2. ROWID 的别名<!--more--></strong></span><br/>
+<br/>
+ROWID 除了可用 rowid 查出它之外，还可用别名 _ROWID_ 和 OID，都不分大小写的, 例如 <code>select oid from table1</code>。另外我们还可以自定义一个 ROWID 的别名，用 <code>INTEGER PRIMARY KEY</code>&nbsp;标识的列也是 ROWID 的一个别名，比如我们用 id 来作为 ROWID 的别名。<br/>
+<br/>
+ROWID 的表示也是个自增列，每个表有自己的计数器，和常见的数据库的自增列是一致的。<br/>
+<br/>
+SQLite 的 ROWID 可不象 Oracle 的 ROWID， Oracle 的 ROWID 是纯内部的，标记着记录的物理位置，所以数据库导入导出 Oracle 的 ROWID 就会变了。更为可怕的是 SQLite 的 ROWID 是可以自己赋值的。<br/>
+<br/>
+<span style="color: #0000ff;"><strong>3. 自增列序列表(也是 ROWID)</strong></span><br/>
+<br/>
+用 INTEGER PRIMARY KEY AUTOINCREMENT 标识的列就是个自增列，<strong><span style="color: #800000;">说到底它也是 ROWID &nbsp;别名</span></strong>。数据库中存在自增列后，SQLite 就会创建一个 sqlite_sequence 表。所有表的自增列都共享这个表，sqlite_sequence 分别维护着每个自增列的当前值，所以自增列的计数也是单独的。它不象于 Oracle 中多个表在共用一个序列时，ID 值是交错的，Oracle 的序列的好处就是插入前可获知下一个序列值。<br/>
+<br/>
+自增列的好处就能查看到当前的序列值，sqlite_sequence 中的值也是可以修改的，不过一般人不会这么干，可以用 <code>select last_insert_rowid()</code>&nbsp;得到刚刚插入的 ROWID 值。<br/>
+<br/>
+<span style="color: #0000ff;"><strong>4. VACUUM 命令</strong></span><br/>
+<br/>
+<a href="http://www.sqlite.org/lang_vacuum.html" target="_blank">VACUUM</a> 能重建 ROWID 值，比如对于非自增列，select rowid, c1<br/>
+<blockquote>1|a<br/>
+2|b<br/>
+3|c</blockquote>
+
+把中间那条记录删除后，select rowid, c1 后的记录是<br/>
+<blockquote>1|a<br/>
+3|c</blockquote>
+
+这个结果我们没什么惊奇的，现在我们来执行下 vacuum 命令，再 select rowid, c1 后记录是<br/>
+<blockquote>1|a<br/>
+2|b</blockquote>
+
+ROWID 又可重复利用了，但命令 vacuum 对于自增列是不起作用的，因为自增列的值是由 sqlite_sequence 表维护的。<br/>
+<br/>
+下面是演示那几个概念的全过程：<br/>
+<blockquote>SQLite version 3.8.2 2013-12-06 14:53:3<br/>
+Enter ".help" for instructions<br/>
+Enter SQL statements terminated with a ";"<br/>
+<span style="color: #800000;">sqlite&gt;</span> create table t1(c1);<br/>
+<span style="color: #800000;">sqlite&gt;</span> create table t2(c1);<br/>
+<span style="color: #800000;">sqlite&gt;</span> insert into t1(c1) values('a');<br/>
+<span style="color: #800000;">sqlite&gt;</span> insert into t2(c1) values('b');<br/>
+<span style="color: #800000;">sqlite&gt;</span> select * from t1;<br/>
+a<br/>
+<span style="color: #800000;">sqlite&gt;</span> insert into t2(oid, c1) values(5, 'c');<br/>
+<span style="color: #800000;">sqlite&gt;</span> select rowid, * from t1 union select rowid, * from t2;<br/>
+1|a<br/>
+1|b<br/>
+5|c<br/>
+<span style="color: #800000;">sqlite&gt;</span> create table t3(c1 integer primary key, c2);<br/>
+<span style="color: #800000;">sqlite&gt;</span> insert into t3(c2) values('c');<br/>
+<span style="color: #800000;">sqlite&gt;</span> select rowid, * from t3;<br/>
+1|1|c<br/>
+<span style="color: #800000;">sqlite&gt;</span> select rowid, _rowid_, oid, * from t3;<br/>
+1|1|1|1|c<br/>
+<span style="color: #800000;">sqlite&gt;</span> select 8 from sqlite_master;<br/>
+<span style="color: #800000;">sqlite&gt;</span> select * from sqlite_master;<br/>
+<span style="line-height: 1.5em;">table|t1|t1|2|CREATE TABLE t1(c1)<br/>
+</span>table|t2|t2|3|CREATE TABLE t2(c1)<br/>
+table|t3|t3|4|CREATE TABLE t3(c1 integer primary key, c2)<br/>
+<span style="color: #800000;">sqlite&gt;</span> create table t4(c1 integer primary key autoincrement, c2);<br/>
+<span style="color: #800000;">sqlite&gt;</span> select * from sqlite_master;<br/>
+table|t1|t1|2|CREATE TABLE t1(c1)<br/>
+table|t2|t2|3|CREATE TABLE t2(c1)<br/>
+table|t3|t3|4|CREATE TABLE t3(c1 integer primary key, c2)<br/>
+table|t4|t4|5|CREATE TABLE t4(c1 integer primary key autoincrement, c2)<br/>
+table|sqlite_sequence|sqlite_sequence|6|CREATE TABLE sqlite_sequence(name,seq);<br/>
+<span style="color: #800000;">sqlite&gt;</span> insert into t4(c2) values('d');<br/>
+<span style="color: #800000;">sqlite&gt;</span> select rowid, * from t4;<br/>
+1|1|d<br/>
+<span style="color: #800000;">sqlite&gt;</span> select * from sqlite_sequence;<br/>
+t4|1<br/>
+<span style="color: #800000;">sqlite&gt;</span> create table t5(c1 integer primary key autoincrement, c2);<br/>
+<span style="color: #800000;">sqlite&gt;</span> select * from sqlite_sequence;<br/>
+t4|1<br/>
+<span style="color: #800000;">sqlite&gt;</span> insert into t5(c2) values('e');<br/>
+<span style="color: #800000;">sqlite&gt;</span> select * from sqlite_sequence;<br/>
+t4|1<br/>
+t5|1<br/>
+<span style="color: #800000;">sqlite&gt;</span>&nbsp;insert into t1(c1) values('f');<br/>
+<span style="color: #800000;">sqlite&gt;</span> delete from t1 where rowid=1;<br/>
+<span style="color: #800000;">sqlite&gt;</span> select rowid, * from t1;<br/>
+1|f<br/>
+<span style="color: #800000;">sqlite&gt;</span> update sqlite_sequence set seq=4 where name='t5';<br/>
+<span style="color: #800000;">sqlite&gt;</span> insert into t5(c2) values('h');<br/>
+<span style="color: #800000;">sqlite&gt;</span> select * from t5;<br/>
+1|e<br/>
+4|h<br/>
+<span style="color: #800000;">sqlite&gt;</span> delete from t5 where c1=1;<br/>
+<span style="color: #800000;">sqlite&gt;</span> select * from t5<br/>
+4|h</blockquote>
+
+参考：1. <a href="http://www.sqlite.org/autoinc.html?http://www.sqlite.org/faq.html" target="_blank">SQLite Autoincrement</a><br/>
+&nbsp; &nbsp; &nbsp; &nbsp; 2. <a href="http://www.sqlite.org/fileformat2.html#seqtab" target="_blank">sqlite_sequence table</a>

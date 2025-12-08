@@ -1,0 +1,70 @@
+---
+title: 显示出 Hibernate 查询语句的绑定参数值
+url: /show-parameters-for-hql/
+date: 2010-12-28T11:03:15-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Hibernate
+tags: 
+  - p6spy
+  - Hibernate
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2974 
+wpStatus: publish
+views: 3562
+lastmod: 2021-09-03T12:06:24-05:00
+---
+
+在使用 Hibernate 进行数据库操作的时候可以显示出所执行的 SQL 语句，相信用 Hibernate 的兄弟姐妹们都知道怎么设置。就设置 hibernate.show_sql  或者 show_sql 属性为 true 就行，在 hibernate.cfg.xml 或者与 Spring 集成时配置在 Spring 的配置文件中。再就是要让显示的 SQL 语句是格式化的，就配置 hibernate.format_sql 或是 format_sql 为 true，否则总在一行中执行。Hibernate 显示的 SQL 语句好像是通过 System.out.println() 直接输出的。</p>
+<br/>
+Hibernate 大部份时候是通过 PreparedStatement 来执行 SQL 语句的，它的好处是可预处理、被缓存，可防止注入。只是这样让 Hibernate 执行的 SQL 语句输出到控制台是带问号的，如：<!--more--><br/><br/>
+<pre class="brush:sql">Hibernate: 
+    select
+        formtempla0_.id as id6_,
+        formtempla0_.name as name6_,
+        formtempla0_.title as title6_,
+        formtempla0_.finish_message as finish4_6_,
+        formtempla0_.promotion_code as promotion5_6_ 
+    from
+        footnotedpro.form_templates formtempla0_ 
+    where
+        formtempla0_.name=?</pre>
+<br/>
+我们有时候很想知道此时绑定给这个 ？号具体是什么值，但默认情况下在日志中是没有显示出来的，因为输出它的 LEVEL 级别是 TRACE，而我们用 Log4J 或 Slf4J 开发时默认级别一般最低也是 DEBUG，也就是要为这一输出指定日志的 LEVEL 为 TRACE。<br/><br/>
+针对我所用的 Hibernate 3.6.0，如果是用 Log4J 输出日志就在 log4j.properties(log4j.xml 参照此) 中配置：<br/><br/>
+<pre class="brush:text">log4j.logger.org.hibernate.type.descriptor.sql.BasicBinder=TRACE</pre>
+<br/>
+如果用的是 Slf4J + Logback 的话，就在 logback.xml 中配置：<br/><br/>
+<pre class="lang:default decode:true ">&lt;logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="TRACE"/&gt;</pre>
+<br/>
+有了这个 TRACE 配置，在输出上面 SQL 语句后还会显示出每个参数所绑定的值，如：<br/><br/>
+<pre class="brush:text">00:41:03.262 [http-8080-1] TRACE org.hibernate.type.descriptor.sql.BasicBinder - binding parameter [1] as [VARCHAR] - gt</pre>
+<br/>
+第一个参数绑定的值是 VARCHAR 类型的 "gt"，如果有更多的参数依次显示下去。<br/><br/>
+如果 Hibernate 的版本不是 3.6.0 话，可能配置略有不同，有些文章介绍说把下面两个包的 TRACE 打开，即：<br/><br/>
+<pre class="brush:text">log4j.logger.org.hibernate.type=TRACE
+log4j.logger.org.hibernate.sql=TRACE</pre>
+<br/>
+logback 中的配置请参照上面。这时候你不仅看到了查询前的绑定值，连查询出来的每一个字段值都有了：<br/><br/>
+<pre class="brush:text">00:56:50.474 [http-8080-2] TRACE org.hibernate.type.descriptor.sql.BasicExtractor - found [7] as column [id6_]
+00:56:50.505 [http-8080-2] TRACE org.hibernate.type.descriptor.sql.BasicExtractor - found [gt] as column [name6_]
+00:56:50.505 [http-8080-2] TRACE org.hibernate.type.descriptor.sql.BasicExtractor - found [Learn more] as column [title6_]
+00:56:50.505 [http-8080-2] TRACE org.hibernate.type.descriptor.sql.BasicExtractor - found [Thank you.] as column [finish4_6_]
+00:56:50.990 [http-8080-2] TRACE org.hibernate.type.descriptor.sql.BasicExtractor - found [] as column [promotion5_6_]</pre>
+<br/>
+还有更冗余的 Hibernate 初始化的信息，所以你应该在 org.hibernate.type 和 org.hibernate.sql 这两个包的 TRACE 基础上，观察日志输出来紧缩要 TRACE 的包。<br/><br/>
+注(2018-11-14): 用 logback 的时候，注意下面一个配置对显示参数的影响<br/><br/>
+<pre class="lang:default mark:4-5 decode:true">&lt;logger name="org.hibernate" level="warn" additivity="false"/&gt;<br/><br/>
+&lt;!-- 上面那样加了 additivity="false" 将显示不了 SQL 参数，而需要去掉它，或为 true--&gt;
+&lt;logger name="org.hibernate" level="warn"/&gt;
+&lt;logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="TRACE"/&gt;</pre>
+<br/>
+上面高亮的两行配置可以显示出 Hibernate 查询语句的参数。<br/><br/>
+参考：1. <a href="http://blog.csdn.net/csdn1234/archive/2008/10/11/3058986.aspx" target="_blank" rel="noopener">显示Hibernate的sql语句参数值</a><br />
+             2. <a href="http://www.renren.it/a/JAVAbiancheng/Hibernate/20101129/51088.html" target="_blank" rel="noopener">在控制台中显示Hibernate打印的SQL中的参数</a>

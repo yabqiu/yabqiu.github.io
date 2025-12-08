@@ -1,0 +1,52 @@
+---
+title: 安装 MySQL 5 后无法启动(不能 Start service) 的解决办法
+url: /install-mysql-cannot-start-service/
+date: 2011-01-25T06:14:03-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Database
+tags: 
+  - Mysql
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3087 
+wpStatus: publish
+views: 1660
+lastmod: 2011-01-25T07:24:51-06:00
+---
+
+安装的 MySQL 5.1.48 或是 MySQL 5.5.8，配置好最后点击 Execute 按钮了，但是进行不到 Start service 这一步。检查了下 MySQL 系统服务已添加，但是无法启动，手工也不行。这时候用事件查看器可以看到程序事件里有几个来自于 MySQL 的错误：<br/>
+<br/>
+<span style="color: #ff0000;">Plugin 'InnoDB' registration as a STORAGE ENGINE failed.<br/>
+Unknown/unsupported table type: INNODB</span><br/>
+<br/>
+原来是因为这两版本的 MySQL 默认使用了支持事物的 INNODB 引擎，打开 my.ini 文件，在 MySQL 的安装文件夹, 如 c:\program files\MySQL\ 中，看到：<br/>
+<br/>
+<span style="color: #ff0000;">default-storage-engine=INNODB</span><br/>
+<br/>
+解决办法是把该设置改为<br/>
+<br/>
+<span style="color: #ff0000;">default-storage-engine=MYISAM<!--more--></span><br/>
+<br/>
+仍然使用 MyISAM 作为默认的数据库引擎，保存 my.ini 文件，然后手工启动 MySQL 服务，成功；再把刚刚的配置窗口关掉就行了。<br/>
+<br/>
+你完全可以在创建数据库时指定所创建数据库所用的数据库引擎，或创建表时所用的数据库引擎，或者创建后再更改都可以。<br/>
+<br/>
+你可以再次回忆一下刚刚配置的过程：<br/>
+<br/>
+安装的最后一个步骤，在点 Finish 按钮时，可以选择 Configure the MySQL Server now，或者是从开始菜单里直接运行 MySQL 的 MySQL Server Instance Configuration Wizard 来进行配置数据库，在选择 database usage 时有三个选项：<br/>
+<br/>
+1) Multifunctional Database<br/>
+2) Transactional Database Only<br/>
+3) No-Transactional Database Only<br/>
+<br/>
+默认是第一项，选第二项也会让数据库默认的引擎为 INNODB，生成的 my.ini 文件里都会是 default-storage-engine=INNODB。至于在 my.ini 中注释掉了 --skip-innodb 并不太会影响到数据库的启动，只是决定了数据库的事物特性。<br/>
+<br/>
+那么在最后一步 Processing configuration ... 里写完 my.ini 文件后，进行到 Start service 就不动了，也就是启动不了 MySQL 服务，在系统服务里已经加了 MySQL 服务名。<br/>
+<br/>
+如果你这一步选择的是第三项，不使用支持事件的数据库，那么在 my.ini 文件里就是 default-storage-engine=MYISAM，那么你也很幸运，能顺利配置成功，并启动好数据库。不过这将使你不能使用 INNODB 引擎（ERROR 1286 (42000): Unknown table engine 'InnoDB'），其实也就是把 my.ini 中的 skip-innodb 给启用了，你可以把它再次注释掉试试事物。

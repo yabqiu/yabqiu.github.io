@@ -1,0 +1,86 @@
+---
+title: Retrotranslator让你用JDK1.5的特性写出的代码能在JVM1.4中运行
+url: /retrotranslator-jdk15-run-in-jvm14/
+date: 2007-05-17T03:47:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - JVM
+tags: 
+  - JVM
+  - Jdk
+  - Retrotranslator
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 523 
+wpStatus: publish
+views: 751
+lastmod: 2021-05-11T11:09:26-05:00
+---
+
+JDK1.5出来多年了(2004年10月正式发行)，就连6.0正式版在 <a href="http://java.sun.com">http://java.sun.com</a>上已是赫然在目，紧跟着的各应用服务器和 Java IDE 厂商的都准备就绪. 可是相信很多开发者跟我一样却碍于公司用的是老版本的应用服务器，如WebSphere Application Server,，WebLogic等只能支持到1.4的JDK，要升级应用服务器成本和风险都有担心，所以项目中只能用1.4 的JDK，一直无法体验到 JDK 1.5 的新特性带来的便利．</p>
+<br/>
+有些同事机器里一直还是躺着 JDK 1.4，我可能比他们好一点就是直接装了一个 JDK 1.5，然后在 Java IDE 中设置编译器的 Compiler compliance level为 1.4（实质就是javac –target 1.4）．这样避免了用JDK1.5编译的Class 放在1.4的JVM中运行出现49.0的字节码版本太高的错误，这样做只不是50步和100步的差距，照例用不了JDK1.5 的新特性．<!--more--><br/><br/>
+我一直在探索：能不能使用JDK1.5的特性，然后让生成的字节码能在1.4的JVM下运行．如是果是仅仅换掉应用服务所用的JDK恐怕是会出很多问题的．<br/><br/>
+也算是功夫不负有心人啊，时至今日终于在网上找着了一个叫做 Retrotranslator 的工具，开源的，在 SourceForge <a href="http://sourceforge.net/projects/retrotranslator">http://sourceforge.net/projects/retrotranslator</a>，当前版本是1.2.1．这个工具正好能满足我的需求．进到那个下载页面，你只要下载 <a href="http://downloads.sourceforge.net/retrotranslator/Retrotranslator-1.2.1-bin.zip?modtime=1170291482&amp;big_mirror=0">Retrotranslator-1.2.1-bin.zip</a>，其中包含了<br/><br/>
+retrotranslator-runtime-1.1.1-bundle.jar 字节码转换之后，运行时需要这个包来支持<br/><br/>
+retrotranslator-transformer-1.2.1-bundle.jar 转换字节码用，如用命令转换或用ant来转换需要这个包<br/><br/>
+而且还有一个 backport-util-concurrent-3.0.jar 大概是用新的并发机制运行时需要依赖这个包<br/><br/>
+Retrotranslator实质上是一个基于ASM 框架的字节码转换工具，如果要看它详细的使用帮助，请见页面　<a href="http://retrotranslator.sourceforge.net/">http://retrotranslator.sourceforge.net/</a>．<br />
+使用 Retrotranslator 可以让你使用的JDK1.5的特征有泛型、注解、泛型和注解的反射、枚举、自动装/拆箱、增强的循环、变参、协变式返回类型、格式化输出、静态引入、新的并发机制、增强的集合框架。（见<a href="http://retrotranslator.sourceforge.net/#features">What Java 5 features are supported?</a>）<br />
+还能使用新的类和新的方法，如 StringBuilder 等，见<a href="http://retrotranslator.sourceforge.net/#supported">What Java 5 classes and methods are supported?</a><br />
+使用方式：<br/><br/>
+1． 命令行下转换用JDK1.5的编译的classes文件<br/><br/>
+2． 用Ant或Maven自动化转换用JDK1.5的编译的classes文件，Retrotranslator提供了对Ant和Maven的支持。<br/><br/>
+3． 运行程序时加载类时即时转换换用JDK1.5的编译的类打成的jar包<br/><br/>
+4． 作为 IntelliJ IDEA的一个插件使用，可惜现在还没有Eclipse的插件，只能是期盼着。<br/><br/>
+下面只介绍如何用ANT方式来转换用JDK1.5的编译的classes文件，让它们能运行在1.4的JVM中。步骤如下：<br/><br/>
+1． 用1.5的JDK编译好你的类，比如编译在c:\workspace\unmi\WEB-INF\classes下。用Ant或是IDE帮你编译好。<br/><br/>
+2． 把retrotranslator-transformer-1.2.1-bundle.jar拷入到 $ANT_HOME/lib中，如果是在Eclipse中运行Ant Build文件，你需要设置 Window-&gt;Preferences-&gt;Ant-Runtime然后Add External JARSs…把retrotranslator-transformer-1.2.1-bundle.jar加进来。<br/><br/>
+3． 上面准备做好了，就要开始用 Retrotranslator来转换你的字节码了。转换部分的Ant Build的target像下面这么写：<br/><br/>
+<pre class="lang:default decode:true"> &lt;!-- 用 Retrotranslator 把上面编译的Class文件转换成JVM1.4的Class文件--&gt;
+&lt;target name="translate"&gt;
+   &lt;taskdef name="retrotranslator"
+      classname="net.sf.retrotranslator.transformer.RetrotranslatorTask" /&gt;
+   &lt;retrotranslator
+      destdir="c:\workspace\unmi\WEB-INF\classes" verify="true"
+      srcdir="c:\workspace\unmi\WEB-INF\classes"&gt;
+      &lt;!-- 项目中用到的包或类 --&gt;
+      &lt;classpath refid="classpath"/&gt; <br/><br/>
+      &lt;!-- 1.4JDK的运行时包 --&gt;
+      &lt;classpath location="c:/jdk1.4/jre/lib/rt.jar"/&gt;
+   &lt;/retrotranslator&gt;
+&lt;/target&gt;</pre>
+<br/>
+4． 注意到上面destdir和srcdir都写成了一样的，我是让转换后的类直接把原来的类覆盖了，你可已把destdir设置为别的目录。<br/><br/>
+5． 最后就是运行了，你需要事先把retrotranslator-runtime-1.1.1-bundle.jar和backport-util-concurrent-3.0.jar配置在你的classpath中，比如是WEB应用程序，把它们拷到WEB-INF\lib中就行了。<br/><br/>
+比如，你写的是一个企业应用程序或者WEB程序，你只需要在打EAR或WAR包之前作以上的转换就行了。<br/><br/>
+另外，对于在JSP中用了JDK1.5的特性，就稍稍有点麻烦了，先要用特定于应用服务器的JSP编译器编译好JSP文件，在用 Retrotranslator 转换生成的 JSP 对应的class文件。如果中途对JSP文件有改动，我们不仅要编译并转换JSP 对应的class文件，然后覆盖掉服务器上的那个JSP对应的class文件，还要覆盖服务器上的那个JSP文件。<br/><br/>
+通常我们都不会对JSP文件预编译的。<br/><br/>
+所以我们的口号是：尽量不在JSP文件中写JAVA代码，写了也不要用JDK1.5的新特性，即使有复杂的东西也可以交给自定义标签处理。<br/><br/>
+比如struts标签<br/><br/>
+<pre class="lang:default decode:true"> &lt;logic:equal name="myBean" property="amount"  value="1"&gt;……&lt;/logic:equal&gt;</pre>
+<br/>
+不管amount是Integer还是 int 都无妨<br/><br/>
+再比如<br/><br/>
+<pre class="lang:default decode:true">&lt;logic:iterate name="myBeanList" id="myBean"&gt;
+    &lt;bean:write name="myBean" property="amount"/&gt;
+&lt;/logic:iterate&gt;</pre>
+<br/>
+不管myBeanList是否是用的泛型，都能够正确取出数据来。如果要求严格点在给&lt;logic:iterate标签加上一个type属性指明所存储的数据类型。<br/><br/>
+当然不是正统上的东西还是会有一些局限性的，具体参看：<a href="http://retrotranslator.sourceforge.net/#limitations">What are the limitations?，</a>如果在项目中遇到问题，我想总会有别的解决问道的。<br/><br/>
+借助于 Retrotranslator，我的一个项目就是用JDK1.5的特性写的，用了泛型、增强的循环、自动装/拆箱等特新，部署在WAS5.1下运行，至今状况十分良好。<br/><br/>
+其他类似工具：<br/><br/>
+    1. <a href="http://retroweaver.sourceforge.net/">Retroweaver</a><br />
+    2. <a href="http://tinyurl.com/r8xba">Declawer<br />
+</a>    3. <a href="http://wiki.jboss.org/wiki/Wiki.jsp?page=JBossRetro">JBossRetro</a><br/><br/>
+参考：<br />
+    1. <a href="http://retrotranslator.sourceforge.net/">Retrotranslator ReadMe.html</a><br/><br/>
+<hr /><br/><br/>
+由于在 Eclipse 没有相应的插件，可考虑修改在 JDK 1.5 中使用 javac api 调用 Retrotranslator 打造自己的 java 编译器。<br/><br/>
+后记：retrotranslator 的  destdir 属性可以省略，这时候就与 srcdir 同一目录，转换后的 class 覆盖原来的 class。并且 srcdir 可以指定到包目录中，如 srcdir="c:\workspace\unmi\WEB-INF\classes\com\unmi\utils"，这时候只转换 com.unmi.utils 包中的 class 文件。

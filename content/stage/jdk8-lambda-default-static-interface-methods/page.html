@@ -1,0 +1,120 @@
+---
+title: JDK8 的 Lambda 表达式 -- 默认和静态接口方法
+url: /jdk8-lambda-default-static-interface-methods/
+date: 2014-03-25T01:41:50-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - jdk8
+  - lambda
+  - java8
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6238 
+wpStatus: publish
+views: 2387
+lastmod: 2021-09-03T18:25:32-05:00
+---
+
+进入 Java8 之后我们会发现接口可以有方法实现了，这与我们一直看待 Java 接口的观念产生了冲突，不过也别急，接口中的方法实现必须是一个默认方法，即像</p>
+<br/>
+<blockquote>
+interface Shape {<br />
+    default boolean isShape() {<br />
+        return true;<br />
+    }<br />
+}
+</blockquote>
+<br/>
+本文旨在探讨 Java8 的默认接口方法存在的合理性，Java8 在这点上如何保持与前面版本的兼容性。<br/><br/>
+Lambda 和方法引用使得 Java 语言更具表现力。说到 Lambda 和方法引用的关系，Lambda 表达式的目的就是让你更为便捷的去绕过对象直接引用方法。<br/><br/>
+接口应该是相对稳固的，我们应该有这样的经验，类中使用了接口中定义的常量，如果在接口中改变了该常量值，单纯的替换接口对应的 class 文件是不奏效的，因为编译类时其实是把接口中的常量直接固化在类中了。如果类中要体现出最新常量值，那么使用接口的类也要重新编译。即使在接口中添加或改变了方法定义，也不能强制使用到它的类重新编译，早先的类完全可以自由的运行，因为接口中定义的常量和方法的所有内容都在自身，类一旦编译后便可脱离所实现的接口而运转。<!--more--><br/><br/>
+上面有点扯远了，因为恰好回想起替换接口类并不影响现在实现类行为的问题。<br/><br/>
+再次回到 Java8 为什么引入默认方法，因为添加普通接口方法会促使实现类去实现，而添加的默认接口方法让它的实现类可不予理会，还能有自己偷偷的实现。<br/><br/>
+接口中的默认方法又称作虚拟扩展方法或 defender 方法，它能让接口既可加入方法，还能保持向后的兼容性。对于这一点，我没太感受。<br/><br/>
+说直接点就是接口中添加一个默认行为，让无数的具体实现类不用拐弯抹角的去调用默认方法。比如集合想要支持 Lambda 操作，照以前的思维，要么给 Collection 加个抽象方法，具体集合类各自实现，要么往 Collections 中放些静态方法，总之都不直观，不怎么面向对象，不友好。<br/><br/>
+现在 Java8 往接口 Collection 中添加了<br/><br/>
+<pre class="lang:default decode:true">default Stream stream() {
+    return StreamSupport.stream(spliterator(), false);
+}</pre>
+<br/>
+Iterable 接口中新添了<br/><br/>
+<pre class="lang:default decode:true">default void forEach(Consumer&lt;? super T&gt; action) {
+    Objects.requireNonNull(action);
+    for (T t : this) {
+        action.accept(t);
+    }
+}</pre>
+<br/>
+这样任何集合，就能调用 stream() 方法了，如<br/><br/>
+<pre class="lang:default decode:true">List list = new ArrayList&lt;&gt;();
+list.add("abc");
+list.add("def");<br/><br/>
+//这里 stream() 是在 Collection 接口中定义的默认方法，至于这里的 forEach() 是在 ReferencePipeline 中实现的
+list.stream().map(e-&gt;e+"X").forEach(x-&gt;System.out.println(x));
+list.forEach(x-&gt;System.out.println(x));  //这里的 forEach() 是在 Iterable 接口中定义的默认方法</pre>
+<br/>
+<span style="line-height: 1.5em;">我们知道 Java 不支持类的多重继承就是为避免基类实现上的冲突，和简单的继承关系。而如 Java8 从新引入接口的默认方法，要知道 Java 是支持接口多重继承和类实现多个接口的，于是乎再一次拉回到 C++ 那样的复杂关系上了。有必要用代码一一来体验默认接口方法带来的麻烦：</span><br/><br/>
+1. 默认接口方法可以被实现类或子接口重写，因为它也是虚方法<br />
+2. 子接口或实现类中可以把默认方法置为抽象的，如下面的代码不能编译通过<br/><br/>
+<pre class="lang:default decode:true">public class TestDefaultInterfaceMethod implements InterfaceB{
+    //InterfaceB 中 foo() 是抽象的，所以必须实现 int foo() 方法
+}<br/><br/>
+interface InterfaceB extends InterfaceA {
+    int foo();
+}<br/><br/>
+interface InterfaceA {
+    default int foo(){
+        return 1;
+    }
+}</pre>
+<br/>
+错误为：The type TestDefaultInterfaceMethod must implement the inherited abstract method InterfaceB.foo() TestDefaultInterfaceMethod.java <br/><br/>
+3. 当类实现的两个接口中有相同的默认方法，纠结了<br/><br/>
+<pre class="lang:default decode:true">public class TestDefaultInterfaceMethod implements InterfaceA, InterfaceB {
+    //这里的错误是 Duplicate default methods named foo with the parameters ()
+    // and () are inherited from the types InterfaceB and InterfaceA
+}<br/><br/>
+interface InterfaceB {
+    default int foo() {
+        return 2;
+    }
+}<br/><br/>
+interface InterfaceA {
+    default int foo(){
+        return 1;
+    }
+}</pre>
+<br/>
+解决冲突的办法是 亮明立场：<br/><br/>
+<pre class="lang:default decode:true">public class TestDefaultInterfaceMethod implements InterfaceA, InterfaceB {
+    public int foo() { //实现中显式的选择某一个默认方法
+        return InterfaceA.super.foo();
+    }
+}</pre>
+<br/>
+初稿中曾采用过类 C++ 的初始化函数列表那种方案来解决冲突，但 Java8 正式版本中未采纳<br/><br/>
+<del>public int foo() default InterfaceB.foo;</del><br/><br/>
+4. 当接口继承的两个接口中中相同的默认方法，情况与 #3 是一样的，必须<br/><br/>
+<pre class="lang:default decode:true">public interface InterfaceC extends InterfaceA, InterfaceB {
+    default int foo() {
+        return InterfaceB.super.foo();
+    }
+}</pre>
+<br/>
+<span style="color: #0000ff;"><strong><span style="font-size: large;">接口的静态方法</span></strong></span><br/><br/>
+既然接口中承认默认方法存在的合理合法性，应该说既然接口中允许有方法实现，裹入静态方法实现就更无可厚非了，是这样声明的<br/><br/>
+<pre class="lang:default decode:true ">public interface InterfaceC {
+    static int foo() {
+        return 3;
+    }
+}</pre>
+<br/>
+接口中对方法的修饰不能同时用 abstract, static, default 中任何两个。这里的 static 与原来修饰在类的静态方法上的 static 并没什么两样，表示的是类方法，即 InterfaceC.class 上的方法，而 default 和 abstract 方法是实例方法。因 static 方法只绑定在 InterfaceC.class，所以它不会卷入到多重实现与继承的泥沼中。<br/><br/>
+参考：1.  <a href="http://cr.openjdk.java.net/~briangoetz/lambda/lambda-state-final.html" target="_blank" rel="noopener">State of the Lambda</a>

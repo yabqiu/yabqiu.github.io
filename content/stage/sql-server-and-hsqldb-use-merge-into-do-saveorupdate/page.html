@@ -1,0 +1,181 @@
+---
+title: SQL Server 和 HSQLDB 中使用 merge into 完成 saveOrUpdate 操作
+url: /sql-server-and-hsqldb-use-merge-into-do-saveorupdate/
+date: 2016-12-11T16:18:02-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Database
+  - Hibernate
+tags: 
+  - Hibernate
+  - JPA
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7613 
+wpStatus: publish
+views: 1255
+lastmod: 2021-09-03T17:01:48-05:00
+---
+
+当我们调用 Hibernate 的  saveOrUpdate() 或 JPA 的 save() 方法的 Hibernate 实现时，都会做两步操作：1）按 ID 查询记录是否已存在，2）不存在插入新记录，存在则更新原记录。这种两步操作其实可以在 SQL Server 和 HSQLDB 中一条语句完成，这就是本文要介绍的 <code>merge into</code> 语句。感觉到用数据库自己的特性，并且一条语句会比 <code>saveOrUpdate()</code> 两步操作性能要好，还需实测。<br/><br/>
+之所以把 SQL Server 和 HSQLDB 扯到一块来讲，是因为我们在实际项目中的单元测试是基于 HSQLDB 内存数据库的。<code>merge into</code> 如其名所示，它应该是给予我们便利的去根据把一个表中符合条件的记录合并到另一个表中去。我们这里只利用它的这特性去实现类似 Hibernate 的 <code>saveOrUpdate()</code> 操作。<br/><br/>
+假设我们有一个简单的表<br/><br/>
+<pre class="brush:sql">CREATE TABLE user (
+  id INT,
+  name VARCHAR(32),
+  address VARCHAR(128)
+);</pre>
+<br/>
+如果指 id 的记录已存在更新原来记录的 name 和  address, 不存在则插入新记录<!--more--><br/><br/>
+<h3><span style="color: #0000ff;"><strong>SQL Server 的 merge into 实现 saveOrUpdate</strong></span></h3><br/><br/>
+<pre class="lang:default decode:true Server ">MERGE INTO user u1
+  USING (SELECT 1 as id) u2
+  ON u1.id = u2.id  --这里可以写组合条件， 如 ON u1.id = u2.id AND u1.id &gt; 0
+  WHEN MATCHED THEN
+    UPDATE SET u1.name = CONCAT(u1.name, 'N'), u1.address = CONCAT(u1.address, 'A')
+  WHEN NOT MATCHED THEN
+    INSERT (id, name, address) values(1, 'Yanbin', 'Chicago')
+;</pre>
+<br/>
+未找到 id 为 1 的记录插入新记录，找到的话更新 name  和  address 值 -- <span style="color: #0000ff;">这句话其实是不准确的，应该是 USING 后的记录针对 ON 条件，匹配的执行 UPDATE, 不匹配的执行 INSERT</span>.<br/><br/>
+<h3><strong><span style="color: #0000ff;">HSQLDB 的 merge into 实现 saveOrUpdate</span></strong></h3><br/><br/>
+<pre class="brush:sql">MERGE INTO user u1
+  USING (VALUES 1) u2(id)
+    ON u1.id = u2.id
+  WHEN MATCHED THEN
+    UPDATE SET u1.name = CONCAT(u1.name, 'N'), u1.address = CONCAT(u1.address, 'A')
+  WHEN NOT MATCHED THEN
+    INSERT (id, name, address) values(1, 'Yanbin', 'Chicago')
+;</pre>
+<br/>
+在 HSQLDB 中不能直接 <code>select 1</code> 无源的查询一个常量值，如果有某个表只有一条记录的话，可以 <code>select 1 from TABLE_WITH_ONE_RECORD</code>, 可者用 <code>VALUES</code> 创建一临时表立即查询，这样做<br/><br/>
+<pre class="brush:sql">SELECT 1 FROM (VALUES 'ANY')</pre>
+<br/>
+所以上面的 merge into 语句中的 <code>USING</code> 行也可以写成<br/><br/>
+<pre class="brush:sql">  USING (SELECT 1 from (VALUES 'ANY')) u2</pre>
+<br/>
+<h3><strong><span style="color: #0000ff;">SQL Server 与 HSQLDB 的通用 merge into 实现</span></strong></h3><br/><br/>
+在 USING 子句中要用到下面的查询方式，如<br/><br/>
+<pre class="brush:sql">SELECT * FROM (VALUES (1, 'Unmi', 'Shenzhen')) AS tmp(id, name, address)</pre>
+<br/>
+上面语句中的 <code>(VALUES (1, 'Unmi', 'Shenzhen'))</code> 部分可以构造出多行记录，如 <code>(VALUES (1, 'Unmi', 'Shenzhen'), (2, 'Yanbin', 'Chicago'))</code>, 借由此可以进行批量的更新或插入, 完整的写法如下<br/><br/>
+<pre class="brush:sql">MERGE INTO user u1
+  USING (SELECT * FROM (VALUES (1, 'Unmi', 'Shenzhen'), (2, 'Yanbin', 'Chicago')) as tmp(id, name, address)) as u2
+  ON u1.id = u2.id
+  WHEN MATCHED THEN
+    UPDATE SET u1.name = u2.name, u1.address = u2.address
+  WHEN NOT MATCHED THEN
+    INSERT (id, name, address) VALUES(u2.id, u2.name, u2.address)
+;  </pre>
+<br/>
+上面我 MERGE INTO 语句在实际中很有用，批量处理一般能获得更好性能，实际操作中，可以设置一个占位符 <code>(VALUES %s)</code>, 运行时再填充，如 MERGE INTO 的格式字符串 USING 部份这么写<br/><br/>
+<pre class="brush:sql">  USING (SELECT * FROM (VALUES %s)) AS tmp(id, name, address) as u2</pre>
+<br/>
+程序运行时把 <code>%s</code> 部分替换为 <code>(1, 'Unmi', 'Shenzhen'), (2, 'Yanbin', 'Chicago')</code> 这样的具体数据格式即可。<br/><br/>
+<h3><span style="color: #0000ff;"><strong>JDBC 中参数化 <code>merge into</code> 语句</strong></span></h3><br/><br/>
+实际应用中一般都需要传递参数到 SQL 中， 应用 <code>?</code> 或 <code>:name</code> 在 SQL 作为占位符。参数通常是作为 <code>WHERE</code> 语句的条件，或 <code>UPDATE</code> 中 <code>SET</code>  的值，不能直接用作 <code>SELECT</code> 的查询字段，如下面的语句<br/><br/>
+<pre class="brush:java">String sql = "select ? from user";</pre>
+<br/>
+如果采用 jdbcTemplate 来执行上面的语句并套入自己的参数<br/><br/>
+<pre class="brush:java">jdbcTemplate.queryForList(sql, 123);</pre>
+<br/>
+会得到类似下面的错误<br/><br/>
+<blockquote>
+data type cast needed for parameter or null literal
+</blockquote>
+<br/>
+原因是上面的 <code>?</code> 处无法确定数据类型，它可以是任何类型，所以我们需要用 <code>CAST</code> 函数，正确的带参数的语句应该是<br/><br/>
+<pre class="brush:java">String sql = "select cast(? as int) from user";</pre>
+<br/>
+对于 HSQLDB 也类似， <span style="color: #666666; font-family: monospace;"><span style="background-color: #fafafa;"><code>(VALUES 1) u2(id)</code> 需参数化的话，要写成</span></span><br/><br/>
+<pre class="brush:sql">(VALUES CAST(? as INT)) u2(id)</pre>
+<br/>
+现在以 SQL Server 的 merge into 为例来说明如何参数化，分别又为 <code>?</code> 与 <code>:paraName</code> 的形式<br/><br/>
+<span style="color: #0000ff;"><strong>用 <code>?</code> 号参数化 merge into 语句</strong></span><br/><br/>
+<pre class="brush:sql">MERGE INTO user u1
+  USING (SELECT CAST(? as INT) as id) u2
+  ON u1.id = u2.id
+  WHEN MATCHED THEN
+    UPDATE SET u1.name = ?, u1.address = ?
+  WHEN NOT MATCHED THEN
+    INSERT (id, name, address) values(?, ?, ?)</pre>
+<br/>
+我们实际只需要传入 3 个参数(id, name, address), 然而上面的语句有 6 个问号，也就是我们在代码中必须老老实实的传入 6 个参数，即使重复也没办法。假设上面的语句赋值给了 <code>String sql</code> 变量，那么<br/><br/>
+<pre class="brush:java">jdbcTemplate.update(?, 1, 'Yanbin', 'Chicago', 1, 'Yanbin', 'Chicago');</pre>
+<br/>
+<span style="color: #ff0000;"><strong>参数化时是可以不需要 <code>CAST</code> 的，下面 SQL 在 SQL Server 中测试过</strong></span><br/><br/>
+<pre class="lang:default decode:true ">MERGE INTO user u1
+  USING (SELECT * FROM (VALUES (?, ?, ?)) as tmp(id, name, address)) as u2
+  ON u1.id = u2.id
+  WHEN MATCHED THEN
+    UPDATE SET u1.name = u2.name, u1.address = u2.address
+  WHEN NOT MATCHED THEN
+    INSERT (id, name, address) VALUES(u2.id, u2.name, u2.address)
+;  </pre>
+<br/>
+如果操作的表字段更多的话就更恐怖，很容易在参数匹配上出问题，所以更好的办法是<br/><br/>
+<span style="color: #0000ff;"><strong>用命名参数 <code>:paraName</code> 来参数化 merge into  语句</strong></span><br/><br/>
+<pre class="brush:sql">MERGE INTO user u1
+  USING (SELECT CAST(:id as INT) as id) u2
+  ON u1.id = u2.id
+  WHEN MATCHED THEN
+    UPDATE SET u1.name = :name, u1.address = :address
+  WHEN NOT MATCHED THEN
+    INSERT (id, name, address) values(:id, :name, :address)</pre>
+<br/>
+此时要用 <code>NamedParameterJdbcTemplate</code>, 具体操作如下：<br/><br/>
+<pre class="brush:java">namedParameterJdbcTemplate.update(sql, ImmutableMap.of("id", 1, "name", "Yanbin, "address", "Chicago");</pre>
+<br/>
+不需要重复列出参数值。<br/><br/>
+我们是否可以不用 <code>CAST</code> 呢？我们可以试着把参数转移到 <code>USING</code> 部分的 <code>WHERE</code> 条件中去，如写成<br/><br/>
+<pre class="brush:sql">MERGE INTO user u1
+  USING (SELECT id from user where id = :id) u2
+  ON u1.id = u2.id
+  WHEN MATCHED THEN
+    UPDATE SET u1.name = :name, u1.address = :address
+  WHEN NOT MATCHED THEN
+    INSERT (id, name, address) values(:id, :name, :address)</pre>
+<br/>
+感觉上只要上面的 <code>SELECT id from user where id  = :id</code> 不返回任何记录时便是 <code>NOT MATCHED</code>, 就会插入记录，不是的，此时什么也不会做。如果存在指定 id 的记录更新是没问题的。这在 HSQLDB 中的效果也是一样的。<br/><br/>
+其实我之前也踏入过这样的误区，还是 StackOverflow 好，问了 <a href="http://stackoverflow.com/questions/41092005/hsqldb-merge-into-can-neither-insert-nor-update">HSQLDB merge into can neither insert nor update</a>，很快得到了回复<br/><br/>
+<blockquote>
+The problem is in this clause:
+USING (select id from user where id=1) u2<br />
+When there is no record in the table, there is no row generated by the USING clause. So there is nothing to insert or update the existing rows with.
+You need to rewrite it so the USING clause generates a row with data.
+For example:
+USING (values(1)) u2(id)
+</blockquote>
+<br/>
+重新审视一下，然而我对 <code>MERGE INTO</code> 的正确理解是：<br/><br/>
+<pre class="brush:sql">MERGE INTO user u1     -- MATCHED 或 NOT MATCHED 的操作都会针对这个表
+  USING (SELECT id from user where id = :id) u2   -- 待比较(条件分类)的表
+  ON u1.id = u2.id  -- match 条件
+  WHEN MATCHED THEN -- u2 中符合条件的记录执行 UPDATE 操作
+    UPDATE SET u1.name = :name, u1.address = :address
+  WHEN NOT MATCHED THEN -- u2 中不符合条件的记录执行 INSERT 操作
+    INSERT (id, name, address) values(:id, :name, :address)
+--当然是如果 u2 是空表的话则什么操作都不会执行</pre>
+<br/>
+基于上面的理解，上面的 MERGE INTO 可以进一步演化<br/><br/>
+<pre class="brush:sql">MERGE INTO user u1
+  USING (SELECT CAST(? as INT) as id CAST(? as VARCHAR) as name, CAST(? as VARCHAR) as address) u2
+  ON u1.id = u2.id
+  WHEN MATCHED THEN
+    UPDATE SET u1.name = u2.name, u1.address = u2.address
+  WHEN NOT MATCHED THEN
+    INSERT (id, name, address) values(u2.id, u2.name, u2.address)</pre>
+<br/>
+这样的话，同一个传入参数就不需要写多遍了，我们也可以把上面的语句转换成命名变量的形式，只需把上面的三个问题依次替换为相应的命名如 <br/><br/>
+<pre class="brush:sql">USING (SELECT CAST(:id as INT) as id CAST(:name as VARCHAR) as name, CAST(:address as VARCHAR) as address) u2</pre>
+<br/>
+相关链接：<br/><br/>
+<ol>
+    <li><a href="http://hsqldb.org/doc/guide/dataaccess-chapt.html#dac_merge_statement">HSQLDB Merge Statement</a></li>
+    <li><a href="https://msdn.microsoft.com/en-us/library/bb510625.aspx">MERGE (Transact-SQL)</a></li>
+</ol>

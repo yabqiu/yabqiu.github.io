@@ -1,0 +1,88 @@
+---
+title: UIView 动画的两种编程方式
+url: /uiview-animation-programming/
+date: 2011-09-18T03:37:26-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - objective-c
+  - UIView
+  - Animation
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3826 
+wpStatus: publish
+views: 1732
+lastmod: 2021-09-03T14:44:46-05:00
+---
+
+iOS  中的 UIView 动画编程其实还是很简单的，像 CSS3 一样，在给定的时间内完成状态连续性的变化呈现。比如背景色，Frame 大小，位移、翻转，特明度等。</p>
+<br/>
+以前我使用的编程方式都是用下面那样的三段式处理：<br/><br/>
+<pre class="lang:default decode:true">[UIView beginAnimations:nil context: nil];
+[UIView setAnimationDuration:1.0];
+    
+//要动画改变的属性
+self.view.alpha = 0.0;
+self.view.frame = CGRectMake(10, 10, 50, 50);
+    
+[UIView commitAnimations];</pre>
+<br/>
+那么被 beginAnimations 和  commitAnimations 框起来的代码就会让你产生动画效果，这种方式像是数据库中的事物编程一样。<!--more--><br/><br/>
+还有另一种编程方式，使用代码块，对于常常书写 JS 代码的同志会比较适应，还是来个简单的代码片段：<br/><br/>
+<pre class="lang:default decode:true">[UIView animateWithDuration:1.0
+                 animations:^{
+                     self.view.alpha = 0.0;
+                     self.view.frame = CGRectMake(10, 10, 50, 50);
+                 }];</pre>
+<br/>
+对于不太复杂的动画，上面的写法很精练，因为只有一条语句，如果动画太过复杂了，写在这样一条语句中就会显得冗长了，对于代码调试没那么方便。<br/><br/>
+animateWithDuration 有三个重载方法：<br/><br/>
+<ul>
+    <li><code><a href="http://developer.apple.com/library/ios/documentation/UIKit/Reference/UIView_Class/UIView/UIView.html#//apple_ref/occ/clm/UIView/animateWithDuration:animations:" target="_self" rel="noopener">animateWithDuration:animations:</a></code></li>
+    <li><code><a href="http://developer.apple.com/library/ios/documentation/UIKit/Reference/UIView_Class/UIView/UIView.html#//apple_ref/occ/clm/UIView/animateWithDuration:animations:completion:" target="_self" rel="noopener">animateWithDuration:animations:completion:</a></code></li>
+    <li><code><a href="http://developer.apple.com/library/ios/documentation/UIKit/Reference/UIView_Class/UIView/UIView.html#//apple_ref/occ/clm/UIView/animateWithDuration:delay:options:animations:completion:" target="_self" rel="noopener">animateWithDuration:delay:options:animations:completion:</a></code></li>
+</ul><br/><br/>
+比如我们用最后面那个重载方法，可以比 beginAnimations...commitAnimations 更轻松的实现动画完后执行的动作，如：<br/><br/>
+<pre class="lang:default decode:true">[UIView animateWithDuration:1.0
+                      delay: 0.0
+                    options: UIViewAnimationOptionCurveEaseIn
+                 animations:^{
+                     self.view.alpha = 0.0;
+                     self.view.frame = CGRectMake(10, 10, 50, 50);
+                 }
+                 completion:^(BOOL finished){
+                     NSLog(@"Do something after the animation.");
+                 }];</pre>
+<br/>
+再回头看看 beginAnimations...commitAnimations 该如何实现上面同样的行为：<br/><br/>
+<pre class="lang:default decode:true">[UIView beginAnimations:nil context: nil];
+[UIView setAnimationDuration:1.0];
+    
+[UIView setAnimationDelay:0.0];
+[UIView setAnimationCurve:UIViewAnimationCurveEaseIn];
+    
+[UIView setAnimationDelegate:self];
+[UIView setAnimationDidStopSelector:@selector(animationStopped)];
+   
+self.view.alpha = 0.0;
+self.view.frame = CGRectMake(10, 10, 50, 50);
+    
+[UIView commitAnimations];</pre>
+<br/>
+还要给当前类加一个方法 animationStopped:<br/><br/>
+<pre class="lang:default decode:true ">-(void) animationStopped {
+    NSLog(@"Do something after the animation.");
+}</pre>
+<br/>
+代码是多些，但是 beginAnimations...commitAnimations 编程方式是全能的，而 animateWithDuration 是有局限性的，因为它的目的就是让编写代码更简洁。在 animateWithDuration 中只提供了 completion 代码块，意即在动画完成后执行的动作，而要达成<br/><br/>
+<span style="color: #800000;">[UIView setAnimationWillStartSelector:@selector(animationWillStart)]</span><br/><br/>
+这样的在动画即将启动之前的动作却是无能为力，还有些动画设置也是 animateWithDuration 做不到。所以一旦你先前用 animateWithDuration  实现的动画方式要增加稍复杂的功能而不得不用 beginAnimations...commitAnimations 来改写时，付出就大了。<br/><br/>
+该用哪种方式，只能自己斟酌吧。<br/><br/>
+关于 UIView 的动画请参考官方文档：<a href="http://developer.apple.com/library/ios/#documentation/WindowsViews/Conceptual/ViewPG_iPhoneOS/AnimatingViews/AnimatingViews.html#//apple_ref/doc/uid/TP40009503-CH6-SW1" target="_blank" rel="noopener">Animations</a>

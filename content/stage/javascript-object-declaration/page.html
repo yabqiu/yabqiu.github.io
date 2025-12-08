@@ -1,0 +1,100 @@
+---
+title: JavaScript 对象声明
+url: /javascript-object-declaration/
+date: 2013-11-23T09:39:21-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Web/JS
+tags: 
+  - javascript
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5790 
+wpStatus: publish
+views: 314
+lastmod: 2021-05-05T16:07:33-05:00
+---
+
+对象，类，模块的概念可以让系统更清晰，亦能增强代码的重用性。目前 JavaScript 规范本身并不支持类或模块，正在制定中的 <a href="https://people.mozilla.org/~jorendorff/es6-draft.html" target="_blank" rel="noopener">ECMAScript 6<sup>th</sup> Edition</a> 将会纳入类，模块的概念，不过不知会是何年马月的事，毕竟这不能像 JDK 升级那么干脆。</p>
+<br/>
+还有种办法来写模块化的 JavaScript 就是使用微软的  <a href="http://www.typescriptlang.org/" target="_blank" rel="noopener">TypeScript</a> 或是 Google 的 <a href="https://www.dartlang.org/" target="_blank" rel="noopener">Dart</a>，它们是面向对象的编程语言，能直接编译成兼容的 JavaScript 代码，有条件的可以去尝试。<br/><br/>
+回到现实来，就现有的 JavaScript 规范怎么去模块化。众所周知，JavaScript 中函数是第一等公民，所以我们早先是这样使用函数来声明对象的：<br/><br/>
+<span style="color: #000080;"><strong>1. 原始写法</strong></span>(比直接调用函数显得高级些)：<br/><br/>
+<pre class="brush:js">function Module(){
+    this.count = 10;
+    this.foo = function(x){
+        return x+1;
+    }
+}<br/><br/>
+var m1 = new Module();
+console.log(m1.count);
+console.log(m1.foo(3));</pre>
+<br/>
+<strong><span style="color: #000080;"><!--more-->2. 简单写法</span></strong>，借助 JSON 就无需写成 new Object({}) 的形式：<br/><br/>
+<pre class="brush:js">var module1 = {<br/><br/>
+    _count : 10,<br/><br/>
+    m1 : function() {
+        console.info("do something");
+    },<br/><br/>
+    m2 : function() {
+        // ...
+    }<br/><br/>
+};<br/><br/>
+module1.m1();
+console.log(module1._count);</pre>
+<br/>
+这不能很好的保护好内部成员，象这里你直接访问了 _count 属性。<br/><br/>
+<strong><span style="color: #000080;">3. 立即执行函数</span></strong>(Immediately-Invoked Function Expression, IIFE):<br/><br/>
+<pre class="brush:js">var module1 = (function() {<br/><br/>
+    var _count = 0;<br/><br/>
+    var _m1 = function() {
+        // ...
+    };<br/><br/>
+    var _m2 = function() {
+        // ...
+    };<br/><br/>
+    return {
+        m1 : _m1,
+        m2 : _m2
+    };<br/><br/>
+})();
+console.log(module1.m1);</pre>
+<br/>
+形式 (function(){}(); 就是声明函数并立即执行，你只能访问到 return 语句把暴露的有限的成员。<br/><br/>
+<span style="color: #000080;"><strong>4. 扩展模式</strong></span>(Augmentation)<br/><br/>
+<pre class="brush:js">var module2 = (function(mod) {
+    mod.m3 = function() {
+        //...
+    };<br/><br/>
+    return mod;<br/><br/>
+})(module1);</pre>
+<br/>
+其实就是在前一种模式的基础上传入一个参数，却很有意义，例如上面完成了 module2 对 module1 的继承，module2 不仅拥有 module1 所有的属性和方法，还增加了一个 m3 方法。<br/><br/>
+同时扩展模式还有其他的用途，例如引入其他的 JavaScript 函数库，像 jQuery 等。<br/><br/>
+下面叫做宽松的扩展模式(Loose augmentation) 是个更保险的做法。比如在浏览器环境下，可能 module1 还未初始化好会导致传入一个空对象，所以加个判断<br/><br/>
+<pre class="brush:js">var module1 = ( function (mod){
+     //...
+    return mod;<br/><br/>
+})(window.module1 || {});</pre>
+<br/>
+再比如引入全局对象，模块中需使用到 jQuery 和 YUI 库<br/><br/>
+<pre class="lang:default decode:true">var module1 = (function ($, YAHOO) {<br/><br/>
+    //$("div") ...<br/><br/>
+})(jQuery, YAHOO);</pre>
+<br/>
+本文主要参考自：<a href="http://www.ruanyifeng.com/blog/2012/10/javascript_module.html" target="_blank" rel="noopener">Javascript模块化编程（一）：模块的写法</a><br/><br/>
+我们可以多读读那些著名的 JavaScript 库的源码，从中取经。像 jQuery 的模式就是<br/><br/>
+<pre class="brush:js">(function( window, undefined ) {
+    //......
+    ow.jQuery = window.$ = jQuery;
+})( window );</pre>
+<br/>
+上面这个函数立即执行，并把 jQuery 赋值为 window 的 $ 变量，从而让你在任何时候可以使用 $。<br/><br/>
+现在似乎不太怎么用 prototype 了，原型链感觉有点深奥，它与传统的面象对象编程中继承的概念有些差异。<br/><br/>
+另参考：1. <a href="http://my.oschina.net/chenzhiqiang/blog/129783" target="_blank" rel="noopener">JavaScript 模块化编程 - Module Pattern</a><br />
+                2. <a href="http://www.adequatelygood.com/JavaScript-Module-Pattern-In-Depth.html" target="_blank" rel="noopener">JavaScript Module Pattern: In-Depth</a>

@@ -1,0 +1,77 @@
+---
+title: Play 2.0 中文资料 - 编写功能性测试
+url: /play2-0-tutorials-cn-writing-functional-tests/
+date: 2013-01-16T09:36:21-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+  - PlayFramework
+tags: 
+  - 翻译
+  - Scala
+  - PlayFramework
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4907 
+wpStatus: publish
+views: 572
+lastmod: 2021-05-19T16:38:56-05:00
+---
+
+<ul style="float: right; border-left: solid 1px green; border-bottom: solid 1px green;">
+    <li><a href="/play2-0-tutorials-cn-writing-tests">编写测试 </a></li>
+    <li><a href="/play2-0-tutorials-cn-writing-functional-tests">编写功能性测试 </a></li>
+</ul><br/><br/>
+<span style="font-size: medium;"><strong>测试模板</strong></span><br/><br/>
+因为模板自身就是一个标准的 Scala 函数, 所以你可以在你的测试代码中直接执行它, 并检查结果:<br/><br/>
+<pre class="brush:scala">"render index template" in {
+  val html = views.html.index("Coco")<br/><br/>
+  contentType(html) must equalTo("text/html")
+  contentAsString(html) must contain("Hello Coco")
+}</pre>
+<br/>
+<strong><span style="font-size: medium;">测试你的 controllers</span></strong><br/><br/>
+你可以通过提供一个 <code>FakeRequest 来调用任何 Action 代码</code>:<!--more--><br/><br/>
+<pre class="brush:scala">"respond to the index Action" in {
+  val result = controllers.Application.index("Bob")(FakeRequest())<br/><br/>
+  status(result) must equalTo(OK)
+  contentType(result) must beSome("text/html")
+  charset(result) must beSome("utf-8")
+  contentAsString(result) must contain("Hello Bob")
+}</pre>
+<br/>
+<strong><span style="font-size: medium;">测试 router</span></strong><br/><br/>
+代之以调用 <code>Action</code> 本身, 你可以让 <code>Router</code> 来为你效劳:<br/><br/>
+<pre class="brush:scala">"respond to the index Action" in {
+  val Some(result) = routeAndCall(FakeRequest(GET, "/Bob"))<br/><br/>
+  status(result) must equalTo(OK)
+  contentType(result) must beSome("text/html")
+  charset(result) must beSome("utf-8")
+  contentAsString(result) must contain("Hello Bob")
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 上面两种测试方法可以说是基于两种路径达到对 Controller 的测试。一个是直接调用，另一个是基于 URL，它们所断言的内容是一致的，都验证了 Controller 是否能正常的工作，对 Router 的测试还兼顾了对 URL 的验证。因此，从我个人的观点来说，如果针对 Router 写的测试，一贯而穿，可以不用再专门的测试 Controller 了。</span><br/><br/>
+<strong><span style="font-size: medium;">启动一个真实的 HTTP 服务器</span></strong><br/><br/>
+有时候你需通过你的测试对实际的 HTTP 栈进行测试, 这种情况下你可以启动一个测试服务器:<br/><br/>
+<pre class="brush:scala">"run in a server" in {
+  running(TestServer(3333)) {<br/><br/>
+    await(WS.url("http://localhost:3333").get).status must equalTo(OK)<br/><br/>
+  }
+}</pre>
+<br/>
+<strong><span style="font-size: medium;">从 Web 浏览器中来测试</span></strong><br/><br/>
+假如你想要用浏览器来测试你的应用, 你可以采用 <a href=" http://code.google.com/p/selenium/?redir=1">Selenium WebDriver</a>. Play 会为你启动 WebDriver, 并且由 <a href="https://github.com/FluentLenium/FluentLenium">FluentLenium</a> 封装，提供了很方便的 API。<br/><br/>
+<pre class="lang:default decode:true ">"run in a browser" in {
+  running(TestServer(3333), HTMLUNIT) { browser =&gt;<br/><br/>
+    browser.goTo("http://localhost:3333")
+    browser.$("#title").getTexts().get(0) must equalTo("Hello Guest")<br/><br/>
+    browser.$("a").click()<br/><br/>
+    browser.url must equalTo("http://localhost:3333/Coco")
+    browser.$("#title").getTexts().get(0) must equalTo("Hello Coco")<br/><br/>
+  }
+}</pre>

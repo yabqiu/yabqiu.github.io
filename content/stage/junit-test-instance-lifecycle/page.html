@@ -1,0 +1,158 @@
+---
+title: JUnit 中是以测试方法为一个独立的生命周期
+url: /junit-test-instance-lifecycle/
+date: 2017-09-24T23:22:34-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2017/09/junit5_logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - JUnit
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8281 
+wpStatus: publish
+views: 1480
+lastmod: 2018-05-18T09:56:09-05:00
+---
+
+<p>在研究 JUnit 5 新特性的时候，学习到其中有一节 <a href="http://junit.org/junit5/docs/snapshot/user-guide/#writing-tests-test-instance-lifecycle">Test Instance Lifecycle</a>, 才意识到对 JUnit 的理解一直存在一个误区，以为 JUnit 是以测试类为一个生命周期的，其实不然。不管是 JUnit 5 还是 JUnit 4 或更早的版本，JUnit 都是以测试方法为一个独立的生命周期。</p>
+
+<p>只是到了 JUnit 5 提供了方法来把生命周期由方法改为测试类，对于单个测试类可以使用注解 <code>@TestInstance(Lifecycle.PER_CLASS)</code> 来指定用一个测试实例来跑所有的测试方法，这就意味着测试类中的成员变量只被初始化一次。<code>@TestInstance</code> 的 Lifecycle 默认是 PER_METHOD, JUnit 4 就是 PER_METHOD, 而且是不能改的。如果在 JUnit 5 中改变为 PER_CLASS, 恐怕反而会出许多乱子，每个测试方法本就该是完全独立的。</p>
+
+<p>比如在同一个类中多个测试方法使用了同一个实例变量的情况下，总会用一个  <code>@After</code> 方法来复位该实例变量，现在才知道那是多余的。像下面的代码</p>
+
+<pre class="lang:default decode:true">public class CalculatorTest {<br/>
+<br/>
+    private int number = 100;<br/>
+<br/>
+    @Test<br/>
+    public void test1() {<br/>
+        System.out.println(number);<br/>
+        number = 200;<br/>
+    }<br/>
+<br/>
+    @Test<br/>
+    public void test2() {<br/>
+        System.out.println(number);<br/>
+        number = 300;<br/>
+    }<br/>
+}</pre>
+
+<p><!--more-->两个方法引用了同一个实例变量，但是那两个测试用例不管怎么执行都是输出 100, 用不着 @After 方法来复位实例变量 number</p>
+
+<pre class="lang:default decode:true">@After   //这个完全是多余的<br/>
+public void tearDown() {<br/>
+    number = 100;<br/>
+}</pre>
+
+<p>这就是因为 JUnit 是以测试方法为一个独立的生命周期，JUnit 框架执行上面那个测试方法时相当于作了如下操作：</p>
+
+<pre class="lang:default decode:true">new CalculatorTest().test1();<br/>
+new CalculatorTest().test2();</pre>
+
+<p>而不是</p>
+
+<pre class="lang:default decode:true">CalculatorTest calculatorTest = new CalculatorTest();<br/>
+calculatorTest.test1();<br/>
+calculatorTest.test2();</pre>
+
+<p>那么我们还要 <code>@After</code> 来做什么呢？如果测试方法是串行执行时，可用它来复位操作的外部资源，例如删除临时文件。</p>
+
+<p>既然 JUnit 是以测试方法为生命周期，那么一个类的多个测试方法是可以并发执行的，这时候它们操作同一资源时要多留点心了。</p>
+
+<p>为加深理解测试方法为生命周期的概念，我们通过下面 JUnit 4 的一个例子来验证</p>
+
+<pre class="lang:default decode:true">import org.junit.Test;<br/>
+<br/>
+public class CalculatorTest {<br/>
+<br/>
+    private int number;<br/>
+<br/>
+    @Test<br/>
+    public void test1() throws InterruptedException {<br/>
+        System.out.println("test1 start " + System.currentTimeMillis());<br/>
+        Thread.sleep(500);<br/>
+        number = 100;<br/>
+        System.out.println("test1 end " + System.currentTimeMillis() + " number " + number + ", instance " + this);<br/>
+    }<br/>
+<br/>
+    @Test<br/>
+    public void test2() {<br/>
+        System.out.println("test2 start " + System.currentTimeMillis());<br/>
+        System.out.println("test2 end " + System.currentTimeMillis() + " number " + number + ", instance " + this);<br/>
+    }<br/>
+}</pre>
+
+<p>JUnit 4 默认时同一个类中多个方法不会并发执行，可以用 <a href="http://junit.org/junit4/javadoc/4.12/org/junit/experimental/ParallelComputer.html">ParallelComputer</a> 开启方法级别的并发执行，这是后话。</p>
+
+<p>我们只说默认情况下，上面的 test1() 总是先执行，然后才 test2()。如果测试方法是一个生命周期，那么 test2() 输出的 number 仍然是默认值  0，而不是 test1() 设置的 100, 看效果</p>
+
+<blockquote><br/>
+<p>test1 start 1506308523747<br /><br/>
+test1 end 1506308524249 number 100, instance cc.unmi.CalculatorTest@5d6f64b1<br /><br/>
+test2 start 1506308524251<br /><br/>
+test2 end 1506308524251 number 0, instance cc.unmi.CalculatorTest@78e03bb5</p>
+
+</blockquote>
+
+<p>没错，尽管 test1 先执行完，设置了 number 为 100, 但 test2 中得到的都是 number 的默认值  0; 因为每次测试方法都是一个新实例，看 this 的实例地址。</p>
+
+<p>之所以有这样一个误区，一部分原因也是被 @BeforeClass 和 @AfterClass 两个注解混淆了视听。</p>
+
+<p>比如 @BeforeClass 很容易令人误以为是在创建好了某个测试用例实例，在执行它任何一个测试方法前唯一执行一次 @BeforeClass 注解的方法。</p>
+
+<p>正确理解 @BeforeClass 和 @AfterClass 应该是，在一次 JUnitCore 运行周期中</p>
+
+<p><code>@BeforeClass</code>：注解的方法在创建第一个该测试类实例前执行一次</p>
+
+<p><code>@AfterClass</code>: 注解的方法在执行后该类最后一个测试方法后执行一次</p>
+
+<p>明白了 JUnit 4 是以测试方法为独立的生命周期运转，那么同一个类中多个测试方法是有能力并发执行的。具体做法可参考：<a href="https://stackoverflow.com/questions/423627/running-junit-tests-in-parallel-in-a-maven-build">Running junit tests in parallel in a Maven build?</a></p>
+
+<p>还可用 <a href="http://tempusfugitlibrary.org/">tempus-fugit</a>, 然后测试类用 @RunWith(ConcurrentTestRunner.class)。</p>
+
+<p>用 ParallelComputer 的办法我尝试了以下几种都未能成功</p>
+
+<pre class="lang:default decode:true">@Test  <br/>
+public void test() {      <br/>
+   Class[] cls={ParallelTest1.class,ParallelTest2.class };  <br/>
+<br/>
+   //Parallel among classes  <br/>
+   JUnitCore.runClasses(ParallelComputer.classes(), cls);  <br/>
+<br/>
+   //Parallel among methods in a class  <br/>
+   JUnitCore.runClasses(ParallelComputer.methods(), cls);  <br/>
+<br/>
+   //Parallel all methods in all classes  <br/>
+   JUnitCore.runClasses(new ParallelComputer(true, true), cls);     <br/>
+} </pre>
+
+<p>实际中应该值得去研究如何通过配置 <code>maven-surefire-plugin</code> 来支持测试方法并发执行。</p>
+
+<p>我倒是用 <code>@RunWith(ConcurrentTestRunner.class)</code> 看到了上面测试类执行的输出效果</p>
+
+<blockquote><br/>
+<p>test1 start 1506312917860<br /><br/>
+test2 start 1506312917860<br /><br/>
+test2 end 1506312917860 number 0, instance cc.unmi.CalculatorTest@5accd8d6<br /><br/>
+test1 end 1506312918363 number 100, instance cc.unmi.CalculatorTest@5310aea3</p>
+
+</blockquote>
+
+<p>参考：</p>
+
+<ol>
+
+	<li><a href="http://www.logicbig.com/tutorials/unit-testing/junit/lifecycle/">JUnit - Lifecycle of a Test Class</a></li>
+
+	<li><a href="https://stackoverflow.com/questions/423627/running-junit-tests-in-parallel-in-a-maven-build">Running junit tests in parallel in a Maven build?</a></li>
+
+</ol>
+
+<p>&nbsp;</p>

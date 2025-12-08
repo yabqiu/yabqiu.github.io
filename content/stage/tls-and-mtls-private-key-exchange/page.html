@@ -1,0 +1,134 @@
+---
+title: TLS 与 mTLS 的私钥交换过程
+url: /tls-and-mtls-private-key-exchange/
+date: 2024-11-25T16:16:36-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Web/JS
+tags: 
+  - SSL
+  - TLS
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13892 
+wpStatus: publish
+views: 249
+lastmod: 2024-11-27T12:48:26-06:00
+---
+
+不管是 HTTPS, SSH, SFTP, SCP 等都涉及到 SSL(Secure Sockets Layer) 或 TLS(Transport Layer Security)，以及使用非对称加密交互私钥的过程。<br/><br/>
+很久很久以前傻傻的认为所谓的非对称加密是像 MD5 那样内容加密后，无法从 MD5 码中还原出原始内容，其实那不就加密，是摘要(Digest)。非对称指的是加密与解密使用是不一样的密钥，即用公钥加密，私有解密。<br/><br/>
+提到 SSL 和 TLS, 顺便了解一下它们的极简史<br/><br/>
+SSL 由 Netscape 于 90 年代开发，SSL1.0(94 年，未公开), SSL 2.0(95 年发布), SSL 3.0(96 年发布), 后来 IETF 出了个 TLS 1.0 作为 SSL 3.0 的继承者，再就是后面的 TLS 1.1(2006), 1.2(2008), 1.3(2018)。2015 年 TLS 正式的取代了 SSL，从此江湖不再有 SSL 了，而我们习惯说的 SSL 只是在向曾经的 Netscape 致敬，其实指代的就是 TLS。<br/><br/>
+HTTPS 并非一直使用非对称加密进行数据通信，而只是用 TLS 安全的交换密钥，而后的数据通信使用私钥进行对称加密。如果数据通信都用非对称的方式性能是不允许的，所以只用非对称的方式进行密钥交换。<!--more--><br/><br/>
+说到公钥(public key) 私钥(private key)，必须清楚两个关系：<br/><br/>
+<ol>
+    <li>公钥加密的数据只能用私钥解密</li>
+    <li>私钥加密码的数据也只能用私服钥解密</li>
+</ol>
+<br/>
+TLS 触及了三个概念：公钥，私钥，密钥。公私钥的产生可以用命令 <code>ssh-keygen -t rsa</code>， <code>openssl genrsa</code>, 或第三方的证书颁发机构(CA)。公钥之所谓之公钥，可以明文传输，被截取了问题也不大，因为用它加密的数据只有掌握了私钥的一方才能解密读出来<br/><br/>
+关于非对称加密可参考本人之前写过的一篇 <a href="https://yanbin.blog/python-implement-rsa-encryption/">Python 实现 RSA 非对称加解密</a><br/><br/>
+TLS 单向与 mTLS 多向认证过程，从网络上 <a href="https://koca.szkingdom.com/forum/t/topic/213">基于证书的双向认证（mTLS）技术方案</a> 找了两张容易理解的过程图<br/><br/>
+<h3>TLS 单向认证过程</h3><br/><br/>
+&nbsp;<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/11/TLS.jpeg"><img class="aligncenter wp-image-13894 size-full" src="https://yanbin.blog/wp-content/uploads/2024/11/TLS.jpeg" alt="" width="694" height="674" /></a><br/><br/>
+要点<br/><br/>
+<ol>
+    <li>只需要客户端单向信任服务端的证书，以获服务端公钥</li>
+    <li>服务端确定好的对称加密方案是以明文的方式发送给客户端</li>
+    <li>客户端生成随机密钥，用从服务端得来的公钥对密钥加密送给服务端</li>
+    <li>服务端用本地私钥解开密钥，用于将来的对称加密通信</li>
+</ol>
+<br/>
+<h3>mTLS 双向认证过程</h3><br/><br/>
+&nbsp;<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/11/mTLS.png"><img class="aligncenter wp-image-13895 size-full" src="https://yanbin.blog/wp-content/uploads/2024/11/mTLS.png" alt="" width="678" height="696" /></a><br/><br/>
+要点<br/><br/>
+<ol>
+    <li>服务端与客户端需互相信息证书，及交换各自的公钥</li>
+    <li>服务端确认的加密方式用客户端的公钥进行加密后发送给客户端</li>
+    <li>客户端用本地私钥解开获知加密方式，生成随机密钥，用服务端的公钥对密钥加密传给服务端</li>
+    <li>服务端用本地私钥解开密钥，用于将来的对称加密通信</li>
+</ol>
+<br/>
+<h3>TLS 与 mTLS 的主要区别</h3><br/><br/>
+除了客户端要信息服务端的证书外，mTLS 客户端也有自己的证书和公钥需发送给服务端，让服务端信任。服务端确定要加密方式后用客户外公钥进行加密，更安全的方式发送给客户端。与 TLS 单向认证相比，不仅要求客户端的密钥用非对称的方式确定，而且加密方式也是用非对称的方式确定的，这进一步增加了破解的难度，因为对称加密方式在当前的 Linux, mac OS 下都有 60 种之多。<br/><br/>
+在 Linux/mac OS 下用命令 openssl ciphers -v 可列出所有支持的对称加密方式<br/><br/>
+<pre class="height-set:true height:300 lang:default decode:true">openssl ciphers -v
+TLS_AES_256_GCM_SHA384         TLSv1.3 Kx=any      Au=any   Enc=AESGCM(256)            Mac=AEAD
+TLS_CHACHA20_POLY1305_SHA256   TLSv1.3 Kx=any      Au=any   Enc=CHACHA20/POLY1305(256) Mac=AEAD
+TLS_AES_128_GCM_SHA256         TLSv1.3 Kx=any      Au=any   Enc=AESGCM(128)            Mac=AEAD
+ECDHE-ECDSA-AES256-GCM-SHA384  TLSv1.2 Kx=ECDH     Au=ECDSA Enc=AESGCM(256)            Mac=AEAD
+ECDHE-RSA-AES256-GCM-SHA384    TLSv1.2 Kx=ECDH     Au=RSA   Enc=AESGCM(256)            Mac=AEAD
+DHE-RSA-AES256-GCM-SHA384      TLSv1.2 Kx=DH       Au=RSA   Enc=AESGCM(256)            Mac=AEAD
+ECDHE-ECDSA-CHACHA20-POLY1305  TLSv1.2 Kx=ECDH     Au=ECDSA Enc=CHACHA20/POLY1305(256) Mac=AEAD
+ECDHE-RSA-CHACHA20-POLY1305    TLSv1.2 Kx=ECDH     Au=RSA   Enc=CHACHA20/POLY1305(256) Mac=AEAD
+DHE-RSA-CHACHA20-POLY1305      TLSv1.2 Kx=DH       Au=RSA   Enc=CHACHA20/POLY1305(256) Mac=AEAD
+ECDHE-ECDSA-AES128-GCM-SHA256  TLSv1.2 Kx=ECDH     Au=ECDSA Enc=AESGCM(128)            Mac=AEAD
+ECDHE-RSA-AES128-GCM-SHA256    TLSv1.2 Kx=ECDH     Au=RSA   Enc=AESGCM(128)            Mac=AEAD
+DHE-RSA-AES128-GCM-SHA256      TLSv1.2 Kx=DH       Au=RSA   Enc=AESGCM(128)            Mac=AEAD
+ECDHE-ECDSA-AES256-SHA384      TLSv1.2 Kx=ECDH     Au=ECDSA Enc=AES(256)               Mac=SHA384
+ECDHE-RSA-AES256-SHA384        TLSv1.2 Kx=ECDH     Au=RSA   Enc=AES(256)               Mac=SHA384
+DHE-RSA-AES256-SHA256          TLSv1.2 Kx=DH       Au=RSA   Enc=AES(256)               Mac=SHA256
+ECDHE-ECDSA-AES128-SHA256      TLSv1.2 Kx=ECDH     Au=ECDSA Enc=AES(128)               Mac=SHA256
+ECDHE-RSA-AES128-SHA256        TLSv1.2 Kx=ECDH     Au=RSA   Enc=AES(128)               Mac=SHA256
+DHE-RSA-AES128-SHA256          TLSv1.2 Kx=DH       Au=RSA   Enc=AES(128)               Mac=SHA256
+ECDHE-ECDSA-AES256-SHA         TLSv1   Kx=ECDH     Au=ECDSA Enc=AES(256)               Mac=SHA1
+ECDHE-RSA-AES256-SHA           TLSv1   Kx=ECDH     Au=RSA   Enc=AES(256)               Mac=SHA1
+DHE-RSA-AES256-SHA             SSLv3   Kx=DH       Au=RSA   Enc=AES(256)               Mac=SHA1
+ECDHE-ECDSA-AES128-SHA         TLSv1   Kx=ECDH     Au=ECDSA Enc=AES(128)               Mac=SHA1
+ECDHE-RSA-AES128-SHA           TLSv1   Kx=ECDH     Au=RSA   Enc=AES(128)               Mac=SHA1
+DHE-RSA-AES128-SHA             SSLv3   Kx=DH       Au=RSA   Enc=AES(128)               Mac=SHA1
+RSA-PSK-AES256-GCM-SHA384      TLSv1.2 Kx=RSAPSK   Au=RSA   Enc=AESGCM(256)            Mac=AEAD
+DHE-PSK-AES256-GCM-SHA384      TLSv1.2 Kx=DHEPSK   Au=PSK   Enc=AESGCM(256)            Mac=AEAD
+RSA-PSK-CHACHA20-POLY1305      TLSv1.2 Kx=RSAPSK   Au=RSA   Enc=CHACHA20/POLY1305(256) Mac=AEAD
+DHE-PSK-CHACHA20-POLY1305      TLSv1.2 Kx=DHEPSK   Au=PSK   Enc=CHACHA20/POLY1305(256) Mac=AEAD
+ECDHE-PSK-CHACHA20-POLY1305    TLSv1.2 Kx=ECDHEPSK Au=PSK   Enc=CHACHA20/POLY1305(256) Mac=AEAD
+AES256-GCM-SHA384              TLSv1.2 Kx=RSA      Au=RSA   Enc=AESGCM(256)            Mac=AEAD
+PSK-AES256-GCM-SHA384          TLSv1.2 Kx=PSK      Au=PSK   Enc=AESGCM(256)            Mac=AEAD
+PSK-CHACHA20-POLY1305          TLSv1.2 Kx=PSK      Au=PSK   Enc=CHACHA20/POLY1305(256) Mac=AEAD
+RSA-PSK-AES128-GCM-SHA256      TLSv1.2 Kx=RSAPSK   Au=RSA   Enc=AESGCM(128)            Mac=AEAD
+DHE-PSK-AES128-GCM-SHA256      TLSv1.2 Kx=DHEPSK   Au=PSK   Enc=AESGCM(128)            Mac=AEAD
+AES128-GCM-SHA256              TLSv1.2 Kx=RSA      Au=RSA   Enc=AESGCM(128)            Mac=AEAD
+PSK-AES128-GCM-SHA256          TLSv1.2 Kx=PSK      Au=PSK   Enc=AESGCM(128)            Mac=AEAD
+AES256-SHA256                  TLSv1.2 Kx=RSA      Au=RSA   Enc=AES(256)               Mac=SHA256
+AES128-SHA256                  TLSv1.2 Kx=RSA      Au=RSA   Enc=AES(128)               Mac=SHA256
+ECDHE-PSK-AES256-CBC-SHA384    TLSv1   Kx=ECDHEPSK Au=PSK   Enc=AES(256)               Mac=SHA384
+ECDHE-PSK-AES256-CBC-SHA       TLSv1   Kx=ECDHEPSK Au=PSK   Enc=AES(256)               Mac=SHA1
+SRP-RSA-AES-256-CBC-SHA        SSLv3   Kx=SRP      Au=RSA   Enc=AES(256)               Mac=SHA1
+SRP-AES-256-CBC-SHA            SSLv3   Kx=SRP      Au=SRP   Enc=AES(256)               Mac=SHA1
+RSA-PSK-AES256-CBC-SHA384      TLSv1   Kx=RSAPSK   Au=RSA   Enc=AES(256)               Mac=SHA384
+DHE-PSK-AES256-CBC-SHA384      TLSv1   Kx=DHEPSK   Au=PSK   Enc=AES(256)               Mac=SHA384
+RSA-PSK-AES256-CBC-SHA         SSLv3   Kx=RSAPSK   Au=RSA   Enc=AES(256)               Mac=SHA1
+DHE-PSK-AES256-CBC-SHA         SSLv3   Kx=DHEPSK   Au=PSK   Enc=AES(256)               Mac=SHA1
+AES256-SHA                     SSLv3   Kx=RSA      Au=RSA   Enc=AES(256)               Mac=SHA1
+PSK-AES256-CBC-SHA384          TLSv1   Kx=PSK      Au=PSK   Enc=AES(256)               Mac=SHA384
+PSK-AES256-CBC-SHA             SSLv3   Kx=PSK      Au=PSK   Enc=AES(256)               Mac=SHA1
+ECDHE-PSK-AES128-CBC-SHA256    TLSv1   Kx=ECDHEPSK Au=PSK   Enc=AES(128)               Mac=SHA256
+ECDHE-PSK-AES128-CBC-SHA       TLSv1   Kx=ECDHEPSK Au=PSK   Enc=AES(128)               Mac=SHA1
+SRP-RSA-AES-128-CBC-SHA        SSLv3   Kx=SRP      Au=RSA   Enc=AES(128)               Mac=SHA1
+SRP-AES-128-CBC-SHA            SSLv3   Kx=SRP      Au=SRP   Enc=AES(128)               Mac=SHA1
+RSA-PSK-AES128-CBC-SHA256      TLSv1   Kx=RSAPSK   Au=RSA   Enc=AES(128)               Mac=SHA256
+DHE-PSK-AES128-CBC-SHA256      TLSv1   Kx=DHEPSK   Au=PSK   Enc=AES(128)               Mac=SHA256
+RSA-PSK-AES128-CBC-SHA         SSLv3   Kx=RSAPSK   Au=RSA   Enc=AES(128)               Mac=SHA1
+DHE-PSK-AES128-CBC-SHA         SSLv3   Kx=DHEPSK   Au=PSK   Enc=AES(128)               Mac=SHA1
+AES128-SHA                     SSLv3   Kx=RSA      Au=RSA   Enc=AES(128)               Mac=SHA1
+PSK-AES128-CBC-SHA256          TLSv1   Kx=PSK      Au=PSK   Enc=AES(128)               Mac=SHA256
+PSK-AES128-CBC-SHA             SSLv3   Kx=PSK      Au=PSK   Enc=AES(128)               Mac=SHA1</pre>
+<br/>
+接下将使用自签证书和可信任的证书颁发机构(CA)签发的证书来体验 HTTPS 单向 TLS 和双向(mTLS) 认证的实际就用场景。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://koca.szkingdom.com/forum/t/topic/213">基于证书的双向认证（mTLS）技术方案</a></li>
+    <li><a href="https://www.cloudflare.com/learning/access-management/what-is-mutual-tls/">What is mutual TLS (mTLS)?</a></li>
+    <li><a href="https://blog.csdn.net/jzg5845201314/article/details/114646199">HTTPS双向认证（Mutual TLS authentication)</a></li>
+    <li><a href="https://www.cnblogs.com/xiao987334176/p/11041241.html">NGINX 配置本地HTTPS(双向认证)</a></li>
+    <li><a href="https://kunyuan.tech/archives/1230">nginx 自签证书实现配置 https 双向认证</a></li>
+    <li><a href="https://www.ruanyifeng.com/blog/2014/02/ssl_tls.html">SSL/TLS协议运行机制的概述</a></li>
+</ol>

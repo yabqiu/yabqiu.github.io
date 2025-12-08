@@ -1,0 +1,134 @@
+---
+title: JMockit Mock 私有方法和私有属性
+url: /jmockit-mock-private-methods-fields/
+date: 2014-02-03T01:02:39-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Unit Test
+  - JUnit
+  - jMockit
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6169 
+wpStatus: publish
+views: 11870
+lastmod: 2015-05-26T13:34:03-05:00
+---
+
+前面说过 JMockit 因身处前线，所以简直无不可，本节例子演示 JMockit 怎么 Mock 私有方法和私有属性，示例虽然是静态方法和属性，但因采用的是反射手法，所以这种 Deencapsulation 的 Mock 手段同样适用于公有的方法或属性，无论是否静态。<br/>
+<br/>
+本文所用 JMockit 版本为 1.6, 可能网上所搜索的方法与此有所不同，请注意 JMockit 版本差异。仍需重复一下，运行 JMockit 的例子 classpath 上必须让 jmockit.jar 在 junit.jar 之前，或用 javaagent 参数来加载 jmockit.jar，并且 junit 要 4.8 及以上版本.<br/>
+<br/>
+<span style="color: #0000ff;"><strong>1. Mock 私有方法(非静态类似)</strong></span><!--more--><br/>
+<pre class="brush:java">package cc.unmi;<br/>
+<br/>
+public class MyService {<br/>
+    public static String fetchData(String name){<br/>
+        System.out.println("call MyService.fetchData");<br/>
+        return fetchDataFromDB(name);<br/>
+    }<br/>
+    <br/>
+    private static String fetchDataFromDB(String name){<br/>
+        throw new RuntimeException("Not implemented yet!");<br/>
+    }<br/>
+}</pre>
+
+fetchDataFromDB 是私有静态方法，正常测试的话肯定不过<br/>
+<pre class="brush:java">package cc.unmi;<br/>
+<br/>
+import mockit.Deencapsulation;<br/>
+import mockit.Expectations;<br/>
+<br/>
+import org.junit.Assert;<br/>
+import org.junit.Test;<br/>
+<br/>
+public class MyServiceTest {<br/>
+<br/>
+    @Test<br/>
+    public void testFetchData() {<br/>
+<br/>
+        new Expectations(MyService.class) {<br/>
+            {<br/>
+                Deencapsulation.invoke(MyService.class, "fetchDataFromDB", "Unmi");<br/>
+                result = "http://unmi.cc";<br/>
+            }<br/>
+        };<br/>
+<br/>
+        String actual = MyService.fetchData("Unmi");<br/>
+        Assert.assertEquals("http://unmi.cc", actual);<br/>
+    }<br/>
+}</pre>
+
+这行<br/>
+<blockquote>Deencapsulation.invoke(MyService.class, "fetchDataFromDB", "Unmi");</blockquote>
+
+使用了反射的方式拦截了 MyService 的 fetchDataFromDB 方法，并非强设了它的返回值为  “http://unmi.cc”。关键是调用了 Deencapsulation.invoke() 方法，来看到这个类里还有哪些方法：<br/>
+<p style="text-align: center;"><img class="aligncenter  wp-image-6123" src="http://unmi.cc/wp-content/uploads/2014/02/jmockit-deencapsulation1.png" alt="jmockit-deencapsulation" /></p>
+
+看到上图，我们必须要产生一些想法的，特别是 invoke 和 setField，以及它们的第一个参数可以是 Class，也可以是 Object，不难获知的是我们能够借助于它来 Mocket 私有方法和属性，不论它们是静态还是非静态的。<br/>
+<br/>
+上面的测试用例可以见绿，输出为：<br/>
+<blockquote>call MyService.fetchData</blockquote>
+
+如果把测试代码中的调用处改为<br/>
+<blockquote>String actual = MyService.fetchData("Unmis");</blockquote>
+
+就要见红了，失败：<br/>
+<blockquote>java.lang.RuntimeException: Not implemented yet!<br/>
+at cc.unmi.MyService.fetchDataFromDB(MyService.java:10)<br/>
+at cc.unmi.MyService.fetchData(MyService.java:6)<br/>
+at cc.unmi.MyServiceTest.testFetchData(MyServiceTest.java:21)<br/>
+at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)<br/>
+at java.lang.reflect.Method.invoke(Method.java:606)<br/>
+at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)<br/>
+at java.lang.reflect.Method.invoke(Method.java:606)<br/>
+................</blockquote>
+
+对了，就是反射。受上面的点拨，怎么 Mock 属性已了然于心了，再行累述纯为拉长篇幅，不妨<br/>
+<br/>
+<strong><span style="color: #0000ff;">2. Mock 私有属性(静态亦类似)</span></strong><br/>
+<pre class="brush:java">package cc.unmi;<br/>
+<br/>
+public class MyService {<br/>
+    <br/>
+    private String url = "";<br/>
+    <br/>
+    public String fetchData(String name){<br/>
+        System.out.println("call MyService.fetchData");<br/>
+        return this.url;<br/>
+    }<br/>
+}</pre>
+
+欲 Mock 的是 url 属性，从 fetchData 方法的 return url 可以检测到 Mock 后的值<br/>
+<pre class="brush:java">package cc.unmi;<br/>
+<br/>
+import mockit.Deencapsulation;<br/>
+import mockit.Expectations;<br/>
+<br/>
+import org.junit.Assert;<br/>
+import org.junit.Test;<br/>
+<br/>
+public class MyServiceTest {<br/>
+<br/>
+    @Test<br/>
+    public void testFetchData() {<br/>
+        final MyService service = new MyService();<br/>
+        Deencapsulation.setField(service, "url", "http://unmi.cc");<br/>
+<br/>
+        String actual = service.fetchData("Unmi");<br/>
+        Assert.assertEquals("http://unmi.cc", actual);<br/>
+    }<br/>
+}</pre>
+
+断言成功，也用不着设置 result 值了, 而且这时候也用不着 new Expectations()  了。<br/>
+<br/>
+<span style="color: #0000ff;">Deencapsulation 是后来引入的，在 JMockit 0.999.19 中可以在  Expectations 中直接调用 invoke, setField 方法来改变运行中的值，Expectations 继承自 Invocations，原来的 Invocations 中定义了 invoke, setField, getFiled 等方法，新版的 JMockit 从  Invocations 中移除了那些方法。</span><br/>
+<br/>
+记得当初我们用 @MockClass, @Mock, 再 Mockit.setUpMock() 三步曲来进行 Mock 操作，如今看来光 new Expectations() 这一招便可走遍天下。

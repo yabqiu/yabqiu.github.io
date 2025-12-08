@@ -1,0 +1,255 @@
+---
+title: Python 连接和操作 DB2 和 Oracle 数据库
+url: /python-connect-db2-oracle-databases/
+date: 2022-02-22T18:27:53-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Database
+tags: 
+  - Oracle
+  - DB2
+  - JPype
+  - JayDeBeApi
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12250 
+wpStatus: publish
+views: 980
+lastmod: 2022-02-22T18:47:34-06:00
+---
+
+使用 Python 就难免要应对到不同数据库连接的问题，Python 目前也没有 Java 使用 JDBC 瘦客户端驱动那么方便。本人在用 Python 连接 SQL Server 时经常还是会有些问题，此文只着力于如何用 Python 连接 DB2 和 Oracle 数据库。<br/><br/>
+从本文中我们将会学到<br/><br/>
+<ol>
+    <li>Python 围绕着 ibm_db 来操作 DB2</li>
+    <li>以 Python DB-API 2.0 规范来操作 DB2</li>
+    <li>cx_Oracle Python 库 + Oracle Instant Client 操作 Oracle</li>
+    <li>用 Oracle 的  SID 还是 Service Name 来连接数据库</li>
+    <li>Python 中借助 JayDeBeApi 使用 JDBC 驱动来操作数据库(以 Oracle 为例)</li>
+    <li>从 JayDeBeApi 中我们了解到 JPype 有助于我们在 Python 中调用 Java </li>
+</ol>
+<br/>
+<h3>Python 操作 DB2</h3><br/><br/>
+连接 DB2 数据库要简单的多，只要安装 ibm-db 库<!--more--><br/><br/>
+<blockquote>
+pip install ibm-db   # 或用是 ibm_db
+</blockquote>
+<br/>
+假设数据库中创建有一个表  t1, 并有记录<br/><br/>
+<pre class="lang:default decode:true ">CREATE TABLE t1(c1 integer, c2 varchar(8));
+INSERT INTO t1(c1, c2) values(1, 'aaa'), (2, 'bbb');</pre>
+<br/>
+<h4>立即查询</h4><br/><br/>
+然后查询记录的代码如下<br/><br/>
+<pre class="lang:default decode:true">import ibm_db
+conn = ibm_db.connect("DATABASE=study;HOSTNAME=localhost;PORT=50000;PROTOCOL=TCPIP;UID=dbuser;PWD=your-password;", "", "")
+stmt = ibm_db.exec_immediate(conn, "select * from t1")<br/><br/>
+result = ibm_db.fetch_both(stmt)
+while result:
+    print(result)
+    result = ibm_db.fetch_both(stmt)</pre>
+<br/>
+执行后输出的结果为<br/><br/>
+<blockquote>
+{'C1': 1, 0: 1, 'C2': 'aaa', 1: 'aaa'}<br />
+{'C1': 2, 0: 2, 'C2': 'bbb', 1: 'bbb'}
+</blockquote>
+<br/>
+both 表示是结果行里既有列名也有索引号。<br/><br/>
+这和我们在 Python 中使用数据库的标准流程(conn-&gt;conn.cursor()-&gt;cursor.execute()-&gt;cursor.fetchXxx()) 不太一致，DB2 的操作以 ibm_db 模块为中心。ibm_db 的 conn 对象没什么有效的操作函数, 我们可以列出 ibm_db 的函数和属性<br/><br/>
+<pre class="lang:default decode:true ">print('\n'.join([name for name in dir(ibm_db) if name.lower()==name and (not name.startswith('__'))]))</pre>
+<br/>
+<blockquote>
+active<br />
+autocommit<br />
+bind_param<br />
+callproc<br />
+check_function_support<br />
+client_info<br />
+close<br />
+column_privileges<br />
+columns<br />
+commit<br />
+conn_error<br />
+conn_errormsg<br />
+conn_warn<br />
+connect<br />
+createdb<br />
+cursor_type<br />
+dropdb<br />
+exec_immediate<br />
+execute<br />
+execute_many
+</blockquote>
+<br/>
+立即执行单条语句用 exec_immediate(), 如果要绑定参数来执行就得用到 prepare, bind_param 和 execute 函数<br/><br/>
+<h4>绑定参数查询</h4><br/><br/>
+<pre class="lang:default decode:true">stmt = ibm_db.prepare(conn, "select * from t1 where c1=?")
+ibm_db.bind_param(stmt, 1, 2)
+ibm_db.execute(stmt)<br/><br/>
+param = (2,)
+ibm_db.execute(stmt, param)
+</pre>
+<br/>
+然后像上面那样处理结果<br/><br/>
+<h4>调用存储过程</h4><br/><br/>
+创建一个示例存储过程<br/><br/>
+<pre class="lang:default decode:true ">CREATE PROCEDURE test_proc(
+    IN empno integer,
+    IN randing integer,
+    OUT name varchar(8))
+LANGUAGE SQL
+BEGIN
+    SELECT 'abc' INTO name FROM sysibm.sysdummy1;
+END</pre>
+<br/>
+然后调用它<br/><br/>
+<pre class="lang:default decode:true">stmt, *_, name = ibm_db.callproc(conn, 'test_proc', (1, 2, ''))</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+abc
+</blockquote>
+<br/>
+返回值为 statement 和所有输入输出参数组成的列表，输入值我们并不用关心，所以用 *_ 去匹配它们。<br/><br/>
+调用存储过程时注意存储过程的名称，参数个数及类型的匹配，不然任何错误都是报<br/><br/>
+<blockquote>
+Exception: Describe Param Failed: [IBM][CLI Driver][DB2/NT64] SQL0440N No authorized routine named "TEST_PROC" of type "PROCEDURE" having compatible arguments was found. SQLSTATE=42884 SQLCODE=-440
+</blockquote>
+<br/>
+根本无法明确是什么错误。<br/><br/>
+IBM DB2 的 Python 驱动是以二进制的行式提供的，而且非标准方式使用 DB2 数据库，几乎有方法的参数都是 (*args, **kwargs), 如何调用只好看 IBM 的 <a href="https://www.ibm.com/docs/en/db2/11.5?topic=framework-application-development-db">Application development in Python with ibm_db</a>，或者也可以看源代码 <a href="https://github.com/ibmdb/python-ibmdb">https://github.com/ibmdb/python-ibmdb</a><br/><br/>
+<h3>标准方式使用 DB2</h3><br/><br/>
+上面的非标准方式操作 DB2 很反常规，幸好这个驱动同时也提供了<br/><br/>
+<blockquote>
+ibm_db_dbi: Python driver for IBM DB2 and IBM Informix databases that complies to the DB-API 2.0 specification
+</blockquote>
+<br/>
+<pre class="lang:default decode:true ">import ibm_db
+import ibm_db_dbi<br/><br/>
+ibm_db_conn = ibm_db.connect("DATABASE=study;HOSTNAME=localhost;UID=dbuser;PWD=your-password;", "", "")
+# 如果是连接本地数据库，可用 ibm_db.connect("study", "dbuser", your-password")
+conn = ibm_db_dbi.Connection(ibm_db_conn)<br/><br/>
+cursor = conn.cursor()
+cursor.execute("select * from t1")
+for row in cursor.fetchall():
+    print(row)</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+(1, 'aaa')<br />
+(2, 'bbb')
+</blockquote>
+<br/>
+最后别忘了用 <code>conn.close()</code> 关闭连接。<br/><br/>
+<h3>Python 操作 Oracle 数据库</h3><br/><br/>
+Python 连接 Oracle 数据库就比较复杂一些了，除了安装  cx_Oracle 库<br/><br/>
+<blockquote>
+pip install cx-oracle
+</blockquote>
+<br/>
+麻烦的事还在后头<br/><br/>
+现在试着用 cx_Oracle 来连接数据库<br/><br/>
+<pre class="lang:default decode:true">import cx_Oracle<br/><br/>
+conn = cx_Oracle.connect('system', 'oracle', '192.168.86.10:1521/EE.oracle.docker')</pre>
+<br/>
+注意：cx_Oracle 连接时要用 service name, 而不是 SID, 下面将会介绍到如何得到 service name，以及通过 SID 构建 DSN 字符串。<br/><br/>
+错误来了<br/><br/>
+<blockquote>
+cx_Oracle.DatabaseError: DPI-1047: Cannot locate a 64-bit Oracle Client library: "dlopen(libclntsh.dylib, 1): image not found". See https://cx-oracle.readthedocs.io/en/latest/user_guide/installation.html for help
+</blockquote>
+<br/>
+因为这不是一个瘦客户端，需要安装 Oracle 的本地库来支援该驱动，即 <a href="https://www.oracle.com/database/technologies/instant-client.html">Oracle Instant Client</a>。还可用预先安装了 Oracle Instant Client 的 <a href="https://github.com/orgs/oracle/packages">Docker 镜像</a> 或 <a href="https://github.com/oracle/docker-images/tree/master/OracleInstantClient">Dockerfile</a>。<br/><br/>
+下面以在 Mac OS 上安装 Oracle Instant Client 为例，可选择安装 <a href="https://www.oracle.com/database/technologies/instant-client/macos-intel-x86-downloads.html">Oracle Instant Client Downloads for macOS(Intel x86)</a> 里的 <a href="https://download.oracle.com/otn_software/mac/instantclient/198000/instantclient-basiclite-macos.x64-19.8.0.0.0dbru.zip">Basic Light Package(ZIP)</a>(大小 35M)。然后解压某个目录下，比如<br/><br/>
+<blockquote>
+unzip instantclient-basiclite-macos.x64-19.8.0.0.0dbru.zip -d ~/Developers
+</blockquote>
+<br/>
+现在只要连接 Oracle 数据库前加上一行代码<br/><br/>
+<pre class="lang:default decode:true">cx_Oracle.init_oracle_client(lib_dir="/Users/yanbin/Developers/instantclient_19_8")</pre>
+<br/>
+因此完整的操作 Oracle 数据库的代码是<br/><br/>
+<pre class="lang:default decode:true">import cx_Oracle<br/><br/>
+cx_Oracle.init_oracle_client(lib_dir="/Users/yanbin/Developers/instantclient_19_8")<br/><br/>
+conn = cx_Oracle.connect('system', 'oracle', '192.168.86.10:1521/EE.oracle.docker')
+cursor = conn.cursor()
+cursor.execute('select * from dual')
+for row in cursor.fetchall():
+    print(row)
+conn.close()</pre>
+<br/>
+输出<br/><br/>
+<blockquote>
+('X',)
+</blockquote>
+<br/>
+除了调用 cx_Oracle.init_oracle_client 来指定 Oracle Instant Client 的位置外，还能用环境变量 LD_LIBRARY_PATH 的方式<br/><br/>
+<blockquote>
+export LD_LIBRARY_PATH=/Users/yanbin/Developers/instantclient_19_8:$LD_LIBRARY_PATH
+</blockquote>
+<br/>
+这样的话，就不需要 xc_Oracle.init_oracle_client() 这个函数调用了。<br/><br/>
+<h3>如何通过 SID 进行连接</h3><br/><br/>
+前面提到 cx_Oracle 是用 service name 进行连接的，如查把 service name  换作 SID 是不能连接成功的，比如写成<br/><br/>
+<pre class="lang:default decode:true ">conn = cx_Oracle.connect('system', 'oracle', '192.168.86.33:1521/ee')</pre>
+<br/>
+报错<br/><br/>
+<blockquote>
+cx_Oracle.DatabaseError: ORA-12514: TNS:listener does not currently know of service requested in connect descriptor
+</blockquote>
+<br/>
+这儿有两种方式<br/><br/>
+通过 SID 构造 DSN 字符串<br/><br/>
+<pre class="lang:default decode:true ">dsn_str = cx_Oracle.makedsn("192.168.86.33", "1521", "ee")
+conn = cx_Oracle.connect('system', 'oracle', dsn_str)
+</pre>
+<br/>
+此时的 dsn_str 是<br/><br/>
+<blockquote>
+(DESCRIPTION=(ADDRESS=(PROTOCOL=TCP)(HOST=192.168.86.33)(PORT=1521))(CONNECT_DATA=(SID=ee)))
+</blockquote>
+<br/>
+或者在 tnsnames.ora 中找到 service name, 也可用 SID 连接数据库后，通过 SQL 语句 <code>select * from global_name</code> 找到 service name。<br/><br/>
+<h3>JayDeBeApi 桥接 JDBC 到 Python</h3><br/><br/>
+最后，有人尝试用 <a href="https://pypi.org/project/JayDeBeApi/">JayDeBeApi</a> 在 Python 中使用 JDBC 数据库驱动来连接数据库，这样做似乎对 Oracle 来讲可以省去安装 Oracle Instant Client 软件包，但带来的负担更重了，还需要安装 Java 虚拟机，并且运行的时候还得启动 JVM，用 Python 一个很重要的原因就是要摆脱 Java。<br/><br/>
+比如操作 DB2<br/><br/>
+<pre class="lang:default decode:true">import jaydebeapi
+conn = jaydebeapi.connect(
+    jclassname="oracle.jdbc.OracleDriver",
+    url="jdbc:oracle:thin:@192.168.86.33:1521:ee",
+    driver_args=("system", "oracle"),
+    jars='/Users/yanbin/.m2/repository/com/oracle/database/jdbc/ojdbc8/21.5.0.0/ojdbc8-21.5.0.0.jar')
+cursor = conn.cursor()
+# use cursor standard APIs</pre>
+<br/>
+因为实际上扮演连接操作数据库的角色是 Java 的 JDBC, 所以 url 是一个 JDBC 连接字符串，JayDeBeApi 用 url 结合 driver_args 中的参数去调用 Java 的 Driver.getConnection(url, *driver_args) 方法。JayDeBeApi 所实现的是在 Java 与 Python 之间进行类型的转换，以调用相应的 JDBC 函数。<br/><br/>
+JayDeBeApi 依赖于 JVM，它借助于 <a href="https://pypi.org/project/JPype1/">JPype1</a> 试图从 JAVA_HOME 或 PATH 环境变量中找到 java 执行程序启动 JVM。如果没有 JAVA_HOME 或 PATH 中找不到 java，则最后因系统而异采用不同的查找定位 JAVA_HOME 的办法，见 <a href="https://github.com/jpype-project/jpype/blob/24a2b95aefc2a59e7cf2c362a92ee5c6b13eb94f/jpype/_jvmfinder.py">_jvmfinder.py</a>，所以这会造成启动 JVM 非常的慢。<br/><br/>
+找到的 JVM 的路径可以通过 JPype1 代码打印出来<br/><br/>
+<blockquote>
+pip install jpype1
+</blockquote>
+<br/>
+<pre class="lang:default decode:true ">from jpype import getDefaultJVMPath
+print(getDefaultJVMPath())</pre>
+<br/>
+如果定位到 JAVA_HOME, 输出类似如下的路径<br/><br/>
+<blockquote>
+/Library/Java/JavaVirtualMachines/jdk1.8.0_281.jdk/Contents/Home/jre/lib/jli/libjli.dylib
+</blockquote>
+<br/>
+否则报告<br/><br/>
+<blockquote>
+jpype._jvmfinder.JVMNotFoundException: No JVM shared library file (libjvm.so) found. Try setting up the JAVA_HOME environment variable properly.
+</blockquote>
+<br/>
+基于 JayDeBeApi 的实现原理，它几乎可以应用于所有 JDBC 驱动支持的数据库。<br/><br/>
+参考：<br/><br/>
+<ol>
+    <li><a href="https://www.ibm.com/docs/en/db2/11.5?topic=framework-python-downloads-related-resources">Python downloads and related resources</a></li>
+    <li><a href="https://github.com/ibmdb/python-ibmdb/wiki/APIs">ibm_db API documentation</a></li>
+</ol>

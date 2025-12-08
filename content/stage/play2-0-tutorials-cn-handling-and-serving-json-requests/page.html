@@ -1,0 +1,99 @@
+---
+title: Play 2.0 中文资料 - 处理和响应 JSON 请求
+url: /play2-0-tutorials-cn-handling-and-serving-json-requests/
+date: 2013-01-13T06:46:56-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+  - PlayFramework
+tags: 
+  - Scala
+  - play
+  - PlayFramework
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4901 
+wpStatus: publish
+views: 1102
+lastmod: 2021-05-21T11:03:56-05:00
+---
+
+<ul style="float: right; border-left: solid 1px green; border-bottom: solid 1px green;">
+    <li><strong>使用 Json </strong>
+<ul>
+    <li><a href="/play2-0-tutorials-cn-play-json-library" target="_blank" rel="noopener">Play Json 库 </a></li>
+    <li><a href="/play2-0-tutorials-cn-handling-and-serving-json-requests">处理 Json 请求</a></li>
+    <li><a href="/play2-0-tutorials-cn-json-library-with-generics" target="_blank" rel="noopener">Play Json 库使用泛型 </a></li>
+</ul>
+</li>
+</ul><br/><br/>
+<strong><span style="font-size: medium;">处理 JSON 请求</span></strong><br/><br/>
+JSON 请求是一个以有效的 JSON 数据作为请求体的 HTTP 请求. 它必须指定 <code>Content-Type</code> 头为 <code>text/json</code> 或是 <code>application/json</code> 作为 mime 类型.<br/><br/>
+默认的， <code>Action</code> 使用 <strong>any content</strong> 作为 Body 解析器, 这让你接收 Body 并解析为 JSON (实际为 <code>JsValue</code>):<br/><br/>
+<pre class="lang:default decode:true">def sayHello = Action { request =&gt;
+  request.body.asJson.map { json =&gt;
+    (json \ "name").asOpt[String].map { name =&gt;
+      Ok("Hello " + name)
+    }.getOrElse {
+      BadRequest("Missing parameter [name]")
+    }
+  }.getOrElse {
+    BadRequest("Expecting Json data")
+  }
+}</pre>
+<br/>
+更好的(也是更简单的)办法是指定你自己的 <code>BodyParser</code> 用以告诉 Play 把类容 Body 直接解析为 JSON:<!--more--><br/><br/>
+<pre class="lang:default decode:true">def sayHello = Action(parse.json) { request =&gt;
+  (request.body \ "name").asOpt[String].map { name =&gt;
+    Ok("Hello " + name)
+  }.getOrElse {
+    BadRequest("Missing parameter [name]")
+  }
+}</pre>
+<br/>
+<blockquote>
+<strong>注:</strong> 让使用 JSON Body 解析器, <code>request.body</code> 值就已经是一个有效的 <code>JsValue 了</code>.
+</blockquote>
+<br/>
+你可以在命令行下用 <strong>cURL</strong> 进行测试:<br/><br/>
+<pre class="brush:scala">curl 
+  --header "Content-type: application/json" 
+  --request POST 
+  --data '{"name": "Guillaume"}' 
+  http://localhost:9000/sayHello</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: curl 是 unix 簇系统下的命令，windows 下的 curl 当然也有，用法略有不同，在 Windows 下推荐用 <a href="http://www.fiddler2.com/fiddler2/" target="_blank" rel="noopener">Fiddler</a>。上面命令在 shell 下换行的话需在每行后加上反斜杠 \，反斜杠的作用是把一个 shell 续行，所以需要在适当的地方加上空格，执行完命令就上下方向键看看刚刚执行的命令就知道，shell 知道把多行合成一行的。</span><br/><br/>
+回应是:<br/><br/>
+<pre class="brush:scala">HTTP/1.1 200 OK
+Content-Type: text/plain; charset=utf-8
+Content-Length: 15<br/><br/>
+Hello Guillaume</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 在 Mac shell 下需给 curl 命令再加上 <strong><span style="color: #ff0000;">-i</span></strong> 才能看到响应头信息，否则只有 <span style="color: #800000;">Hello Guillaume</span> 行。如果用 <span style="color: #ff0000;"><strong>-v</strong></span> 参数可以看到更详细的请求响应过程：</span><br/><br/>
+<p style="text-align: center;"><a href="/wp-content/uploads/2013/01/play_curl_json.png"><img class="aligncenter wp-image-5343" src="/wp-content/uploads/2013/01/play_curl_json.png" alt="play_curl_json" /></a></p>
+<br/>
+<span style="font-size: medium;"><strong>输出 JSON 响应</strong></span><br/><br/>
+在我们前面的例子中处理了 JSON 请求, 但我们回应的是 <code>text/plain</code> 类型的数据. 让我们作点改变来向客户端送出有效的 JSON HTTP 响应数据:<br/><br/>
+<pre class="lang:default decode:true">def sayHello = Action(parse.json) { request =&gt;
+  (request.body \ "name").asOpt[String].map { name =&gt;
+    Ok(toJson(
+      Map("status" -&gt; "OK", "message" -&gt; ("Hello " + name))
+    ))
+  }.getOrElse {
+    BadRequest(toJson(
+      Map("status" -&gt; "KO", "message" -&gt; "Missing parameter [name]")
+    ))
+  }
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 使用  toJson() 方法需要引入 play.api.libs.json.Json._ 。play.libs.Json 也有个 toJson(Any)，但它返回的是 JsonNode 类型，而我们要的是  JsValue 类型。</span><br/><br/>
+现在回应的是:<br/><br/>
+<pre class="brush:scala">HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+Content-Length: 43<br/><br/>
+{"status":"OK","message":"Hello Guillaume"}</pre>

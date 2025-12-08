@@ -1,0 +1,144 @@
+---
+title: 为 Java 注册 classpath: 协议用 URL 读取文件
+url: /register-classpath-protocol-for-java/
+date: 2021-06-17T12:50:16-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - protocol
+  - URLStreamHandler
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10946 
+wpStatus: publish
+views: 1133
+lastmod: 2021-06-17T13:52:23-05:00
+---
+
+ 本文为 Java 注册 classpath 协议读取文件的目的就是要让下面的代码能工作起来</p>
+<br/>
+<pre class="lang:default decode:true">String text = IOUtils.toString(new URL("classpath:/db.properties"), "UTF-8");
+System.out.println(text);</pre>
+<br/>
+假设在 classpath 下有个文件 db.properties, 比如在 Maven 项目的 src/main/resources 目录中，或是在某个 jar 包的根位置。如果我们直接执行上面的代码将会得到异常<br/><br/>
+<blockquote>
+Exception in thread "main" java.net.MalformedURLException: unknown protocol: classpath<br />
+    at java.net.URL.&lt;init&gt;(URL.java:617)<br />
+    at java.net.URL.&lt;init&gt;(URL.java:507)
+</blockquote>
+<br/>
+说是不认识的 classpath 协议。<br/><br/>
+前面代码是有实际用途的，比如说我们使用 XML 时就能支持远程协议<br/><br/>
+<pre class="lang:default decode:true">Document document = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+    .parse("https://www.w3schools.com/xml/note.xml");
+System.out.println(document.getDocumentElement().getTagName());</pre>
+<br/>
+<!--more-->以上代码能打印出 https://www.w3schools.com/xml/note.xml 的根节点是 "note"，但是换成<br/><br/>
+<pre class="lang:default decode:true">Document document = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+    .parse("classpath:/xml/note.xml");</pre>
+<br/>
+试图读取 classpath 下的 /xml/note.xml 文件时出现前面一样的错误信息。因为 DocumentBuilder.parse(str) 本质上和<br/><br/>
+<blockquote>
+IOUtils.toString(new URL("classpath:/db.properties"), "UTF-8");
+</blockquote>
+<br/>
+一样的方式来读取 URL 所指示的内容，因为本文接下来研究将使用读取 <code>classpath:/...</code> 文件内容成为可能。<br/><br/>
+题外话，在 Spring 中我们可以通过配置<br/><br/>
+<pre class="lang:default decode:true">@PropertySource("classpath:/db.properties")</pre>
+<br/>
+来读取 classpath 下的 /db.properties，那么能不能借鉴它的实现呢？不能，它们是有区别的，Spring 的 @PropertySource 并不能读取远程 http(s) 指示的内容，它的实现只是用  ClassLoader 去加载 classpath 下的文件，请参考<br/><br/>
+<a href="https://github.com/spring-projects/spring-framework/blob/main/spring-core/src/main/java/org/springframework/core/io/DefaultResourceLoader.java#L157">https://github.com/spring-projects/spring-framework/blob/main/spring-core/src/main/java/org/springframework/core/io/DefaultResourceLoader.java#L157</a><br/><br/>
+<pre class="lang:default decode:true">else if (location.startsWith("classpath:")) {
+    return new ClassPathResource(location.substring("classpath:".length()), getClassLoader());
+}</pre>
+<br/>
+假如以 <code>classpath:</code> 开头，那么去除掉前缀用 ClassLoader 去读取 <code>/db.properties</code> 的内容。<br/><br/>
+回到最初，要使得 <code>IOUtils.toString(new URL("classpath:/db.properties"), "UTF-8")</code> 工作，我们需要为 <code>classpath</code> 协议注册一个 URLStreamHandler 实现，最终得以让 new URL("classpath:/db.properties").openConnection() 能工作。有两种方式可帮助我们注册 classpath 的 URLStreamHandler最简单的方式.<br/><br/>
+<h2>调用 URL 的静态方法 setURLStreamHandlerFactory</h2><br/><br/>
+只要在程序启动的时候借助于 URL 的静态方法 setURLStreamHandlerFactory 来间接注册一个自己的 <code>URLStreamHandler</code>，可放在静态块中<br/><br/>
+<pre class="lang:default decode:true">static {
+    URL.setURLStreamHandlerFactory(protocol -&gt; "classpath".equals(protocol) ? new URLStreamHandler() {
+        protected URLConnection openConnection(URL url) throws IOException {
+            String path = url.getPath();
+            URL classpathUrl = Thread.currentThread().getContextClassLoader().getResource(path);
+            if (classpathUrl == null) {
+                classpathUrl = TestAppConfig.class.getResource(path);
+            }<br/><br/>
+            if (classpathUrl == null) {
+                throw new FileNotFoundException("classpathUrlStreamHandler.notFound: " + url);
+            } else {
+                return classpathUrl.openConnection();
+            }
+        }
+    } : null);
+}</pre>
+<br/>
+这样的话，再执行最前面的代码<br/><br/>
+<pre class="lang:default decode:true ">String text = IOUtils.toString(new URL("classpath:/db.properties"), "UTF-8");
+System.out.println(text);</pre>
+<br/>
+URL 就知道使用自定义的  URLStreamHandler 来处理 classpath 协议，取出 classpath 下 /db.properties 中的内容了。<br/><br/>
+这个实现是参考自 <code>tomcat-embed-cor-x.x.xx.jar</code> 中的 <code>ClasspathURLStreamHandler</code> 实现, 见 <a href="https://github.com/apache/tomcat/blob/main/java/org/apache/catalina/webresources/ClasspathURLStreamHandler.java#L27">https://github.com/apache/tomcat/blob/main/java/org/apache/catalina/webresources/ClasspathURLStreamHandler.java#L27</a>.<br/><br/>
+Tomcat 启动的时候，在它的 <code>org.apache.catalina.util.LifecycleBase.start()</code> 方法中辗转调用了 <code>URL.setURLStreamHanlderFactory(factory)</code> 把 <code>factory</code> 设置为 <code>TomcatURLStreamHandlerFactory</code>, 其后如果协议是 <code>classpath</code> 的话，<code>URL.getURLStreamHandler("classpath")</code><br/><br/>
+<pre class="lang:default decode:true ">if (factory != null) {
+    handler = factory.createURLStreamHandler(protocol);
+    checkedWithFactory = true;
+}</pre>
+<br/>
+通过 factory(这里是 TomcatURLStreamHandlerFactory) 创建 ClasspathURLStreamHandler 实例并使用它来读取 classpath 下的文件内空。<br/><br/>
+因此另一种方式我们也可定义自己的 URLStreamHandlerFactory, 然后在启动的时候用 <code>URL.setURLStreamHandlerFactory(factory)</code> 注册它。<br/><br/>
+或者如果是一个 Tomcat 应用程序，什么都不用做，Tomcat 启动的时候帮我们实现了。<br/><br/>
+<h2>用系统属性 -Djava.protocol.handler.pkgs 来注册 URLStreamHandler</h2><br/><br/>
+应用这种方式包名和类名是有讲究的，比如我们创建一个 Handler 类，并放到  <code>blog.yanbin.protocols.classpath</code> 包下，Handler 类的内容如下(与前面相同)<br/><br/>
+<pre class="lang:default decode:true ">package blog.yanbin.protocols.classpath;<br/><br/>
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.net.URL;
+import java.net.URLConnection;
+import java.net.URLStreamHandler;<br/><br/>
+public class Handler extends URLStreamHandler {<br/><br/>
+    protected URLConnection openConnection(URL url) throws IOException {
+        String path = url.getPath();
+        URL classpathUrl = Thread.currentThread().getContextClassLoader().getResource(path);
+        if (classpathUrl == null) {
+            classpathUrl = Handler.class.getResource(path);
+        }<br/><br/>
+        if (classpathUrl == null) {
+            throw new FileNotFoundException("classpathUrlStreamHandler.notFound: " + url);
+        } else {
+            return classpathUrl.openConnection();
+        }
+    }
+}</pre>
+<br/>
+然后执行下面的代码时<br/><br/>
+<pre class="lang:default decode:true ">String text = IOUtils.toString(new URL("classpath:/db.properties"), StandardCharsets.UTF_8);
+System.out.println(text);</pre>
+<br/>
+需要用指定系统属性<br/><br/>
+<blockquote>
+-Djava.protocol.handler.pkgs=blog.yanbin.protocols
+</blockquote>
+<br/>
+强调一下包和类的名称匹配<br/><br/>
+<ol>
+    <li>自定义的 URLStreamHandler 类名必须命名为 Handler</li>
+    <li>包名为 blog.yanbin.protocols.classpath 时用  -Djava.protocol.handler.pkgs 要指定为 blog.yanbin.protocols, 包名为 <code>classpath</code> 部分用来匹配要处理的协议，然后在其中找到 Handler 类。</li>
+</ol>
+<br/>
+如果想实现更多的协议，如 xyz, 就要创建一个类 blog.yanbin.protocols.xyz.Handler 类。<br/><br/>
+<h3>解析 -Djava.protocol.handler.pkgs 的实现</h3><br/><br/>
+所有的逻辑同样是发生在 URL.getURLStreamHandler(String protocol) 方法中<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/06/URL.getURLStreamHandler.png"><img class="aligncenter wp-image-10988" src="https://yanbin.blog/wp-content/uploads/2021/06/URL.getURLStreamHandler-800x512.png" alt="" width="1045" height="669" /></a><br/><br/>
+通过 -Djava.protocol.handler.pkgs 指定 URLStreamHandler 的实现包，上面的 <code>protocolPathProp</code> 就是 <code>java.protocol.handler.pkgs</code>，查找类名是用 <code>packagePrefix + "." + protocol + ".Handler"</code>, 这就是为什么类为必须为 <code>Handler</code>，并且要放置到下一级的 <code>classpath</code> 包中的原由。<br/><br/>
+同时还注意到 Java 总是把 <code>sun.net.www.protocol</code>  包附加到了 <code>java.protocol.handler.pkgs</code> 中，于是我们浏览一下这个包看看支持了一些什么协议<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/06/java-supported-protocols.png"><img class="aligncenter wp-image-10989" src="https://yanbin.blog/wp-content/uploads/2021/06/java-supported-protocols.png" alt="" width="395" height="302" /></a><br/><br/>
+这就为什么我们一直可以用 file, ftp, http, https, jar, mailto 和 netdoc 协议，其中的 jar, mailto, netdoc 还没用过呢。<br/><br/>
+有了上面的基础后，想要自定义什么样的  URL 协议都不难了, 比如像 <code>hadoop:/abc/xyz</code>, <code>s3:/bucket_abc/xyz.avro</code> 等等。

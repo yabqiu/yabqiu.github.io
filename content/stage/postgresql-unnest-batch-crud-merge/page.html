@@ -1,0 +1,144 @@
+---
+title: PostgreSQL 批量插入,  更新和合并操作
+url: /postgresql-unnest-batch-crud-merge/
+date: 2019-01-29T01:39:34-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/postgresql-logo.png"
+categories:
+  - Database
+tags: 
+  - PostgreSQL
+  - merge
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9281 
+wpStatus: publish
+views: 4798
+lastmod: 2025-05-23T09:39:06-05:00
+---
+
+就在 2019 年 1 月份微软收购了 PostgreSQL 数据库的初创公司 <a href="https://www.citusdata.com/">CitusData</a>, 在云数据库方面可以增强与 AWS 的竟争。AWS 的 RDS 两大开源数据库就是 MySQL(Aurora 和 MariaDB 是它的变种) 和 PostgreSQL。<br/><br/>
+而 PostgreSQL 跳出了普通关系型数据库的类型约束，它灵活的支持 JSON, JSONB, XML, 数组等类型。比如说字段类型可以是各种形式的数组，一维或多维。<br/><br/>
+<blockquote>
+<p class="p1">create table t1(<br />
+    address varchar(5)[3],<br />
+    counter integer[3][3],<br />
+    schedule text[][]<br />
+)</p>
+</blockquote>
+<br/>
+上面只是认识了一下 PostgreSQL 这一亮眼的特性，本篇重点不在如何定义操作数组类型的字段，而是对于普通的非数组字段类型如何用与数组相关的 <code>unnest</code> 关键字进行记录的批量插入，更新以及合并操作。<br/><br/>
+在正式使用介入 <code>unnest</code> 之前先熟悉一下 PostgreSQL 的 upsert(update insert) 操作。受其他数据库的影响，总以后 PostgreSQL 也应该支持 <code>merge into</code> 语句，而且竟然 PostgreSQL 官方也有文档介绍 <a href="https://www.postgresql.org/message-id/attachment/23520/sql-merge.html">MERGE</a> 有模有样的，然而试了一下根本就不支持 <code>merge into</code> 操作。<!--more--><br/><br/>
+<h3>普通的 insert upsert 操作</h3><br/><br/>
+不过 PostgreSQL 有另一种 <code>upsert</code> 的语法，或称之为 <code>insert on conflict</code>，也就是 PostgreSQL 加强版的 <code>insert</code> 语句。如下<br/><br/>
+<pre class="lang:default decode:true">INSERT INTO users (id, level)
+VALUES (1, 0)
+ON CONFLICT (id) DO UPDATE
+SET level = users.level + 1;</pre>
+<br/>
+即插入记录时存在相同的主键可对原记录的某些列进行更新，否则插入该记录。更详细的 <code>insert</code> 语法请参考官方文档 <a href="https://www.postgresql.org/docs/9.5/sql-insert.html">PostgreSQL INSERT</a>。<br/><br/>
+如果是组合主键，则在 ON CONFLICT (c1, c2) 处列出组合主键中的所有字段。<br/><br/>
+注意到上面的 <code>upsert</code> 只是应用于处理单条记录，而本文将要讨论到的是批量的处理。我们知道 insert 时可以同时插入多行记录，那么这个  <code>upsert</code> 语法是否也能同时操作多行记录呢？我们大胆假设，小心求证，那就动手一试吧<br/><br/>
+<pre class="lang:default decode:true ">create table users(
+  id int primary key,
+  level int
+)</pre>
+<br/>
+创建一个表 <code>users</code>, 然后插入一条记录<br/><br/>
+<pre class="lang:default decode:true">INSERT INTO users (id, level) VALUES (1, 0)
+</pre>
+<br/>
+查询 <code>select * from users</code> 表的内容如下<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2019/01/postgresql-upsert-1.png"><img class="aligncenter wp-image-9282" src="https://yanbin.blog/wp-content/uploads/2019/01/postgresql-upsert-1.png" alt="" width="250" height="169" /></a><br/><br/>
+执行批量的 insert<br/><br/>
+<pre class="lang:default decode:true">INSERT INTO users (id, level)
+VALUES (1, 3), (2, 1)
+ON CONFLICT (id) DO UPDATE
+SET level = excluded.level;</pre>
+<br/>
+理看看 <code>users</code> 表中的内容<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2019/01/postgresql-upsert-2.png"><img class="aligncenter wp-image-9283" src="https://yanbin.blog/wp-content/uploads/2019/01/postgresql-upsert-2.png" alt="" width="250" height="184" /></a><br/><br/>
+我们看到已存在行(id=1) 的 level 更新为新的值 3, 并且插入新行。<br/><br/>
+这里注意到我们用到一个关键字 <code>excluded</code> 用于引用 <code>INSERT</code> 语句中 <code>VALUES</code> 提供的值，相应的表名 <code>users</code> 用于引用表中原有的值。<br/><br/>
+<h3>基于 unnest 的 upsert 操作</h3><br/><br/>
+前面仍然是写作此文的意外收获，实际上想要总结的是 <code>unnest</code> 关键字在批量操作中的作用。下面来进行演示<br/><br/>
+<pre class="lang:default decode:true">create table testunnest(
+    id int primary key,
+    col1 int,
+    col2 varchar(50)
+)
+</pre>
+<br/>
+创建一个表并用 <code>unnest</code> 提供并行数组来进行批量插入<br/><br/>
+<pre class="lang:default decode:true">insert into testunnest(id, col1, col2) 
+  values (unnest(array[1,2]), unnest(array[30,40]), unnest(array['val1', 'val2']));
+</pre>
+<br/>
+这时候表中的内容为<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2019/01/postgresql-unnest-1.png"><img class="aligncenter wp-image-9285" src="https://yanbin.blog/wp-content/uploads/2019/01/postgresql-unnest-1.png" alt="" width="277" height="177" /></a><br/><br/>
+从执行效果来看，它与下面的 insert 语句是等效的<br/><br/>
+<pre class="lang:default decode:true">insert into testunnest(id, col1, col2) values
+  (1, 30, 'val1')
+  (2, 40, 'val2')</pre>
+<br/>
+换成成 <code>unnest(array[..])</code> 的形式有一种行转列的行为。<br/><br/>
+用 <code>unnest</code> 加上 <code>unsert</code> 再执行一次插入<br/><br/>
+<pre class="lang:default decode:true">insert into testunnest(id, col1, col2)
+  values (unnest(array[2,3]), unnest(array[80,90]), unnest(array['valupdated', 'val3']))
+  on conflict (id) do update
+  set col1 = excluded.col1, col2 = excluded.col2
+</pre>
+<br/>
+再查看表的内容如下<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2019/01/postgresql-unnest-2.png"><img class="aligncenter wp-image-9286" src="https://yanbin.blog/wp-content/uploads/2019/01/postgresql-unnest-2.png" alt="" width="273" height="194" /></a><br/><br/>
+&nbsp;<br/><br/>
+<h3>unnest 与 JDBC 操作</h3><br/><br/>
+<code>insert into users values (?, ?) on conflict....</code> 的 SQL 语句的单条记录或批量操作(addBatch(), executeBatch()) 就不多说了，主要看下用 JDBC 怎么对 <code>unnest</code> 进行赋值操作。<br/><br/>
+<pre class="lang:default decode:true">PreparedStatement pstmt = conn.prepareStatement(
+    "INSERT INTO testunnest(id, col1, col2) " +
+        "  VALUES (unnest(?), unnest(?), unnest(?))" +
+        "  ON CONFLICT (id) DO UPDATE" +
+        "  SET col1 = excluded.col1, col2 = excluded.col2"
+);<br/><br/>
+pstmt.setArray(1, conn.createArrayOf("int", new Integer[]{2, 3}));
+pstmt.setArray(2, conn.createArrayOf(JDBCType.INTEGER.getName(), new Integer[]{80, 90}));
+pstmt.setArray(3, conn.createArrayOf("varchar", new String[]{"val1", "val2"}));<br/><br/>
+int update = pstmt.executeUpdate();
+System.out.println(update); //影响的记录数是 2</pre>
+<br/>
+点位符要用 <code>unnest(?)</code>，设置参数时要用 <code>setArray()</code>, 参数用 <code>conn.createArrayOf(type, array)</code> 来指定。需要指明数组中的元素类型，这么普通的 <code>setInt()</code>, <code>setString()</code> 是一个意思。<br/><br/>
+用不着转换为 PostgreSQL 特定的 <code>PreparedStatement</code> 来操作，用 JDBC 通用的 <code>PreparedStatement</code> 接口就能支持对数组类型的赋值，难道是其他类型的数据库也能支持类似的数组操作？<br/><br/>
+<hr /><br/><br/>
+2019-05-16<br/><br/>
+<h3>组合主键的 upsert 操作</h3><br/><br/>
+看一下表的主键是多个字符组合时怎么进行合并操作，假设有一个表<br/><br/>
+<pre class="lang:pgsql decode:true">CREATE TABLE customers (
+    id1 int4 NOT NULL,
+    id2 int4 NOT NULL,
+    name1 varchar(20) NULL,
+    name2 varchar(20) NULL,
+    CONSTRAINT pk_ids PRIMARY KEY (id1, id2)
+);</pre>
+<br/>
+upsert 操作<br/><br/>
+<pre class="lang:pgsql decode:true">INSERT INTO customers(id1, id2, name1)
+    VALUES(1, 2, 'cc')
+    ON CONFLICT (id1, id2) DO UPDATE
+    SET name1 = excluded.name1, name2 = 'reset'
+</pre>
+<br/>
+或者指定主键约束名称<br/><br/>
+<pre class="lang:pgsql decode:true ">INSERT INTO customers(id1, id2, name1)
+    VALUES(1, 2, 'cc')
+    ON CONFLICT ON CONSTRAINT pk_ids DO UPDATE
+    SET name1 = excluded.name1, name2 = 'reset'</pre>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://hashrocket.com/blog/posts/upsert-records-with-postgresql-9-5">Upsert Records with PostgresSQL 9.5</a></li>
+</ol>

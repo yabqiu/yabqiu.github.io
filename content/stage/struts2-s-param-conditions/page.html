@@ -1,0 +1,54 @@
+---
+title: Struts2 的 &lt;s:component&gt; 中如何加条件参数 &lt;s:param&gt;...
+url: /struts2-s-param-conditions/
+date: 2011-02-10T05:11:56-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Struts
+tags: 
+  - Struts2
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3117 
+wpStatus: publish
+views: 1864
+lastmod: 2021-09-03T12:22:48-05:00
+---
+
+Struts2 的 &lt;s:component&gt; 标签可以让你消磨掉自定义标签的意愿，它可以指定一个模板文件，我比校亲赖于 ftl 文件，然后用 &lt;s:param&gt; 给上参数，其他的事情交给 freemarker 去处理了，而且在 ftl 文件能够直接以 &lt;@s.textfield ..../&gt; 的形式使用 Struts2 的标签。</p>
+<br/>
+比如，jsp 文件里这么使用 &lt;s:component&gt; 标签：<br/><br/>
+&lt;s:component template="/components/status.ftl" theme="simple"&gt;<br />
+    &lt;s:param name="status" value="#status"/&gt;<br />
+&lt;/s:component&gt;<br/><br/>
+把 status.ftl 要放在 WEB-INF/classes/template/simple/components/status.ftl。当然你可以应用 &lt;s:component&gt; 的 templateDir 属性使 status.ftl 放在别的位置上，但可能会带来别的麻烦。<!--more--><br/><br/>
+然后在 status.ftl 文件里用 &lt;#if parameters.status??&gt;...... 判断参数，进而随意发挥 FreeMarker 和 Struts2 标签的功能了。<br/><br/>
+有时候多个 jsp 页面要共用同一个 ftl 文件时，某些时候要向 ftl 模板传入某个参数，其他时候不需要。一种本能的写法就是给其中的 &lt;s:param&gt; 用 &lt;s:if&gt; 框起来，像：<br/><br/>
+<pre class="lang:default decode:true">&lt;s:component template="/components/status.ftl" theme="simple"&gt;
+    &lt;s:if test="some a condition"&gt;
+        &lt;s:param name="link"&gt;
+            &lt;button type="button" onclick="bra()"&gt;Watch&lt;/button&gt;
+        &lt;/s:param&gt;
+    &lt;/s:if&gt;
+&lt;/s:component&gt;</pre>
+<br/>
+可是走不通，在 ftl 里怎么都感觉不到 link 参数的存在，解决办法是让 &lt;s:if&gt; 作 &lt;s:param&gt; 的儿子，写成：<br/><br/>
+<pre class="lang:default decode:true">&lt;s:component template="/components/status.ftl" theme="simple"&gt;
+    &lt;s:param name="link"&gt;
+        &lt;s:if test="some a condition"&gt;
+            &lt;button type="button" onclick="bra()"&gt;Watch&lt;/button&gt;
+        &lt;/s:if&gt;
+    &lt;/s:param&gt;
+&lt;/s:component&gt;</pre>
+<br/>
+这样在 ftl 文件里的：<br/><br/>
+<pre class="lang:default decode:true ">&lt;#if parameters.link2??&gt;
+    ${parameters.link2!''}
+&lt;/#if&gt;</pre>
+<br/>
+上面那段代码就会在条件不成立时同样是不会有任何输出，达到正常思维下的 &lt;s:if&gt; 包裹 &lt;s:param&gt; 的效果。

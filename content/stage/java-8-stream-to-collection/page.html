@@ -1,0 +1,69 @@
+---
+title: Java 8 Stream 如何还原为集合
+url: /java-8-stream-to-collection/
+date: 2015-12-08T02:29:11-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - Java8
+tags: 
+  - java8
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7094 
+wpStatus: publish
+views: 667
+lastmod: 2021-05-04T16:00:17-05:00
+---
+
+由于 Java 对集合的函数式操作并非原生态的，必须对得到的 stream() 进行过滤等操作，之后还是一个 stream()，一般我们最后返回给调用者需还原为相应的集合。这无法与 Scala 的 <code>for ... yield</code> 操作相比。例如下面在使用 Stream API 过滤获得所有大于 3 的数字之后，方法的返回值还应该还原为 List&lt;Integer&gt;, 这个需求非常自然</p>
+<br/>
+<pre class="lang:default decode:true">List&lt;Integer&gt; list = Arrays.asList(1, 2, 3, 4, 5);
+List&lt;Integer&gt; greaterThan3(list) {
+  Stream&lt;Integer&gt; streamOfInteger = list.stream().filter( i -&gt; i &gt; 3);
+  return streamOfInteger.ToIntegerList......;
+}</pre>
+<br/>
+我们这儿的问题就是如何把上面的 streamOfInteger 转换为 List&lt;Integer&gt;, 有以下几种办法<!--more--><br/><br/>
+<strong>1 使用 Collectors.toList 方法 ***</strong><br/><br/>
+<pre class="brush:java">streamOfInteger.collect(Collectors.toList());</pre>
+<br/>
+<strong>2 使用 toCollection() 方法 **</strong><br/><br/>
+<pre class="brush:java">streamOfInteger.collect(Collectors.toCollection(ArrayList::new))</pre>
+<br/>
+<strong>3 forEach() 方法 *<br />
+</strong><br/><br/>
+<pre class="lang:default decode:true">List&lt;Integer&gt; newList = new ArrayList&lt;&gt;();
+streamOfInteger.forEach(newList::add);
+streamOfInteger.forEachOrdered(newList::add); //或者</pre>
+<br/>
+需要借助于临时变量，不带为 Functional 接受<br/><br/>
+<strong>4. toArray() 方法</strong><br/><br/>
+<pre class="lang:default decode:true">Integer[] arrayOfInteger = streamOfInteger.toArray(Integer[]::new);
+List&lt;Integer&gt; newList = Arrays.asList(arrayOfInteger);</pre>
+<br/>
+此法更觉多此一举<br/><br/>
+<strong>此外，不妨窥探下使用 Stream API 处理后的 Map 该如何还原为 Map</strong><br/><br/>
+<pre class="lang:default decode:true ">Map&lt;String, String&gt; map = new HashMap&lt;&gt;();
+map.put("a", "aa");
+map.put("b", "bb");
+Stream&lt;Map.Entry&lt;String, String&gt;&gt; filtered = map.entrySet().stream()
+  .filter(entry -&gt; entry.getKey().equals("b"));<br/><br/>
+filtered.collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    
+//或
+filtered.collect(Collectors.toMap(entry -&gt; entry.getKey(), entry -&gt; entry.getValue()));
+    
+//或
+Map&lt;String, String&gt; newMap = new HashMap&lt;&gt;();
+filtered.forEach(entry -&gt; newMap.put(entry.getKey(), entry.getValue()));
+</pre>
+<br/>
+如果我们根本用不着对原有的 key/value 作进一步加工处理，只是应用原始的 key/value 生成新的 Map，那么我们可以自定义一个通用的 Collector. 这是功课，且到用时再思考。<br/><br/>
+&nbsp;<br/><br/>
+参考： 1. <a href="http://javarevisited.blogspot.com/2015/03/5-ways-to-convert-java-8-stream-to-list.html" target="_blank" rel="nofollow noopener">5 ways to Convert Java 8 Stream to List - Example, Tutorial</a>

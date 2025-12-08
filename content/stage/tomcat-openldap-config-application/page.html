@@ -1,0 +1,307 @@
+---
+title: Tomcat 和 OpenLDAP, 从配置到应用[翻译]
+url: /tomcat-openldap-config-application/
+date: 2008-01-03T09:50:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/09/tomcat-logo.png"
+categories:
+  - Mid-Ware
+tags: 
+  - Tomcat
+  - OpenLdap
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 453 
+wpStatus: publish
+views: 962
+lastmod: 2021-09-03T21:41:39-05:00
+---
+
+<h2>Tomcat 和 OpenLDAP, 从配置到应用</h2><br/><br/>
+by <a href="http://today.java.net/pub/au/321">Darren Duke</a><br />
+05/31/2005</p>
+<br/>
+几乎所有的 Java Web 应用都需要某种类型的安全性的控制, 并且这通常会借助于 <a href="http://en.wikipedia.org/wiki/LDAP">Lightweight Directory Access Protocol</a> (LDAP) 目录服务来实现.  作为一个开发者，很有必要在本地安装一个 OpenLDAP 和 Web 容器来提高开发效率. 配置 Tomcat 连接到 OpenLDAP 的过程假如你能理解的话，还是很直白的. 这篇文章详细描述了这一配置过程，并用 Apache Jakarta 项目下的标签库 (<em>taglib</em>) 来演示简单的方式去测试这一安全机制.<br/><br/>
+<strong>内容</strong><br/><br/>
+<ol>
+    <li><a href="#what_is_ldap">什么是 LDAP?</a></li>
+    <li><a href="#openldap_setup">OpenLDAP 的安装和配置</a></li>
+    <li><a href="#jxplorer">JXplorer: 可视化 LDAP</a></li>
+    <li><a href="#tomcat_configuration">Tomcat 为 OpenLDAP 的配置</a></li>
+    <li><a href="#tomcat_server">Tomcat 服务器配置</a></li>
+    <li><a href="#web_app_config">Web 应用配置</a></li>
+    <li><a href="#jakarta_taglibs">Jakarta 相应标签库</a></li>
+    <li><a href="#conclusion">小结</a></li>
+    <li><a href="#resources">资源</a><!--more--></li>
+</ol>
+<br/>
+<h2 id="what_is_ldap">什么是 LDAP?</h2><br/><br/>
+LDAP 对于许多人来说不是几句话就能说清的. 对于本文来讲, 只需理解为是通过用户名和密码对用户进行验证的简单通用协议就够了. 换句话就是, 它提供了一种验证机制. 再进一步讲，它还要验证用户是否允许访问特定应用程序区域. 这是一个鉴权的过程. 验证和鉴权是有明显区别的. 它们并非一回事.<br/><br/>
+不同的 LDAP 产品在理论上是可互换了. 然而, 还是应该要注意到它们之间配置的不同. 一个 LDAP 目录是由下面那些层级组成树型结构的:<br/><br/>
+<ul>
+    <li>根 (树的源头), 由此产生分支</li>
+    <li><em>国家</em>, 每项可有分支</li>
+    <li><em>组织</em>, 可有分支</li>
+    <li><em>组织单元</em> (分部, 部门, 片区, 等)., 可有分支 (或是最终节点)</li>
+    <li><em>个体</em>.</li>
+</ul><br/><br/>
+LDAP 目录能通过 Lightweight Directory Interchange Format (LDIF) 文件格式导入或导出它们的内容. LDIF 是一个文本格式的文件，它能用来在 LDAP 之间交换信息, 或者像本文中那样用了它来初始化目录的配置. 由于是开源的, <a href="http://www.openldap.org/">OpenLDAP</a> 是许多开发者的首选的目录服务器.<br/><br/>
+<h2 id="openldap_setup">OpenLDAP 的安装和配置</h2><br/><br/>
+下载并安装好了 OpenLDAP 之后, 我们需要对安装目录下的 <em>slapd.conf</em> 文件作些很重要的修改.<br/><br/>
+首先是要包含 <em>InetOrgPerson</em> 模式. 这个模式里预定义了许多针对网络用户的有用的属性, 包括作为用户登陆用 ID 的 uid 属性. <em>InetOrgPerson</em> 模式依赖于 <em>Cosine</em> 模式, 因此应包含它.<br/><br/>
+<pre><code>ucdata-path C:/openldap/ucdata
+include C:/openldap/etc/schema/core.schema
+include C:/openldap/etc/schema/cosine.schema
+include C:/openldap/etc/schema/inetorgperson.schema<br/><br/>
+database bdb
+suffix dc="mycompany",dc="com"
+rootdn "cn=Manager,dc=mycompany,dc=com"
+rootpw secret
+directory       C:/openldap/var/openldap-data
+index   objectClass     eq
+</code></pre>
+<br/>
+第二方面的修改是要告诉 OpenLDAP 使用什么类型的数据库和根的识别名及密码是什么. 这是进入城市的钥匙, 所以应该选择并设任何其他的密码.<br/><br/>
+一旦所有对 <em>slapd.conf</em> 文件修改完毕之后, 就可以启动 OpenLDAP 了. 到命令行下进入到安装目录中(默认是 <em>c:\openldap</em>). 输入命令 <code>.\slapd -d 1, </code>然后服务器就会启动，界面如图 1.<br/><br/>
+<table border="0" width="250" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td>
+<p class="secondary"><img src="//yanbin.blog/wp-content/uploads/2008/01/startup.gif" alt="Figure 1" /><br />
+<em>图 1. OpenLDAP 启动后 </em></p>
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+如果服务器报错后启动失败, 应检查上面说的那两个模式是否已加到 <em>slapd.conf</em> 文件中. 再就是, 假如 OpenLDAP 不是安装在默认目录中, 需检验模式文件的路径是否正确. 一旦服务器起来了, 可以来检验我们的安装. 打开另一个命令行窗口并输入命令 <code>ldapsearch -x -b "dc=mycompany,dc=com" "(objectclass=*)"</code>. 执行的结果应该像下图 2 那样.<br/><br/>
+<table border="0" width="250" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td>
+<p class="secondary"><img src="//yanbin.blog/wp-content/uploads/2008/01/ldapsearch.gif" alt="Figure 2" border="0" vspace="4" /><br />
+<em>图 2. OpenLDAP 正在工作 </em></p>
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+要组装一个目录结构, 需导入一个 LDIF 文件. 要写这种格式的文件是非人所愿的, 因此这里准备好了一个 LDIF 文件供下载. 要导入这个文件, 在命令行下执行 <code>ldapadd -x -D "cn=Manager,dc=mycompany,dc=com" -W -f setup.ldif,</code> 然后会提示你输入密码, 就是配置在 <em>slapd.conf</em> 文件中的密码. 输入密码之后, 会得到如图 3 所示那样的结果.<br/><br/>
+<table border="0" width="250" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td>
+<p class="secondary"><img src="//yanbin.blog/wp-content/uploads/2008/01/ldapadd.gif" alt="Figure 3" border="0" vspace="4" /><br />
+<em>图 3. <code>ldapadd</code> 进行中 </em></p>
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+这都非常好, 但是怎么才知道顺利完成了呢? 嗯, 主要是 <code>ldapadd</code> 加入了两个组织单元 (people 和 roles), 三个用户角色 (在 roles OU 下) 和三个用户 (在 people OU 下). 这些用户还被指定为不用的角色. 通过导入 LDIF 文件创建的层级如下:<br/><br/>
+<ul>
+    <li>com</li>
+    <li style="list-style-type: none;">
+<ul>
+    <li>mycompany</li>
+    <li style="list-style-type: none;">
+<ul>
+    <li>people</li>
+    <li style="list-style-type: none;">
+<ul>
+    <li>admin</li>
+    <li>jbloggs</li>
+    <li>sspecial</li>
+</ul>
+</li>
+    <li>roles</li>
+    <li style="list-style-type: none;">
+<ul>
+    <li>Admin Users</li>
+    <li style="list-style-type: none;">
+<ul>
+    <li>uid=admin/ou=people/...</li>
+</ul>
+</li>
+    <li>Special Users</li>
+    <li style="list-style-type: none;">
+<ul>
+    <li>uid=sspecial/ou=people/...</li>
+</ul>
+</li>
+    <li>Test Users</li>
+    <li style="list-style-type: none;">
+<ul>
+    <li>uid=sspecial/ou=people/...</li>
+    <li>uid=jbloggs/ou=people/...</li>
+    <li>uid=admin/ou=people/...</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul><br/><br/>
+现在你可以输入另一个 <code>ldapsearch -x -b "dc=mycompany,dc=com" "(objectclass=*)" 指令</code>, 这一次的输出会包含一些更有意义的东西了(像用户属和角色成员之类的), 如图 4 所示. 虽然在完全在命令行下敲击指令是足够的, 但是有一个相当好的开源的, Java Swing 界面的 LDAP 浏览器能帮到你，它就是 JXplorer.<br/><br/>
+<table border="0" width="250" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td>
+<p class="secondary"><img class=" aligncenter" src="/wp-content/uploads/2008/01/ldapsearch2.gif" alt="Figure 4" border="0" vspace="4" /><br />
+<em>图 4. <code>ldapsearch</code> 返回用户和角色 </em></p>
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<h2 id="jxplorer">JXplorer: 可视化 LDAP</h2><br/><br/>
+<a href="http://sourceforge.net/projects/jxplorer/">JXplorer</a> 是一个 LDAP 浏览器. 它能用来查看、添加、 修改, 和删除目录中的任何元素或属性. 如果必要的话，它甚至可用来修改密码. 安装 JXplorer 并依据你的操作系统运行 <em>jxplorer.bat</em> 或 <em>jxplorer.sh</em>. 运行后，就可使用根用户名和密码连接到你本地的 OpenLDAP 目录上, 见图 Figure 5 所示.<br/><br/>
+<img src="http://today.java.net/images/2005/05/jxconnect.jpg" alt="JXplorer connection screen" width="452" height="341" /><br />
+<em>图 5. JXplorer 连接截屏</em><br/><br/>
+JXplorer 可用来浏览目录和修改任何值. 在你还未熟悉 LDAP 之前，修改除用户属性 (email, 密码等) 之外的任何信息都要小心些. 看图 6 的例子.<br/><br/>
+<table border="0" width="250" cellspacing="0" cellpadding="0">
+<tbody>
+<tr>
+<td>
+<p class="secondary"><img src="/wp-content/uploads/2008/01/jxbrowse.jpg" alt="Figure 6" width="750" border="0" vspace="4" /><br />
+<em>图 6. JXplorer 浏览 LDAP 目录 </em></p>
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<h2 id="tomcat_configuration">Tomcat 为 OpenLDAP 的配置</h2><br/><br/>
+Servlet 2.3 的规范在对用户进行验证和鉴权时, 允许应用服务器使用<em>容器管理的安全性</em>连接到一个已存在的用户仓库. 然而，还没有一种标准的方式能在不同容器间完成对用户的验证和鉴权. 每一种容器能 (通常就是) 以不同的方式实现. Tomcat 容器用域 (<code>Realm</code>) 的概念来实现这种安全性. Realm 可描述为一个存有用户名和密码的仓库, 它们唯一标识了 web 应用的有效用户. Tomcat 4 容器有四种 Realm 类型, 每一种类型存储和获取是在不同类型的仓库中.<br/><br/>
+<ul>
+    <li><code>JDBCRealm</code> 使用一个关系型数据库.</li>
+    <li><code>DataSourceRealm</code> 通过 JNDI 连接使用一个关系型数据库.</li>
+    <li><code>JNDIRealm</code> 使用 JNDI , 通常是使用到一个 LDAP 目录.</li>
+    <li><code>MemoryRealm</code> 使用内存文件, 常为 <em>tomcat-users.xml</em>.</li>
+</ul><br/><br/>
+Tomcat 默认的 <code>Realm</code> 是 <code>MemoryRealm</code>, 它是通过 <em>tomcat-users.xml</em> 文件配置的. Tomcat 需要手动去配置使用 <code>JNDIRealm</code> 以允许通过 LDAP 目录来难证用户.<br/><br/>
+配置 Tomcat 使用 JNDIRealm 需要以下几个步骤.<br/><br/>
+<ul>
+    <li>在文件 <em>server.xml</em> 中设置 Realm.</li>
+    <li>创建一个 JSP 登录表单页.</li>
+    <li>在 <em>web.xml</em> 文件中设置任意的 <code>&lt;security-constraint&gt;</code> 来保护资源.</li>
+    <li>在 <em>web.xml</em> 文件中设置 <code>&lt;login-config&gt;</code> 指示使用登录表单页.</li>
+    <li>在 <em>web.xml</em> 文件中配置所有的 <code>&lt;security-role&gt;</code> 映射.</li>
+</ul><br/><br/>
+<h2 id="tomcat_server">Tomcat 服务器配置</h2><br/><br/>
+每一个应用可以在各自的 <code>&lt;Context&gt;</code> 元素中配置自己的 Realm; 这个 realm <strong>仅仅</strong>是对该应用是有效的. 然而, realm 也能配置到 <code>&lt;Engine&gt;</code> 或 <code>&lt;Host&gt;</code> 级别上. 它们对 realm 的行为和范围有影响. 这样允许一个 realm 很容易的在多个应用间共享.<br/><br/>
+这里有一个 <em>server.xml</em> 的 realm, 它允许应用连接到 OpenLDAP.<br/><br/>
+<pre class="lang:default decode:true ">&lt;Realm className="org.apache.catalina.realm.JNDIRealm"
+    debug="99"
+    connectionName="cn=Manager,dc=mycompany,dc=com"
+    connectionPassword="secret"
+    connectionURL="ldap://localhost:389"
+    roleBase="ou=roles,dc=mycompany,dc=com"
+    roleName="cn"
+    roleSearch="(uniqueMember={0})"
+    roleSubtree="false"
+    userSearch="(uid={0})"
+    userPassword="userPassword"
+    userPattern="uid={0},ou=people,dc=mycompany,dc=com"
+/&gt;</pre>
+<br/>
+在声明式配置 LDAP 时，<code>userSearch</code> 和 <code>userPattern</code> 属性是最容易产生混淆和错误的地方. 假如你使用其他的 LDAP 服务器应特别注意这些属性.<br/><br/>
+<h2 id="web_app_config">Web 应用配置</h2><br/><br/>
+要完成 Tomcat 对 OpenLDAP 的配置, 应用的 <em>web.xml</em> 文件必须更新的. 提供下载的应用中有 6 个 JSP 页面组成, 其中三个是针对 LDAP 目录中设置的不同角色的受保护资源. 应用必须配置为允许基于 form 的验证，并被告知存在着哪些角色. 首先, 创建一个 <em>login.jsp</em> 文件. 当使用基于 form 的验证时, 这个 JSP 必须包含如下内容.<br/><br/>
+<pre class="lang:default decode:true ">&lt;body&gt;
+    &lt;form method="POST" action="j_security_check"&gt;
+        &lt;input type="text" name="j_username"&gt;
+        &lt;br&gt;
+        &lt;input type="password" name="j_password"&gt;
+        &lt;br&gt;
+        &lt;input type="submit"&gt;
+    &lt;/form&gt;
+&lt;/body&gt;</pre>
+<br/>
+必须参考新的 OpenLDAP realm 来更新<em>web.xml</em> 文件, 并在其中使用 LDAP 指定的角色. 应用还需要让对 <em>login.jsp</em> 页面的访问权限是公开的; 不然的话, 没有用户能登陆.<br/><br/>
+要告知应用什么角色能访问什么资源, 就要在应用 (或安全约束) 中用到 URL 映射. 这种映射既可以是一个文件名 (<em>/admin.jsp</em>) 也可以是一个路径 (<code>/jsp/*</code> 将保护 <em>jsp</em> 目录中的任何东西). 下面的 XML 表示列出的这两个 .jsp 文件不受到保护.<br/><br/>
+<pre class="lang:default decode:true ">&lt;security-constraint&gt;
+    &lt;web-resource-collection&gt;
+        &lt;web-resource-name&gt;Public Area&lt;/web-resource-name&gt;
+        &lt;!-- Define the context-relative URL(s) to be protected --&gt;
+        &lt;url-pattern&gt;/index.jsp&lt;/url-pattern&gt;
+        &lt;url-pattern&gt;/login.jsp&lt;/url-pattern&gt;
+    &lt;/web-resource-collection&gt;
+&lt;/security-constraint&gt;</pre>
+<br/>
+为什么这个代码会标记其他的 .jsp 文件为不受保护呢? 这是由于未列出的不受保护, 而非列出来的才不受保护. 下面的 <em>web.xml</em> 片断标明了 <code>user.jsp</code> 资源是受保护的, 并指定了什么角色可访问它.<br/><br/>
+<pre class="lang:default decode:true ">&lt;security-constraint&gt;
+    &lt;web-resource-collection&gt;
+        &lt;web-resource-name&gt;Protected Area&lt;/web-resource-name&gt;
+        &lt;!-- Define the context-relative URL(s) to be protected --&gt;
+        &lt;url-pattern&gt;/user.jsp&lt;/url-pattern&gt;
+    &lt;/web-resource-collection&gt;
+    &lt;auth-constraint&gt;
+    &lt;!-- Anyone with one of the listed roles may access this area --&gt;
+        &lt;role-name&gt;Test Users&lt;/role-name&gt;
+        &lt;role-name&gt;Special Users&lt;/role-name&gt;
+        &lt;role-name&gt;Admin Users&lt;/role-name&gt;
+     &lt;/auth-constraint&gt;
+&lt;/security-constraint&gt;</pre>
+<br/>
+注意到那个受保护资源有还有另一个节点配置, <code>&lt;auth-constraint&gt;</code>, 它指定了什么应用角色可以访问上面的资源. 假如存在 <code>&lt;auth-constraint&gt;</code> 配置, 资源就会是安全的. 否则, 它们就是公开的. 除非整个应用都是受保护的 (例如, <code>&lt;url-pattern&gt;/&lt;/url-pattern&gt;</code>), 公开的权限约束完全是多余.<br/><br/>
+欲配置 <em>web.xml</em> 文件利用前面创建的 <em>login.jsp</em> , 要添加下面的代码到 <em>web.xml</em> 文件中.<br/><br/>
+<pre class="lang:default decode:true ">&lt;!--  uses form-based authentication --&gt;
+&lt;login-config&gt;
+    &lt;auth-method&gt;FORM&lt;/auth-method&gt;
+    &lt;form-login-config&gt;
+        &lt;form-login-page&gt;/login.jsp&lt;/form-login-page&gt;
+        &lt;form-error-page&gt;/fail_login.html&lt;/form-error-page&gt;
+    &lt;/form-login-config&gt;
+&lt;/login-config&gt;</pre>
+<br/>
+最后是对 <em>web.xml </em>的一个附加配置步骤: 应用需要被知会我们要用到哪些角色.<br/><br/>
+<pre class="lang:default decode:true ">&lt;!-- Security roles referenced by this web application --&gt;
+&lt;security-role&gt;
+    &lt;role-name&gt;Test Users&lt;/role-name&gt;
+&lt;/security-role&gt;
+&lt;security-role&gt;
+    &lt;role-name&gt;Special Users&lt;/role-name&gt;
+&lt;/security-role&gt;
+&lt;security-role&gt;
+    &lt;role-name&gt;Admin Users&lt;/role-name&gt;
+&lt;/security-role&gt;</pre>
+<br/>
+现在 Tomcat 已被配置为使用 OpenLDAP 并且我们的应用也对 <em>web.xml</em> 文件进行了正确的设置. 当用户首次被导航到 <code>&lt;security-constraint&gt;</code> 中列出的任何资源时 (只要不是公开的资源) , 服务器会自动显示 <em>login.jsp</em> 页面要求用户验证. 假如用户验证失败, 将会显示在 <code>&lt;form-error-page&gt;</code> 中指定的页面. 要是验证用户是通过了, 但是<strong>未授权</strong>访问某个资源 (比如, 不是某个角色的成员), 服务器会返回一个 <code>403</code> 错误页. 想要的话, 错误页可以在 <em>web.xml</em> 文件中定制, 使用 <code>&lt;error-code&gt;</code> 元素.<br/><br/>
+注, <em>web.xml</em> 中的元素有一个特定的顺序 (定义在 DTD 文件中), 所以你应该看看例子代码 (在后面 <a href="#resources">资源</a> 一节) 中完整的 <em>web.xml </em>文件. 尤其是 <code>&lt;login-config&gt;</code> 和 <code>&lt;security-role&gt;</code> 中的元素顺序.<br/><br/>
+现在用户可以登陆了, 但是该如何登出呢? 可以写代码来让用户的会话失效, 或者我们可以使用 Apache Jakarta 项目提供的便利的会话标签库.<br/><br/>
+<h2 id="jakarta_taglibs">Jakarta 相应标签库</h2><br/><br/>
+通过加入 <em>logout.jsp</em> 到应用中并使用 Apache Jakarta Project 的会话标签库 , 我们能在不写任何定制代码情况下就失效掉的用户 (在实际的应用中, 你也许还需为清除一个用户会话做更多一些事情, 你也可能不怎么满意这么做).<br/><br/>
+<pre class="lang:default decode:true ">&lt;body&gt;
+    &lt;sess:invalidate/&gt;
+    You are now logged out&lt;br&gt;
+    &lt;a href="index.jsp"&gt;Return to index&lt;/a&gt;
+&lt;/body&gt;</pre>
+<br/>
+一旦包含用 <code>&lt;sess:invalidate/&gt;</code> 标签的 JSP 页面显示之后, 用户会话便被移除, 该用户被有效的注销掉了. 简单的放置一个链接指向 <em>logout.jsp</em> 页面, 就能让用户导航该页, 这足以应付简单的应用. 另, 除会话标签库外, 我们还能利用 request 标签库来定制化基于用户和角色 JSP 页面的内容.<br/><br/>
+<pre class="lang:default decode:true">&lt;req:isUserInRole role="Admin Users"&gt;
+    The remote user is in role "Admin Users".&lt;br /&gt;
+&lt;/req:isUserInRole&gt;</pre>
+<br/>
+前述的 JSP 片断只有在当前用户在请求的角色中时才显示内容. 要验证角色安全性的行为, 可以用 JXplorer 快速的从角色中添加和移除用户.<br/><br/>
+<h2 id="conclusion">小结</h2><br/><br/>
+对于开发人员来说, 非常值的在本地工作站安装一个 LDAP 目录服务器. 可能不再是为了让网络管理员来访问它, 而可以为自己创建测试帐户. 所有的这些任务可以在很短的时间内搞定, 而不是几天或者几星期. 那不是说 LDAP 就很简单. 非也; LDAP 是一个很强大且复杂的系统. 但是只要对它有了一些实际的了解及用上正确的工具, 搭建起来还是相当简单的.<br/><br/>
+感谢两个跨平台的 Tomcat 和 OpenLDAP, 持续构建服务器, CruiseControl, Anthill 等等, 它们都能在生产系统中保持完全的独立性. 这种解耦形式对它们都很有利.<br/><br/>
+值得注意的是实际上所有 LDAP 服务器是不能对换的. 例如, OpenLDAP 不支持 <code>memberOf</code> 属性对角色成员的检查, 这有时修也让人很扫兴的. 在 Tomcat 中针对 OpenLDAP 配置的 realm 在改变了目录服务器和相应值时未必能正常工作. 这或许是使用 LDAP 时唯一也是最大的挑战, 但是只要使用 <code>ldapsearch</code> 你就能最终指出需要哪些值.<br/><br/>
+<h2 id="resources">资源</h2><br/><br/>
+<ul>
+    <li>本文的<a href="http://today.java.net/today/2005/05/31/tomcat_openldap_app.zip">例子代码</a></li>
+    <li><a href="http://download.bergmans.us/openldap/openldap-2.2.19/openldap-2.2.19-db-4.2.52-openssl-0.9.7e-win32.exe">OpenLDAP w32 二进制版本</a></li>
+    <li><a href="http://sourceforge.net/projects/jxplorer/">JXplorer</a></li>
+    <li><a href="http://jakarta.apache.org/taglibs/">Jakarta Taglib 主页</a></li>
+    <li><a href="http://jakarta.apache.org/tomcat/tomcat-4.1-doc/realm-howto.html">Jakarta Tomcat 4 Realms</a></li>
+    <li><a href="http://java.sun.com/products/servlet/download.html">Sun Servlet 规范主页</a></li>
+</ul><br/><br/>
+<em><a href="http://today.java.net/pub/au/321">Darren Duke</a> 是在他自已创建的总部位于乔治亚州亚特兰大的 <a href="http://www.simplified-tech.com/">Simplified Technology Solutions, Inc</a> 公司 (简单化科技解决方案公司) 的软件开发顾问领导 .</em><br/><br/>
+[译者 Unmi 后注] 因公司的生产系统是基于 LDAP 实现的 SSO 验证，而平时开发不可能抱一个笨重的商业应用服务器。开发主要还是基于 Tomcat 来进行的，所以每次部署都得重新改一下配置文件以适应生产环境。于是乎就想能不能用 Tomcat 也连接 LDAP 来进行相仿的验证，网上找了些资料，也参考过 Tomcat 的配置文档，但都没有一个完整的流程。唯独这篇文章我最喜欢，欣喜间不忘把它翻译过来以饷诸位战斗在同一战线的同仁 (忙乱中拣些闲暇，历经数日方成)；其实，自私、坦白讲是为了锻炼一下自己的英文阅读能力，也难免不明之处欠些琢磨更要紧是水平的不到位，见谅并希望能得到无情的指摘。同时 Unmi 也对例子有所实践，并非平白引进；还有就是注意到文中用的是 Form 的验证方式，读者可自己试验 Basic 的验证方式，更多的属性配置就该参考 Tomcat 关于 Realm 的配置文档了。

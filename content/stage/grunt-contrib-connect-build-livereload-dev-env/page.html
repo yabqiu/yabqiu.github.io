@@ -1,0 +1,112 @@
+---
+title: 用 grunt-contrib-connect 构建实时预览开发环境
+url: /grunt-contrib-connect-build-livereload-dev-env/
+date: 2014-04-30T02:16:07-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2014/04/grunt-logo.png"
+categories:
+  - NodeJS
+tags: 
+  - Grunt
+  - connect
+  - NodeJS
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6428 
+wpStatus: publish
+views: 3965
+lastmod: 2021-09-03T18:15:55-05:00
+---
+
+本文基本是参照着 <a href="http://nya.io/Node.js/grunt-livereload-for-realtime-preview/" target="_blank" rel="noopener">用Grunt与livereload构建实时预览的开发环境</a> 实操了一遍，直接实现能实时预览文件列表，内容页面。不用刷新页面了，这比以前开发网页程序都简单。</p>
+<br/>
+这里要用到的 Grunt 插件有<br/><br/>
+<a href="https://github.com/gruntjs/grunt-contrib-connect" target="_blank" rel="noopener">grunt-contrib-connect</a>, 用来充当一个静态文件服务器，本身集成了 livereload 功能<br />
+<a href="https://github.com/gruntjs/grunt-contrib-watch" target="_blank" rel="noopener">grunt-contrib-watch</a>, 监视文件的改变，然后执行指定任务，这里用来刷新 <code>grunt serve</code> 打开的页面<br/><br/>
+以下是个辅助的插件<br/><br/>
+<a href="https://github.com/sindresorhus/load-grunt-tasks" target="_blank" rel="noopener">load-grunt-tasks</a>, 省事的插件，有了这个可以不用写一堆的 <code>grunt.loadNpmTasks('xxx')</code>，再多的任务只需要写一个 <code>require('load-grunt-tasks')(grunt)</code>。<br/><br/>
+参考的文档中提到了 <a href="https://www.npmjs.org/package/time-grunt" target="_blank" rel="noopener">time-grunt</a> 插件，可用来显示每一个任务所花的时间和百分比，由于此示例中基本就 watch 任务占了百分百的时间。<br/><br/>
+下面是 Grunt 项目的两个基本的文件<!--more--><br/><br/>
+<span style="color: #0000ff; font-size: 12pt;"><strong>1. package.json</strong></span><br/><br/>
+<pre class="lang:default decode:true">{
+    "name": "test_connect",
+    "version": "0.0.1",
+    "devDependencies": {
+        "grunt-contrib-connect": "~0.6.0",
+        "grunt-contrib-watch": "~0.5.3",
+        "load-grunt-tasks": "~0.3.0"
+    }
+}</pre>
+<br/>
+运行 <code>npm install</code> 下载安装上面的依赖<br/><br/>
+<span style="font-size: 12pt; color: #0000ff; background-color: #ffffff;"><strong>2. Gruntfile.js</strong></span><br/><br/>
+<pre class="lang:default decode:true">module.exports = function(grunt){<br/><br/>
+    require('load-grunt-tasks')(grunt); //加载所有的任务
+    //require('time-grunt')(grunt); 如果要使用 time-grunt 插件<br/><br/>
+    grunt.initConfig({
+        connect: {
+            options: {
+                port: 9000,
+                hostname: '*', //默认就是这个值，可配置为本机某个 IP，localhost 或域名
+                livereload: 35729  //声明给 watch 监听的端口
+            },<br/><br/>
+            server: {
+                options: {
+                    open: true, //自动打开网页 http://
+                    base: [
+                        'app'  //主目录
+                    ]
+                }
+            }
+        },<br/><br/>
+        watch: {
+            livereload: {
+                options: {
+                    livereload: '&lt;%=connect.options.livereload%&gt;'  //监听前面声明的端口  35729
+                },<br/><br/>
+                files: [  //下面文件的改变就会实时刷新网页
+                    'app/*.html',
+                    'app/style/{,*/}*.css',
+                    'app/scripts/{,*/}*.js',
+                    'app/images/{,*/}*.{png,jpg}'
+                ]
+            }
+        }
+    });<br/><br/>
+    grunt.registerTask('serve', [
+        'connect:server',
+        'watch'
+    ]);
+}</pre>
+<br/>
+现在我们配置好了一个静态文件 Web 服务器，运行命令<br/><br/>
+<blockquote>
+grunt serve
+</blockquote>
+<br/>
+会自动打开浏览器访问 http://0.0.0.0:9000, 然后有个 watch 一直在监听文件的改变。如果 app 目录下有 index.html 则浏览该文件，没有索引文件就显示文件目录列表。<br/><br/>
+这是一个响应式设计的页面<br/><br/>
+<img class="aligncenter size-large wp-image-6430" src="/wp-content/uploads/2014/04/grunt-connect-1-800x281.png" alt="grunt-connect-1" width="800" height="281" /><br/><br/>
+缩写浏览器宽度<br/><br/>
+<img class="aligncenter wp-image-6431" src="/wp-content/uploads/2014/04/grunt-connect-2.png" alt="grunt-connect-2" width="400" height="519" /><br/><br/>
+这时候在 app 目录中增，删相关类型的文件都会实时反映在上面的 http://0.0.0.0:9000 页面上，也就是文件列表可以实时刷新。<br/><br/>
+现在我们想要更极致的实时页面内容的预览，我们打开上面的某个页面，如 http://0.0.0.0:9000/test.html，然而我们来编辑 test.html 文件内容，来观察页面是不是能实时预览。<br/><br/>
+你也有可能在页面上看到实时的修改，因为页面中没有 body 标签，<span style="color: #ff0000;">为能实时预览页面中需要有 body 标签</span>，因为 livereload 会在 body 中加上通信的代码：<br/><br/>
+<blockquote>
+&lt;script type="text/javascript"&gt;document.write('&lt;script src="' + (location.protocol || 'http:') + '//' + (location.hostname || 'localhost') + ':35729/livereload.js?snipver=1" type="text/javascript"&gt;&lt;\/script&gt;')&lt;/script&gt;
+</blockquote>
+<br/>
+如果有谁不加 body 标签也想能实时预览的话可以采用这里 <a href="https://github.com/gruntjs/grunt-contrib-watch#live-reloading" target="_blank" rel="noopener">https://github.com/gruntjs/grunt-contrib-watch#live-reloading</a> 说的两种办法：<br/><br/>
+1. 手动在需要实时预览的页面里加上<br/><br/>
+<pre class="lang:default decode:true">&lt;script src="http://localhost:35729/livereload.js"&gt;&lt;/script&gt;</pre>
+<br/>
+注意相应的主机和端口号<br/><br/>
+2. 安装浏览器扩展，包括 Safari, Chrome 和 Firefox 的，点击链接  <a href="http://feedback.livereload.com/knowledgebase/articles/86242-how-do-i-install-and-use-the-browser-extensions-" target="_blank" rel="noopener">How do I install and use the browser extensions?</a> 安装。这样就不用在页面上引入上面的脚本。<br/><br/>
+现在看实时的预览效果<br/><br/>
+<img class="aligncenter size-full wp-image-6434" src="/wp-content/uploads/2014/04/grunt-connect-livereload.gif" alt="grunt-connect-livereload" width="682" height="326" /><br/><br/>
+grunt-connect 还可以和 <a href="https://github.com/drewzboto/grunt-connect-proxy" target="_blank" rel="noopener">grunt-connect-proxy</a> 结合来制作本地代理访问其他域名的 api 而不用处理跨域问题，有空再体验下 grunt-connect-proxy。

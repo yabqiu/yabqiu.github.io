@@ -1,0 +1,207 @@
+---
+title: 把 Lucene 索引数据存到数据库表中
+url: /store-lucene-index-in-database/
+date: 2010-10-19T08:27:49-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Lucene
+  - index
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2802 
+wpStatus: publish
+views: 2318
+lastmod: 2010-10-19T08:39:58-05:00
+---
+
+一般我们都是把 Lucene 索引存放在文件系统中，大数据量时会考虑用分布式文件系统，如 Hadoop 及 MapReduce、GFS 的应用。也许你会想我们有数据库作为集中的数据存储地，是否可以把 Lucene 索引文件存储到关系型数据库中。可以这么做，不过好像性能上有些问题，本文就此也作这样一个尝试。<br/>
+<br/>
+看 <a href="http://wiki.apache.org/lucene-java/LuceneFAQ">http://wiki.apache.org/lucene-java/LuceneFAQ</a><br/>
+Can I store the Lucene index in a relational database?<br/>
+Lucene does not support that functionality out of the box, but several people have implemented <a href="http://www.google.com/search?q=jdbcdirectory%20lucene'" target="_blank">JdbcDirectory's</a>. The reports we have seen so far indicate that performance with such implementations is not great, but it is doable.<!--more--><br/>
+<br/>
+Lucene 里内置了 FSDirectory、MMapDirectory、RAMDirectory 这样的与索引存储相关的实现。如果要存储到数据库中，必须实现一个 DbDirectory,对于 Java 也就是 JdbcDirectory。但事情远没有这么简单，还需要一堆的类来为 JdbcDirectory 服务，如锁机制、缓存机制、内存镜像、不同数据库讲的方言也不一样。<br/>
+<br/>
+幸好 Compass 实现了把索引存储到数据库的功能，我们可以借用它的代码。先到 <a href="http://www.compass-project.org/">http://www.compass-project.org/</a> 下载最新版的  <a href="'http://downloads.sourceforge.net/project/compass/compass/2.2.0/compass-2.2.0-with-dependencies.zip?r=http%3A%2F%2Fsourceforge.net%2Fprojects%2Fcompass%2Ffiles%2Fcompass%2F2.2.0%2F&amp;ts=1287491873&amp;use_mirror=nchc" target="_blank">compass-2.2.0-with-dependencies.zip</a>，当前是 2.2.0，所使用的 Lucene 是 2.4.1，有点老了。<br/>
+<br/>
+所以我们也用 Lucene 2.4.1，用最新的 3.0.2 会有些问题，另外也依赖了compass 的 compass-2.2.0.jar 包。再就是直接使用 compass 为我们写好的 JdbcDirectory 和一批外缘类，需要把 compass-2.2.0-with-dependencies.zip\compass-2.2.0\src\main\src\org\apache\lucene 目录里的类引进到我们的工程中。<br/>
+<br/>
+现在就可以开始来写我们的代码了，要演示的例子是索引存储到 MySql 数据库表中，并基于该表里的索引数据进行查询。还有数据库和表要我们自己预先创建好，比如数据库是 unmi_db，索引表是 lucene_index，创建表的 SQL 如下：<br/>
+<pre class="brush:sql">CREATE TABLE `lucene_index` (<br/>
+  `Id` int(11) NOT NULL AUTO_INCREMENT,<br/>
+  `name_` varchar(50) DEFAULT NULL,<br/>
+  `value_` blob,<br/>
+  `size_` decimal(10,2) DEFAULT NULL,<br/>
+  `lf_` timestamp NULL DEFAULT NULL,<br/>
+  `deleted_` bit(1) DEFAULT NULL,<br/>
+  PRIMARY KEY (`Id`)<br/>
+)</pre>
+
+请参考这个：<a href="http://static.compassframework.org/docs/latest/jdbcdirectory.html" target="_blank">Appendix A. Lucene Jdbc Directory</a><br/>
+<br/>
+看 Java 代码了：<br/>
+<pre class="brush:java">package cc.unmi.lucene;<br/>
+<br/>
+import java.io.IOException;<br/>
+import java.sql.Connection;<br/>
+<br/>
+import javax.sql.DataSource;<br/>
+<br/>
+import org.apache.lucene.analysis.standard.StandardAnalyzer;<br/>
+import org.apache.lucene.document.*;<br/>
+import org.apache.lucene.index.IndexWriter;<br/>
+import org.apache.lucene.queryParser.QueryParser;<br/>
+import org.apache.lucene.search.*;<br/>
+import org.apache.lucene.store.jdbc.*;<br/>
+import org.apache.lucene.store.jdbc.datasource.*;<br/>
+import org.apache.lucene.store.jdbc.dialect.MySQLDialect;<br/>
+import org.apache.lucene.store.jdbc.lock.NoOpLock;<br/>
+<br/>
+public class TestJdbcDirectory {<br/>
+<br/>
+    private static DataSource ds = null;<br/>
+<br/>
+    static {<br/>
+        ds = new DriverManagerDataSource("com.mysql.jdbc.Driver",<br/>
+                "jdbc:mysql://localhost:3306/unmi_db", "root", "", false);<br/>
+    }<br/>
+<br/>
+    /**<br/>
+     * @param args<br/>
+     * @throws Exception<br/>
+     */<br/>
+    public static void main(String[] args) {<br/>
+        index();<br/>
+        search();<br/>
+    }<br/>
+<br/>
+    private static void index() {<br/>
+<br/>
+        JdbcDirectorySettings settings = new JdbcDirectorySettings();<br/>
+<br/>
+        settings.setLockClass(NoOpLock.class);<br/>
+        JdbcDirectory jdbcDir = new JdbcDirectory(ds, new MySQLDialect(),<br/>
+                 "lucene_index");<br/>
+<br/>
+        Connection conn = null;<br/>
+        try {<br/>
+            conn = DataSourceUtils.getConnection(ds);<br/>
+<br/>
+            IndexWriter writer = new IndexWriter(jdbcDir, new StandardAnalyzer(), true);<br/>
+<br/>
+            Document doc = new Document();<br/>
+<br/>
+            Field field1 = new Field("url", "<a href="http://unmi.cc">http://unmi.cc</a>", Field.Store.YES,<br/>
+                    Field.Index.NOT_ANALYZED);<br/>
+            Field field2 = new Field("title", "隔叶黄莺 Unmi Blog - 软件编程实践",<br/>
+                    Field.Store.YES, Field.Index.ANALYZED);<br/>
+            doc.add(field1);<br/>
+            doc.add(field2);<br/>
+<br/>
+            writer.addDocument(doc);<br/>
+<br/>
+            writer.optimize();<br/>
+<br/>
+            writer.close();<br/>
+<br/>
+            DataSourceUtils.commitConnectionIfPossible(conn);<br/>
+        } catch (IOException e) {<br/>
+            DataSourceUtils.safeRollbackConnectionIfPossible(conn);<br/>
+            e.printStackTrace();<br/>
+        } finally {<br/>
+            DataSourceUtils.releaseConnection(conn);<br/>
+        }<br/>
+    }<br/>
+<br/>
+    private static void search() {<br/>
+<br/>
+        JdbcDirectorySettings settings = new JdbcDirectorySettings();<br/>
+        settings.setLockClass(NoOpLock.class);<br/>
+<br/>
+        JdbcDirectory jdbcDir = new JdbcDirectory(ds, new MySQLDialect(),<br/>
+                settings, "lucene_index");<br/>
+<br/>
+        Connection conn = null;<br/>
+        try {<br/>
+            conn = DataSourceUtils.getConnection(ds);<br/>
+            Searcher searcher = new IndexSearcher(jdbcDir);<br/>
+<br/>
+            QueryParser parser = new QueryParser("title",new StandardAnalyzer());<br/>
+<br/>
+            TopDocs topDocs = searcher.search(parser.parse("unmi blog"),20);   <br/>
+<br/>
+            // Get an array of references to matched documents<br/>
+            ScoreDoc[] scoreDosArray = topDocs.scoreDocs;   <br/>
+               for(ScoreDoc scoredoc: scoreDosArray){<br/>
+                  //Retrieve the matched document and show relevant details<br/>
+                  Document doc = searcher.doc(scoredoc.doc);<br/>
+                  System.out.println(doc.get("url") + "; Score: " + scoredoc.score<br/>
+                            +"\r\n"+doc.get("title"));<br/>
+               }<br/>
+<br/>
+        }catch(Exception ex){<br/>
+            ex.printStackTrace();<br/>
+        }<br/>
+        finally {<br/>
+            DataSourceUtils.releaseConnection(conn);<br/>
+        }<br/>
+    }<br/>
+}</pre>
+
+执行结果可以看到：<br/>
+<br/>
+<a href="http://unmi.cc">http://unmi.cc</a>; Score: 0.10848885<br/>
+隔叶黄莺 Unmi Blog - 软件编程实践<br/>
+<br/>
+来看下数据库表里是什么样子，两次执行了上面程序的结果：<br/>
+<p style="text-align: center;"><img class="aligncenter" src="http://unmi.cc/wp-content/uploads/2010/10/lucene_indexdb.jpg" alt="Lucene Index Database" width="547" height="517" /></p>
+
+红色的框里是第一次执行时产生的记录，蓝色框里的是第二次执行时产生的记录。<br/>
+<br/>
+看到每次创建索引都会生成一批记录，一直累加，但是前面的记录是无法使用的。但是找不到办法来清除，即使创建 IndexWriter 是指定 create 为 true 也没用，删除策略指定只保留最后的也没用。如果是用文件系统来保存索引，只要 IndexWriter 的 create 为 true 就只会在索引目录中保存最新的文件。每次创建的时候 delete lucene_index 清理索引表是最不用思考的。<br/>
+<br/>
+还有一个严重的 Bug 就是 org.apache.lucene.store.jdbc.dialect.MySQLDialect 类中<br/>
+<pre class="brush:java">    /**<br/>
+     * MySQL requires quoting the blob column with connector J 3.1 when using emulateLocators=true.<br/>
+     */<br/>
+    public String openBlobSelectQuote() {<br/>
+        return "'";<br/>
+    }<br/>
+<br/>
+    public String closeBlobSelectQuote() {<br/>
+        return "'";<br/>
+    }</pre>
+
+改为反向的单引号，<br/>
+<pre class="brush:java">    public String openBlobSelectQuote() {<br/>
+        return "`";<br/>
+    }<br/>
+<br/>
+    public String closeBlobSelectQuote() {<br/>
+        return "`";<br/>
+    }</pre>
+
+不然你可能会碰到这样的错误：<br/>
+<br/>
+<span style="color: red;">org.apache.lucene.store.jdbc.JdbcStoreException: Failed to execute sql [select name_, 'value_' as x, size_ from lucene_index where name_ = ?]; nested exception is java.sql.SQLException: "pos" + "length" arguments can not be larger than the BLOB's length.<br/>
+java.sql.SQLException: "pos" + "length" arguments can not be larger than the BLOB's length.<br/>
+ at com.mysql.jdbc.SQLError.createSQLException(SQLError.java:1075)</span><br/>
+<br/>
+也许是要用 connector J 3.1 的驱动，不过我现在用的是 mysql-connector-java-5.1.13 的驱动。<br/>
+<br/>
+还有就是 JdbcDirectory 是使用锁的时候有些麻烦事，我前面的代码用:<br/>
+<br/>
+settings.setLockClass(NoOpLock.class);<br/>
+<br/>
+禁用了锁，默认是用 PhantomReadLock 锁，请谨慎行事。要是碰到像更多的诸如此类：<br/>
+<br/>
+<span style="font-family: mceinline;">------"org.apache.lucene.store.LockObtainFailedException: Lock obtain timed out: PhantomReadLock[write.lock/lucene_index]"------------</span><br/>
+<br/>
+的错误后，希望你一直还有勇气四处找寻解决办法，在 compass 的世界里好像也为 JdbcDirectory 惹来了不少的疑问。的确 JdbcDirectory 为我们解决了集群环境的索引安置问题，但引来了新的问题，我想我还是回到老路上去，即使集群环境中搞一边一国也容易些，放共享目录好了。

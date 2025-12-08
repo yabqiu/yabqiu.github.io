@@ -1,0 +1,125 @@
+---
+title: Java 运行时如何获取泛型参数的类型
+url: /java-how-to-get-generic-type/
+date: 2017-02-05T00:57:12-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - generic
+  - 泛型
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7813 
+wpStatus: publish
+views: 2976
+lastmod: 2021-06-22T15:25:31-05:00
+---
+
+在 Java 中对于下面最简单的泛型类<br/><br/>
+<blockquote>
+class A&lt;T&gt; {<br />
+    public void foo() {<br />
+        //如何在此处获得运行时 T 的具体类型呢？<br />
+    }<br />
+}
+</blockquote>
+<br/>
+设想我们使用时<br/><br/>
+<blockquote>
+new A&lt;String&gt;().foo();
+</blockquote>
+<br/>
+是否能在 <code>foo()</code> 方法中获得当前的类型是 String 呢？答案是否定的，不能。在 <code>foo()</code> 方法中 this 引用给不出类型信息，<code>this.getClass()</code> 就更不可能了，因为 Java 的泛型不等同于 C++ 的模板类，<code>this.getClass()</code> 实例例是被所有的不同具体类型的 A 实例(new A&lt;String&gt;(), new A&lt;Integer&gt;() 等) 共享的，所以在字节码中类型会被擦除到上限。<br/><br/>
+我们可以在 IDE 的调试时看到这个泛型类的签名<br/><br/>
+<img class="aligncenter size-full wp-image-7814" src="/wp-content/uploads/2017/02/generic_signature-1.png" alt="" width="399" height="133" /><!--more--><br/><br/>
+或者用 <code>javap -v cc.unmi.A</code> 可以查看到类 A 的泛型签名<br/><br/>
+<blockquote>
+Signature: #17                          // &lt;T:Ljava/lang/Object;&gt;Ljava/lang/Object;
+</blockquote>
+<br/>
+为什么说是擦除到上限呢？并不是泛型在字节码中都表示为 <code>Object</code>, 看下面的例子，假如 <code>A</code> 声明如下<br/><br/>
+<blockquote>
+class A&lt;T extends Number&gt; {<br />
+}
+</blockquote>
+<br/>
+再用 <code>javap -v cc.unmi.A</code> 来看泛型签名<br/><br/>
+<blockquote>
+Signature: #18                          // &lt;T:Ljava/lang/Number;&gt;Ljava/lang/Object;
+</blockquote>
+<br/>
+也就是说在上面的 <code>foo()</code> 方法中无法获得当前的类型，我们必须给它加个参数 T<br/><br/>
+<blockquote>
+public void foo(T t) {<br />
+    t.getClass();<br />
+}
+</blockquote>
+<br/>
+了解了 Java 泛型机制是如何擦除类型的，我们接下来的问题就是如何通过反射获得泛型签名中的类型，一般会在继承或实现泛型接口时会用到它。<br/><br/>
+<h3>继承一个泛型基类</h3><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+class A&lt;T, ID&gt; {
+}<br/><br/>
+class B extends A&lt;String, Integer&gt; {
+}<br/><br/>
+public class Generic {<br/><br/>
+    public static void main(String[] args) {
+        System.out.println(B.class.getGenericSuperclass());
+    }
+}</pre>
+<br/>
+上面的代码输出是<br/><br/>
+<blockquote>
+cc.unmi.A&lt;java.lang.String, java.lang.Integer&gt;
+</blockquote>
+<br/>
+所以要获得这两个类型是可行的，设置了断点<br/><br/>
+<img class="aligncenter wp-image-7815 size-full" src="/wp-content/uploads/2017/02/java-generic-get-types.png" width="680" height="400" /><br/><br/>
+这张图可以看到 <code>B.class.getGenericSuperclass()</code> 得到的实际类型是 <code>ParameterizedTypeImpl</code>  通过它就可以获得 <code>actualTypeArguments</code> 了。代码就是<br/><br/>
+<pre class="lang:default decode:true ">ParameterizedType parameterizedType = (ParameterizedType) B.class.getGenericSuperclass();
+Type[] actualTypeArguments = parameterizedType.getActualTypeArguments();
+for(Type actualTypeArgument: actualTypeArguments) {
+    System.out.println(actualTypeArgument);
+}</pre>
+<br/>
+上面的代码输出<br/><br/>
+<blockquote>
+class java.lang.String<br />
+class java.lang.Integer
+</blockquote>
+<br/>
+我们不妨用 <code>javap -v cc.unmi.B</code> 的泛型签名<br/><br/>
+<blockquote>
+Signature: #12                          // Lcc/unmi/A&lt;Ljava/lang/String;Ljava/lang/Integer;&gt;;
+</blockquote>
+<br/>
+<h3>实现一个泛型接口</h3><br/><br/>
+这时与继承一个泛型基类的情况略有不同，如下关系，A 是一个泛型接口<br/><br/>
+<pre class="lang:default decode:true">interface A&lt;T, ID&gt; {
+}<br/><br/>
+class B implements A&lt;String, Integer&gt; {
+}</pre>
+<br/>
+该如何反射获得 B 的参数类型呢，用上面的方法已不可行，<code>B.class.getGenericSuperclass()</code> 已不是一个 <code>ParameterizedTypeImpl</code> 而是一个 Object 类型。现在需要另一个方法 <code>getGenericInterfaces(): Type[]</code>  它得到一个 <code>Type</code>  数组，代表类实现的多个接口，因为我们这儿只实现了一个接口，所以取第一个元素，它的类型是我们已见过的 <code>ParameterizedTypeImpl</code>,<br/><br/>
+<img class="aligncenter size-full wp-image-7816" src="/wp-content/uploads/2017/02/java-generic-get-interface-types.png" alt="" width="744" height="396" /><br/><br/>
+因此我们用来获得实现接口而来的泛型参数的代码就是<br/><br/>
+<pre class="brush:java">ParameterizedType parameterizedType = (ParameterizedType) B.class.getGenericInterfaces()[0];
+Type[] actualTypeArguments = parameterizedType.getActualTypeArguments();
+for (Type actualTypeArgument : actualTypeArguments) {
+    System.out.println(actualTypeArgument);
+}</pre>
+<br/>
+同样能得到上面的一样的结果。<br/><br/>
+<h3>总结一下</h3><br/><br/>
+<ol>
+    <li>如果是继承基类而来的泛型，就用 <code>getGenericSuperclass()</code>, 转型为 <code>ParameterizedType</code> 来获得实际类型</li>
+    <li>如果是实现接口而来的泛型，就用 <code>getGenericInterfaces()</code>, 针对其中的元素转型为 <code>ParameterizedType</code> 来获得实际类型</li>
+    <li>我们所说的 Java 泛型在字节码中会被擦除，并不总是擦除为 <code>Object</code> 类型，而是擦除到上限类型</li>
+    <li>能否获得想要的类型可以在 IDE 中，或用 <code>javap -v &lt;your_class&gt;</code>  来查看泛型签名来找到线索</li>
+</ol>

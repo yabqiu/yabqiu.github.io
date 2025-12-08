@@ -1,0 +1,78 @@
+---
+title: Unmi 学习 Groovy 之 Groovlet
+url: /unmi-study-groovy-groovlet/
+date: 2008-10-03T01:47:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Groovy
+tags: 
+  - Groovy
+  - groovlet
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 323 
+wpStatus: publish
+views: 395
+lastmod: 2021-09-02T14:14:03-05:00
+---
+
+在 Java 领域中我们结识过多个 XXXlet 的东西，比如 Applet、Servlet、Scriptlet，这里的 let 作为一个后缀，代表小的意思，或者引申为简短、精巧。</p>
+<br/>
+Applet  ---- Application let 小应用程序<br />
+Servlet  ---- Service let 小服务程序<br />
+Scriptlet ---- Script let  一小段脚本，在 jsp 中用这样的标签 &lt;jsp:scriptlet&gt;<br/><br/>
+另外还有一种叫做 text/x-scriptlet 的 MIME 类型。<br/><br/>
+而本篇所要介绍的角色也用了 let 后缀，叫做 Groovlet，不能简单识作为 Groovy let ---- 小 Groovy 程序。不尽对，确切来说它是 GroovyServlet、进一步 Groovy Service let 的简称，没错，它实质上也是一个 Servlet，也就是 Servlet 的扩展。简单讲就是用 Groovy 脚本替代 Java 语言来写 Servlet 程序，再明白点讲就是：比如我们在浏览器中用 <a href="http://localhost:8080/groovlet/hello.groovy">http://localhost:8080/groovlet/hello.groovy</a> 访问某个脚本就像访问某个 php/perl 一样的效果。<!--more--><br/><br/>
+概念应该清楚了，那我们如何做才能使你的 Groovy 脚本成为一个小服务程序呢？详细步骤如下：<br/><br/>
+<strong>一. 让 Servlet 容器认识你的 Groovy 脚本</strong><br/><br/>
+正如 URL 中出现的 .jsp/*do 分别会交给 org.apache.jasper.servlet.JspServlet(tomcat 中) 和 org.apache.struts.action.Action 来处理，同理我们也需要容器在碰到 *.groovy(同样你也可以用其他后缀) 时也能派出一个 Servlet 来处理这种请求，这个 Servlet 就是 groovy.servlet.GroovyServlet，所以参照 Struts 1 对 *.do 的配置，我们的 web.xml 内容如下：<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;web-app version="2.4" xmlns="http://java.sun.com/xml/ns/j2ee"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee   http://java.sun.com/xml/ns/j2ee/web-app_2_4.xsd"&gt;
+    &lt;servlet&gt;
+        &lt;servlet-name&gt;GroovyServlet&lt;/servlet-name&gt;
+        &lt;servlet-class&gt;groovy.servlet.GroovyServlet&lt;/servlet-class&gt;
+    &lt;/servlet&gt;
+    &lt;servlet-mapping&gt;
+        &lt;servlet-name&gt;GroovyServlet&lt;/servlet-name&gt;
+        &lt;url-pattern&gt;*.groovy&lt;/url-pattern&gt;
+    &lt;/servlet-mapping&gt;
+&lt;/web-app&gt;</pre>
+<br/>
+留意一下 GroovyServlet 的父类 groovy.servlet.AbstractHttpServlet，可知有哪些属性可以在此进行配置，例如 encoding，默认为 UTF-8，等等。参考  groovy.servlet.GroovyServlet 和  groovy.servlet.AbstractHttpServlet 的 API Doc：<br/><br/>
+GroovyServlet API:           <a href="http://groovy.codehaus.org/api/groovy/servlet/GroovyServlet.html">http://groovy.codehaus.org/api/groovy/servlet/GroovyServlet.html</a><br />
+AbstractHttpServlet API:   <a href="http://groovy.codehaus.org/api/groovy/servlet/AbstractHttpServlet.html">http://groovy.codehaus.org/api/groovy/servlet/AbstractHttpServlet.html</a><br/><br/>
+从中，我们也发现还有一个 AbstractHttpServlet 的姊妹 groovy.servlet.TemplateServlet，它可以大简简 Groovy Server Page 的编写，后话。<br/><br/>
+<strong>二. 引入需要的 jar 包<br />
+</strong><br />
+以 groovy 1.5.6 为例，只需把 groovy-1.5.6/lib 目录下的 groovy-1.5.6.jar、asm-2.2.jar 和 antlr-2.7.6.jar 三个文件拷到 WEB-INF/lib 目录中即可。如果你觉得放多个包麻烦，且日后需要又得从中拣某个 jar  包的话，你可以直接把 groovy-1.5.6/embeddable/groovy-all-1.5.6.jar 放到 WEB-INF/lib 下，这个 groovy-all-1.5.6.jar 可是一应俱全。<br/><br/>
+借此说明一下，有如 jsp 文件一样，GroovyServlet 在第一次碰到某一个 Groovy 脚本，或其有改动时，会对其进行编译，生成字节码缓存起来，以后将直接从缓存中加载字节码。不过，与 jsp 不同之处是，GroovyServlet 并没把 groovy 脚本相应字节码缓存成文件，而是是内存当中的。<br/><br/>
+<strong>三. 编写 Groovy 脚本页面</strong><br/><br/>
+就像其他的 Servlet 扩展(如 jsp)一样，Groovlet 也把几个重要的 Servlet 变量内置到了 Groovlet 脚本之中，直接从 《Groovy in Action 2007.1》 中截个屏贴了过来：<br/><br/>
+<div><img src="/wp-content/uploads/2008/10/GroovletVars.JPG" alt="GroovletVars.JPG" width="852" height="513" border="0" /></div>
+<br/>
+说明：所谓的 Lazy init，就是变量存在，直接第一次使用前它都是 null。<br />
+ <br />
+在 Web 应用的根目录下创建文件 hello.groovy，内空如下：<br/><br/>
+<pre class="lang:default decode:true">out&lt;&lt;"""
+Hello 来自 ${request.remoteHost} 的朋友，今天是 ${new Date()}
+"""</pre>
+<br/>
+其他内置怎么使用，如何获取请求参数等等用法，以及 HTML 代码的修饰，都不在这里的话下。总之这个就是一个 groovy 脚本，再加上那么多的内置变量可用。<br/><br/>
+从 groovy.servlet.AbstractHttpServlet 的源代码可以看出，如果 Grvoovlet 依据 URL 的路径在根目录下找不到脚本文件，它还会再次到 /WEB-INF/groovy 目录下找，例如，通过 <a href="http://localhost:8080/groovlet/hello.groovy">http://localhost:8080/groovlet/hello.groovy</a> 访问时，若是在根目录下没有 hello.groovy 文件，就到 /WEB-INF/groovy 下找 hello.groovy，找到了也是有效的，同理用 <a href="http://localhost:8080/groovylet/other/hello.groovy">http://localhost:8080/groovylet/other/hello.groovy</a> 访问时，若在 /other 目录下没有 hello.groovy，就尝试找 /WEB-INF/groovy/other/hello.groovy 文件。因此把 groovy 放在 /WEB-INF/groovy 中显然是 Groovlet 所推荐的做法。<br/><br/>
+<strong>四. 浏览 Groovlet 脚本页面</strong><br/><br/>
+发布在 Tomcat 或是其他的 Servlet 容器中，假设应用程序上下文是 groovlet、http 端口是 8080，那么就可以通过 <a href="http://localhost:8080/groovlet/hello.groovy">http://localhost:8080/groovlet/hello.groovy</a> 来访问这个 groovlet 页面，得到的界面如下图：<br/><br/>
+<div><img src="/wp-content/uploads/2008/10/hellogroovlet.jpg" alt="hellogroovlet.jpg" width="477" height="73" border="0" /></div>
+<br/>
+<strong>五. 小结</strong><br/><br/>
+Groovlet Hello World 的例子就是这样的，也不知是谁搞出个 Hello World 之说来的。郑重的说从 Hello World 到实际的应用还有一段很长的路。就说上面那个 hello.groovy，要是真把大段大段的 HTML 代码往里堆，那真够要命的。所以写这种 Groovlet 实际得用上 Groovy 模板，或者配置用 groovy.servlet.TemplateServlet，还可以用 GroovyMarkup 技术中的 MarkupBuilder(Groovlet 中内置的 html 变量就是)。 <br/><br/>
+量级大了，想用 Groovy 来进行 Web 开发的话，Grails 大概是现在的不二之选了。<br/><br/>
+参考：1. 《Scripting in Java languages, Frameworks, and Patterns》Chapter 5<br />
+        2. 《Groovy in Action》 2007.1  9.5 Working with Groovylets<br />
+        3. <a href="http://www.hxen.com/englishstudy/words/2007-03-20/31.html" target="_blank" rel="noopener">英语单词常见前后缀总结</a>

@@ -1,0 +1,114 @@
+---
+title: Unmi 学习 Groovy 之 GroovyMarkup (一)
+url: /unmi-study-groovy-markup-1/
+date: 2008-11-19T06:15:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Groovy
+tags: 
+  - Groovy
+  - Markup
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 313 
+wpStatus: publish
+views: 454
+lastmod: 2021-09-02T11:52:49-05:00
+---
+
+每一种语言都不能忽略了 XML 操作相关的 API，而 Groovy 把使用 XML 的美妙和简易性推向了极致，这就是 GroovyMarkup。它不仅简化了 SAX、DOM 操作，并且把这一理念引入到了 Swing、Swt 界面绘制领域中，Ant、Maven 构建脚本生成中；甚至铺散到更广阔的领域。</p>
+<br/>
+Groovy 用闭包和命名参数给标记数据的操作创建通用的语法。GroovyMarkup 在实际的应用中表现为各种 Builder。例如在 Groovy 中内建了以下几个 Builder。<br/><br/>
+·groovy.xml.MarkupBuilder  --  将你的对象序列化成 XML 或 XHTML<br />
+·groovy.xml.SAXBuilder       --  可以用于现有的 SAX 处理器<br />
+·groovy.xml.DOMBuilder     --  创建并解析 DOM 文档<br/><br/>
+而且 GroovyMarkup 语法已经被公认为对操作特定于领域的对象结构很有价值，例如 Ant 文件和 Swing 用户界面。<!--more--><br/><br/>
+·groovy.util.AntBuilder        --  用来创建 Ant 构建文件<br />
+·groovy.swing.SwingBuilder -- 用来创建 Swing 用户界面<br />
+·groovy.util.NodeBuilder      --   创建一般的任意对象的树状结构<br/><br/>
+除了上面的 Builder，还有第三方的 Builder，例如:<br/><br/>
+·groovy.swt.SwtBuilder(<a href="http://groovy.codehaus.org/GroovySWT">http://groovy.codehaus.org/GroovySWT</a>)   --  用来创建 SWT 用户界面<br/><br/>
+应该还能找到其他的第三方构建器，要是明白了构建类的基本原则，你就可以编写自己的构建器。<br/><br/>
+现在来看一下 Builder 生成 XML 的基本规则，以 MarkupBuilder 为例来说明，如下代码：<br/><br/>
+<pre class="lang:default decode:true">import groovy.xml.MarkupBuilder<br/><br/>
+xml = new MarkupBuilder();
+xml.users(){
+    user(name:'dejanb',balance:200);
+    user('mike');
+}</pre>
+<br/>
+上面脚本生成下列输出：<br/><br/>
+&lt;users&gt;<br />
+  &lt;user name='dejanb' balance='200' /&gt;<br />
+  &lt;user&gt;mike&lt;/user&gt;<br />
+&lt;/users&gt;<br/><br/>
+代码说明(即构建器的语法规则)：<br/><br/>
+1. MarkupBuilder 的默认构造是输出到控制台，还可以接受其他的参数 IndentPrinter、PrintWriter、Writer，分别指明了不同的输出目的地。所以你可以此控制输出到 Socket 上，或是 Groovlet 的网页上等。<br/><br/>
+2. MarkupBuilder 的方法名是想当然的，如这里的 users()、user() 方法，它们会生成同名的标签。<br/><br/>
+3. 如果给调用提供一个 Map 参数，它的元素就表示该标签的参数，如上面的 name:'dejanb',balance:200 命名参数，其实是 [name:'dejanb',balance:200] 的缩写形式。<br/><br/>
+4. 如果传递一个 Object 参数给方法，它就用作该标签的值，如上面的 mike。<br/><br/>
+5. 当然也可以既有 Map 参数也有 Object 参数，如写成 user([name:'dejanb',balance:200], 'Unmi'); 生成相应的标签就是(注意这里的中括号不能少了) <br />
+    &lt;user name='dejanb' balance='200'&gt;Unmi&lt;/user&gt;<br/><br/>
+6. 闭包中的方法生成为外层方法(标签) 的子标签，例如，上面的 user() 生成了 users() 对应标签 &lt;users&gt; 的子标签 &lt;user&gt;<br/><br/>
+接着来体验一下功能更完备的 MarkupBuilder 应用代码：<br/><br/>
+<pre class="lang:default decode:true ">import groovy.xml.MarkupBuilder<br/><br/>
+xml = new MarkupBuilder(new PrintWriter(System.err)); //为了说明 MarkupBuilder 可有不同输出目的地
+xml.users(goal:'sample'){                             //根标签，带 Map 参数
+    user([name:'dejanb',balance:200],'Mike');         //带 Map 和 Object 参数
+    user(name:'Unmi'){                                //带 Map 参数
+        email('fantasia@sina.com');                   //只带 Object 参数
+    }
+}</pre>
+<br/>
+上面代码输出为：<br/><br/>
+&lt;users goal='sample'&gt;<br />
+  &lt;user name='dejanb' balance='200'&gt;Mike&lt;/user&gt;<br />
+  &lt;user name='Unmi'&gt;<br />
+    &lt;email&gt;fantasia@sina.com&lt;/email&gt;<br />
+  &lt;/user&gt;<br />
+&lt;/users&gt;<br/><br/>
+最后应用 MarkupBuilder 生成 XHTML 的例子。<br/><br/>
+<pre class="lang:default decode:true">import groovy.xml.MarkupBuilder<br/><br/>
+users = ["Mike","Joe"];<br/><br/>
+doc = new MarkupBuilder();
+doc.html(){
+    head(){
+        title("New Balance page");
+    }
+    body(){
+        table(){
+            users.each(){ user -&gt;
+                doc.tr(){
+                    doc.td(user);
+                }
+            }
+        }
+    }
+}:</pre>
+<br/>
+生成的 XHTML 代码如下：<br/><br/>
+<blockquote>
+&lt;html&gt;<br />
+  &lt;head&gt;<br />
+    &lt;title&gt;New Balance page&lt;/title&gt;<br />
+  &lt;/head&gt;<br />
+  &lt;body&gt;<br />
+    &lt;table&gt;<br />
+      &lt;tr&gt;<br />
+        &lt;td&gt;Mike&lt;/td&gt;<br />
+      &lt;/tr&gt;<br />
+      &lt;tr&gt;<br />
+        &lt;td&gt;Joe&lt;/td&gt;<br />
+      &lt;/tr&gt;<br />
+    &lt;/table&gt;<br />
+  &lt;/body&gt;<br />
+&lt;/html&gt;
+</blockquote>
+<br/>
+这就是网页了，不过在 Groovlet 中一般还是推荐用模板来实现。<br/><br/>
+参考：1. 《Java 脚本编程 语言、框架与模式》 第五章，高级的 Groovy 编程

@@ -1,0 +1,116 @@
+---
+title: Unmi 学习 Groovy 之闭包与资源、异常处理
+url: /unmi-study-groovy-closure-resource-exception/
+date: 2008-09-17T22:17:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Groovy
+tags: 
+  - Groovy
+  - Exception
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 332 
+wpStatus: publish
+views: 493
+lastmod: 2018-03-02T20:43:36-06:00
+---
+
+<p>闭包还为我们提供了改善处理复杂 try/catch/finally 结构的方法。利用闭包，很容易编写正确处理资源和异常的代码。使用闭包的新方法已经添加到处理文件、进程和数据库连接的标准 Java 类中。当它们用在 Groovy 中的时候，不必处理和担心资源的关闭。首先我们来看看 Groovy 实现这一方式的原理。我们假设有这么一个资源处理类。</p>
+
+<pre class="lang:default decode:true">class Resource{<br/>
+    public Resource(String resourceName) throws ResourceException{<br/>
+        //open the resource<br/>
+    }<br/>
+<br/>
+    public Object read() throws ResourceException{<br/>
+        //return data or false as the end marker<br/>
+    }<br/>
+<br/>
+    public void close() throws ResourceException{<br/>
+        //close the resource<br/>
+    }<br/>
+}</pre>
+
+<p>那么我们的打开、读取和关闭资源的典型的 Java 代码看起来就像这样：<!--more--></p>
+
+<pre class="lang:default decode:true">Resource res = new Resource("someName");<br/>
+try{<br/>
+    while(result=res.read()){<br/>
+        println(result);<br/>
+    }<br/>
+}catch(ResourceException e){<br/>
+    e.printStackTrace();<br/>
+}finally{<br/>
+    try{<br/>
+        res.close();<br/>
+    }catch(ResourceException e){<br/>
+    }<br/>
+}</pre>
+
+<p>这在数据库的操作是很常见的代码，当然我们一般不会处处这么写的，而是会写一个工具类方法来统一处理这种异常，不过这种办法仍显笨拙。</p>
+
+<p>而 Groovy 的闭包能使得我们轻松优雅的处理资源，只要在原始类中增加一个新的 read() 方法，这个 read() 方法接受一个 Closure 参数，完整的 Resource 类如下：</p>
+
+<pre class="lang:default decode:true">class Resource{<br/>
+    public Resource(String resourceName) throws ResourceException{<br/>
+        //open the resource<br/>
+    }<br/>
+<br/>
+    public Object read() throws ResourceException{<br/>
+        //return data or false as the end marker<br/>
+    }<br/>
+<br/>
+    public void read(Closure closure) throws ResourceException{<br/>
+        try{<br/>
+            while(result = read()){<br/>
+                closure.call(result);<br/>
+            }<br/>
+        }catch(ResourceException){<br/>
+            throw e;<br/>
+        }finally{<br/>
+            try{<br/>
+                close()<br/>
+            }catch(ResourceException e){<br/>
+            }<br/>
+        }<br/>
+    }<br/>
+<br/>
+    public void close() throws ResourceException{<br/>
+        //close the resource<br/>
+    }<br/>
+}</pre>
+
+<p>OK，现在有了这个 read(Closure closure) 方法后，您使用上面的资源就简单多了，只要写成</p>
+
+<pre class="brush:groovy">new Resource("someName").read{<br/>
+    println it;<br/>
+}</pre>
+
+<p>就行啦，非常简洁。</p>
+
+<p>异常处理、资源打开和关闭被移到了接受闭包参数的 read() 方法中。这是 Groovy 中一种常见的应用哲学。它使 Groovy 脚本更容易阅读，也使它们编写起来更快且更轻松。它被广泛应用于系统操作(文件和进程操作) 和数据库使用等方法，Groovy 对标准的 Java 类进行了扩展，在以后会详细介绍这方面的用法。</p>
+
+<p>最后来欣赏几个 Groovy 闭包这方面用法的代码：</p>
+
+<pre class="brush:groovy">//-----逐行以大写行式输出文件内容<br/>
+import java.io.File;<br/>
+lineList = new File("foo.txt").readLines();<br/>
+liineList.each {<br/>
+    println it.toUpperCase();<br/>
+}</pre>
+
+<pre class="brush:groovy ">//-----数据库查询操作<br/>
+import groovy.sql.Sql;<br/>
+<br/>
+sql = Sql.newInstance("jdbc:mysql://localhost/groovy", "root", "", "com.mysql.jdbc.Driver");<br/>
+sql.eachRow("select * from user"){<br/>
+    println it.username;<br/>
+}</pre>
+
+<p>参考：1. 《Java 脚本编程 语言、框架与模式》 第 4 章</p>

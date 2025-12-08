@@ -1,0 +1,153 @@
+---
+title: 用 Java 把内存中的表格数据合并到 SQL Server 表中
+url: /merge-in-memory-table-data-into-sql-server-table/
+date: 2019-09-26T22:49:25-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/sqlserver-logo.png"
+categories:
+  - Java/JEE
+  - Database
+tags: 
+  - merge into
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9609 
+wpStatus: publish
+views: 688
+lastmod: 2019-09-27T09:55:58-05:00
+---
+
+<p>承接近两年前的 <a href="https://yanbin.blog/sqlserver-insert-multiple-rows-onetime/">用 PreparedStatement 向 SqlServer 中一次性插入多条记录</a>，其文后用 User-Defined Type 可用下面简单的代码把 Java 本地内存中表格数据一股脑的刷入到 SQL Server 数据库表格中</p>
+
+<blockquote><br/>
+<p>String sql = "INSERT INTO Customers SELECT * FROM ?";<br /><br/>
+SQLServerPreparedStatement pstmt = (SQLServerPreparedStatement) conn.prepareStatement(sql);<br /><br/>
+SQLServerDataTable dataTable = ..... // 生成好的本地表格数据<br /><br/>
+pstmt.setStructured(1, "CustomersTableType", dataTable);<br /><br/>
+pstmt.execute();</p>
+
+</blockquote>
+
+<p>上面的 dataTable 本地表格类型变量容易生成，关键是必须在正式数据库数须预先用 <code>CREATE TYPE</code> 创建好 <code>CustomersTableType</code> 这个用户自定义类型，这会受权限的约束。如果由 DBA 预先完全依照目标表来创建好这个用户自定义类型，又无法确定是否总是要操作该目标表的所有字段。</p>
+
+<p>数据库是允许我们创建临时的用户自定义类型<!--more--></p>
+
+<blockquote><br/>
+<p>use tempdb;<br /><br/>
+create type CustomersTableType as table (...</p>
+
+</blockquote>
+
+<p><a href="https://yanbin.blog/wp-content/uploads/2019/09/merge-local-table.png"><img class="aligncenter wp-image-9611" src="https://yanbin.blog/wp-content/uploads/2019/09/merge-local-table.png" alt="" width="256" height="229" /></a></p>
+
+<p>但是在临时数据库中定义的 Data Type 确无法在操作正式表时引用，所以想要创建用户自定义数据类型还得获得相应的权限才行。</p>
+
+<p>这之前都是在回顾上一篇中的内容，这里仍然使用了基本相同的办法，只是以此来体验一下怎么把内存中排好的表格用 <code>merge into</code> 语句合并到目标数据库表中去。操作代码如下：</p>
+
+<pre class="lang:default decode:true ">Connection conn = DriverManager.getConnection("jdbc:sqlserver://localhost;databaseName=master",<br/>
+    "sa", "yourStrong(!)Password");<br/>
+<br/>
+//  String sql = "INSERT INTO Customers SELECT * FROM ?";<br/>
+String sql = "MERGE INTO Customers AS t\n" +<br/>
+    "  USING ? as s\n" +<br/>
+    "    ON t.Id = s.Id\n" +<br/>
+    " WHEN NOT MATCHED THEN\n" +<br/>
+    "   INSERT(Id, Name, Age) VALUES(s.Id, s.Name, s.Age)\n" +<br/>
+    " WHEN MATCHED THEN\n" +<br/>
+    "   UPDATE SET t.Name=s.Name, t.Age=s.Age;";<br/>
+SQLServerPreparedStatement pstmt = (SQLServerPreparedStatement) conn.prepareStatement(sql);<br/>
+<br/>
+SQLServerDataTable dataTable = new SQLServerDataTable();<br/>
+dataTable.addColumnMetadata("Id", Types.INTEGER);<br/>
+dataTable.addColumnMetadata("Name", Types.VARCHAR);<br/>
+dataTable.addColumnMetadata("Age", Types.DECIMAL);<br/>
+dataTable.addRow(1, "Name1", 21.7);  // addRow 中的参数不一定要对应的类型，全为字符串都行<br/>
+dataTable.addRow(2, "Name2", 32.7);  // addRow("2", "Name2", "32.7") 字符串会被依据上面的 Metadata 解析为具体类型值<br/>
+<br/>
+pstmt.setStructured(1, "CustomersTableType", dataTable);<br/>
+<br/>
+pstmt.execute();</pre>
+
+<p>操作后看看表中的数据</p>
+
+<p><a href="https://yanbin.blog/wp-content/uploads/2019/09/merge-local-table-1.png"><img class="aligncenter wp-image-9612" src="https://yanbin.blog/wp-content/uploads/2019/09/merge-local-table-1.png" alt="" width="309" height="104" /></a></p>
+
+<p>欲完成上面的操作，前面说过还必须基于 Customers 表定义好 CustomersTableType 类型</p>
+
+<pre class="lang:default decode:true ">CREATE TABLE Customers(<br/>
+    Id INTEGER,<br/>
+    Name VARCHAR(20),<br/>
+    Age DECIMAL(5, 2)<br/>
+)<br/>
+<br/>
+CREATE TYPE CustomersTableType AS TABLE (<br/>
+    Id INTEGER,<br/>
+    Name VARCHAR(20),<br/>
+    Age DECIMAL(5, 2)<br/>
+)<br/>
+</pre>
+
+<p>弄到这里其实还是没什么意思，夺取创建用户自定义类型的权限才是关键，如果 SQL Server 的 JDBC 驱动允许把自定义类型维持中本地内存才好。至于怎么生成内在表格数据倒不是难事，况且还支持多种类型的表格</p>
+
+<pre class="lang:default decode:true ">public void setStructured(int n, String tvpName, SQLServerDataTable tvpDataTable)<br/>
+public void setStructured(int n, String tvpName, ResultSet tvpResultSet) <br/>
+public vpod setStructured(int n, String tvpName, ISQLServerDataRecord tvpBulkRecord)</pre>
+
+<p>本文主要是验证了一下能够通过 <code>merge into</code> 把本地内存中的表格数据直接合并到实际数据库表格，而不用借助于临时表格或拼凑一大段的 <code>merge into</code> 语句，唯一不可突破的是为目标表格创建用户自定义类型。</p>
+
+<p>上面提供有三个 <code>setStructured(...)</code> 方法，再来尝试最后一种 <code>ISQLServerDataRecord</code>,  SQL Server 驱动中目前没有相应的实现，自己实现一个便是</p>
+
+<pre class="lang:default decode:true">ISQLServerDataRecord dataRecords = new ISQLServerDataRecord() {<br/>
+    private int currentRow = -1;<br/>
+    Object[][] records = new Object[][] {<br/>
+        {1, "Name1", 21.5},<br/>
+        {2, "Name2", 32.5}<br/>
+    };<br/>
+<br/>
+    @Override<br/>
+    public SQLServerMetaData getColumnMetaData(int column) {<br/>
+        switch (column) {<br/>
+            case 1:<br/>
+                return new SQLServerMetaData("Id", Types.INTEGER);<br/>
+            case 2:<br/>
+                return new SQLServerMetaData("Name", Types.VARCHAR);<br/>
+            default:<br/>
+                return new SQLServerMetaData("Age", Types.DECIMAL);<br/>
+        }<br/>
+    }<br/>
+<br/>
+    @Override<br/>
+    public int getColumnCount() {<br/>
+        return 3;<br/>
+    }<br/>
+<br/>
+    @Override<br/>
+    public Object[] getRowData() {<br/>
+        return records[currentRow];<br/>
+    }<br/>
+<br/>
+    @Override<br/>
+    public boolean next() {<br/>
+        currentRow ++;<br/>
+        return currentRow != 2;<br/>
+    }<br/>
+};<br/>
+<br/>
+pstmt.setStructured(1, "CustomersTableType", dataRecords);<br/>
+pstmt.execute();<br/>
+</pre>
+
+<p>再次可见，生成本地数据是件容易的事，关键还是那个 User-Defined Type.</p>
+
+<p>链接：</p>
+
+<ol>
+
+	<li><a href="https://docs.microsoft.com/zh-tw/sql/connect/jdbc/using-table-valued-parameters?view=sql-server-2017">使用資料表值參數</a></li>
+
+</ol>

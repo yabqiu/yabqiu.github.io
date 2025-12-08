@@ -1,0 +1,78 @@
+---
+title: Maven 1 的 Unknown error downloading; status code was: 301 错误解决
+url: /maven-1-301-unknown-error-downloading/
+date: 2008-10-14T02:10:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Maven
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 318 
+wpStatus: publish
+views: 573
+lastmod: 2012-03-09T09:44:18-06:00
+---
+
+现在早已是 Maven 2 了，可还是有机会用了一下 Maven 1，所用的版本是 Maven 1.0.2，刚开始尝试的时候出现以下两个问题：<br/>
+<br/>
+<strong>1. 执行 maven genapp 时产生如下异常：</strong><br/>
+<br/>
+<span style="color: #800080;">???????? commons-jelly-tags-interaction-20030211.143817.jar????<br/>
+Error retrieving artifact from [http://www.ibiblio.org/maven/commons-jelly/jars/commons-jelly-tags-interaction-20030211.143817.jar]: java.net.ConnectException: Connection timed out: connect<br/>
+?????? commons-jelly-tags-interaction-20030211.143817.jar ?????§°???<br/>
+???????????????±???????¨??????????</span><br/>
+<br/>
+<span style="color: #800080;">commons-jelly-tags-interaction-20030211.143817.jar<!--more--><br/>
+</span><br/>
+<br/>
+我也不知道问题是怎么回事，反正看到上面的  java.net.ConnectException: Connection timed out: connect 就知道连接不到 <a href="http://www.ibiblio.org/maven/commons-jelly/jars/commons-jelly-tags-interaction-20030211.143817.jar">http://www.ibiblio.org/maven/commons-jelly/jars/commons-jelly-tags-interaction-20030211.143817.jar</a> 这个资源。IE 浏览一下，没问题，IE 使用了代理，Maven 不像自动应用 IE 的代理，很显然要告诉 Maven 通过代理服务器来下载资源。<br/>
+<br/>
+于是网上查了一下 maven 1 build.properties proxy，找到了 <a href="http://maven.apache.org/maven-1.x/reference/properties.html" target="_blank">Properties Reference</a>，Maven 可通过属性来指定代理，Maven 是配置在 ${user.home}/.m2/settings.xml 中。一般写在${user.home}/build.properties 文件中，于是创建了 ${user.home}/build.properties 文件，在其中加上代理设置，并保存：<br/>
+<br/>
+<span style="color: #0000ff;">maven.proxy.host=10.128.38.33<br/>
+maven.proxy.port=80<span style="color: #0000ff;"><font color="#0000ff">#假如你的代理要求用户和密码验证的话就写上这个<br/>
+#maven.proxy.username=unmi<br/>
+#maven.proxy.password=unmi<br/>
+<br/>
+</font></span> <br/>
+<br/>
+</span><br/>
+<br/>
+<strong>2. 配置了代理之后，再次运行 maven genapp，没想又出现接下来的异常：<br/>
+</strong><br/>
+<span style="color: #800080;">???????? commons-jelly-tags-interaction-20030211.143817.jar????<br/>
+Error retrieving artifact from [http://www.ibiblio.org/maven/commons-jelly/jars/commons-jelly-tags-interaction-20030211.143817.jar]: java.io.IOException: Unknown error downloading; status code was: 301<br/>
+?????? commons-jelly-tags-interaction-20030211.143817.jar ?????§°???<br/>
+???????????????±???????¨??????????</span><br/>
+<br/>
+<span style="color: #800080;">commons-jelly-tags-interaction-20030211.143817.jar<br/>
+</span><br/>
+<br/>
+301 表示的状态码是 Moved Permamently 的意思，指出被请求的文档在别处，被重定向了。<br/>
+<br/>
+具体为何，自然是请求  Google 帮忙，查找 maven java.io.IOException: Unknown error downloading; status code was: 301，找到页面 <a href="http://blogs.atlassian.com/developer/2006/12/maven_1_repository_changes.html" target="_blank">Maven 1 repository changes</a>，原因是 Maven 1 的仓库从  <a href="http://www.ibiblio.org/maven">http://www.ibiblio.org/maven</a> 重定向到了 <a href="http://mirrors.ibiblio.org/pub/mirrors/maven">http://mirrors.ibiblio.org/pub/mirrors/maven</a>，而 Maven 1 理解不了这种重定向(IE 知道)。解决办法，还是在 ${user.home}/build.properties 中除了代理设置外还要加上一个属性：<br/>
+<br/>
+<span style="color: #0000ff;">maven.repo.remote=http://repository.atlassian.com,http://mirrors.ibiblio.org/pub/mirrors/maven,http://www.ibiblio.org/maven<br/>
+</span><br/>
+保存 ${user.home}/build.properties 后，再执行 maven genapp，OK 啦。<br/>
+<br/>
+关于命令行提示乱码的解决<br/>
+<br/>
+进入maven.jar，发现org\apache\maven\messages目录下的messages_zh_CN.properties里面直接写了中文字符。删掉它！就不会乱码了，用了英文提示。（或者用native2ascii转换）<br/>
+<br/>
+关于 maven javadoc 生成的文件乱码问题解决<br/>
+<br/>
+找到 %MAVEN_HOME%\plugins\maven-javadoc-plugin-1.7.jar 文件，修改其中的 plugin.properties 文件，把<br/>
+<br/>
+maven.javadoc.locale               = en_US<br/>
+<br/>
+前面的注释符号 # 去掉，放回到那个 jar 去就行了，界面显示为英文，不会有乱码了。<br/>
+<br/>
+参考: 1. Maven 学习笔记(其中有提示信息乱码的解决)

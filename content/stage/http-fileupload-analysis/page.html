@@ -1,0 +1,24 @@
+---
+title: http上传文件深度解析－高性能http传输
+url: /http-fileupload-analysis/
+date: 2010-04-12T21:43:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Web/JS
+tags: 
+  - http
+  - fileupload
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 199 
+wpStatus: publish
+views: 460
+lastmod: 2016-07-13T00:37:04-05:00
+---
+
+<p>最近在做web服务器的时候将一些应用集成在了服务器里面，比如说文件上传，结果调试用了一个星期的时间，搞得自己头昏脑涨，现在总于解决了，现将注意细节叙述如下： http上传协议很简单，用post协议，协议头部包含Content－Length项，这是一次上传的所有body部分长度总和，包括多文件之间的分割等等，所以也就难怪了，http上传要比ftp等慢，其实慢就慢在body解析上，下面对于文件分割作一些阐述。 <strong>一个典型的http上传协议头类似于这样：</strong></p><p><span style="background-color: #ccffff;">POST /public/upload.action HTTP/1.1 </span><br style="background-color: #ccffff;" /><span style="background-color: #ccffff;"> ost: maiit.com:8088 </span><br style="background-color: #ccffff;" /><span style="background-color: #ccffff;"> User-Agent: Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9b5) Gecko/2008041514                  Firefox/3.0b5 </span><br style="background-color: #ccffff;" /><span style="background-color: #ccffff;"> Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8 <!--more--></span><br style="background-color: #ccffff;" /><span style="background-color: #ccffff;"> Accept-Language: en-us,en;q=0.5 </span><br style="background-color: #ccffff;" /><span style="background-color: #ccffff;"> ccept-Encoding: gzip,deflate </span><br style="background-color: #ccffff;" /><span style="background-color: #ccffff;"> ccept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7 </span><br style="background-color: #ccffff;" /><span style="background-color: #ccffff;"> Keep-Alive: 300 </span><br style="background-color: #ccffff;" /><span style="background-color: #ccffff;"> Connection: keep-alive </span><br style="background-color: #ccffff;" /><span style="background-color: #ccffff;"> Referer: http://maiit.com:8088/public/up.html </span><br style="background-color: #ccffff;" /><span style="background-color: #ccffff;"> Content-Type: multipart/form-data; </span><strong style="background-color: #ccffff;">boundary</strong><span style="background-color: #ccffff;">=---------------------------88739631214394723612117964652 </span><br style="background-color: #ccffff;" /><span style="background-color: #ccffff;"> Content-Length: 3433</span> <strong>其中，boundary是文件分割符号，每个文件以如下字段开头</strong> <span style="background-color: #ccffff;"> -----------------------------88739631214394723612117964652 </span><br style="background-color: #ccffff;" /><span style="background-color: #ccffff;"> Content-Disposition: form-data; name="file"; filename="hashtables.h" </span><br style="background-color: #ccffff;" /><span style="background-color: #ccffff;"> Content-Type: text/x-chdr </span> <strong>以如下字段结尾：</strong> <span style="background-color: #ccffff;"> -----------------------------88739631214394723612117964652 </span><br style="background-color: #ccffff;" /><span style="background-color: #ccffff;"> Content-Disposition: form-data; name="uploadButton" </span><br style="background-color: #ccffff;" /><br style="background-color: #ccffff;" /><span style="background-color: #ccffff;"> up </span><br style="background-color: #ccffff;" /><span style="background-color: #ccffff;"> -----------------------------88739631214394723612117964652--</span></p><p>其中并没有包含单个文件的长度，这就是对于传输大文件性能不高的关键所在，因为应用服务器必须对每次的数据进行比对，查找文件分割符号，加入传输一个100M的文件，服务器端cpu必须对这100M的文件每一个字节进行字符串比对，那么有没有解决办法呢？</p><p>web服务器一般只将请求的数据直接转发给应用层，不做任何处理（除了HTTP协议头），假设你可以直接控制web服务器，类似于我现在的状况，就有了解决办法，比如我的服务器模型是epoll事件驱动，通过分析发现，对于flash等上传途径flash已经做了优化，数据并不是一股脑地发送过来，而是先发送协议头部，然后发送一个文件分割符部分数据，在然后才是正文，正文最后一个数据包不管是否等于socketBuffer，结尾标识<span style="color: #ff0000;">有可能</span>会下次发送，这样一个过程就给了我们一个解决途径，几乎不用分析（除了文件名称）任何一个文件数据包就能完成地保存下来文件，因为数据是分段发送的，并没有粘滞在一起，通过比对发送次数就可以确定，http协议头的第一个数据包肯定是单独发送的，然后才会转向文件处理程序，然后接收第2个数据包，并且flash上传文件不管是多文件还是单文件其实都是按照单个文件分次上传的，这样传送过程就可控了。</p><p>注意上面的“有可能”几个字，这几天困扰我的也在于此，flash并不是想象中的稳定的，不同版本之间是不一样的，linux上和windows上的解析也是不一样的，这样就不能给我们一个统一的解决途径，我也是在测试中才发现这样的问题的，不仅仅如此，flash的很多特性as3和as2根本不兼容，一个不向下兼容的软件这样流行真是让人费解，并且上述的解决途径不不适合传送的页面http上传，页面上传基本上就是直接混合在一起的，所以这个最高效的解决途径看来要放弃了，几天的测试改进发现还还是有解决办法的，于是就有了下面的处理模式。</p><p>既然对于没个文件都是有一个开头标识和结尾标识，那不防在这上面做作文章，如果能只分析开头和结尾而不分析中间数据，那么对于大型文件http传送将是一件幸事，开头倒是好分析，对没个数据包分析知道有文件开头为止，问题就在于结尾，不知道文件长度的情况下你怎么知道何时分析一个数据包是否包含结尾？幸好有这样一个共同特性，对于单个文件传送，最后一个包含结尾的数据包在总length传送＝0的时候总是完整地发送地（不会有一部分放在前一个socket交互另一个放在后一个，估计这是浏览器在发送没个文件的时候后面不会主动将文本附加在最后一个数据包），所以当总length小于SocketBuffer得时候就是分析文件结尾的时候，这样我们最总最多分析2次开头，2次结尾，我在缓存设为16K的时候局域网就可以达到3M的上传速度，最大64k缓存（刚好等于socket最大缓存）的时候能大到<strong><span style="color: #ff0000;">9M／秒</span>的上传</strong>速度，几乎等于UDP的速度，对于大型文件的优势可想而知。</p><p>这里依然存在的问题是之支持flash多文件上传和http单文件上传，当然，如果你是一个视频上传等程序这足够用了，这里抛砖引玉，望高手共同探讨</p><p>转自：<a href="http://hi.baidu.com/netpet/blog/item/423007faa0867f9058ee90c4.html">http://hi.baidu.com/netpet/blog/item/423007faa0867f9058ee90c4.html</a></p>

@@ -1,0 +1,392 @@
+---
+title: sbt 中单元测试并发执行
+url: /sbt-tests-execute-in-parallel/
+date: 2016-04-13T00:46:03-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+  - PlayFramework
+tags: 
+  - Scala
+  - sbt
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7194 
+wpStatus: publish
+views: 1220
+lastmod: 2023-12-13T00:04:39-06:00
+---
+
+此次研究的目的原本是要使得 Play Framwork 2 中单元测试能够并发执行, 包括 JUnit 和 Spec 的测试用例, Play 2 的 activator 就是一个 sbt 的包装. 开发中发现我们 Play 2 中的单元测试是按序执行的, 实际上 sbt 下测试用例默认是并发执行的. 之所以 Play 2 的单元测试是按序的, 是因为 activator 设置了把 sbt 的两个属性 <code>fork in Test := true</code> 和 <code>parallelExecution in Test := false</code>, 见 <a href="https://github.com/playframework/playframework/blob/master/framework/src/sbt-plugin/src/main/scala/play/sbt/PlaySettings.scala">PlaySettings.scala</a>, 它们默认分别为 false 和 true. 这使得默认设置下 Play 2 中的所有测试无法并发执行.</p>
+<br/>
+sbt 默认的 fork 是 false, Play 2 改为 true 之后便可以使用 <code>javaOptions in Test := "-Dkey1=value1"</code> (注: 如果 fork 为 false 的话, javaOptions 将无效.) 往单元测试中参数了, 这也是为什么在 Play 2 的单元测试中无法获得启动 sbt 时(像 sbt -Dkey1=value) 的参数, 不同一个 JVM 啊.<br/><br/>
+那是不把 Play 2 的 <code>fork in Test</code> 和 <code>parallelExecution in Test</code> 分别改回成 false 和 true 就可以让测试用例并发执行了呢? 答案是 Yes. 但我们得相信 Play 2 把它们预设为 true 和 false 是有它的用意的, 比如集成测试的每个用例都会开启本地的 3333 端口, 如果让两个集成测试同时执行将会造成端口冲突. 细致说来, Play 2 其实是懒政, 只管一刀切而让所有测试按序执行而影响了效率, 如能利用好 sbt 的测试分组机制是可以达到测试的并发执行的.<br/><br/>
+<strong>这里引出 sbt 执行测试的几个机制:</strong><br/><br/>
+1) sbt 总是对测试进行分组, 默认时所有的测试都包含在 &lt;default&gt; 组中, 可用 <code>show testGrouping</code> 查看, 如<br/><br/>
+<!--more--><br/><br/>
+<code>fork in Test := false</code> 时<br/><br/>
+<blockquote>
+&gt; show test:fork<br />
+[info] false<br />
+> show testGrouping<br />
+[info] List(Group(&lt;default&gt;,List(Test model.BookSpecTest : subclass(true, org.specs2.specification.core.SpecificationStructure), Test model.BookTest : annotation(false, org.junit.Test), Test service.BookServiceSpecTest : subclass(true, org.specs2.specification.core.SpecificationStructure), Test service.BookServiceTest : annotation(false, org.junit.Test)),InProcess))
+</blockquote>
+<br/>
+<code>fork in Test := true</code> 时<br/><br/>
+<blockquote>
+&gt; show test:fork<br />
+[info] true<br />
+> show testGrouping<br />
+[info] List(Group(&lt;default&gt;,List(Test model.BookSpecTest : subclass(true, org.specs2.specification.core.SpecificationStructure), Test model.BookTest : annotation(false, org.junit.Test), Test service.BookServiceSpecTest : subclass(true, org.specs2.specification.core.SpecificationStructure), Test service.BookServiceTest : annotation(false, org.junit.Test)),SubProcess(ForkOptions(None,None,List(),Some(/Users/yanbin/Workspaces/test_in_parallel),List(-Dfrom.sbt.javaOptions=valueFromSbtJavaOptions),false,Map()))))
+</blockquote>
+<br/>
+从上面看出 <code>fork in Test</code> 的取值直接影响了默认分组的运行策略, 是 InProcess 还是 SubProcess. 我们可以自定义分组, 如果是自定义分组里指定了 InProcess 或 SubProcess, 那么  <code>fork in Test</code> 的值将被忽略. <code>javaOptions in Test</code> 用来向 <code>fork in Test := true</code> 时默认分组传递 JVM 参数.<br/><br/>
+sbt 测试说到底还是分组执行, 组内自定义测试的运行策略. 现在我们懂得了 <code>fork in Test</code> 的功用, 如果是自定义了测试组它将一无所是. 再看另外两个属性的功能<br/><br/>
+1) <code>parallelExecution in Test</code> 是并发的一个总开关, 值为 true 时可让 <code>InProcess</code> <strong>组内</strong>测试并发执行, 或让多个 <code>SubProcess</code> <strong>组间</strong>并发, <strong>组内</strong>按序执行.<br/><br/>
+2) 另一个实验中的设置 <code>testForkedParallel in Test</code> 相当的猛, 如果设置为 true 时可以让 <code>InProcess</code> 和 <code>SubProcess</code> 类型的组内并发执行当 <code>for in Test</code> 为 true 时, 但它受到 <code>parallelExecution in Test</code> 的约束, 前面说了它是个总开发.<br/><br/>
+我们来看一下 sbt 和 Play 2 的默认行为:<br/><br/>
+sbt 默认时 <code>fork in Test := false</code> 和 <code>parallelExecution in Test := true</code>, 所有测试分配在一个  <code>InProcess</code> 组中, 所以该组内的测试是并发执行的. 该分组在 sbt 所在 JVM 中执行, 所以能读取到启动 sbt 时的 JVM 参数.<br/><br/>
+Play 2 把这两个值分别设置为 <code>for in Test := true</code> 和 <code>parallelExecution in Test := false</code>, 所有测试分组在一个 <code>SubProcess</code> 的组中. 组内的测试将在 fork 的新 JVM 中执行, 该分组直接用 <code>javaOptions in Test</code> 定义作为 SubProcess 的 JVM 参数. 我们可以设置 <code>parallelExecution in Test := true</code> 来达到组间并发执行, 由于此时默认只有一个分组, 所以即使它为 true 所能看到的也是所有测试按序执行.<br/><br/>
+因此为达到 Play 2 的测试并发执行, 我们必须对所有测试实施自定义分组. 若为 <code>SubProcess</code> 类型的分组指定了  <code>ForkOption</code> 的话, <code>javaOptions in Test</code> 将失效. 当然我们可以通过简单的把 <code>fork in Test</code>, <code>parallelExecution in Test</code>, 和 <code>testForkedParallel in Test</code> 同时设为 true, 实现了分组内的测试也能并发执行, 但这种过高的并发会带来不可控性, 比如对唯一资源的抢占冲突, 因而暂不推荐使用.<br/><br/>
+如此一来, 最好以两回合来分解, 一为 fork 为 false 时, 二为 fork 和 parallelExecution 同为 true 时, 现在暂作一处, 有空再理. 接着当然是前面所述的两部份:<br/><br/>
+注: 本文采用 sbt 版本是 0.13.11, Scala 版本是 2.11.7.<br/><br/>
+<strong><span style="color: #0000ff; font-size: 10pt;">一: sbt 默认 <code>fork in Test := false</code> 时测试用例在 sbt 所在 JVM 中并发执行</span></strong><br/><br/>
+通过一个简单的 sbt 项目来体验, 该示例中包含有 JUnit 和 Scala Spec 两种类型的测试. 本例的目录及文件如下<br/><br/>
+<blockquote>
+├── build.sbt<br />
+└── test<br />
+    ├── model<br />
+    │   ├── BookSpecTest.scala<br />
+    │   └── BookTest.scala<br />
+    └── service<br />
+        ├── BookServiceSpecTest.scala<br />
+        └── BookServiceTest.java
+</blockquote>
+<br/>
+由于只涉及到单元测试, 所以只有 test 目录, 文件内容依次如下:<br/><br/>
+<span style="color: #0000ff;">build.sbt</span><br/><br/>
+<pre class="brush:scala ">name := "test-in-parallel"
+scalaVersion := "2.11.7"<br/><br/>
+
+libraryDependencies ++= Seq(
+  "org.specs2" %% "specs2-core" % "3.7.2" % "test",
+  "com.novocode" % "junit-interface" % "0.11" % "test"
+)<br/><br/>
+javaSource in Compile := new File(baseDirectory.value, "app")
+scalaSource in Compile := new File(baseDirectory.value, "app")<br/><br/>
+javaSource in Test := new File(baseDirectory.value, "test")
+scalaSource in Test := new File(baseDirectory.value, "test")<br/><br/>
+testOptions += Tests.Argument(TestFrameworks.JUnit, "-q", "-v")<br/><br/>
+javaOptions in Test += "-Dfrom.sbt.javaOptions=valueFromSbtJavaOptions"</pre>
+<br/>
+引入了 Spec 和 JUnit 测试依赖, 把产品和测试代码分别指定到 app 和 test 目录, 学的 Play 2 的样, javaOptions 行是用来验证它在 fork 为 false 时是否有效.<br/><br/>
+<span style="color: #0000ff;">test/model/BookTest.scala</span><br/><br/>
+<pre class="lang:default decode:true">package model<br/><br/>
+import org.junit.Test<br/><br/>
+class BookTest {<br/><br/>
+  @Test
+  def testCreateBook1: Unit = {
+    BookTest.print("BookTest#testCreateBook1")
+  }<br/><br/>
+  @Test
+  def testCreateBook2: Unit = {
+    BookTest.print("BookTest#testCreateBook2")
+  }
+}<br/><br/>
+object BookTest {
+  def print(name: String): Unit = {
+    (1 to 3).foreach { n =&gt;
+      System.err.println("from " + name + " " + Thread.currentThread() + " " + n)
+      Thread.sleep(500)
+    }
+  }
+}</pre>
+<br/>
+这里声明了一个辅助方法 BookTest.print(name) 来循环加延时输出当前线程名, 会被各个测试调用, 由此来观察用例是如何被执行.<br/><br/>
+<span style="color: #0000ff;">test/model/BookSpecTest.scala</span><br/><br/>
+<pre class="lang:default decode:true">package model<br/><br/>
+import org.specs2.mutable.Specification<br/><br/>
+object BookSpecTest extends Specification {<br/><br/>
+  "BookSpecTest" should {
+    "looks like this demo" in {
+      BookTest.print(getClass.getName)
+      "a" === "a"
+    }
+  }
+}</pre>
+<br/>
+<span style="color: #0000ff;">test/service/BookServiceTest.java</span><br/><br/>
+<pre class="lang:default decode:true">package service;<br/><br/>
+import org.junit.Test;<br/><br/>
+import model.BookTest;<br/><br/>
+public class BookServiceTest {<br/><br/>
+  @Test
+  public void testGetBookById() {
+    System.err.println("Property from.sbt.cmd " + System.getProperty("from.sbt.cmd"));
+    System.err.println("Property from.sbt.javaOptions " + System.getProperty("from.sbt.javaOptions"));
+    System.err.println("Property from.sbt.testGroup " + System.getProperty("from.sbt.testGroup"));<br/><br/>
+    BookTest.print(getClass().getName());
+  }
+}</pre>
+<br/>
+这里试图从 sbt 启动命令行或 sbt 的 javaOptions 配置中读取系统属性, 从而验证测试用例是在新的 JVM 中还是 sbt 所在的 JVM 中执行<br/><br/>
+<span style="color: #0000ff;">test/service/BookServiceSpecTest.scala</span><br/><br/>
+<pre class="lang:default decode:true">package service<br/><br/>
+import model.BookTest
+import org.specs2.mutable.Specification<br/><br/>
+object BookServiceSpecTest extends Specification {<br/><br/>
+  "BookServiceSpecTest" should {
+    "looks like this demo" in {
+      BookTest.print(getClass.getName)
+      "a" === "a"
+    }
+  }
+}</pre>
+<br/>
+好了, 我们现在用下面的命令来启来 sbt<br/><br/>
+<blockquote>
+<span style="color: #800000;">sbt -Dfrom.sbt.cmd=ValueFromSbtCmd</span>
+</blockquote>
+<br/>
+再执行几个 sbt 任务观察它的输出为<br/><br/>
+<blockquote>
+[I] ➜  test_in_parallel git:(master) ✗ sbt -Dfrom.sbt.cmd=ValueFromSbtCmd<br />
+[info] Set current project to test-in-parallel (in build file:/Users/yanbin/Workspaces/bitbucket/sbt-in-action/chapter4/test_in_parallel/)<br />
+> <span style="color: #800000;">show test:fork</span><br />
+[info] <span style="color: #0000ff;">false</span><br />
+> <span style="color: #800000;">show test:parallelExecution</span><br />
+[info] <span style="color: #0000ff;">true</span><br />
+> <span style="color: #800000;">show test:javaOptions</span><br />
+[info] <span style="color: #0000ff;">List(-Dfrom.sbt.javaOptions=valueFromSbtJavaOptions)</span><br />
+[success] Total time: 0 s, completed Apr 12, 2016 11:47:35 PM<br />
+> <span style="color: #800000;">test</span><br />
+[warn] javaOptions will be ignored, fork is set to false<br />
+<span style="color: #0000ff;">Property from.sbt.cmd ValueFromSbtCmd</span><br />
+<span style="color: #0000ff;">Property from.sbt.javaOptions null<br />
+Property from.sbt.testGroup null</span><br />
+from BookTest#testCreateBook1 Thread[pool-3-thread-5,5,main] 1<br />
+from service.BookServiceTest Thread[pool-3-thread-9,5,main] 1<br />
+from BookTest#testCreateBook1 Thread[pool-3-thread-5,5,main] 2<br />
+from service.BookServiceTest Thread[pool-3-thread-9,5,main] 2<br />
+from model.BookSpecTest$ Thread[specs2.fixed.env-300074353-7,5,main] 1<br />
+from service.BookServiceSpecTest$ Thread[specs2.fixed.env-842134031-7,5,main] 1<br />
+from service.BookServiceTest Thread[pool-3-thread-9,5,main] 3<br />
+from BookTest#testCreateBook1 Thread[pool-3-thread-5,5,main] 3<br />
+from model.BookSpecTest$ Thread[specs2.fixed.env-300074353-7,5,main] 2<br />
+from service.BookServiceSpecTest$ Thread[specs2.fixed.env-842134031-7,5,main] 2<br />
+from BookTest#testCreateBook2 Thread[pool-3-thread-5,5,main] 1<br />
+[info] Test run started<br />
+[info] Test service.BookServiceTest.testGetBookById started<br />
+[info] Test run finished: 0 failed, 0 ignored, 1 total, 1.53s<br />
+from model.BookSpecTest$ Thread[specs2.fixed.env-300074353-7,5,main] 3<br />
+from service.BookServiceSpecTest$ Thread[specs2.fixed.env-842134031-7,5,main] 3<br />
+from BookTest#testCreateBook2 Thread[pool-3-thread-5,5,main] 2<br />
+from BookTest#testCreateBook2 Thread[pool-3-thread-5,5,main] 3<br />
+[info] BookServiceSpecTest<br />
+[info]<br />
+[info] BookServiceSpecTest should<br />
+[info]   + looks like this demo<br />
+[info]<br />
+[info]<br />
+[info] Total for specification BookServiceSpecTest<br />
+[info] Finished in 1 second, 540 ms<br />
+[info] 1 example, 0 failure, 0 error<br />
+[info]<br />
+[info] BookSpecTest<br />
+[info]<br />
+[info] BookSpecTest should<br />
+[info]   + looks like this demo<br />
+[info]<br />
+[info]<br />
+[info] Total for specification BookSpecTest<br />
+[info] Finished in 1 second, 559 ms<br />
+[info] 1 example, 0 failure, 0 error<br />
+[info]<br />
+[info] Test run started<br />
+[info] Test model.BookTest.testCreateBook1 started<br />
+[info] Test model.BookTest.testCreateBook2 started<br />
+[info] Test run finished: 0 failed, 0 ignored, 2 total, 3.036s<br />
+[info] Passed: Total 5, Failed 0, Errors 0, Passed 5<br />
+[success] <span style="color: #0000ff;">Total time: 4 s</span>, completed Apr 12, 2016 11:47:42 PM
+</blockquote>
+<br/>
+从前面的输出可以发觉所有的测试都是并发执行的, 测试中可以取得 sbt 的系统属性, 基本上证明测试是在 sbt 所在的 JVM 中执行. 如果设置 <code>parallelExecution in Test := false</code> 的话将禁上这种 fork 为 false 时的默认为测试并发执行的行为. 也就是说 fork 为 false, parallelExecution 为 false 时测试类将按序执行.<br/><br/>
+那如果我们在 build.sbt 中加上<br/><br/>
+<blockquote>
+fork in Test := true
+</blockquote>
+<br/>
+会怎么样呢? 在上一个 sbt 控制台中 reload 后, 再执行 test 看看<br/><br/>
+<blockquote>
+&gt; <span style="color: #800000;">reload</span><br />
+[info] Set current project to test-in-parallel (in build file:/Users/yanbin/Workspaces/bitbucket/sbt-in-action/chapter4/test_in_parallel/)<br />
+> <span style="color: #800000;">show test:fork</span><br />
+[info] <span style="color: #0000ff;">true</span><br />
+> <span style="color: #800000;">test</span><br />
+[info] Updating {file:/Users/yanbin/Workspaces/bitbucket/sbt-in-action/chapter4/test_in_parallel/}test_in_parallel...<br />
+[info] Resolving jline#jline;2.12.1 ...<br />
+[info] Done updating.<br />
+from model.BookSpecTest$ Thread[specs2.fixed.env994707824-7,5,main] 1<br />
+from model.BookSpecTest$ Thread[specs2.fixed.env994707824-7,5,main] 2<br />
+from model.BookSpecTest$ Thread[specs2.fixed.env994707824-7,5,main] 3<br />
+[info] BookSpecTest<br />
+[info]<br />
+[info] BookSpecTest should<br />
+[info]   + looks like this demo<br />
+[info]<br />
+[info]<br />
+[info] Total for specification BookSpecTest<br />
+[info] Finished in 1 second, 543 ms<br />
+[info] 1 example, 0 failure, 0 error<br />
+[info]<br />
+from service.BookServiceSpecTest$ Thread[specs2.fixed.env-1284062022-7,5,main] 1<br />
+from service.BookServiceSpecTest$ Thread[specs2.fixed.env-1284062022-7,5,main] 2<br />
+from service.BookServiceSpecTest$ Thread[specs2.fixed.env-1284062022-7,5,main] 3<br />
+[info] BookServiceSpecTest<br />
+[info]<br />
+[info] BookServiceSpecTest should<br />
+[info]   + looks like this demo<br />
+[info]<br />
+[info]<br />
+[info] Total for specification BookServiceSpecTest<br />
+[info] Finished in 1 second, 509 ms<br />
+[info] 1 example, 0 failure, 0 error<br />
+[info]<br />
+[info] Test run started<br />
+[info] Test model.BookTest.testCreateBook1 started<br />
+from BookTest#testCreateBook1 Thread[pool-1-thread-1,5,main] 1<br />
+from BookTest#testCreateBook1 Thread[pool-1-thread-1,5,main] 2<br />
+from BookTest#testCreateBook1 Thread[pool-1-thread-1,5,main] 3<br />
+[info] Test model.BookTest.testCreateBook2 started<br />
+from BookTest#testCreateBook2 Thread[pool-1-thread-1,5,main] 1<br />
+from BookTest#testCreateBook2 Thread[pool-1-thread-1,5,main] 2<br />
+from BookTest#testCreateBook2 Thread[pool-1-thread-1,5,main] 3<br />
+[info] Test run finished: 0 failed, 0 ignored, 2 total, 3.026s<br />
+[info] Test run started<br />
+[info] Test service.BookServiceTest.testGetBookById started<br />
+<span style="color: #0000ff;">Property from.sbt.cmd null</span><br />
+<span style="color: #0000ff;">Property from.sbt.javaOptions valueFromSbtJavaOptions<br />
+Property from.sbt.testGroup null</span><br />
+from service.BookServiceTest Thread[pool-1-thread-1,5,main] 1<br />
+from service.BookServiceTest Thread[pool-1-thread-1,5,main] 2<br />
+from service.BookServiceTest Thread[pool-1-thread-1,5,main] 3<br />
+[info] Test run finished: 0 failed, 0 ignored, 1 total, 1.51s<br />
+[info] Passed: Total 5, Failed 0, Errors 0, Passed 5<br />
+[success] <span style="color: #0000ff;">Total time: 10 s</span>, completed Apr 12, 2016 11:56:15 PM
+</blockquote>
+<br/>
+不难发现当 <code>fork in Test := true</code> 之后, 所有的测试类将按序同步执行, 耗费更多的时间. 测试中获取不到 sbt 的系统属性, 可以得到通过 <code>javaOptions</code> 设置的系统属性, 即测试用例跑在一个新的 JVM 中.<br/><br/>
+我们该如何让测试用例在 fork 的 JVM 中并发执行了, 由此引出我们第二个议题<br/><br/>
+<span style="color: #0000ff; font-size: 10pt;"><strong>二. <code>fork in Test := true</code> 时用例分组并发执行</strong></span><br/><br/>
+设置了 fork 为 true 之后所有的测试类将在一个 fork 的 JVM 中按序同步执行. 我们说了 fork 的 JVM 中并发执行的粒度是用例组 -- 组内按序, 组间并发. 如果没有自定义分组的话所有测试在一个默认分组中, 也就是说全部用例按序执行, 可以去掉下面的的 <code>testGrouping in Test &lt;&lt;= definedTests in Test map groupByModule</code> 这行验证一下. 本例中我们按所在不同的包分成  model 和 service 两个组.<br/><br/>
+因此, 新的 <code>build.sbt</code> 文件内容将如下:<br/><br/>
+<pre class="lang:default decode:true">import sbt.Tests.{Group, SubProcess}<br/><br/>
+name := "test-in-parallel"
+scalaVersion := "2.11.7"<br/><br/>
+libraryDependencies ++= Seq(
+  "org.specs2" %% "specs2-core" % "3.7.2" % "test",
+  "com.novocode" % "junit-interface" % "0.11" % "test"
+)<br/><br/>
+javaSource in Compile := new File(baseDirectory.value, "app")
+scalaSource in Compile := new File(baseDirectory.value, "app")<br/><br/>
+javaSource in Test := new File(baseDirectory.value, "test")
+scalaSource in Test := new File(baseDirectory.value, "test")<br/><br/>
+testOptions += Tests.Argument(TestFrameworks.JUnit, "-q", "-v")<br/><br/>
+parallelExecution in Test := true
+fork in Test := true<br/><br/>
+javaOptions in Test += "-Dfrom.sbt.javaOptions=valueFromSbtJavaOptions"<br/><br/>
+def groupByModule(tests: Seq[TestDefinition]) = {
+  tests groupBy {test =&gt;
+    test.name.split("\\.")(0)  //grouped by top package name
+  } map {
+    case (name, tests) =&gt; Group(name, tests,
+      SubProcess(ForkOptions(
+        runJVMOptions = Seq(
+          "-Dfrom.sbt.testGroup=valueFromSbtTestGroup " + name
+        )
+      )))
+  } toSeq
+}<br/><br/>
+testGrouping in Test &lt;&lt;= definedTests in Test map groupByModule</pre>
+<br/>
+再回到 sbt 控制台下 reload, 然后 test 一下<br/><br/>
+<blockquote>
+&gt; <span style="color: #800000;">reload</span><br />
+[info] Set current project to test-in-parallel (in build file:/Users/yanbin/Workspaces/bitbucket/sbt-in-action/chapter4/test_in_parallel/)<br />
+> <span style="color: #800000;">show test:fork</span><br />
+[info] <span style="color: #0000ff;">true</span><br />
+> <span style="color: #800000;">show test:javaOptions</span><br />
+[info] <span style="color: #0000ff;">List(-Dfrom.sbt.javaOptions=valueFromSbtJavaOptions)</span><br />
+[success] Total time: 0 s, completed Apr 13, 2016 12:30:22 AM<br />
+> <span style="color: #800000;">show testGrouping</span><br />
+[info] <span style="color: #0000ff;">List(Group(model,List(Test model.BookSpecTest : subclass(true, org.specs2.specification.core.SpecificationStructure), Test model.BookTest : annotation(false, org.junit.Test)),SubProcess(ForkOptions(None,None,List(),None,List(-Dfrom.sbt.testGroup=valueFromSbtTestGroupmodel),false,Map()))), Group(service,List(Test service.BookServiceSpecTest : subclass(true, org.specs2.specification.core.SpecificationStructure), Test service.BookServiceTest : annotation(false, org.junit.Test)),SubProcess(ForkOptions(None,None,List(),None,List(-Dfrom.sbt.testGroup=valueFromSbtTestGroupservice),false,Map()))))</span><br />
+[success] Total time: 0 s, completed Apr 13, 2016 12:30:27 AM<br />
+> <span style="color: #800000;">test</span><br />
+from model.BookSpecTest$ Thread[specs2.fixed.env-1444496425-7,5,main] 1<br />
+from service.BookServiceSpecTest$ Thread[specs2.fixed.env994707824-7,5,main] 1<br />
+from model.BookSpecTest$ Thread[specs2.fixed.env-1444496425-7,5,main] 2<br />
+from service.BookServiceSpecTest$ Thread[specs2.fixed.env994707824-7,5,main] 2<br />
+from service.BookServiceSpecTest$ Thread[specs2.fixed.env994707824-7,5,main] 3<br />
+from model.BookSpecTest$ Thread[specs2.fixed.env-1444496425-7,5,main] 3<br />
+[info] BookSpecTest<br />
+[info] BookServiceSpecTest<br />
+[info]<br />
+[info]<br />
+[info] BookSpecTest should<br />
+[info] BookServiceSpecTest should<br />
+[info]   + looks like this demo<br />
+[info]   + looks like this demo<br />
+[info]<br />
+[info]<br />
+[info] Total for specification BookSpecTest<br />
+[info] Finished in 1 second, 550 ms<br />
+[info] 1 example, 0 failure, 0 error<br />
+[info]<br />
+[info]<br />
+[info]<br />
+[info] Total for specification BookServiceSpecTest<br />
+[info] Finished in 1 second, 536 ms<br />
+[info] 1 example, 0 failure, 0 error<br />
+[info]<br />
+[info] Test run started<br />
+[info] Test model.BookTest.testCreateBook1 started<br />
+from BookTest#testCreateBook1 Thread[pool-1-thread-1,5,main] 1<br />
+[info] Test run started<br />
+[info] Test service.BookServiceTest.testGetBookById started<br />
+<span style="color: #0000ff;">Property from.sbt.cmd null</span><br />
+<span style="color: #0000ff;">Property from.sbt.javaOptions null</span><br />
+<span style="color: #0000ff;">Property from.sbt.testGroup valueFromSbtTestGroup service</span><br />
+from service.BookServiceTest Thread[pool-1-thread-1,5,main] 1<br />
+from BookTest#testCreateBook1 Thread[pool-1-thread-1,5,main] 2<br />
+from service.BookServiceTest Thread[pool-1-thread-1,5,main] 2<br />
+from BookTest#testCreateBook1 Thread[pool-1-thread-1,5,main] 3<br />
+from service.BookServiceTest Thread[pool-1-thread-1,5,main] 3<br />
+[info] Test model.BookTest.testCreateBook2 started<br />
+from BookTest#testCreateBook2 Thread[pool-1-thread-1,5,main] 1<br />
+[info] Test run finished: 0 failed, 0 ignored, 1 total, 1.52s<br />
+from BookTest#testCreateBook2 Thread[pool-1-thread-1,5,main] 2<br />
+from BookTest#testCreateBook2 Thread[pool-1-thread-1,5,main] 3<br />
+[info] Test run finished: 0 failed, 0 ignored, 2 total, 3.032s<br />
+[info] Passed: Total 5, Failed 0, Errors 0, Passed 5<br />
+[success] <span style="color: #0000ff;">Total time: 6 s</span>, completed Apr 13, 2016 12:30:43 AM
+</blockquote>
+<br/>
+这时候测试类是并发执行是没问题的, 要细心点去才能从结果中看出组内是按序执行, 组与组是并发执行的. 测试类自定义分组后用 <code>javaOptions in Test</code> 定义的 JVM 参数都不可用, 而必须为每个分组单独定义 JVM 参数, 这说明了 sbt 为每一个测试分组启动了单独的 JVM. 原理上我们可以为每一个测试类建立一个单独的组, 那将要求 fork 很多的 JVM, 需实际考虑效果. 上面结果也能看出测试类分组后运行时间也有减少.<br/><br/>
+视情况设置 Tags.ForkedTestGroup, 默认为 1, 但好像也能同时处理 2 个分组的. 它的设置方法如下<br/><br/>
+<pre class="lang:default decode:true">concurrentRestrictions in Test := Seq(
+  Tags.limit(Tags.ForkedTestGroup, 8)
+//  Tags.limit(Tags.Test, 8),
+//  Tags.limit(Tags.All, 8)
+)</pre>
+<br/>
+参考:  1. sbt forking<br />
+         2. <a href="http://grokbase.com/t/gg/simple-build-tool/1477vfvdnp/sbt-re-parallel-execution-vs-tests">Re: [sbt] Re: Parallel Execution vs Tests</a><br />
+         3. <a href="https://github.com/etorreborre/specs2/issues/60"> Parallel Execution of Examples and Execution Order #60</a><br />
+         4. <a href="https://github.com/sbt/sbt/issues/1886">parallel even with parallel disabled #1886</a><br />
+         5. <a href="https://github.com/playframework/playframework/issues/849"> Parallel execution definitions of tests are ignored #849</a><br />
+        6. <a href="http://stackoverflow.com/questions/15798341/how-to-fork-the-jvm-for-each-test-in-sbt">How to fork the jvm for each test in sbt</a>

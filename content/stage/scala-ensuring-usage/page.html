@@ -1,0 +1,55 @@
+---
+title: Scala 中 ensuring 方法的使用说明
+url: /scala-ensuring-usage/
+date: 2012-09-24T11:28:11-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - Scala
+  - ensuring
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4723 
+wpStatus: publish
+views: 2595
+lastmod: 2021-06-02T23:59:04-05:00
+---
+
+Scala 在方法里除了可用 assert() 方法像 Java 那样进行断言，还可以使用 ensuring() 方法在返回结果的分支的花括号同一行上进行断言。它们不同的是 assert 可以随意放在哪里对任何的 boolean 类型进行断言，而 ensuring 是用来对返回结果行断言的，所以它必须尾随返回结果处。 assert 和  ensuring 方法都是定方在 Predef 中的，所以可以直接写。</p>
+<br/>
+在 《Programming in Scala》一书中对 ensuring 使用的示例代码，会让人感到很费解的，并且对 ensuring 的解释也不多，只是说了 ensuring 中用 "_" 作为当前返回结果对象的占位符。在 《Programming in Scala》中 ensuring 示例代码是：<br/><br/>
+<pre class="lang:default decode:true">private def widen(w: Int): Element = 
+    if(w &lt;= width)
+        this
+    else {
+        val left = elem(' ', (w - width)/2, height)
+        var right = elem(' ', (w - width -left.width, height)
+        left beside this beside right
+    } ensuring (w &lt;= _.width)</pre>
+<br/>
+第一个让人一下不好理解的是方法定义第一行等号后没有加花括号，一般来说方法只包一条(行)语句时花括号可以省略，多行时虽然程序能够推断出该方法在何处解释，但人来阅读时却不容易把握方法代码在哪里结束，所以最好多行时用花括号括住函数代码。再说，如果在 Scala 控制台敲上面的代码，中间加回车的时候就会报错。<!--more--><br/><br/>
+还有 ensuring 该放在何处欠更详细的说明，首明要明白的是 ensuring() 是用来断言返回结果的，所以它应该放在返回结果分支的花括号后面，如果没有花括号，应该造花括号让它跟，或是写在函数后最后那个花括号的后面(这看起来 ensuring() 跑到方法外头去了)。<br/><br/>
+我们可以从下面的例子来理解 ensuring 的用法：<br/><br/>
+<pre class="lang:default decode:true ">private def widen(w: Int): Element = {
+    if(w &lt; width){
+        this
+    } ensuring(_.width &gt; 10) //这里欲断言返回结果 this，所有两 if 后的花括号不能省略
+    else {
+        val left = elem(' ', (w - width)/2, height)
+        var right = elem(' ', (w - width - left.width, height)
+        left beside this beside right
+    } ensuring(w &lt;= _.width) //断言的是上一行 left beside this beside right 结果
+} ensuring((w + _.width) &gt; 100) //ensuring 断言可以放在方法体外了，用来断言最终的结果</pre>
+<br/>
+上面的 ensuring() 方法中的表达式是随意写的，只说明它是一个 boolean 值。再次说明一个 ensuring 断言的是方法中每一个分支持返回结果后花括号后头。如果方法只有一行语句，原来是可以省去花括号，但要用上 ensuring 的话也必须把花括号补回来。<br/><br/>
+另外，ensuring() 中的  "_" 是它之前返回结果的占位符，如：<br/><br/>
+第一个 ensuring(_.width &gt; 10) 中  "_" 代表前面的 this<br />
+第二个  ensuring(w &lt;= _.width) 中的 "_" 代表的是它前面 left.beside this beside right 语句的值<br />
+最后一个 ensuring((w + _.width) &gt; 100) 中的 "_" 代表的是此方法最终的结果，可能是 if 中的  this，也可能是 else 中的结果值<br/><br/>
+写在方法最外层的花括号后的  ensuring 语句等于是对返回结果的最后仲裁。

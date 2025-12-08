@@ -1,0 +1,111 @@
+---
+title: DB2 "The transaction log for the database is full" 问题的解决
+url: /db2-the-transaction-log-for-the-database-is-full-fix/
+date: 2022-02-16T22:22:36-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Database
+tags: 
+  - DB2
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12291 
+wpStatus: publish
+views: 846
+lastmod: 2022-02-16T22:22:36-06:00
+---
+
+在使用 DB2 的 Community 版本的 Docker 镜像 <code>ibmcom/db2</code> 进行测试，启动 Docker 容器的命令是<br/><br/>
+<blockquote>
+$ docker run -name db2server --privileged=true -p 50000:50000 \ <br />
+    -e LICENSE=accept \<br />
+    -e DB2INSTANCE=db2user \<br />
+    -e DB2INST1_PASSWORD=password123 \<br />
+    -e DBNAME=test \<br />
+    ibmcom/db2
+</blockquote>
+<br/>
+当使用多线程以及 JDBC 的 Batch Update 时，出现 "The transaction log for the database is full" 问题，一旦出现这个问题时，用数据库客户端连接后即使执行一条简单的 insert/update 语句也会报同样的错误。于是只能减少线程数和 Batch Update 时的记录来勉强过关，但性能上与其他数据库就有很大的差别了。<!--more--><br/><br/>
+<h3>问题在哪里</h3><br/><br/>
+因为在产品数据库中用 10 个线程，Batch Size 设置为 500 应该不会过分，所以必须找到 transaction log 限制在哪里。<br/><br/>
+DB2 的操作需用 db2 命令，在 Docker 容器中要切换到 ${DB2INSTANCE} 环境变量代表的用户，我们这里是 <code>db2user</code>, 因此我们登陆到 db2server Docker 容器中<br/><br/>
+<blockquote>
+$ docker exec -it db2server sh -c "su - db2user"<br />
+$ export DBNAME=test
+</blockquote>
+<br/>
+我们进入到 Docker 容器中后就可以执行 db2 命令了，查看 log file 相应的数据库配置<br/><br/>
+<blockquote>
+$ db2 get db cfg | grep -i "log file"<br />
+Log file size (4KB) (LOGFILSIZ) = 1024<br />
+Number of primary log files (LOGPRIMARY) = 16<br />
+Number of secondary log files (LOGSECOND) = 22<br />
+Changed path to log files (NEWLOGPATH) =<br />
+Path to log files = /database/data/db2user/NODE0000/SQL00001/LOGSTREAM0000/<br />
+First active log file = S0000000.LOG<br />
+Num. of active log files for 1 active UOW(NUM_LOG_SPAN) = 0<br />
+Percent log file reclaimed before soft chckpt (SOFTMAX) = 0
+</blockquote>
+<br/>
+这里我们看到日志文件大小(LOGFILESIZ) 为 1024, 其实质就是在目录 <code>Path to log files</code> 下的一个个文件大小不能超过 1K 大小，真的是一个稍微大的事物就容纳不下。<br/><br/>
+<h3>修改日志大小上限</h3><br/><br/>
+我们要对它的值进行修改，另两个配置 LOGPRIMARY 和 LOGSECOND 必要时也改一改。使用命令<br/><br/>
+<blockquote>
+$ db2 update db cfg using LOGFILSIZ 10240<br />
+$ db2 update db cfg using LOGPRIMARY 100<br />
+$ db2 update db cfg using LOGSECOND 100
+</blockquote>
+<br/>
+改完后可用 <code>db2 get db cfg | grep -i "log file"</code> 立即看到修改后的值，但要生效的话必须重启数据库实例。<br/><br/>
+<h3>重启数据库实例</h3><br/><br/>
+<blockquote>
+$ db2 force applications all<br />
+$ db2stop force<br />
+$ db2start
+</blockquote>
+<br/>
+说明：如果没数据库连接，db2stop 就能停止数据库，否则会提示<br/><br/>
+<blockquote>
+QL1025N The database manager was not stopped because databases are still active.
+</blockquote>
+<br/>
+用 <code>db2stop force</code> 强制停掉数据库，先用 <code>db2 force applications all</code> 断掉数据库连接后，其实紧接着的 <code>db2stop</code> 就不需要 <code>force</code> 了<br/><br/>
+待数据库重新启动后就能支持更大的事物，更多客户端连接及更大的 Batch Update Size 了。<br/><br/>
+<h3>最后总结一下</h3><br/><br/>
+挑出几个必须的步骤<br/><br/>
+<ol>
+    <li>进到数据库服务器并切换到数据库用户</li>
+    <li>db2 get db cfg for test | grep LOGFILSIZ 查看日志文件大小限制</li>
+    <li>db2 update db cfg for test using LOGFILSIZ 10240</li>
+    <li>db2stop force</li>
+    <li>db2start</li>
+</ol>
+<br/>
+执行 db2 命令时的补充：<br/><br/>
+db2 update db cfg 命令可带上数据库名称(比如未设置 DBNAME 环境变量的情况下)<br/><br/>
+<blockquote>
+$ db2 update db cfg for test using LOGFILSIZ 10240
+</blockquote>
+<br/>
+如果没有设置 DBNAME=test 环境变量就执行 <code>db2 get db cfg</code> 命令会提示<br/><br/>
+<blockquote>
+SQL1024N A database connection does not exist. SQLSTATE=08003
+</blockquote>
+<br/>
+不想设置  DBNAME 环境变量操作该数据库的办法可以分两步<br/><br/>
+<ol>
+    <li>先执行 <code>db2</code> 进行 db2 的提示符 "db2 =&gt;"</li>
+    <li>在 "db2 =&gt;" 提示符下执行 "connect to test"</li>
+    <li>继续在 "db2 =&gt;"  提示符下执行 "get db cfg" 命令</li>
+</ol>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://www.ibm.com/support/pages/default-db2-database-transaction-log-size-may-be-too-small-ibm-content-collector">Default DB2 database transaction log size may be too small for IBM Content Collector</a></li>
+    <li><a href="https://workloadautomation.hcldoc.com/help/index.jsp?topic=%2Fcom.hcl.wa.doc_9.4%2Fdistr%2Fsrc_ad%2Fawsadchgmaxdb2log.html">Procedure for changing the maximum DB2 log capacity</a></li>
+</ol>

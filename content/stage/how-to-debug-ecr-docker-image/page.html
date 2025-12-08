@@ -1,0 +1,174 @@
+---
+title: 如何调试 ECR Docker 镜像
+url: /how-to-debug-ecr-docker-image/
+date: 2021-09-04T22:47:02-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+categories:
+  - Java/JEE
+  - AWS
+tags: 
+  - Docker
+  - ECR
+  - 容器
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11011 
+wpStatus: publish
+views: 601
+lastmod: 2022-10-19T20:40:43-05:00
+---
+
+<!-- wp:paragraph --><br/>
+<p>常常因为在 AWS 上部署的 ECS 或 EKS 服务，甚至是使用了 ECR 镜像的 Lambda 服务这样或那样的原因无法启动，或其他莫名的异常，这时候最好能直接调试 ECR 上的 Docker 镜像，比调试用于打包 Docker 的源代码更接近真实环境。</p>
+
+<p>要调试 Docker 镜像需要先从 ECR 中下载到 AWS 服务用的镜像，下面以运行 Java 的 Docker 为例，同时用 IntelliJ IDEA 关联源代码进行远程调试。</p>
+
+<p>从 ECR 下载 Docker 镜像部分可参考 <a href="/push-docker-image-to-amazon-ecr-repository/">推送 Docker 镜像到 Amazon ECR 仓库</a>, 那篇文章写作之时可能与现在略有不同。具体需直接进到 ECR 的页面，如 https://console.aws.amazon.com/ecr/repositories/private/&lt;aws_account_id&gt;/&lt;ecr_name&gt;?region=&lt;region&gt;，点击 <code>View push commands</code> 可看到用 AWS CLI 如何登陆 ECR，现在看到的在 macOS/Linux 下的命令是(假设 AWS AccountId 是 123456789, region 是 us-east-1)</p>
+
+<blockquote><br/>
+<p>aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 123456789.dkr.ecr.us-east-1.amazonaws.com</p>
+
+</blockquote>
+
+<p>假如 ECR 仓库名是 test-java, 那么要下载 tag 1.0.1 的命令是<!--more--></p>
+
+<blockquote><br/>
+<p>docker pull 123456789.dkr.ecr.us-east-1.amazonaws.com/test-java:1.0.1</p>
+
+</blockquote>
+
+<p>也能跳过 docker pull 这一步，因为接下来要执行的  <code>docker run</code> 命令会主动从 ECR 上下载相应的 Docker 镜像。</p>
+
+<p>还是直奔主题吧，用下面命令来启动一个 Java 的 Docker 应用</p>
+
+<blockquote><br/>
+<p>docker run -v /Users/yanbin/.aws:/root/.aws \<br /><br/>
+-e JAVA_TOOL_OPTIONS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:8000" \<br /><br/>
+-p 8000:8000  123456789.dkr.ecr.us-east-1.amazonaws.com/test-java:1.0.1</p>
+
+</blockquote>
+
+<p>然后用 IntelliJ IDEA 进行 Remote JVM Debug, 关联代码，源代码上打上断点，执行，断点调试。</p>
+
+<p>看到这里也就差不多，后面的文字就当是无关紧要的后戏吧，只是为了解释 JAVA_TOOL_OPTIONS 的来由及如何找到相应开启远程调试的 JVM 参数。</p>
+
+<p>因为要用 IntelliJ IDEA 对 Docker 中运行的 Java 程序进行远程调试，先必须找到如何打开 JVM 的调试端口。这需要修改 JVM 的启动参数，不同的 Java 版本还略有不同</p>
+
+<p>如 Java 5 之前</p>
+
+<blockquote><br/>
+<p>-Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=8000</p>
+
+</blockquote>
+
+<p>Java 5 及之后</p>
+
+<blockquote><br/>
+<p>-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=8000</p>
+
+</blockquote>
+
+<p>从 Java 9 开始，-Xdebug 可以省了</p>
+
+<blockquote><br/>
+<p>-agentlib:jdwp=transport=dt_socket,server=y,<span class="hljs-built_in">suspend</span>=n,address=*:8000</p>
+
+</blockquote>
+
+<p>address=8000 可以写成 address=127.0.0.1:8000, 或 address=*:8000</p>
+
+<p>ECR 中的 Java 应用我们如果不想改变其中 CMD 或 ENTRYPOINT 来修改 JVM 参数的话，可以用外部的环境变量来控制 JVM 参数。</p>
+
+<p>某些 Java 应用会使用特定的环境变量作为 JVM 参数，如 JAVA_OPTS，CATALINA_OPTS 或 JPDA_OPTS，这有赖于我们去阅读一些 Java 应用的启动脚本。而更通用的环境变量是 <a href="https://docs.oracle.com/javase/8/docs/platform/jvmti/jvmti.html#tooloptions">JAVA_TOOL_OPTIONS</a>, 如果它有设置的话，JVM 启动时会从 JAVA_TOOL_OPTIONS 中提取虚拟机参数。</p>
+
+<p>我们不妨做个测试，写一个 Java  代码 Test.java</p>
+
+<pre class="lang:default decode:true ">import java.lang.management.ManagementFactory;<br/>
+import java.lang.management.RuntimeMXBean;<br/>
+import java.util.List;<br/>
+<br/>
+public class Test {<br/>
+<br/>
+  public static void main(String[] args) throws Exception {<br/>
+    RuntimeMXBean runtimeMxBean = ManagementFactory.getRuntimeMXBean();<br/>
+    List&lt;String&gt; arguments = runtimeMxBean.getInputArguments();<br/>
+    System.out.println(arguments);<br/>
+    System.out.println(System.getProperty("foo"));<br/>
+    Thread.sleep(9999999);<br/>
+  }<br/>
+}</pre>
+
+<p>编译，在执行前设置 JAVA_TOOL_OPTIONS 环境变量，如下</p>
+
+<blockquote><br/>
+<p>$ export JAVA_TOOL_OPTIONS="-Xmx1G -Dfoo=bar"<br /><br/>
+$ java Test<br /><br/>
+Picked up JAVA_TOOL_OPTIONS: -Xmx1G -Dfoo=bar<br /><br/>
+[-Xmx1G, -Dfoo=bar]<br /><br/>
+bar</p>
+
+</blockquote>
+
+<p>上面显示了 java Test 执行时已 <code>Picked up</code> JAVA_TOOL_OPTIONS 中的设置, 并且也实际打印出了相关的设置。且由于此时程序未退出，还能在另一终端中显示虚拟机参数</p>
+
+<blockquote><br/>
+<p>$ jps -v |grep Test<br /><br/>
+40561 Test -Xmx1G -Dfoo=bar</p>
+
+</blockquote>
+
+<p>我们接下来正是要借助于 JAVA_TOOL_OPTIONS 环境变量对 JVM 的特效来打开 JVM 的远程调试端口。</p>
+
+<p>再则 AWS 的服务需要相应的 AWS 帐号权限，我们可以把宿主机上的 ~/.aws 目录共享给容器(一般需 default 的 profile)，或者通过</p>
+
+<blockquote><br/>
+<p>-e AWS_ACCESS_KEY_ID=xxx -e AWS_SECRET_ACCESS_KEY=yyy -e AWS_SESSION_TOKEN=zzz</p>
+
+</blockquote>
+
+<p>传递给容器，以映射 ~/.aws 卷为例，完整的启动一个 Java Docker 镜像的命令为</p>
+
+<blockquote><br/>
+<p>docker run -v /Users/yanbin/.aws:/root/.aws \<br /><br/>
+-e JAVA_TOOL_OPTIONS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=8000" \<br /><br/>
+-p 8000:8000  123456789.dkr.ecr.us-east-1.amazonaws.com/test-java:1.0.1</p>
+
+</blockquote>
+
+<p>调试端口启动在容器内部的 127.0.0.1:8000, 用 -p 8000:8000 映射到宿主机的 8000 端口号上。现在我们就能用 IntelliJ 连接宿主机的 8000 端口号关联源代码进行调试了。</p>
+
+<p><a href="https://yanbin.blog/wp-content/uploads/2021/09/remote-debug-java-ecr.png"><img class="aligncenter wp-image-11637 size-large" src="https://yanbin.blog/wp-content/uploads/2021/09/remote-debug-java-ecr-800x496.png" alt="" width="800" height="496" /></a></p>
+
+<p>上图是在 IntelliJ IDEA 中进行 Remote JVM Debug 的设置，Use module classpath: 可以让你选择关联的源代码，打开所选模块的源代码在某行打上断点，就和本地调试一样了。</p>
+
+<p>前面不同版本的开启远程调试的参数我还是在网上搜索了一番，看到这里发现又是白费了不少时间。注意到该窗口明明白的列出了不同版本的 JVM 开启远程调试的虚拟机参数，为便于在 IntelliJ IDEA 之外的地方应用，我们可以把它们全部列示出来</p>
+
+<blockquote><br/>
+<p><strong>JDK 1.3.x or earlier:</strong> -Xnoagent -Djava.compiler=NONE -Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=8000</p>
+
+<p><strong>JDK 1.4.x:</strong> -Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=8000</p>
+
+<p><strong>JDK 5 - 8:</strong> -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=8000</p>
+
+<p><strong>JDK 9 or later:</strong> -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:8000</p>
+
+</blockquote>
+
+<p>链接：</p>
+
+<ol>
+
+	<li><a href="https://www.baeldung.com/java-application-remote-debugging">Java Application Remote Debugging</a></li>
+
+	<li><a href="https://docs.oracle.com/javase/8/docs/platform/jvmti/jvmti.html#tooloptions">JAVA_TOOL_OPTIONS</a></li>
+
+</ol>
+
+<!-- /wp:paragraph --><br/>
+<!-- wp:paragraph --><!-- /wp:paragraph -->

@@ -1,0 +1,278 @@
+---
+title: Spring Boot 与 Logback 日志配置
+url: /springboot-work-with-logback/
+date: 2018-10-08T01:35:10-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - Spring Boot
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9012 
+wpStatus: publish
+views: 1258
+lastmod: 2018-11-03T03:55:10-05:00
+---
+
+<p>本文记录 SpringBoot 与 Logback 是如何工作的，即观察 SpringBoot 中 Logback  是怎么一步一步初始化的。用以测试的 SpringBoot 版本是 1.5.16, 而非最新的 SpringBoot 2。关于 SpringBoot 日志的官方文档在 <a href="https://docs.spring.io/spring-boot/docs/current/reference/html/howto-logging.html">Logging</a>, 但不太详细或透彻。本文也不承诺说就理解得更有深度，只是为官方文档提供更多方面的参考。</p>
+
+<p>SpringBoot 默认使用 Slf4J + Logback 来记录日志，对于一个基本的依赖于</p>
+
+<blockquote><br/>
+<p>&lt;dependency&gt;<br /><br/>
+    &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;<br /><br/>
+    &lt;artifactId&gt;spring-boot-starter&lt;/artifactId&gt;<br /><br/>
+&lt;/dependency&gt;</p>
+
+</blockquote>
+
+<p>的 Spring Boot 项目，上面组件依赖了 spring-boot-starter-logging 组件，而该组件又引入了以下几个依赖</p>
+
+<ol>
+
+	<li>logback-classic:   依赖了 Slf4J</li>
+
+	<li>jcl-over-slf4j</li>
+
+	<li>jul-to-slf4j</li>
+
+	<li>log4j-over-slf4j</li>
+
+</ol>
+
+<p>相当于把其他的日志框架全桥接到了 Slf4J + Logback 上去了。<!--more--></p>
+
+<p>那么  Spring Boot Web 项目是怎么样子的呢？spring-boot-starter-web 依赖于  spring-boot-starter，所以日志框架选用上就没有一点区别了。</p>
+
+<h3>Spring Boot 应用默认日志输出</h3><br/>
+<p>从一个最简单的 Spring Boot 应用程序来感受它的配置日志输出，一个 Maven 项目，最基本的配置是</p>
+
+<pre class="lang:default decode:true">&lt;parent&gt;<br/>
+    &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;<br/>
+    &lt;artifactId&gt;spring-boot-starter-parent&lt;/artifactId&gt;<br/>
+    &lt;version&gt;1.5.16.RELEASE&lt;/version&gt;<br/>
+    &lt;relativePath/&gt; &lt;!-- lookup parent from repository --&gt;<br/>
+&lt;/parent&gt;<br/>
+<br/>
+&lt;dependencies&gt;<br/>
+    &lt;dependency&gt;<br/>
+        &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;<br/>
+        &lt;artifactId&gt;spring-boot-starter&lt;/artifactId&gt;<br/>
+    &lt;/dependency&gt;<br/>
+&lt;/dependencies&gt;</pre>
+
+<p>注意：<a href="http://central.maven.org/maven2/org/springframework/boot/spring-boot-starter-parent/1.5.16.RELEASE/spring-boot-starter-parent-1.5.16.RELEASE.pom">spring-boot-starter-parent 的 pom.xml</a> 文件值得瞧一瞧的。</p>
+
+<p>当 application.properties 文件内容为空，并且没有任何的 Logback 配置文件在 resources 目录中时，</p>
+
+<p>来个最简单的程序</p>
+
+<pre class="lang:default decode:true">@SpringBootApplication<br/>
+public class Application {<br/>
+    private static final Logger logger = LoggerFactory.getLogger(Application.class);<br/>
+<br/>
+    public static void main(String[] args) {<br/>
+        logger.info("aaa");<br/>
+        SpringApplication.run(Application.class, args);<br/>
+        logger.info("bbb");<br/>
+    }<br/>
+}</pre>
+
+<p>在 SpringApplication.run(...) 前后各调用  logger.info(...) 输出信息</p>
+
+<p><a href="https://yanbin.blog/wp-content/uploads/2018/10/springboot-logback-1.png"><img class="aligncenter wp-image-9013" src="https://yanbin.blog/wp-content/uploads/2018/10/springboot-logback-1-800x311.png" alt="" width="831" height="323" /></a></p>
+
+<p>前面 logger.info("aaa") 和 logger.info("bbb") 的输出用红线标示出来了，可以非常感性的认识到</p>
+
+<ol>
+
+	<li>它们输出样式不同，所以使用了不同的日志配置</li>
+
+	<li>logger.info("aaa") 发生在 Spring 上下文初始化之前，以 Logback 的默认行为初始化的 LoggerFactory</li>
+
+	<li>logger.info("bbb") 发生在  Spring 上下文初始化之后，因此 Spring Boot 又重新配置了 Logback 的 LoggerFactory</li>
+
+	<li>#2 不是我们这里探讨的范畴，它和普通 Java 应用使用 Logback 是一致的，主要看 #3 怎么来的，并且默认的 Log 是怎么样的配置</li>
+
+</ol>
+
+<h3>Spring Boot 是如何初始化 Logback 的</h3><br/>
+<p>在 <a href="https://docs.spring.io/spring-boot/docs/current/reference/html/howto-logging.html">Logging</a> 一文中提到了 Spring Boot 有一个 <code>LoggingSystem</code> 抽象来负责配置日志系统，并且 Logback 是首选。<code>LoggingSystem</code> 是一个抽象类，它的实现层次如下</p>
+
+<p><a href="https://yanbin.blog/wp-content/uploads/2018/10/springboot-logback-2.png"><img class="aligncenter wp-image-9015" src="https://yanbin.blog/wp-content/uploads/2018/10/springboot-logback-2-800x214.png" alt="" width="505" height="135" /></a>既然说 Logback 是首选，那么 Spring Boot 最终是要用到 <code>LogbackLoggingSystem</code> 这个类的，那我们从源代码跟踪一下 Spring Boot 的 Spring 上下文是如何与 Logback 衔接起来的。</p>
+
+<p>能与 Spring 上下文进行交互的一般来说是 ApplicationEvent, 这里是 <code>org.springframework.boot.logging.LoggingApplicationListener</code>, 它实现了 <code>ApplicationListener</code>, 看 <code>LoggingApplicationListener</code> 的事件方法</p>
+
+<pre class="lang:default decode:true">@Override<br/>
+public void onApplicationEvent(ApplicationEvent event) {<br/>
+    if (event instanceof ApplicationStartingEvent) {<br/>
+        onApplicationStartingEvent((ApplicationStartingEvent) event);  // #1<br/>
+    }<br/>
+    else if (event instanceof ApplicationEnvironmentPreparedEvent) {<br/>
+        onApplicationEnvironmentPreparedEvent(   // #2<br/>
+            (ApplicationEnvironmentPreparedEvent) event);<br/>
+    }<br/>
+    else if (event instanceof ApplicationPreparedEvent) {<br/>
+        onApplicationPreparedEvent((ApplicationPreparedEvent) event);  // #3<br/>
+    }<br/>
+......</pre>
+
+<p>#1 找到 <code>LoggingSystem</code> 的实现类，在 <code>LoggingSystem.get(classloader)</code> 方法中，如果配置了系统属性 <code>org.springframework.boot.logging.LoggingSystem</code> 对应的实现类的话，就用它，指定为 <code>none</code> 值就用 <code>NoOpLogginSystem</code> 实现，即没有任何日志输出。如果没有指定 <code>org.springframework.boot.logging.LoggingSystem</code> 系统属性，<code>LoggingSystem</code> 则尝试以下的顺序找实现类</p>
+
+<ol>
+
+	<li>ch.qos.logback.core.Appender =&gt; org.springframework.boot.logging.logback.LogbackLoggingSystem</li>
+
+	<li>ora.apache.logging.log4j.core.impl.Log4jContextFactory =&gt; org.springframework.boot.logging.log4j2.Log4J2LoggingSystem</li>
+
+	<li>java.util.logging.LogManager =&gt; org.springframework.boot.logging.java.JavaLoggingSystem</li>
+
+</ol>
+
+<p>而显然 LogbackLoggingSystem 对应的类 <code>ch.qos.logback.core.Appender</code> 是存在于 springboot starter 中的，所以在 #1 中可以确定是用 <code>LogbackLoggingSystem</code> 实现</p>
+
+<p>#3 先说这最后一步，如果初始化好，把 <code>LoggingSystem</code> 的实例(此处为 LogbackLoggingSystem 实例) 注册名为 <code>springBootLogginSystem</code> 的 Spring Bean</p>
+
+<p>#2 对日志进行配置，具体实现在 <code>LoggingApplicationListener.initialize(environment, classLoader)</code> 和 <code>LogbackLoggingSystem.initialize(...)</code> 方法中。不列出实际代码来了，只解翻译一下过程</p>
+
+<ol>
+
+	<li>试图从 Spring 属性(包括配置在 Spring 属性文件，--logging.file= 或 -Dlogging.file= 这样的配置)读出配置的 <code>logging.file</code> 和  <code>logging.path</code> 值，如果有的话，分别映射为 <code>LOG_FILE</code> 和 <code>LOG_PATH</code> 系统属性值，这可以在 logback.xml 的配置中用 ${LOG_FILE} 引用到</li>
+
+	<li>初始日志级别的设置，如果 Spring 属性中配置了  <code>debug=true</code> 则为 LogLevel.DEBUG, 如果配置了 <code>trace=true</code> 则为 LogLevel.TRACE。后面还会专为某些包预设一些日志级别，并且最后的日志级别可在 Spring 属性中用 <code>logging.level.logger_name=DEBUG</code> 来一一配置，如 <code>logging.level.org.springframework=DEBUG</code></li>
+
+	<li>如果用 Spring 属性 <code>logging.config</code> 指定了配置文件，则使用该配置文件初始化 Logback 的 LoggerFactory，否则 <code>LogbackLoggingSystem</code> 将会以下面的顺序来查找 Logback 配置文件<br /><br/>
+<br /><br/>
+logback-test.groovy, logback-test.xml, logback.groovy, logback.xml<br /><br/>
+logback-test-spring.xml, logback-test-spring.xml, logback-spring.groovy, logback-spring.xml (AbstractLoggingSystem.getSpringConfigLocations() 方法)<br /><br/>
+<br /><br/>
+注意：SpringBoot 会忽略掉普通 Logback 应用的系统属性 <code>logback.configurationFile</code> 设定配置文件的方法<br /><br/>
+<pre class="lang:default decode:true ">if (StringUtils.hasText(System.getProperty(CONFIGURATION_FILE_PROPERTY))) {<br/>
+    getLogger(LogbackLoggingSystem.class.getName()).warn(<br/>
+        "Ignoring '" + CONFIGURATION_FILE_PROPERTY + "' system property. "<br/>
+            + "Please use 'logging.config' instead.");<br/>
+}</pre>
+
+</li>
+
+	<li>如果检查了以上八个文件都不存在的话，就要调用 <code>LogbackLoggingSystem.loadDefaults(initializationContext, logFile)</code> 来配置默认的日志。</li>
+
+</ol>
+
+<h3>Spring Boot 没有任何日志配置文件时配置</h3><br/>
+<p>这块其实是上面步骤 #2 中的一个子步骤，因其重要才将其单独列出，来看看 SpringBoot 在没有加载到任何的配置文件时如何配置默认 Logback 的 LoggerFactory。入口就是 <code>LogbackLoggingSystem.loadDefaults(initializationContext, logFile)</code>。</p>
+
+<p>首先，默认显示日志级别的格式是：<code>${logging.pattern.level:${LOG_LEVEL_PATTERN:%5p}}</code>， 可用 Spring 属性 <code>logging.pattern.level</code> 或系统属性 <code>LOG_LEVEL_PATTERN</code>，默认为  <code>%5p</code>。<br /><br/>
+<br /><br/>
+其他的默认配置就要参考类  <code>org.springframework.boot.logging.logback.DefaultLogbackConfiguation</code></p>
+
+<p>不管有没有配置 <code>logging.file</code> 或 <code>logging.path</code>，Spring Boot 都会初始化 consoleAppender, 并且默认的输出模式是</p>
+
+<pre class="lang:default decode:true ">private static final String CONSOLE_LOG_PATTERN = "%clr(%d{yyyy-MM-dd HH:mm:ss.SSS}){faint} "<br/>
+        + "%clr(${LOG_LEVEL_PATTERN:-%5p}) %clr(${PID:- }){magenta} %clr(---){faint} "<br/>
+        + "%clr([%15.15t]){faint} %clr(%-40.40logger{39}){cyan} "<br/>
+        + "%clr(:){faint} %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}";</pre>
+
+<p>该模式可用 Spring 属性 <code>logging.pattern.console</code> 进行覆盖设置。注意，Spring Boot 还为我们定义了 <code>clr</code>, <code>wEx</code> 这两个 <code>Converter</code>。</p>
+
+<p>如果配置了 Spring 属性 <code>logging.file</code> 和 <code>logging.path</code> 其中一个或两个，就会在 <code>consoleAppender</code> 的基础上再加一个 <code>fileAppender</code>, 它的输出模式是</p>
+
+<pre class="lang:default decode:true">private static final String FILE_LOG_PATTERN = "%d{yyyy-MM-dd HH:mm:ss.SSS} "<br/>
+    + "${LOG_LEVEL_PATTERN:-%5p} ${PID:- } --- [%t] %-40.40logger{39} : %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}";</pre>
+
+<p>该模式可以用 Spring 属性 <code>logging.pattern.file</code> 进行覆盖。</p>
+
+<p>日志文件是 <code>10MB</code> 大小不断滚动的，不会删除旧文件。</p>
+
+<p>日志文件路径如何决定的</p>
+
+<ol>
+
+	<li>如果只设置了 Spring 属性 <code>logging.file</code>, 就是 <code>logging.file</code> 所指定的文件，文件名可以是绝对文件路径，或者相对路径</li>
+
+	<li>如果只设置了 Spring 属性 <code>logging.path</code>, 那么日志文件是 <code>logging.path</code> 下的 <code>spring.log</code> 文件</li>
+
+	<li>如果以上两个属性同时指定了，则只有 <code>logging.file</code> 是有用的，与 #1 同</li>
+
+</ol>
+
+<p>无论是对于 <code>consoleAppender</code> 还是 <code>fileAppender</code>, 都是设置 INFO 为默认日志级别，并且预设了一些 logger 的日志输出级别。</p>
+
+<h3>简单的 Spring Boot 日志文件配置</h3><br/>
+<p>理解了 SpringBoot 是如何初始化 Logback 日志配置后，我们来看一下项目中几种最简的日志配置方式。通常我们都会在项目的类路径下放置 <code>logback.xml</code> 或 <code>logback-spring.xml</code> 文件，而不是用 <code>apprication.properties</code> 的  <code>loggin.aa.bb</code> 等属性来配置日志。</p>
+
+<h4>日志同时输出到控制台和文件</h4><br/>
+<p>依据 Spring Boot 加载 Logback  配置文件的顺序，我们可以在 classpath 下放 <code>logback-spring.xml</code> 或 <code>logback.xml</code>, 注意是 <code>logback.xml</code> 被优先选择。内容如下</p>
+
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;<br/>
+&lt;configuration&gt;<br/>
+    &lt;include resource="org/springframework/boot/logging/logback/base.xml"/&gt;<br/>
+    &lt;logger name="org.springframework.web" level="DEBUG"/&gt;<br/>
+&lt;/configuration&gt;</pre>
+
+<p>设置 Spring 属性 <code>logging.file</code> 或系统属性 <code>LOG_FILE</code> 来指定日志输出文件名。或者用 Spring 属性  <code>logging.path</code> 或系统属性 <code>LOG_PATH</code> 指定 <code>spring.log</code> 的路径。</p>
+
+<h4>日志只输出到文件</h4><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;<br/>
+&lt;configuration&gt;<br/>
+    &lt;include resource="org/springframework/boot/logging/logback/defaults.xml" /&gt;<br/>
+    &lt;property name="LOG_FILE" value="${LOG_FILE:-${LOG_PATH:-${LOG_TEMP:-${java.io.tmpdir:-/tmp}}/}spring.log}"/&gt;<br/>
+    &lt;include resource="org/springframework/boot/logging/logback/file-appender.xml" /&gt;<br/>
+    &lt;root level="INFO"&gt;<br/>
+        &lt;appender-ref ref="FILE" /&gt;<br/>
+    &lt;/root&gt;<br/>
+&lt;/configuration&gt;</pre>
+
+<p>用上面相同的方式指定日志文件的路径。</p>
+
+<h4>只输出到控制台</h4><br/>
+<p>就更简单了，可以什么配置文件也不要，并且不要配置 <code>logging.file</code> 和  <code>logging.path</code>。而且效果与下面的配置是一样的。</p>
+
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;<br/>
+&lt;configuration&gt;<br/>
+    &lt;include resource="org/springframework/boot/logging/logback/defaults.xml" /&gt;<br/>
+    &lt;include resource="org/springframework/boot/logging/logback/console-appender.xml" /&gt;<br/>
+    &lt;root level="INFO"&gt;<br/>
+        &lt;appender-ref ref="CONSOLE" /&gt;<br/>
+    &lt;/root&gt;<br/>
+&lt;/configuration&gt;</pre>
+
+<h3>小结：</h3><br/>
+<ol>
+
+	<li>Spring Boot 基础的依赖于  starter  的项目默认采用 Slf4J + Logback 来输出日志</li>
+
+	<li>没有任何配置文件，也没有配置 Spring 属性 <code>logging.file</code>, <code>logging.path</code> 或系统属性 <code>LOG_FILE</code>，<code>LOG_PATH</code> 的情况下只会输出日志到控制台</li>
+
+	<li>没有任何配置文件，且有配置 #2 中任何一个属性的情况下将会同时输出日志到控制台与文件，文件以 10MB 大小滚动，不删除旧文件</li>
+
+	<li>不采用外部配置文件的情况下，可以用一些 Spring 属些来进行简单的日志配置，如 <code>logging.pattern.file</code> 等</li>
+
+	<li>可以设置 Spring 属性 <code>logging.config</code> 来指定外部 Logback 配置文件，Logback 默认用系统属性 <code>logback.configurationFile</code> 指定配置文件的方式在 Spring Boot 项目中不再生效</li>
+
+	<li>以上叙述的 Spring 属性，可用多种设置方式，如 Spring 属性 <code>abc</code>，有四种方式：1) application.properties 文件中的 <code>abc=xxx</code>, 2)环境变量 <code>export abc=xxx</code>, 3) 启动参数  <code>--abc=xxx</code>，4) 系统属性  <code>-Dabc=xxx</code></li>
+
+	<li>类路径下的配置文件可以用 <code>logback-spring.xml</code> 或 <code>logback.xml</code>，但是 <code>logback.xml</code> 优先加载，并未遵循先特殊再普通的原则。(Logback 1.3.0 之后由于支持 Java 9，但是 Groovy 与 Java 9 未处理好关系，所以 Logback 1.3.0 不能支持 .groovy 的配置文件)</li>
+
+	<li>为更精细化的控制 Logback 的输出，我们通常都会在类路径下旋转 <code>logback.xml</code> 或 <code>logback-spring.xml</code> 配置文件，二选一了。我没发现这两个文件有什么不同。</li>
+
+</ol>
+
+<p>链接：</p>
+
+<ol>
+
+	<li><a href="https://lankydanblog.com/2017/08/31/configuring-logback-with-spring-boot/">Configuring Logback with Spring Boot</a></li>
+
+	<li><a href="https://docs.spring.io/spring-boot/docs/current/reference/html/howto-logging.html">Spring Boot Logging</a></li>
+
+	<li><a href="https://springframework.guru/using-logback-spring-boot/">USING LOGBACK WITH SPRING BOOT</a></li>
+
+</ol>

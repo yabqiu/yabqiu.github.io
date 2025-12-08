@@ -1,0 +1,82 @@
+---
+title: 为 JDOM 解析 XML 文件成 Document 加速
+url: /speed-jdom-resolve-xml/
+date: 2008-10-03T23:49:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - XML/DOM
+  - Java/JEE
+tags: 
+  - xml
+  - Dom
+  - JDom
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 322 
+wpStatus: publish
+views: 492
+lastmod: 2021-09-02T14:12:17-05:00
+---
+
+本篇讲述在 XML 中使用了 DTD 的情况下，用 JDOM 解析时如何加速，使用 Schema 验证 XML 的不在讨论之中。所用的是一个 Struts 1.3 的配置文件，大小为 102 K。</p>
+<br/>
+我们用 JDOM 解析 XML 最简单的代码莫过于以下两行代码，不过为了测试我们在其前后加上记录执行时间的代码：<br/><br/>
+<pre class="brush:java">long start = System.currentTimeMillis();
+SAXBuilder builder = new SAXBuilder();
+Document document = builder.build("struts-config.xml");
+System.out.println("耗时：" + (System.currentTimeMillis()-start)+" 毫秒.");</pre>
+<br/>
+在这个 struts-config.xml 中的 DTD 声明如下：<!--more--><br/><br/>
+<pre class="lang:default decode:true">&lt;!DOCTYPE struts-config PUBLIC "-//Apache Software Foundation//DTD Struts Configuration 1.3//EN"
+                               "http://jakarta.apache.org/struts/dtds/struts-config_1_3.dtd"&gt;</pre>
+<br/>
+正常执行时，打印出的耗时是 <span style="color: #ff0000;">2698 毫秒(五次的平均值)</span>，这是能正常访问 <a href="http://jakarta.apache.org/struts/dtds/struts-config_1_3.dtd">http://jakarta.apache.org/struts/dtds/struts-config_1_3.dtd</a> 的情况下。假如把网线拔了，再执行上面的代码，就会报出下面的异常：<br/><br/>
+<span style="color: #ff1493;">Exception in thread "main" java.net.UnknownHostException: jakarta.apache.org<br />
+ at java.net.PlainSocketImpl.connect(PlainSocketImpl.java:177)<br />
+ .......................................................<br />
+ at sun.net.www.protocol.http.HttpURLConnection.getInputStream(HttpURLConnection.java:977)<br />
+ at com.sun.org.apache.xerces.internal.impl.XMLEntityManager.setupCurrentEntity(XMLEntityManager.java:677)<br />
+ at com.sun.org.apache.xerces.internal.impl.XMLEntityManager.startEntity(XMLEntityManager.java:1315)<br />
+ at com.sun.org.apache.xerces.internal.impl.XMLEntityManager.startDTDEntity(XMLEntityManager.java:1282)<br />
+ at com.sun.org.apache.xerces.internal.impl.XMLDTDScannerImpl.setInputSource(XMLDTDScannerImpl.java:283)<br />
+ at com.sun.org.apache.xerces.internal.impl.XMLDocumentScannerImpl$DTDDriver.dispatch(XMLDocumentScannerImpl.java:1176)<br />
+</span> ........................................................<br/><br/>
+很明显，前面的代码要从网络上读取 struts-config_1_3.dtd 来进行验证，于是有了第一个加速的办法：<span style="color: #ff0000;"><strong>本地 DTD 验证</strong></span>。从本地读取 struts-config_1_3.dtd 文件，从 <a href="http://jakarta.apache.org/struts/dtds/struts-config_1_3.dtd">http://jakarta.apache.org/struts/dtds/struts-config_1_3.dtd</a> 下载 struts-config_1_3.dtd 放到 struts-config.xml 同一目录。然后修改 struts-config.xml 的 DTD 声明如下：<br/><br/>
+<pre class="lang:default decode:true">&lt;!DOCTYPE struts-config PUBLIC "-//Apache Software Foundation//DTD Struts Configuration 1.3//EN"
+                               "struts-config_1_3.dtd"&gt;</pre>
+<br/>
+再执行上面的代码，打印出的耗时是 <span style="color: #ff0000;">717 毫秒(五次的平均值)</span>，比前面的 2698 节省了 73.4 的时间，我所用的网络带宽也是能 BT 到 250 K的那种。<br/><br/>
+前面两种情况都是进行了 DTD 验证的情形，如果我们能给予 XML 充分信任时，就可以不进行 DTD 验证，这是一种极端，这时候管不管你有没有接网线都不在乎了。因此这第二种办法就是 <span style="color: #ff0000;"><strong>不进行 DTD 验证</strong></span>。<br/><br/>
+查了一下 SAXBuilder 的 API  <a href="http://www.jdom.org/docs/apidocs/org/jdom/input/SAXBuilder.html">http://www.jdom.org/docs/apidocs/org/jdom/input/SAXBuilder.html</a>，有构造方法 SAXBuilder(boolean validate) 和一个实例方法 setValidation(boolean validate) 。望文生义，似乎把参数设置为 false，就能合乎不进行 DTD 验证的要求，可是错了，validate 的默认值就是 false。SAXBuilder 还有一个方法 setDTDHandler(org.xml.sax.DTDHandler dtdHandler) 好像也是干这事的，于是试了一下让 DTDHandler 无所作为：<br/><br/>
+<pre class="lang:default decode:true">builder.setDTDHandler(new DTDHandler(){
+    public void notationDecl(String name, String publicId,
+        String systemId) throws SAXException {
+    }<br/><br/>
+    public void unparsedEntityDecl(String name, String publicId,
+        String systemId, String notationName) throws SAXException {
+    }
+});</pre>
+<br/>
+可执行效果仍和本地 DTD 验证是一样的。也许早有人曾纳闷一下前面贴出的异常为何有选择性的。是的，关注一下中间那段 Entity 的处理。为了不进行 DTD 验证，我们需要为 SAXBuilder 设置一个自定义的 EntityResolver。不进行 DTD 验证的完整代码如下：<br/><br/>
+<pre class="lang:default decode:true ">long start = System.currentTimeMillis();
+SAXBuilder builder = new SAXBuilder();<br/><br/>
+builder.setEntityResolver(new EntityResolver(){
+    public InputSource resolveEntity(String publicId, String systemId) {
+        return new InputSource(new StringReader(""));
+    }
+});<br/><br/>
+Document document = builder.build("struts-config.xml");
+System.out.println("耗时：" + (System.currentTimeMillis()-start)+" 毫秒.");</pre>
+<br/>
+现在执行上面这段代码，打印出的耗时为 <span style="color: #ff0000;">608 毫秒(五次平均值)</span>，比之 717 略有改善，不甚明显。但有一个最大的好处是不用下载 DTD 文件至本地，继而修改 XML 文件本身。<br/><br/>
+我时常写起东西来，总爱循着自己的思路脉络来写，而非开门见山的给出答案。所以一不小心就堆出个有些走样的长篇累牍。很考验读者的耐心，非得翻到最后才能知晓个究竟，估计很多人在中途被吓跑。看过《辛德勒的名单》的朋友一定会有这样的感受，前面 2 个多小时都是十分的沉闷，到最后部分才渐入佳境，很扣人心弦的。不太恰当的比喻，我还炮制不出这种作品来。<br/><br/>
+好啦，中间闭话了，总结一下，实际上前面那么多加速 JDOM 解析 XML 的文字，两言以蔽之就是：<br/><br/>
+<span style="color: #ff0000;">方法 1：把 XML 中的 DTD 文件下载至本地，并修改该 XML，使之应用本地的那个 DTD 文件。网络验证改为本地验证效果很明显。<br />
+</span><br />
+<span style="color: #ff0000;">方法 2：只需为 SAXBuilder 对象设置一个返回 new InputSource(new StringReader("")) 的 EntityResolver 即可。但要自己保证 XML 的合法性了。</span><br/><br/>
+如果是在只有少量的 XML 文件要解析，或只在程序启动时加载 XML 的应用中，大可不必动此干戈。而在以解析 XML 文件较为密集的应用中，这种加速就是个善举了。比如我先前做的一个 StrutsConfigHelper，专为解析多个 struts-config.xml，然后从中查找相应配置，如果仍从网络验证那就很难接受了。

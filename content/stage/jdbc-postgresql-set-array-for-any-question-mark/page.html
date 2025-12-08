@@ -1,0 +1,202 @@
+---
+title: JDBC 设置 PostgreSQL 查询中 any(?) 的参数
+url: /jdbc-postgresql-set-array-for-any-question-mark/
+date: 2024-05-01T00:00:08-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/postgresql-logo.png"
+categories:
+  - Database
+tags: 
+  - JDBC
+  - jdbctemplate
+  - PostgreSQL
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13582 
+wpStatus: publish
+views: 182
+lastmod: 2024-05-01T00:00:08-05:00
+---
+
+<!-- wp:paragraph --><br/>
+<p>这段时间都纠缠于 Java 如何操作 PostgreSQL 数据库上，千方百计的为求得更好的性能。为此我们用上了 Batch, 或用 id = any(?) 这种更 PostgreSQL 化的数组参数操作。其实它还有更多数组方面的花样可以玩，毕竟 PostgreSQL 数据库有一种广纳百川的胸怀，总有好的新特性能在 PostgreSQL 中首先体验到。</p>
+
+<p>回到之前的一篇 <a href="https://yanbin.blog/postgres-in-vs-any-comparison/">postgres in (?,?) 和 =any(?) 用法/性能对比</a>，其中关于如何向查询语句中 <code>id = any(?)</code> 占位符传入数组参数的代码是</p>
+
+<pre class="lang:default decode:true">Connection conn = datasource.getConnection();<br/>
+<br/>
+String query = "select * from users where id = any(?)";<br/>
+PreparedStatement pstmt = conn.prepareStatement(query);<br/>
+Object[] params = new Object[]{1, 2, 3};<br/>
+pstmt.setArray(1, conn.createArrayOf("int", params));<br/>
+ResultSet rs = pstmt.executeQuery();</pre>
+
+<p>在 PreparedStatement(PgPreparedStatement) 中设置数组参数的函数是用<!--more--></p>
+
+<blockquote><br/>
+<p>setArray(int i, Array x)</p>
+
+</blockquote>
+
+<p>而创建一个 java.sql.Array(PgArray) 对象需要使用到数据库连接对象，在本例中我们直接使用数据库连接是没问题的</p>
+
+<blockquote><br/>
+<p>pstmt.setArray(1, conn.createArrayOf("int", params);</p>
+
+</blockquote>
+
+<p>但对于用到了 JdbcTemplate 隐式使用数据库连接对象时稍微增添些麻烦，似乎只能通过回调函数来使用 Connection 对象来创建 java.sql.Array 对象，如含有 Connection 参数的以下回调</p>
+
+<ol>
+
+	<li>PreparedStatementCreator</li>
+
+	<li>ConnectionCallback</li>
+
+	<li>PreparedStatementCallback</li>
+
+	<li>CallableStatementCallback</li>
+
+</ol>
+
+<p>比如上面代码换成 JdbcTemplate 就要写成</p>
+
+<pre class="lang:default decode:true">List&lt;String&gt; ids = jdbcTemplate.query(con -&gt; {<br/>
+    PreparedStatement pstmt = con.prepareStatement("select * from users where id = any(?)");<br/>
+    Object[] params = new Object[]{1, 2, 3};<br/>
+    pstmt.setArray(1, conn.createArrayOf("int", params));<br/>
+     return pstmt;<br/>
+ }, (rs, idx) -&gt; rs.getString(1));</pre>
+
+<p>上面的代码自然没问题</p>
+
+<p>但是否能不使用连接对象而直接创建 java.sql.Array 对象呢？其间思考过定制 PostgreSQL JDBC 驱动 Driver 类来注入自定义的 PgPreparedStatement, 如构造 jdbc:tryme:postgresql://localhost/postgres 这种方式，或使用 Spring JDBC 时去寻找 JdbcTemplate 的扩展点。其实根本就犯不着，最后绕了一个弯回来发现答案就是问题的起点处放着。提前放送</p>
+
+<pre class="lang:default decode:true">jdbcTemplate.queryForList("select * from users where id = any(?)", new int[]{1, 2, 3});</pre>
+
+<p>用 JdbcTemplate 给 <code>any(?)</code> 设置参数就这么简单</p>
+
+<p>下面是当前由 JDBC setArray 到 JdbcTemplate 的 setArray 尝试的整个过程</p>
+
+<p>我们查看 PgPreparedStatement 源代码，看到关于设置 Array 参数的方法还有一个私有的</p>
+
+<blockquote><br/>
+<p>private &lt;A extends @NonNull Object&gt; void setObjectArray(int parameterIndex, A in) throws SQLException</p>
+
+</blockquote>
+
+<p>那么是谁在调用它呢？</p>
+
+<p>追寻到以下两个 setObject() 方法</p>
+
+<ol>
+
+	<li>setObject(@Positive int parameterIndex, @Nullable Object in, in targetSqlType, int scale)</li>
+
+	<li>setObject(@Positive int parameterIndex, @Nullable Object x)</li>
+
+</ol>
+
+<p>它们在调用 setArray(index, object) 的分支处代码分别为</p>
+
+<p>#1 setObject(@Positive int parameterIndex, @Nullable Object in, in targetSqlType, int scale)</p>
+
+<pre class="lang:default decode:true ">      case Types.ARRAY:<br/>
+        if (in instanceof Array) {<br/>
+          setArray(parameterIndex, (Array) in);<br/>
+        } else {<br/>
+          try {<br/>
+            setObjectArray(parameterIndex, in);<br/>
+          } catch (Exception e) {<br/>
+            throw new PSQLException(<br/>
+                GT.tr("Cannot cast an instance of {0} to type {1}", in.getClass().getName(), "Types.ARRAY"),<br/>
+                PSQLState.INVALID_PARAMETER_TYPE, e);<br/>
+          }<br/>
+        }<br/>
+        break;</pre>
+
+<p>#2 setObject(@Positive int parameterIndex, @Nullable Object x)</p>
+
+<pre class="lang:default decode:true ">    } else if (x.getClass().isArray()) {<br/>
+      try {<br/>
+        setObjectArray(parameterIndex, x);<br/>
+      } catch (Exception e) {<br/>
+        throw new PSQLException(<br/>
+            GT.tr("Cannot cast an instance of {0} to type {1}", x.getClass().getName(), "Types.ARRAY"),<br/>
+            PSQLState.INVALID_PARAMETER_TYPE, e);<br/>
+      }<br/>
+    }</pre>
+
+<p>这就给了我们一个启发：我们并不需要直接的用 Connection 对象去创建一个 java.sql.Array 对象，只需要经由 setObject() 方法，传入适当的数组类型就能调用到实际的 setArray() 方法。于是我们尝试</p>
+
+<pre class="lang:default decode:true">String query = "select * from users where id = any(?)";<br/>
+PreparedStatement pstmt = conn.prepareStatement(query);<br/>
+Object[] params = new Object[]{1, 2, 3};<br/>
+pstmt.setObject(1, params);<br/>
+ResultSet rs = pstmt.executeQuery();<br/>
+<br/>
+while (rs.next()) {<br/>
+    System.out.println(rs.getString(1));<br/>
+}</pre>
+
+<p>执行后出错</p>
+
+<blockquote><br/>
+<p>Exception in thread "main" org.postgresql.util.PSQLException: Cannot cast an instance of [Ljava.lang.Object; to type Types.ARRAY<br /><br/>
+    at org.postgresql.jdbc.PgPreparedStatement.setObject(PgPreparedStatement.java:1071)</p>
+
+</blockquote>
+
+<p>无法把 new Object[]{1, 2, 3} 转换为 java.sql.Array 对象，即不能从 Object[] 类型推断出要的元素是 int。</p>
+
+<p>关于 PgPreparedStatement 如何根据传入的数组对象推断出相关联的数据库列类型的这里就不细讲了，欲知详情可阅读 PgPreparedStatement 的源代码, 它是开源的。</p>
+
+<p>而把 Object[] 改成  int[] 类型就没问题了</p>
+
+<pre class="lang:default decode:true">String query = "select * from users where id = any(?)";<br/>
+PreparedStatement pstmt = conn.prepareStatement(query);<br/>
+int[] params = new int[]{1, 2, 3};<br/>
+pstmt.setObject(1, params);</pre>
+
+<p>同样 JdbcTemplate 在执行时动态传入的参数也是通过  setObject() 来设定的，所以也是需要给它提供正确的数组类型参数。等效的代码如下</p>
+
+<pre class="lang:default decode:true">List&lt;String&gt; ids = jdbcTemplate.query("select * from users where id = any(?)",<br/>
+            (rs, idx) -&gt; rs.getString(1), new int[]{1,2,3});</pre>
+
+<p>在 IntelliJ IDEA 中对参数 <code>new int[]{1,2,3}</code> 处有一个警告</p>
+
+<blockquote><br/>
+<p>Confusing primitive array argument to varargs method</p>
+
+</blockquote>
+
+<p>它觉得可以拆开来写成</p>
+
+<pre class="lang:default decode:true">jdbcTemplate.query("select * from users where id = any(?)",<br/>
+    (rs, idx) -&gt; rs.getString(1), 1, 2, 3);</pre>
+
+<p>而实际上这个 <code>new int[]{1, 2, 3}</code> 整体是作为 PreparedStatement 的一个参数，拆开的话被认为会对应 PreparedStatement 的三个 <code>?</code> 占位符，这是不对的, <code>new int[]{1, 2, 3}</code> 是不可分割的。</p>
+
+<p>在 Mac OS X 平台中按下 Option + Enter, IntelliJ IDEA 提供了方案是</p>
+
+<pre class="lang:default decode:true">List&lt;String&gt; ids = jdbcTemplate.query("select * from users where id = any(?)",<br/>
+    (rs, idx) -&gt; rs.getString(1), (Object) new int[]{1,2,3})</pre>
+
+<p>然后它又说 <code>(Object)</code> 转型是多余的, 去掉 (Object) 的话又回去了，产生了死循环。所以在重构时千万要注意, 轻易信 IntelliJ IDEA, 得不来永生。</p>
+
+<p>为避免 IntelliJ IDEA 执拗的提示，我们可以声明和使用分开来写</p>
+
+<pre class="lang:default decode:true">int[] params = new int[]{1, 2, 3};<br/>
+List&lt;String&gt; ids = jdbcTemplate.query("select * from users where id = any(?)",<br/>
+   (rs, idx) -&gt; rs.getString(1), params);</pre>
+
+<p>这下就皆大欢喜了</p>
+
+<p>一点小小的回味，想最初只死心眼要用 setArray(int, Array) 方法来设置, 直接阅读源代码才追溯到用 setObject(int, Object) 是一个更通用的设置参数的方法，最终才找到用 JdbcTemplate 设置 <code>any(?)</code> 参数的简单方法。若是当初保持头脑简单，直接 jdbcTemplate.queryForList("select * from users where id = any(?)", new int[]{1, 2, 3}) 一试所预设的问题就会完美的躲避了，也就不会有上面的那些故事 -- 世上本无事 庸人自扰之。 </p>
+
+<!-- /wp:paragraph -->

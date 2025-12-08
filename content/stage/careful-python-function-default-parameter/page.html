@@ -1,0 +1,179 @@
+---
+title: 小心 Python 函数默认参数的陷阱
+url: /careful-python-function-default-parameter/
+date: 2022-01-14T21:01:44-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - Python
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12140 
+wpStatus: publish
+views: 600
+lastmod: 2022-01-14T21:30:09-06:00
+---
+
+Python 的函数参数支持默认值，这是本人一直喜欢的特性，Python 不支持方法重载，但默认参数可起到类似的效果，还不用写多个函数。现在支持默认参数的语言普遍的，像 C++, C#, Ruby, Groovy, PHP, Scala, JavaScript 等，Java 还不行。</p>
+<br/>
+但是特别要小心，Python 的函数默认值与其他的语言是不同的，直接违反了最直观的常识 -- 默认参数应该是省略就每次用同样的默认值，传的话就用传入的值。<br/><br/>
+当我在 IntelliJ IDEA 中写类似如下的代码<br/><br/>
+<pre class="lang:default decode:true">def foo(a, b=[]):
+    b.append(1)
+    return b</pre>
+<br/>
+我的 SonarLint 插件就要抱怨了<img class="aligncenter size-large wp-image-12141" src="https://yanbin.blog/wp-content/uploads/2022/01/python-default-parameter-1-800x122.png" alt="" width="800" height="122" /><br/><br/>
+说是<br/><br/>
+<blockquote>
+SonarLint: Change this default value to "None" and initialize this parameter inside the function/method<br />
+Default argument value is mutable
+</blockquote>
+<br/>
+<!--more--><br/><br/>
+原因是默认参数值为可变的，并且在函数中对它进行了修改，如果在函数中未修改该默认参数值也不会有这样的提示。然后按照建议被要求改成如下的形式<br/><br/>
+<pre class="lang:default decode:true">def foo(a, b=None):
+    if b is None:
+        b = []
+    b.append(1)
+    return b</pre>
+<br/>
+为了一个默认参数需要加上额外的两行。我一开始对  Sonar 的提示不以为然，因为按照其他语言的思维模式，默认参数就是这样用，直到后来发现多次对该函数调用返回值是有关联的才意识到踩到了一个陷阱。<br/><br/>
+为了说明 Python 的这一陷阱，换一下测试函数<br/><br/>
+<pre class="lang:default decode:true">def say(word, total=[]):
+    print(f'----------------total={total}')
+    total.append(word)
+    return ' '.join(total)
+    <br/><br/>
+print(say('hello'))        # hello
+print(say('world'))        # hello world
+print(say('!'))            # hello world !<br/><br/>
+print(say('aa', ['bb']))   # bb aa
+print(say('cc'))           # hello world ! cc</pre>
+<br/>
+执行后的输出是<br/><br/>
+<blockquote>
+----------------total=[]<br />
+hello<br />
+----------------total=['hello']<br />
+hello world<br />
+----------------total=['hello', 'world']<br />
+hello world !<br />
+----------------total=['bb']<br />
+bb aa<br />
+----------------total=['hello', 'world', '!']<br />
+hello world ! cc
+</blockquote>
+<br/>
+应用默认值前后多次调用该函数时是有关联的，很像 C+ 函数内部的 static 变量，多次函数调用只初始化一次。<br/><br/>
+先搁置一下，看看多数语言默认参数的行为，来个 Scala  -- 许久未用 Scala 了<br/><br/>
+<pre class="lang:default decode:true ">import java.util._<br/><br/>
+object HelloWorld {
+   def main(args: Array[String]) {
+     println(say("hello"))
+     println(say("world"))
+     println(say("!"))
+        
+     var data:List[String] = new ArrayList()
+     data.add("bb")
+     println(say("aa", data))
+     println(say("cc"))
+   }
+   
+   
+  def say(word: String, total: List[String]=new ArrayList()): String = {
+    println(s"----------------total=${total}")
+    total.add(word)
+    String.join(" ", total)
+  }
+    
+}</pre>
+<br/>
+执行，输出为<br/><br/>
+<blockquote>
+----------------total=[]<br />
+hello<br />
+----------------total=[]<br />
+world<br />
+----------------total=[]<br />
+!<br />
+----------------total=[bb]<br />
+bb aa<br />
+----------------total=[]<br />
+cc
+</blockquote>
+<br/>
+这是合乎常规的，前后不传默认参数的调用是无关的。<br/><br/>
+回过头来看 Python 的默认参数的行为，它的默认参数值相当于是一个全局变量，前面 Python 的 say(word, total=[]) 与下面的实现行为上是完全一致的 <br/><br/>
+<pre class="lang:default decode:true ">total = []
+def say(word, total=total):
+    print(f'----------------total={total}')
+    total.append(word)
+    return ' '.join(total)</pre>
+<br/>
+根据现象，我们试着这么去理解<br/><br/>
+<ol>
+    <li>Python 在解释 <code>def say(word, total=[])</code> 时产生一个全局的变量 total</li>
+    <li>调用时如果省略该 total 参数，函数内部就会使用用全局的 total 变量</li>
+    <li>调用时如传入自己的 total 参数，全局的 total 变量就会暂时被传入的 total 变量遮盖 </li>
+</ol>
+<br/>
+这完全能解释 Python 默认参数的行为，接下来要深入到本质。<br/><br/>
+从查看 globals() 和用  dis.dis(say) 检视字节码没看到什么玄机，如果可视化的对比两段代码的才能发现差异<br/><br/>
+带默认值参数<br/><br/>
+<iframe width="750" height="330" frameborder="0" src="https://pythontutor.com/iframe-embed.html#code=def%20say%28word,%20total%3D%5B%5D%29%3A%0A%20%20%20%20total.append%28word%29%0A%20%20%20%20return%20'%20'.join%28total%29%0A%20%20%20%20%0Asay%28'aa',%20%5B'bb'%5D%29&amp;codeDivHeight=400&amp;codeDivWidth=350&amp;cumulative=false&amp;curInstr=4&amp;heapPrimitives=nevernest&amp;origin=opt-frontend.js&amp;py=3&amp;rawInputLstJSON=%5B%5D&amp;textReferences=false"><span data-mce-type="bookmark" style="display: inline-block; width: 0px; overflow: hidden; line-height: 0;" class="mce_SELRES_start">﻿</span><span data-mce-type="bookmark" style="display: inline-block; width: 0px; overflow: hidden; line-height: 0;" class="mce_SELRES_start">﻿</span><span data-mce-type="bookmark" style="display: inline-block; width: 0px; overflow: hidden; line-height: 0;" class="mce_SELRES_start">﻿</span><span data-mce-type="bookmark" style="display: inline-block; width: 0px; overflow: hidden; line-height: 0;" class="mce_SELRES_start">﻿</span> </iframe><br/><br/>
+从上图可以看到 Global frame 的 say 函数持有一个自己的 total 引用，如果参数 total 省略时就会它，否则就使用通过参数传递进来的 total<br/><br/>
+不带默认值参数<br/><br/>
+<iframe width="750" height="330" frameborder="0" src="https://pythontutor.com/iframe-embed.html#code=def%20say%28word,%20total%29%3A%0A%20%20%20%20total.append%28word%29%0A%20%20%20%20return%20'%20'.join%28total%29%0A%20%20%20%20%0Asay%28'aa',%20%5B'bb'%5D%29&amp;codeDivHeight=400&amp;codeDivWidth=350&amp;cumulative=false&amp;curInstr=4&amp;heapPrimitives=nevernest&amp;origin=opt-frontend.js&amp;py=3&amp;rawInputLstJSON=%5B%5D&amp;textReferences=false"><span data-mce-type="bookmark" style="display: inline-block; width: 0px; overflow: hidden; line-height: 0;" class="mce_SELRES_start">﻿</span><span data-mce-type="bookmark" style="display: inline-block; width: 0px; overflow: hidden; line-height: 0;" class="mce_SELRES_start">﻿</span> </iframe><br/><br/>
+其实在解释函数的时候，函数对象会有一个 <code>__defaults__</code> 引用了所有的默认参数列表，该 <code>__defaults__</code> 只会被初始化一次。观察下面的代码就能很的理解<br/><br/>
+<pre class="lang:default decode:true">def say(word, total=["11"]):
+    print(f'{id(total)=}')
+    print(f'{id(say.__defaults__[0])=}')
+    total.append(word)
+    return ' '.join(total)<br/><br/>
+
+print(f'{say.__defaults__=}')
+print('----------')<br/><br/>
+say('hello')
+print('----------')
+say('hello', [])
+print('----------')
+say('world')</pre>
+<br/>
+执行结果如下：<br/><br/>
+<blockquote>
+say.__defaults__=(['11'],)<br />
+----------<br />
+id(total)=140665234758400<br />
+id(say.__defaults__[0])=140665234758400<br />
+----------<br />
+id(total)=140665235569600<br />
+id(say.__defaults__[0])=140665234758400<br />
+----------<br />
+id(total)=140665234758400<br />
+id(say.__defaults__[0])=140665234758400
+</blockquote>
+<br/>
+注意观察上面从函数中打印出的 <code>id(total)</code> 和 <code>id(say.__defaults__[0])</code> 的值。函数的 <code>__defaults__</code> 包含所以默认参数的引用，调用函数时省略的参数就会从函数 <code>__defaults__</code> 中找对应的值。<br/><br/>
+进一步理解 Python 的默认参数与别的语言的不同之处就是<br/><br/>
+Python 在解释函数时，参数默认值只初始化一次，其他的语言的默认参数在调用时省略的话就会又初始一个默认值<br/><br/>
+如何避免 Python 这种默认参数的行为造成的问题呢？两种方式：1）默认参数值为不可变的，2）使用 sentinel 值作为默认参数值<br/><br/>
+如果是不可变值作为默认参数，是安全的<br/><br/>
+<pre class="lang:default decode:true">def say(word, total=("11",)):
+    ...</pre>
+<br/>
+这是没问题的，Immutable 的默认参数每次调用时都是初始值。<br/><br/>
+如果是可变的话，就按照 Sonar 的推荐方式<br/><br/>
+<pre class="lang:default decode:true">def say(word, total=None):
+    if total is None:
+        total = []
+    ...</pre>
+<br/>
+None 就是一个 sentinel, 也可以选择其他的值作为 sentinel。<br/><br/>
+这样做，total 永远就没有机会指向 <code>say.__defaults__[0]</code> 的值了，因为只要省略就会用 <code>total = []</code> 每次动态创建一个新的实例。

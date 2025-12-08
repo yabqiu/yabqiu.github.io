@@ -1,0 +1,383 @@
+---
+title: 构建 AWS Lambda Python Docker 镜像
+url: /build-aws-lambda-python-docker-image/
+date: 2021-11-08T17:00:58-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+categories:
+  - Python
+  - AWS
+  - Docker
+tags: 
+  - lambda
+  - Docker
+  - AWS
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11901 
+wpStatus: publish
+views: 1567
+lastmod: 2021-11-09T22:28:49-06:00
+---
+
+AWS 的 Lambda 在 2020-12-01 开始支持用 Docker 镜像存放代码，见 <a href="https://aws.amazon.com/blogs/aws/new-for-aws-lambda-container-image-support/">New for AWS Lambda - Container Image Support</a>。AWS Lambda 最初的对发布包的限制是 50M, 解压后(因为执行前需要解压缩)不能超过 250M，对于压缩比小于 1/5 的包来说，要突破 50M 部署包的限制就要用 2018-11-29 推出的层(<a href="https://docs.aws.amazon.com/lambda/latest/dg/configuration-layers.html">layer</a>), 即把 Lambda 的依赖可以组织为层，每个 Lambda 可引用最多 5 个层，但最终 Lambda 加上层所解压后的大小仍然有 250 M 的限制。<br/><br/>
+对于使用了大量依赖的 Lambda，比如 Python 中用了 Pandas 之类的数学分析包，250M 的大小是不够的，所以才有了 Docker 镜像化的 Lambda, 镜像的大小限制一下蹦到 10G，要构建出一个 10G Lambda 用的 Linux 镜像, 那绝对是个巨兽，至少目前是超越我的想像力，除非往里面塞入大量的业务数据。关于 Lambda 有哪些限制，请参阅 <a href="https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html">Lambda quotas</a>。<br/><br/>
+介绍完 Lambda 引入 Docker 镜像的背景后，本文接下来只关注如何构建一个 Python Lambda 镜像，对于如何部署 Docker 化的 Lambda, 不在本文的范围之内。主要的参考文档为 AWS Lambda 官方的 <a href="https://docs.aws.amazon.com/lambda/latest/dg/python-image.html">Deploy Python Lambda functions with container images</a>.<!--more--><br/><br/>
+<h3>构建一个简单的 Lamda 镜像</h3><br/><br/>
+最简单的构建一个 Lambda 用的 Python Docker 镜像的方式就是从 AWS 提供的基础镜像开始，Amazon 有一个公开的像 Dockhub 类似的镜像仓库，叫做 <a href="https://gallery.ecr.aws/">Amazon ECR Public Gallery</a>。下面是两个 Lambda 镜像相关的链接<br/><br/>
+<ol>
+    <li><a href="https://gallery.ecr.aws/?operatingSystems=Linux&amp;searchTerm=lambda">https://gallery.ecr.aws/?operatingSystems=Linux&amp;searchTerm=lambda</a>: 包括所有 Lambda 所支持语的运行时相关镜像</li>
+    <li><a href="https://gallery.ecr.aws/lambda/python">https://gallery.ecr.aws/lambda/python</a>: Python 相关的 Lambda 基础镜像</li>
+</ol>
+<br/>
+我们将以 public.ecr.aws/lambda/python:3.9 以基础构建一个 Lambda 镜像。首先准备一个 Lambda 代码  <code>app.py</code><br/><br/>
+<pre class="lang:default decode:true">import sys
+def handler(event, context):
+    return 'Hello from AWS Lambda using Python' + sys.version + '!'</pre>
+<br/>
+假如我们要安装第三方的 Python 依赖(这通常是必须的，否则也就没有必要为 Lambda 选择 Docker) 放在 <code>requirements.txt</code>, 内容为<br/><br/>
+<pre class="lang:default decode:true">bounded-executor</pre>
+<br/>
+接下来基本的 <code>Dockerfile</code> 内容为<br/><br/>
+<pre class="lang:default decode:true">FROM public.ecr.aws/lambda/python:3.9<br/><br/>
+COPY app.py requirements.txt ${LAMBDA_TASK_ROOT}/<br/><br/>
+RUN  pip3 install -r requirements.txt --target "${LAMBDA_TASK_ROOT}" --no-cache-dir<br/><br/>
+CMD [ "app.handler" ]</pre>
+<br/>
+我们用命令<br/><br/>
+<blockquote>
+$ docker build -t lambda-docker-demo .
+</blockquote>
+<br/>
+构建好后，在部署到 AWS 之前我们可进行本地测试，先运行容器<br/><br/>
+<blockquote>
+$ docker run -p 9080:8080 lambda-docker-demo<br />
+time="2021-11-08T16:27:43.262" level=info msg="exec '/var/runtime/bootstrap' (cwd=/var/task, handler=)"
+</blockquote>
+<br/>
+测试<br/><br/>
+<blockquote>
+$ curl -XPOST "http://localhost:9080/2015-03-31/functions/function/invocations" -d '{}'<br />
+"Hello from AWS Lambda using Python3.9.6 (default, Oct 25 2021, 08:38:55) \n[GCC 7.3.1 20180712 (Red Hat 7.3.1-13)]!"
+</blockquote>
+<br/>
+同时在 Docker 容器中会打印<br/><br/>
+<blockquote>
+time="2021-11-08T16:28:29.09" level=info msg="extensionsDisabledByLayer(/opt/disable-extensions-jwigqn8j) -&gt; stat /opt/disable-extensions-jwigqn8j: no such file or directory"<br />
+time="2021-11-08T16:28:29.09" level=warning msg="Cannot list external agents" error="open /opt/extensions: no such file or directory"<br />
+START RequestId: 025033dc-1361-42f4-8325-4abc97e3f689 Version: $LATEST<br />
+END RequestId: 025033dc-1361-42f4-8325-4abc97e3f689<br />
+REPORT RequestId: 025033dc-1361-42f4-8325-4abc97e3f689 Init Duration: 0.77 ms Duration: 78.07 msBilled Duration: 79 ms Memory Size: 3008 MB Max Memory Used: 3008 MB
+</blockquote>
+<br/>
+这是一个标准的 Lambda 的后台输出<br/><br/>
+<h3>分析 Lambda 镜像</h3><br/><br/>
+我们可以用 docker inspect 来查看所生成的镜像以及容器，基础镜像的 Dockerfile 可见 <a href="https://github.com/aws/aws-lambda-base-images/blob/python3.9/Dockerfile.python3.9">aws/aws-lambda-base-images</a>.<br/><br/>
+<blockquote>
+$ docker inspect public.ecr.aws/lambda/python:3.9
+</blockquote>
+<br/>
+我们得如下值得关注的内容<br/><br/>
+<pre class="lang:default decode:true">"Env": [
+    "LANG=en_US.UTF-8",
+    "TZ=:/etc/localtime",
+    "PATH=/var/lang/bin:/usr/local/bin:/usr/bin/:/bin:/opt/bin",
+    "LD_LIBRARY_PATH=/var/lang/lib:/lib64:/usr/lib64:/var/runtime:/var/runtime/lib:/var/task:/var/task/lib:/opt/lib",
+    "LAMBDA_TASK_ROOT=/var/task",
+    "LAMBDA_RUNTIME_DIR=/var/runtime"
+],
+"Cmd": null,
+"Image": "",
+"Volumes": null,
+"WorkingDir": "/var/task",
+"Entrypoint": [
+    "/lambda-entrypoint.sh"
+],</pre>
+<br/>
+环境变量 LAMBDA_TASK_ROOT 为 /var/task, 即 Lambda 的工作目录，它的入口为 <code>/lambda-entrypoint.sh</code>, 构建镜像 lambda-docker-demo 的 <code>CMD</code> 的内容将作为该 Entrypoint 的参数，即最终镜像的启动命令相当于<br/><br/>
+<blockquote>
+$ cd /var/task<br />
+$ /lambda-entrypoint.sh app.handler
+</blockquote>
+<br/>
+如果我们用 <code>docker ps --no-trunc</code> 也能看到该完整命令<br/><br/>
+<pre class="lang:default decode:true">docker ps --no-trunc --format "table {{.Image}}\t{{.Command}}"
+IMAGE                COMMAND
+lambda-docker-demo   "/lambda-entrypoint.sh app.handler"</pre>
+<br/>
+下面我们通过覆盖 <code>--entrypoint</code> 参数进到该容器<br/><br/>
+<blockquote>
+$ docker run -it -p 9080:8080 --entrypoint /bin/sh lambda-docker-demo<br />
+sh-4.2# 
+</blockquote>
+<br/>
+手动执行 <code>/lambda-entrypoint.sh app.handler</code> 后，同样可以在本地测试通过。<br/><br/>
+我们尽量收集多的一些 Lambda 启动的信息<br/><br/>
+<pre class="lang:default decode:true">sh-4.2# pwd
+/var/task
+sh-4.2# ls
+app.py  bounded_executor  bounded_executor-0.0.5.dist-info  __pycache__  requirements.txt
+sh-4.2# python -c 'import sys; print("\n".join(sys.path))'<br/><br/>
+/var/lang/lib/python39.zip
+/var/lang/lib/python3.9
+/var/lang/lib/python3.9/lib-dynload
+/var/lang/lib/python3.9/site-packages
+sh-4.2# cat /lambda-entrypoint.sh
+#!/bin/sh
+# Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.<br/><br/>
+if [ $# -ne 1 ]; then
+  echo "entrypoint requires the handler name to be the first argument" 1&gt;&amp;2
+  exit 142
+fi
+export _HANDLER="$1"<br/><br/>
+RUNTIME_ENTRYPOINT=/var/runtime/bootstrap
+if [ -z "${AWS_LAMBDA_RUNTIME_API}" ]; then
+  exec /usr/local/bin/aws-lambda-rie $RUNTIME_ENTRYPOINT
+else
+  exec $RUNTIME_ENTRYPOINT
+fi
+sh-4.2# bash -x /lambda-entrypoint.sh app.handler
++ '[' 1 -ne 1 ']'
++ export _HANDLER=app.handler
++ _HANDLER=app.handler
++ RUNTIME_ENTRYPOINT=/var/runtime/bootstrap
++ '[' -z '' ']'
++ exec /usr/local/bin/aws-lambda-rie /var/runtime/bootstrap
+INFO[0000] exec '/var/runtime/bootstrap' (cwd=/var/task, handler=)
+^CINFO[0001] Received signal                               signal=interrupt
+INFO[0001] Shutting down...
+WARN[0001] Reset initiated: SandboxTerminated
+sh-4.2# cat /var/runtime/bootstrap
+#!/bin/bash
+# Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.<br/><br/>
+export AWS_EXECUTION_ENV=AWS_Lambda_python3.9<br/><br/>
+if [ -z "$AWS_LAMBDA_EXEC_WRAPPER" ]; then
+  exec /var/lang/bin/python3.9 /var/runtime/bootstrap.py
+else
+  wrapper="$AWS_LAMBDA_EXEC_WRAPPER"
+  if [ ! -f "$wrapper" ]; then
+    echo "$wrapper: does not exist"
+    exit 127
+  fi
+  if [ ! -x "$wrapper" ]; then
+    echo "$wrapper: is not an executable"
+    exit 126
+  fi
+    exec -- "$wrapper" /var/lang/bin/python3.9 /var/runtime/bootstrap.py
+fi
+sh-4.2# echo $LAMBDA_RUNTIME_DIR
+/var/runtime
+sh-4.2# ls /var/runtime
+awslambdaric              __pycache__
+awslambdaric-1.2.2.dist-info  python_dateutil-2.8.2.dist-info
+bin               runtime_client.cpython-39-x86_64-linux-gnu.so
+bootstrap             runtime-release
+bootstrap.py              s3transfer
+boto3                 s3transfer-0.5.0.dist-info
+boto3-1.18.55.dist-info       simplejson
+botocore              simplejson-3.17.2-py3.9.egg-info
+botocore-1.21.55.dist-info    six-1.16.0.dist-info
+dateutil              six.py
+jmespath              urllib3
+jmespath-0.10.0.dist-info     urllib3-1.26.6.dist-info
+layer_bootstrap</pre>
+<br/>
+关键信息整理如下：<br/><br/>
+<ol>
+    <li>第三方依赖我们用 pip install --target /var/task 目录下，不指定 --target  安装到  site-packages 中也行</li>
+    <li>从执行入口 /lambda-entrypoint.sh app.handler，在本地测试时，最后执行的代码是<br />
+export _HANDLER=app.handler<br />
+exec /usr/local/bin/aws-lambda-rie /var/runtime/bootstrap</li>
+    <li>/usr/local/bin/aws-lambda-rie 是一个二进制文件，专为测试用的</li>
+    <li>在 /var/runtime 是 Lambda 的一些必需的模块，主要是 boto3，不用太关注</li>
+    <li>通过后面的回溯，本地测试时没有 AWS_LAMBDA_RUNTIME_API，执行的是 exec /usr/local/bin/aws-lambda-rie /var/runtime/bootstarp, 部署到 AWS  环境后有了 AWS_LAMBDA_RUNTIME_API, 执行的是 /var/runtime/bootstrap<br />
+起决定性的脚本是<br />
+<pre class="lang:default decode:true">export _HANDLER=app.handler<br/><br/>
+RUNTIME_ENTRYPOINT=/var/runtime/bootstrap
+if [ -z "${AWS_LAMBDA_RUNTIME_API}" ]; then
+  exec /usr/local/bin/aws-lambda-rie $RUNTIME_ENTRYPOINT
+else
+  exec $RUNTIME_ENTRYPOINT
+fi</pre>
+</li>
+</ol>
+<br/>
+如果我们只基于一个 Python 基础镜像来构建自己的 Lambda 镜像, 只要达到以上 #5 的要求就行，所创建的镜像可同时运行于本地及 AWS 环境。实际上要达成 /var/runtime/bootstrap 的启动方式会比较复杂，所以后面未采此种方法 <code>awslambdaric</code> 或 <code>aws-lambda-rie</code> 来启动 Lambda 的。<br/><br/>
+<h3>创建 Python 为基础的 Lambda 镜像</h3><br/><br/>
+如果按照当前版本的 AWS 官方文档 <a href="https://docs.aws.amazon.com/lambda/latest/dg/images-create.html#images-create-from-alt">To create an image using an alternative base image</a> 来创建一个 Lambda 镜像，在本地启动的时候会出现错误<br/><br/>
+<blockquote>
+$ docker run -p 9080:8080 lambda-docker-demo1<br />
+Traceback (most recent call last):<br />
+    File "/usr/local/lib/python3.10/runpy.py", line 196, in _run_module_as_main<br />
+        return _run_code(code, main_globals, None,<br />
+    File "/usr/local/lib/python3.10/runpy.py", line 86, in _run_code<br />
+        exec(code, run_globals)<br />
+    File "/function/awslambdaric/__main__.py", line 20, in &lt;module&gt;<br />
+        main(sys.argv)<br />
+    File "/function/awslambdaric/__main__.py", line 14, in main<br />
+        lambda_runtime_api_addr = os.environ["AWS_LAMBDA_RUNTIME_API"]<br />
+    File "/usr/local/lib/python3.10/os.py", line 679, in __getitem__<br />
+        raise KeyError(key) from None<br />
+KeyError: 'AWS_LAMBDA_RUNTIME_API'
+</blockquote>
+<br/>
+但部署后 AWS 上是没问题的<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/11/lambda-docker-image-1.png"><img class="aligncenter wp-image-11906 size-large" src="https://yanbin.blog/wp-content/uploads/2021/11/lambda-docker-image-1-800x134.png" alt="" width="800" height="134" /></a><br/><br/>
+原因是因为本地启动容器时不存 <code>AWS_LAMBDA_RUNTIME_API</code> 环境变量值，而在 AWS 环境中是有的。<br/><br/>
+ 如果我们在 <code>app.py</code> 中加输出 <code>os.environ</code> 可以看到以下所有的环境变量<br/><br/>
+<pre class="lang:default mark:11 decode:true">'_AWS_XRAY_DAEMON_PORT': '2000'
+'_AWS_XRAY_DAEMON_ADDRESS': '169.254.79.129'
+'_HANDLER': 'app.handler'
+'AWS_LAMBDA_FUNCTION_VERSION': '$LATEST'
+'PATH': '/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+'AWS_LAMBDA_LOG_STREAM_NAME': '2021/11/08/[$LATEST]2ee4dc9a1a334fae8096f73424ad06ac'
+'AWS_LAMBDA_INITIALIZATION_TYPE': 'on-demand'
+'PYTHON_GET_PIP_URL': 'https://github.com/pypa/get-pip/raw/3cb8888cc2869620f57d5d2da64da38f516078c7/public/get-pip.py'
+'LAMBDA_TASK_ROOT': '/var/task'
+'AWS_REGION': 'us-east-1'
+'AWS_LAMBDA_RUNTIME_API': '127.0.0.1:9001'
+'AWS_LAMBDA_FUNCTION_NAME': 'test-lambda'
+'PYTHON_PIP_VERSION': '21.2.4'
+'PYTHON_GET_PIP_SHA256': 'c518250e91a70d7b20cceb15272209a4ded2a0c263ae5776f129e0d9b5674309'
+'PYTHON_SETUPTOOLS_VERSION': '57.5.0'
+'AWS_XRAY_DAEMON_ADDRESS': '169.254.79.129:2000'
+'AWS_SESSION_TOKEN': '......'
+'AWS_LAMBDA_FUNCTION_MEMORY_SIZE': '128'
+'GPG_KEY': 'A035C8C19219BA821ECEA86B64E628F8D684696D'
+'AWS_LAMBDA_LOG_GROUP_NAME': '/aws/lambda/test-lambda'
+'AWS_EXECUTION_ENV': 'AWS_Lambda_Image'
+'AWS_XRAY_CONTEXT_MISSING': 'LOG_ERROR'
+'AWS_ACCESS_KEY_ID': '......'
+'LAMBDA_RUNTIME_DIR': '/var/runtime'
+'AWS_DEFAULT_REGION': 'us-east-1'
+'LANG': 'C.UTF-8'
+'PYTHON_VERSION': '3.10.0'
+'AWS_SECRET_ACCESS_KEY': '......'
+'_X_AMZN_TRACE_ID': 'Root=1-618968c7-7f745c050fc6b61d59cf2280;Parent=790e20cb2f0228fe;Sampled=0'</pre>
+<br/>
+AWS_LAMBDA_RUNTIME_API 为 127.0.0.1:9001<br/><br/>
+不过即使我们在本地启动 docker 时加上该环境变量也无济于事<br/><br/>
+<blockquote>
+$ docker run -e AWS_LAMBDA_RUNTIME_API=127.0.0.1:9001 -p 9080:8080 lambda-docker-demo1<br />
+Traceback (most recent call last):<br />
+    File "/usr/local/lib/python3.10/runpy.py", line 196, in _run_module_as_main<br />
+[ERROR] [123456789088] LAMBDA_RUNTIME Failed to get next invocation. No Response from endpoint<br />
+return _run_code(code, main_globals, None,<br />
+    File "/usr/local/lib/python3.10/runpy.py", line 86, in _run_code<br />
+        exec(code, run_globals)<br />
+    File "/function/awslambdaric/__main__.py", line 20, in &lt;module&gt;<br />
+        main(sys.argv)<br />
+    File "/function/awslambdaric/__main__.py", line 16, in main<br />
+        bootstrap.run(app_root, handler, lambda_runtime_api_addr)<br />
+    File "/function/awslambdaric/bootstrap.py", line 399, in run<br />
+        event_request = lambda_runtime_client.wait_next_invocation()<br />
+    File "/function/awslambdaric/lambda_runtime_client.py", line 68, in wait_next_invocation<br />
+        response_body, headers = runtime_client.next()<br />
+RuntimeError: Failed to get next
+</blockquote>
+<br/>
+通过对前面的实践，我才逐步了解到 AWS Lambda  给我们提供了两个运行接口<br/><br/>
+<ol>
+    <li><a href="https://docs.aws.amazon.com/lambda/latest/dg/images-test.html">Runtime interface emulator</a>, 即 RIE, 本地测试用的执行入口</li>
+    <li><a href="https://docs.aws.amazon.com/lambda/latest/dg/runtimes-images.html#runtimes-api-client">Runtime interface clients</a>, 即 RIC, 实际 Lambda 部署到 AWS 环境的执行入口</li>
+</ol>
+<br/>
+通常是检测是否有 AWS_LAMBDA_RUNTIME_API 环境变量来选择入口，本地测试时没有该环境变量，所以进入 RIE<br/><br/>
+<h4>创建不含 RIE 的 Docker 镜像</h4><br/><br/>
+如果不考虑本地测试的 RIE,  Dockerfile 内容如下<br/><br/>
+<pre class="lang:default decode:true">FROM python:3.9-slim <br/><br/>
+ENV LAMBDA_TASK_ROOT=/var/task
+RUN mkdir -p ${LAMBDA_TASK_ROOT} 
+COPY app.py requirements.txt ${LAMBDA_TASK_ROOT}/<br/><br/>
+WORKDIR ${LAMBDA_TASK_ROOT}<br/><br/>
+RUN  pip install awslambdaric --target ${LAMBDA_TASK_ROOT} --no-cache-dir &amp;&amp; \
+     pip install -r requirements.txt --target "${LAMBDA_TASK_ROOT}" --no-cache-dir<br/><br/>
+ENTRYPOINT python -m awslambdaric app.handler
+</pre>
+<br/>
+<strong>注：由于选择的是 python:3.9-slim 基础镜像，所以要进行 AWS 操作的话，应该在 <code>requirements.txt</code> 文件中加上 <code>boto3</code> 依赖。</strong><br/><br/>
+ENTRYPOINT 可用命令，参数数组的形式<br/><br/>
+<pre class="lang:default decode:true">ENTRYPOINT [ "python", "-m", "awslambdaric" ]
+CMD [ "app.handler" ]</pre>
+<br/>
+那么是否就无法在本地测试不带 RIE 的镜像呢？问题总有解决它的办法, 下载 aws-lambda-rie 在宿主机上，映射卷再替换 entrypoint<br/><br/>
+<blockquote>
+$ mkdir -p ~/.aws-lambda-rie<br />
+$ wget -P ~/.aws-lambda-rie https://github.com/aws/aws-lambda-runtime-interface-emulator/releases/latest/download/aws-lambda-rie<br />
+$ chmod +x ~/.aws-lambda-rie/aws-lambda-rie
+</blockquote>
+<br/>
+然后启动时用命令<br/><br/>
+<blockquote>
+$ docker run -v ~/.aws-lambda-rie:/aws-lambda -p 9080:8080 --entrypoint /aws-lambda/aws-lambda-rie \<br />
+    lambda-docker python -m awslambdaric app.handler
+</blockquote>
+<br/>
+镜像名 lambda-docker 后面整串 <code>python -m awslambdaric app.handler</code> 是作为 entrypoint 的参数，所以启动 Lambda 的命令是<br/><br/>
+<blockquote>
+/aws-lambda/aws-lambda-rie python -m awslambdaric app.handler
+</blockquote>
+<br/>
+最后用一样的命令测试<br/><br/>
+<blockquote>
+$ curl -XPOST "http://localhost:9080/2015-03-31/functions/function/invocations" -d '{}'
+</blockquote>
+<br/>
+<h4>创建整合了 RIE   的 Docker 镜像</h4><br/><br/>
+现在要构建一个整合了 RIE 的 Lambda 镜像，既能方便本地测试同时又能部署到 AWS 上运行的 Docker 镜像的方法如下：<br/><br/>
+先建立一个自己的 entrypoint 脚本 <code>entry_script.sh</code>, 内容为<br/><br/>
+<pre class="lang:default decode:true">#!/bin/sh
+if [ -z "${AWS_LAMBDA_RUNTIME_API}" ]; then
+  exec aws-lambda-rie python -m awslambdaric $@
+else
+  exec python -m awslambdaric $@
+fi     </pre>
+<br/>
+$@ 表示入口命令与参数，即 ENTRYPOINT + CMD<br/><br/>
+再用命令把它改为可执行(想在 Dockerfile 中 RUN 下面的命令也行)<br/><br/>
+<blockquote>
+$ chmod +x entry_script.sh
+</blockquote>
+<br/>
+接下来就是如何把 RIE 包打入 Docker 镜像内部， 见如下完整的 Dockerfile 内容<br/><br/>
+<pre class="lang:default decode:true">FROM python:3.9-slim<br/><br/>
+ADD https://github.com/aws/aws-lambda-runtime-interface-emulator/releases/latest/download/aws-lambda-rie /usr/local/bin<br/><br/>
+RUN chmod +x /usr/local/bin/aws-lambda-rie<br/><br/>
+ENV LAMBDA_TASK_ROOT=/var/task
+RUN mkdir -p ${LAMBDA_TASK_ROOT}
+COPY app.py requirements.txt ${LAMBDA_TASK_ROOT}/
+COPY entry_script.sh /<br/><br/>
+WORKDIR ${LAMBDA_TASK_ROOT}<br/><br/>
+RUN  pip install awslambdaric --target ${LAMBDA_TASK_ROOT} --no-cache-dir &amp;&amp; \
+     pip install -r requirements.txt --target "${LAMBDA_TASK_ROOT}" --no-cache-dir<br/><br/>
+ENTRYPOINT [ "/entry_script.sh" ]</pre>
+<br/>
+为了保持更清晰的结构，没有把上面的多个 RUN 用 &amp;&amp; 合并，所以会产生更多的 Docker 层。<br/><br/>
+这样打出来的包既能用<br/><br/>
+<blockquote>
+$ docker run -it -p 9080:8080 lambda-docker
+</blockquote>
+<br/>
+启动来进行本地测试，本地测试时控制台出现<br/><br/>
+<blockquote>
+IndexError: list index out of range<br />
+<span style="color: #a3a30b;">WARN</span>[0009] First fatal error stored in appctx: Runtime.ExitError<br />
+<span style="color: #a3a30b;">WARN</span>[0009] Process 14(python) exited: Runtime exited with error: exit status 1<br />
+<span style="color: #ff0000;">ERRO</span>[0009] Init failed <span style="color: #ff0000;">InvokeID</span>= <span style="color: #ff0000;">error</span>="Runtime exited with error: exit status 1"<br />
+<span style="color: #a3a30b;">WARN</span>[0009] Reset initiated: ReserveFail<br />
+<span style="color: #a3a30b;">WARN</span>[0009] Cannot list external agents <span style="color: #a3a30b;">error</span>="open /opt/extensions: no such file or directory"
+</blockquote>
+<br/>
+无须担心，不会影响到 Lambda 的执行。<br/><br/>
+而且这个 Docker 镜像部署到 AWS 上也是可执行的。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://docs.aws.amazon.com/lambda/latest/dg/images-test.html">Testing Lambda container images locally</a></li>
+    <li><a href="https://docs.aws.amazon.com/lambda/latest/dg/python-image.html">Deploy Python Lambda functions with container images</a></li>
+    <li><a href="https://docs.aws.amazon.com/lambda/latest/dg/images-create.html">Creating Lambda container images</a></li>
+</ol>

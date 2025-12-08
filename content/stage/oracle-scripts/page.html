@@ -1,0 +1,84 @@
+---
+title: ORACLE 常用脚本（2）[转]
+url: /oracle-scripts/
+date: 2006-09-19T00:02:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Database
+tags: 
+  - Oracle
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 547 
+wpStatus: publish
+views: 257
+lastmod: 2014-01-28T00:52:10-06:00
+---
+
+<strong>一、ORACLE的表的分类：<br/>
+</strong><br/>
+<br/>
+1、REGULAR TABLE：普通表，ORACLE推荐的表，使用很方便，人为控制少。<br/>
+2、PARTITIONED TABLE：分区表，人为控制记录的分布，将表的存储空间分为若干独立的分区，记录按一定的规则存储在分区里。适用于大型的表。<br/>
+<br/>
+<strong>二、建表<br/>
+</strong><br/>
+<br/>
+1 CREATE TABLE 表名 （EMPNO NUMBER（2），NAME VARCHAR2（20）） PCTFREE 20 PCTUSED 50<br/>
+STORAGE （INITIAL 200K NEXT 200K MAXEXTENTS 200 PCTINCREASE 0） TABLESPACE 表空间名称<!--more--><br/>
+[LOGGING|NOLOGGING]所有的对表的操作都要记入REDOLOG，ORACLE建议使用NOLOGGING；<br/>
+[CACHE|NOCACHE]：是否将数据按照一定的算法写入内存。<br/>
+2、关于PCTFREE 和PCTUSED<br/>
+A、行迁移和行链接<br/>
+B、PCTFREE：制止INSERT，为   UPDATE留FREE 空间<br/>
+C、PCTUSED：为恢复INSERT操作，而设定的。<br/>
+<br/>
+<strong>三、拷贝一个已经存在的表：<br/>
+</strong><br/>
+<br/>
+CREATE TABLE 新表名 STORAGE（。。） TABLESPACE 表空间<br/>
+AS SELECT * FROM 老表名 ；<br/>
+当老表存在约束，触发的时候，不会拷过去。<br/>
+<br/>
+<strong>四、修改表的参数</strong>ALTER TABLE 名称 PCTFREE 20 PCTUSED 50 STOAGE（MAXEXTENTS 1000）；<br/>
+<br/>
+<strong>五、手工分配空间：</strong><br/>
+<br/>
+ALTER TABLE 名称 ALLOCATE EXTENT（SIZE 500K DATAFILE '。。'）；<br/>
+<br/>
+1、SIZE选项，按照NEXT分配<br/>
+2、表所在表空间与所分配的数据文件所在的表空间必须一样。<br/>
+<br/>
+<strong>六、水线<br/>
+</strong><br/>
+<br/>
+1、水线定义了表的数据在一个BLOCK中所达到的最高的位置。<br/>
+2、当有新的记录插入，水线增高<br/>
+3、当删除记录时，水线不回落<br/>
+4、减少查询量<br/>
+<br/>
+<strong>七、如何回收空间：<br/>
+</strong><br/>
+<br/>
+ALTER TABLE 名称 DEALLOCATE UNUSED [KEEP 4[M|K]]<br/>
+1、当空间分配过大时，可以使用本命令<br/>
+2、如果没有加KEEP，回收到水线<br/>
+3、如果水线《MINEXTENTS的大小回收到MINEXTENTS所指定的大小<br/>
+<br/>
+<strong>八、TRUNCATE 一个表<br/>
+</strong><br/>
+<br/>
+TRUNCATE TABLE 表名，表空间截取MINEXTENT，同时水线重置。<br/>
+<br/>
+<strong>九、DROP 一个表</strong>DROP TABLE 表名 [CASCADE CONSTRAINTS]<br/>
+当一个表含有外键的时候，是不可以直接DROP的，加CASCADE CONSRIANTS将外键等约束一并删掉。<br/>
+<br/>
+<strong>十、信息获取</strong>1、dba_object<br/>
+2 dba_tables:建表的参数<br/>
+3 DBA_SEGMENTS:<br/>
+组合查询的连接字段：DBA_TABLES的table_name+dba_ojbect的object_name+dba_segments的SEGMENT_NAME

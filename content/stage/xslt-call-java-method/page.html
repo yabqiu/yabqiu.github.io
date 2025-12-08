@@ -1,0 +1,81 @@
+---
+title: XSLT 调用 Java 的类方法
+url: /xslt-call-java-method/
+date: 2011-01-10T05:30:04-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - XML/DOM
+  - Java/JEE
+tags: 
+  - xslt
+  - Java
+  - 函数
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3021 
+wpStatus: publish
+views: 2282
+lastmod: 2021-09-04T11:15:24-05:00
+---
+
+曾经有两篇介绍了在 XSLT 里如何调用 C# 或 Js 写的函数，其中用到了与微软相关的，像：xmlns:msxsl="urn:schemas-microsoft-com:xslt",  &lt;msxsl:script implements-prefix="unmifn" language="C#"&gt;。回到了 Java 环境同样得考虑在 XSLT 中如何调用 Java 的方法，毕竟在 XSLT 外处理内容要方便许多。</p>
+<br/>
+参考了一些网上的文章，大多讲的不怎么好理解与应用，未尝试之前不免让人想缩手。其实做起来可以更简单些，两步而已：<br/><br/>
+1） 声明时指定包名和函数前缀<br />
+2） 调用时加上前缀和类名及静态方法，传入参数<br/><br/>
+要想再深入些，可注意有时候 Java 函数应该传入的参数类型是什么？是否能调用非静态方法，public 是最基本的要求，以及通过什么组件来调用的等等。<!--more--><br/><br/>
+下面来看例子，在 xslt 里这样写(如 example.xslt)：<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+    xmlns:java="cc.unmi.commons" exclude-result-prefixes="java"&gt;<br/><br/>
+    &lt;xsl:output method="xml"/&gt;<br/><br/>
+    &lt;xsl:template match="user/name"&gt;
+        &lt;li&gt;&lt;xsl:value-of select='java:XsltFunctions.replace(.)'/&gt;&lt;/li&gt;
+    &lt;/xsl:template&gt;
+&lt;/xsl:stylesheet&gt; </pre>
+<br/>
+说明：我们把要调用的方法所在类放在 cc.unmi.commons 包中，别名为 java，用 exclude-result-prefixes="java" 使用 java 不被包含在声明中。使用代码 java:XsltFunctions.replace(.) 来 cc.unmi.commons.XsltFunctions.replace(String str) 方法，传入的参数是点表示当前节点。<br/><br/>
+再看 Java 类及其中方法 replace 的定义：<br/><br/>
+<pre class="lang:default decode:true ">package cc.unmi.commons;<br/><br/>
+public class XsltFunctions {
+    public static String replace(String src){
+        return dest.replace("unmi", "unmi.cc");
+    }
+}</pre>
+<br/>
+这个方法它应该是个 public static 的，这里只是作了简单的替换操作，要知道从 XSLT 来到了 Java 的世界里，可以在这里做非常灵活、复杂的事情。<br/><br/>
+假设是这样一个 xml 文件(如 example.xml)：<br/><br/>
+<pre class="lang:default decode:true">&lt;user&gt;
+    &lt;name&gt;unmi&lt;/name&gt;
+    &lt;blog&gt;http://unmi.cc&lt;/blog&gt;
+    &lt;email&gt;fantasia@sina.com&lt;/email&gt;
+&lt;/user&gt;</pre>
+<br/>
+完成转换的 Java 代表如下，只需用到 JDK 自带的 javax.xml.transform 下的类：<br/><br/>
+<pre class="lang:default decode:true ">public static void transfer() throws Exception{
+    Source xmlSource = new StreamSource("example.xml");
+    Source xsltSource = new StreamSource("example.xslt");
+    TransformerFactory transfact = TransformerFactory.newInstance();<br/><br/>
+    StringWriter sw = new StringWriter();
+    Result result = new StreamResult(sw);<br/><br/>
+    Transformer trans = transfact.newTransformer(xsltSource);
+    trans.transform(xmlSource, result);<br/><br/>
+    System.out.println(sw.toString());
+}</pre>
+<br/>
+上面的代码在 Eclipse 或命令行下运行时 javax.xml.transform.TransformerFactory 的实现是 org.apache.xalan.processor.TransformerFactoryImpl<br/><br/>
+在 Tomcat 下的实现默认是 net.sf.saxon.TransformerFactoryImpl。你可以用下面两种方式来指定 XSLT 转换时的实现类<br/><br/>
+System.setProperty("javax.xml.transform.TransformerFactory", "net.sf.saxon.TransformerFactoryImpl"); //全局方式<br />
+TransformerFactory transfact = TransformerFactory.newInstance("org.apache.xalan.processor.TransformerFactoryImpl", YourClass.class.getClassLoader());<br/><br/>
+xalan 的兼容性要强，但是使用 saxon 的实现时，xstl 中的写法又不一样了，参考：<a title="XSLT 调用 Java 的类方法 -- Tomcat 环境" href="http://unmi.cc/xslt-call-java-functions-tomcat-env" target="_blank" rel="noopener">XSLT 调用 Java 的类方法 -- Tomcat 环境</a><br/><br/>
+看看 sw.toString() 的内容吧。<br/><br/>
+中间的实现好像也是通过 Xalan 组件的。另外，除了可用 xmlns:java="cc.unmi.commons" 直接指定包名的方法，还可多了解下它还能不能使用别的方式，比如加载网络包等等。<br/><br/>
+参考：1. <a href="http://tech.ddvip.com/2007-10/119324432636464_3.html" target="_blank" rel="noopener">通过XSLT访问Java代码</a><br />
+             2. <a href="http://www.ibm.com/developerworks/cn/xml/x-xalanextensions.html" target="_blank" rel="noopener">简单的 Xalan 扩展函数</a><br />
+             3. <a href="http://www.edankert.com/transforms/xslt.invoke-java.html" target="_blank" rel="noopener">Call Java methods from within the XSLT</a><br />
+             4. <a href="http://www.cafeconleche.org/books/xmljava/chapters/ch17s03.html" target="_blank" rel="noopener">Extending XSLT with Java</a>

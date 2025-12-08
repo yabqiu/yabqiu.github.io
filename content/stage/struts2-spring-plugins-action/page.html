@@ -1,0 +1,73 @@
+---
+title: 引入了 struts2-spring-plugins 包后 Spring 就会管理你的 Action
+url: /struts2-spring-plugins-action/
+date: 2011-01-20T05:51:04-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Spring
+tags: 
+  - Struts2
+  - Spring
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3063 
+wpStatus: publish
+views: 3691
+lastmod: 2021-09-03T12:14:04-05:00
+---
+
+Struts2 与 Spring 结合，使用 Spring 来管理 Action 实例，在项目中引入了struts2-spring-plugin-2.2.1.jar 包。然后想到的是既然是要用 Spring 来管理 Action 实例，就得在 struts.xml 里加上：</p>
+<br/>
+<pre class="lang:default decode:true">&lt;constant name="struts.objectFactory" value="spring" /&gt;</pre>
+<br/>
+或者是在 struts.properties 里加上一条属性：<br/><br/>
+<pre class="brush:text">struts.objectFactory = spring</pre>
+<br/>
+OK，这也没问题，然而有次在某个测试项目中想暂时不用 Spring 来管理 Bean，于是把上面的配置去了，也把 web.xml 中的相关 Spring 的 ContextLoaderListener 也格啦。容器启动的时候却发现：<!--more--><br/><br/>
+<span style="color: #ff0000;">INFO: Initializing Struts-Spring integration...<br />
+Jan 20, 2011 7:32:08 PM org.apache.struts2.spring.StrutsSpringObjectFactory &lt;init&gt;<br />
+SEVERE: ********** FATAL ERROR STARTING UP STRUTS-SPRING INTEGRATION **********<br />
+Looks like the Spring listener was not configured for your web app!<br />
+Nothing will work until WebApplicationContextUtils returns a valid ApplicationContext.<br />
+You might need to add the following to web.xml:<br />
+    &lt;listener&gt;<br />
+        &lt;listener-class&gt;org.springframework.web.context.ContextLoaderListener&lt;/listener-class&gt;<br />
+    &lt;/listener&gt;<br />
+Jan 20, 2011 7:32:08 PM org.apache.catalina.core.StandardContext filterStart<br />
+SEVERE: Exception starting filter action2<br />
+java.lang.NullPointerException<br />
+ at com.opensymphony.xwork2.spring.SpringObjectFactory.getClassInstance(SpringObjectFactory.java:189)<br />
+ at com.opensymphony.xwork2.config.providers.XmlConfigurationProvider.verifyResultType(XmlConfigurationProvider.java:479)<br />
+ at com.opensymphony.xwork2.config.providers.XmlConfigurationProvider.addResultTypes(XmlConfigurationProvider.java:450)<br />
+ at com.opensymphony.xwork2.config.providers.XmlConfigurationProvider.addPackage(XmlConfigurationProvider.java:407)<br />
+ at com.opensymphony.xwork2.config.providers.XmlConfigurationProvider.loadPackages(XmlConfigurationProvider.java:239)<br />
+ at org.apache.struts2.config.StrutsXmlConfigurationProvider.loadPackages(StrutsXmlConfigurationProvider.java:111)<br />
+ at com.opensymphony.xwork2.config.impl.DefaultConfiguration.reload(DefaultConfiguration.java:152)<br />
+ at com.opensymphony.xwork2.config.ConfigurationManager.getConfiguration(ConfigurationManager.java:52)<br />
+ at org.apache.struts2.dispatcher.Dispatcher.init_PreloadConfiguration(Dispatcher.java:395)<br />
+ at org.apache.struts2.dispatcher.Dispatcher.init(Dispatcher.java:452)<br />
+ at org.apache.struts2.dispatcher.FilterDispatcher.init(FilterDispatcher.java:201)</span><br/><br/>
+难道 Struts2 默认就是用 Spring 来管理 Bean 吗？也不对啊，Struts2 并不依赖 Spring 啊。原来是在 struts2-spring-plugin-2.2.1.jar 中的 struts-plugin.xml 中是这样的配置：<br/><br/>
+<pre class="lang:default decode:true ">&lt;struts&gt;
+    &lt;bean type="com.opensymphony.xwork2.ObjectFactory" name="spring" class="org.apache.struts2.spring.StrutsSpringObjectFactory"/&gt;
+    
+    &lt;!--  Make the Spring object factory the automatic default --&gt;
+    &lt;constant name="struts.objectFactory" value="spring" /&gt;<br/><br/>
+    &lt;constant name="struts.class.reloading.watchList" value="" /&gt;
+    &lt;constant name="struts.class.reloading.acceptClasses" value="" /&gt;
+    &lt;constant name="struts.class.reloading.reloadConfig" value="false" /&gt;<br/><br/>
+    &lt;package name="spring-default"&gt;
+        &lt;interceptors&gt;
+            &lt;interceptor name="autowiring" class="com.opensymphony.xwork2.spring.interceptor.ActionAutowiringInterceptor"/&gt;
+            &lt;interceptor name="sessionAutowiring" class="sessionAutowiring" class="org.apache.struts2.spring.interceptor.SessionContextAutowiringInterceptor"/&gt;
+        &lt;/interceptors&gt;
+    &lt;/package&gt;    
+&lt;/struts&gt;</pre>
+<br/>
+看到里面的 &lt;constant name="struts.objectFactory" value="spring" /&gt;，只要引入了 struts2-spring-plugin 插件包就启作用了，原来我们自己在 struts.xml 或是 struts.properties 中的设置的该属性完全是多此一举，要知道 spring 这个 objectfactory 也是在这里边声明的啊。只要引入了 struts2-spring 插件包即可，最好还是从 strtus.xml 或 struts.properties 中把该项目配置拿掉。<br/><br/>
+同时也多请留意下里面配置的其他几个属性，肯定蕴藏着不少学问的。

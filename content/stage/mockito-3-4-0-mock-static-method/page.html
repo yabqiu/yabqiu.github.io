@@ -1,0 +1,204 @@
+---
+title: Mockito 3.4.0 开始可 Mock 静态方法
+url: /mockito-3-4-0-mock-static-method/
+date: 2021-02-03T13:36:23-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/01/rsz_mockito_logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - mockito
+  - UnitTest
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10580 
+wpStatus: publish
+views: 18078
+lastmod: 2021-06-18T14:00:58-05:00
+---
+
+Java 单元测试最趁手的 Mock 组件当属 Mockito，虽然它最初是基于继承来实现  Mock 的，所以对私有方法，私有属性，静态方法，final 类，final 方法，构造函数无能为力。于是有时不得不引入 JMockit 或 PowerMockit 来辅助。不过现在的 Mockito 功力有所增强。<br/><br/>
+首先是 Mockito 2.1.0 开始可以 Mock final 类和 final 方法，要在 classpath 下创建个文件 <code>mockito-extensions/org.mockito.plugins.MockMaker</code>, 内容为 <code>mock-maker-inline</code>。之前写过一篇介绍：<a href="https://yanbin.blog/mockito-mock-final-class-final-method/">Mockto 也能 Mock final 类和 final 方法了</a>，其中也探索了它的实现细节，使用到了 ByteBuddy 修改字节码。<br/><br/>
+从 <a href="https://github.com/mockito/mockito/blob/caac3535daaeb9370cd25f23694d3d059a72d8d9/doc/release-notes/official.md#340">Mockito 3.4.0</a> 通过类似的 mockto-extensions 扩展的方式，实现了对静态方法的 Mock。所有使用到的接口是 org.mockito.MockedStatic，它当前在 Mockito 3.7.7 中还是一个试验性方法 @Incubating，能拿来用就行。<!--more--><br/><br/>
+<h3>引入 mockito-inline 依赖</h3><br/><br/>
+那么来看看 Mockito 是如何 Mock  静态方法，网上的文章一般是说要用 <code>mockito-inline</code> 替换 <code>mockito-core</code> 依赖，也就是要在 pom.xml 中的依赖由通常的<br/><br/>
+<pre class="lang:xml decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;org.mockito&lt;/groupId&gt;
+    &lt;artifactId&gt;mockito-core&lt;/artifactId&gt;
+    &lt;version&gt;3.7.7&lt;/version&gt;
+    &lt;scope&gt;test&lt;/scope&gt;
+&lt;/dependency&gt;
+</pre>
+<br/>
+换成<br/><br/>
+<pre class="lang:xml decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;org.mockito&lt;/groupId&gt;
+    &lt;artifactId&gt;mockito-inline&lt;/artifactId&gt;
+    &lt;version&gt;3.7.7&lt;/version&gt;
+    &lt;scope&gt;test&lt;/scope&gt;
+&lt;/dependency&gt;
+</pre>
+<br/>
+那么由 <code>mockito-core</code> 到 <code>mockito-inline</code> 发生了什么呢，看 mockito-inline 的 <a href="https://repo1.maven.org/maven2/org/mockito/mockito-inline/3.7.7/mockito-inline-3.7.7.pom">pom.xml</a> 文件就知道，它其实内部依赖了 <code>mockito-core</code>。使用了 <code>mockito-inline</code> 后效果如下：<br/><br/>
+<img class="aligncenter" src="/wp-content/uploads/2021/02/mockito-static-1.png" width="716px" /><br/><br/>
+实质上 <code>mockito-inline</code> 就是给 mockito-core 添加了两个插件配置，分别是 <code>org.mockito.plugins.MockMaker</code> 和 <code>org.mockito.plugins.MemberAccessor</code>，而前者也是用于 Mock final 类和 final 方法的。至于 Mock 静态方法是由前者还是后者支持的需要进一步研究。<br/><br/>
+要是不想直接引入 <code>mockito-inline</code> 的话，自己在 classpath 下创建相同的文件及其内容也是可以的。<br/><br/>
+<h3>测试 Mock 静态方法</h3><br/><br/>
+有了 <code>mockito-inline</code> 接着尝试下用代码如何 Mock 一个静态方法，先创建一个含有静态方法的待测试类 <code>Utils</code><br/><br/>
+<pre class="lang:java decode:true">package yanbin.blog;<br/><br/>
+import java.time.LocalDate;<br/><br/>
+public class Utils {<br/><br/>
+    public LocalDate getCurrentDate() {
+        return LocalDate.now();
+    }
+}
+</pre>
+<br/>
+测试 UtilsTest<br/><br/>
+<pre class="lang:java decode:true">package yanbin.blog;<br/><br/>
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
+import org.mockito.junit.MockitoJUnitRunner;<br/><br/>
+import java.time.LocalDate;<br/><br/>
+import static org.junit.Assert.assertEquals;<br/><br/>
+@RunWith(MockitoJUnitRunner.class)
+public class UtilsTest {<br/><br/>
+    private Utils target = new Utils();<br/><br/>
+    @Test
+    public void testGetCurrentDate() {
+        LocalDate yearOf2000 = LocalDate.of(2000, 1, 1);
+        try (MockedStatic theMock = Mockito.mockStatic(LocalDate.class)) {
+            theMock.when(LocalDate::now).thenReturn(yearOf2000);<br/><br/>
+            System.out.println(target.getCurrentDate());
+            assertEquals(2000, target.getCurrentDate().getYear());
+        }
+    }
+}
+</pre>
+<br/>
+测试通过，当前日期是 2021-02-03, 打印的日期是 2000-01-01, 又重回到了 2000 年。<br/><br/>
+这里我们用到了  <code>Mockito.mockStatic(LocalDate.class)</code> Mock 了 LocalDate 的所有的静态方法，在它 try 块外端调用 LocalDate 的静态方法是可以, 其间不用 <br/><br/>
+theMock.when(LocalDate::now).thenReturn(yearOf2000)<br/><br/>
+而直接调用 LocalDate 的其他静态方法，如 LocalDate.of(2000, 1, 1) 则会报错，像下面的代码<br/><br/>
+<pre class="lang:java decode:true">@Test
+public void testGetCurrentDate() {
+    try (MockedStatic&lt;LocalDate&gt; theMock = Mockito.mockStatic(LocalDate.class)) {
+        theMock.when(LocalDate::now).thenReturn(LocalDate.of(2000, 1, 1));<br/><br/>
+        System.out.println(target.getCurrentDate());
+        assertEquals(2000, target.getCurrentDate().getYear());
+    }
+}
+</pre>
+<br/>
+运行后报错<br/><br/>
+<blockquote>
+org.mockito.exceptions.misusing.UnfinishedStubbingException: <br />
+Unfinished stubbing detected here:<br />
+-&gt; at yanbin.blog.UtilsTest.testGetCurrentDate(UtilsTest.java:21)
+E.g. thenReturn() may be missing.<br />
+Examples of correct stubbing:<br />
+    when(mock.isOk()).thenReturn(true);<br />
+    when(mock.isOk()).thenThrow(exception);<br />
+    doThrow(exception).when(mock).someVoidMethod();<br />
+Hints:<br />
+  1. missing thenReturn()<br />
+  2. you are trying to stub a final method, which is not supported<br />
+  3. you are stubbing the behaviour of another mock inside before 'thenReturn' instruction is completed
+<br />
+    at java.time.LocalDate.of(LocalDate.java:266)<br />
+    at yanbin.blog.UtilsTest.testGetCurrentDate(UtilsTest.java:21)<br />
+    ............
+</blockquote>
+<br/>
+也就是说用 <code>try (MockedStatic theMock = Mockito.mockStatic(LocalDate.class)) { ... }</code> 一旦 Mock 一个类，那么它所有的静态方法都被 Mockito 接管。<br/><br/>
+<h3>Mock 带参数的静态方法</h3><br/><br/>
+前面 Mock 是不带参数的静态方法，注意到 <code>MockedStatic.when(Verification)</code> 的参数是一个  Verification，它是一个 SAM 接口<br/><br/>
+<pre class="lang:default decode:true ">interface Verification {
+    void apply() throws Throwable;
+}</pre>
+<br/>
+而我们通常用的 Mockito.when(T methodCall) 的参数是一个方法调用的返回值，所以当 Mock 带参数的静态方法时与 Mockito.when(obj.foo(1, 2)).thenReturn(34)) 的用法是不一样的，MockedStatic.when() 的参数需要放一个 () -&gt; LocalDate.of(anyInt(), anyInt(), anyInt()) 这样的 Lambda. 完整例子如下<br/><br/>
+先改造一下  Utils 类，为<br/><br/>
+<pre class="lang:default decode:true ">package yanbin.blog;<br/><br/>
+import java.time.LocalDate;<br/><br/>
+public class Utils {<br/><br/>
+    public LocalDate getDate(int year, int month, int day) {
+        return LocalDate.of(year, month, day);
+    }
+}</pre>
+<br/>
+再就是下面的方式 Mock 带参数的静态方法<br/><br/>
+<pre class="lang:default mark:14 decode:true">@RunWith(MockitoJUnitRunner.class)
+public class UtilsTest {<br/><br/>
+    private Utils target = new Utils();<br/><br/>
+    @Test
+    public void testGetCurrentDate() {
+        LocalDate yearOf1970 = LocalDate.of(1970, 1, 1);
+        try (MockedStatic&lt;LocalDate&gt; theMock = Mockito.mockStatic(LocalDate.class)) {
+            theMock.when(() -&gt; LocalDate.of(anyInt(), anyInt(), anyInt())).thenReturn(yearOf1970);<br/><br/>
+            System.out.println(target.getDate(2000, 2, 28));
+            assertEquals(1970, target.getDate(2000, 2, 28).getYear());
+            theMock.verify(()-&gt;LocalDate.of(anyInt(), anyInt(), anyInt()), times(1));
+        }
+    }
+}</pre>
+<br/>
+其实前面无参静态方法也可以把方法引用替代为一个 Lambda 表达式<br/><br/>
+<blockquote>
+theMock.when(() -&gt; LocalDate.now()).thenReturn(yearOf1970);
+</blockquote>
+<br/>
+并且注意到上面的第 14 行，对静态方法调用的 verify 也要用 theMock 的 verify() 方法，而不是 Mockito.verify()。<br/><br/>
+<h3>一张图大概看一下它的内部实现</h3><br/><br/>
+<img class="aligncenter" src="/wp-content/uploads/2021/02/mockito-static-2.png" width="800px" /><br/><br/>
+也是用的 ByteBuddy<br/><br/>
+<h3>再测试一下是哪个 Mockito 的插件在起作用</h3><br/><br/>
+我们把依赖从 <code>mockito-inline</code> 恢复到 <code>mockito-core</code>, 然后在 classpath 下自己创建 <code>mockito-extensions/org.mockito.plugins.MockMaker</code> 并内容<br/><br/>
+<blockquote>
+mock-maker-inline
+</blockquote>
+<br/>
+重新运行最前面的 UtilsTest, 测试通过，说明 <code>mock-maker-inline</code> 同时支撑了对 final 类，final 方法和静态方法的 Mock。那就是说明 <code>mockito-extensions/org.mockito.plugins.MemberAccessor</code> 的 <code>member-accessor-module</code> 增强了 Mockito 的其他特性，初步猜测是可用来替换测试类的内部成员属性值，新任务又来了。<br/><br/>
+<h3>Mockito Mock 静态方法的弊端</h3><br/><br/>
+在实际应用 Mockito 对静态方法进行 Mock 的时候，发现在多线程的时候失效，问题在于当用<br/><br/>
+<pre class="lang:default decode:true ">try (MockedStatic&lt;LocalDate&gt; theMock = Mockito.mockStatic(LocalDate.class)) {
+    // 只对当前线程有效
+}</pre>
+<br/>
+只对当前线程对 LocalDate 静态方法的调用有效，看下面的例子就知道<br/><br/>
+<pre class="lang:default decode:true ">@Test
+public void testGetCurrentDate() throws InterruptedException {
+    LocalDate yearOf2000 = LocalDate.of(1970, 1, 1);
+    try (MockedStatic&lt;LocalDate&gt; theMock = Mockito.mockStatic(LocalDate.class)) {
+        theMock.when(LocalDate::now).thenReturn(yearOf2000);<br/><br/>
+        System.out.println(Thread.currentThread().getName() + ":" + LocalDate.now()); //main:1970-01-01<br/><br/>
+        Thread thread = new Thread(() -&gt;
+            System.out.println(Thread.currentThread().getName() + ":" + LocalDate.now()) //Thread-0:2021-06-18，对于非当前线程无效
+        );
+        thread.start();
+        thread.join();<br/><br/>
+        System.out.println(Thread.currentThread().getName() + ":" + LocalDate.now()); //main:1970-01-01
+    }
+    System.out.println(Thread.currentThread().getName() + ":" + LocalDate.now()); //main:2021-06-18, 退出 try block 后当然也失效
+}</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+main:1970-01-01<br />
+Thread-0:2021-06-18<br />
+main:1970-01-01<br />
+main:2021-06-18
+</blockquote>
+<br/>
+因为这一限制，几乎让 Mockito mock 静态方法这一表现淡然无色，在实际应用代码中线程的使用是非常普遍的。看来偶然间发现的亮点还得放弃掉。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://frontbackend.com/java/how-to-mock-static-methods-with-mockito">How to mock static methods with Mockito</a></li>
+</ol>

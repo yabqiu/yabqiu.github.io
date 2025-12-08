@@ -1,0 +1,163 @@
+---
+title: Python 常用日期处理 -- calendar 与 dateutil 模块
+url: /python-datetime-calendar-dateutil/
+date: 2019-05-01T10:50:37-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - Calendar
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9360 
+wpStatus: publish
+views: 455
+lastmod: 2019-05-01T10:50:37-05:00
+---
+
+<p>本文紧承上一篇 <a href="/python-date-libraries-usages/">Python 常用日期处理</a>，因制于篇幅的大小需求才临时分立新篇，这里要简单提到 calendar 和 dateutil 模块的使用，其中 calendar 是 Python 内置的。相比于上一篇而言，此处主旨会更明确一些，只记录三个应用案例，分别是</p>
+
+<ol>
+
+	<li>用 dateutil 灵活的解析 datetime 字符串</li>
+
+	<li>给定起始日期后的连续日期</li>
+
+	<li>给定起始日期后连续的月末日期</li>
+
+</ol>
+
+<h3>dateutil 灵活的解析 datetime 字符串</h3><br/>
+<p>使用 Python 内容的  date 或 datetime, 构造它们的实例时需要逐个的传入年月日或时分秒，或者要调用  <code>fromisoformat()</code> 方法解析严格的字符串表示格式。而 dateutil.parser 的 parse() 方法就显得特别的聪明和随意，它可以智能的解析更丰富的字符串表示方式。详细的支持格式请参考官方文档的 <a href="https://dateutil.readthedocs.io/en/stable/examples.html#parse-examples">parse examples</a>，恐怕官方文档也未列举完全，只要觉得合理的时间字符串就可以尝试去解析。下方是一些例子<!--more--></p>
+
+<pre class="lang:default decode:true">&gt;&gt;&gt; from dateutil.parser import parse<br/>
+&gt;&gt;&gt;<br/>
+&gt;&gt;&gt; parse('2018-02-28')<br/>
+datetime.datetime(2018, 2, 28, 0, 0)<br/>
+&gt;&gt;&gt; parse('2018-02-28T12:08:23')<br/>
+datetime.datetime(2018, 2, 28, 12, 8, 23)<br/>
+&gt;&gt;&gt; parse('2018-02-28T12:08:23PM')  # 下午<br/>
+datetime.datetime(2018, 2, 28, 12, 8, 23)<br/>
+&gt;&gt;&gt; parse('2018-02-28T12:08:23+05:00') # 加上时区偏移<br/>
+datetime.datetime(2018, 2, 28, 12, 8, 23, tzinfo=tzoffset(None, 18000))<br/>
+&gt;&gt;&gt; parse('Jan 18, 2018')<br/>
+datetime.datetime(2018, 1, 18, 0, 0)<br/>
+&gt;&gt;&gt; parse('Oct. 10, 2008 10:43am CST')  # 加上时区<br/>
+datetime.datetime(2008, 10, 10, 10, 43, tzinfo=tzlocal())<br/>
+&gt;&gt;&gt; parse('Wed Jul 08 17:08:48 GMT 2009')<br/>
+datetime.datetime(2009, 7, 8, 17, 8, 48, tzinfo=tzutc())<br/>
+&gt;&gt;&gt; parse("09-25-2003")<br/>
+datetime.datetime(2003, 9, 25, 0, 0)<br/>
+&gt;&gt;&gt; parse("13-02-2003")   # 第一段大于 12 不可能是月份，所以推断为日期<br/>
+datetime.datetime(2003, 2, 13, 0, 0)<br/>
+&gt;&gt;&gt;parse('09:23pm')<br/>
+datetime.datetime(2019, 4, 30, 21, 23)</pre>
+
+<p>parser.parse() 返回的总是 datetime 类型，这也很好理解，因为 datetime 有完整的时间信息，可由此得到 date 或 time 实例。</p>
+
+<h3>给定起始日期后的连续日期</h3><br/>
+<p>从一个给定日期一天天往后推可以直接用 Python 内置的 datetime(date 和 timedelta)，还用不上 calendar 模块</p>
+
+<pre class="lang:default decode:true">&gt;&gt;&gt; from datetime import date, timedelta<br/>
+&gt;&gt;&gt; start_date = date(2018, 2, 25)<br/>
+&gt;&gt;&gt; for i in range(1, 10):<br/>
+...     print(start_date + timedelta(days = i))<br/>
+...<br/>
+2018-02-26<br/>
+2018-02-27<br/>
+2018-02-28<br/>
+2018-03-01<br/>
+2018-03-02<br/>
+2018-03-03<br/>
+2018-03-04<br/>
+2018-03-05<br/>
+2018-03-06</pre>
+
+<p>使用 <code>timedelta</code> 来计算日期偏移只能支持以下的度量</p>
+
+<blockquote><br/>
+<p>timedelta(days=0, seconds=0, microseconds=0, milliseconds=0, minutes=0, hours=0, weeks=0)</p>
+
+</blockquote>
+
+<p>不能按月，年来换算，而 <code>dateutil.relativedelta</code> 就更强大了，看下它的构造函数</p>
+
+<blockquote><br/>
+<p>relativedelta(dt1=None, dt2=None, years=0, months=0, days=0, leapdays=0, weeks=0, hours=0, minutes=0, seconds=0, microseconds=0, year=None, month=None, day=None, weekday=None, yearday=None, nlyearday=None, hour=None, minute=None, second=None, microsecond=None)</p>
+
+</blockquote>
+
+<p>我们可以换用  relativedelta 来重写上面的代码</p>
+
+<pre class="lang:default decode:true ">&gt;&gt;&gt; from datetime import date<br/>
+&gt;&gt;&gt; from dateutil.relativedelta import relativedelta<br/>
+&gt;&gt;&gt; start_date = date(2018, 2, 25)<br/>
+&gt;&gt;&gt; for i in range(1, 10):<br/>
+...     print(start_date + relativedelta(days = i))<br/>
+...<br/>
+2018-02-26<br/>
+2018-02-27<br/>
+2018-02-28<br/>
+2018-03-01<br/>
+2018-03-02<br/>
+2018-03-03<br/>
+2018-03-04<br/>
+2018-03-05<br/>
+2018-03-06</pre>
+
+<p>如果想要推算下一个，下一个月，或下下年就需要用 <code>relativedelta</code>。</p>
+
+<h3>给定起始日期后连续的月末日期</h3><br/>
+<p>假如用 relativedelta 按月推算日期的话就要涉及到 calendar 模块了，因为无论 30 天往下推算或是 <code>relativedelta(months = 1)</code> 得到的都可能不是自己想要的结果。例如</p>
+
+<ul><br/>
+	<li>2019-01-30 + relativedelta(months = 1) 是 2019-02-28</li>
+
+	<li>2019-02-28 + relativedelta(months = 1) 是 2019-03-28</li>
+
+</ul><br/>
+<p>日期部分飘忽不定，这种按月推演出的结果没多大意思，一般来说我们可能需要的是每个月月末日期，可以使用 calendar 来确定指定年月的最小和最大日期。</p>
+
+<pre class="lang:default decode:true ">&gt;&gt;&gt; from datetime import date<br/>
+&gt;&gt;&gt; from dateutil.relativedelta import relativedelta<br/>
+&gt;&gt;&gt; from calendar import monthrange<br/>
+&gt;&gt;&gt;<br/>
+&gt;&gt;&gt; monthend = date(2019, 1, 31)<br/>
+&gt;&gt;&gt; for i in range(1, 10):<br/>
+...     dd = monthend + relativedelta(months = i)<br/>
+...     dd = dd.replace(day = monthrange(dd.year, dd.month)[1])<br/>
+...     print(dd)<br/>
+...<br/>
+2019-02-28<br/>
+2019-03-31<br/>
+2019-04-30<br/>
+2019-05-31<br/>
+2019-06-30<br/>
+2019-07-31<br/>
+2019-08-31<br/>
+2019-09-30<br/>
+2019-10-31</pre>
+
+<p>Python 自带的  calendar 模块还有许多好玩的函数，如对星期，月份的遍历，真正的日历输出为文本或 HTML 代码的功能，详情请见 <a href="https://www.guru99.com/calendar-in-python.html">Python CALENDAR Tutorial with Example</a>.</p>
+
+<p>来份简单的例子</p>
+
+<pre class="lang:default decode:true ">&gt;&gt;&gt; import calendar<br/>
+&gt;&gt;&gt; c = calendar.TextCalendar(calendar.SUNDAY)<br/>
+&gt;&gt;&gt; str = c.formatmonth(2019, 4)<br/>
+&gt;&gt;&gt; print(str)<br/>
+     April 2019<br/>
+Su Mo Tu We Th Fr Sa<br/>
+    1  2  3  4  5  6<br/>
+ 7  8  9 10 11 12 13<br/>
+14 15 16 17 18 19 20<br/>
+21 22 23 24 25 26 27<br/>
+28 29 30</pre>
+
+<p>显示出与 bash 命令 <code>cal -h 4 2019</code> 一样的内容。</p>

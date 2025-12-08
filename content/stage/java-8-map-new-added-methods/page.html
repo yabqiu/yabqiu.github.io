@@ -1,0 +1,243 @@
+---
+title: Java 8 Map 中新增的方法使用记录
+url: /java-8-map-new-added-methods/
+date: 2018-10-31T00:13:29-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/12/Java8-Logo.png"
+categories:
+  - Java8
+tags: 
+  - java8
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9033 
+wpStatus: publish
+views: 543
+lastmod: 2019-09-19T22:37:41-05:00
+---
+
+<p>得益于 Java 8 的 default 方法特性，Java 8 对 Map 增加了不少实用的默认方法，像 <code>getOrDefault</code>, <code>forEach</code>, <code>replace</code>, <code>replaceAll</code>, <code>putIfAbsent</code>, <code>remove(key, value)</code>, <code>computeIfPresent</code>, <code>computeIfAbsent</code>, <code>compute</code> 和<code>merge</code> 方法。另外与 Map 相关的 <code>Map.Entry</code> 也新加了多个版本的 <code>comparingByKey</code> 和 <code>comparingByValue</code> 方法。</p>
+
+<p>为达到熟练运用上述除 <code>getOrDefault</code> 和 <code>forEach</code> 外的其他方法，有必要逐一体验一番，如何调用，返回值以及调用后的效果如何。看看每个方法不至于 Java 8 那么多年还总是  <code>if(map.containsKey(key))...</code> 那样的老套操作。</p>
+
+<p>前注：Map 新增方法对  present 的判断是 map.containsKey(key) &amp;&amp; map.get(key) != null，简单就是  map.get(key) != null，也就是即使 key 存在，但对应的值为 null 的话也视为 absent。absent 就是 map.get(key) == null。</p>
+
+<p>不同 Map 实现对 key/value 是否能为 null 有不同的约束, HashMap, LinkedHashMap, key 和 value 都可以为 null 值，TreeMap 的 key 为不能为 null, 但 value 可以为 null, 而 Hashtable, ConcurrentMap 则 key 和 value 都不同为 null。一句话 absent/present 的判断是 map.get(key) 是否为 null。</p>
+
+<p>方法介绍的顺序是它们相对于本人的生疏程度而定的。每个方法介绍主要分两部分，参考实现代码与示例代码执行效果。参考实现代码摘自 JDK 官方的 <a href="https://docs.oracle.com/javase/8/docs/api/java/util/Map.html">Map JavaDoc</a>。</p>
+
+<h3>getOrDefault 方法</h3><br/>
+<p>本想忽略这个方法的测试，因为涉及到 key 存在，值为 null 的情况。当 key 不存在或相关联的值为 null 时，返回默认值，否则返回实际值。不要认为 key 存在时总是返回 map.get(key) 的值。</p>
+
+<h4>参考实现：</h4><br/>
+<p><!--more--></p>
+
+<pre class="lang:default decode:true">V v = get(key);<br/>
+return v != null ? v : defaultValue;</pre>
+
+<h4>示例及效果：</h4><br/>
+<pre class="lang:default decode:true">String ret;<br/>
+Map&lt;String, String&gt; map = new HashMap&lt;&gt;();<br/>
+ret = map.getOrDefault("a", "1111"); //ret 为 "1111"<br/>
+map.put("a", null);<br/>
+System.out.println(map.containsKey("a")); //true<br/>
+ret = map.getOrDefault("a", "2222"); //ret 为 "2222"</pre>
+
+<h3>putIfAbsent 方法</h3><br/>
+<p>方法原型 <code>V putIfAbsent(K key, V value)</code>, 如果 key 不存在或相关联的值为 null, 则设置新的 key/value 值。</p>
+
+<h4>参考实现：</h4><br/>
+<pre class="lang:default decode:true ">V v = get(key);<br/>
+if (v == null) {<br/>
+    v = put(key, value);<br/>
+}<br/>
+return v;</pre>
+
+<p>如果原 map 中对应 key 的值为 null(或不存在) 则返回 <code>null</code> 值，或者返回新的 value 值</p>
+
+<p>如果想要没有 key 对应的值(或为 null) 时，加入新值后马上返回新的值的话就该用后面的 <code>computeIfAbsent</code>  方法</p>
+
+<pre class="lang:default decode:true  ">String ret = map.computeIfAbsent("key", key -&gt; "abc");<br/>
+// map 为空时执行上面语句后 ret 的值为刚加入的 "abc"</pre>
+
+<h4>示例及效果：</h4><br/>
+<pre class="lang:default decode:true">String ret;<br/>
+Map&lt;String, String&gt; map = new HashMap&lt;&gt;();<br/>
+ret = map.putIfAbsent("a", "aaa"); //ret 为 null, map 为 {"a":"aaa"}<br/>
+ret = map.putIfAbsent("a", "bbb"); //ret 为 "aaa", map 还是 {"a":"aaa"}<br/>
+<br/>
+map.put("b", null);<br/>
+ret = map.putIfAbsent("b", "bbb"); //ret 为 null, map 为 {"a":"aaa","b":"bbb"}</pre>
+
+<h3>computeIfPresent 方法</h3><br/>
+<p>方法原型 <code>V computeIfPresent(K key, BiFunction&lt;? super K, ? super V, ? extends V&gt; remappingFunction)</code>，如果指定的 key 存在并且相关联的 value 不为 null 时，根据旧的 key 和 value 计算 newValue 替换旧值，newValue 为 null 则从 map 中删除该 key; key 不存在或相应的值为 null 时则什么也不做，方法的返回值为最终的 map.get(key)。</p>
+
+<h4>参考实现：</h4><br/>
+<pre class="lang:default decode:true"> if (map.get(key) != null) {<br/>
+     V oldValue = map.get(key);<br/>
+     V newValue = remappingFunction.apply(key, oldValue);<br/>
+     if (newValue != null)<br/>
+         map.put(key, newValue);<br/>
+     else<br/>
+         map.remove(key);<br/>
+ }</pre>
+
+<h4>示例及效果：</h4><br/>
+<pre class="lang:default decode:true">String ret;<br/>
+Map&lt;String, String&gt; map = new HashMap&lt;&gt;();<br/>
+ret = map.computeIfPresent("a", (key, value) -&gt; key + value); //ret null, map 为 {}<br/>
+map.put("a", null);    //map 为 ["a":null]<br/>
+ret = map.computeIfPresent("a", (key, value) -&gt; key + value); //ret null, map 为 {"a":null}<br/>
+map.put("a", "+aaa");<br/>
+ret = map.computeIfPresent("a", (key, value) -&gt; key + value); //ret "a+aaa", map 为 {"a":"a+aaa"}<br/>
+ret = map.computeIfPresent("a", (key, value) -&gt; null);  //ret 为 null, map 为 {}，计算出的 null 把 key 删除了</pre>
+
+<p>计算出的值为 null 时直接删除 key 而不是设置对应 key 的值为 null, 这能照顾到值不能为 null 的 Map 实现，如 Hashtable 和 ConcurrentMap。</p>
+
+<h3>computeIfAbsent 方法</h3><br/>
+<p>方法原型 <code>V computeIfAbsent(K key, Function&lt;? super &lt;, ? extends V&gt; mappingFunction)</code>, 与上一个方法相反，如果指定的 key 不存在或相关的 value 为 null 时，设置 key 与关联一个计算出的非 null 值，计算出的值为 null 的话什么也不做(不会去删除相应的  key)。如果 key 存在并且对应 value 为 null 的话什么也不做。同样，方法的返回值也是最终的 map.get(key)。</p>
+
+<p>参考实现：</p>
+
+<pre class="lang:default decode:true"> if (map.get(key) == null) {<br/>
+     V newValue = mappingFunction.apply(key);<br/>
+     if (newValue != null)<br/>
+         map.put(key, newValue);<br/>
+ }</pre>
+
+<p>示例及效果：</p>
+
+<pre class="lang:default decode:true">String ret;<br/>
+Map&lt;String, String&gt; map = new HashMap&lt;&gt;();<br/>
+ret = map.computeIfAbsent("a", key -&gt; key + "123"); //ret "a123", map 为 {"a":"a123"}<br/>
+ret = map.computeIfAbsent("a", key -&gt; key + "456"); //ret "a123", map 为 {"a":"a123"}<br/>
+map.put("a", null);<br/>
+ret = map.computeIfAbsent("a", key -&gt; key + "456"); //ret "a456", map 为 {"a":"a456"}<br/>
+ret = map.computeIfAbsent("a", key -&gt; null);  //ret 为 "a456", map 为 {"a":"a456"}</pre>
+
+<h3>replace(K key, V value) 方法</h3><br/>
+<p>只要 key 存在，不管对应值是否为  null，则用传入的 value 替代原来的值。<span style="color: #800000;">即使传入的 value 是 null 也会用来替代原来的值，而不是删除，注意这对于 value 不能为  null 值的  Map  实现将会造成 NullPointerException</span>。key 不存在不会修改 Map 的内容，返回值总是原始的 map.get(key) 值。</p>
+
+<h4>参考实现：</h4><br/>
+<pre class="lang:default decode:true"> if (map.containsKey(key)) {<br/>
+     return map.put(key, value);<br/>
+ } else<br/>
+     return null;</pre>
+
+<h4>示例及效果：</h4><br/>
+<pre class="lang:default decode:true ">String ret;<br/>
+Map&lt;String, String&gt; map = new HashMap&lt;&gt;();<br/>
+ret = map.replace("a", "abc"); //ret 为 null，map 为 {}<br/>
+map.put("a", "ddd");<br/>
+ret = map.replace("a", "abc"); //ret 为 "ddd", map 为 {"a":"abc"}<br/>
+ret = map.replace("a", null);  //ret 为 "abc", map 为 {"a":null}<br/>
+ret = map.replace("a", "ddd"); //ret 为 null, map 为 {"a":"ddd"}</pre>
+
+<h3>replace(K key, V oldValue, V newValue)</h3><br/>
+<p>当且仅当 key 存在，并且对应值与 oldValue 不相等，才用 newValue 作为 key 的新相关联值，返回值为是否进行了替换。</p>
+
+<h4>参考实现：</h4><br/>
+<pre class="lang:default decode:true"> if (map.containsKey(key) &amp;&amp; Objects.equals(map.get(key), value)) {<br/>
+     map.put(key, newValue);<br/>
+     return true;<br/>
+ } else<br/>
+     return false;</pre>
+
+<p>示例及效果：</p>
+
+<pre class="lang:default decode:true ">boolean ret;<br/>
+Map&lt;String, String&gt; map = new HashMap&lt;&gt;() ;<br/>
+ret = map.replace("a", null, "aaa"); //ret 为 false, map 为 {}<br/>
+map.put("a", null);<br/>
+ret = map.replace("a", null, "aaa"); //ret 为 true, map 为 {"a":"aaa"}<br/>
+ret = map.replace("a", "aaa", null); //ret 为 true, map 为 {"a":null}<br/>
+ret = map.replace("a", "aaa", "bbb");//ret 为 false, map 为 {"a":null}</pre>
+
+<h3>replaceAll 方法</h3><br/>
+<p>方法原型 <code>void replaceAll(BiFunction&lt;? super K, ? super V, ? extends V&gt; function)</code>。它更像一个传统函数型语言的 map 函数，即对于 Map 中的每一个元素应用函数 function, 输入为 key 和  value。</p>
+
+<h4>参考实现：</h4><br/>
+<pre class="lang:default decode:true"> for (Map.Entry&lt;K, V&gt; entry : map.entrySet())<br/>
+     entry.setValue(function.apply(entry.getKey(), entry.getValue()));</pre>
+
+<h4>示例及效果：</h4><br/>
+<pre class="lang:default decode:true">Map&lt;String, String&gt; map = new HashMap&lt;&gt;() ;<br/>
+map.put("a", "aaa");<br/>
+map.put("b", "bbb");  //map 为 {"a":"aaa","b":"bbb"}<br/>
+map.replaceAll((key, value) -&gt; key + "-" + value); //map 为 {"a":"a-aaa","b":"b-bbb"}</pre>
+
+<h3>remove(key, value)</h3><br/>
+<p>这个也不用多说，key 与 value 都匹配时才删除。</p>
+
+<h4>参考实现：</h4><br/>
+<pre class="lang:default decode:true"> if (map.containsKey(key) &amp;&amp; Objects.equals(map.get(key), value)) {<br/>
+     map.remove(key);<br/>
+     return true;<br/>
+ } else<br/>
+     return false;</pre>
+
+<h3>compute 方法</h3><br/>
+<p>方法原型 <code>V compute(K key, BiFunction&lt;? super K, ? super V, ? extends V&gt; remappingFunction)</code>, 它是 <code>computeIfAbsent</code> 与 <code>computeIfPresent</code>  的结合体。也就是既不管 key 存不存在，也不管 key 对应的值是否为 null, <code>compute</code> 死活都要设置与 key 相关联的值，或者计算出的值为 null 时删除相应的 key, 返回值为最终的 map.get(key)。</p>
+
+<h4>参考实现：</h4><br/>
+<pre class="lang:default decode:true"> V oldValue = map.get(key);<br/>
+ V newValue = remappingFunction.apply(key, oldValue);<br/>
+ if (oldValue != null ) {<br/>
+    if (newValue != null)<br/>
+       map.put(key, newValue);<br/>
+    else<br/>
+       map.remove(key);<br/>
+ } else {<br/>
+    if (newValue != null)<br/>
+       map.put(key, newValue);<br/>
+    else<br/>
+       return null;<br/>
+ }</pre>
+
+<h4>示例及效果：</h4><br/>
+<pre class="lang:default decode:true ">String ret;<br/>
+Map&lt;String, String&gt; map = new HashMap&lt;&gt;() ;<br/>
+ret = map.compute("a", (key, value) -&gt; "a" + value); //ret="anull", map={"a":"anull"}<br/>
+ret = map.compute("a", (key, value) -&gt; "a" + value); //ret="aanull", map={"a":"aanull"}<br/>
+ret = map.compute("a", (key, value) -&gt; null); //ret=null, map={}</pre>
+
+<h3>merge 方法</h3><br/>
+<p>方法原型 <code>V merge(K key, V value, BiFunction&lt;? super V, ? super V, ? extends V&gt; remappingFucntion)</code>，这是至今来说比较神秘的一个方法，尚未使用到它。如果指定的 key 不存在，或相应的值为 null 时，则设置  value 为相关联的值。否则根据 key 对应的旧值和 value 计算出新的值 newValue，newValue 为 null 时，删除该key, 否则设置 key 对应的值为  newValue。方法的返回值也是最终的  map.get(key) 值。</p>
+
+<h4>参考实现：</h4><br/>
+<pre class="lang:default decode:true">V oldValue = map.get(key);<br/>
+ V newValue = (oldValue == null) ? value :<br/>
+              remappingFunction.apply(oldValue, value);<br/>
+ if (newValue == null)<br/>
+     map.remove(key);<br/>
+ else<br/>
+     map.put(key, newValue);</pre>
+
+<p>注意 value 不能为 null 值</p>
+
+<h4>示例及效果：</h4><br/>
+<pre class="lang:default decode:true ">String ret;<br/>
+Map&lt;String, String&gt; map = new HashMap&lt;&gt;() ;<br/>
+ret = map.merge("a", "aa", (oldValue, value) -&gt; oldValue + "-" + value); //ret="aa", map={"a":"aa"}<br/>
+ret = map.merge("a", "bb", (oldValue, value) -&gt; oldValue + "-" + value); //ret="aa-bb", map={"a":"aa-bb"}<br/>
+ret = map.merge("a", "bb", (oldValue, value) -&gt; null); //ret=null, map={}<br/>
+map.put("a", null);<br/>
+ret = map.merge("a", "aa", (oldValue, value) -&gt; oldValue + "-" + value); //ret="aa", map={"a":"aa"}<br/>
+map.put("a", null);<br/>
+ret = map.merge("a", "bb", (oldValue, value) -&gt; null); //ret="bb", map={"a":"bb"}<br/>
+ret = map.merge("a", null, (oldValue, value) -&gt; oldValue + "-" + value); //NullPointerException, value 不能为 null</pre>
+
+<h3>Map.Entry comparingByKey 和  comparingByValue 方法</h3><br/>
+<p>另外介绍一下 Map.Entry 新加的两个排序方法，它们分别有无参与带 Comparator 参数可嵌套使用的两个版本。<code>comparingByKey()</code>, <code>comparingByKey(Comparator&lt;? super K&gt; cmp)</code>, <code>comparingByValue()</code> 和 <code>comparingByValue(Comparator&lt;? super V&gt; cmp)</code>。</p>
+
+<p>示例代码如下：</p>
+
+<pre class="lang:default decode:true  ">map.entrySet().stream().sorted(Map.Entry.comparingByKey()).collect(Collectors.toList());<br/>
+map.entrySet().stream().sorted(Map.Entry.comparingByKey(String::compareTo)).collect(Collectors.toList());<br/>
+map.entrySet().stream().sorted(Map.Entry.comparingByValue()).collect(Collectors.toList());<br/>
+map.entrySet().stream().sorted(Map.Entry.comparingByValue(String::compareTo)).collect(Collectors.toList());</pre>

@@ -1,0 +1,337 @@
+---
+title: 学习并体验 JUnit 5 新特性
+url: /learn-junit-5-new-features/
+date: 2017-09-25T01:31:47-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2017/09/junit5_logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - JUnit5
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8270 
+wpStatus: publish
+views: 1212
+lastmod: 2021-09-10T13:02:34-05:00
+---
+
+上一篇 <a href="junit-5-new-features-and-get-started/">JUnit 5 快速上手(从 JUnit 4 到 JUnit 5)</a> 介绍了如何在一个项目中同时使用 JUnit 4 和 JUnit 5。现在来开始了解 JUnit 5 的新特性. 我们现在的项目基本是用 Maven 来管理依赖，在 Maven 项目中如何引入 JUnit 5 可以参考官方例子 <a href="https://github.com/junit-team/junit5-samples/tree/master/junit5-maven-consumer">junit5-maven-consumer</a>. 我们知道 JUnit 5 包括三个模块，不用 JUnit 4 的话只要 Platform 和 Jupiter, 而 Jupiter Maven 模块本身依赖于 JUnit Platform, 因此应用 JUnit 5 的项目 Maven 配置就是<br/><br/>
+<pre class="lang:default decode:true ">&lt;dependency&gt;
+    &lt;groupId&gt;org.junit.jupiter&lt;/groupId&gt;
+    &lt;artifactId&gt;junit-jupiter-engine&lt;/artifactId&gt;
+    &lt;version&gt;5.0.0&lt;/version&gt;
+    &lt;scope&gt;test&lt;/scope&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+这样在当前的 IntelliJ IDEA(2017.2.4) 可以执行 JUnit 5 的测试用例。但要让 Maven 找到 JUnit 5 的测试用例，还得在 <code>pom.xml</code> 中加上<!--more--><br/><br/>
+<pre class="lang:default decode:true">&lt;build&gt;
+    &lt;plugins&gt;
+        &lt;plugin&gt;
+            &lt;artifactId&gt;maven-surefire-plugin&lt;/artifactId&gt;
+            &lt;version&gt;2.19.1&lt;/version&gt;
+            &lt;dependencies&gt;
+                &lt;dependency&gt;
+                    &lt;groupId&gt;org.junit.platform&lt;/groupId&gt;
+                    &lt;artifactId&gt;junit-platform-surefire-provider&lt;/artifactId&gt;
+                    &lt;version&gt;1.0.0&lt;/version&gt;
+                &lt;/dependency&gt;
+            &lt;/dependencies&gt;
+        &lt;/plugin&gt;
+    &lt;/plugins&gt;
+&lt;/build&gt;</pre>
+<br/>
+这是由于 JUnit 5 的 API 从包 <code>org.junit</code> 变到了 <code>org.junit.jupiter.api</code>，而现在 <code>maven-surefire-plugin</code> 只能识别 <code>org.junit.Test</code> 标注的测试用例。<br/><br/>
+<h3>一. JUnit 5 的注解</h3><br/><br/>
+&nbsp;<br/><br/>
+<table>
+<tbody>
+<tr>
+<td>JUnit 5 注解</td>
+<td>相应 JUnit 4 中的注解</td>
+<td>说明</td>
+</tr>
+<tr>
+<td>@Test</td>
+<td>@Test</td>
+<td>
+在 JUnit 4, 5 混合的项目，特别注意包名.<br />
+如果是 JUnit 4 的 @Test, 那么下面的注解都会失效
+</td>
+</tr>
+<tr>
+<td>@DisplayName</td>
+<td>无</td>
+<td>相当于 TestNG 中的 description 属性，测试类/方法的显示名称<br />
+让测试结果显示更友好，</td>
+</tr>
+<tr>
+<td>@BeforeEach</td>
+<td>@Before</td>
+<td rowspan="5">两个版本间是一一对应的，只是 JUnit 5 中的注解语义上更清晰</td>
+</tr>
+<tr>
+<td>@BeforeAll</td>
+<td>@BeforeClass</td>
+</tr>
+<tr>
+<td>@AfterEach</td>
+<td>@After</td>
+</tr>
+<tr>
+<td>@AfterAll</td>
+<td>@AfterClass</td>
+</tr>
+<tr>
+<td>@Disabled</td>
+<td>@Ignore</td>
+</tr>
+<tr>
+<td>@Tag</td>
+<td>@Category</td>
+<td>JUnit 4 中的 @Category 是一个试验性的注解</td>
+</tr>
+<tr>
+<td>@ExtendWith</td>
+<td>@RunWith</td>
+<td>&nbsp;</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<h4> </h4><br/><br/>
+<h4>@DisplayName</h4><br/><br/>
+显示测试类或方法的友好名称，目前在 IDEA 中有效，在 Maven 下没效果。例如下面的代码<br/><br/>
+<pre class="lang:default decode:true ">@Test
+@DisplayName("1 plus 2 should be 3")
+public void onePlugTwoShouldBeThree() {
+    Calculator calc = new Calculator();
+    assertEquals(3, calc.add(1, 2));
+}</pre>
+<br/>
+IntelliJ IDEA 中的效果是<a href="/wp-content/uploads/2017/09/junit5-new-features-1.png"><img class="aligncenter size-full wp-image-8271" src="/wp-content/uploads/2017/09/junit5-new-features-1.png" alt="" width="360" height="110" /></a><br/><br/>
+Maven 测试正常的情况下本来就不显示测试方法名称，即使将来 Maven 中能显示 @DisplayName 中的名称，估计出错的时候还得显示实际方法名。<br/><br/>
+<h3>@Tag</h3><br/><br/>
+它用来对测试进行分类，例如含有 @Tag("remote") 的测试用例在 Jenkins 上不应执行。但仅用字符串标识对书写时要求太高，有可能谁就写了一个 @Tag("Remote"). 一种办法就是用常量来代替字符串 <code>remote</code>, 再就是用元注解<br/><br/>
+<pre class="lang:default decode:true ">@Target({ ElementType.TYPE, ElementType.METHOD })
+@Retention(RetentionPolicy.RUNTIME)
+@Tag("remote")
+public @interface Remote {
+}</pre>
+<br/>
+然后在测试方法上就可直接用 @Remote 注解来代替 @Tag("remote") 的功效<br/><br/>
+<pre class="lang:default decode:true ">@Test
+@Remote
+public void testGetUser() {
+    //......
+}</pre>
+<br/>
+进一步，可以定义包含了 @Tag 和 @Test 的元注解，那么测试用例可只用 @RemoteTest, 而不必 @Test 和 @Remote.<br/><br/>
+<h3>二. JUnit 5 断言</h3><br/><br/>
+JUnit 5 的断言由 org.junit.jupiter.api.Assertitions 静态方法提供， 比以前稍微丰富些。无论是 JUnit 4 还是 JUnit 5 的 @Test 注解，断言方法是可以混用的。基本的断言方法没有多大变化，仍然是 <code>assertEquals</code> 会让人傻傻分不清哪个是期望值，哪个是实际值。所以我继续坚持用 <a href="http://joel-costigliola.github.io/assertj/">AssertJ</a> 提供的流畅的断言方式，类型推断，根本不用记忆某个类型相应的 Matcher。 <br/><br/>
+JUnit 5 断言有几个改进之处<br/><br/>
+<h4>1) 错误消息可由 Supplier&lt;String&gt; 函数提供</h4><br/><br/>
+JUnit 5 断言方法的错误消息既可以以直接字符串，也能用 Supplier&lt;String&gt; 函数提供。函数提供消息字符串的作用是可以延迟计算，只在断言失败时执行 Supplier&lt;String&gt; 函数<br/><br/>
+<pre class="lang:default decode:true ">public static void assertEquals(float expected, float actual, Supplier&lt;String&gt; messageSupplier) {
+    AssertEquals.assertEquals(expected, actual, messageSupplier);
+}</pre>
+<br/>
+<pre class="lang:default decode:true ">//不管成功与否，都会进行后面的字符串操作
+assertEquals(expected, actual, baseMessage + "wrong value " + actual);<br/><br/>
+//只有在失败时才会进行后面的字符串操作
+assertEquals(expected, actual, () -&gt; baseMessage + "wrong value " + actual);</pre>
+<br/>
+这可以一定程度的提升测试代码的性能。<br/><br/>
+<h4>2) assertAll 接受多个 org.junit.jupiter.api.Executable 函数提供与条件断言</h4><br/><br/>
+<pre class="lang:default decode:true ">assertAll("Math",
+    () -&gt; assertEquals(2, 1 + 1),
+    () -&gt; assertTrue(1 &gt; 0)
+);</pre>
+<br/>
+与其说是方便，还不如说是罗嗦，怎么都没有 <code>AssertJ</code> 那种方法链的类 assertAll 操作方法<br/><br/>
+<pre class="lang:default decode:true" title="AssertJ">assertThat(actual).containsString("hello").containsString("world");</pre>
+<br/>
+<h4>3) assertThrows 方法断言异常(值得关注)</h4><br/><br/>
+<pre class="lang:default decode:true">@Test
+public void testDivide() {
+    Calculator calc = new Calculator();
+    ArithmeticException exception = Assertions.assertThrows(ArithmeticException.class, () -&gt; calc.divide(1, 0));
+    assertEquals(exception.getMessage(), "/ by zero");
+}</pre>
+<br/>
+JUnit 5 的 @Test 注解不再支持 <code>expected</code> 属性，这是综合了先前 JUnit 版本的<br/><br/>
+ @Test(expected = ArithmeticException.class) 和<br />
+@Rule public ExpectedException expectedEx= ExpectedException.none();<br/><br/>
+的改进的写法<br/><br/>
+<h3>三. JUnit 5 前置条件</h3><br/><br/>
+这不是什么新东西，在 JUnit 4 中已有该特性，只是我之前未曾使用过。JUnit 4 中 assumeXxx() 方法在 <code>org.junit.Assume</code> 中，JUnit 5 的 assumeXxx() 方法在 <code>org.junit.jupiter.api.Assumptions</code> 中。前置条件用于决定是否要进行后续的测试，所以它与断言的区别是，前置条件不满足不会使得测试失败，而是忽略该测试，效果是与 @Ignore 或 @Disabled 是一致的，我们可以称之为有条件的 @Ignore 或  @Disabled。<br/><br/>
+同样要注意莫用 JUnit 5 的 @Test 与  JUnit 4 的 Assume 搭配使用，否则产生的是测试代码抛出 RuntimeException 异常那样的失败失败(不是断言失败)，而非忽略，反之亦然。<br/><br/>
+&nbsp;<br/><br/>
+<h3>四. 嵌套测试</h3><br/><br/>
+这是个新鲜玩艺，可以让我们在测试类中嵌套定义测试类，并且嵌套层次不限，内部测试类中也可以用 @BeforeEach 和 @AfterEach 等注解。<br/><br/>
+在我们 JUnit 5 以前，以下代码是不受 JUnit 4 待见的，根本找不到要执行的测试用例<br/><br/>
+<pre class="lang:default decode:true">import org.junit.Test;<br/><br/>
+public class CalculatorTest {<br/><br/>
+    class OperatorTest {<br/><br/>
+        @Test
+        public void testFoo(){
+        }
+    }
+}</pre>
+<br/>
+要求测试用例只能写在顶层类中。<br/><br/>
+<a href="/wp-content/uploads/2017/09/junit5-new-features-2.png"><img class="aligncenter size-full wp-image-8275" src="/wp-content/uploads/2017/09/junit5-new-features-2.png" alt="" width="615" height="127" /></a><br/><br/>
+JUnit 5 用 @Nested  注解使用测试类的嵌套成为了可能。<br/><br/>
+<pre class="lang:default decode:true">import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;<br/><br/>
+public class CalculatorTest {<br/><br/>
+    @Nested
+    class OperatorTest {<br/><br/>
+        @Test
+        public void testFoo(){<br/><br/>
+        }
+    }
+}</pre>
+<br/>
+IntelliJ IDEA 中的执行效果<br/><br/>
+<a href="/wp-content/uploads/2017/09/junit5-new-features-3.png"><img class="aligncenter size-full wp-image-8276" src="/wp-content/uploads/2017/09/junit5-new-features-3.png" alt="" width="615" height="130" /></a><br/><br/>
+Maven 执行测试时会统计到每一个具体的测试方法，并且失败时能准确定位到错误<br/><br/>
+<a href="/wp-content/uploads/2017/09/junit5-new-features-4.png"><img class="aligncenter wp-image-8277 size-full" src="/wp-content/uploads/2017/09/junit5-new-features-4.png" alt="" width="810" height="281" /></a><br/><br/>
+嵌套测试提供了一种组织测试类的方式，不过我目前还未领悟到它的精髓所在。<br/><br/>
+<h3>五. 测试方法是一个独立生命周期</h3><br/><br/>
+学习到这里才意识到我一直存在这么一个误区，以为 JUnit 是以测试类为一个生命周期的。比如在同一个类中多个测试方法使用了同一个实例变量的情况下，总会用一个  <code>@After</code> 方法来复位该实例变量，现在才知道那是多余的, 错误的使用了 <code>@After</code> 。关于 JUnit 以测试方法为生命周期可参考我的一篇日志 <a href="/junit-test-instance-lifecycle/">JUnit 中是以测试方法为一个独立的生命周期</a><br/><br/>
+JUnit 5 提供了方法来把生命周期由方法改为测试类，对于单个测试类可以直接使用注解 <code>@TestInstance(Lifecycle.PER_CLASS)</code>, 默认是 <code>PER_METHOD</code><br/><br/>
+<pre class="lang:default decode:true ">@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+public class CalculatorTest {<br/><br/>
+    @Test
+    public void test1() {
+        System.out.println(this);
+    }<br/><br/>
+    @Test
+    public void test2() {
+        System.out.println(this);
+    }
+}</pre>
+<br/>
+上面代码相当于把 JUnit 的执行行为由<br/><br/>
+<pre class="lang:default decode:true">new CalculatorTest().test1();
+new CalculatorTest().test2();</pre>
+<br/>
+变成了<br/><br/>
+<pre class="lang:default decode:true">CalculatorTest calculatorTest = new CalculatorTest();
+calculatorTest.test1();
+calculatorTest.test2();</pre>
+<br/>
+这样前面两个测试用例输出的 this  就是同一个实例了，默认 <code>PER_METHOD</code> 时每个测试方法都属于各自不同的实例。<br/><br/>
+<blockquote>
+cc.unmi.CalculatorTest@39c0f4a<br />
+cc.unmi.CalculatorTest@39c0f4a
+</blockquote>
+<br/>
+这时候，如果它们使用于实例变量就要特别注意用 <code>@BeforeEach</code> 或 <code>@AfterEach</code> 来复位。<br/><br/>
+另外，还可以全局修改 Lifecycle 为 PER_CLASS，两种方式<br/><br/>
+<ol>
+    <li>系统属性 -Djunit.jupiter.testinstance.lifecycle.default=per_class</li>
+    <li>classpath 下属性文件 junit-platform.properties (如 src/test/resoures 下), 加上内容 <code>junit.jupiter.testinstance.lifecycle.default = per_class</code> </li>
+</ol>
+<br/>
+就是想不到有什么理由需要这样的全局默认行为的改动，这或会使得很多测试产生诡异的结果。<br/><br/>
+<h3>六. 依赖注入</h3><br/><br/>
+在 JUnit 5 之前，标准的测试类不能有非默认构造函数，测试方法不允许有参数。只是说标准的情况下，我曾经用 JMockit 时通过测试方法来注入 Mock 对象。<br/><br/>
+测试类的构造函数，或 @Test, @TestFactory, @BeforeEach, @AfterEach, @BeforeAll, 或 @AfterAll 注解的方法都可以接受参数，参数由 <a href="http://junit.org/junit5/docs/snapshot/api/org/junit/jupiter/api/extension/ParameterResolver.html">ParameterResolver</a> 来解析，它本身是一个扩展，实现了 <a href="http://junit.org/junit5/docs/snapshot/api/org/junit/jupiter/api/extension/Extension.html"><code>Extension</code></a> 接口，且目前有三个实现<br/><br/>
+<ol>
+    <li>TestInfoParameterResolver</li>
+    <li>TestReporterParameterResolver</li>
+    <li>RepetionInfoParameterResolver</li>
+</ol>
+<br/>
+也就是说可接受的参数类型相应的为 TestInfo, TestReporter, RepetionInfo. 举个例子<br/><br/>
+<pre class="lang:default decode:true ">public class CalculatorTest {<br/><br/>
+    public CalculatorTest(TestInfo testInfo) {
+        System.out.println(testInfo.getTestClass().get());
+    }<br/><br/>
+    @Test
+    @DisplayName("my test 1")
+    public void test1(TestInfo testInfo) {
+        System.out.println(testInfo.getDisplayName());
+    }<br/><br/>
+    @Test
+    public void test2(TestReporter testReporter) {
+        testReporter.publishEntry("a key", "a value");
+    }
+}</pre>
+<br/>
+输出如下<br/><br/>
+<blockquote>
+class cc.unmi.CalculatorTest<br />
+my test 1<br />
+class cc.unmi.CalculatorTest<br />
+timestamp = 2017-09-25T00:07:04.736, a key = a value
+</blockquote>
+<br/>
+TestInfo 可以提供的信息有 DisplayName, Tags, TestClass, 和 TestMethod. <br/><br/>
+在 JUnit 5 之前可以用 <code>TestName</code> 这个 <code>@Rule</code> 来简单获取测试信息，JUnit 5 中没有了 <code>@Rule</code> 这个概念。<br/><br/>
+有些 ParameterResolver 由扩展 <code>@ExtendWith</code> 引入了，如 <a href="https://github.com/junit-team/junit5-samples/blob/r5.0.0/junit5-mockito-extension/src/main/java/com/example/mockito/MockitoExtension.java">MockitExtension</a> 本身就实现了 ParameterResolver 接口。可以用下面的方式注入 Mock 对象<br/><br/>
+<pre class="lang:default decode:true">@ExtendWith(MockitoExtension.class)
+public class MyMockitoTest {
+ 
+    @BeforeEach
+    public void init(@Mock Person person) {
+        when(person.getName()).thenReturn("Dilbert");
+    }
+ 
+    @Test
+    public simpleTestWithInjectedMock(@Mock Person person) {
+        assertEquals("Dilbert", person.getName());
+    }
+} </pre>
+<br/>
+<h3>七. 重复测试</h3><br/><br/>
+可用 <code>RepeatedTest(value = times, name = "{displayName} {currentRepetition} / {totalRepetitions}")</code> 来定义重复次数，以及如何显示，name 为可选，可使用三个内置的变量。<br/><br/>
+那么重复测试的实际意义在哪里呢？<br/><br/>
+<h3>八. 参数化测试</h3><br/><br/>
+这个功能在 JUnit 4 中就已存在，<code>RunWith(<a href="http://junit.org/junit4/javadoc/4.12/org/junit/runners/Parameterized.html">Parameterized</a>.class)</code>，主要是提供输入与结果数据不太方便，所以曾跃跃欲试而最终放弃。到了 JUnit 5 中参数化测试反而移入到了实验中的功能，看过 C# 的同事大量用参数化测试，想看看 JUnit 5 的这一功能进化成怎样了。<br/><br/>
+体验了一下好像没多大区别，不过还是让大家欣赏一下<br/><br/>
+首先需要引入库  <code>org.junit.jupiter:junit-jupiter-params:5.0.0</code>, 代码是<br/><br/>
+<pre class="lang:default decode:true">public class CalculatorTest {<br/><br/>
+    static Collection&lt;Object[]&gt; data() {
+        return Arrays.asList(new Object[][]{
+            {1, 2, 3},
+            {2, 2, 4},
+            {2, 3, 6},
+            {3, 5, 8},
+        });
+    }<br/><br/>
+    @ParameterizedTest(name = "#{index}, {0} plus {1} should be {2}")
+    @MethodSource(value = "data")
+    public void testAddition(int x, int y, int z) {
+        Calculator calculator = new Calculator();
+        assertEquals(z, calculator.add(x, y));
+    }
+}</pre>
+<br/>
+IntelliJ IDEA 下的效果<br/><br/>
+<a href="/wp-content/uploads/2017/09/junit5-new-features-5.png"><img class="aligncenter wp-image-8284 size-full" src="/wp-content/uploads/2017/09/junit5-new-features-5.png" alt="" width="807" height="205" /></a><br/><br/>
+Maven 控制台下的效果<br/><br/>
+<a href="/wp-content/uploads/2017/09/junit5-new-features-6.png"><img class="aligncenter wp-image-8285 size-full" src="/wp-content/uploads/2017/09/junit5-new-features-6.png" alt="" width="808" height="423" /></a><br/><br/>
+其他特性如 测试模板，动态测试，扩展模型。扩展模型算是 JUnit 5 的大头戏，所以这里不展开来细讲。<br/><br/>
+前头细数了那么 8 个所谓的新特性，仔细与 JUnit 4 对比了下好像也没几个新鲜的东西。<br/><br/>
+<ol>
+    <li>碰上一个 DisplayName 可以让测试报告变漂亮的，可是 Maven 却视而不见。</li>
+    <li>还有些像 嵌套测试，重复测试 没想到有什么大用处。</li>
+    <li>Assertions 没多大起色，我仍然亲赖于 AssertJ</li>
+    <li>Assumptions, 参数化测试 以前也有。依赖注入 在非标准的 JUnit 4 中也用过</li>
+    <li>Tag 用于过滤测试应该比 @Category 用起来方便些，特别是借助于元注解。@Category 必须指定类，而 Tag 指定字符串就行。</li>
+    <li>说到头，还是扩展最令人期待(尚未深入)</li>
+</ol>
+<br/>
+参考：<br/><br/>
+<ol>
+    <li><a href="https://www.ibm.com/developerworks/cn/java/j-junit5/index.html">JUnit 5 新特性</a></li>
+    <li><a href="http://junit.org/junit5/docs/snapshot/user-guide/#overview-what-is-junit-5">What is JUnit 5</a></li>
+</ol>

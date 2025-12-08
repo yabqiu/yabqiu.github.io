@@ -1,0 +1,175 @@
+---
+title: 简单例子演示如何进行类的热加载(Hot Deployment)
+url: /simple-java-hot-deployment/
+date: 2008-10-21T11:38:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - JVM
+tags: 
+  - Java
+  - Hot
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 315 
+wpStatus: publish
+views: 1414
+lastmod: 2017-11-10T23:26:22-06:00
+---
+
+<p>应用服务器一般都支持热部署(Hot Deployment)，更新代码时把新编译的确类替换旧的就行，后面的程序就执行新类中的代码。这也是由各种应用服务器的独有的类加载器层次实现的。那如何在我们的程序中也实现这种热加载功能呢？即要在虚拟机不关闭的情况下(比如一个)，换个类，JVM 就知道加载这个新类，执行新类中的逻辑呢？下面就简单演示这样一个热加载的例子，首先大致了解一下类加载器。</p>
+
+<p><strong>标准 Java 启动器的类加载器层次</strong></p>
+
+<p>1. 引导类加载器(bootstrap):   加载内核 API，如 rt.jar(java.lang、java.io 等)<br /><br/>
+ 2. 扩展类加载器(extension):   加载的默认扩展来自于 jre/lib/ext<br /><br/>
+ 3. 系统类加载器(system):       类路径上的类，如 com.unmi.*</p>
+
+<p>说明：这只是标准 Java 启动器运行程序时的类加载器层次，像应用服务器中的类加载器通常会多一两层，也是在这个基础上的延伸。上面的类加载层次存在自上而下的委托关系，委托加载不在这里细讲。<!--more--></p>
+
+<p><strong>类加载器的规则有三<br /><br/>
+ </strong><br /><br/>
+ 1. 一致性规则：类加载器不能多次加载同一个类<br /><br/>
+ 2. 委托规则  ：在加载一个类之前，类加载器总参考父类加载器<br /><br/>
+ 3. 可见性规则：类只能看到由其类加载器的委托加载的其他类，委托是类的加载器及其所有父类加载器的递归集。(这个规则可能不太好理解，要举个例子就很容易理解的，这里也不细说)</p>
+
+<h3><strong>实际的例子演示热加载<br /><br/>
+ </strong><br /><br/>
+ <em><span style="color: #0000ff;"><u>1. 建立工程，编写代码</u></span></em></h3><br/>
+<p>前面铺垫的应该够厚了，开始用个例子来说明感受类的热加载(又名热部署 Hot Deployment)。这个例子采用 Eclipse 来做，首先要建立两个普通的 Java 工程，分别是 TestHotDeployInf 和 TestHotDeployImpl。让 TestHotDeployImpl 依赖于 TestHotDeployInf 工程，即在 TestHotDeployImpl 的 Build Path 中，Projects 标签页里把 TestHotDeployInf 工程选进来，因为编译 TestHotDeployImpl 中的类要用到 TestHotDeployInf 中的类。</p>
+
+<p>然后在工程式 TestHotDeployInf 中新建一个接口(Cat.java) 和一个类(Client.java)，内容分别是：</p>
+
+<p>Cat.java(Cat 接口类，也可以用抽象类，用来引用需热加载的实现类的实例)</p>
+
+<pre class="brush:java">package com.unmi;<br/>
+<br/>
+/**<br/>
+ * Cat 接口，要热加载的类一定要有一个接口或基类引用<br/>
+ * @author Unmi<br/>
+ */<br/>
+public interface Cat {<br/>
+	public void miaow();<br/>
+}</pre>
+
+<p>Client.java(测试热加载的客户端类)</p>
+
+<pre class="brush:java">package com.unmi;<br/>
+<br/>
+import java.io.BufferedReader;<br/>
+import java.io.InputStreamReader;<br/>
+import java.net.URL;<br/>
+import java.net.URLClassLoader;<br/>
+<br/>
+/**<br/>
+ * 测试热部署 Hot Deployment 的客户端类<br/>
+ * @author Unmi<br/>
+ */<br/>
+public class Client {<br/>
+<br/>
+	private static ClassLoader cl;<br/>
+	private static Class catClass;<br/>
+<br/>
+	/**<br/>
+	 * @param args<br/>
+	 */<br/>
+	public static void main(String[] args) throws Exception{<br/>
+		BufferedReader br = new BufferedReader(new InputStreamReader(System.in));<br/>
+		Cat cat = createCat();<br/>
+		System.out.println("miaow, reload, or exit");<br/>
+		while(true){<br/>
+			String cmd = br.readLine();<br/>
+			if(cmd.equalsIgnoreCase("exit")){<br/>
+				return;<br/>
+			} else if(cmd.equalsIgnoreCase("reload")){<br/>
+				reloadImpl();<br/>
+				cat = createCat();<br/>
+				System.out.println("CatImpl reloaded.");<br/>
+			} else if(cmd.equalsIgnoreCase("miaow")){<br/>
+				cat.miaow();<br/>
+			}<br/>
+		}<br/>
+	}<br/>
+<br/>
+	/**<br/>
+	 * 使用加载的类 Cat 类创建 Cat 实例<br/>
+	 * @return Cat 实例<br/>
+	 * @throws Exception<br/>
+	 */<br/>
+	public static synchronized Cat createCat() throws Exception{<br/>
+		if(catClass==null){<br/>
+			reloadImpl();<br/>
+		}<br/>
+		Cat newCat = (Cat)catClass.newInstance();<br/>
+		return newCat;<br/>
+	}<br/>
+<br/>
+	/**<br/>
+	 * 用自定义的类加载器重新加载 ../TestHotDeployImpl/bin 目录中的 CatImpl 实现类<br/>
+	 * 注意这里的 ../TestHotDeployImpl/bin，方便直接读取 TestHotDeployImpl 下随时<br/>
+	 * 修改后编译成的新的 com.unmi.CatImpl 类，避免了 class 文件编译后拷贝到别处<br/>
+	 * @throws Exception<br/>
+	 */<br/>
+	public static synchronized void reloadImpl() throws Exception{<br/>
+		URL[] externalURLs = new URL[]{new URL("file:../TestHotDeployImpl/bin/")};<br/>
+		cl = new URLClassLoader(externalURLs);<br/>
+		catClass = cl.loadClass("com.unmi.CatImpl");<br/>
+	}<br/>
+}</pre>
+
+<p>还要在 TestHotDeployImpl 中添加一个 Cat 的实现类 CatImpl</p>
+
+<pre class="brush:java">package com.unmi;<br/>
+<br/>
+/**<br/>
+ * Cat 的实现类，观察是否加载了最新代码，可通过改变 miaow() 方法的输出<br/>
+ * @author Unmi<br/>
+ */<br/>
+public class CatImpl implements Cat {<br/>
+<br/>
+	@Override<br/>
+	public void miaow() {<br/>
+		System.out.println("I'm Hello Kity, I like play with you.");<br/>
+		//System.out.println("I'm Tom, Jerry always kids me.");<br/>
+	}<br/>
+}</pre>
+
+<h3><em><u><span style="color: #0000ff;">2. 进行测试</span></u></em></h3><br/>
+<p>运行 TestHotDeployInf 中的 Client 程序，按照下图中的指令说明，可观察到热加载的过程：</p>
+
+<div><a href="http://unmi.cc/wp-content/uploads/2008/10/HotDeployment.jpg"><img class="aligncenter" src="http://unmi.cc/wp-content/uploads/2008/10/HotDeployment.jpg" alt="HotDeployment.jpg" width="750" height="326" border="0" /></a></div>
+
+<h3><span style="color: #0000ff;"><em><u>3. 几个问题</u></em></span></h3><br/>
+<p>1) 为什么要在单独的工程里放置 CatImpl 类(重要)<br /><br/>
+       <br /><br/>
+         主要是为了编译成的 CatImpl 类对于 TestHotDeployInf 的系统加载类不可见，就是不能放在 TestHotDeployInf 的程序的 classpath 中。<br /><br/>
+         这个问题可以说大，本应该提高一个层次来说明它。前面提过标准 Java 启动器加载器层次中有三个加载器，而在上面的 Client.java 中，我们看到用了一个自定义的 cl = new URLClassLoader(externalURLs) 类加载器来加载 com.unmi.CatImpl。也就是标准的类加载器又多了一层，这里估且把它叫做应用程序加载器(AppClassloader)。</p>
+
+<p>        根据委托规则，执行 Client 时，要加载 com.unmi.CatImpl 时会首先委托加载 Client 类本身的系统加载器加载。如果编译出的 CatImpl.class 放在 Cat.class 相同的位置，那么就由系统加载器来加载 com.unmi.CatImpl，自定义加载器 cl 是没机会了。所以必须放在外面让系统加载器看不到 com.unmi.CatImpl 类。</p>
+
+<p>        再依据一致性规则，如果系统加载器能加载了 com.unmi.CatImpl 类，以后你怎么修改 CatImpl 类，替换掉原来的类，内存中总是最先加载的那个 com.unmi.CatImpl 类版本。因为类只会加载一次。而用自定义的 cl 可不一样了，每次执行 cl.loadClass("com.unmi.CatImpl") 时都是用的一个新的 ClassLoader 实例，所以不受一致性规则的约束，每次都会加载最新版本的 CatImpl 类。</p>
+
+<p>2) 关于类的卸载的问题</p>
+
+<p>        上一条讲了加载 com.unmi.CatImpl 时，每次都 new 了一个新了 ClassLoader 实例，每次都加载最新的 CatImpl 类，那就引出了不再使用的 ClassLoader 实例和早先旧版本的 CatImpl 类实例的回收问题。在多数 JVM 中，它们如同普通的 Java 对象一样的处理，当它们无从触及时被当作垃圾被收集掉。也可能在某些 JVM 中这种情况对 ClassLoader 和旧版本 Class 实例的回收要特殊关照一下。</p>
+
+<p>       这里的 Class 实例，就是对象调用 getClass() 得到的实例，如 CatImpl.getClass()。类实例和类加载器是相关联的，所有会出现这样的问题，相同类的静态变量可能表现为不同的值，因为它们可能是由不同的类加载器加载的。</p>
+
+<hr /><br/>
+<p>对于 ClassLoader 确未细细深入，其实要展开的话内容也不多，关键就知道两点(还是回到了前面的两点，等于什么都没说哦)：</p>
+
+<p>      1)了解你的程序的类加载器层次，应该看看常见应用服务器(如 Tomcat) 的类加载器层次</p>
+
+<p>      2) 理解类加载器的三个规则，着重理解委托机制</p>
+
+<p>知道了类加载器层次，你就可以进行一些定制。如可以把一些包丢到 jre/lib/ext 中就能使用到；给 java 用参数 -Xbootclasspath 指定别的类或包就能替换掉 Java 核心 API 了。</p>
+
+<p>对于可见性规则可以举两个例子：</p>
+
+<p>      1) 对于标准的类加载器层次，放在 jre/lib/ext 中的类(由扩展类加载器加载)可以让放在 classpath 下的类(由系统类加载器加载) 访问到，反过来就不行了。</p>
+
+<p>      2) 应用服务器中不同的 Web 应用中类不能相互访问，因为它们是由不同的类加载器加载的，且是在并行结构中。而在企业应用程序中的 WAR 包使用到 EJB 包和其他工具包，因为加载 WAR 包的类加载层是在加载 EJB 包和其他工具包的类加载器的下层。</p>

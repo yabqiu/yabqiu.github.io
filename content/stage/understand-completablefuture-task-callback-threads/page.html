@@ -1,0 +1,194 @@
+---
+title: 理解 CompletableFuture 的任务与回调函数的线程
+url: /understand-completablefuture-task-callback-threads/
+date: 2016-12-23T02:21:27-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/12/Java8-Logo.png"
+categories:
+  - Java8
+tags: 
+  - java8
+  - Future
+  - CompletableFuture
+  - CompletionStage
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7653 
+wpStatus: publish
+views: 5445
+lastmod: 2021-09-03T16:59:45-05:00
+---
+
+继续对 <a href="https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/CompletableFuture.html">CompletableFuture</a> 的学习，本然依然不对它的众多方法的介绍，其实也不容易通过一篇述说完所有 CompletableFuture 的操作。此处重点了解下 CompletableFuture 几类操作时所使用的线程，CompletableFuture 的方法重点在它的静态方法以及实现自 <a href="https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/CompletionStage.html">CompletionStage</a> 接口的方法，如果是意图异步化编程，反而自我标榜的 <a href="https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/Future.html">Future</a> 中的方法用的少了。</p>
+<br/>
+CompletableFuture 根据任务的主从关系为<br/><br/>
+<ol>
+    <li>提交任务的方法，如静态方法 supplyAsync(supplier[, executor]),  runAsync(runnable[, executor])</li>
+    <li>回调函数，即对任务执行后所作出回应的方法，多数方法了，如 thenRun(action), thenRunAsync(action[, executor]), whenComplete(action), whenCompleteAsync(action[, executor]) 等</li>
+</ol>
+<br/>
+根据执行方法可分为同步与异步方法，任务都是要被异步执行，所以提交任务的方法都是异步的。而对任务作出回应的方法很多分为两个版本，如<br/><br/>
+<ol>
+    <li>同步方法，如 thenRun(action), whenComplete(action)</li>
+    <li>异步方法，如 thenRunAsync(action[, executor]), whenCompleteAsync(action[, executor]), 异步方法可以传入线程池，否则用默认的</li>
+</ol>
+<br/>
+因此所要理解的 CompletableFuture 的线程会涉及到任务与回调函数所使用的线程。<!--more--><br/><br/>
+<h3>先来看一下执行任务的线程</h3><br/><br/>
+我们之所以使用 Future(CompletableFuture) 是希望任务不阻塞当前线程，所以它总是会在一个新的线程中去执行，正如方法名所示 <code>supplyAsync()</code> 和 <code>runAsync()</code> ，而不会有 <code>supply()</code> 和 <code>run()</code>。<code>sypplyAsync()</code> 与 <code>runAsync()</code> 的区别是前者有返回值，后者无返回值，我们这里不关心返回值的问题，因此选择 <code>runAsync()</code> 方法为例，它有两个重载方法<br/><br/>
+<ol>
+    <li>public static CompletableFuture&lt;Void&gt; runAsync(Runnable runnable)</li>
+    <li>public static CompletableFuture&lt;Void&gt; runAsync(Runnable runnable,Executor executor)</li>
+</ol>
+<br/>
+第二个方法，我们可以安排任务在指定的 executor(线程池) 中执行，可以调用 <a href="https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/Executors.html">Executors</a> 的工具方法获得所需类型的 ExecutorService，如 newCachedThreadPool, newFixedThreadPool, newWorkStrealingPool, newSingleThreadExecutor。所以手工方法创建，如 new ForkJoinPool()。<br/><br/>
+那我们看不传入 Executor, 默认时任务在什么线程中执行，跟踪一下 runAsync(Runnable runnable) 方法就知道了<br/><br/>
+<pre class="lang:default decode:true">public static CompletableFuture&lt;Void&gt; runAsync(Runnable runnable) {
+    return asyncRunStage(asyncPool, runnable);
+}</pre>
+<br/>
+追踪 asyncPool<br/><br/>
+<pre class="lang:default decode:true">private static final boolean useCommonPool =
+    (ForkJoinPool.getCommonPoolParallelism() &gt; 1);<br/><br/>
+/**
+ * Default executor -- ForkJoinPool.commonPool() unless it cannot
+ * support parallelism.
+ */
+private static final Executor asyncPool = useCommonPool ?
+    ForkJoinPool.commonPool() : new ThreadPerTaskExecutor();<br/><br/>
+/** Fallback if ForkJoinPool.commonPool() cannot support parallelism */
+static final class ThreadPerTaskExecutor implements Executor {
+    public void execute(Runnable r) { new Thread(r).start(); }
+    </pre>
+<br/>
+在我的 i5 CPU 上跑出的 <code>ForkJoinPool.getCommonPoolParallelism()</code> 值是 3，所以任务默认会提交到 <code>ForkJoinPool.commonPool()</code> 中去执行。<br/><br/>
+小结一下，执行任务时所用的线程可以自己提供，或采用默认的 <code>ForkJoinPool.commonPool()</code>。<br/><br/>
+<h3>再看回调函数代码所用的线程</h3><br/><br/>
+与提交任务的方法不同，回调函数通常有三个版本，以 <code>thenRun</code> 为例<br/><br/>
+<ol>
+    <li>public CompletableFuture&lt;Void&gt; thenRun(Runnable action)</li>
+    <li>public CompletableFuture&lt;Void&gt; thenRunAsync(Runnable action)</li>
+    <li>public CompletableFuture&lt;Void&gt; thenRunAsync(Runnable action,  Executor executor)</li>
+</ol>
+<br/>
+<span style="color: #800000;">第一个方法的 action 会在当前线程中执行，也就是调用 <code>thenRun</code> 方法所在的线程???<span style="color: #000000;"> 这里有个疑问，可参考后面一个试验结果</span><br />
+</span><br/><br/>
+<strong><code>thenRun()</code> 可能使用当前线程或是执行任务的线程池来执行回调函数的代码，它同样不会阻塞当前线程，仍然是一个异步调用, 想像它是一个监听模式，可能会在主线程或是用任务的线程池来执行 <code>thenRun()</code> 中的代码。</strong><br/><br/>
+第二个方法从实现中看到的也是用的 <code>asyncPool</code> 线程池，也就是说它将与前面的 <code>runAsync(runnable)</code> 共用 <code>ForkJoinPool.commonPool()</code> 线程池。<br/><br/>
+<pre class="lang:default decode:true">public CompletableFuture&lt;Void&gt; thenRunAsync(Runnable action) {
+    return uniRunStage(asyncPool, action); </pre>
+<br/>
+第三个方法，更不必多说，通过参数 <code>executor</code> 传入指定的线程池实现。<br/><br/>
+下面一个完整的测试例子看看每个子代码块是由什么线程来执行的<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;<br/><br/>
+public class Main {<br/><br/>
+    public static void main(String[] args) {
+        System.out.println("main thread: " + Thread.currentThread());<br/><br/>
+        new Thread(Main::test1) {{
+            setName("my-new-thread");
+        }}.start();<br/><br/>
+        test2();
+    }<br/><br/>
+    private static void test1() {<br/><br/>
+        CompletionStage&lt;Void&gt; futurePrice = CompletableFuture.runAsync(() -&gt; {
+                sleep(1000);
+                System.out.println("test1:1 - runAsync(runnable), job thread: " + Thread.currentThread());
+            }
+        );<br/><br/>
+        System.out.println("test1:flag1");<br/><br/>
+        futurePrice.thenRun(() -&gt; {
+            System.out.println("test1:2 - thenRun(runnable)), action thread: " + Thread.currentThread());
+        });<br/><br/>
+        System.out.println("test1:flag2");<br/><br/>
+        futurePrice.thenRunAsync(() -&gt; {
+            System.out.println("test1:3 - thenRunAsync(runnable), action thread: " + Thread.currentThread());
+        });<br/><br/>
+    }<br/><br/>
+
+    private static void test2() {<br/><br/>
+        ExecutorService executorService = Executors.newCachedThreadPool();
+        CompletionStage&lt;Void&gt; futurePrice = CompletableFuture.runAsync(() -&gt; {
+            sleep(1000);
+            System.out.println("test2:1 - runAsync(runnable, executor), job thread: " + Thread.currentThread());
+        }, executorService);<br/><br/>
+        System.out.println("test2:flag1");<br/><br/>
+        futurePrice.thenRunAsync(() -&gt; {
+            System.out.println("test2:2 - thenRunAsync(runnable), action thread: " + Thread.currentThread());
+        });<br/><br/>
+        System.out.println("test2:flag2");<br/><br/>
+        futurePrice.thenRun(() -&gt; {
+            System.out.println("test2:3 - thenRun(runnable), action thread: " + Thread.currentThread());
+        });<br/><br/>
+        futurePrice.thenRunAsync(() -&gt; {
+            System.out.println("test2:4 - thenRunAsync(runnable, executor), action thread: " + Thread.currentThread());
+        }, executorService);<br/><br/>
+        executorService.shutdown();
+    }<br/><br/>
+    private static void sleep(long time) {
+        //if(true) return;
+        try {
+            Thread.sleep(time);
+        } catch (InterruptedException e) {
+        }
+    }
+}</pre>
+<br/>
+下面是在 IntelliJ IDEA 中运行时的输出<br/><br/>
+<blockquote>
+main thread: Thread[main,5,main]<br />
+<span style="color: #ff0000;">test1:flag1</span><br />
+<span style="color: #0000ff;">test2:flag1</span><br />
+<span style="color: #0000ff;">test2:flag2</span><br />
+<span style="color: #ff0000;">test1:flag2</span><br />
+<span style="color: #ff0000;">test1:1 - runAsync(runnable), job thread: Thread[ForkJoinPool.commonPool-worker-1,5,main]</span><br />
+<span style="color: #0000ff;">test2:1 - runAsync(runnable, executor), job thread: Thread[pool-1-thread-1,5,main]</span><br />
+<span style="color: #ff0000;">test1:2 - thenRun(runnable)), action thread: Thread[ForkJoinPool.commonPool-worker-1,5,main]</span><br />
+<span style="color: #ff0000;">test1:3 - thenRunAsync(runnable), action thread: Thread[ForkJoinPool.commonPool-worker-1,5,main]</span><br />
+<span style="color: #0000ff;">test2:3 - thenRun(runnable), action thread: Thread[pool-1-thread-1,5,main]</span><br />
+<span style="color: #0000ff;">test2:2 - thenRunAsync(runnable), action thread: Thread[ForkJoinPool.commonPool-worker-1,5,main]</span>
+</blockquote>
+<br/>
+我们把两组测试放在一起了，用 test1, test2 进行区分，我们的执行任务设定为延时 1 秒，回调时 <code>thenRun(runnable)</code> 并不会阻塞主线程。并且我们从输出中可以发现执行 <code>thenRun(runnable)</code> 回调中的代码却是使用的与执行任务时一样的线程池，并非是调用 <code>thenRun(runnable)</code> 方法所用的线程。<code>thenRunAsync(runnable)</code> 方法总是使用 <code>ForkJoinPool.commonPool</code> 线程池。<br/><br/>
+同样是前面的代码，如果把方法 <code>sleep(time)</code> 中的 <code>//if(true) return</code> 代码启用，使用任务很快能完成，再执行多遍，我能够得到如下两组结果：<br/><br/>
+<blockquote>
+main thread: Thread[main,5,main]<br />
+<span style="color: #0000ff;">test2:flag1</span><br />
+<span style="color: #0000ff;">test2:flag2</span><br />
+<span style="color: #0000ff;">test2:1 - runAsync(runnable, executor), job thread: Thread[pool-1-thread-1,5,main]</span><br />
+<span style="color: #0000ff;">test2:3 - thenRun(runnable), action thread: Thread[main,5,main]</span><br />
+<span style="color: #ff0000;">test1:flag1</span><br />
+<span style="color: #ff0000;">test1:flag2</span><br />
+<span style="color: #0000ff;">test2:2 - thenRunAsync(runnable), action thread: Thread[ForkJoinPool.commonPool-worker-1,5,main]</span><br />
+<span style="color: #ff0000;">test1:1 - runAsync(runnable), job thread: Thread[ForkJoinPool.commonPool-worker-1,5,main]</span><br />
+<span style="color: #ff0000;">test1:2 - thenRun(runnable)), action thread: Thread[ForkJoinPool.commonPool-worker-1,5,main]</span><br />
+<span style="color: #ff0000;">test1:3 - thenRunAsync(runnable), action thread: Thread[ForkJoinPool.commonPool-worker-1,5,main]</span><br />
+<span style="color: #0000ff;">test2:4 - thenRunAsync(runnable, executor), action thread: Thread[pool-1-thread-2,5,main]</span>
+</blockquote>
+<br/>
+<code>thenRun(runnable)</code> 也能跑到非调用者线程上去，这样的测试结果确实出乎我所料。<br/><br/>
+<blockquote>
+main thread: Thread[main,5,main]<br />
+<span style="color: #ff0000;">test1:flag1</span><br />
+<span style="color: #ff0000;">test1:1 - runAsync(runnable), job thread: Thread[ForkJoinPool.commonPool-worker-1,5,main]</span><br />
+<span style="color: #0000ff;">test2:1 - runAsync(runnable, executor), job thread: Thread[pool-1-thread-1,5,main]</span><br />
+<span style="color: #0000ff;">test2:flag1</span><br />
+<span style="color: #ff0000;">test1:2 - thenRun(runnable)), action thread: Thread[my-new-thread,5,main]</span><br />
+<span style="color: #ff0000;">test1:flag2</span><br />
+<span style="color: #ff0000;">test1:3 - thenRunAsync(runnable), action thread: Thread[ForkJoinPool.commonPool-worker-1,5,main]</span><br />
+<span style="color: #0000ff;">test2:2 - thenRunAsync(runnable), action thread: Thread[ForkJoinPool.commonPool-worker-1,5,main]</span><br />
+<span style="color: #0000ff;">test2:flag2</span><br />
+<span style="color: #0000ff;">test2:3 - thenRun(runnable), action thread: Thread[main,5,main]</span><br />
+<span style="color: #0000ff;">test2:4 - thenRunAsync(runnable, executor), action thread: Thread[pool-1-thread-1,5,main]</span>
+</blockquote>
+<br/>
+<code>thenRun(runnable)</code> 跑在调用者线程上。<br/><br/>
+所以对于简单的 <code>thenRun()</code> 方法，我们可能会想当然的认为它会阻塞当前线程，由当前线程去执行回调代码，其实从实验中看不带 <code>async</code> 的 <code>thenRun()</code> 方法仍然是一个异步方法，谁来执行回调中的代码似乎更灵活，完全由 JVM 来定，或者是 Lambda 在其中作祟，把 Lambda 换成匿名类还是一样的效果。<code>thenRun()</code> 大概是能根据调用者线程是否空闲来使用当前线程还是用执行任务的线程池。带 <code>async</code> 的方法会把任务再次提交到线程池中去。

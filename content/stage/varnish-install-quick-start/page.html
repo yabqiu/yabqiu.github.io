@@ -1,0 +1,107 @@
+---
+title: Varnish 的安装使用，及简单配置
+url: /varnish-install-quick-start/
+date: 2013-07-28T22:19:35-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Linux/Unix
+tags: 
+  - Ubuntu
+  - Varnish
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5632 
+wpStatus: publish
+views: 1982
+lastmod: 2021-05-10T10:24:56-05:00
+---
+
+Varnish 是一个开源的反向代理软件，所以可做缓存服务器进行 Web 加速，类似的有 Squid, Nginx, 和  HAProxy。但 Varnish 与其他三个相比性能更优，例如 Squid 的成名是它可作为上网代理服务器， Nginx 是一个优秀 Web 服务器，这两都非专业的 Web 加速器，而 HAProxy 与  Varnish 有的一比。</p>
+<br/>
+实际上 Varnish 的表现如何了，网上找来找去都讲这么一个实证：挪威最大的在线报纸 Verdens Gang 使用3台Varnish代替了原来的12台Squid，性能比以前更好。并且要知道 Varnish 的作者Poul-Henning Kamp是FreeBSD的内核开发者之一，牛人一个。<br/><br/>
+<strong>Varnish 有什么特点呢？</strong><br/><br/>
+VCL 进行配置，正则表达式条件判定进行规则设置<br />
+支持负载均衡和健康检查，多种条件请求分分<br />
+支持 ESI( Edge Side Include)，即页面局部组件的缓存<br />
+URL 地址重写，响应头改写<!--more--><br/><br/>
+<strong>安装 Varnish</strong><br/><br/>
+Varnish 官方下载页提供有 Debian, FreeBSD, RedHat, Ubuntu 下的二进制文件下载，它在 FreeBSD 和 Linux 下有良好的表现，也可让它运行在 NetBSD, OpenBSD 和 OS X 下。来看 Varnish 的安装，在 Ubuntu 下只要运行：<!--more--><br/><br/>
+<pre class="brush:bash">sudo apt-get install varnish</pre>
+<br/>
+如果是在 RedHat 下换成 yum 就是，即<br/><br/>
+<pre class="brush:bash">sudo yum install varnish</pre>
+<br/>
+如果愿意基于源代码来安装的话，无非就是<br/><br/>
+<pre class="brush:bash">./configuration
+make
+make install</pre>
+<br/>
+若是缺什么就补什么了。<br/><br/>
+<strong>默认配置</strong><br/><br/>
+装完了之后，它的默认配置文件就是 /etc/varnish/default.vcl，像  Squid 的配置文件  squid.conf 一样，这个默认的配置文件本身就是一个详细的配置文档，详见注释。目前有效内容就只有几行：<br/><br/>
+<pre class="brush:bash">backend default {
+    .host = "127.0.0.1";
+    .port = "8080";
+}</pre>
+<br/>
+Varnish 是个代理服务器，所以它在 Web 服务器前端，它默认的端口也是 6081。所以默认情况下上面的配置表示的意思是：<br/><br/>
+对于发往本机 6081 端口的请求将派发给主机  127.0.0.1 的 8080 端口所对应的进程去处理。8080 基本为知名的 Tomcat 端口，看来它与 Tomcat 走得比较近(玩笑而已)。<br/><br/>
+<strong>Varnish 的启动，三种方式</strong><br/><br/>
+1) varnishd 命令<br/><br/>
+varnishd -f /etc/varnish/default.vcl -s malloc,1G -T 127.0.0.1:2000 -a 0.0.0.0:80 , 命令执行成功以后 , 访问 127.0.0.1 此时返回了 8080 端口的真实数据 , 通过火狐浏览器的FireBug 查看网络请求头信息 , 会发现在 "响应头信息" 里面 Varnish 添加了两个属性信息 （Age:3,Via:1.1 varnish）, Varnish 到此就已经安装并且启动成功。<br/><br/>
+-f /etc/varnish/default.vcl -- 指定 Varnish 需要使用的配置文件<br />
+-s malloc,1G 　　　　　  　-- 指定 Varnish 的缓存空间<br />
+-T 127.0.0.1:2000 　　    　-- varnish 有一个基于文本的管理接口 , 启动它可以在不停止 varnish 的情况下来管理 varnish 。指定管理软件监听哪个 端口<br />
+-a 0.0.0.0:80　　　　　　-- 指定 Varnish 使用的端口号 , Varnish 会监听所有来自 80 端口号的数据 , 并且转发给 backend default 配置的真实服务器 。<br/><br/>
+2) sudo /etc/init.d/varnish start|stop|restart|status<br/><br/>
+3) sudo service varnish start|stop|restart|status<br/><br/>
+后两种方式采用默认配置，即执行的命令是<br/><br/>
+/usr/sbin/varnishd -P /var/run/varnishd.pid -a :6081 -T localhost:6082 -f /etc/varnish/default.vcl -S /etc/varnish/secret -s malloc,256m<br/><br/>
+ 我们可以修改使用  /etc/init.d/varnish 和 service varnish 启动 varnish 的默认参数, RedHat 的配置文件在 /etc/sysconfig/varnish, Ubuntu 的配置文件在 /etc/default/varnish，打开这个文件，针对产品环境通常是用 80 端口来接收并转发请求，这样子看起来它还是一个 Web 服务器。所以我们参考里面的<br/><br/>
+<pre class="brush:bash">DAEMON_OPTS="-a :6081 \
+             -T localhost:6082 \
+             -f /etc/varnish/default.vcl \
+             -S /etc/varnish/secret \
+             -s malloc,256m"</pre>
+<br/>
+在最后面加上<br/><br/>
+<pre class="brush:bash">DAEMON_OPTS="-a :80 \
+             -T localhost:6082 \
+             -f /etc/varnish/default.vcl \
+             -S /etc/varnish/secret \
+             -s malloc,1G"</pre>
+<br/>
+你也可以使用文件来缓存，同样是参看这个  varnish 配置文件中的详细注释。<br/><br/>
+然后 sudo service varnish restart，现在发往 80 上的 http 请求就转发给了 127.0.0.1:8080 去处理了。这里基于测试的方便我把 /etc/varnish/default.vcl 的内容简单改为：<br/><br/>
+<pre class="brush:bash">backend default {
+    .host = "10.0.0.3";
+    .port = "9000";
+}</pre>
+<br/>
+80 上接收到的请求委派给 10.0.0.3:9000 进程去处理。<br/><br/>
+现在用  curl 来对发往本机 80 上的  http 请求进行测试一下<br/><br/>
+<pre class="brush:bash">curl -v http://localhost/index.html</pre>
+<br/>
+看到的请求头中多了关于 varnish 的三行<br/><br/>
+<pre class="lang:default decode:true ">&lt; X-Varnish: 1082334072 1082334071
+&lt; Age: 214
+&lt; Via: 1.1 varnish</pre>
+<br/>
+好了，现在完整的 Varnish 反向代理过程完成了，本想这里详细的把 Varnish VCL 基本规则配置，负载均衡，以及条件缓存，处理流程都讲了，看来要限于篇幅有限，以后分述了。<br/><br/>
+关于观察 Varnish 的状态，以下所有以 varnish 打头的命令很重要，可以用它们实时看到缓存命中状态，和更多的详细信息<br/><br/>
+<pre class="brush:text">unmi@ubuntu:/etc/varnish$ varnish
+varnishadm     varnishhist    varnishncsa    varnishsizes   varnishtest    
+varnishd       varnishlog     varnishreplay  varnishstat    varnishtop</pre>
+<br/>
+另外附上些链接与文档：<br/><br/>
+    1. <a href="https://www.varnish-cache.org/docs/trunk/index.html" target="_blank" rel="noopener">Welcome to Varnish's documentation</a><a href="https://www.varnish-cache.org/docs/3.0/reference/index.html" target="_blank" rel="noopener"><br />
+</a>    2. <a href="http://www.cnblogs.com/kcen/archive/2013/03/28/2846340.html" target="_blank" rel="noopener">varnish学习应用之 安装 配置 监控</a><br />
+    3. <a href="http://blog.icodex.org/2013/01/high-end-varnish-optimization/" target="_blank" rel="noopener">高性能 Varnish 优化指南<br />
+</a>    4. <a href="https://www.varnish-software.com/static/book/index.html" target="_blank" rel="noopener">Welcome to the Varnish Book<br />
+</a>    5. <a href="http://blog.csdn.net/chmo2011/article/details/7106017">缓存服务varnish安装配置</a><br />
+    6. <a href="http://www.jbxue.com/article/951.html" target="_blank" rel="noopener">varnish的VCL的配置详解</a>

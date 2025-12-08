@@ -1,0 +1,130 @@
+---
+title: Java, Python 两种形式的 base64encode
+url: /java-python-two-styles-base64encode/
+date: 2024-09-19T13:21:49-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - Python
+tags: 
+  - base64
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13757 
+wpStatus: publish
+views: 148
+lastmod: 2024-09-19T13:35:55-05:00
+---
+
+在用 Python 写 Web 服务端代码时，用 base64.encodebytes() 函数对字符串进行编码，然后在 Java 端用 Base64.getDecoder().decode() 时无法解码，难道 base64 编码在两种语言间还有这等差异。Google 一下，得到的答案是在 Java 端要用 Base64.getMimeDecoder().decode() 函数解码。这一问题算是解决了, 不过后来又在 Python 写的 AWS Lambda 中输出</p>
+<br/>
+<blockquote>
+return {<br />
+    "statusCode": 200,<br />
+    "body": base64.encodebytes(b"short message"),<br />
+    "isBase64Encoded": True<br />
+}
+</blockquote>
+<br/>
+以 AWS Lambda functionURL 的方式来访问，对于 body 中的小字符串是没问题，一旦 body 够大时在 Postman 或 curl 命令中无法直接展示出来，用 curl --output a.out 存成本地文件，打开后看到的是带换行的格式<br/><br/>
+<blockquote>
+H4sIAAZi7GYC/+19WXfcOLLmX+HxwxzXOS6b2AhiprvnyFtZt7yoJbdr6r74UEpKyq5UpjoXL/fX<br />
+D8AlkysIkCFmpo2H7pJJEBkAAsCHQMQXf/t6HX/YrO83a++P168+xcvVdDH/+yP6lOGnzEciCNHn<br />
+gD7yTufT9evpLD6L1rd/f3Q6n03nsXexXk7nN4+8F4v59fRms4zW8uNtHdjH9KkfPEXoM6JPsf8U<br />
+......
+</blockquote>
+<br/>
+<!--more-->这就是问题的所在，由 base64.encodebytes() 产生的 'body' 其实连 API Gateway 也无法自动解码出来，所以 base64 编码的内容才直接送到了客户端，原来 API Gateway 在看到 "isBase64Encoded": True 后会解码后送给请求端。<br/><br/>
+ChatGPT 的解决是在 Python 端用 base64.b64encode() 代替 base64.encodebytes(), 所以在 Python 和 Java 端有下面的对应关系<br/><br/>
+<blockquote>
+base64.b64encode()        &lt;-&gt;   Base64.getDecoder().encode()<br />
+base64.encodebytes()      &lt;-&gt;  Base64.getMimeDecoder().decode()
+</blockquote>
+<br/>
+相应的<br/><br/>
+<blockquote>
+Base64.getEncoder().encode()      &lt;-&gt;  base64.b64decode()  <br />
+Base64.getMimeEncoder().encode()      &lt;-&gt;  base64.decodebytes()
+</blockquote>
+<br/>
+那么 Python 的 base64.b64encode() 与 base64.encodebytes() 有什么区别呢？或者说 Java 的 Base64.getEncoder().encode() 和 Base64.getMimeEncoder().encode() 有何不同？<br/><br/>
+用一段代码来测试下  test.py<br/><br/>
+<pre class="lang:default decode:true">import base64
+import sys<br/><br/>
+repeat = int(sys.argv[1])
+source_str = b'hello' * repeat
+print('source str: \n', source_str.decode())<br/><br/>
+print('\n----base64.encodebytes()----')
+print(base64.encodebytes(source_str).decode())<br/><br/>
+print('\n----base64.b64encode()----')
+print(base64.b64encode(source_str).decode())
+</pre>
+<br/>
+当字符串较短时，如输入<br/><br/>
+<blockquote>
+python a.py 10<br />
+source str:<br />
+hellohellohellohellohellohellohellohellohellohello
+----base64.encodebytes()----<br />
+aGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG8=
+<br />
+----base64.b64encode()----<br />
+aGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG8=
+</blockquote>
+<br/>
+而当字符串较大时<br/><br/>
+<blockquote>
+python a.py 50<br />
+source str:<br />
+hellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohellohello
+----base64.encodebytes()----<br />
+aGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hl<br />
+bGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxs<br />
+b2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9o<br />
+ZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVs<br />
+bG9oZWxsb2hlbGxvaGVsbG9oZWxsbw==
+<br />
+----base64.b64encode()----<br />
+aGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsbw==
+</blockquote>
+<br/>
+有没有对 base64.encodebytes() 这种格式很熟悉的感觉，就是像软件的注册文件的样式。base64.encodebytes() 会对产生的编码中插入换行符使得显示的时候更整洁些，看字符串内容的话会有许多的 <code>\r\n</code>  换行字符，当等编码的字符串较短时(编码后未超过一行)，base64.encodebytes() 与 base64.b64encode() 生成的结果是一样的。base64.b64encode() 才是原滋原味的 base64 编码, 它们之间除了格式化用的换行外没有别的区别了，所以用 base64.encodebytes() 编码的字符串手工去掉换行符，然后用 Base64.getDecoder().decode() 也可以解码出来。<br/><br/>
+我看阅读 Java 的 Base64.getMimeEncoder() 的源码<br/><br/>
+<pre class="lang:default decode:true ">    public static Encoder getMimeEncoder() {
+        return Encoder.RFC2045;
+    }</pre>
+<br/>
+然后是 RFC2045 的相关定义<br/><br/>
+<pre class="lang:default decode:true">        private static final int MIMELINEMAX = 76;
+        private static final byte[] CRLF = new byte[] {'\r', '\n'};<br/><br/>
+        static final Encoder RFC2045 = new Encoder(false, CRLF, MIMELINEMAX, true);</pre>
+<br/>
+每行宽度 76 个字符，用 <code>\r\n</code> 分割，也就是前面看到的 base64.encodebytes() 产生长字符串的样子。<br/><br/>
+最后重复一遍上面的<br/><br/>
+<blockquote>
+base64.b64encode()        &lt;-&gt;   Base64.getDecoder().encode()                                // 原味的 base64<br />
+base64.encodebytes()      &lt;-&gt;  Base64.getMimeDecoder().decode()                      // 插入换行 的 base64
+</blockquote>
+<br/>
+相应的<br/><br/>
+<blockquote>
+Base64.getEncoder().encode()      &lt;-&gt;  base64.b64decode()                                  // 原味的 base64<br />
+Base64.getMimeEncoder().encode()      &lt;-&gt;  base64.decodebytes()                     // 插入换行 的 base64
+</blockquote>
+<br/>
+想当然 Java 的 Base64.getMimeEncoder().encode() 编码出来长字符串也应该是会插入换行符的，何不快速体验一下呢？<br/><br/>
+<blockquote>
+jshell&gt; System.out.println(new String(Base64.getMimeEncoder().encode("hello".repeat(50).getBytes())));<br />
+aGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hl<br />
+bGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxs<br />
+b2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9o<br />
+ZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVsbG9oZWxsb2hlbGxvaGVs<br />
+bG9oZWxsb2hlbGxvaGVsbG9oZWxsbw==
+</blockquote>
+<br/>
+带附加换行符的 base64 只能用 base64.encodebytes() 和 Base64.getMimeDecoder().decode() 来解码，也就是说任何时候都可以用 base64.encodebytes() 或 Base64.getMimeDecoder().decode() 这两个函数进行 base64 解码，但编码的时候需看仔细。

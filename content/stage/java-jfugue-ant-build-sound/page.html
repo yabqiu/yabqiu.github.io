@@ -1,0 +1,78 @@
+---
+title: 用 JFugue 给 Ant 构建完成分别在成功或失败时加上不同的声音提醒
+url: /java-jfugue-ant-build-sound/
+date: 2008-09-23T03:48:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - build
+  - jfugue
+  - ant
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 328 
+wpStatus: publish
+views: 442
+lastmod: 2021-09-02T14:15:24-05:00
+---
+
+现在基本用 Eclipse，所有的操作都在无声无息中进行的，除了操作系统带来的咔嚓声还有你的呼哧声。怀念起使用 JBuilder 的时代了，在 JBuilder 中编译、执行程序或 Ant 脚本，在成功或失败时都有不同的声音提醒。<br/><br/>
+那我们不妨也来用 JFugue 让 Ant 构建成功或失败时发出不同的声音，关于 JFugue 的使用在 <a href="http://unmi.cc/java-music-jfugue/" target="_blank" rel="noopener">让 Java 轻松乐动起来，使用 JFugue 制作自己的音乐</a> 介绍过。这样我们就能在闭目养神中完成 Ant 的构建，听声音就知道成功还是失败。当然，敏捷过程中多是在晚上无人值守的时候完成自动构建，那晚上可要小心，别吓着鬼了。<br/><br/>
+实现原理，启动 ant 时用参数 -logger YourLoggerClass 指定你自己的 Logger 类(也是一个监听器)，在你的 Logger 类的 buildFinished(BuildEvent event) 时，发现无异常，表示成功，用 JFugue 发出一种声音，有异常时，表时失败，用 JFugue 发出另外一种声音。<!--more--><br/><br/>
+下面介绍具体的做法，引入 jfugue-x.x.x.jar 和 ant.jar 到项目中，然后编写类 AntSoundBuildLogger，代码如下：<br/><br/>
+<pre class="brush:java">package com.unmi.tools.ant.listener;<br/><br/>
+import org.apache.tools.ant.BuildEvent;
+import org.apache.tools.ant.DefaultLogger;
+import org.jfugue.Player;<br/><br/>
+/**
+ * Ant 构建的Logger,也是监听器，在构建完成时，能根据成功或失败发出不同提醒声音
+ * 使用 ant -logger com.unmi.tools.ant.listener.AntSoundBuildLogger
+ * 直接继承默认的 DefaultLogger 类，可以使用原有的行为，在控制台输出
+ * BUILD SUCCESSFUL 或是 BUILD FAILED，还有完成构建的时间显示
+ * @author Unmi
+ */
+public class AntSoundBuildLogger extends DefaultLogger {<br/><br/>
+    /**
+     * 构建完成后被触发执行的方法
+     */
+    public void buildFinished(BuildEvent event) {
+        super.buildFinished(event); //调用 DefaultLogger，复用默认行为
+        Player player = new Player();
+        Throwable t = event.getException();
+        if (t != null) {
+            // There has been an exception
+            player.play("I[String_Ensemble_1] B3q Bb3q. G3i F3h");
+        } else {
+            // Build was successful
+            player.play("I[French_Horn] As E6h As E6i Rt As E6h");
+        }
+    }
+}</pre>
+<br/>
+为了省事，我们直接继承自 DefaultLogger(它实现了 BuildLogger，BuildLogger 又是实现了 BuildListener 接口，所以说 Logger 本质上也是一个 Listener)。<br/><br/>
+把这个类编译、打包成一个 jar 文件，如 ant-sound-logger.jar。打包方法，这里不细说，可以用 Eclipse 的 export 导出、或者 jar 命令，或者是 winara/winzip 压成 zip 格式文件。<br/><br/>
+然后把这个 ant-sound-logger.jar 包拷贝到 ANT_HOME/lib 目录下，这样 ant 就能加载到其中的类了。<br/><br/>
+还有，因为用到了 JFugue，所以也应该把 jfugue.x.x.x.jar 包拷到 ANT_HOME/lib 目录下。<br/><br/>
+现在，就可以做个测试，首先要有一个 build.xml 文件，尽量简单，比如保存到 C:\，内容如下：<br/><br/>
+<pre class="lang:default decode:true ">&lt;project name="test" default="default"&gt;
+    &lt;target name="default"&gt;
+        &lt;echo&gt;Hello, JFugue Sound working with Ant.&lt;/echo&gt;
+    &lt;/target&gt;
+&lt;/project&gt;</pre>
+<br/>
+目前为止，准备工作都做完了，命令行下进到 C 盘根目录，执行<br/><br/>
+ant -logger com.unmi.tools.ant.listener.AntSoundBuildLogger<br/><br/>
+不出什么意外，构建应该是成功的，听到像帝国里交战时的那种声音了吗？<br/><br/>
+再让 ant 构建失败，乱改一下 build.xml 文件就行，再执行上面的 ant 命令，是否听到了失败时有些令人颓废的声音。<br/><br/>
+你可以编辑 play() 方法中的 Music String 为自己喜爱的声音，JFugue 还支持你把一段 Midi 转成 Music String 而使用。<br/><br/>
+如果你觉得打包你的类到 jar 和加参数执行 ant 略有麻烦你可以直接修改 org.apache.tools.ant.DefaultLogger 类，在它的 buildFinished(BuildEvent event) 方法中加上出声的代码，替换到 ANT_HOME/lib/ant.jar 包中就行了。<br/><br/>
+最后，可能会在 IDE 中执行 Ant 脚本，那这里顺便说说 Eclipse 中执行 Ant 脚本用 JFugue 发声的做法。在 Eclipse 中的 Preferences-&gt;Ant-&gt;Runtime 中把 ant-sound-logger.jar 和 jfugue.x.x.x.jar 加到 classpath 中。然后从 build.xml 的右键菜单中选 Run As-&gt;Open External Tools Dialog...，Ant Build 中 new 一个，在右边 Arguments 中加上  -logger com.unmi.tools.ant.listener.AntSoundBuildLogger。这样以后在 Eclipse 中执行这个 build.xml 文件时就不会是闷声不响了。<br/><br/>
+同样的，你如果用的是修改 DefaultLogger 的办法，也不需要在 Eclipse 中设置  -logger 参数，ant-sound-logger.jar 和 jfugue.x.x.x.jar 还是要加到 classpath 中的。再如果你是把 ant-sound-logger.jar 和 jfugue.x.x.x.jar 拷到了 Eclipse 中的 ANT/lib(如 D:\eclipse\plugins\org.apache.ant_1.7.0.v200706080842\lib) 目录中，在 Eclipse 重启后会自动加到 Ant-&gt;Runtim-&gt;Ant Home Entries 中，所以上面这一步都可以省去了。<br/><br/>
+另外，Ant 对于  Logger  和 Listener 有些不太清晰，就像 BuildLogger 实现了 BuildListener，对于 AntSoundBuildLogger，你用 -listener 来指定也有效果的，如 ant -listener com.unmi.tools.ant.listener.AntSoundBuildLogger。<br/><br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

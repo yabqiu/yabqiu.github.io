@@ -1,0 +1,199 @@
+---
+title: IntelliJ IDEA 中创建 Maven Scala 项目
+url: /intellij-idea-create-maven-scala-project/
+date: 2017-11-19T15:34:46-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2017/11/scala-logo.png"
+categories:
+  - Scala
+tags: 
+  - Maven
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8370 
+wpStatus: publish
+views: 2975
+lastmod: 2021-09-10T12:54:42-05:00
+---
+
+Scala 项目看家的构建工具当然是 SBT, 假如我们已习惯于 Maven, 想要用 Maven 来构建 Scala 项目该如何做呢？那首先要找到一个 Maven Scala 相应的 Archetype, 然后用命令 <code>mvn archetype:generate</code> 或是在 IntelliJ IDEA 使用 Maven 项目创建向导来选择一个 Maven Scala Archetype。这里主要介绍 IntelliJ IDEA 中 Maven 向导创建 Scala 项目的方式。</p>
+<br/>
+首先确保我们已安装了 IntelliJ IDEA 的 Maven 和  Scala 插件。插件中自带了 org.scala-tools.archetypes:scala-archetype-simple:1.2 的 Maven archetype, 这是一个貌视 Scala 官方的 archetype。我们可以尝试基于它来创建一个 Maven Scala 项目。通过 IntelliJ IDEA 的菜单 <code>File/New/Project...</code>, 在弹出的窗口中选择 Maven/Create from archetype, 然后找到 <a href="https://mvnrepository.com/artifact/org.scala-tools.archetypes/scala-archetype-simple/1.3">scala-archetype-simple</a>, 自带版本为 1.2, 当前最新版也不过 1.3, 那还是  2010 年建立，别提有多老了。<!--more--><br/><br/>
+<a href="/wp-content/uploads/2017/11/maven-scala-archetype-1.png"><img class="aligncenter size-large wp-image-8371" src="/wp-content/uploads/2017/11/maven-scala-archetype-1-800x506.png" alt="" width="800" height="506" /></a><br/><br/>
+创建出来项目的 pom.xml 也不出所料<br/><br/>
+<pre class="lang:default decode:true ">  &lt;properties&gt;
+    &lt;maven.compiler.source&gt;1.5&lt;/maven.compiler.source&gt;
+    &lt;maven.compiler.target&gt;1.5&lt;/maven.compiler.target&gt;
+    &lt;encoding&gt;UTF-8&lt;/encoding&gt;
+    &lt;scala.version&gt;2.8.0&lt;/scala.version&gt;
+  &lt;/properties&gt;</pre>
+<br/>
+一切都太老了，实际上在当今的 IntelliJ IDEA(2017.2.6) 中该项目也无法运行。<br/><br/>
+所以我们需寻求更新的 Maven Scala Archetype，于是找到了 <a href="https://mvnrepository.com/artifact/net.alchim31.maven/scala-archetype-simple">net.alchim31.maven:scala-archetype-simple:1.6</a>, 它的版本号是  1.4, 1.5, 1.6，看来是来给官方的 scala-archetype-simple 续命来的，它的项目在 github 上可以找到 <a href="https://github.com/davidB/scala-archetype-simple">davidB/scala-archetype-simple</a>。<br/><br/>
+我们需要在创建项目时把该 archetype 添加到 IntelliJ IDEA 中来，还是同样的创建 Maven 项目的向导，只是这时候我们要点击 <code>Add Archetype...</code> 按钮，在窗口中输入相应的<br/><br/>
+GroupId: net.alchim31.maven<br />
+ArtifactId: scala-archetype-simple<br />
+Version: 1.6<br/><br/>
+<a href="/wp-content/uploads/2017/11/maven-scala-archetype-2.png"><img class="aligncenter size-full wp-image-8372" src="/wp-content/uploads/2017/11/maven-scala-archetype-2.png" alt="" width="680" height="400" /></a><br/><br/>
+添加完后，我们选择该 Maven Archetype 来创建项目，输入自己项目的 GroupId, ArtifactId 等信息，生成项目后，我们可以查看一个 pom.xml 文件<br/><br/>
+<pre class="lang:default decode:true ">  &lt;properties&gt;
+    &lt;maven.compiler.source&gt;1.6&lt;/maven.compiler.source&gt;
+    &lt;maven.compiler.target&gt;1.6&lt;/maven.compiler.target&gt;
+    &lt;encoding&gt;UTF-8&lt;/encoding&gt;
+    &lt;scala.version&gt;2.11.5&lt;/scala.version&gt;
+    &lt;scala.compat.version&gt;2.11&lt;/scala.compat.version&gt;
+  &lt;/properties&gt;</pre>
+<br/>
+好像还不怎么新，可以自己把 Java 的改为 1.8, 或 Scala 的版本改为 2.12.* 的版本，改完了需作测试。<br/><br/>
+基于原始状态，我试着运行该项目的 App.scala, 报出错误<br/><br/>
+<blockquote>
+Error:scalac: bad option: '-make:transitive'
+</blockquote>
+<br/>
+把 pom.xml 中的<br/><br/>
+<blockquote>
+&lt;arg&gt;-make:transitive&lt;/arg&gt;
+</blockquote>
+<br/>
+删掉，再运行，错误是<br/><br/>
+<blockquote>
+Error:(18, 18) not found: type JUnitRunner<br />
+@RunWith(classOf[JUnitRunner])
+</blockquote>
+<br/>
+需要引入依赖<br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;org.specs2&lt;/groupId&gt;
+    &lt;artifactId&gt;specs2-junit_${scala.compat.version}&lt;/artifactId&gt;
+    &lt;version&gt;3.7.2&lt;/version&gt;
+    &lt;scope&gt;test&lt;/scope&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+并且在 specs.scala 测试类中引入 JUnitRunner<br/><br/>
+<blockquote>
+import org.specs2.runner.JUnitRunner
+</blockquote>
+<br/>
+下面是我修复后的完整的 pom.xml 内容<br/><br/>
+<pre class="lang:default decode:true">&lt;project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd"&gt;
+  &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+  &lt;groupId&gt;cc.unmi&lt;/groupId&gt;
+  &lt;artifactId&gt;spark-test&lt;/artifactId&gt;
+  &lt;version&gt;1.0-SNAPSHOT&lt;/version&gt;
+  &lt;name&gt;${project.artifactId}&lt;/name&gt;
+  &lt;description&gt;My wonderfull scala app&lt;/description&gt;
+  &lt;inceptionYear&gt;2015&lt;/inceptionYear&gt;
+  &lt;licenses&gt;
+    &lt;license&gt;
+      &lt;name&gt;My License&lt;/name&gt;
+      &lt;url&gt;http://....&lt;/url&gt;
+      &lt;distribution&gt;repo&lt;/distribution&gt;
+    &lt;/license&gt;
+  &lt;/licenses&gt;<br/><br/>
+  &lt;properties&gt;
+    &lt;maven.compiler.source&gt;1.8&lt;/maven.compiler.source&gt;
+    &lt;maven.compiler.target&gt;1.8&lt;/maven.compiler.target&gt;
+    &lt;encoding&gt;UTF-8&lt;/encoding&gt;
+    &lt;scala.version&gt;2.11.7&lt;/scala.version&gt;
+    &lt;scala.compat.version&gt;2.11&lt;/scala.compat.version&gt;
+  &lt;/properties&gt;<br/><br/>
+  &lt;dependencies&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.scala-lang&lt;/groupId&gt;
+      &lt;artifactId&gt;scala-library&lt;/artifactId&gt;
+      &lt;version&gt;${scala.version}&lt;/version&gt;
+    &lt;/dependency&gt;<br/><br/>
+    &lt;!-- Test --&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;junit&lt;/groupId&gt;
+      &lt;artifactId&gt;junit&lt;/artifactId&gt;
+      &lt;version&gt;4.12&lt;/version&gt;
+      &lt;scope&gt;test&lt;/scope&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.specs2&lt;/groupId&gt;
+      &lt;artifactId&gt;specs2-core_${scala.compat.version}&lt;/artifactId&gt;
+      &lt;version&gt;3.7.2&lt;/version&gt;
+      &lt;scope&gt;test&lt;/scope&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.specs2&lt;/groupId&gt;
+        &lt;artifactId&gt;specs2-junit_${scala.compat.version}&lt;/artifactId&gt;
+        &lt;version&gt;3.7.2&lt;/version&gt;
+        &lt;scope&gt;test&lt;/scope&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+      &lt;groupId&gt;org.scalatest&lt;/groupId&gt;
+      &lt;artifactId&gt;scalatest_${scala.compat.version}&lt;/artifactId&gt;
+      &lt;version&gt;3.0.4&lt;/version&gt;
+      &lt;scope&gt;test&lt;/scope&gt;
+    &lt;/dependency&gt;
+  &lt;/dependencies&gt;<br/><br/>
+  &lt;build&gt;
+    &lt;sourceDirectory&gt;src/main/scala&lt;/sourceDirectory&gt;
+    &lt;testSourceDirectory&gt;src/test/scala&lt;/testSourceDirectory&gt;
+    &lt;plugins&gt;
+      &lt;plugin&gt;
+        &lt;!-- see http://davidb.github.com/scala-maven-plugin --&gt;
+        &lt;groupId&gt;net.alchim31.maven&lt;/groupId&gt;
+        &lt;artifactId&gt;scala-maven-plugin&lt;/artifactId&gt;
+        &lt;version&gt;3.3.1&lt;/version&gt;
+        &lt;executions&gt;
+          &lt;execution&gt;
+            &lt;goals&gt;
+              &lt;goal&gt;compile&lt;/goal&gt;
+              &lt;goal&gt;testCompile&lt;/goal&gt;
+            &lt;/goals&gt;
+            &lt;configuration&gt;
+              &lt;args&gt;
+                &lt;arg&gt;-dependencyfile&lt;/arg&gt;
+                &lt;arg&gt;${project.build.directory}/.scala_dependencies&lt;/arg&gt;
+              &lt;/args&gt;
+            &lt;/configuration&gt;
+          &lt;/execution&gt;
+        &lt;/executions&gt;
+      &lt;/plugin&gt;
+      &lt;plugin&gt;
+        &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;
+        &lt;artifactId&gt;maven-surefire-plugin&lt;/artifactId&gt;
+        &lt;version&gt;2.20.1&lt;/version&gt;
+        &lt;configuration&gt;
+          &lt;useFile&gt;false&lt;/useFile&gt;
+          &lt;disableXmlReport&gt;true&lt;/disableXmlReport&gt;
+          &lt;!-- If you have classpath issue like NoDefClassError,... --&gt;
+          &lt;!-- useManifestOnlyJar&gt;false&lt;/useManifestOnlyJar --&gt;
+          &lt;includes&gt;
+            &lt;include&gt;**/*Test.*&lt;/include&gt;
+            &lt;include&gt;**/*Suite.*&lt;/include&gt;
+          &lt;/includes&gt;
+        &lt;/configuration&gt;
+      &lt;/plugin&gt;
+    &lt;/plugins&gt;
+  &lt;/build&gt;
+&lt;/project&gt;</pre>
+<br/>
+下一步，将会把这个修复好的项目作为一个 g8 的项目模板。<br/><br/>
+Dec 8, 2017: 做成了一个 giter8(g8) 的 Maven Scala 2.11 项目模板，之所以特定于 Scala 2.11.x, 是因为换成 Scala 2.12.x 后其他的依赖也改动很大，目前主流上像 Spark(当前版本 2.2) 还是只支持 Scala 2.11.<br/><br/>
+如果安装了 giter8 的话，只需要输入一行命令<br/><br/>
+<pre class="lang:sh decode:true  ">$ g8 yabqiu/maven-scala2.11-archetype<br/><br/>
+Maven Scala 2.11 project template <br/><br/>
+name [Maven Scala Project]: My Scala Test
+package [cc.unmi]: 
+version [1.0-SNAPSHOT]: <br/><br/>
+Template applied in /Users/yanbin/Workspaces/./my-scala-test</pre>
+<br/>
+再回答三个关于项目名，包名，版本的问题，一个基本的 Maven Scala 2.11 的项目便立马呈现在了你的面前。<br/><br/>
+关于  giter8(g8) 的使用请参考我一年多前的一篇日志：<a href="/giter8-put-project-layout-on-github/">Giter8 -- 把项目布局模板放到 GitHub 上</a><br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://www.ivankrizsan.se/2016/03/27/creating-a-scala-project-with-maven-dependency-management-for-gatling-testing-in-intellij-idea/">Creating a Scala Project with Maven Dependency Management for Gatling Testing in IntelliJ IDEA</a></li>
+    <li><a href="https://github.com/spark-in-action/scala-archetype-sparkinaction">spark-in-action/scala-archetype-sparkinaction</a></li>
+    <li><a href="https://docs.scala-lang.org/tutorials/scala-with-maven.html">SCALA WITH MAVEN</a></li>
+</ol>
+<br/>
+&nbsp;

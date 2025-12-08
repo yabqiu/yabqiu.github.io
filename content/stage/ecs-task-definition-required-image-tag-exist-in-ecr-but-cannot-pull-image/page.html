@@ -1,0 +1,243 @@
+---
+title: ECS Task Definition 中需要的 image:tag 明明在 ECR 中存在却找不到 image
+url: /ecs-task-definition-required-image-tag-exist-in-ecr-but-cannot-pull-image/
+date: 2024-10-17T21:43:51-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - AWS
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13784 
+wpStatus: publish
+views: 83
+lastmod: 2024-10-17T21:43:51-05:00
+---
+
+这是近些天遇到的一个问题，因为早先使用 ECS 为求快速验证新的 Docker Image, 一直是用相同的 Tag 覆盖 ECR 中原有的 Docker Image，然后停掉 ECS 中相应的 Task, 新的 Task 起来，拉取最新 Docker Image，这样不用重新部署 Infrastructure, 以最小的改动就能达到偷梁换柱的效果。比如下面的情景：</p>
+<br/>
+<ol>
+    <li>ECS 任务定义中所用的 Image 是 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo:1.10</li>
+    <li>构建新的 Docker Image, 然后再 docker push 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo:1.10</li>
+    <li>覆盖后，在 ECR 中将有两个 Tag,  刚 push 的是 <code>1.10</code>, 被覆盖的变成 <code>-</code>, 多次覆盖将会产生更多的 <code>-</code></li>
+    <li>停掉 ECS 相应的 Task, 新的 Task 起来，<span style="color: #000000;">拉取 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo:1.10 代表的新镜像</span></li>
+</ol>
+<br/>
+这种做法在以前是灵验的，每次修改代码，覆盖现有 Tag, 重启 Task 就能快速测试, 不用重新创建 Task Definition 和别的 Infrastructure。<br/><br/>
+然而最近突然不起作用了，本地不断的修改代码，构建新的镜像，覆盖原有 Tag, 重启 Task, 可是依旧跑的是老代码。怀疑 ECR 中的 Image 有问题，用 docker pull 下来看确实是新代码，就差进到 ECS Task 实例中去找问题。而且即使是重新运行 Terraform 来部署整个 Infrastructure 都无济于事，就是 aws_ecs_service 中指定了 force_new_deployment = true 也没辙，因为只要 Docker Image 的 Tag 没变,  Terraform 就认为是 <span style="color: #008000;">no change</span>。<!--more--><br/><br/>
+当时临时的解决方案是每次通过变换 Image Tag 和重新执行 Terraform 脚本更新 Task Definition，新的 Task Definition 版本就会取到新的 Image，问题一时是被隐藏了起来。<br/><br/>
+不过有次看到覆盖 Image Tag 太多次，把降级下来的 <code>-</code> 的 Image 都删除了，重启 ECS Task 后发现出错了<br/><br/>
+<blockquote>
+Task stopped at: 2024-10-17T22:17:54.076Z<br />
+CannotPullContainerError: pull image manifest has been retried 1 time(s): failed to resolve ref 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo:latest@sha256:ff0b2bbabd0147f23a4b4b499175a2aadf4b775285ea4cfdeb7b30fa3af4bdb8: 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo:latest@sha256:ff0b2bbabd0147f23a4b4b499175a2aadf4b775285ea4cfdeb7b30fa3af4bdb8: not found<br />
+<a href="https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_cannot_pull_image.html">View troubleshooting guide</a>
+</blockquote>
+<br/>
+第一反应是查看 Task Definition 中关联的 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo:latest 还在不在，明明存在啊，为什么还会找不到 Docker Image 呢？再仔细看后面还挂了一个 @sha256:ff0b2bbabd0147f23a4b4b499175a2aadf4b775285ea4cfdeb7b30fa3af4bdb8 Image 的 Hash 摘要，这才是关键。<br/><br/>
+通过 <a href="https://docs.aws.amazon.com/AmazonECS/latest/developerguide/task_cannot_pull_image.html">View troubleshooting guide</a> 这个链接没看到有用的信息，最后找到 AWS 在 Jul 11, 2024 发的这篇文章 <a href="https://aws.amazon.com/about-aws/whats-new/2024/07/amazon-ecs-software-version-consistency-containerized-applications/">Amazon ECS now enforces software version consistency for containerized applications</a>，说的就是为防止我们这种通过 Image Tag 覆盖来替换已有 ECS Task Definition 相关联的 Docker Image 而改变了规则，在 Task Definition 内部将采用 Image Digest 哈稀关联镜像版本，AWS 认为 Tag 是 Mutable, Digest 才是 Immutable 的。<br/><br/>
+这和 AWS Lambda 使用 Docker Image 的规则是一致的，不过 AWS Lambda 强制使用 Docker Image 的 Digest 引用镜像，所以部署使用 Docker Image 的 Lambda, 相应的 Image Tag 必须存在; 而 ECS 仍然保留了用 Image Tag 的方式，而且在部署 ECS 时相应的 Image Tag 可以是不存的; 当然 ECS  也可以用 Image Digest 方式来指定镜像版本。<br/><br/>
+此种规则变更也就解释了以上发生的两个现像<br/><br/>
+<ol>
+    <li>覆盖了原有 Tag, 新起的 Task 依然拉取原来的镜像(即 tag 变成了 <code>-</code> 的镜像)，因为 Digest 关联到的还是现在是 <code>-</code> 的镜像</li>
+    <li>删除了 <code>-</code> 镜像后，Task 所引用的 Tag 看似在 ECR 中还存在，却说找不到了(不过在错误信息中也明确了旧的 Digest 值)，因为仍旧在用 Digest 找被删除的 <code>-</code> 所代表的镜像</li>
+</ol>
+<br/>
+因为 AWS Lambda 使用 Docker Image 是从一开始就规定了用 Digest 来引用，所以在 AWS 控制台可以看到 Lambda 当前所用镜像的 Digest 值，却看不到 Tag, 需要自己去找。而 ECS Task 虽然内部用 Digest 关联镜像，但无论是从 AWS 控制台还是从 terraform show 的状态中都看到镜像所对应的 Digest 值，也就无法通过 Image Tag 知道当前 Task 实际运行的是哪个版本的 Docker Image，真被人替换了都未可知。<br/><br/>
+所以为明确当前 ECS Task 实际使用哪个版本的镜像，和覆盖了 ECR 中现有 Tag, 仍能用 Terraform 对同名 Tag 进行 Task Defintion 的更新，我们有两种做法<br/><br/>
+<ol>
+    <li>Task Definition 总是用 Image:Digest 的方式引用 Docker Image, 但由 Digest 定位哪个 Tag 就不那么直接，最后也把 Tag 写到 Task Definition 中某处</li>
+    <li>Task Defintion  仍用 Image:Tag 的方式引用，但在 Task Defintion 中记录下当前的  Digest 值，使得 Terraform 认为即使 Tag 没变，但 Infrastructure 实际是有变化的</li>
+</ol>
+<br/>
+上面两种方式归根结底就是要让 Task Definiton 同时携带有 Image:Tag 和  Image:Digest 信息，所以本质上是一致的。<br/><br/>
+在用 Terraform 实现时下面来采用第二种方式<br/><br/>
+<pre class="lang:default decode:true">resource "aws_ecs_task_definition" "demo" {
+  family = "demo"
+  network_mode = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu = 1024
+  memory = 2048
+  task_role_arn = "arn:aws:iam::123456789012:role/ecs/ecs-task-role"
+  execution_role_arn = "arn:aws:iam::123456789012:role/ecsTaskExecutionRole"
+  container_definitions = &lt;&lt;EOF
+  [
+  {
+    "name": "demo",
+    "image": "${data.aws_ecr_repository.demo.arn}:${local.image_tag}",
+    "essential": true,
+    "command": ["sh", "-c", "cat /etc/os-release &amp;&amp; sleep infinity || true"],
+    "dockerLabels": {
+      "image_digest": "${data.aws_ecr_image.demo.image_digest}"
+    },
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {
+        "awslogs-group": "/aws/ecs/demo",
+        "awslogs-region": "us-east-1",
+        "awslogs-stream-prefix": "demo"
+      }
+    }
+  }
+]
+EOF
+}<br/><br/>
+resource "aws_ecs_service" "demo" {
+  name = "demo-service"
+  cluster = "default"
+  task_definition = aws_ecs_task_definition.demo.arn
+  launch_type = "FARGATE"
+  desired_count = 1
+  force_new_deployment = true
+  network_configuration {
+    subnets = ["subnet-aabbccdd"]
+    security_groups = ["sg-12345678"]
+  }
+}<br/><br/>
+locals {
+  image_tag = "latest"
+}<br/><br/>
+data aws_ecr_repository demo {
+  name = "demo"
+}<br/><br/>
+data aws_ecr_image demo {
+  repository_name = "demo"
+  image_tag       = local.image_tag
+}
+</pre>
+<br/>
+加上有关 logConfiguration  的配置只是方便于用 CloudWatch 查看当前运行的 Image 版本。<br/><br/>
+上面代码用创建一个 ECS Service, 执行后看到在 Task Defintion 中就有了下方的内容<br/><br/>
+<pre class="lang:default decode:true">dockerLabels   = {
+    image_digest = "sha256:6169c4bcc1982095067d85edf58fdcc3bd8505aef728610c5b728f3cf1cec46b"
+}<br/><br/>
+image          = "arn:aws:ecr:us-east-1:913903414417:repository/demo:latest"</pre>
+<br/>
+用 dockerLabels 纯粹是找一个地方寄生当前所用 Docker Image 的 Digest 值，放在别处也行，如 environment 中。这样的话，即使下次 Push 的 Docker Image Tag 保持不变，Task Definition 中的 image_digest 值会变动，Terraform 也就再也不会保持无动于衷了。<br/><br/>
+如此，在 Task Definition  能同时知道当前的 Tag 和 Digest 值，不过换了 Tag 所对应的 Docker 镜像，重启 Task 仍会使用之前 Digest 对应的镜像，也就是被 <code>-</code> 化了的镜像。<br/><br/>
+如果采用第一种方式，Terraform 代码还能更简单些，用不着 data aws_ecr_repository, 完整的代码如下(大部分重复)。当然对于前一种方式也可以只用 data aws_ecr_repository, 再从所获得的 image_uri 中分离出 repository 的 arn 出来。<br/><br/>
+<pre class="lang:default decode:true">resource "aws_ecs_task_definition" "demo" {
+  family = "demo"
+  network_mode = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu = 1024
+  memory = 2048
+  task_role_arn = "arn:aws:iam::123456789012:role/ecs/ecs-task-role"
+  execution_role_arn = "arn:aws:iam::123456789012:role/ecsTaskExecutionRole"
+  container_definitions = &lt;&lt;EOF
+  [
+  {
+    "name": "demo",
+    "image": "${data.aws_ecr_image.demo.image_uri}",
+    "essential": true,
+    "command": ["sh", "-c", "cat /etc/os-release &amp;&amp; sleep infinity || true"],
+    "dockerLabels": {
+      "image_tag": "${local.image_tag}"
+    },
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {
+        "awslogs-group": "/aws/ecs/demo",
+        "awslogs-region": "us-east-1",
+        "awslogs-stream-prefix": "demo"
+      }
+    }
+  }
+]
+EOF
+}<br/><br/>
+resource "aws_ecs_service" "demo" {
+  name = "demo-service"
+  cluster = "default"
+  task_definition = aws_ecs_task_definition.demo.arn
+  launch_type = "FARGATE"
+  desired_count = 1
+  force_new_deployment = true
+  network_configuration {
+    subnets = ["subnet-aabbccdd"]
+    security_groups = ["sg-12345678"]
+  }
+}<br/><br/>
+locals {
+  image_tag = "latest"
+}<br/><br/>
+data aws_ecr_image demo {
+  repository_name = "demo"
+  image_tag       = local.image_tag
+}</pre>
+<br/>
+执行后在 Task Definition 中相关信息就是<br/><br/>
+<pre class="lang:default decode:true">dockerLabels   = {
+    image_tag = "latest"
+}<br/><br/>
+image          = "913903414417.dkr.ecr.us-east-1.amazonaws.com/demo@sha256:6169c4bcc1982095067d85edf58fdcc3bd8505aef728610c5b728f3cf1cec46b"</pre>
+<br/>
+data.aws_ecr_image.demo.image_url 就是一个完整的含有 Digest 值的镜像 URL。<br/><br/>
+两种方法的前提都是要先把需要 Docker Image 传上去，再运行 Terraform 部署 Task，因为 <code>data</code> 需要查找相应 Tag 的 Digest 值。从前只用 Tag 的方式则在没有相应 Docker Image 的情况下也能部署 Task，再上传 Docker Image 后 Task 还能取到最新 Image 执行。<br/><br/>
+不管何种方式, ECS 总是通过 Image:Digest 来获取 Image 版本的，所以用 "image": "Image:Digest" 的方式还是更严格的。使用 "image": "Image:Tag" 方式表面上方便确定当前使用的镜像版本，但对于 ECS 那种 Digest 不透明的行为更难猜测试运行时实际加载的哪个 Image 版本，只有等到相应 Digest 不见了的时候才知道出大问题了。<br/><br/>
+<h3>当部署 ECS Task 时对应的 Image:Tag 尚不存在时又是如何确将来的 Image 版本呢？</h3><br/><br/>
+和 AWS Lambda 不同的是，在部署 ECS Task 时指定 Image:Tag 可以是不存在的，部署完 Task Definition 之后再将相应的 Image:Tag 传到 ECR 中去，比如 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo:xyz, 那么问题来了，ECS 是怎么确定将来要使用的 Image 的  Digest 呢？demo:xyz 不存在时肯定是会出现类似的错误<br/><br/>
+<blockquote>
+CannotPullContainerError: pull image manifest has been retried 1 time(s): failed to resolve ref 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo:xxx: 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo:xyz: not found
+</blockquote>
+<br/>
+因为 Digest 未知，所以只说的是 demo:xyz 找不到<br/><br/>
+这时候上传一个 demo:xyz 去<br/><br/>
+<blockquote>
+docker pull ubuntu:16.04<br />
+docker tag ubuntu:16.04 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo:xyz<br />
+docker push 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo:xyz
+</blockquote>
+<br/>
+ 再观察, 成功启动了 Task, 控制台输出为<br/><br/>
+<blockquote>
+NAME="Ubuntu"<br />
+VERSION="16.04.7 LTS (Xenial Xerus)"<br />
+ID=ubuntu<br />
+ID_LIKE=debian<br />
+PRETTY_NAME="Ubuntu 16.04.7 LTS"<br />
+VERSION_ID="16.04"<br />
+HOME_URL="http://www.ubuntu.com/"<br />
+SUPPORT_URL="http://help.ubuntu.com/"<br />
+BUG_REPORT_URL="http://bugs.launchpad.net/ubuntu/"<br />
+VERSION_CODENAME=xenial<br />
+UBUNTU_CODENAME=xenial
+</blockquote>
+<br/>
+版本没错，再来移花接木，试试<br/><br/>
+<blockquote>
+docker pull ubuntu:18.04<br />
+docker tag ubuntu:18.04 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo:xyz<br />
+docker push 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo:xyz
+</blockquote>
+<br/>
+ECR 中是这样子的<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/10/ecr-images-tag-override.png"><img class="aligncenter wp-image-13788" src="https://yanbin.blog/wp-content/uploads/2024/10/ecr-images-tag-override-800x117.png" alt="" width="850" height="124" /></a><br/><br/>
+把现有的 Task 关掉，让它重启一个新的观察会取哪一个 Docker Image, 启动后从控制台的输出来看还是用的 ubuntu:16.04 的版本<br/><br/>
+<blockquote>
+NAME="Ubuntu"<br />
+VERSION="16.04.7 LTS (Xenial Xerus)"<br />
+ID=ubuntu<br />
+ID_LIKE=debian<br />
+PRETTY_NAME="Ubuntu 16.04.7 LTS"<br />
+VERSION_ID="16.04"<br />
+HOME_URL="http://www.ubuntu.com/"<br />
+SUPPORT_URL="http://help.ubuntu.com/"<br />
+BUG_REPORT_URL="http://bugs.launchpad.net/ubuntu/"<br />
+VERSION_CODENAME=xenial<br />
+UBUNTU_CODENAME=xenial
+</blockquote>
+<br/>
+还是 ubuntu:16.04, 说明，如果给 Task Definition 指定的 image 是用的格式 Image:Tag，那么会在第一次通过 Image:Tag 成功获取到 Image 后用它的 Image:digest 确定下该 Task Definition 将来使用的 Image 版本。<br/><br/>
+如果删除掉 <code>-</code> 所对应的  Image，再重启 Task, 得到错误<br/><br/>
+<blockquote>
+CannotPullContainerError: pull image manifest has been retried 1 time(s): failed to resolve ref 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo:xyz@sha256:a3785f78ab8547ae2710c89e627783cfa7ee7824d3468cae6835c9f4eae23ff7: 123456789012.dkr.ecr.us-east-1.amazonaws.com/demo:xyz@sha256:a3785f78ab8547ae2710c89e627783cfa7ee7824d3468cae6835c9f4eae23ff7: not found
+</blockquote>
+<br/>
+没错，就是先前那个被覆盖的版本找不到了。也有可能 ECS 获取 Image 后会缓存到某个地方，时间长些不知会否取用  demo:xyz 所代表的新 Image 版本 - ubuntu:18.04?

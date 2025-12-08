@@ -1,0 +1,163 @@
+---
+title: 《HTTP/2 in Action》阅读笔记(一)
+url: /http-2-in-action-reading-notes-1/
+date: 2022-08-16T23:14:58-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2020/04/http2_logo.png"
+categories:
+  - Web/JS
+  - HTTP
+tags: 
+  - http
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12525 
+wpStatus: publish
+views: 460
+lastmod: 2022-10-03T16:51:48-05:00
+---
+
+本书买来有一段时日了，一直还未开始阅读，关于网络上 HTTP/2 的真实使用状态查到以下信息<br/><br/>
+<ol>
+    <li>截止 2021 年 1 月 8 日，有 50% 的网站正在使用 HTTP/2，参见 <a href="https://w3techs.com/technologies/details/ce-http2">Usage statistics of HTTP/2 for websites</a></li>
+    <li>另一篇介绍 <a href="https://almanac.httparchive.org/en/2020/http#http2-adoption">HTTP/2 Adoption</a> 说 2020 年就有 64% Web 请求是基于 HTTP/2 的</li>
+</ol>
+<br/>
+得看看我们自己的网站对 HTTP/2 的支持以及使用状况<br/><br/>
+于此同时，HTTP/3(gQUIC) 也上了议程，作为 <a href="https://datatracker.ietf.org/doc/html/rfc9114">HTTP/3</a> 的提议标准的 RFC9114 也于 2022 年 6 月 6 日由 IETF 发布。<br/><br/>
+本书首先介绍的是关于 HTTP 协议从 0.9 到 1.0, 再到 1.1 的变迁史。<br/><br/>
+关于 IPv4 和 IPv6<br/><br/>
+IP 报文的前四位表示协议版本，所以 0100 就是 4。版本 0 ～ 3 是留给实验用的，5 设计为 Intenet 流协议的，例如实时音视频，像 VoIP, 实际上也因为地址数量的限制没被使用。所以就跳到了 IPv6，字节为  0110。后续的 IP 协议版本 7, 8, 9 都被预定了(比如中国的 IPv9 - 冷)，所以再有新的 IP 协议版本的放丈是 IPv10<!--more--><br/><br/>
+下面是访问 <code>curl http://google.com</code> 时用 Wireshark 抓下来的数据包<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/08/ipv4-google-com.png"><img class="aligncenter wp-image-12527" src="https://yanbin.blog/wp-content/uploads/2022/08/ipv4-google-com-800x697.png" alt="" width="786" height="685" /></a><br/><br/>
+这是在 Linux 下访问 curl http://ipv6.google.com 时用命令 <code>tcpdump 'tcp port 80' -w target.cap</code> 抓下的包，然后在 Wireshark 中打开该 cap 文件<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/08/ipv6-google-com-1.png"><img class="aligncenter wp-image-12528" src="https://yanbin.blog/wp-content/uploads/2022/08/ipv6-google-com-1-800x550.png" alt="" width="850" height="585" /></a><br/><br/>
+HTTP(Hypertext Transfer Protocol) 最早设计用来传输带链接的超文本，后来 HTTP 不只用来传文本了，还传图片等任何类型的数据，但我们还是继续用 Hypertext 这个词。<br/><br/>
+OSI - Open Systems Interconnection<br/><br/>
+HTTP 是文本形式的协议 request-response<br/><br/>
+HTTP 0.9 只有 GET method, 没有 HTTP 头的概念，只是单行的命令，回车是可选的，被设计为请求完即关闭连接，只用来传送文本，它发布于 1991 年<br/><br/>
+<blockquote>
+$ telnet www.google.com 80   [或 nc www.google.com 80]<br />
+.....<br />
+GET /     [默认版本为 HTTP/0.9, 应该 GET / HTTP/1.1]
+</blockquote>
+<br/>
+通过 telnet 发送的请求在 Wireshare 好像不能正常识别为 HTTP 请求。如果用 HTTP/1.0 或 HTTP/1.0, 在输入完命令<br/><br/>
+<blockquote>
+GET / HTTP/1.1 ⏎⏎
+</blockquote>
+<br/>
+后必须两次回车才能发送出请求，大约第一个回车是产生空行，第二个回车送出请求<br/><br/>
+如果用 <code>GET / HTTP/1.1</code> 完成一个请求后连接不会被关闭(telnet 或 nc 不退出)，可以继续发送其他的 HTTP 请求。因为 HTTP/1.1 可以重用连接，HTTP/1.0 都不行. <code>GET / HTTP/1.1</code> 是否会关闭连接可以用来验证 Web 服务端是否支持连接的重用, 在 Ubuntu 20.04 上 <code>apt install apache2</code> 默认安装的 Apache2 就不能重用连接, 可是它的 KeepAlive 是 On<br/><br/>
+ HTTP/1.0 作为 <a href="https://tools.ietf.org/html/rfc1945">RFC 1945</a> 发布于 1996 年 5 月，加入 HEAD 和 POST; <code>GET /</code> 未指定版本时默认仍为 HTTP/0.9; Request 和 Response 加入了头信息，如允许重定向，条件请求和错误状态; 引入了三位数字的状态码。有了头信息，利用 Content-type 就能支持更多的媒体类型。 <br/><br/>
+HTTP/1.0 因为有了头信息，所以请求需要一个额外的空行表示头信息结束，然后根据需要加上请求体<br/><br/>
+<blockquote>
+GET /page.html HTTP/1.0↩︎<br />
+Header1: Value1↩︎<br />
+Header1: Value2
+# 或<br />
+GET /page.html HTTP/1.0↩︎<br />
+Header1: Value1, Value2↩︎
+</blockquote>
+<br/>
+相同的 header 值可以分多行写或用逗号分隔写在同一行<br/><br/>
+HTTP/0.9 只有大概 700 个单词，而 HTTP/1.0 的 RFC 有近 20,000 个单词<br/><br/>
+HTTP/1.1 作为 HTTP/1.0 的增强，例如它让 HTTP 协议支持连接重用，强制的服务器头，支持缓存和响应分块(chunked encoding)。第一个 HTTP/1.1 标准发布于 1997 年 1 月, 距离 HTTP/1.0 的发布后仅 9 个月. 在 1999 年 6 月更新，并在 2014 年 6 月再一步增强，HTTP/1.1 的文档到了近 100,00 个单词。HTTP/1.1 不停的更新，每一次都会把前面的 RFC 作废弃掉，如 <a href="https://www.rfc-editor.org/rfc/rfc2616">RFC2616</a> 不断演进到了 <a href="https://www.rfc-editor.org/rfc/rfc9110">RFC9110</a>, <a href="https://www.rfc-editor.org/rfc/rfc9111">RFC9111</a>, 和 <a href="https://www.rfc-editor.org/rfc/rfc9112">RFC9112</a>。<br/><br/>
+HTTP/1.1 目前被广泛应用, HTTP/1.0 进化到 HTTP/1.1 后每一次变化基本都是对头信息的增强。<br/><br/>
+在 HTTP/1.1 中 Host 头是强制的，在 HTTP/1.0 中是可选项。比如在一个主机上(192.168.0.1) 上根据域名的不同部署了多个 Web 服务时(虚拟机)<br/><br/>
+<blockquote>
+telnet 192.168.0.1 80<br />
+GET / HTTP/1.0
+</blockquote>
+<br/>
+没有 Host 头时只能访问默认的 Web 服务，而通过 Host 头的，一个连接可访问多个 Web 服务<br/><br/>
+<blockquote>
+telnet 192.168.0.1 80<br />
+GET / HTTP/1.1<br />
+Host: aa.example.com↩︎↩︎<br />
+<br />
+GET / HTTP/1.1<br />
+Host: bb.example.com↩︎↩︎
+</blockquote>
+<br/>
+强制的 Host 头让一个服务器上部署多个虚拟机。实现了 HTTP/1.1 的 Web 服务为持与 HTTP/1.0 兼容，仍会处理不含  Host 头的请求。<br/><br/>
+头 <code>Connection: Keep-Alive</code>, 客户端请求服务器保持连接，允许后续请求重用访连接。现在 HTTP/1.1 重用连接已是默认行为，所以只要指定用 HTTP/1.1, 默认就会试图重用连接。如果客户端希望显式的关闭连接，发送一个 <code>Connection: close</code> 头就行。<br/><br/>
+用 telnet 可以试验重用连接的效果<br/><br/>
+<blockquote>
+telnet www.google.com 80<br />
+GET / HTTP/1.1↩︎↩︎       -- 如果 GET / HTTP/1.0↩︎ ↩︎  会立即关闭连接<br />
+..... 还能重用连接继续发送请求<br />
+GET / HTTP/1.0↩︎<br />
+Connection: Keep-Alive<br />
+..... 可能还能重用连接继续发送请求, 但对 www.google.com 的测试依旧会关闭连接<br />
+GET / HTTP/1.1↩︎<br />
+Connection: close↩︎↩︎<br />
+<span style="color: #800000;">Connection closed by foreign host.      -- 连接关闭</span>
+</blockquote>
+<br/>
+HTTP 确定响应是否发送完成，在响应头中有 <code>Content-Length</code> 标明响应体的长度，当收到相应长度的响应体即能判定收到全部数据。<br/><br/>
+HTTP/1.1 虽然能重用连接，但重用连接只能顺序的一个个处理请求，pipelining 似乎能通过一个连接发送多个请求，响应中按相同的顺序取得响应，不过支持的客户端和服务器较少。<br/><br/>
+HTTP/1.1 的其他更新(除了新增的 HTTP  方法外，其作都是通过 Header   来增强的)<br/><br/>
+<ol>
+    <li>新增了 PUT, OPTIONS, CONNECT, TRACE, 和 DELETE</li>
+    <li>Cache-Control 头，在 HTTP/1.0 中已有 Expires 头</li>
+    <li>HTTP cookie 让 HTTP 变得有状态了</li>
+    <li>增加了字符集(charset)与语言(language) 的支持</li>
+    <li>支持代理和鉴权，新的状态码</li>
+    <li>Trailer 头  -- 没用过</li>
+</ol>
+<br/>
+由于 HTTP 定义了许多标准的 header 名称，最初建议用 <code>X-</code> 前缀来定义自己的非标准 header 名称，但这种约定被 <a href="https://www.rfc-editor.org/rfc/rfc6648">RFC6648</a> 否决了。因为 <code>X</code> 常被理解为 <code>eXperimental</code> 或 <code>eXtension</code>. 建议只要选择一个非标准的头名称就行。<br/><br/>
+大致了解了 HTTP 协议的发展简史后，移步到 HTTPS。HTTP 是一个明文的协议，所以它被互联网上的任何一个节点截获便能直接读取其中的内容，没有任何安全可言。<br/><br/>
+HTTPS 是一个能加密消息的 HTTP 安全版本，传送报文使用 TLS（Transport Layer Security)，它的前身是 SSL(Secure Socket Layer)。HTTPS 相对于 HTTP 有了以下几方面的增强<br/><br/>
+<ol>
+    <li>消息加密：传送时不能被第三方解读</li>
+    <li>完整性：消息传送时不能被篡改，因为有签名验证，解密前须验证签名</li>
+    <li>鉴权：只能与确定的服务器进行通信</li>
+</ol>
+<br/>
+SSL 由 Netscape 发明，SSLv1 只出现在 Netscape 内部，所以公开发布的第一版是 SSLv2(1995), SSLv3 1996 年发布的。SSL 由 Netscape 拥有，是非标准化的, 后来标准化为 TLS。TLSv1.0 类似于 SSLv3，TLSv1.1(2006), TLSv1.2(2008) 更安全些, TLSv1.3(2018) 是目前最新的标准, 更安全更高效.<br/><br/>
+2014 年在 SSLv3 和 TLSv1.0 中发现主要的安全漏洞，应尽量用 TLSv1.1 及新的版本<br/><br/>
+对称加密使用同一串密钥加解密; 非对称加密是使用公钥加密，用私钥解密码。端与端建立加密通道时，互相交换公钥，私钥保存在本地，对方用公钥加密码，只有用本地的私钥才能解密。<br/><br/>
+HTTP 通信首先要经过 TCP 三次握手，TLS 四次握手，双方手都要麻了。TLS 有两种握手方式, RSA(Ron <strong>R</strong>ivest, Adi <strong>S</strong>hamir, Leonard <strong>A</strong>dleman) 握手和 DH 握手，以及由 DH(Diffie, Hellman) 握手衍生的 TLS1.3 握手方式。实际应用中因为公钥加密很慢，所以公钥只用来在双方协商一个共享的密钥，以后则用该共享密钥加解密.<br/><br/>
+SSL/TLS 工作在 TCP 与 HTTP 两层之间。<br/><br/>
+切换到 HTTPS 后，用 telnet 连接到 www.google.com 443 用 <code>GET / HTTP/1.1</code> 不再工作了，因为 telnet 不能理解 HTTPS. 现在要用 openssl 的 s_client 了<br/><br/>
+<blockquote>
+openssl s_client -crlf -connect www.google.com:443 -quiet<br />
+GET / HTTP/1.1↩︎↩︎<br />
+HTTP/1.1 200 OK<br />
+...
+</blockquote>
+<br/>
+然后是各种查看，发送 HTTP 请求的工具，如所有浏览器的 Developer Tools(右键 Inspect/Inspect Element 可打开), Advanced REST client, Rested, Postman(Chrome), RESTClient(Firefox), RESTMan(Opera), curl, wget, httpie, SOAP-UI, Fiddler, Wireshark。<br/><br/>
+<h3>简述 TSL 的握手流程</h3><br/><br/>
+<code>openssl cliphers -v</code> 命令可以看到客户端支持的加密套件<br/><br/>
+<blockquote>
+$ openssl ciphers -v<br />
+ECDHE-RSA-AES256-GCM-SHA384 TLSv1.2 Kx=ECDH Au=RSA Enc=AESGCM(256) Mac=AEAD<br />
+ECDHE-ECDSA-AES256-GCM-SHA384 TLSv1.2 Kx=ECDH Au=ECDSA Enc=AESGCM(256) Mac=AEAD<br />
+ECDHE-RSA-AES256-SHA384 TLSv1.2 Kx=ECDH Au=RSA Enc=AES(256) Mac=SHA384<br />
+......
+</blockquote>
+<br/>
+拧出一个来说明一个<br/><br/>
+<blockquote>
+ECDHE-RSA-AES256-GCM-SHA384
+</blockquote>
+<br/>
+ECDHE 为密钥交换算法, RSA: 身份验证算法, AES: 数据加密算法, 256: 数据加密强度, GCM: 加密(分组)模式, SHA384: 数据完整性校验算法<br/><br/>
+在握手时双方找到都支持的加密套件。<br/><br/>
+RSA 握手： 客户端与服务端交换 client_random, server_random, 客户端把由 RSA 生成的 pre_random 用服务端给过来的公钥加密回传到服务端，服务端用私钥解密它，现在在两端都有了 client_random, server_random 和 pre_random, 它们最终用它们生成密钥进行对称加密<br/><br/>
+DH 握手：与 RSA 握手类似，只是 pre_random 由 ECDHE 算法生成, 服务务同样要有私钥解密 pre_random, 最后两端都有 client_random, server_random 和 pre_random 生成的密钥进行对称加密<br/><br/>
+TLS 1.3 握手：客户端与服务端交换 client_random, client_params, server_random, server_params, 双方各自用 ECDHE 计算出相同的 pre_random, 最后对称加密的密钥也都是由 client_random, server_random 和 pre_random 生成。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://almanac.httparchive.org/en/2020/http">Web Almanac - HTTP/2</a></li>
+    <li><a href="https://juejin.cn/post/6895624327896432654">TLS 详解握手流程</a></li>
+    <li><a href="https://www.cnblogs.com/xiaolincoding/p/14318338.html">图解 ECDHE 密钥交换算法</a></li>
+</ol>

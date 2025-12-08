@@ -1,0 +1,213 @@
+---
+title: Redis 中使用服务端 Lua 脚本
+url: /redis-builtin-lua-script/
+date: 2019-09-22T01:26:44-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2019/09/redis-logo.png"
+categories:
+  - Mid-Ware
+  - Redis
+tags: 
+  - Lua
+  - Redis
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9582 
+wpStatus: publish
+views: 1615
+lastmod: 2021-03-25T22:52:50-05:00
+---
+
+Redis 自 2.6 版本起加入了服务端的 Lua 脚本支持，即增添了 <code>EVAL</code>, <code>EVALSHA</code>, <code>SCRIPT</code> 相关命令。Lua 为何物，Lua 是一个非常轻量级，强大，高效，可内嵌的脚本语言; 产自于巴西，源码和二进制包都只有 200 多 KB。当前版本的 Redis 5.0.5 中 Lua 引擎版本是 Lua 5.1(自 Redis 2.6 起就没变，当前 Lua 为 5.3.5)，可用 Redis 命令 <code>eval "return _VERSION" 0</code> 查看到。</p>
+<br/>
+本文就要探究一下如何在 Redis 中使用 Lua 脚本，以及如何简化与 Redis 的交互。比如说在 Redis 中要先获一个值，然后根据这个值再去 Redis 中获得另一个相关联的值，如果不使用 Lua 脚本就会有两次与 Redis 交互，引入 Lua 脚本可以只用一次操作。<br/><br/>
+本文不具体讲述 Lua 语言本身，只涉及到与 Redis 相关的 Lua 特性。现在来体验下 Lua 中嵌入 Lua 脚本的基本操作。<!--more--><br/><br/>
+<h3>Redis Lua 脚本 Hello World</h3><br/><br/>
+<pre class="lang:lua decode:true ">127.0.0.1:6379&gt; eval "return 'Hello World!'" 0
+"Hello World!"</pre>
+<br/>
+<code>EVAL</code> 命令用来执行 Lua 脚本，返回值直接作为 Redis 的返回值，上面最后那个 <code>0</code> 表示没有 KEY 值。<a href="https://redis.io/commands/eval">EVAL</a> 的完整命令如下<br/><br/>
+<blockquote>
+eval script numKeys key [key ...] arg [arg ...]
+</blockquote>
+<br/>
+<code>script</code> 为 Lua 脚本，<code>numKeys</code> 指明后面有多少个 KEY，一个 KEY 都没有就写成 <code>0</code>, 数完了 KEY 之后的就是一个个的 ARGV (参数) 了。如何在 Lua 脚本中引用 KEY 和 ARGV 看下面的例子<br/><br/>
+<pre class="lang:default decode:true">127.0.0.1:6379&gt; eval "return {KEYS[1]..' and '..KEYS[2],ARGV[1],ARGV[2]}" 2 key1 key2 first second
+1) "key1 and key2"
+2) "first"
+3) "second"</pre>
+<br/>
+KEYS 和 ARGV 数组(Lua 中叫做 Table)下标是基于 1 开始的，同时见识一下 Lua 拼接字符串是用 <code>..</code> 双点，<code>{}</code> 括起来的是 Lua 的数组类型表示法。<br/><br/>
+KEYS 和 ARGV  的区别，从编程上好像没什么不同，但从约定上 KEYS 对应于 Redis 的 key，而 ARGV 可以为其他任何意义的参数。<br/><br/>
+<h3>Lua 中使用 Redis 命令</h3><br/><br/>
+上面了解了在 Redis 中使用 Lua 脚本的基本用法，现在开始熔入 redis 操作。需要用到 redis.call() 来直接操作 Redis 的命令，该 Redis 命令要用到的参数可由变量, KEYS 或 ARGV 来提供<br/><br/>
+<pre class="lang:default mark:3-4 decode:true">127.0.0.1:6379&gt; set key1 hello
+OK
+127.0.0.1:6379&gt; eval "return redis.call('get', KEYS[1])" 1 key1
+"hello"</pre>
+<br/>
+更复杂一些<br/><br/>
+<pre class="lang:default mark:5 decode:true">127.0.0.1:6379&gt; set key1 key2
+OK
+127.0.0.1:6379&gt; set key2 hello
+OK
+127.0.0.1:6379&gt; eval "local key = redis.call('get', KEYS[1]); return redis.call('get', key)" 1 key1
+"hello"</pre>
+<br/>
+一次 Redis  在已知 key1 的情况下辗转由 key1 -&gt; key2 -&gt; hello 获得最终想要的值。<br/><br/>
+Lua 中可以使用任何 Redis 命令，只要注意变量类型在 Lua 与 Redis 之间的传递与匹配。<br/><br/>
+<h3>浮点类型与 Lua 数组截断</h3><br/><br/>
+Lua 的浮点类型返回给 Redis  会被转换为整形，Lua 的数组也会被 Redis 从 nil 处截断，如下例子<br/><br/>
+<pre class="lang:default decode:true">127.0.0.1:6379&gt; eval "return {1,2,3.6,'foo',nil,'bar'}" 0
+1) (integer) 1
+2) (integer) 2
+3) (integer) 3
+4) "foo"</pre>
+<br/>
+浮点数只保留整数部分，Lua 数组中 nil 后面的值被忽略掉，因为 Lua 的数组特性就是这样的，从第一个直到非 nil 元素。解决办法可用字符串类型返回浮点数，nil 值替换为空字符串 ''<br/><br/>
+<pre class="lang:default decode:true">127.0.0.1:6379&gt; eval "return {1,2,'3.6','foo','','bar'}" 0
+1) (integer) 1
+2) (integer) 2
+3) "3.6"
+4) "foo"
+5) ""
+6) "bar"</pre>
+<br/>
+不过在 Lua 在执行 <code>mget</code> 碰到不存在的 key 时是能够返回 nil 值的<br/><br/>
+<pre class="lang:default decode:true ">127.0.0.1:6379&gt; set k1 v1
+OK
+127.0.0.1:6379&gt; set k2 v2
+OK
+127.0.0.1:6379&gt; eval "return redis.call('mget', 'k1', 'k3', 'k4', 'k2')" 0
+1) "v1"
+2) (nil)
+3) (nil)
+4) "v2"</pre>
+<br/>
+这应该能启发我们另一种方式来用 Lua 返回中间包含 nil 值的数组，有待进一步研究。<br/><br/>
+<h3>Lua 脚本的多种执行方式</h3><br/><br/>
+前面都是进入到 Redis 交互界面然后用 <code>eval</code> 命令执行 Lua 脚本，接下来尝试多种不同的方式。Redis 中的 Lua 脚本是会预编译的，如果多次用 <code>eval</code>  命令执行的是相同的脚本，只会在第一次执行前编译好，其后相同的脚本直接执行编译好的代码。我们可以用 <code>script load</code> 来加载相同内容的脚本，会发现多次加载会返回一样的 hash 值<br/><br/>
+<pre class="lang:default mark:2,4 decode:true">127.0.0.1:6379&gt; script load "return {KEYS[1], ARGV[1]}"
+"d006f1a90249474274c76f5be725b8f5804a346b"
+127.0.0.1:6379&gt; script load "return {KEYS[1], ARGV[1]}"
+"d006f1a90249474274c76f5be725b8f5804a346b"
+127.0.0.1:6379&gt; script load "return {KEYS[1], ARGV[1], 1}"
+"15bb715dbe0efc8757810961d3b87146305203e1"</pre>
+<br/>
+相同的脚本内容产生一样的 hash 值，所以只要后面相同的脚本内容执行时无需重新编译。<br/><br/>
+这个 SHA1 值的是通过调用 <code>redis.sha1hex()</code> 函数产生的，见下面那种方式，只要字符串一样生成的 SHA1 值也是一样的。<br/><br/>
+<pre class="lang:default decode:true">127.0.0.1:6379&gt; script load 'return 100'
+"22cd37f569ce84333afb93ba232d04d5aa6bb87a"
+127.0.0.1:6379&gt; eval "return redis.sha1hex('return 100')" 0
+"22cd37f569ce84333afb93ba232d04d5aa6bb87a"</pre>
+<br/>
+频繁的 eval 相同的 Lua 代码块会增加一些网络传输量，特别是对于一大段较复杂的 Lua 脚本，这时候就最好显式的用 <code>SCRIPT LOAD</code> 加载，并用 <code>EVALSHA</code> 来调用它。<br/><br/>
+<pre class="lang:default mark:1-3 decode:true">127.0.0.1:6379&gt; script load "return {KEYS[1], ARGV[1]}"
+"d006f1a90249474274c76f5be725b8f5804a346b"
+127.0.0.1:6379&gt; evalsha d006f1a90249474274c76f5be725b8f5804a346b 1 key1 arg1
+1) "key1"
+2) "arg1"</pre>
+<br/>
+加载的脚本会用一个 hash 与其关联，以后使用时就用 <code>EVALSHA</code> 命令指定 hash 值来调用，KEY 或 ARGV 的传入方式是完全一样的。上面相当于执行时翻译为<br/><br/>
+<pre class="lang:default decode:true">eval "return {KEYS[1], ARGV[1]}" 1 key1 arg1</pre>
+<br/>
+关于 script load 产生的 hash 值<br/><br/>
+<a href="https://redis.io/commands/script-load">script load</a> 说是会为脚本内容产生 SHA1 对应的 hash 值，我们可以做一个有意思的测试，进一步验证脚本是预编译的。<br/><br/>
+<pre class="lang:default decode:true">127.0.0.1:6379&gt; script flush                      -- 清除所有的脚本
+OK
+127.0.0.1:6379&gt; script load "return KEYS[1]"      -- 装载脚本产生一个 hash
+"4a2267357833227dd98abdedb8cf24b15a986445"
+127.0.0.1:6379&gt; evalsha 4a2267357833227dd98abdedb8cf24b15a986445 1 hello
+"hello"
+127.0.0.1:6379&gt; script flush                      -- 再次清除所有的脚本
+OK
+127.0.0.1:6379&gt; evalsha 4a2267357833227dd98abdedb8cf24b15a986445 1 hello    -- 前面装载的脚本不存在了
+(error) NOSCRIPT No matching script. Please use EVAL.
+127.0.0.1:6379&gt; script exists 4a2267357833227dd98abdedb8cf24b15a986445      -- 再次确认脚本不存在了
+1) (integer) 0
+127.0.0.1:6379&gt; eval "return KEYS[1]" 1 world      -- 这次不用 script load, 而是用 eval 来执行与前面完全相同的脚本内容
+"world"
+127.0.0.1:6379&gt; evalsha 4a2267357833227dd98abdedb8cf24b15a986445 1 haha   -- eval 针对相同的脚本产生了相同的 hash，evalsha 可直接调用
+"haha"</pre>
+<br/>
+知道了相同的脚本文件内容总是产生相同的 hash 值后，那么我们每次在程序启动的时候多次加载相同的脚本都无害的，得到相应脚本的 hash 值其他就直接使用该 hash 值来调用 Redis 中的 Lua 脚本，省却了每一次的脚本传输。<br/><br/>
+<h4>用 redis-cli + Redis 命令执行 Lua 脚本</h4><br/><br/>
+<code>redis-cli</code> shell 命令后能够直接使用 Redis 的命令，所以下面的操作与在 redis-cli 交互界面操作方式没有分别<br/><br/>
+<pre class="lang:default decode:true">$ redis-cli eval "return 1" 0
+(integer) 1
+$ redis-cli script load "return ARGV[1]"
+"098e0f0d1448c0a81dafe820f66d460eb09263da"
+$ redis-cli evalsha 098e0f0d1448c0a81dafe820f66d460eb09263da 0 arg1
+"arg1"</pre>
+<br/>
+<h4>加载 Lua 脚本文件</h4><br/><br/>
+如果 Lua 脚本比较复杂，最好是写在一个单独的 lua 脚本文件, 比如 lua 脚本文件名是 test.lua, 内容如下<br/><br/>
+<pre class="lang:lua decode:true">local key = redis.call('get', KEYS[1])
+if key == nil then
+  return nil
+else
+  return redis.call('get', key)
+end</pre>
+<br/>
+我们就可以用以下命令来加载或执行<br/><br/>
+<pre class="lang:default decode:true">$ redis-cli eval "$(cat test.lua)" 1 key1
+"hello"
+$ redis-cli script load  "$(cat test.lua)"
+"f109a1ddf4c6dd8727a080910625642bdae3f00d"
+$ redis-cli evalsha f109a1ddf4c6dd8727a080910625642bdae3f00d 1 key1
+"hello"</pre>
+<br/>
+<code>"$(cat test.lua)"</code> 的作用是读入 <code>test.lua</code> 脚本的内容放置在外部命令外，<code>test.lua</code> 中有双引号也能正确处理。<br/><br/>
+<h4>真正 redis-cli --eval 执行 Lua 脚本</h4><br/><br/>
+前面两种方式实质还是进到 redis-cli shell 再操作的，这里来看 redis-cli --eval  参数的操作，把 <code>test.lua</code> 的内容改一改更能体现 redis-cli --eval 的差异性，新的内容如下<br/><br/>
+<pre class="lang:default decode:true">return {KEYS[1], KEYS[2], ARGV[1], ARGV[2]}</pre>
+<br/>
+然后执行 redis-cli --eval 命令<br/><br/>
+<pre class="lang:default decode:true">redis-cli --eval test.lua key1 key2 , arg1 arg2
+1) "key1"
+2) "key2"
+3) "arg1"
+4) "arg2"</pre>
+<br/>
+注意到 KEYS 和 ARGV 的传递方式有变，KEYS 之前不再需要用数字告诉脚本有多少个 KEY, 而是用逗号分隔 KEYS 与 ARGV 两个群组。而且得特别留意在 <code>key2</code> 与 <code>,</code> 之间一定要有空格，否则 <code>key2,</code> 会作为一个整体，未发现单独的逗号的话，<code>key1 key2, arg1 arg2</code> 将分别作为四个 KEY。<br/><br/>
+从 Redis 3.2 起，我们可以用 <code>redis-cli --ldb --eval test.lua key1 key2 , arg1 arg2</code> 对 Lua 脚本进行调试，详情请见 <a href="https://redis.io/topics/ldb">Redis Lua scripts debugger</a><br/><br/>
+Redis 中的 Lua 脚本也不能做太耗时的操作，默认最多 5 秒(lua-time-limit 配置)，如果 5 秒中未能返回则会告诉客户端 <code>Redis is busy running a script</code>, 由客户端来决定用 <code>script kill</code> 来杀掉该 busy  的脚本。<br/><br/>
+<h3>Java Jedis 对 Lua 的支持</h3><br/><br/>
+我们在用 Jedis 库连接 Redis 服务时，Jedis 也提供了对 Lua 的支持，以下是 Jedis 中 eval 和 script 两组 API<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2019/09/jedis-lua-1.png"><img class="aligncenter wp-image-9600" src="https://yanbin.blog/wp-content/uploads/2019/09/jedis-lua-1-800x437.png" alt="" width="545" height="298" /></a><br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2019/09/jedis-lua-2.png"><img class="aligncenter wp-image-9601" src="https://yanbin.blog/wp-content/uploads/2019/09/jedis-lua-2-800x280.png" alt="" width="545" height="191" /></a><br/><br/>
+此处还是来体验一下当传入一批 key 时，Lua 中怎么用 <code>mget</code> 命令来处理，显然我们不该用 KEYS[1], KEYS[2], ... KEYS[n] 来接收，在 Lua 在对 KEYS 循环逐个 get 的话性能上是个问题。<br/><br/>
+<pre class="lang:default decode:true  ">Jedis jedis = new Jedis("localhost");
+Object value = jedis.eval("return redis.call('mget', unpack(KEYS))", 4, "k1", "k3", "k2", "k4");
+//Object value = jedis.eval("return redis.call('mget', KEYS[1], KEYS[2], KEYS[3], KEYS[4])",
+//4, "k1", "k3", "k2", "k4");  // 谁知道会有多少个 KEY 传入
+System.out.println(value);
+</pre>
+<br/>
+得到执行结果<br/><br/>
+<blockquote>
+[v1, null, v2, null]
+</blockquote>
+<br/>
+有了 Lua 的 unpack 函数能够进行如下转换<br/><br/>
+<blockquote>
+Java 的 Varargs -&gt; Lua Array -&gt; Redis 的  Varargs
+</blockquote>
+<br/>
+<h3>关于执行 Lua 脚本的权限</h3><br/><br/>
+Redis 集群中分 primary 和 replica  节点类型，replica 是只读的，但是在 replica 上也可以执行 <code>script load</code> 命令加载脚本得到一个 hash, 并执行 <code>evalsha &lt;hash&gt;</code>。只是在 replica 上加载的脚本内部不能执行写入操作，例如 :<code>redis.call('set', 'a', 'b')</code>。还有一点要注意，replica 上加载的脚本不会同步到其他节点上，而在 primary 上加载的脚本可以任意节点上使用相同的 hash 执行。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://redis.io/topics/ldb">Redis Lua scripts debugger</a></li>
+    <li><a href="https://www.compose.com/articles/a-quick-guide-to-redis-lua-scripting/">A Speed Guide to Redis Lua Scripting</a></li>
+    <li><a href="http://www.runoob.com/lua/lua-tutorial.html">Lua 教程</a></li>
+    <li><a href="https://redisbook.readthedocs.io/en/latest/feature/scripting.html">Redis 设计与实现 - Lua 脚本</a></li>
+    <li><a href="https://www.redisgreen.net/blog/intro-to-lua-for-redis-programmers/">Lua: A Guide for Redis Users</a></li>
+</ol>
+<br/>
+&nbsp;

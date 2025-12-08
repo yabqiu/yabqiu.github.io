@@ -1,0 +1,87 @@
+---
+title: Java 何日能随意实现自定义的对象装箱
+url: /java-how-to-implements-custom-autobox/
+date: 2011-01-11T06:31:47-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - autobox
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3045 
+wpStatus: publish
+views: 375
+lastmod: 2021-09-03T12:09:32-05:00
+---
+
+Java 步入到 Tiger 后增加了自动拆装箱特性，构造 Integer 不用 Integer i = new Integer(1); 或者 Integer i = Integer.valueOf(1); 只要写成 Integer i=1 就行了。Java 的自动拆装箱只是针对基本类型与其封装类型之间的转换，无法自定义类似的行为，比如想实现某个自定义类 Item，能够通过 Item i = 1; 就完成从整形 1 到自定义类的自动装箱功能。</p>
+<br/>
+Java 在目前还是没办法做到的，当然也是我自己的一个猜想。Java 的自动拆装箱与 C# 相比也是要弱些，C# 中 int 仅仅是 Int32 这样的类型的别名，所以它们也是等效的，声明 int i=0; 你就可以呼叫 i.ToString() 方法了。可以说 C# 比 Java 更对象化了。<br/><br/>
+现在来看下 C++ 是怎么实现自定义类的 Item i = 10; 这样的声明的，见代码：<!--more--><br/><br/>
+<pre class="lang:default decode:true ">#include &lt;stdio.h&gt;<br/><br/>
+class Item {
+private:
+    int id;
+public:
+    Item(){} //Item j; 会调用这个构造函数
+    Item(char c){//Item j = 'a'; 会调它
+        printf("Call Construct Item(char c).\n");
+        this-&gt;id = c;
+    }
+    Item(int id){ //Item i = 10; 自动调用该构造函数
+        printf("Call Construct Item(int id).\n");
+        this-&gt;id = id;
+    }
+    inline int GetId(){
+        return this-&gt;id;
+    }
+};<br/><br/>
+int main(int argc, char* argv[])
+{
+    Item i = 10;
+    printf("i.id is %d\n",i.GetId());<br/><br/>
+    Item j = 'a';
+    printf("j.id is %d\n",j.GetId());
+    return 0;
+}</pre>
+<br/>
+执行上面的代码控制台输出：<br/><br/>
+<span style="color: #ffffff;"><span style="background-color: #000000;">Call Construct Item(int id).<br />
+i.id is 10<br />
+Call Construct Item(char c).<br />
+j.id is 97<br />
+Press any key to continue</span></span><br/><br/>
+可以见识到当使用 Item i = 10; Item j = 'a'; 这种基本类型到对象类型的赋值时，如果能找到一个参数的且类型匹配的构造函数则会自动调用它，完成自动装箱的操作。这是很方便的。<br/><br/>
+我为什么会联想到在 Java 中想要这种功能呢，例如枚举类型：<br/><br/>
+<pre class="brush:java">public enum Week {
+    MON,TUE,WED,THU,FRI,SAT,SUN
+}</pre>
+<br/>
+想要方便的用 Week oneDay = 2; 来得到一个枚举类型，当然这样应用会破坏代码的健壮性，再就是枚举的个数较有限。但如果是放到一系列的常量定义中，如果每一个声明都写成 Item xxx = new Item(1); Item yyy = new Item(2); ....... 就会让你觉得是在做重复性的工作了，自然想偷下懒。<br/><br/>
+想要在 Java 中成熟恐怕是不用去指望的，臆想一下总还是可以的。大家知道 Java 实现装拆箱实际是通过内部方法调用来完成的。比如 Integer i = 1; int j = i; 分别调用的是 Integer 的 Integer.valueOf(int) 和 intValue() 这两个方法的。依循这种思维，假如，只是假如自定义的 Item 也实现类似的两个方法，像：<br/><br/>
+<pre class="brush:java">public class Item {
+    private int id;<br/><br/>
+    public Item(int id){
+        this.id = id;
+    }<br/><br/>
+    public static Item valueOf(int id){
+        return new Item(id);
+    }<br/><br/>
+    public int intValue(){
+        return this.id;
+    }
+}</pre>
+<br/>
+想像中的空间里存在这样的合法代码就好，能够识别类型自动调用合适的方法去转型：<br/><br/>
+<pre class="brush:java">//理想中的自定义装拆箱代码
+Item i = 10; //希望它能自动调用 valueOf(int) 方法
+int j = i; //希望它会去自动调用 intValue() 方法</pre>
+<br/>
+这只有要编译器来实现了，比如编译器在看到 Item i = 10; 时发现存在 valueOf(int) 方法就认识编译通，并且字节码自动转换为 valueOf(int) 方法的调用。对于 int j = i; 也能被编译为 int j = i.intValue() 才行，只是恐怕这种要求比洗洗体味的新闻联播变得寒冷还难。

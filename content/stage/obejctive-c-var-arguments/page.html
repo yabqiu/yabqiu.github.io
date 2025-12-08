@@ -1,0 +1,93 @@
+---
+title: Obejctive-C 中定义可变参函数
+url: /obejctive-c-var-arguments/
+date: 2011-06-16T13:38:10-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - ios
+  - objective-c
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3662 
+wpStatus: publish
+views: 2377
+lastmod: 2011-06-16T13:40:15-05:00
+---
+
+Objective-C 中有许多不定参数函数，像 NSLog(format, arg1, arg2)，还有字符串或数组在构造时所用的 [NSString stringWithFormat: format, arg1, arg2, arg3]，它们的方法原型分别是：<br/>
+<br/>
+FOUNDATION_EXPORT void NSLog(NSString *format, ...) NS_FORMAT_FUNCTION(1,2);<br/>
++ (id)stringWithFormat:(NSString *)format, ... NS_FORMAT_FUNCTION(1,2);<br/>
+<br/>
+应该去掉后面的 NS_FORMAT_FUNCTION(1,2) 来看，否来会干扰到思维。我们现在的例子还不需要这么写，至于 NS_FORMAT_FUNCTION(1,2) 的功用为何，我有时间还得好生看下。OK, 看多了 Apple 的那些可变参函数，可能反而令你感到费解，还不如来试个实际的例子：<br/>
+<pre class="brush:objc">- (void)foo:(NSString *)format, ...<br/>
+{<br/>
+    va_list args;<br/>
+    va_start(args, format);<br/>
+    NSString *str = [[NSString alloc] initWithFormat:format arguments:args];<br/>
+    va_end(args);<br/>
+<br/>
+    printf([str UTF8String]);<br/>
+<br/>
+    [str release];<br/>
+} <br/>
+<br/>
+- (IBAction) doo: (UIButton*) sender<br/>
+{<br/>
+    //须留意不定参函数的调用格式，逗号分隔的序列，应该它们整体是作为函数的一个参数传入<br/>
+    [self foo : @"My name %@, %@", @"Unmi", @"Yes"];<br/>
+}</pre>
+
+<!--more-->上面的代码我未加注释，演示的是点击界面某个按钮来触发执行的，调用 NSString 的 initWithFormat 把传入的格式字符串及后面不定数量的参数拼接成一个字符串，然后打印出：<br/>
+<br/>
+My name Unmi, Yes<br/>
+<br/>
+到现了，已经有个体验了，也看到 va_list，va_start，va_end 那几个西正是处理不定参数的关键元件。下面要稍加深入去理解它们了。<br/>
+<br/>
+现在重写前面的 foo 方法：<br/>
+<pre class="brush:objc">- (void)foo:(NSString *) format, ...<br/>
+{   <br/>
+    NSString* eachArg;<br/>
+    va_list argList;<br/>
+    if (format)                      // 第一个参数 format 是不属于参数列表的,<br/>
+    {                                  <br/>
+        va_start(argList, format);          // 从 format 开始遍历参数，不包括 format 本身.<br/>
+        while (eachArg = va_arg(argList, NSString*)) // 从 args 中遍历出参数，NSString* 指明类型<br/>
+            NSLog(@"%@",eachArg);              // 打印出每一个参数.<br/>
+        va_end(argList);<br/>
+    }<br/>
+}</pre>
+
+可以逐个打印出第一个之后的参数，如：<br/>
+<br/>
+2011-06-17 02:05:28.840 Ohh[21874:40b] Unmi<br/>
+2011-06-17 02:05:31.279 Ohh[21874:40b] Yes<br/>
+<br/>
+每一个参数都能处理，那接下来自己写更复杂的类似函数不会有什么问题了，不定参数可以指定任何实际的类型，(id) 可真是任何类型了。<br/>
+<br/>
+跟 Java 的不定参函数一样，不定的那些参数最终是作为函数的一个数组参数，Objective-C 的那堆参数也是变成函数的一个参数 args 参数列表。而且同样的，Objective-C 的不定参数，即 ... 也必须放在函数的最后面，如还有其他参数时，foo 要写成：<br/>
+<br/>
+- (void)foo: state: (BOOL) enable withFormat: (NSString *)format, ...<br/>
+<br/>
+而不能是：<br/>
+<br/>
+- (void)foo: format: (NSString *)format, ... withState: (BOOL) enable<br/>
+<br/>
+最后那几个关键件要说明一下：<br/>
+<br/>
+va_list argList：定义一个指向个数可变的参数列表指针；<br/>
+va_start(argList,statement)：使参数列表指针arg_ptr指向函数参数列表中的第一个可选参数，说明：argN是位于第一个可选参数之前的固定参数，（或者说，最后一个 固定参数；…之前的一个参数），函数参数列表中参数在内存中的顺序与函数声明时的顺序是一致的。如果有一va函数的声明是void va_test(char a, char b, char c, …)，则它的固定参数依次是a,b,c，最后一个固定参数argN为c，因此就是va_start(arg_ptr, c)。<br/>
+va_arg(argList,id)：返回参数列表中指针arg_ptr所指的参数，返回类型为type，并使指针arg_ptr指向参数列表中下一个参数。<br/>
+va_end(arg_ptr)：清空参数列表，并置参数指针arg_ptr无效。<br/>
+<br/>
+在调用的时候要在参数结尾的时候加 nil，回想下 [NSMutableArray arrayWithObjects: 1, 2, 3, nil] 这个构造过程，最后一个 nil 能让 va_arg 取参数时碰到 nil 则断定为 NO，终止循环。为何像 NSLog 调用不需要最后一个 nil？<br/>
+<br/>
+参考：1. <a href="http://www.cocoachina.com/bbs/read.php?tid-5579.html" target="_blank">关于可变参数函数的定义</a><br/>
+2. <a href="http://archive.cnblogs.com/a/1749364/" target="_blank">Object c－可变参数函数的定义</a>

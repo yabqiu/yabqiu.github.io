@@ -1,0 +1,58 @@
+---
+title: Spring 学习点滴，《Spring in Action》笔记（六）
+url: /spring-in-action-notes-6/
+date: 2007-06-16T07:56:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - Spring
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 513 
+wpStatus: publish
+views: 503
+lastmod: 2021-09-03T10:16:29-05:00
+---
+
+<ol>
+<li>Spring 提供了丰富的控制器层次，方便根据实际需求选择实现或继承那一种控制器。不像 Struts 和 WebWork 比较平坦的 Action 层次。比如 ThowawayController/MultiActionController/SimpleFormController 等。 (P254)</p></li>
+</ol>
+<br/>
+82. 继承 AbstractController 要覆盖的方法是 handleRequestInternal(request,response)；new ModelAndView("counrseList","courses",courses) 第一个参数是 view 的逻辑名，第二第三个参数是传递给 view 的名称/数值对，那要向 View 传递多个参数就还是要用 request.setAttribute() 了。(P256)<!--more--><br/><br/>
+83. 当控制器需要根据参数执行工作时，如参数绑定到业务对象，插入验证器的钩子，应该继承 AbstractCommandController，你的 Controller 中需要覆盖 handle(request,response,Object command,BindException) 方法，这个方法还需带一个控制器命令参数，并且需要在构造函数中指定命令类，如<br/><br/>
+<pre class="brush:java">public MyController(){
+    setCommandClass(MyCommand.class);
+}</pre>
+<br/>
+在使用 command 对象与 Struts 中的 ActionForm是一样的，也是通过处理方法来传递的，在 handle 方法中用 MyCommand myCommand = (MyCommand)command。<br />
+命令对象只是一个 POJO，功能相当于 Struts 的 ActionForm，能匹配接受请求中的参数，它不需要在 Spring 的配置文件中配置。留下一个疑问：要是 AbstractCommandController 能在 Spring 的配置文件中注入可能要好些，相当于 Struts 的 Action 的 FormBean 也是在 struts-config.xml 配置给 Action 的<br />
+自己试了一下，可以通过配置给 commandClass 一个全限类名字符串注册 class 属性，Spring 提供了相应的属性编辑器(P258)<br/><br/>
+<pre class="lang:default decode:true">&lt;property name="commandClass"&gt;
+    &lt;value&gt;com.unmi.MyCommand&lt;/value&gt;
+&lt;/property&gt;</pre>
+<br/>
+84. AbstractFormController(BaseCommandController的子类，所以也要设置 commandClass 属性) 有一个子类 SimpleFormController，它声明了两个属性 formView 和 successView，分别对应了在处理请求出现异常和正常时对应的 View 的逻辑名，这两个属性需要在配置文件中给配上，在你的 SimpleFormController 类中覆盖 void doSubmitAction(Object command) throws Exception 将会使用到它们，注意这个方法没有返回值的。你也可以覆盖 ModelAndView onSubmit(Ojbect command)，向 View 中传递数据，return new ModelAndView(getSuccessView(),"student",student); (P260)<br/><br/>
+85. AbstractFormController 可在接收到 HTTP GET 请求的时候显示一个表单，转向到 formView，而在接收到一个 HTTP POST 请求是处理这个表单，转向到 successView，处理时若验证不通过返回到 formView。doSubmitAction(Object command)  只处理 HTTP POST 请求操作。(P259)<br/><br/>
+86. 验证表单输入， 你的验证类必须实现 org.springframework.validation.Validator 接口，supports()方法帮助判断验证器是否适用于指定类，在 validate(Object command, Errors errors) 用 Errors 驳回任何非法数据。可使用 ValidationUtils.rejectIfXxx()、ValidationUtils.invokeValidator() 方法或者是 Errors.reject()、Erros.rejectValue() 方法。如<br/><br/>
+<pre class="brush:java">ValidationUtils.rejectIfEmpty(errors, "login", "required.login" "Login is required");
+if(!new Perl5util().match(PHONE_REGEXP,phone){
+    errors.reject("invalide.phone","Phone number is invalid");
+}</pre>
+<br/>
+最后，你需要把验证类注入给你的 CommandController 的 validator 属性<br/><br/>
+<pre class="lang:default decode:true ">&lt;property name="validator"&gt;
+    &lt;bean class="com.unmi.MyValidator"/&gt;
+&lt;/property&gt;</pre>
+<br/>
+validate 方法会在 AbstractCommandController.handleRequestInternal(request,response) 之前调用，SimpleFormController.onSubmit() 会在调用 doSubmitAction() 之后，把 errors 传递给 View。这里的 Errors 就相当于 Struts 中的 ActionErros/ActionMessages。书中未提及如何在页面显示出错信息(P263)<br/><br/>
+87. P262 中写的 StudentValidator 类有方法 validate()、validatePhone() 和 validateEmail() 方法，但是在 validate() 中却没有调用其他两个 validateXxx() 方法。(P262)<br/><br/>
+88. 在讨论下面的向导式表单之前，来闲话一下 Spring MVC。Spring MVC 相对它的 AOP 来控制事物权限来说，名声太小了些，多数人都会选择用其他的 MVC 框架，如 Struts1/Strus2/WebWork/JSF 等，Spring MVC 只能说它与 IOC 结合紧密，实际的设计上似乎过于复杂，不易于使用。<br/><br/>
+89. 譬如 Controller 的类层次太多，继承这个 Controller 类要实现这个方法，继承那个 Controller 类要实现那个方法，有些麻烦。尤其是在维护代码时，如果发现原有的 Controller 类不适合现在场景需要切换到继承另一个 Controller 时，要实现的方法名又得改改。对于容许多种 HandlerMapping (URL 映射到哪个 Controller) 的并存会让开发者有时茫然不知所措，某个 URL 会导向到哪里不清淅。<br/><br/>
+90. Spring MVC 中把输入验证逻辑与数据对象分离，还是很值得肯定的。不过 Spring MVC 中用代码来校验的做法这相比于 Struts 和 WebWork 中用配置方式来进行验证要纸级一些。还不知道 Spring MVC 支不支持配置方式来验证输入数据的合法性。还有就是前面提过，ModelAndView 只适于传递一个属性到请求中，当有多个请求属性仍需用 Servlet API 来塞值。

@@ -1,0 +1,192 @@
+---
+title: Hibernate 映射枚举(Enum) 类型的属性
+url: /hibernate-map-enum-type-field/
+date: 2016-12-14T01:24:45-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/12/hibernate_log.png"
+categories:
+  - Hibernate
+tags: 
+  - Enum
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7637 
+wpStatus: publish
+views: 4306
+lastmod: 2021-06-22T15:16:41-05:00
+---
+
+在数据库中我们一般用整数或字符串来表示枚举值(有些数据库(如 MySQL)本身带有枚举类型), 而在使用 Hibernate 时实体对象中也用 Integer 或 String 来表示枚举就不那么友好了。试想来我们这样定义实体对象的两个属性<br/><br/>
+<blockquote>
+@Entity<br />
+public class User {<br />
+  ....
+  public Integer type;  //0: Individual 类型，1: Company 类型<br />
+  public String gender;  //可取值 Male 和 Female<br />
+}
+</blockquote>
+<br/>
+这样的定义很不严谨，type 和 gender 理论上可取任何值，这会造成表中数据的混乱。其实 Hibernate 在 Java 实体对象中是可以直接用枚举类型与数据库中的整数或字符串映射，需用到 <code>@Enumerated</code> 注解，用法如下：<!--more--><br/><br/>
+<pre class="brush:java">import javax.persistence.*;<br/><br/>
+@Entity
+public class User {
+  enmu Type { Individual, Company }
+  enum Gender { Male, Female }<br/><br/>
+  @Id @GeneratedValue
+  @Column(name = "id")
+  public Long id;<br/><br/>
+  @Enumerated(EnumType.ORDINAL)
+  @Column(name = "type")
+  public Type type;<br/><br/>
+  @Enumerated(EnumType.STRING)
+  @Column(name = "gender")
+  public Gender gender;<br/><br/>
+  public User() {}<br/><br/>
+  public User(Type type, Gender gender) {
+    this.type = type;
+    this.gender = gender;
+  }
+}</pre>
+<br/>
+<code>type</code> 和 <code>gender</code> 分别是两个枚举类型， <code>@Enumerated</code> 可选 value 属性有 <code>ORDINAL</code> 和 <code>STRING</code>. 稍后会说明这两种类型的不同，先看下相对应的 <code>user</code> 表的 Schema 定义<br/><br/>
+<pre class="brush:sql">create table user (
+  id int auto_increment,
+  type int,
+  gender varchar(8),
+  primary key(id)
+)</pre>
+<br/>
+上面是 MySQL 创建表的语法，不同数据库需稍加改动。<br/><br/>
+现在我们可以进行 User 对象的持久化与加载操作了，假如有一个 <code>UserRepository</code><br/><br/>
+<pre class="lang:default decode:true">import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;<br/><br/>
+public interface UserRepository extends JpaRepository&lt;User, Integer&gt;, JpaSpecificationExecutor {
+}</pre>
+<br/>
+例如下面那样的操作<br/><br/>
+<pre class="brush:java">@Injected
+private UserRepository userRepository;<br/><br/>
+userRepository.save(new User(Type.Individual, Gender.Male);
+userRepository.save(new User(null, Gender.Female);<br/><br/>
+User user1 = userRepository.findOne(1); 
+User user2 = userRepository.findOne(2);</pre>
+<br/>
+我们会看到<br/><br/>
+<ol>
+    <li>type: Individual 时保存为 0, Company 时保存为 1</li>
+    <li>gender: Male 时保存为字符串 'Male', Female 时保存为字符串 'Female'</li>
+    <li>Java 属性为 null 值时，数据库中也是 NULL 值</li>
+    <li>当数据库中字段 type 为 NULL 时，得到的 User 对象的 type 也是 null 值; 对于 <code>gender</code> 字段也是一样的</li>
+    <li>当数据库的 type 或  gender 字段保存了非预期的值时，生成 User 对象时会产生异常， 如 type 是  -1, 2 等，gender 是 'Other'</li>
+</ol>
+<br/>
+<span style="color: #0000ff;"><strong>枚举字段在 HQL 中如何查询</strong></span><br/><br/>
+把把枚举字段以在数据库中的实际类型对象，如<br/><br/>
+<pre class="brush:sql">from User u where u.type=1 and u.gender='Female'
+select u.type, u.gender from User u; //返回的两个字段分别是 Type 和 Gender 的枚举类型</pre>
+<br/>
+现在回过头来看 <code>@Enumerated</code> 的两个取值，全部实现都在这里 <a href="https://github.com/hibernate/hibernate-orm/blob/5.1/hibernate-core/src/main/java/org/hibernate/type/EnumType.java">org.hibernate.type.EnumType</a><br/><br/>
+<ol>
+    <li>EnumType.ORDINAL：要求被映射的数据库字段类型为整形<br />
+Java 中的枚举项都有一个内部的 ordinal 值，从 0 开始编排，不能像 C/C++ 那样定制，所以如果选用这个类型时。持久化时调用 enum.oridinal() 得到整数值，加载数据时按照整数索引找到相应的枚举值。<br />
+实现为 <a href="https://github.com/hibernate/hibernate-orm/blob/5.1/hibernate-core/src/main/java/org/hibernate/type/EnumType.java#L327">OrdinaEnumValueMapper</a>, <br />
+<br />
+持久化时从枚举值转换为整形时调用 <code>setValue()</code> 方法<br />
+<pre class="brush:java"> public void setValue(PreparedStatement st, Enum value, int index) throws SQLException {
+   final Object jdbcValue = value == null ? null : extractJdbcValue( value );
+   if ( jdbcValue == null ) {
+     st.setNull( index, getSqlType() );
+     return;
+   }
+   st.setObject( index, jdbcValue, EnumType.this.sqlType );
+ }</pre>
+<br/>
+它所调用的 <code>extractJdbcValue(value)</code> 是：<br />
+<pre class="brush:java">protected Object extractJdbcValue(Enum value) {
+  return value.ordinal();
+}</pre>
+<br/>
+由上可知 Java 属性值为 null, 数据库字段也会是 NULL, 非 null 时直接调用枚举的 <code>ordinal()</code> 获得整形值。<br />
+<br />
+从数据库中加载数据生成 Java 的枚举值时调用 <code>getValue()</code> 方法<br />
+<pre class="brush:java"> public Enum getValue(ResultSet rs, String[] names) throws SQLException {
+   final int ordinal = rs.getInt( names[0] );
+   if ( rs.wasNull() ) {
+     return null;
+   }
+   return fromOrdinal( ordinal );
+ }</pre>
+<br/>
+它调用的 <code>fromOrdinal(ordinal)</code> 方法如下：<br />
+<pre class="lang:default decode:true"> private Enum fromOrdinal(int ordinal) {
+   final Enum[] enumsByOrdinal = enumsByOrdinal();
+   if ( ordinal &lt; 0 || ordinal &gt;= enumsByOrdinal.length ) {
+     throw new IllegalArgumentException(
+       String.format("Unknown ordinal value [%s] for enum class [%s]", ordinal, enumClass.getName()));
+   }
+   return enumsByOrdinal[ordinal];
+ }</pre>
+<br/>
+当数据库表中存的值为 NULL, 得到的枚举值也是 null, 当为越界的整形值是报出异常，这是合理的，既然定义该字段映射为 Java 枚举值，那么就不能乱填值。</li>
+    <li>EnumType.STRING：要求被映射的数据库字段类型为字符串<br />
+就是枚举的字面名 name，持久化时调用 enum.name() 获得这个名称，加载数据时调用 Enum.valueOf() 方法来获得枚举值<br />
+实现类为 <a href="https://github.com/hibernate/hibernate-orm/blob/5.1/hibernate-core/src/main/java/org/hibernate/type/EnumType.java#L399">NamedEnumValueMapper</a>.<br />
+<br />
+持久化时从枚举值转换为字符是调用与上同一个 <code>setValue()</code> 方法，只是 <code>extractJdbcValue(value)</code> 不一样<br />
+<pre class="brush:java">protected Object extractJdbcValue(Enum value) {
+  return value.name();
+}</pre>
+<br/>
+类似的，如果枚举值为  null， 保存到数据库后也是 NULL, 否则调用枚举的 <code>name()</code> 方法获得字符串存入数据库<br />
+<br />
+从数据库中加载数据生成 Java 的枚举值是调用 <code>getValue()</code> 方法<br />
+<pre class="brush:java"> public Enum getValue(ResultSet rs, String[] names) throws SQLException {
+   final String value = rs.getString( names[0] );
+   if ( rs.wasNull() ) {
+     return null;
+   }
+   return fromName( value );
+ }</pre>
+<br/>
+它调用 <code>fromName(value)</code> 方法<br />
+<pre class="brush:java"> private Enum fromName(String name) {
+   try {
+     if (name == null) {
+       return null;
+     }
+     return Enum.valueOf( enumClass, name.trim() );
+   }catch ( IllegalArgumentException iae ) {
+     throw new IllegalArgumentException(
+      String.format("Unknown name value [%s] for enum class [%s]",name, enumClass.getName()));
+   }
+ }</pre>
+<br/>
+数据库中是 NULL 值，没问题，得到的枚举值也是 null, 但非预期的字符串就要报出异常，正常的话调用 <code>Enum.valueOf()</code> 方法获得相应的枚举值。</li>
+</ol>
+<br/>
+ Hibernate 在使用枚举能安全的进行 null 值映身从分别调用 <code>getValue()</code> 和 <code>setValue()</code> 的入口方法就知道，入口方法各自叫做 <code>nullSafeGet()</code> 和 <code>nullSafeSet()</code><br/><br/>
+<pre class="brush:java"> public Object nullSafeGet(ResultSet rs, String[] names, SessionImplementor session, Object owner) throws SQLException {
+   if ( enumValueMapper == null ) {
+     throw new AssertionFailure( "EnumType (" + enumClass.getName() + ") not properly, fully configured" );
+   }
+   return enumValueMapper.getValue( rs, names );
+ }<br/><br/>
+ public void nullSafeSet(PreparedStatement st, Object value, int index, SessionImplementor session) throws HibernateException, SQLException {
+   if ( enumValueMapper == null ) {
+     throw new AssertionFailure( "EnumType (" + enumClass.getName() + ") not properly, fully configured" );
+   }
+   enumValueMapper.setValue( st, (Enum) value, index );
+ }</pre>
+<br/>
+以上源代码来自 Hibernate 官方代码库，但进行了重排并移除了日志相关的代码。通过阅读 Hibernate EnmuType 源代码我们可以非常的清楚它是如何工作的，以及什么情况下会出现何种状况，也就是千万不去乱改数据库中的值。<br/><br/>
+使用枚举类型进行映射有一个弊端就是，将来有一天修改了枚举类型的定义<strong><span style="color: #0000ff;">会造成数据库中的数据无法被加载</span></strong>，所以如果对改动的枚举定义(如顺序调整了-- ORDINAL; 或名称改了; 或增减了选项) 时一定要同步 update 数据库中的记录，这对于产品数据库也是个麻烦事。<span style="color: #0000ff;"><strong>这一点上还是需要谨慎的思考是否真要用 Java 的枚举值来映射</strong></span>。<br/><br/>
+而用 Integer 或 String 来作为 Java 的属性时则不会造成数据加载的异常，顶多是数据混乱，或有些值无法理解而已。<br/><br/>
+相关链接：<br/><br/>
+<ol>
+    <li><a href="http://www.codejava.net/frameworks/hibernate/hibernate-enum-type-mapping-example">Hibernate Enum Type Mapping Example</a></li>
+</ol>

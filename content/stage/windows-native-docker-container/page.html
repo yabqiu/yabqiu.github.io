@@ -1,0 +1,411 @@
+---
+title: 使用原生的 Windows Docker 容器
+url: /windows-native-docker-container/
+date: 2022-02-25T01:41:35-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2020/03/docker-2.png"
+categories:
+  - Docker
+tags: 
+  - Docker
+  - Container
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12279 
+wpStatus: publish
+views: 4403
+lastmod: 2022-03-02T23:18:35-06:00
+---
+
+一谈到 Docker 容器，按照以往的惯性思维，那就是 Linux 容器(LXC)，和 Windows 没多大关系，顶多也就是在 Windows 的 Linux 虚拟机中跑 Docker 容器。<br/><br/>
+不过自从 Windows Server 2016 开始，出现了 Windows 原生的 Docker 容器，它再也不只是 Linux 下的专利了。Docker 容器中可以运行 Windows 系统了, 每个 Windows 容器共享宿主机的 Windows 内核(--isolation=process,)，或使用一个高度优化虚拟机中的 Windows 内核(--isolation=hyperv)。<br/><br/>
+我们说自 Windows Server 2016 开始，包括现在的 Windows Server 2019, Windows Server 2022, 还有桌面系统的 Windows 10 和  11 上 借助于 <a href="https://store.docker.com/editions/community/docker-ce-desktop-windows">Docker Desktop</a> 也能跑 Windows 容器。<br/><br/>
+原本在 Windows 桌面版上安装 Docker Desktop 就能用来运行 Linux 容器，由此可知在 Windows 桌面版上(如 Windows 7, 10, 11) 可运行两种类型的容器<br/><br/>
+<ol>
+    <li>Linux 容器: 每个容器运行的是 Linux 实例，用 cgcroups 命名空间隔离资源。默认的，使用 Docker Desktop 的 LinuxEngine</li>
+    <li>Windows 容器：容器中运行的是 Windows 实例，进程隔离模式是容器共享主 机的 Windows 内核，Hyper-V 隔离模式是容器使用高度优化虚拟机的内核。需启用 Windows 的 Hyper-V 特性，并切换 Docker Desktop 使用 WindowsEngine</li>
+</ol>
+<br/>
+<!--more--><br/><br/>
+由于在传统的 LXC 的概念上加入了 Windows 容器，所以 Docker 的架构变成下面这样了<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/02/windows-docker-1.png"><img class="aligncenter wp-image-12287 size-full" src="https://yanbin.blog/wp-content/uploads/2022/02/windows-docker-1.png" alt="" width="624" height="279" /></a><br/><br/>
+关于 Windows Docker 容器的知识可参考微软的官方文档 <a href="https://docs.microsoft.com/en-us/virtualization/windowscontainers/">Containers on Windows Documentation</a>。<br/><br/>
+Windows 的最基础的镜像有以下四种，按重量级由重到轻排列：<br/><br/>
+<ol>
+    <li><a href="https://hub.docker.com/_/microsoft-windows">Windows</a>: 包含全套 Windows API 和系统服务(但不含 Server 相关的)，比如 Windows 10 镜像 20H2。</li>
+    <li><a href="https://hub.docker.com/_/microsoft-windows-server">Windows Server</a>: 包含全套 Windows API 和系统服务，允许使用多数服务特性，需要 GPU 加速就用它。</li>
+    <li><a href="https://hub.docker.com/_/microsoft-windows-servercore">Windows Server Core</a>: 只包括主要用以支持 .NET 框架的 Windows Server API 子集。也包含多数服务(如 Fax 服务就没有)。</li>
+    <li><a href="https://hub.docker.com/_/microsoft-windows-nanoserver">Nano Server</a>: 最轻量级 Windows Server 镜像，仅包含支持 .NET Core API 一些服务。</li>
+</ol>
+<br/>
+我们构建自己的镜像可选择以上基础镜像，更快捷的方式是选择别人已添加有我们需要的软件包的镜像。比如要用 Windows 下运行 Python 可选择 3.10.2-windowsservercore-ltsc2022; .net sdk4.8 的 https://mcr.microsoft.com/dotnet/framework/sdk:4.8。<br/><br/>
+粗略对比一下各版本镜像文件大小(因版本而有很大的差异)，以下是用 docker images 列出的镜像大小<br/><br/>
+<ol>
+    <li>mcr.microsoft.com/windows:20H2 大小 16.2G</li>
+    <li>mcr.microsoft.com/windows/server:ltsc2022 大小 11.4 G</li>
+    <li>mcr.microsoft.com/windows/servercore:ltsc2022 大小 4.96 G, mcr.microsoft.com/windows/servercore:ltsc2016 却有 12G</li>
+    <li>mcr.microsoft.com/windows/nanoserver:ltsc2022 大小 295 M，像是一个嵌入式系统</li>
+</ol>
+<br/>
+只能在 Windows 平台下 pull/run/build Windows 镜像，并且要求当前 Windows 平台与镜像的版本要兼容，不像 Linux 容器对当前平台没有任何要求。我们会在后面详细了解到。<br/><br/>
+Windows Server(包括目前的 Windows 2016, 2019, 2022) 安装 Docker，在 PowerShell 中执行<br/><br/>
+<blockquote>
+<span class="hljs-pscommand">Install-Module</span><span class="hljs-parameter"> -Name</span> DockerMsftProvider<span class="hljs-parameter"> -Repository</span> PSGallery<span class="hljs-parameter"> -Force</span>
+</blockquote>
+<br/>
+如提示要安装 NuGet 的话，选择 Y。如果上面命令要求 TLS 的话，请先执行<br/><br/>
+<blockquote>
+<span class="hljs-pscommand">[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12;</span>
+</blockquote>
+<br/>
+最后安装  Docker<br/><br/>
+<blockquote>
+<span class="hljs-pscommand">Install-Package</span><span class="hljs-parameter"> -Name</span> docker<span class="hljs-parameter"> -ProviderName</span> DockerMsftProvider
+</blockquote>
+<br/>
+Windows 10 或 11 下要安装 <a href="https://store.docker.com/editions/community/docker-ce-desktop-windows">Docker Desktop</a>。<br/><br/>
+接下来以 Windows 10(同样适用于 Windows 11) 为例, 看两种容器类型(Linux/Windows)的不同，为此还专门安装了一个干净的系统, 以下是测试机器的软硬件环境<br/><br/>
+<ol>
+    <li>CPU： Intel i7-7700 @3.60GHz</li>
+    <li>内存：48 GB</li>
+    <li>Windows 10 Pro, 21H1, OS Version: 10.0.19043</li>
+    <li>Docker Desktop 4.5.1 (74721), 并其要求的 WSL 2</li>
+    <li>还未开启额外的 Windows 特性，如 Containers, Hyper-V, Windows Hypervisor Platform, 但发现默认开启了 Virtual Machine Platform</li>
+</ol>
+<br/>
+<h3>Windows 下的 Linux 容器</h3><br/><br/>
+在刚安装完 Windows 10 Pro + Docker Desktop, 默认情况下，是用的 LinuxEngine，所以只能支持 Linux 容器，运行 <code>docker version</code> 查看 server/client 的版本<br/><br/>
+<pre class="lang:default mark:9,20 decode:true">C:\Users\yanbin&gt;docker version
+Client:
+ Cloud integration: v1.0.22
+ Version:           20.10.12
+ API version:       1.41
+ Go version:        go1.16.12
+ Git commit:        e91ed57
+ Built:             Mon Dec 13 11:44:07 2021
+ OS/Arch:           windows/amd64
+ Context:           default
+ Experimental:      true<br/><br/>
+Server: Docker Desktop 4.5.1 (74721)
+ Engine:
+  Version:          20.10.12
+  API version:      1.41 (minimum version 1.12)
+  Go version:       go1.16.12
+  Git commit:       459d0df
+  Built:            Mon Dec 13 11:43:56 2021
+  OS/Arch:          linux/amd64
+  Experimental:     false
+ containerd:
+  Version:          1.4.12
+  GitCommit:        7b11cfaabd73bb80907dd23182b9347b4245eb5d
+ runc:
+  Version:          1.0.2
+  GitCommit:        v1.0.2-0-g52b36a2
+ docker-init:
+  Version:          0.19.0
+  GitCommit:        de40ad0</pre>
+<br/>
+我们看到上面的  <code>Server Engine OS/Arch: linux/amd64</code>。 Server 的 linux/amd64 表示 Docker 只能运行 Linux 容器。<br/><br/>
+这时候我们可以运行<br/><br/>
+<blockquote>
+docker pull busybox<br />
+docker run busybox echo hello world!
+</blockquote>
+<br/>
+也能构建 Linux 镜像，如 Dockerfile 内容<br/><br/>
+<pre class="lang:default decode:true">FROM ubuntu:20.04
+CMD echo hello world!</pre>
+<br/>
+然后<br/><br/>
+<blockquote>
+docker build -t test .<br />
+docker run test
+</blockquote>
+<br/>
+如果此时试图去 pull 或 run 一个 Windows 容器是非法的<br/><br/>
+<blockquote>
+C:\Users\yanbin&gt; docker pull mcr.microsoft.com/windows/nanoserver:20H2<br />
+20H2: Pulling from windows/nanoserver<br />
+no matching manifest for linux/amd64 in the manifest list entries
+</blockquote>
+<br/>
+当然 run/build Windows 镜像也不行，因为在 run/build 之前都要 pull Windows 镜像。原因为与当前的 linux/amd64 不匹配。<br/><br/>
+<h3>探究 Windows 下的 Docker Desktop LinuxEngine</h3><br/><br/>
+还是用 <a href="https://yanbin.blog/docker-desktop-replacement-docker-machine/">理解 Docker Client/Server 架构, 找寻 Docker Desktop 替代品</a> 中的老办法，揭一揭 Docker Desktop 的小底<br/><br/>
+<pre class="lang:default decode:true ">c:\Users\yabqi&gt;docker context ls
+NAME                TYPE                DESCRIPTION                               DOCKER ENDPOINT                             KUBERNETES ENDPOINT   ORCHESTRATOR
+default *           moby                Current DOCKER_HOST based configuration   npipe:////./pipe/docker_engine                                    swarm
+desktop-linux       moby                                                          npipe:////./pipe/dockerDesktopLinuxEngine</pre>
+<br/>
+进到 Docker 的宿主机<br/><br/>
+<pre class="lang:default decode:true">c:\Users\yanbin&gt;docker run --net=host --ipc=host --uts=host --pid=host -it --security-opt=seccomp=unconfined --privileged --rm -v /:/host alpine chroot /host
+root@docker-desktop:/# uname -a
+Linux docker-desktop 5.10.16.3-microsoft-standard-WSL2 #1 SMP Fri Apr 2 22:23:49 UTC 2021 x86_64 GNU/Linux
+root@docker-desktop:/# free
+               total        used        free      shared  buff/cache   available
+Mem:        39336428      586016    37845116      377180      905296    37951412
+Swap:       10485760           0    10485760
+root@docker-desktop:/# cat /proc/cpuinfo | grep processor
+processor       : 0
+processor       : 1
+processor       : 2
+processor       : 3
+processor       : 4
+processor       : 5
+processor       : 6
+processor       : 7</pre>
+<br/>
+物理内存为 48G, Docker 宿主机可使用最大 39G 的内存，CPU 也可用所有的 8 个内核。这与 Mac OS X 下 Docker Desktop 默认分配置 2G 内存，CPU 总内核数一半数量是不同的。<br/><br/>
+注意，到目前为止 Windows 10 的 Hyper-V 是未启用的，用命令查看<br/><br/>
+<pre class="lang:default decode:true ">PS C:\Windows\system32&gt; Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V<br/><br/>
+
+FeatureName      : Microsoft-Hyper-V
+DisplayName      : Hyper-V Platform
+Description      : Provides the services that you can use to create and manage virtual machines and their resources.
+RestartRequired  : Possible
+State            : Disabled
+CustomProperties :</pre>
+<br/>
+<h3>切换到使用 Windows 容器</h3><br/><br/>
+如果要在 Windows 10 中使用 Windows 容器，先对 Docker Desktop 进行切换到  Windows containers，点开系统栏上的 Docker Desktop, 进入它的上下文菜单<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/02/windows-container-1.png"><img class="aligncenter wp-image-12314" src="https://yanbin.blog/wp-content/uploads/2022/02/windows-container-1.png" alt="" width="307" height="194" /></a><br/><br/>
+或者用 DockerCli 命令来切换<br/><br/>
+<blockquote>
+"c:\Program Files\Docker\Docker\DockerCli.exe" -SwitchWindowsEngine
+</blockquote>
+<br/>
+如果要从 WindowsEngine 切换回到 LinuxEngine 的话，参数就是 <code>-SwitchLinuxEngine</code><br/><br/>
+或者用 <code>-SwitchDaemon</code> 参数在 LinuxEngine 与 WindowsEngine 之间来回切换<br/><br/>
+<blockquote>
+"c:\Program Files\Docker\Docker\DockerCli.exe" -SwitchDaemon
+</blockquote>
+<br/>
+不过，现在无论是通过 UI 还是命令试图切换到 WindowsEngine 都会弹出一个错误容器<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/02/windows-container-2.png"><img class="aligncenter wp-image-12315" src="https://yanbin.blog/wp-content/uploads/2022/02/windows-container-2-800x315.png" alt="" width="799" height="314" /></a><br/><br/>
+原因就是 Hyper-V 没开启，可用 Turn Windows features on or off 界面中操作<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/02/windows-container-3.png"><img class="aligncenter wp-image-12316" src="https://yanbin.blog/wp-content/uploads/2022/02/windows-container-3-800x696.png" alt="" width="406" height="353" /></a><br/><br/>
+或用前面提示的 PowerShell 指令<br/><br/>
+<blockquote>
+Enable-WindowsOptionalFeature -Online -FeatureName $("Microsoft-Hyper-V", "Containers") -All
+</blockquote>
+<br/>
+开启 Hyper-V 后 Windows 会自动重启。完后再执行上一步操作就能成功切换 Docker Desktop 到 Window containers 模式，此时再查看 <code>docker version</code><br/><br/>
+<pre class="lang:default decode:true">C:\Users\yanbin&gt;docker version
+Client:
+ Cloud integration: v1.0.22
+ Version:           20.10.12
+ API version:       1.41
+ Go version:        go1.16.12
+ Git commit:        e91ed57
+ Built:             Mon Dec 13 11:44:07 2021
+ OS/Arch:           windows/amd64
+ Context:           default
+ Experimental:      true<br/><br/>
+Server: Docker Desktop 4.5.1 (74721)
+ Engine:
+  Version:          20.10.12
+  API version:      1.41 (minimum version 1.24)
+  Go version:       go1.16.12
+  Git commit:       459d0df
+  Built:            Mon Dec 13 11:42:13 2021
+  OS/Arch:          windows/amd64
+  Experimental:     false</pre>
+<br/>
+版本信息显示的更简单些，我们看到 Server / OS/Arch 变成了 windows/amd64。<br/><br/>
+如果此时试图运行 Linux 容器也是不行的<br/><br/>
+<blockquote>
+C:\Users\yanbin&gt;docker run busybox<br />
+Unable to find image 'busybox:latest' locally<br />
+latest: Pulling from library/busybox<br />
+docker: no matching manifest for windows/amd64 10.0.19043 in the manifest list entries.<br />
+See 'docker run --help'.
+</blockquote>
+<br/>
+构建运行 Windows 镜像/容器<br/><br/>
+<blockquote>
+C:\Users\yanbin&gt;docker run mcr.microsoft.com/windows:20H2 cmd /c "echo hello world!"<br />
+hello world!
+</blockquote>
+<br/>
+构建 Windows 镜像，Dockerfile 内容为<br/><br/>
+<pre class="lang:default decode:true ">FROM mcr.microsoft.com/windows/servercore:ltsc2016
+CMD echo hello world!</pre>
+<br/>
+<blockquote>
+C:\Users\yanbin&gt;docker build -t test .<br />
+C:\Users\yanbin&gt;docker run test<br />
+hello world!
+</blockquote>
+<br/>
+<h3>WindowsEngine 下的 Docker Desktop</h3><br/><br/>
+切换到 WindowsEngine 后看下 docker context<br/><br/>
+<pre class="lang:default decode:true">C:\Users\yanbin&gt;docker context ls
+NAME                TYPE                DESCRIPTION                               DOCKER ENDPOINT                               KUBERNETES ENDPOINT   ORCHESTRATOR
+default *           moby                Current DOCKER_HOST based configuration   npipe:////./pipe/docker_engine                                      swarm
+desktop-windows     moby                                                          npipe:////./pipe/dockerDesktopWindowsEngine</pre>
+<br/>
+出现了一个 desktop-windows，而不是先前的 desktop-linux<br/><br/>
+至于 Windows 容器的宿主机就和隔离模式有关了，有两种，分别是进程隔离和 Hyper-V 隔离<br/><br/>
+<h4>进程隔离</h4><br/><br/>
+它与 Linux 容器的 cgroups 命名隔离类似的，所有容器共享当前系统内核，容器其实就是一个当前系统下的进程。当前系统为 Windows 容器的宿主机，这时候要求所运行的容器与当前操作系统一致的版本，否则无法共享内核，也就会出现下面的错误<br/><br/>
+<blockquote>
+C:\Users\yanbin&gt;docker run -it --isolation=process mcr.microsoft.com/windows/servercore:ltsc2016 ping localhost -t<br />
+docker: Error response from daemon: hcsshim::CreateComputeSystem 2cc0e4e8ce8c0f7e8c82bef76df4a9dbf0672d6ffe29776814891ce27c6bb3fe: The container operating system does not match the host operating system.
+</blockquote>
+<br/>
+和 Linux 的容器类似，如果用 --isolation=process 启动的进程可用 <code>Get-Process</code> 命令列出来<br/><br/>
+<h4>Hyper-V 隔离</h4><br/><br/>
+docker 运行时的 <code>--isolation</code> 的默认值为 <code>hyperv</code>, 此时容器会运行在一个高度优化的虚拟机当中，容器进程也不会出现在当前系统中，而是被包裹在一个个的 <code>vmwp</code> 虚拟机进程当中。也就是说那个虚拟机才是 Windows 容器的宿主机。但哪里能查看到那个所谓高度优化的虚拟机呢？在 Hyper-V Manager 中没有，用 Get-VM 命令看列不出来，优化的太有高度了。<br/><br/>
+学习到 Windows 容器的两种隔离模式，这或许可用来解释为什么 <code>docker run -p 80:8080 ...</code> 映射端口时不通的原因，默认 hyperv 隔离时 80 开到了那个高度优化的虚拟机中了，而不是当前操作系统，应该用 <code>--isolation=process</code> 尝试下，只是必须保证当前系统版本与容器中系统版本要高度一致。----- 经验证，即使用 --isolation=process -p 80:8080, 端口还是无法映射出来。<br/><br/>
+还有启动容器的速度也许与选择的隔离模式有关，再高度优化的虚拟机也应该比进程隔离方式启动容器要慢，因为进程隔离本质上就是本地的一个进程。----- 实际测试好像差不了多少，反正都比 Linux 容器慢多了，至少一个数量级的差异。<br/><br/>
+在某一个特定的 Windows 操作系统上，并不是所有 Windows 镜像都支持进程隔离，Hyper-V 隔离都是支持的，参考 Windows 容器版本兼容性列表 <a href="https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility?tabs=windows-server-2022%2Cwindows-10-21H1">Windows container version compatibility</a>。<br/><br/>
+<h3>Windows 系统与容器版本兼容性</h3><br/><br/>
+了解这方面的内容可指导我们选择什么版本的 Windows 来构建镜像，在什么版本的 Windows 系统上运行容器。这对 Linux 容器根本不是问题，因为基本上只要是一个能运行 docker 命令的 Linux 系统就能自由的构建/运行任何 Linux 发行版的镜像。而首次接触到 Windows 容器时，选择一个 Windows 机器，并且能以 WindowsEngine 方式运行 docker 命令, 想要 pull, run 或 build 一个镜像时，头脑中仍然保有 Linux 容器的思维定式，很容易遭受挫折。<br/><br/>
+比如在 Windows 2016 上 pull mcr.microsoft.com/windows/servercore:ltsc2022 的镜像<br/><br/>
+<blockquote>
+PS C:\docker&gt; docker pull mcr.microsoft.com/windows/servercore:ltsc2022<br />
+ltsc2022: Pulling from windows/servercore<br />
+8f616e6e9eec: Extracting [==================================================&gt;] 1.252 GB/1.252 GB<br />
+898469748ff6: Download complete<br />
+failed to register layer: re-exec error: exit status 1: output: ProcessUtilityVMImage C:\ProgramData\docker\windowsfilter\ce66a282a87a379aca443a594025eee342160907305a3f4323f2baaa38d89937\Util<br />
+ityVM: The system cannot find the path specified.
+</blockquote>
+<br/>
+但 pull mcr.microsoft.com/windows/servercore:ltsc2016 是没问题的。docker run/build 基于不兼容的镜像版本也是一样的问题，因为 rub/build 之前需要先 pull。<br/><br/>
+<blockquote>
+PS C:\&gt; docker run mcr.microsoft.com/windows/servercore:ltsc2016 cmd /c "echo hello"<br />
+docker: Error response from daemon: hcsshim::CreateComputeSystem a9c5b39283e525ca8cbf688f95d7aaabfdd1eb7dd21914d9e587144a455125ca: The container operating system does not match the host operating system.
+</blockquote>
+<br/>
+因此，清楚的了解 Windows 系统与容器版本兼容性也不至于一接触 Windows 容器就可能令我们垂头丧气，甚至有些抓狂。<br/><br/>
+Windows 系统与 Windows 镜像版本的对应，以及是否支持 Hyper-V 或进程隔离请参考这个列表 <a href="https://docs.microsoft.com/en-us/virtualization/windowscontainers/deploy-containers/version-compatibility?tabs=windows-server-2022%2Cwindows-10-21H1">Windows container version compatibility</a>。基本上是新版本兼容旧版本，如 Windows Server 2019 下可运行 Windows Server 2019 和 Windows Server 2016, Windows Server 2022 就能运行从 Windows 2016 到 Windows 2022 之间所有的版本。但支持进程隔离的话，必须是平台与容器的版本一致，如 Windows Server 2019 以进程隔离方式运行 Windows 容器就只能支持 Windows Server 2019。<br/><br/>
+同样的，在用 docker pull 或 build 时也要遵行前面这个兼容性表格。构建时使用高版本操作系统平台更具广泛的兼容性，但要用到 --isolation=process 的好处运行容器时就要完全一致的版本。<br/><br/>
+这种 Windows 镜像版本与 Windows 宿主机的严格的匹配并系破坏了运行 Linux 容器的初衷，我们在一个 Linux 宿主机中运行其他的 Linux 容器根本都不用在乎是什么内核版本或发行版本。这有点像当初 Windows 对 Java 掺一手搞出个 Visual J++ 直接破坏了 Java 所号称的一次编写到处运行的口号。<br/><br/>
+<h3>AWS 对 Windows 容器的支持</h3><br/><br/>
+之前一直在 ECS 中使用 Linux 容器服务，因为定义 Task 时必须指定镜像，而那时对 Windows 容器不是一片黑，一直觉得 ECS 根本就不支持 Windows 容器。最近才注意到 AWS 早已提供了很多的优化了的 Windows Server ECS AMI 用来跑 docker Windows 容器, 如<br/><br/>
+Windows_Server-2016-English-Core-Containers-*<br />
+Windows_Server-2016-English-Full-ECS_Optimized-*<br />
+Windows_Server-2019-English-Core-Containers<br />
+Windows_Server-2019-English-Full-ECS_Optimized-*<br />
+Windows_Server-2022-English-Core-Containers-*<br />
+Windows_Server-2022-English-Full-ECS_Optimized-*<br />
+Windows_Server-20H2-English-Core-Containers<br />
+Windows_Server-20H2-Core-ECS_Optimized-*<br/><br/>
+等等<br/><br/>
+Windows 的版本可以通过 <code>ver</code>, <code>systeminfo</code> 命令获得<br/><br/>
+在选择的 Windows_Server-2016-English-Core-Containers-2016  上试图用 <code>docker run --isolation=hyperv</code> 时却提示没有 hypervisor<br/><br/>
+<blockquote>
+PS C:\docker&gt; docker run --isolation=hyperv mcr.microsoft.com/windows/servercore:ltsc2016 cmd /c "echo hello"<br />
+C:\Program Files\Docker\docker.exe: Error response from daemon: container fba5ff713c0e9a4fc439747c6792251855c06dfcb1649c3e58d72280b9d62a23 encountered an error during CreateContainer: failure<br />
+in a Windows system call: No hypervisor is present on this system. (0xc0351000) extra info.......................
+</blockquote>
+<br/>
+虽然 ECS 支持 Windows 容器，但 Windows 镜像身躯十分巨大，动不动 10G 起步，相比 Linux 的 100-200M 左右的镜像，可称是个巨兽，这会严重影响构建，推送，拉取镜像的速度。且镜像下载后启动一个 Windows 容器也比较慢。所以对于 Windows 应用程序或许要跑过 ECS, 而让  ELB 直接连向 EC2 Target Group。<br/><br/>
+<h3>启动速度测试</h3><br/><br/>
+对于同一个镜像还无法进行不同隔离模式下启动速度的测试，因为在 Windows Server 上不能用 <code>--isolation=hyperv</code> 隔离级别。<br/><br/>
+<h4>Windows 容器不同隔离模式</h4><br/><br/>
+在 Windows Server 2016 上分别以进程隔离和 Hyper-V 隔离测试启动 Windows 容器的速度<br/><br/>
+<pre class="lang:default decode:true">PS C:\docker&gt; Measure-Command {docker run --isolation=process mcr.microsoft.com/windows/servercore:ltsc2016 cmd /c "echo hello" | Out-Host} | findStr TotalSeconds
+TotalSeconds      : 6.1539651</pre>
+<br/>
+平均耗时 6.15 秒。<br/><br/>
+这与在 Linux 下启动一个 Linux 容器是无法比拟的<br/><br/>
+<pre class="lang:default decode:true">$ time docker run ubuntu:20.04 echo hello<br/><br/>
+real    0m0.361s
+user    0m0.019s
+sys 0m0.005s</pre>
+<br/>
+在 Windows 10 下启动一个 ubuntu:20.04 的时间为<br/><br/>
+<pre class="lang:default decode:true">PS C:\Windows\system32&gt; Measure-Command {docker run ubuntu:20.04 echo hello | Out-Host} | findStr TotalSeconds
+TotalSeconds      : 1.7179686</pre>
+<br/>
+<h3>总结</h3><br/><br/>
+刚开始用到 Windows 容器时头脑中总是延续着 Linux 容器的思维，哪知其实几乎是进入了另外一个世界，本来一个十分趁手的 Docker 容器在 Windows 那边却被压缩的会四处碰壁。Windows 容器不光是个头大，而且 Windows 容器启动明显示的缓慢。 <br/><br/>
+<del>至今仍有一个问题有待解决，就是用 -p 端口映射时无法在执行 docker 命令的机器上启动相应的端口。</del><br/><br/>
+所以还是能用 Linux 的地方坚决拥护 Linux，像 C# 的代码如果能用 .NET Core 解决的话一定是件幸事。<br/><br/>
+<hr /><br/><br/>
+<h3>端口映射的问题(已解决)[2022-03-02]</h3><br/><br/>
+运行 Windows  Server Docker container<br/><br/>
+<blockquote>
+docker run --name aspnet_sample --rm -it -p 8080:80 mcr.microsoft.com/dotnet/framework/samples:aspnetapp
+</blockquote>
+<br/>
+之前依旧的按照 Linux 容器的惯性，先用 <code>docker ps</code> 验证端口映射是否已设置(下面只显示 Name 和 Ports)<br/><br/>
+<blockquote>
+PS C:\Windows\system32&gt; docker ps --format "{{.Names}}: {{.Ports}}"<br />
+aspnet_sample: 0.0.0.0:8080-&gt;80/tcp
+</blockquote>
+<br/>
+端口映射没问题，从宿主机的 8080 到容器的  80<br/><br/>
+先用类似于 Linux 的 <code>netstat -na|grep 8080</code> 检查一下在宿主机上是否开启了 8080 端口<br/><br/>
+<blockquote>
+PS C:\Windows\system32&gt; netstat -na|findstr 8080<br />
+PS C:\Windows\system32&gt;
+</blockquote>
+<br/>
+发现什么都没有，再加上 <code>telnet</code> 双重验证<br/><br/>
+<blockquote>
+PS C:\Windows\system32&gt; telnet localhost 8080<br />
+Connecting To localhost...Could not open connection to the host, on port 8080: Connect failed
+</blockquote>
+<br/>
+这时候查看容器的 IP 和端口号<br/><br/>
+<pre class="lang:default decode:true">PS C:\Windows\system32&gt; docker exec aspnet_sample ipconfig<br/><br/>
+
+Ethernet adapter vEthernet (Container NIC 91439e0f):<br/><br/>
+    Connection-specific DNS Suffix  . : ec2.internal
+    Link-local IPv6 Address . . . . . : fe80::e878:9772:931:e2cd%19
+    IPv4 Address. . . . . . . . . . . : 172.25.8.94
+    Subnet Mask . . . . . . . . . . . : 255.255.240.0
+    Default Gateway . . . . . . . . . : 172.25.0.1<br/><br/>
+PS C:\Windows\system32&gt; docker exec  aspnet_sample netstat -na|findstr 80
+TCP 0.0.0.0:80 0.0.0.0:0 LISTENING
+TCP [::]:80 [::]:0 LISTENING</pre>
+<br/>
+&nbsp;<br/><br/>
+容器内启动的 80 端口是没问题的, 所以通过容器 IP 访问 http://172.25.8.94:80 是没问题的，有些地方却介绍访问 http://172.25.8.94:8080 来访问(此路不通)。而且一个理由是在更早的版本要用容器 IP，哪个更早又没说清楚。<br/><br/>
+<blockquote>
+After the application starts, navigate to <code>http://localhost:8080</code> in your web browser. You need to navigate to the application via IP address instead of <code>localhost</code> for earlier Windows versions<br />
+见 <a href="https://hub.docker.com/_/microsoft-dotnet-framework-samples/?tab=description">https://hub.docker.com/_/microsoft-dotnet-framework-samples/?tab=description</a>
+</blockquote>
+<br/>
+看到上面的景象后，基本就气馁了 -- 1) localhost 的 8080 没有打开, 2) 容器的 80 端口确实是打开了，但外部不知道容器的 IP 一般也无法直接访问容器，即使能直接访问容器(设置不同的网络类型)，那所谓的 <code>-p 8080:80</code> 端口映射根本就没必要的，因为不管有无 <code>-p</code> 参数，容器内的 <code>80</code> 端口都会开启。<br/><br/>
+前几天我就一直被这种假象所困扰，由 netstat -na 看到不主机的 8080 端口，且 telnet localhost 8080 也不通，本能的认为 Windows Server 容器的端口映射没戏，进一步用它来做 ECS 的端口映射也势将无法成功。其实这只是一个显示 Bug, 见 Open issue: <a href="https://github.com/moby/moby/issues/30300">[Windows] Port binding is not visible with 'netstat' but works correctly. #30300</a>。<br/><br/>
+这种情况下，端口映射其实是成功的，只是不能用 localhost:8080 来访问，用 <code>ipconfig</code> 找到主机 IP， 然后访问 主机 IP:8080 是能通的<br/><br/>
+<blockquote>
+<pre class="lang:default decode:true">PS C:\Windows\system32&gt; ipconfig<br/><br/>
+........<br/><br/>
+Ethernet adapter Ethernet:<br/><br/>
+   Connection-specific DNS Suffix  . : ec2.internal
+   Link-local IPv6 Address . . . . . : fe80::64ea:22d5:4620:79a8%4
+   IPv4 Address. . . . . . . . . . . : 10.255.60.241
+   Subnet Mask . . . . . . . . . . . : 255.255.255.0
+   Default Gateway . . . . . . . . . : 10.255.60.1</pre>
+</blockquote>
+<br/>
+然后 <br/><br/>
+<blockquote>
+telnet 10.255.60.241 8080
+</blockquote>
+<br/>
+也没问题的，也就是从远程访问 http://10.255.60.241:8080 是通的，自然作为 ECS 的端口映射也不是个问题<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/02/windows-container-4-1.png"><img class="aligncenter size-full wp-image-12337" src="https://yanbin.blog/wp-content/uploads/2022/02/windows-container-4-1.png" alt="" width="800" height="490" /></a><br/><br/>
+netstat -na 是个假象，localhost:8080 确实也不通，127.0.0.1:8080 也不行，也就是说启动 Windows 容器时的 <code>docker -p 8080:80</code> 只会在网卡的 8080 端口上监听，只对 <code>netstat -na</code>, 甚至是 PowerShell 命令 <code>Get-NetTCPConnection</code> 都不可见。不过再来一个 <code>-p 8080:80</code> 就能暴露问题了<br/><br/>
+<blockquote>
+PS C:\Windows\system32&gt; docker run -p 8080:80 mcr.microsoft.com/dotnet/framework/samples:aspnetapp<br />
+C:\Program Files\Docker\docker.exe: Error response from daemon: failed to create endpoint dazzling_clarke on network nat: HNS failed with error : The object already exists.
+</blockquote>
+<br/>
+端口 8080 已被占用，证明 8080 已在某个我们所看不到的地方已绑定了。<br/><br/>
+自此，在 ECS 中使用 Windows 容器值得进一步去实践，下面的任务大约就是如何控制 Windows Docker 镜像的大小，放到网速快的 Docker Registry 中。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://weblogs.asp.net/scottgu/docker-and-microsoft-integrating-docker-with-windows-server-and-microsoft-azure">Docker and Microsoft: Integrating Docker with Windows Server and Microsoft Azure</a></li>
+    <li><a href="https://developer.aliyun.com/article/62375">Docker的Windows容器初体验</a></li>
+    <li><a href="https://computingforgeeks.com/how-to-run-docker-containers-on-windows-server-2019/">Run Docker Containers on Windows Server 2019</a></li>
+</ol>

@@ -1,0 +1,84 @@
+---
+title: 写第一个 Wordpress 插件程序
+url: /my-first-wordpress-plugin/
+date: 2010-04-26T12:06:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - WordPress
+tags: 
+  - wordpress
+  - plugin
+  - php
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 188 
+wpStatus: publish
+views: 368
+lastmod: 2021-09-02T10:53:23-05:00
+---
+
+本文旨在让像我这样的 Wordpress 初入门的开发者快速体验怎么写出一个最简单能工作的插件。至于插件的工作原理就不太多说，但基本的还是要懂得，插件中会用 add_action() 或 add_filter() 方法去挂住一些事件，如显示标题、显示内容等事件，然后执行一个函数。</p>
+<br/>
+add_action() 意味着某件事情发生了，要做什么事情，add_filter() 意味着事情发生，并传来的数据可对数据进行处理。用 add_action() 还是 add_filter() 就看你实际需求了。<br/><br/>
+虽然刚开始就声明了不太想多讲插件的原理，但前面几句话却表明的差不多了。立即例子入手吧，比如我们来做一个在每篇文章内容后附加一句版权声明的话。<!--more--><br/><br/>
+在 wp-content/plugins/ 目录下新建文件插件文件：CopyrightNotice.php，内容如下：<br/><br/>
+<pre class="lang:default decode:true ">&lt;?php
+/*
+Plugin Name: Post Copyright
+Plugin URI: http://unmi.cc
+Description: This plugin is used to append a Copyright Notice to the post content.
+Version: 0.1
+Author: Unmi
+Author URI: http://unmi.cc
+License: A "Slug" license name e.g. GPL2
+*/<br/><br/>
+function copyright_notice($content=''){
+    return $content .= '&lt;hr&gt;&lt;font size=2&gt;All articles contained on this web site is copyright '
+                       .'protected. do not use or copy of them with permission. &lt;b&gt;Unmi&lt;/b&gt;&lt;/font&gt;';
+}<br/><br/>
+//用 copyright_notice 函数拦截 the_content hook
+add_filter('the_content','copyright_notice');
+?&gt;</pre>
+<br/>
+说明：<br/><br/>
+1. 注释中的插件名称 Plugin Name: Post Copyright 这一行是必不可少，否则 Wordpress 根本不认识它。其它字段是补充，最好也写上，让它在后台插件列表中好看些。<br/><br/>
+2. post_copyright() 函数的功能只是在原来文章内容 $content 后附加一句话，该函数参数是由后面 add_filter() 函数中的 hookname 决定的。<br/><br/>
+3. add_filter('the_content','post_copyright'); 的作用是，在 the_content 事件时，即输出文件内容的时候，用函数 post_copyright 去处理一下内容。就像 C++ 中那样针对 the_content hook 注册一个勾子程序 post_copyright 进行拦截。这里的 the_content 又被叫做 hookname，the_content hook 要用 add_filter() 来注册。什么 hook 用 add_filter()，什么 hook 用 add_action() 注册都是有讲究的。Wordpress  所有的 Hook 列表详见 <a href="http://adambrown.info/p/wp_hooks" target="_blank" rel="noopener">WordPress Hooks Database</a>，有上千个，其中分明了 action hook 和 filter hook，以及各个 Wordpress 版本中 hook 的变迁，恐怕你又无法正常访问这个 hook 列表页面，聪明的你，翻墙吧。<br/><br/>
+显示，修改，添加，删除什么或等等其他一系列的操作你都可以挂接上自己的程序进行加工处理。<br/><br/>
+程序写完了，需要安装和激活。因为文件在 wp-content/plugins 目录下，所以只要刷新一下后台的插件列表，就会显示出我们刚刚写的插件：<br/><br/>
+<table id="all-plugins-table" cellspacing="0">
+<tbody class="plugins">
+<tr class="inactive">
+<th class="check-column" scope="row"><input name="checked[]" type="checkbox" value="CopyrightNotice.php" /></th>
+<td class="plugin-title"><strong>Post Copyright</strong></td>
+<td class="desc">This plugin is used to append a Copyright Notice to the post content.</td>
+</tr>
+<tr class="inactive second">
+<td>&nbsp;</td>
+<td class="plugin-title">
+<div class="row-actions-visible"><span class="0"><a class="edit" title="Activate this plugin" href="plugins.php?action=activate&amp;plugin=CopyrightNotice.php&amp;plugin_status=all&amp;paged=1&amp;_wpnonce=f92ee3b55b">Activate</a> | </span><span class="1"><a class="edit" title="Open this file in the Plugin Editor" href="plugin-editor.php?file=CopyrightNotice.php">Edit</a> | </span><span class="2"><a class="delete" title="Delete this plugin" href="plugins.php?action=delete-selected&amp;checked%5B0%5D=CopyrightNotice.php&amp;plugin_status=all&amp;paged=1&amp;_wpnonce=e769affebd">Delete</a></span></div>
+</td>
+<td class="desc">Version 0.1 | By <a title="Visit author homepage" href="http://unmi.cc">Unmi</a> | <a title="Visit plugin site" href="http://unmi.cc">Visit plugin site</a></td>
+</tr>
+</tbody>
+</table>
+<br/>
+点击 Activate 把它激就行了，然后到前台就可以看到每篇文章后面都跟了一个版权声明：<br/><br/>
+<h3 class="storytitle"><a href="http://localhost/wordpress/?p=1" rel="bookmark">Hello world!</a></h3><br/><br/>
+<div class="meta">Filed under: <a title="View all posts in Uncategorized" href="http://localhost/wordpress/?cat=1" rel="category">Uncategorized</a> — admin @ 9:03 am <a class="post-edit-link" title="Edit post" href="http://localhost/wordpress/wp-admin/post.php?action=edit&amp;post=1">Edit This</a></div>
+<br/>
+<div class="storycontent">
+Welcome to WordPress. This is your first post. Edit or delete it, then start blogging!
+<hr /><span style="font-size: x-small;">All articles contained on this web site is copyright protected. do not use or copy of them with permission. <strong>Unmi</strong></span></div>
+<br/>
+这样一个插件就写完了。这个最简单的文件我们只需要一个 php 文件就行了。可是我们一般看过的插件都会很多文件，所以需要把它们安放到一个目录中去，其实即使是一个文件，也为它建立一个目录是受推崇的，这样方便扩展，更整洁。Wordpress 对插件命名很宽松的，只要避免重命，还有就是在插件目录中的挂接 hook 的 php 文件(我暂且叫它为入口文件) 最好是一望便知的。<br/><br/>
+你要把插件打成 ZIP 压缩包，通过后台来安装也行，这时候就请注意一下压缩包的目录层次，挂接 hook 的 php 程序文件必须是在根目录下或是在第一层目录中。<br/><br/>
+参考 1. <a href="http://codex.wordpress.org/Writing_a_Plugin">http://codex.wordpress.org/Writing_a_Plugin</a><br />
+        2. <a href="http://adambrown.info/p/wp_hooks" target="_blank" rel="noopener">WordPress Hooks Database</a><br />
+        3. <a title="Plugin API" href="/Plugin_API">Plugin Application Program Interface (API)</a><br />
+        4. <a href="http://codex.wordpress.org/Function_Reference" target="_blank" rel="noopener">Wordpress Function Reference</a>

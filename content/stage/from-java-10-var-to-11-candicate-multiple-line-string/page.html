@@ -1,0 +1,156 @@
+---
+title: 相比于 Java 10 的 var, 更期待 Java 11 支持多行字符串
+url: /from-java-10-var-to-11-candicate-multiple-line-string/
+date: 2018-06-16T02:24:04-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Java 11
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8865 
+wpStatus: publish
+views: 3127
+lastmod: 2018-06-16T02:39:42-05:00
+---
+
+<p>Java 六个月的版本迭代周期让我们突然间有些喘不过气来，又 Java 11 才会是一个长期支持版本，如果可能的话我们将会是从 Java 8 直接往 Java 11 跳去。在 Java 8 大行其道，裹足不前的当下，谈论着未来 Java 11 不确定的新特性，有一种看着别人家碗里的不过瘾，还要看着别人家锅里的感觉。</p>
+
+<p>本篇原本只是为了对 Java 11 潜在的原始字符串字面量(Raw String Literals)的哨探，同时考虑到 Java 10 仅有的一个语言层面的新特性 <code>var</code> <span style="text-decoration: underline;">局部变量类型推断</span>，所以顺带介绍一下。</p>
+
+<p>我这儿把它称之为 <strong>var 局部变量类型推断</strong>，说明了<code>var</code> 类型推断并不适用于类或实例的变量，或方法的参数。而且 <code>var</code> 也并未上升为一个  Java 的关键字，我们仍然可以用 <code>var</code> 作为变量或方法名。</p>
+
+<p>对局部变量用 <code>var</code> 进行类型推断的代码示例变化如下：</p>
+
+<pre class="lang:default decode:true">List&lt;String&gt; list = new ArrayList&lt;&gt;(); //Java 10 以前<br/>
+var list = new ArrayList&lt;String&gt;();    //Java 10 开始<br/>
+<br/>
+int age = 100;   //Java 10 以前<br/>
+var age = 100;   //Java 10 开始，推断为 int 类型<br/>
+<br/>
+var stream = blocks.stream();   //都不需要引入 java.util.Stream 类</pre>
+
+<p><code>var</code> 学了 <code>Scala</code> 的语法，再重复一遍，<code>var</code> 只能用于局部变量，这有一个好处就是局部变量的跨越性较小，不至于 <code>var</code> 声明的变量阅读时只有编译器知道它的确切类型。<code>var</code> 类型推断给代码书写上的变化就是对局部变量的任何类型声明都可以替代为 <code>var</code>。<!--more--></p>
+
+<p>看到前面的 <code>var</code>，仿佛觉得它摇身一变就成了 Java 的关键字，其实不然，<code>var</code> 仍然可用作普通的变量或方法名，下面的代码是可以被正常编译执行的</p>
+
+<pre class="lang:default decode:true">public static void main(String[] args) {<br/>
+    int var = 100;<br/>
+    var(var);<br/>
+}<br/>
+<br/>
+private static void var(int var) {<br/>
+    System.out.println(var);<br/>
+}</pre>
+
+<p>简单见识过 Java 10 的 <code>var</code> 后，我们再推进到尚处于愿景中的  Java 11 特性: 原始字符串字面量(Raw String Literals, 含多行字符串，避免转议，heredoc，但不包含字符串插值)。<a href="http://openjdk.java.net/jeps/326">JEP 326: Raw String Literals</a>, 仍处于候选状态，相应 Issue 是  <a href="https://bugs.openjdk.java.net/browse/JDK-8198986">JDK-8198986： 3.10.7： Raw string literals</a>, 活跃当中，优先级是  P3。不管是否能在  Java 11 还是后续的版本中加入，先了解一下这个 JEP 是干什么的。</p>
+
+<p><code>var</code> 仅让我们免去了书写变量的类型，以不变应万变，仅乎改进体验收效不甚明显，那么 JEP(JDK Enhancement Proposal) 326 将会带我们带来更大的快感。</p>
+
+<p>回顾一下我当年对  Java 的多行字符串是多么的渴望，尝试过用  Java 的编译期  AnnotationProcessor 的方式: <a href="https://yanbin.blog/java-implement-here-document/">Java 的多行字符串  Here Document 的实现</a>。后来完全对此失望了，Java 对某些众多语言共有便利特性的追逐总是慢了十拍，要多行字符串的时候就直接求助于 Scala 或 Groovy 语言，只是让一个项目变得更复杂了些。</p>
+
+<p>说几个切实的例子，由于 Java 没有多行字符串的表示法，我们在代码中写一段 SQL 语句，JSON 字符串，或  XML 字符串，我们不得不用加号换行连接，还得对其中的双引号进行转议，对正则表达式中的关键字也必须进行双重转议。</p>
+
+<pre class="lang:default decode:true">String sql = "select id, name \n "<br/>
+            + " from user \n"<br/>
+            + " where id=? \n"<br/>
+            + " and deleteFlag = 0";<br/>
+<br/>
+String json = "{\n"<br/>
+             +    "\"id\": 123,\n"<br/>
+             +    "\name\": \"Yanbin\"\n"<br/>
+             + "}";</pre>
+
+<p>上面只是一个简单示例，实际项目中的 SQL 或  JSON 会比这个更加庞大，导致大量的连接与转议，书写起来特不方便。也许会说可以在外部先写好，用工具一次性转议即可，但代码要进行修改时又苦了。所以有时候不得不把大段的类似的格式化文本外部化到文件中，只在运行时载入。</p>
+
+<p>如果候选中的 JEP 326 能够成行的话，上面的代码只要写成</p>
+
+<pre class="lang:default decode:true">String sql = `select id, name<br/>
+               from user<br/>
+               where id=?<br/>
+                 and deleteFlag = 0`;<br/>
+<br/>
+String json = `{<br/>
+                 "id": 123,<br/>
+                 "name": "Yanbin"<br/>
+               }`;</pre>
+
+<p>如果打印它们的话可保持一样的格式输出，是不是有一种所见即所得的即视感？该 <a href="http://openjdk.java.net/jeps/326">JEP 326: Raw String Literals</a>，描述的是用斜撇号(backtick) 来作为边界符，其中的字符无须进行转议，如果中间有  <code>\n</code> 或 <code>\u2022</code>, 它们都将以字面量的形式输出，所以才叫做 <code>Raw String Literals</code>。斜撇号的表示法是参考了 Go, JavaScript 的做法。Scala 或 Groovy 是用三个双引号 <code>"""</code>。</p>
+
+<p>如果字符串字面量中含有斜撇号的话，边界用双重斜撇号，如</p>
+
+<pre class="lang:default decode:true ">String query = ``<br/>
+                 SELECT `EMP_ID`, `LAST_NAME` FROM `EMPLOYEE_TB`<br/>
+                 WHERE `CITY` = ‘INDIANAPOLIS'<br/>
+                 ORDER BY `EMP_ID`, `LAST_NAME`;<br/>
+               ``;</pre>
+
+<p>下面是几个 JEP 326 中提到的问题</p>
+
+<h3>多行字符串时边界的管理</h3><br/>
+<p>如果对上面的 <code>json</code> 变量输出的控制台，将会是下面的样子 (点号代表空格)</p>
+
+<blockquote><br/>
+<p>{<br /><br/>
+................."id": 1234<br /><br/>
+................."name": "Yanbin"<br /><br/>
+.................}</p>
+
+</blockquote>
+
+<p>如果需要我们期望的漂亮格式，代码声明就得改成</p>
+
+<pre class="lang:default decode:true ">String json = `{<br/>
+    "id": 123,<br/>
+    "name": "Yanbin"<br/>
+}`;</pre>
+
+<p>也不赖，边界的管理也就发生在第一行和最末一行。该 JEP 326 中未描述边界如何控制，可看看 Scala 的做法</p>
+
+<pre class="lang:default decode:true ">val json = """|{<br/>
+              |  "id": 123,<br/>
+              |  "name": "Yanbin"<br/>
+              |}""".stripMargin</pre>
+
+<p>有了那道杠杠，总能把格式控制的漂漂亮亮。</p>
+
+<h3>边界符的选择</h3><br/>
+<p>JEP 326 中用的是一个或两个斜撇号，正式加入该特性后，都说不定。边界符的选择需避免二义性，又要在实际字符串中出现频度尽可能少的，可借鉴比较通行的用法，如</p>
+
+<blockquote><br/>
+<p><code>"""..."""</code>：                  Groovy, Kotlin, Python, Scala, Swift<br /><br/>
+<code>`...`</code>：                           Go, JavaScript<br /><br/>
+<code>@"..."</code>：                         C#<br /><br/>
+<code>R"..."</code>：                         Groovy (old style)<br /><br/>
+<code>R"xxx(...)xxx"</code>：     C/C++<br /><br/>
+<code>%(...)</code>：                         Ruby<br /><br/>
+<code>qq{...}</code>：                      Perl</p>
+
+</blockquote>
+
+<h3>关于字符串插值(interpolation)</h3><br/>
+<p>该 JEP 并不打算实现这一功能，或许在将来。因此基本第一个版本别希望下如下字符串中的变量引用与方法调会被解析</p>
+
+<pre class="lang:default decode:true ">`Hello $name, number: ${count.get()}`</pre>
+
+<h3>Heredoc 的支持</h3><br/>
+<p>Here document 是 Linux Shell 和 Perl 爱用的多行字符串表示法，以任意配对的首尾标记来框住多行字符串，例如:</p>
+
+<pre class="lang:default decode:true ">System.out.println(&lt;&lt;HTML);<br/>
+&lt;html&gt;<br/>
+    &lt;body&gt;<br/>
+        &lt;p&gt;Hello World.&lt;/p&gt;<br/>
+    &lt;/body&gt;<br/>
+&lt;/html&gt;<br/>
+HTML</pre>
+
+<p>由于该 JEP 仍处在候选状态，开发过程中，所以下载不到一个含该特性的 JDK 11 进行抢先体验，最终 JDK 11 的发布将在九月份，不知三个月后能否事与愿为。已包含在 JDK 11 的 JEP 可由该链接 <a href="http://openjdk.java.net/projects/jdk/11/">http://openjdk.java.net/projects/jdk/11/</a> 查看到，从目前迹象来看 JEP 326 进入 JDK 11 的希望很渺茫。</p>
+
+<p>关于对 Java 语言的期待，或者说自以为的 Java 语言的几个缺陷 的抱怨可参考下方 <code>相关阅读</code> 中的几篇日志。</p>

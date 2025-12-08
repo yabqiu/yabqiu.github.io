@@ -1,0 +1,196 @@
+---
+title: Play 2.0 中文资料 - Action, Controller 和 Result
+url: /play2-0-tutorials-cn-action-controller-result/
+date: 2012-10-06T13:56:04-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PlayFramework
+tags: 
+  - 翻译
+  - Scala
+  - PlayFramework
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4830 
+wpStatus: publish
+views: 2633
+lastmod: 2021-06-01T16:33:45-05:00
+---
+
+<strong><span style="font-size: medium;">什么是 Action?</span></strong><br/><br/>
+多数的请求被 Play 应用接收到，并由  <code>Action 进行处理</code>.<br/><br/>
+一个 <code>play.api.mvc.Action</code> 简单说来就是一个 <code>(play.api.mvc.Request =&gt; play.api.mvc.Result)</code> 函数，它处理请求并产生一个 result 发送给客户端.<br/><br/>
+<pre class="lang:default decode:true">val echo = Action { request =&gt;
+  Ok("Got request [" + request + "]")
+}</pre>
+<br/>
+Action 返回一个 <code>play.api.mvc.Result</code> 值, 代表着发送给 Web 客户端的 HTTP 响应. 上面的例子中 <code>Ok</code> 构造了一个 <strong>200 OK</strong> 的响应，它包含了 <strong>text/plain</strong> 类型的响应体.<br/><br/>
+<strong><span style="font-size: medium;">建造一个 Action</span></strong><br/><br/>
+<code>play.api.mvc.Action</code> 伴生对象提供有多个帮助方法用于构建 Action 值.<br/><br/>
+最简单的一个方法是以返回值为 <code>Result</code> 的表达式块作为参数:<!--more--><br/><br/>
+<pre class="brush:scala">Action {
+  Ok("Hello world")
+}</pre>
+<br/>
+这是创建 Action 的最简单的方式, 但是我们无法得到传入的请求的引用. 通常调用 Action 的时候会要求访问 HTTP 请求.<br/><br/>
+因此，还有另外一个 Action 建造器，它接收一个函数 <code>Request =&gt; Result 作为参数</code>:<br/><br/>
+<pre class="lang:default decode:true">Action { request =&gt;
+  Ok("Got request [" + request + "]")
+}</pre>
+<br/>
+经常会用 <code>implicit</code>   来标记 <code>request</code> 参数，这样可在其他的 API 需要的时候隐式的使用它:<br/><br/>
+<pre class="lang:default decode:true">Action { implicit request =&gt;
+  Ok("Got request [" + request + "]")
+}</pre>
+<br/>
+最后一种创建 Action 值的方式是指定一个附加的 <code>BodyParser</code> 作为参数:<br/><br/>
+<pre class="lang:default decode:true">Action(parse.json) { implicit request =&gt;
+  Ok("Got request [" + request + "]")
+}</pre>
+<br/>
+Body 解析器将会在本手册的后面讲到. 当前你仅需了解其他创建 Action 值的方法是使用了一个默认的任意内容请求数据体解析器 <strong>(Any content body parser)</strong>.<br/><br/>
+<strong><span style="font-size: medium;">Controller 是 action 的产生器</span></strong><br/><br/>
+<code>Controller</code> 总是一个用来产生 Action 值的单例对象.<br/><br/>
+最简单的用于定义一个 Action 产生器的案例就是一个无参并返回 Action 值的方法:<br/><br/>
+<pre class="brush:scala">package controllers<br/><br/>
+import play.api.mvc._<br/><br/>
+object Application extends Controller {<br/><br/>
+  def index = Action {
+    Ok("It works!")
+  }<br/><br/>
+}</pre>
+<br/>
+当然了, Action 产生器方法也可以带参数, 这些参数能够被 Action 闭包捕获的到:<br/><br/>
+<pre class="brush:scala">def hello(name: String) = Action {
+  Ok("Hello " + name)
+}</pre>
+<br/>
+Unmi 注: 从 Action 开始要理解下 Scala 比较灵活的语法了。首先感性的知道下 Scala 方法定义的最主要四种形式是，不妨先记下它们来：<br/><br/>
+<pre class="lang:default decode:true">def index = Action { ...... }   //不访问 request
+def index = Action { request =&gt; ...... }  //代码块中要访问 request
+def index = Action(parse.json) { ...... } //这是调用了柯里化(currying) 后的函数
+def index(name: String) = Action { ...... } //获得请求参数 name</pre>
+<br/>
+拿第二行来说明它的由来，它的完整的方法定义如下：<br/><br/>
+<pre class="lang:default decode:true">def index = {
+  Action( request =&gt;
+    ......
+  )
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: Scala 把上面的写法转换成 def index Action { request =&gt; .......} 是基于以下几个规则的：</span><br/><br/>
+<span style="color: #0000ff;">1. 如果定义的方法返回值不是 Unit 类型的话就必须要在方法实现之前加上等号</span><br/><br/>
+<span style="color: #0000ff;">2. 如果方法实现只有一条语句，或者 Scala 能够推断出方法何时结束，则可以省略掉方法体外围的大括号，此处的 index 就是直接返回 Action 方法的值</span><br/><br/>
+<span style="color: #0000ff;">3. 如果方法只有一个参数，则调用它时可以用花括号代替小括号包围参数，所以通常把 Action( request =&gt; ......) 写成了 Action{ request =&gt; ......}。这样写的好处就是它看起来像是一种内建控制结构。这里 request =&gt; ...... 是一个闭包，或称字面函数参数</span><br/><br/>
+<span style="color: #0000ff;">4. 在 Action.scala 源文件中，Action 是一个单例对象：</span><br/><br/>
+<pre class="brush:scala">/**
+ * Helper object to create `Action` values.
+ */
+object Action extends ActionBuilder</pre>
+<br/>
+<span style="color: #0000ff;">直接在对象后加上括号的写法会转去调用它相应的 apply 方法，上面的 Action 继承了特质 ActionBuilder，而在特质 ActionBuilder 中定义了如下几个 apply 方法：</span><br/><br/>
+<pre class="lang:default decode:true">/**
+ * Provides helpers for creating `Action` values.
+ */
+trait ActionBuilder {<br/><br/>
+  /**
+   * Constructs an `Action`.
+   *
+   * For example:
+   * {{{
+   * val echo = Action(parse.anyContent) { request =&gt;
+   *   Ok("Got request [" + request + "]")
+   * }
+   * }}}
+   *
+   * @tparam A the type of the request body
+   * @param bodyParser the `BodyParser` to use to parse the request body
+   * @param block the action code
+   * @return an action
+   */
+  def apply[A](bodyParser: BodyParser[A])(block: Request[A] =&gt; Result): Action[A] = new Action[A] {
+    def parser = bodyParser
+    def apply(ctx: Request[A]) = block(ctx)
+  }<br/><br/>
+  /**
+   * Constructs an `Action` with default content.
+   *
+   * For example:
+   * {{{
+   * val echo = Action { request =&gt;
+   *   Ok("Got request [" + request + "]")
+   * }
+   * }}}
+   *
+   * @param block the action code
+   * @return an action
+   */
+  def apply(block: Request[AnyContent] =&gt; Result): Action[AnyContent] = apply(BodyParsers.parse.anyContent)(block)<br/><br/>
+  /**
+   * Constructs an `Action` with default content, and no request parameter.
+   *
+   * For example:
+   * {{{
+   * val hello = Action {
+   *   Ok("Hello!")
+   * }
+   * }}}
+   *
+   * @param block the action code
+   * @return an action
+   */
+  def apply(block: =&gt; Result): Action[AnyContent] = apply(_ =&gt; block)<br/><br/>
+}</pre>
+<br/>
+<span style="color: #0000ff;">从这些源文件知道 Action 里是个闭包就行，返回是个 Result 类型。至于执行时 request 值是怎么产生的还需研究下。</span><br/><br/>
+<strong><span style="font-size: medium;">简单的 Result</span></strong><br/><br/>
+目前我们只讲述简单的 Result: 一个具有状态代码的 HTTP Result, 一系列 HTTP 头和要发送到 Web 客户端的响应体.<br/><br/>
+这些 Result 由 <code>play.api.mvc.SimpleResult 定义</code>:<br/><br/>
+<pre class="lang:default decode:true">def index = Action {
+  SimpleResult(
+    header = ResponseHeader(200, Map(CONTENT_TYPE -&gt; "text/plain")), 
+    body = Enumerator("Hello world!")
+  )
+}</pre>
+<br/>
+当然，也有数个帮助方法让你创建通用的 Result，像下面例子中的 <code>Ok</code> Result:<br/><br/>
+<pre class="brush:scala">def index = Action {
+  Ok("Hello world!")
+}</pre>
+<br/>
+这会产生与之上例中完全相同的 Result.<br/><br/>
+下面是几个创建种种 Result 的例子:<br/><br/>
+<pre class="lang:default decode:true">val ok = Ok("Hello world!")
+val notFound = NotFound
+val pageNotFound = NotFound(&lt;h1&gt;Page not found&lt;/h1&gt;)
+val badRequest = BadRequest(views.html.form(formWithErrors))
+val oops = InternalServerError("Oops")
+val anyStatus = Status(488)("Strange response type")</pre>
+<br/>
+所有的这些帮助方法可在 <code>play.api.mvc.Results</code> 特质和伴生对象中找到.<br/><br/>
+<strong><span style="font-size: medium;">重定向也是简单的 Result</span></strong><br/><br/>
+重定向浏览器到一个新的 URL 是另一类简单的 Result. 然而, 这类 Result 类型不会带上响应体.<br/><br/>
+下面是些创建重定向 Result 的几个帮助方法:<br/><br/>
+<pre class="brush:scala">def index = Action {
+  Redirect("/user/home")
+}</pre>
+<br/>
+默认是利用 <code>303 SEE_OTHER</code> 响应类型, 但是 你可以根据需要设置特别的状态码:<br/><br/>
+<pre class="brush:scala">def index = Action {
+  Redirect("/user/home", status = MOVED_PERMANENTLY)
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 返回 Result 类型的各方法定义在 Controller 所继承的 Results(.scala) 文件中，如 Ok，Redirect 等方法。</span><br/><br/>
+<strong><span style="font-size: medium;">“TODO” 虚页面</span></strong><br/><br/>
+你可以用一个定义为 <code>TODO</code> 的空的 <code>Action</code> 实现: 这个 Result 是一个标准的 ‘Not implemented yet’ 结果页:<br/><br/>
+<pre class="brush:scala">def index(name:String) = TODO</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: TODO  定义在 trait Controller(.scala) 中:</span><br/><br/>
+<pre class="brush:scala ">  val TODO = Action {
+    NotImplemented[play.api.templates.Html](views.html.defaultpages.todo())
+  }</pre>

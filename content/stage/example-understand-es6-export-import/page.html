@@ -1,0 +1,256 @@
+---
+title: 用一个例子理解 ES6 的 export/import 用法
+url: /example-understand-es6-export-import/
+date: 2020-08-09T17:57:46-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2006/07/js-logo.png"
+categories:
+  - Web/JS
+tags: 
+  - es6
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10476 
+wpStatus: publish
+views: 1471
+lastmod: 2023-03-07T20:04:17-06:00
+---
+
+使用了一段时间的 Vue.js 以后，其中有大量的 ES6 的 <code>export/import</code> 用法，如<br/><br/>
+<blockquote>
+import axios from 'axios';<br />
+import Home from '../views/Home.vue';<br />
+export default {<br />
+  data() { .... }
+</blockquote>
+<br/>
+因为目前对 ES6 的 <code>export/import</code> 用法是一知半解的，所以基本上都是基于 vue-cli 创建的项目上依葫芦画瓢，更是不太理解 vue 的项目是如何由 <code>main.js</code> -&gt; <code>App.vue</code> 把所有的 router, views, 和 components 串联起来的。为了进一步理清 Vue.js 项目的初步运行机制，现在开始着手试图通过一个例子来尽可能多的理解 ES6 的 export/import 用法。<br/><br/>
+我不是标题党，所以不可能命名如：理解 export/import 一篇就够了，全网最全诸如此类的。且本人博客主要是记录自己学习过程的，而非为了招人眼球。所以尽力吧，在一个代码例子中尽可能多的展示 export/import 的用法，为不增加代码的复杂性，有些技巧在代码后进行解释。<!--more--><br/><br/>
+首选推荐阅读 阮一峰 的 ECMAScript 6 入门中的 <a href="https://es6.ruanyifeng.com/#docs/module">Module 的语法</a>与 <a href="https://es6.ruanyifeng.com/#docs/module-loader">Module 的加载实现</a>这两章。ES6 官方的名称是 <a href="http://www.ecma-international.org/ecma-262/6.0/">ES2015</a>, 规范一直在演进，每年一个，也就是说现在都 ES2020，我还要研究  ES6(ES2015)。<br/><br/>
+<table style="width: 37.4624%;">
+<thead>
+<tr>
+<th style="width: 20.625%;">Edition</th>
+<th style="width: 35.9375%;" align="center">Official name</th>
+<th style="width: 84.0401%;" align="right">Date published</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="width: 20.625%;">ES11</td>
+<td style="width: 35.9375%;" align="center">ES2020</td>
+<td style="width: 84.0401%;" align="right">Summer 2020</td>
+</tr>
+<tr>
+<td style="width: 20.625%;">ES10</td>
+<td style="width: 35.9375%;" align="center"><a href="https://flaviocopes.com/es2019/">ES2019</a></td>
+<td style="width: 84.0401%;" align="right">Summer 2019</td>
+</tr>
+<tr>
+<td style="width: 20.625%;">ES9</td>
+<td style="width: 35.9375%;" align="center"><a href="https://flaviocopes.com/es2018/">ES2018</a></td>
+<td style="width: 84.0401%;" align="right">June 2018</td>
+</tr>
+<tr>
+<td style="width: 20.625%;">ES8</td>
+<td style="width: 35.9375%;" align="center"><a href="https://flaviocopes.com/es2017/">ES2017</a></td>
+<td style="width: 84.0401%;" align="right">June 2017</td>
+</tr>
+<tr>
+<td style="width: 20.625%;">ES7</td>
+<td style="width: 35.9375%;" align="center"><a href="https://flaviocopes.com/es2016/">ES2016</a></td>
+<td style="width: 84.0401%;" align="right">June 2016</td>
+</tr>
+<tr>
+<td style="width: 20.625%;"><a href="https://flaviocopes.com/es6/">ES6</a></td>
+<td style="width: 35.9375%;" align="center">ES2015</td>
+<td style="width: 84.0401%;" align="right">June 2015</td>
+</tr>
+</tbody>
+</table>
+<br/>
+在 ES6 之前，JavaScript 世界只能以曲线的方式来支持模块化，出现了 CommonJS 和 AMD(Asynchronously Module Definition), 和它们的统一品 UMD(Universal Module Definition)，CommonJS 用于服务端或桌面的 JS 应用。AMD 用于 Web 项目，它的常用实现有 RequireJS 和国内的一个  Sea.js。然而 ES6 的模块化(export/import) 出现把 CommonJS 和 AMD，还是 UMD 都扫入了历史文件堆。<br/><br/>
+还是马上开始吧，先来一个模块定义 <code>utils.js</code> 文件，先只写上一行来验证 <code>import</code><br/><br/>
+<pre class="lang:default decode:true">console.info('utils module imported')<br/><br/>
+export abc = 123</pre>
+<br/>
+一句话，什么都可以导出, 变量，常量，函数和类定义，当然广义上讲一切都是变量，但字面常量有些特殊。<br/><br/>
+现在来看怎么使用它，依照先前 <code>&lt;script src="utils.js"&gt;&lt;/script&gt;</code> 的惯性思维，我们写一个 index.html 文件<br/><br/>
+<pre class="lang:default decode:true ">&lt;script src="utils.js"&gt;&lt;/script&gt;</pre>
+<br/>
+用浏览器打开文件，比如 file:///Users/yanbin/test/index.html, 在浏览器的 Inspect 中会看到一个错误<br/><br/>
+<blockquote>
+utils.js:3 Uncaught SyntaxError: Unexpected token 'export'
+</blockquote>
+<br/>
+不能这么用，那么试下 <code>import</code>, 把 index.html 的内容改为<br/><br/>
+<pre class="lang:default decode:true ">&lt;script&gt;
+  import utils from './utils.js'
+&lt;/script&gt;</pre>
+<br/>
+刷新 file:///Users/yanbin/test/index.html，新的错误<br/><br/>
+<blockquote>
+index.html:9 Uncaught SyntaxError: Cannot use import statement outside a module
+</blockquote>
+<br/>
+google 了一下，说是 &lt;script&gt; 的 type 默认为 <code>text/javascript</code>，type 必须为  <code>module</code> 才能用 <code>import</code> 新语法，再次变 index.html 的内容为<br/><br/>
+<pre class="lang:default decode:true ">&lt;script type="module"&gt;
+  import utils from './utils.js'
+&lt;/script&gt;</pre>
+<br/>
+再来，新问题又来了<br/><br/>
+<blockquote>
+index.html:1 Access to script at 'file:///Users/yanbin/test/utils.js' from origin 'null' has been blocked by CORS policy: Cross origin requests are only supported for protocol schemes: http, data, chrome, chrome-extension, https.
+</blockquote>
+<br/>
+<code>import</code> 是被允许了，但不能像以往 &lt;script src="utils.js"&gt;&lt;/script&gt; 那样引入本地的 js 文件，而需要借由 http, https 等协议来引入 js 文件。还需要启动一个 web 服务来使用 <code>import</code>，我们这里选择 nodejs 的 http-server, 可以用以下方式之一来安装<br/><br/>
+<blockquote>
+$ npm install --global http-server<br />
+$ brew install http-server                 # 或
+</blockquote>
+<br/>
+在 <code>/Users/yanbin/test</code> 目录下运行 <code>http-server</code> 后，现在可以通过 http://localhost:8080/index.html 来打开页面了, 继续最后的 <code>index.html</code> 内容，在浏览器的 Inspect 中看到<br/><br/>
+<blockquote>
+utils module imported
+</blockquote>
+<br/>
+模块 <code>export/import</code> 工作正常。<br/><br/>
+再接再厉，来一个更完整的 <code>utils.js</code> 的 <code>index.html</code> 演示实例，内容分别为<br/><br/>
+<table style="border-collapse: collapse; width: 100%;">
+<tbody>
+<tr>
+<td style="width: 43.263%;">utils.js</td>
+<td style="width: 56.737%;">index.html</td>
+</tr>
+<tr>
+<td style="width: 43.263%; vertical-align: top;">
+<pre class="lang:default decode:true crayon-selected">console.info('utils module imported')   // 0<br/><br/>
+export default {
+  host: 'localhost'
+}<br/><br/>
+// 上面的 export default 写法相当于
+//var obj = { host: 'localhost' }
+//export { obj as default }<br/><br/>
+function foo() {
+  console.info('function foo');
+}<br/><br/>
+var schema = 'https';<br/><br/>
+export {
+  schema,
+  foo as fn1     // 使用别名 fn1
+};<br/><br/>
+export let endPoint = '/apis'
+export const PI = 3.14<br/><br/>
+export function fn2() {
+  console.info('function fn2')
+}<br/><br/>
+export class Circle {
+  constructor(radius) {
+    this.radius = radius
+  }<br/><br/>
+  get area() {
+    return PI * Math.pow(this.radius, 2)
+  }
+}</pre>
+</td>
+<td style="width: 56.737%; vertical-align: top;">
+<pre class="lang:default decode:true">&lt;html&gt;
+  &lt;head&gt;
+    &lt;title&gt;test ES6 module&lt;/title&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+&lt;script type="module"&gt;
+  import uu from './utils.js'
+  //相当于 import { default as uu } from './utils.js'
+ 
+  console.info(uu.host)     // 1  output: localhost<br/><br/>
+  import './utils.js'<br/><br/>
+  import { fn1, fn2 } from './utils.js'  // {} 中是对象解析的写法
+  fn1()      // 2   output: function foo
+  fn2()      // 3   output: function fn2<br/><br/>
+  console.info(api);  //4   output: /apis<br/><br/>
+  // 可以写完整路径
+  import { schema, endPoint as api } from 'http://localhost:8081/utils.js'<br/><br/>
+  import * as util from './utils.js' // 引入所有并命别名为 util
+  console.info(util.schema)   // 5    output: https
+  console.info(util.PI)       // 6    output: 3.14<br/><br/>
+  // import 函数，动态引入, ES2020 加入的支持，Chrome 已支持
+  import('./utils.js')           // 得到一个 Promise
+    .then( ({ schema, Circle }) =&gt; {
+       const c = new Circle(2)
+       console.info(`circle area: ${c.area}`)  // 7   output: 12.56
+    })
+&lt;/script&gt;
+</pre>
+&nbsp;
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+刷新 http://localhost:8080/index.html 后，在浏览器的 Console 中显示<br/><br/>
+<blockquote>
+utils module imported<br />
+localhost<br />
+function foo<br />
+function fn2<br />
+/apis<br />
+https<br />
+3.14<br />
+circle area: 12.56
+</blockquote>
+<br/>
+为方便对应，输出内容添加到了 <code>index.html</code> 中的 <code>output:</code> 上。<br/><br/>
+一些说明：<br/><br/>
+<ol>
+    <li>一个模块可以 export 多个变量(常量，函数，类)，一个模块只一个 export default { ... } 会更清晰些</li>
+    <li>import 语句是编译时静态引入，任何给它安插运行时条件都无效，也因此早于 <code>import</code> 语句的模块中的代码是可运行的</li>
+    <li>import 一个模块(js 文件) 多次只会加载模块一次，与 Java 等的 import 类型，不同于 C++ 的 #include</li>
+    <li><code>default</code> 是一个特殊别名,  方便于 <code>import axios from 'axios'</code> 这种用法。使用中注意 <code>default</code> 的有些特殊性</li>
+    <li>import 的模块必须为 <code>./</code>, <code>../</code> 或 <code>/</code>, <code>import 'utils.js</code> 会出错 <span style="color: #800000;">Uncaught TypeError: Failed to resolve module specifier "utils.js". Relative references must start with either "/", "./", or "../"</span>.</li>
+    <li>import 的模块默认不能省略扩展名，<code>import './utils.js'</code>，<code>import ./utils</code> 会提示说类似找不到 <code>http://localhost:8080/utils</code>, 除非该 js 的文件名就是 <code>utils</code>, 或者像 Webpack 介入编译让 <code>import</code> 更智能，例如 <code>import './utils'</code> 自动查找 <code>./utils.js</code> 文件或 <code>./utils/index.js</code> 文件</li>
+</ol>
+<br/>
+<h3>模块中导入别的模块再导出</h3><br/><br/>
+一个模块中导入别的模块，再导出，可以简化<br/><br/>
+<pre class="lang:default decode:true ">import { foo, bar } from 'third_party_module'
+export { foo, bar }<br/><br/>
+// 上面两行简化为一个  export
+export ( foo, bar } from 'third_party_module'</pre>
+<br/>
+别的应用别名(含 default 别名)和 <code>*</code> 发挥<br/><br/>
+<pre class="lang:default decode:true">export { foo as myFoo } from 'my_module'
+export * from 'my_module'
+export { default } from 'foo'
+export { es6 as default } from './someModule'
+export * as ns from 'my_module'      // ES2020</pre>
+<br/>
+<h3>实现模块继承</h3><br/><br/>
+继承层次其实也是维护着不同的命名空间，就是当前类中找不到的顺着继承链接往父类去找。对于非面向对象的语言，如 C++ 要实现两个结构的继承也可以这么做，把"父" 结构放在"子"结构的前部，即让"子", "父"结构共同起始指针。ES6 的模块继承让导入的第三方模块的东西再次作为自己的导出<br/><br/>
+<pre class="lang:default decode:true">export * from 'circle'<br/><br/>
+export var e = 2.71828
+export default function(x) {
+  return Math.exp(x)
+}</pre>
+<br/>
+ES6 的模块系统与 Python 的模块使用比较相近：<br/><br/>
+<ol>
+    <li>一个 js 或 py 文件就是一个模块</li>
+    <li>有 <code>from .. import ..</code>，JS 是 <code>import .. from ..</code></li>
+    <li>import 时可以 <code>as</code> 别名</li>
+    <li>Python  <code>__all__</code> 指定的内容是 <code>from .. import *</code> 的所有，JS 的 <code>import * from ..</code> 为所有 export 的内容</li>
+    <li>Python 中是 <code>_</code> 私有内容不能被引入，JS 中只有用 <code>export</code> 明确的内容才能被引用</li>
+</ol>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://www.saltycrane.com/blog/2015/12/modules-and-import-es6-python-developers/">Modules and import in ES6 for Python developers</a></li>
+    <li>各大浏览器对 ES6 的支持可以查看<a href="https://kangax.github.io/compat-table/es6/">kangax.github.io/compat-table/es6/</a></li>
+</ol>

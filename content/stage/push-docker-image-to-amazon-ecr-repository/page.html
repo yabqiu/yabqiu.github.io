@@ -1,0 +1,144 @@
+---
+title: 推送 Docker 镜像到 Amazon ECR 仓库
+url: /push-docker-image-to-amazon-ecr-repository/
+date: 2018-01-30T00:30:19-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - Docker
+  - AWS
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8466 
+wpStatus: publish
+views: 3393
+lastmod: 2021-09-10T12:52:51-05:00
+---
+
+Docker 镜像在未指定仓库时默认是从  <a href="https://hub.docker.com/">Docker Hub</a> 拉取的。如果需向 Docker Hub 推送镜像的话还可用 <code>docker login</code> 在交互中完成登陆 Docker Hub 的操作。<code>docker login</code> 的命令格式是</p>
+<br/>
+<blockquote>
+docker login [OPTIONS] [SERVER]
+</blockquote>
+<br/>
+所以我们可以连接到任何的 Docker 镜像仓库，也可以是本机，但我们这里所要介绍的是如何推送镜像到 AWS 给我们提供的 Docker 镜像仓库(Amazon ECR - Amazon Elastic Container Registry)。每个帐号下都有自己独立的仓库，镜像推送到了  Amazon ECR 后我们能够很方便的在 ECS, Batch 服务中使用它，也可以从 ECR 拉取镜像到本地来。<br/><br/>
+首先我们来做一个运行 Spring Boot Web 的简单的 Docker 镜像，假定已用 <code>mvc pacakge</code> 生成了一个可独立运行的 jar 包 <code>java-webapp-0.0.1-SNAPSHOT.jar</code> 。该应用开启一个 Web 服务，访问 http://localhost:8080 显示一行字符串 <code>Hello World!</code><br/><br/>
+创建一个目录 aws-docker, 并把 <code>java-webapp-0.0.1-SNAPSHOT.jar</code> 移入该目录，在其下创建 <code>Dockerfile</code> 文件，文件目录结构如下：<br/><br/>
+<blockquote>
+aws-docker<br />
+  ├── Dockerfile<br />
+  └── java-webapp-0.0.1-SNAPSHOT.jar
+</blockquote>
+<br/>
+<!--more-->Dockerfile 的内容是<br/><br/>
+<pre class="lang:default decode:true ">FROM openjdk:8-jre-slim
+ADD java-webapp-0.0.1-SNAPSHOT.jar app.jar<br/><br/>
+EXPOSE 8080<br/><br/>
+ENTRYPOINT [ "java", "-jar", "/app.jar" ]</pre>
+<br/>
+ 然后是确保本地安装了 <code>docker</code> 和 <code>aws-cli</code>. 本人在本地已生成了 <code>~/.aws/credentials</code> 文件用于 <code>aws</code> 命令的用户验证，为简单起见，profile 是 <code>default</code>。<br/><br/>
+有了以上的前提之后，正式步入创建 Docker 镜像，登陆 Amazon ECR, 推送镜像到 ECR，从 ECR 拉取 Docker 的操作。<br/><br/>
+<h3>创建镜像和 Tag</h3><br/><br/>
+基于前面的 Dockerfile 创建一个  Docker 镜像，如果要把该镜像推送到 ECR 必须有一符合规格的 Tag 名称。命令行中来到与 aws-docker 平行的目录，我们可以执行下面任意一组命令<br/><br/>
+<blockquote>
+docker build -t java-webapp:latest ./aws-docker<br />
+docker tag java-webapp:latest <span style="color: #ff0000;">aws_account_id</span>.dkr.ecr.us-east-1.amazonaws.com/java-webapp:latest
+</blockquote>
+<br/>
+或<br/><br/>
+<blockquote>
+docker build -t <span style="color: #ff0000;">aws_account_id</span>.dkr.ecr.us-east-1.amazonaws.com/java-webapp:latest
+</blockquote>
+<br/>
+<code>aws_account_id</code> 是当前登陆帐号的 ID, 可以在网页登陆 AWS 后的  <a href="https://console.aws.amazon.com/billing/home?#/account">Account Settings</a> 中找到，也可以在 <code>~/.aws/credentials</code> 文件(如果有的话)中找到，也可以在后面介绍的 <code>aws ecr get-login</code> 命令中看到。<br/><br/>
+总之，待推送的镜像必须符合 <code><span style="color: #ff0000;">aws_account_id</span>.dkr.ecr.us-east-1.amazonaws.com/java-webapp:latest</code> 规则, 即 RepositoryURI:tag, 其中的 <code>java-webapp</code> 是仓库名，接下来用 docker push 才知道往哪儿推。<br/><br/>
+<h3>登陆 Amazon ECR</h3><br/><br/>
+在推送镜像到 ECR 之前类似于登陆 Docker Hub 一样，也必须事先登陆到 Amazon ECR，命令 <code>aws ecr get-login --no-include-email</code> 为我们生成一个完整的 <code>docker login</code> 命令，大致如下：<br/><br/>
+<blockquote>
+docker login -u AWS -p eyJwYXlsb2FkIjoi.......== https://<span style="color: #ff0000;">aws_account_id</span>.dkr.ecr.us-east-1.amazonaws.com
+</blockquote>
+<br/>
+执行上面的 <code>docker login</code> 命令将完成登陆 ECR 的过程，生成的令牌在 12 小时有效。<br/><br/>
+借助于 Shell 的管道，可以用一条简短的命令完成以上两步，即<br/><br/>
+<blockquote>
+aws ecr get-login --no-include-email | sh
+</blockquote>
+<br/>
+注：对于 Docker 17.06 或更高的版本，需要 <code>--no-include-email</code> 参数<br/><br/>
+<h3>创建 Amazon ECR 仓库</h3><br/><br/>
+莫急，在执行 <code>docker push</code> 之前还需要提前创建好 <code>java-webapp</code> 仓库，否则在推送的时候会出现找不到 repository 的错误<br/><br/>
+<blockquote>
+<span style="color: #800000;">name unkown: The repository with name 'java-webapp' does not exist in the registry with id 'xxxxxxxxxxxx'</span>
+</blockquote>
+<br/>
+根据每个人的所好，在 Web 控制台或是命令行下创建仓库都可以，我这里就不妨命令行一路到底，用  aws 命令<br/><br/>
+<blockquote>
+aws ecr create-repository --repository-name java-webapp
+</blockquote>
+<br/>
+注意：仓库名必须要保持一致<br/><br/>
+<h3>推送 Docker 镜像到 ECR</h3><br/><br/>
+现在可是万事俱备，什么风也不歉了。只要像推送镜像到  Docker Hub 那样操作就行了<br/><br/>
+<blockquote>
+docker push aws_account_id.dkr.ecr.us-east-1.amazonaws.com/java-webapp:latest
+➜ / docker push xxxxxxxxxx.dkr.ecr.us-east-1.amazonaws.com/java-webapp:latest<br />
+The push refers to repository [xxxxxxxxxxxx.dkr.ecr.us-east-1.amazonaws.com/java-webapp]<br />
+ee923fd81c63: Layer already exists<br />
+bca5421261df: Layer already exists<br />
+473adefcdec2: Layer already exists<br />
+7f877179d500: Layer already exists<br />
+9c0da68f893b: Layer already exists<br />
+e01103f88b34: Layer already exists<br />
+2ec5c0a4cb57: Layer already exists<br />
+latest: digest: sha256:bb95bc9f6ca4f54b4ef23ae6b3b6b1793d04397c5066bc3ce3891d8d2dc86ec0 size: 1787
+</blockquote>
+<br/>
+<h3>从 ECR 拉取镜像到本地运行</h3><br/><br/>
+一个镜像就这么上传到了 Amazon ECR  了，我们能够在 ECS 或 Batch 服务中使用它了。既然能从本地 push 到 ECR, 也就无法阻挡从 ECR 拉取镜像到本地运行。假设已用 <code>docker rmi &lt;image_id&gt;</code> 删除了本地的 java-webapp 镜像。<br/><br/>
+<pre class="lang:default decode:true">➜ / docker run -p 8080:8080 xxxxxxxx.dkr.ecr.us-east-1.amazonaws.com/java-webapp
+Unable to find image 'xxxxxxxx.dkr.ecr.us-east-1.amazonaws.com/java-webapp:latest' locally
+latest: Pulling from java-webapp
+e7bb522d92ff: Already exists
+acf3a7df1b51: Already exists
+c1c98005fcff: Already exists
+39dcc90226db: Already exists
+693e7ee43844: Already exists
+cb083d9c54cf: Already exists
+46f48bdb2c6e: Already exists
+Digest: sha256:bb95bc9f6ca4f54b4ef23ae6b3b6b1793d04397c5066bc3ce3891d8d2dc86ec0
+Status: Downloaded newer image for xxxxxxxx.dkr.ecr.us-east-1.amazonaws.com/java-webapp:latest<br/><br/>
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+ :: Spring Boot ::        (v1.5.9.RELEASE)
+</pre>
+<br/>
+反正前面用 <code>aws ecr get-login | sh</code> 之后，docker 就是知道根据镜像名找到匹配的仓库(Docker Hub 或 Amazon ECR) 去下载。<br/><br/>
+测试：<br/><br/>
+<blockquote>
+➜ / curl http://localhost:8080<br />
+Hello World!
+</blockquote>
+<br/>
+<h3>终极图片</h3><br/><br/>
+在 Amazon ECR 的控制台 <a href="https://console.aws.amazon.com/ecs/home?region=us-east-1#/repositories">https://console.aws.amazon.com/ecs/home?region=us-east-1#/repositories</a>, 选择到刚刚 Push 上去的  java-webapp，点击 <code>View Push Commands</code> 按钮可以看到前面所有<br/><br/>
+<ol>
+    <li>aws ecr get-login</li>
+    <li>docker build</li>
+    <li>docker tag</li>
+    <li>docker push</li>
+</ol>
+<br/>
+命令，见图：<br/><br/>
+<a href="/wp-content/uploads/2018/01/amazon-ecr-push-commands.png"><img class="aligncenter size-large wp-image-8470" src="/wp-content/uploads/2018/01/amazon-ecr-push-commands-800x766.png" alt="" width="800" height="766" /></a><br/><br/>
+注意：前面的命令都假定了使用 <code>~/.aws/credentials</code> 或 <code>~/.aws/config</code> 中配置的默认区域 <code>us-east-1</code>, 如果要切换到其他的区域请在命令行参数中指定，此时仓库的 URI 也会有所变化。

@@ -1,0 +1,66 @@
+---
+title: Objective-C 对 URL 进行 URLEncode 编码
+url: /objective-c-urlencode/
+date: 2012-01-09T08:33:50-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - objective-c
+  - encode
+  - URLencode
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4187 
+wpStatus: publish
+views: 22633
+lastmod: 2021-09-03T15:01:37-05:00
+---
+
+在 iOS 程序访问 HTTP 资源时需要对 URL 进行 Encode，比如像拼出来的<span style="color: #800000;"> http://unmi.cc?p1=%+&amp;sd f&amp;p2=中文</span>，其中的中文、特殊符号&amp;％和空格都必须进行转译才能正确访问。</p>
+<br/>
+在 Java、.net 和 JS 中都有相应的 encodeURL 方法可用，在 Objective-C 语言中，你可以试下<br/><br/>
+<span style="color: #800000;">- (NSString *)stringByAddingPercentEscapesUsingEncoding:(NSStringEncoding)enc;</span><br/><br/>
+来对完整的 URL(带请求参数的)进行编码，比如执行下面的代码：<br/><br/>
+<pre class="lang:default decode:true">NSString *url=@"http://unmi.cc?p1=%+&amp;sd &amp;p2=中文";
+NSString *encodedValue = [url stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];</pre>
+<br/>
+<!--more-->上面代码转换出的 encodedValue 是：<br/><br/>
+<span style="color: #800000;">http://unmi.cc?p1=%25+&amp;sd%20&amp;p2=%E4%B8%AD%E6%96%87</span><br/><br/>
+可见，它不会转换 URL 中的 ?%&amp; 符号，这也正常，因为它肯定分不出哪个 &amp; 是参数的连接符号还是参数值，你可以单独编码参数，然后在拼接成 URL 之前把属性参数值中的 ?%&amp; 等符号分别替换成相应的编码。<br/><br/>
+或者，您还可以试下另外一个方法来单独编码参数值，然后拼接成完整的 URL：<br/><br/>
+<span style="color: #800000;">/* newString = CFURLCreateStringByAddingPercentEscapes(kCFAllocatorDefault, origString, NULL, NULL, kCFStringEncodingUTF8); */</span><br />
+<span style="color: #800000;"> CF_EXPORT</span><br />
+<span style="color: #800000;"> CFStringRef CFURLCreateStringByAddingPercentEscapes(CFAllocatorRef allocator, CFStringRef originalString, CFStringRef charactersToLeaveUnescaped, CFStringRef legalURLCharactersToBeEscaped, CFStringEncoding encoding);</span><br/><br/>
+参考代码，分别编码前面的 p1=%+&amp;sd f&amp;p2=中文，两个参数的代码和结果如下：<br/><br/>
+<pre class="lang:default decode:true">NSString *param = @"%+&amp;sd f";
+    NSString *encodedValue = (NSString*)CFURLCreateStringByAddingPercentEscapes(nil, 
+                                   (CFStringRef)param, nil, 
+                                (CFStringRef)@"!*'();:@&amp;=+$,/?%#[]", kCFStringEncodingUTF8);</pre>
+<br/>
+这样编码出来的 encodedValue 为 <span style="color: #800000;">%25%2B%26sd%20f</span>，对 ?%&amp; 等符号也会编码的。用上面的代码对 “中文” 进行编码的结果是：<span style="color: #800000;">%E4%B8%AD%E6%96%87</span>，与前面是一致的。<br/><br/>
+我实际应用时还是这个 <span style="color: #800000;">CFURLCreateStringByAddingPercentEscapes</span> 方法比较方便。<br/><br/>
+我们在项目中是使用的 ASIHTTPRequest 组件来访问 URL 的，在使用 ASIFormDataRequest 时发出它其中有一个方法：<br/><br/>
+<pre class="lang:default decode:true">- (NSString*)encodeURL:(NSString *)string
+{
+    NSString *newString = NSMakeCollectable([(NSString *)CFURLCreateStringByAddingPercentEscapes(
+                                                              kCFAllocatorDefault,
+                                  (CFStringRef)string, NULL, CFSTR(":/?#[]@!$ &amp;'()*+,;=\"&lt;&gt;%{}|\\^~`"),
+                        CFStringConvertNSStringEncodingToEncoding([self stringEncoding])) autorelease]);
+    if (newString) {
+        return newString;
+    }
+    return @"";
+}</pre>
+<br/>
+看起来它就是个 Objective-C 版的 encodeURL 方法，可是它声明成了一个实例方法，必须构造出 <span style="color: #800000;">ASIFormDataRequest</span> 实例才能使用它，在它的父类 <span style="color: #800000;">ASIHTTPRequest</span> 中都无该方法。现在来试验一下这个方法的返回值：<br/><br/>
+<pre class="lang:default decode:true">ASIFormDataRequest *formDataRequest = [ASIFormDataRequest requestWithURL:nil];
+NSString *encodedValue1 = [formDataRequest encodeURL:@"%+&amp;sd f"];
+NSString *encodedValue2 = [formDataRequest encodeURL:@"中文"];</pre>
+<br/>
+得出的 encodedValue1 和 encodedValue2 分别是 <span style="color: #800000;">%25%2B%26sd%20f</span> 和 <span style="color: #800000;">%E4%B8%AD%E6%96%87</span>，和前面是一致的，所以你可以用 <span style="color: #800000;">ASIFormDataRequest</span> 提供的方式来进行 URLEncode，把这个方法提出为一个工具方法即可。

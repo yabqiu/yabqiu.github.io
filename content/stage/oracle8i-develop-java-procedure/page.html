@@ -1,0 +1,276 @@
+---
+title: Oracle8i中使用Java语言来开发存储过程
+url: /oracle8i-develop-java-procedure/
+date: 2006-01-15T22:12:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2006/01/oracle-logo.png"
+categories:
+  - Java/JEE
+  - Database
+tags: 
+  - Java
+  - Oracle
+  - sp
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 591 
+wpStatus: publish
+views: 356
+lastmod: 2019-11-06T00:03:11-06:00
+---
+
+在Oracle8i之前，开发人员只能使用PL/SQL来开发存储过程。而在Oracle8i之中，不仅可以使用原有的PL/SQL开发存储过程，而且也可以使用Java语言来开发存储过程。本篇文章将简单介绍关于这方面的知识，包括以下内容：(灰色显示的部分在此将不作详细介绍)</p>
+<br/>
+本文是我参考网上资料，整理出来的一份，文中所有代码语句均真实可用，因只是作测试，所以代码未表现实际业务操作。<br/><br/>
+<a href="#1">一. 存储过程简介</a><br />
+<!--more--><br />
+<a href="#2">二. Java存储过程</a><br/><br/>
+<a href="#3">三. Java存储过程的开发步骤</a><br/><br/>
+<a href="#4">四. 使用Java开发过程</a><br/><br/>
+<a href="#5">五. 使用Java开发函数</a><br/><br/>
+<a href="#6">六. 使用Java开发包</a><br/><br/>
+<a href="#7">七. 使用Java开发触发器<br />
+</a><br />
+<a href="#8"><span style="color: #c0c0c0;">八. 使用Java开发对象方法</span><br />
+</a><br />
+<a href="#9"><span style="color: #c0c0c0;">九. 使用JDeveloper开发JSP</span><br />
+</a><br/><br/>
+<h3><a name="1"></a>一. 存储过程简介</h3><br/><br/>
+存储过程是存储在数据库中的一段存储程序。当创建存储过程时，系统会对其进行编译，并将执行代码存储到数据库中。<br/><br/>
+1. 设计存储过程的方针<br/><br/>
+1) 在定义存储过程时，要使用其完成单一、相对集中的任务。<br />
+2) 在定义存储过程时，不要定义已经由其它特征所提供功能的过程。例如，不要定义强制数据完整性的过程（使用完整性约束）。<br/><br/>
+2. 存储过程的优点<br/><br/>
+1) 安全性<br/><br/>
+当创建了存储过程之后，可以将执行该过程的权限授予其它用户，从而使得他可以执行特定的数据库操作，而不能访问其它模式对象（例如表）。例如，你可以将执行过程（更新表）的权限授予其它用户，但不授予它们直接访问该表的权限。<br/><br/>
+2) 性能<br/><br/>
+① 存储过程只被发送到数据库一次，相对于SQL语句或PL/SQL块而言，其网络通信量更小。<br />
+② 当调用存储过程时，数据库会直接运行该存储过程，无需进行编译。相对于SQL语句或PL/SQL块而言，其执行速度更快。<br/><br/>
+3) 内存分配<br/><br/>
+存储过程充分利用了Oracle共享内存的能力。在将存储过程装载到内存中后，多个用户可以同时调用该存储过程，从而降低了应用对Oracle的实际内存需求。<br/><br/>
+4) 生产力<br/><br/>
+存储过程提高了开发生产力。通过将公共集合编写为存储过程，避免了冗余代码，从而提高了开发生产力。例如，我们可以编写用于插入、更新、删除DEPT表的过程，此后应用可以直接调用这些过程，而无需重写SQL语句。当管理数据的方法发生变化时，只需要修改过程，而不需要对应用进行任何修改。<br/><br/>
+<h3><a name="2"></a>二. Java存储过程</h3><br/><br/>
+在以前的Oracle版本中，开发存储过程是通过PL/SQL来完成的。而在Oracle8i版本中，我们不仅可以使用PL/SQL开发存储过程，而且还可以使用Java语言来开发存储过程。<br/><br/>
+1. PL/SQL与Java存储过程比较<br/><br/>
+与PL/SQL相比，使用Java语言开发存储过程有以下优点：<br/><br/>
+1) Java语言具有更强大的运算能力，提供了更多的运算方法。当要完成进行复杂运算的存储过程时，使用JSP(Java Storage Procedure)将是你最好的选择。<br />
+2) PL/SQL只能用于Oracle数据库，而Java语言可以应用于更多的数据库系统（如Sybase、DB2、Informix等等），所以Java存储过程将具有更好的兼容性、可移植性。<br/><br/>
+2. JSP(Java Storage Procedure)分类<br/><br/>
+Java存储过程包括过程、函数、触发器以及对象方法四种类型。<br/><br/>
+3. 调用JSP的四种方法<br/><br/>
+1) CALL语法<br />
+2) DML语句<br />
+3) PL/SQL块、子程序、包<br />
+4) 由触发器隐含调用<br/><br/>
+<h3><a name="3"></a>三 Java存储过程的开发步骤</h3><br/><br/>
+1. 编写Java源代码<br/><br/>
+当开发Java存储过程时，首先应该编写Java源代码。<br/><br/>
+注意事项：<br/><br/>
+<strong><br />
+<span style="color: #0000ff;">① 一般都写成public static方法作为Java存储过程</span><br />
+</strong><br/><br/>
+② 如果从SQL调用Java的实例方法。就必须在Oracle中建立Oracle Objects对象，用Java方法实现对象的方法。这个技术使用CREATE TYPE BODY命令。<br/><br/>
+2. 装载Java代码及类到Oracle8i数据库中<br/><br/>
+在编写了Java源代码之后，接下来应该将Java代码及相应的Java类装载到Oracle8i数据库中。<br/><br/>
+装载Java代码及类到RDBMS有以下两种方法：<br/><br/>
+1) 使用loadjava工具，通过该工具可以快速装载Java源代码（.java）、Java二进制代码（.class）以及Java打包文件（.jar）。<br />
+2) 使用CREATE Java、ALTER Java装载Java代码。<br/><br/>
+其中，前一种方法相对简单，并且我们推荐你使用这种方法。 如果借助于像PL/SQL Developer和JDeveloper来开发JSP装载过程就更简单，比如在PL/SQL DEveloper的SQL窗口第一行加上 "create or replace and compile java source named Foo as" 点执行工具按钮，PL/SQL Developer就知道是要把Java代码装载到Oracle中<br/><br/>
+3. 生成调用说明<br/><br/>
+在装载了Java类之后，接下来应该生成对public static方法的调用说明，最终完成Java存储过程的开发工作。就是声明哪些Java类方法要暴露给数据库调用。<br/><br/>
+完成上述步骤之后，就完成了Java存储过程的开发工作，然后就可以调用并执行该Java存储过程了。<br/><br/>
+下面将逐一分绍用Java开发几种存储过程的步骤，实例中的代码及操作均可在 Oracle 8.1.6 中成功执行。<br/><br/>
+<h3><a name="4"></a>四：使用Java开发过程</h3><br/><br/>
+过程用于执行某种操作。需要注意的是，过程所对应的Java方法返回值必须为空（void）。<br/><br/>
+下面讲述完成上述任务的方法及过程： （前三个步骤在开发函数、包、触发器、对象方法基本一致，所以在以后的介绍中将不再重复）<br/><br/>
+1. 编写Java源代码<br/><br/>
+程序清单如下（<span style="color: #ff0000;"><strong>HelloJSP.java</strong></span>）：(这段代码在开发其他几种过程的时候也要用到)<br/><br/>
+<pre class="brush:java">import java.io.*;
+import java.net.*;
+import java.sql.*;<br/><br/>
+import oracle.jdbc.driver.OracleDriver;<br/><br/>
+public class HelloJSP {<br/><br/>
+    // 有返回值，要说明为数据库的函数,有参数
+    public static String javaFunction(String userName) {
+        // 取系统、数据记录信息等返回
+        return "Hello " + userName;
+    }<br/><br/>
+    //  有返回值，要说明为数据库的函数,无参数
+    public static String javaFunction1() {<br/><br/>
+        try {
+            //通过URL连接读取http://java.sun.com:80上的内容
+            // 注意，执行前需要指定用户对Socket java.sun.com:80的访问权限,解析与连接
+            // 在sqlplus中以system用户调用dbms_java包的grant_permission过程，命令如下：
+            // call dbms_java.grant_permission('SCOTT','java.net.SocketPermission',
+            // 'java.sun.com:80', 'resolve,connect, accept');
+             URL url = new URL("http://java.sun.com");
+            InputStream is = url.openStream();
+            BufferedReader br = new BufferedReader(new InputStreamReader(is));<br/><br/>
+            //返回读取到的第一行字符串
+            return br.readLine();
+        } catch (Exception e) {
+            return e.getMessage();
+        }
+    }<br/><br/>
+    // 无返回值，要说明为数据库的过程
+    // 执行成功后将会在c:/看到一个文件a,内容为你所输入的参数字符吕串
+    public static void javaProcedure(String userName) {
+        // todo something,如维护数据记录，读取系统信息等
+        try {<br/><br/>
+            // 取得连接就可以做你要的数据库操作，用默认连接
+            Connection conn = new OracleDriver().defaultConnection();
+            conn.close();
+        } catch (SQLException e) {
+        }<br/><br/>
+        try {
+            // 注意，执行前需要指定用户对文件c:/a至少有写的权限
+            // 在sqlplus中以system用户调用dbms_java包的grant_permission过程，命令如下：
+            // call dbms_java.grant_permission('SCOTT','java.io.FilePermission','c:/a','read,write');
+            OutputStream os = new FileOutputStream("c:/a");
+            os.write(userName.getBytes());
+            os.close();
+        } catch (IOException e) {
+        }
+    }<br/><br/>
+    public static void javaTrigger(int deptNo, String oldName,
+                                   String newName) {
+        // to do something
+        // 我们可以直接调用上面的方法，也往产生一个文件c:/a,看看效果
+        try {
+            javaProcedure("Dept No: "+deptNo+" Old name: "+oldName+" New name: "+newName);
+        }
+        catch (Exception e) {<br/><br/>
+        }
+    }
+}</pre>
+<br/>
+2. 装载Java代码及类到Oracle8i数据库中<br/><br/>
+在编写了Java源代码之后，就可以将Java对象装载到Oracle8i数据库中了。下面是完成这项任务的方法：<br/><br/>
+你的Java类中用到了哪些包，就应设置好相应的classpath环境变量，　例如：用以下命令<br/><br/>
+set classpath=%classpath%;%ORA_HOME%/jdbc/lib/classes12.zip;%ORA_HOME%/sqlj/lib/runtime.zip;%ORA_HOME%/sqlj/lib/translator.zip<br/><br/>
+<span style="color: #dc009c;">实际操作loadjava时并没有你上面那样设置classpath也行，当前的classpath是CLASSPATH=.;E:\Oracle\Ora81\orb\classes\yoj.jar;E:\Oracle\Ora81\orb\classes\share.zip，其中这两个包也没有包含上面代码引入的类</span><br/><br/>
+装载命令用：<br/><br/>
+<span style="color: #800080;">loadjava -user scott/tiger@orcl -o -v -f -r d:/jsp/HelloJSP.java</span><br/><br/>
+参数说明：<br />
+-o     使用OCI8 JDBC接口<br />
+-v     显示执行过程<br />
+-f     强制装载<br />
+-r     编译并解析类<br />
+最后一个参数就是源文件路径<br/><br/>
+3. 发行Java，生成调用说明<br/><br/>
+在装载了Java类后，就可以发行该Java类，并生成调用其方法的过程说明了（当然首先要登录到数据库了）<br/><br/>
+1)<br/><br/>
+<pre class="brush:sql">CREATE OR REPLACE PROCEDURE JavaProcedure(userName IN VARCHAR2)
+       AUTHID CURRENT_USER
+       AS LANGUAGE JAVA NAME 'HelloJSP.javaProcedure(java.lang.String)';
+   /</pre>
+<br/>
+4. 调用JSP<br/><br/>
+在生成了调用Java方法的过程说明之后，我们就可以调用JSP了。例如：<br/><br/>
+<span style="color: #800080;">call JavaProcedure('Unmi');</span><br/><br/>
+成功执行后将会在C盘根目录下产生一个文件a,内容为"Unmi".注意必须赋于SCOTT对文件c:/a的写权限，后面会有一个单独专题来讲解OracleJVM权限。<br/><br/>
+<h3><a name="5"></a>五. 使用Java开发函数</h3><br/><br/>
+函数用于返回特定数据。说明使用Java开发函数的方法。与使用Java开发过程不一样的就在发布调用说明与调用略有不同。前两步与上同<br/><br/>
+3. 发行Java，生成调用说明（先也要登录到数据库了）(下面分别生有有参和无参的函数说明)<br/><br/>
+1)<br/><br/>
+<pre class="brush:sql">CREATE OR REPLACE FUNCTION JavaFunction(userName IN VARCHAR2)
+      RETURN VARCHAR2
+      AUTHID CURRENT_USER
+      AS LANGUAGE JAVA NAME 'HelloJSP.javaFunction(java.lang.String) return java.lang.String';
+   /</pre>
+<br/>
+和<br/><br/>
+<pre class="brush:sql">CREATE OR REPLACE FUNCTION JavaFunction1
+      RETURN VARCHAR2
+      AUTHID CURRENT_USER
+      AS LANGUAGE JAVA NAME 'HelloJSP.javaFunction1() return java.lang.String';
+   /</pre>
+<br/>
+4. 调用JSP<br/><br/>
+在生成了调用Java方法的函数说明之后，就可以调用这些函数了<br/><br/>
+对函数的调用方式在最顶层可以有两种,call和sql中<br/><br/>
+1) <span style="color: #800080;">call dbms_output.put_line(JavaFunction('Unmi'))</span><br />
+2) <span style="color: #800080;">select JavaFunction1() from dual</span><br/><br/>
+<h3><a name="6"></a>六. 使用Java开发包</h3><br/><br/>
+Java类用于封装Java方法，与此类似，包用于封装过程和函数等。仍然以上面的代码为例。前两步与上同<br/><br/>
+3. 发行Java，生成调用说明<br/><br/>
+在装载了Java类后，就可以发行该Java类，并生成调用其方法的包了。 包名为HelloJSP。<br/><br/>
+1)<br/><br/>
+<pre class="brush:sql">CREATE OR REPLACE PACKAGE HelloJSP as
+        FUNCTION  JavaFunction(userName IN VARCHAR2) return VARCHAR2;
+        FUNCTION  JavaFunction1 return VARCHAR2;
+        PROCEDURE JavaProcedure(userName IN VARCHAR2);
+        PROCEDURE JavaTrigger(deptNo IN NUMBER,oldName IN VARCHAR2,newName IN VARCHAR2);
+    END HelloJSP ;
+    /</pre>
+<br/>
+2)<br/><br/>
+<pre class="brush:sql">CREATE OR REPLACE PACKAGE BODY HelloJSP as
+        FUNCTION JavaFunction(userName IN VARCHAR2)
+           RETURN VARCHAR2
+           AS LANGUAGE JAVA NAME 'HelloJSP.javaFunction(java.lang.String) return java.lang.String';<br/><br/>
+        FUNCTION JavaFunction1
+           RETURN VARCHAR2
+           AS LANGUAGE JAVA NAME 'HelloJSP.javaFunction1() return java.lang.String';<br/><br/>
+        PROCEDURE JavaProcedure(userName IN VARCHAR2)
+          AS LANGUAGE JAVA NAME 'HelloJSP.javaProcedure(java.lang.String)';<br/><br/>
+        PROCEDURE javaTrigger(deptNo IN NUMBER, oldName IN VARCHAR2, newName IN VARCHAR2)
+           AS LANGUAGE JAVA NAME 'HelloJSP.javaTrigger(int, java.lang.String, java.lang.String)';
+    end HelloJSP ;
+    /</pre>
+<br/>
+创建包的主体时，定义函数或过程体时不能加 "AUTHID CURRENT_USER"<br/><br/>
+4. 调用JSP<br/><br/>
+在生成了调用Java方法的包后，就可以调用这些方法所对应的函数和过程了。例如：<br/><br/>
+1) <span style="color: #800080;">call dbms_output.put_line(HelloJSP.JavaFunction('Unmi'));</span><br />
+2) <span style="color: #800080;">select HelloJSP.JavaFunction1() from dual;<br />
+</span>3) <span style="color: #800080;">call HelloJSP.JavaProcedure('Unmi');</span><br />
+4) <span style="color: #800080;">call HelloJSP.JavaTrigger(10,'Kypfos','Unmi');</span><br/><br/>
+<h3><a name="7"></a>七. 使用Java开发触发器</h3><br/><br/>
+触发器是一段存储程序，当执行特定修改操作时，会触发它，并执行其中的存储程序。下面以表dept有记录变动时执行某个操作为例，说明使用Java开发触发器的方法。<span style="color: #dc009c;">准确点讲这里所谓的使用Java开发触发器仍然是属于开发储过程的范畴，Java方法仍然是声明为数据库的存储过程。</span><br/><br/>
+3. 发行Java，生成调用说明<br/><br/>
+在装载了Java类后，就可以发行该Java类，并生成调用其方法的过程说明及触发器了。下面是完成该项任务的方法：<br/><br/>
+<span style="color: #dc009c;">从下面两个步骤可以看出，触发器调用Java程序还必须借助于存储过程。由真正的数据库触发器传参到Java存储过程。</span><br />
+1)<br/><br/>
+<pre class="brush:sql">CREATE OR REPLACE PROCEDURE JavaTrigger(deptNo IN NUMBER, oldName IN VARCHAR2, newName IN VARCHAR2)
+       AUTHID CURRENT_USER
+       AS LANGUAGE JAVA NAME 'HelloJSP.javaTrigger(int, java.lang.String, java.lang.String)';
+   /</pre>
+<br/>
+2)<br/><br/>
+<pre class="brush:sql">CREATE OR REPLACE TRIGGER CallJavaTrigger
+      AFTER update OR delete OR insert ON dept
+      FOR EACH ROW
+      call JavaTrigger(:old.deptno,:old.dname,:new.dname)
+   /</pre>
+<br/>
+4. 调用JSP<br/><br/>
+在创建了触发器之后，当修改作者工资时会自动调用其中的存储程序。例如：<br/><br/>
+<span style="color: #800080;">update dept set dname=dname||'X' where deptno=20</span><br/><br/>
+<h3><a name="8"></a>八.使用Java开发对象方法</h3><br/><br/>
+对象类型是一种用户自定义的数据结构，它可以将数据类型、函数以及过程封装到该数据结构中。对象方法是指对象类型中的函数和过程，<br/><br/>
+Java对象类必须实现SQLData接口中的getSQLTypeName()、readSQL(SQLInput stream,String typeName)、writeSQL(SQLOut stream)方法<br/><br/>
+因为在数据库中创建对象在实际开发中比较少用，所以具体的操作方法这里略去，以后用到时再细究。<br/><br/>
+<h3><a name="9"></a>九. 使用JDeveloper开发JSP</h3><br/><br/>
+用JDeveloper开发Java存储过程，因为JDeveloper是一个Java IDE，同Oracle又是一家的，能结合的不好吗。基本过程是：<br/><br/>
+1) 配置好到Oracle数据库的连接<br />
+2) 编写好你要嵌入到Oracle中的Java类<br />
+3) 工程中New一个Loadjava and Java Store Procedures的deployment Profile<br />
+4) 选取要发布类的方法，JDeveloper会根据你的方法有无参数决定是过程还是函数<br />
+5) Deploy to 到你配置的数据库上<br/><br/>
+在Depolyment - Log 中会显示Depoly时的信息，如生成调用说明的语句。<br/><br/>
+<span style="color: #0000ff;">总结：自己按上面的步骤一步步操作，常常会碰到一些问题，而且我都还不知道应该怎么去确定是什么问题，而用jDeveloper来开发Java存储过程，就非常之简单了。而且我还发现JDeveloper给我们开发Java存储过程带来了无比的方便，而且还是一款很棒的Java IDE,支持Struts、JSF、EJB、WebService、TopLink、Swing/AWT、还能画UML图，运行速度也很快。</span><br />
+<span style="color: #dc009c;">在JDeveloper中还能够列出已加载到数据库中的Java Classes,而PL/SQL Developer只能看到已加载的Java Source,所以如果用loadjava加载的是一个class文件，在PL/SQL Developer中就是不可见了</span><br />
+<span style="color: #0000ff;">。</span><br />
+参考资料：<br/><br/>
+1. <a href="http://www.huihoo.com/java/oracle/oracle8i_java.html">Oracle8i中使用Java语言来开发存储过程</a>(<span style="font-family: 宋体;">时代朝阳数据库（原晓通数据库）培训部</span><span lang="EN-US">Oracle </span><span style="font-family: 宋体;">资料库</span>) (原文中用的JDeveloper版本是2.0,现在都10.1.3了)<br />
+2. <a href="http://www.google.com/search?q=%22%E7%94%A8PL/SQL%E5%92%8CJava%E5%BC%80%E5%8F%91Oracle8%20i%E5%BA%94%E7%94%A8%E7%A8%8B%E5%BA%8F%22">用PL/SQL和Java开发Oracle8 i应用程序</a><br />
+3. <a href="http://www.cnoug.org/viewthread.php?tid=19232">如何利用java过程执行操作系统命令</a> (<a href="http://www.cnoug.org/index.php">ORACLE技术中国用户讨论组</a>)<br />
+4. <a href="http://www.oracle.com/global/cn/oramag/oracle/03-jul/o43devjvm.html">保证执行Java的安全</a> (<span class="italicbodycopy">作者：Kuassi Mensah</span>)<br />
+5. <a href="http://java.sun.com/j2se/1.5.0/docs/guide/security/permissions.html">Permissions in the JDK</a> (Sun官方文档)

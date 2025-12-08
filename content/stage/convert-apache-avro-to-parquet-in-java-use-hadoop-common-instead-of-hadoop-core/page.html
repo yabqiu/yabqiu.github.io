@@ -1,0 +1,224 @@
+---
+title: 使用 Java 转换 Apache Avro 为 Parquet 数据格式(依赖更新)
+url: /convert-apache-avro-to-parquet-in-java-use-hadoop-common-instead-of-hadoop-core/
+date: 2021-02-25T21:44:05-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2021/02/parquet-logo.jpeg"
+categories:
+  - Java/JEE
+tags: 
+  - Avro
+  - Parquet
+  - Hadoop
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10663 
+wpStatus: publish
+views: 869
+lastmod: 2021-02-25T22:50:39-06:00
+---
+
+在上篇 <a href="https://yanbin.blog/convert-apache-avro-to-parquet-format-in-java/">使用 Java 转换 Apache Avro 为 Parquet 数据格式</a> 实现把 Avro 数据转换为 Parquet 文件或内存字节数组，并支持 LogicalType。其中使用到了 hadoop-core 依赖，注意到它传递的依赖都非常老旧，到官方 Maven 仓库一看才发现还不是一般的老</p>
+<br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/02/avro-to-parquet-1-1.png"><img class="aligncenter wp-image-10665" src="https://yanbin.blog/wp-content/uploads/2021/02/avro-to-parquet-1-1-800x133.png" alt="" width="596" height="99" /></a><br/><br/>
+长时间无人问津的项目，那一定有它的替代品。对啦，据说 hadoop-core 在 2009 年 7 月份更名为 hadoop-common 了，没找到官方说明，只看到 StackOverflow 的 <a href="https://stackoverflow.com/questions/28856096/differences-between-hadoop-common-hadoop-core-and-hadoop-client#:~:text=Hadoop-core%20is%20the%20same,logging%20and%20codecs%20for%20example.">Differences between Hadoop-coomon, Hadoop-core and Hadoop-client?</a> 是这么说的。 应该是这么个说法，不然为何 hadoop-core 一直停留在  1.2.1 的版本，而且原来 hadoop-core 中的类在 hadoop-common 中可以找到，如类 org.apache.hadoop.fs.Path。不过在 hadoop-core-1.2.1 中的 <code>fs/s3</code> 包不见，这么重要的 s3 文件系统没了。<!--more--><br/><br/>
+好了，针对上一篇，我们用活着的 hadoop-coomon 包来实现把  Avro 文件转换为 Parquet 文件或内存字节数组分别不同的 pom.xml 依赖配置，代码实现与前一篇 <a href="https://yanbin.blog/convert-apache-avro-to-parquet-format-in-java/">使用 Java 转换 Apache Avro 为 Parquet 数据格式</a> 相同。<br/><br/>
+<h3>把  Avro 转换为 Parquet 文件的依赖</h3><br/><br/>
+pom.xml 中依赖配置<br/><br/>
+<pre class="lang:default decode:true ">&lt;dependencies&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.apache.avro&lt;/groupId&gt;
+        &lt;artifactId&gt;avro&lt;/artifactId&gt;
+        &lt;version&gt;1.10.1&lt;/version&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.apache.parquet&lt;/groupId&gt;
+        &lt;artifactId&gt;parquet-avro&lt;/artifactId&gt;
+        &lt;version&gt;1.11.1&lt;/version&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.apache.hadoop&lt;/groupId&gt;
+        &lt;artifactId&gt;hadoop-common&lt;/artifactId&gt;
+        &lt;version&gt;3.3.0&lt;/version&gt;
+        &lt;exclusions&gt;
+            &lt;exclusion&gt;
+                &lt;groupId&gt;*&lt;/groupId&gt;
+                &lt;artifactId&gt;*&lt;/artifactId&gt;
+            &lt;/exclusion&gt;
+        &lt;/exclusions&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.apache.hadoop&lt;/groupId&gt;
+        &lt;artifactId&gt;hadoop-auth&lt;/artifactId&gt;
+        &lt;version&gt;3.3.0&lt;/version&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;commons-logging&lt;/groupId&gt;
+        &lt;artifactId&gt;commons-logging&lt;/artifactId&gt;
+        &lt;version&gt;1.2&lt;/version&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.apache.htrace&lt;/groupId&gt;
+        &lt;artifactId&gt;htrace-core4&lt;/artifactId&gt;
+        &lt;version&gt;4.1.0-incubating&lt;/version&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.apache.commons&lt;/groupId&gt;
+        &lt;artifactId&gt;commons-configuration2&lt;/artifactId&gt;
+        &lt;version&gt;2.1.1&lt;/version&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;com.fasterxml.woodstox&lt;/groupId&gt;
+        &lt;artifactId&gt;woodstox-core&lt;/artifactId&gt;
+        &lt;version&gt;5.0.3&lt;/version&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;com.google.guava&lt;/groupId&gt;
+        &lt;artifactId&gt;guava&lt;/artifactId&gt;
+        &lt;version&gt;30.1-jre&lt;/version&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;commons-collections&lt;/groupId&gt;
+        &lt;artifactId&gt;commons-collections&lt;/artifactId&gt;
+        &lt;version&gt;3.2.2&lt;/version&gt;
+    &lt;/dependency&gt;
+&lt;/dependencies&gt;</pre>
+<br/>
+还是重复一下转换 Avro 为 Parquet 文件的代码<br/><br/>
+<pre class="lang:default decode:true ">public static &lt;T extends SpecificRecordBase&gt; void writeToParquetFile(List&lt;T&gt; avroObjects) {
+    Schema avroSchema = avroObjects.get(0).getSchema();
+    GenericData genericData = GenericData.get();
+    genericData.addLogicalTypeConversion(new TimeConversions.DateConversion());
+    Path path = new Path("users.parquet");
+    try (ParquetWriter&lt;Object&gt; writer = AvroParquetWriter.builder(path)
+            .withDataModel(genericData)
+            .withSchema(avroSchema)
+            .withCompressionCodec(CompressionCodecName.SNAPPY)
+            .withWriteMode(ParquetFileWriter.Mode.OVERWRITE)
+            .build()) {
+        avroObjects.forEach(r -&gt; {
+            try {
+                writer.write(r);
+            } catch (IOException ex) {
+                throw new UncheckedIOException(ex);
+            }
+        });
+    } catch (IOException e) {
+        e.printStackTrace();
+    }
+}</pre>
+<br/>
+AvroParquetWriter.builder() 这个方法中要用到 hadoop-common 的类 org.apache.hadoop.fs.Path。<br/><br/>
+<h3>转换 Avro 为内存字节数组的依赖</h3><br/><br/>
+pom.xml<br/><br/>
+<pre class="lang:default decode:true ">&lt;dependencies&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.apache.avro&lt;/groupId&gt;
+        &lt;artifactId&gt;avro&lt;/artifactId&gt;
+        &lt;version&gt;1.10.1&lt;/version&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.apache.parquet&lt;/groupId&gt;
+        &lt;artifactId&gt;parquet-avro&lt;/artifactId&gt;
+        &lt;version&gt;1.11.1&lt;/version&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;org.apache.hadoop&lt;/groupId&gt;
+        &lt;artifactId&gt;hadoop-common&lt;/artifactId&gt;
+        &lt;version&gt;3.3.0&lt;/version&gt;
+        &lt;exclusions&gt;
+            &lt;exclusion&gt;
+                &lt;groupId&gt;*&lt;/groupId&gt;
+                &lt;artifactId&gt;*&lt;/artifactId&gt;
+            &lt;/exclusion&gt;
+        &lt;/exclusions&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;com.fasterxml.woodstox&lt;/groupId&gt;
+        &lt;artifactId&gt;woodstox-core&lt;/artifactId&gt;
+        &lt;version&gt;5.0.3&lt;/version&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;com.google.guava&lt;/groupId&gt;
+        &lt;artifactId&gt;guava&lt;/artifactId&gt;
+        &lt;version&gt;30.1-jre&lt;/version&gt;
+    &lt;/dependency&gt;
+    &lt;dependency&gt;
+        &lt;groupId&gt;commons-collections&lt;/groupId&gt;
+        &lt;artifactId&gt;commons-collections&lt;/artifactId&gt;
+        &lt;version&gt;3.2.2&lt;/version&gt;
+    &lt;/dependency&gt;
+&lt;/dependencies&gt;</pre>
+<br/>
+比前面生成 Parquet 文件要省几个依赖<br/><br/>
+再回顾一下内存中完成转换为 Parquet 字节数组的代码<br/><br/>
+<pre class="lang:default decode:true ">public static &lt;T extends SpecificRecordBase&gt; byte[] writeToParquetByteArray(List&lt;T&gt; avroObjects) throws IOException {
+    Schema avroSchema = avroObjects.get(0).getSchema();
+    GenericData genericData = GenericData.get();
+    genericData.addLogicalTypeConversion(new TimeConversions.DateConversion());
+    InMemoryOutputFile outputFile = new InMemoryOutputFile();
+    try (ParquetWriter&lt;Object&gt; writer = AvroParquetWriter.builder(outputFile)
+            .withDataModel(genericData)
+            .withSchema(avroSchema)
+            .withCompressionCodec(CompressionCodecName.SNAPPY)
+            .withWriteMode(ParquetFileWriter.Mode.CREATE)
+            .build()) {
+        avroObjects.forEach(r -&gt; {
+            try {
+                writer.write(r);
+            } catch (IOException ex) {
+                throw new UncheckedIOException(ex);
+            }
+        });
+    } catch (IOException e) {
+        e.printStackTrace();
+    }<br/><br/>
+    return outputFile.toArray();
+}</pre>
+<br/>
+InMemoryOutputFile 的内容再次重复如下<br/><br/>
+<pre class="lang:default decode:true ">package yanbin.blog;<br/><br/>
+import org.apache.parquet.io.DelegatingPositionOutputStream;
+import org.apache.parquet.io.OutputFile;
+import org.apache.parquet.io.PositionOutputStream;<br/><br/>
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;<br/><br/>
+public class InMemoryOutputFile implements OutputFile {
+    private final ByteArrayOutputStream baos = new ByteArrayOutputStream();<br/><br/>
+    @Override
+    public PositionOutputStream create(long blockSizeHint) throws IOException {
+        return new InMemoryPositionOutputStream(baos);
+    }<br/><br/>
+    @Override
+    public PositionOutputStream createOrOverwrite(long blockSizeHint) throws IOException {
+        return null;
+    }<br/><br/>
+    @Override
+    public boolean supportsBlockSize() {
+        return false;
+    }<br/><br/>
+    @Override
+    public long defaultBlockSize() {
+        return 0;
+    }<br/><br/>
+    public byte[] toArray() {
+        return baos.toByteArray();
+    }<br/><br/>
+    private static class InMemoryPositionOutputStream extends DelegatingPositionOutputStream {<br/><br/>
+        public InMemoryPositionOutputStream(OutputStream outputStream) {
+            super(outputStream);
+        }<br/><br/>
+        @Override
+        public long getPos() throws IOException {
+            return ((ByteArrayOutputStream) this.getStream()).size();
+        }
+    }
+}</pre>
+<br/>
+以后还是尽量用 hadoop-common 库吧。

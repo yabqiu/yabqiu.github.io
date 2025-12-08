@@ -1,0 +1,255 @@
+---
+title: 学习使用 AWS Cognito 并 OAuth2 验证
+url: /learn-aws-cognito-and-oauth2/
+date: 2023-04-04T00:56:59-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - OAuth
+  - Auth0
+  - OpenID
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13034 
+wpStatus: publish
+views: 550
+lastmod: 2023-08-25T15:45:26-05:00
+---
+
+OAuth 是 Open Authorization 的缩写，是一种开放的可为 Web 或桌面应用进行用户验证和授权的协议。例如，在互联网上的许多应用，可不用额外注册帐户而采用第三方的帐户(Gmail, Apple Id 等)登陆并完成授权，这就有 OAuth 身影。<br/><br/>
+当我们提到 OAuth 的时候，常常会碰到 OAuth 1.0, OAuth 2.0, OpenID, 和  Auth0.<br/><br/>
+<ol>
+    <li>OAuth 1.0 于 2007 年 4 月 发布(<a href="http://oauth.net/core/1.0/">OAuthCore 1.0</a>)，存在严重的安全漏洞，2009 年 6 月发布修正版(<a href="http://oauth.net/core/1.0a/">OAuthCore 1.0 Revision A</a>). 较少使用了, 每个 token 加密，但不要求 HTTPS/TLS 协议</li>
+    <li><a href="https://oauth.net/2/">OAuth 2.0</a> 于 2012 年 10 月发布，它与  OAuth 1.0 互不兼容，目前多数平台都支持此版本，它强制使用 HTTPS/TLS 协议，更安全，相关的概念有 Access Token, Refresh Token, Bearer Token</li>
+    <li>OpenID 侧重于 Authentication, 它是在 OAuth 上层用于鉴定用户是否可以登陆，OAuth 专注在 Authorization。与 OpenID 相对应的有 SAML(Security Assertion Markup Language)</li>
+    <li><a href="https://auth0.com/">Auth0</a> 是一个软件产品 -- 身份管理平台(Auth0 Authentication Platform - Identity Access Management)，或者说是一套解决方案，这个缺德的命名纯粹是来搅浑水的。前面的 OAuth 1.0, OAuth 2.0 和 OpenID 都是协议规范，Okta 旗下的 Auth0 使用该名字抢了 OAuth 的光芒。</li>
+</ol>
+<br/>
+那 Amazon Cognito 是什么呢？它和 Auth0 类似，也是一个身份访问管理平台(Implement secure, frictionless <strong>c</strong>ustomer <strong>i</strong>dentity and <strong>a</strong>ccess <strong>m</strong>anagement that scales)，提供了用户的登陆验证，权限管理。背后的实现也是 OAuth 2.0, OIDC(OpenID Connection), 和 SAML。因此通过对 Cognito 的学习的另一个目的是由此了解 OAuth 2.0 协议的相关内容。<!--more--><br/><br/>
+大致梳理了一下上面的那些概念后，我们来学习使用 AWS Cognito，演示中只涉及到其中的部分功能<br/><br/>
+<ol>
+    <li>创建 Cognito UserPool，并使用 Cognito 提供的界面注册用户，进行登陆用户</li>
+    <li>为 UserPool 集成一个应用，用户登陆后在应用中获得相应的 Token</li>
+</ol>
+<br/>
+下面的操作，我们主要不是讲如何让 Cognito 与应用进行集成，而是理解应用程序怎么与 Cognito 进行交互而获得相应的 <code>id_token</code>, <code>access_token</code>, 和 <code>refresh_token</code>, 以及如何使用 <code>refresh_token</code> 不停刷新获到持续有效的  <code>id_token</code> 和 <code>access_token</code>。从而在实际应用中能完全手动处理与 Cognito 的代码集成，或者是使用 Cognito 相关组件时能理解的更透彻，并在发现问题时快速找到解决方案。<br/><br/>
+<h3>准备 AWS Cognito 相关资源</h3><br/><br/>
+接下来用 Terraform 脚本来创建一个 UserPool 并集成应用，使用 Email 完成用户注册，MFA(Multi-Factor Authentication) 未开启。<br/><br/>
+<pre class="lang:default decode:true">provider "aws" {}<br/><br/>
+resource "aws_cognito_user_pool" "my-demo" {
+  name = "my-demo"
+  account_recovery_setting {
+    recovery_mechanism {
+      name     = "verified_email"
+      priority = 1
+    }
+  }
+  auto_verified_attributes = ["email"]
+  username_configuration {
+    case_sensitive = false
+  }
+  schema {
+    attribute_data_type = "String"
+    name                = "email"
+    required            = true
+  }<br/><br/>
+  lifecycle {
+    ignore_changes = [schema]
+    prevent_destroy = true
+  }
+}<br/><br/>
+resource "aws_cognito_user_pool_domain" "my-demo" {
+  domain       = "my-demo-user"
+  user_pool_id = aws_cognito_user_pool.my-demo.id
+}<br/><br/>
+resource "aws_cognito_user_pool_client" "my-demo" {
+  name         = "my-demo-app"
+  user_pool_id = aws_cognito_user_pool.my-demo.id
+  allowed_oauth_flows_user_pool_client = true
+  callback_urls = [
+    "http://localhost:8080/login/oauth2/token",
+    "https://yanbin.blog/login/oauth2/token"
+  ]
+  logout_urls = [
+    "http://localhost:8080/logout",
+    "https://yanbin.blog/logout"
+  ]
+  supported_identity_providers = ["COGNITO"]
+  allowed_oauth_flows  = ["implicit"]
+  allowed_oauth_scopes = ["email", "openid"]
+  explicit_auth_flows = ["ALLOW_REFRESH_TOKEN_AUTH", "ALLOW_USER_PASSWORD_AUTH"]
+  prevent_user_existence_errors = "ENABLED"
+  enable_token_revocation = true
+  access_token_validity = 1
+  id_token_validity = 1<br/><br/>
+  token_validity_units {
+    access_token = "hours"
+    id_token = "hours"
+  }
+}<br/><br/>
+data aws_region current {}<br/><br/>
+output "cognito" {
+  value = {
+    user_pool_id =aws_cognito_user_pool.my-demo.id
+    app_client_id = aws_cognito_user_pool_client.my-demo.id
+    user_pool_domain = "${aws_cognito_user_pool_domain.my-demo.domain}.auth.${data.aws_region.current.name}.amazoncognitor.com"
+  }
+}</pre>
+<br/>
+callback 和 logou urls 都可以配置多个条目，加上 localhost:8080 的条目方便从本地对应用进行调试。<br/><br/>
+执行<br/><br/>
+<blockquote>
+terraform init<br />
+terraform apply -auto-approve
+</blockquote>
+<br/>
+后会在 AWS 中创建 User pool <code>my-demo</code>, 并集成一个应用 <code>my-demo-app</code>, Terraform 的输出类似如下<br/><br/>
+<blockquote>
+cognito = {<br />
+    "app_client_id" = "539onv6jbhs889k6t0bt13rlgr"<br />
+    "user_pool_domain" = "my-demo-user.auth.us-east-1.amazoncognitor.com"<br />
+    "user_pool_id" = "us-east-1_eu7Gn4LG5"<br />
+}
+</blockquote>
+<br/>
+在所集成的应用中将要用到上面输出的三个值。<br/><br/>
+<h3>response_type=token 直接得到 id_token 和 access_token</h3><br/><br/>
+相应的 AWS 资源创建好后，我们就能在自己的应用中检查用户未登陆时跳转下方链接登陆或创建新的用户<br/><br/>
+<blockquote>
+https://my-demo-user.auth.us-east-1.amazoncognito.com/login?redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Flogin%2Foauth2%2Ftoken&amp;response_type=token&amp;client_id=539onv6jbhs889k6t0bt13rlgr&amp;state=4I8xO5VVrJP7eiboJhKxCt1DVp5gDtmm&amp;scope=openid+email
+</blockquote>
+<br/>
+上面链接可由 Python 代码来生成<br/><br/>
+<pre class="lang:default decode:true">from urllib.parse import urlencode<br/><br/>
+cognito_uri = 'https://my-demo-user.auth.us-east-1.amazoncognito.com/login'
+params = {
+    'redirect_uri': 'http://localhost:8080/login/oauth2/token',
+    'response_type': 'token',
+    'client_id': '539onv6jbhs889k6t0bt13rlgr',
+    'state': '4I8xO5VVrJP7eiboJhKxCt1DVp5gDtmm', # 随机字符串
+    'scope': 'openid email'
+}<br/><br/>
+print(f'{cognito_uri}?{urlencode(params)}')</pre>
+<br/>
+链接来打开如下窗口<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2023/03/cognito-login-1.png"><img class="aligncenter wp-image-13036" src="https://yanbin.blog/wp-content/uploads/2023/03/cognito-login-1-800x484.png" alt="" width="721" height="436" /></a><br/><br/>
+我们可通过这里的 Sign up 链接完成注册，或在 AWS Cognito 控制台的 User Pool 为 my-demo 注册一个用户。<br/><br/>
+这里省略注册过程，假设我们已经有了一个用户，用户名为 yanbin, 输入正确的密码登陆后，页面会重定向到<br/><br/>
+<blockquote>
+http://localhost:8080/login/oauth2/token#id_token=eyJraWQiOiJtUkdxVXh5STI4cDJ3Znc4b011aElXM2EraTd1Q01PaWFLdTkwYlVWSnNjPSIsImFsZyI6IlJTMjU2In0.eyJhdF9oYXNoIjoiWVM3LWtscFIyN19ySHRDNFFzUjZvUSIsInN1YiI6ImZhYTZmMjU0LTc0MDUtNGRiMy1iZGJkLTNkYWMwNTkwZTI2YiIsImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJpc3MiOiJodHRwczpcL1wvY29nbml0by1pZHAudXMtZWFzdC0xLmFtYXpvbmF3cy5jb21cL3VzLWVhc3QtMV9ldTdHbjRMRzUiLCJjb2duaXRvOnVzZXJuYW1lIjoieWFuYmluIiwiYXVkIjoiNTM5b252NmpiaHM4ODlrNnQwYnQxM3JsZ3IiLCJ0b2tlbl91c2UiOiJpZCIsImF1dGhfdGltZSI6MTY3OTY4Njk2MSwiZXhwIjoxNjc5NjkwNTYxLCJpYXQiOjE2Nzk2ODY5NjIsImp0aSI6ImE4NGNjMmE3LWIxNTAtNGE5Ny04YTUwLWQzMjBhYTI5ZmJjMiIsImVtYWlsIjoieWFicWl1QGdtYWlsLmNvbSJ9.RUwpukN4s4OVn9FiNRpKp5Y5jvtDghEmExPqbAGDU6P5a_-oVcx-tP0ne7Ge_mn21uJCMxE6OyYgLVK49smTJeAs49RlJczLyxO8gFrBeBpHLcGwehqlZhm5et62aU-kGWDw0kCWphlIoFCTnqVDPhIZMn1U2LcjvQtLh_jmPgcps5uGRY4IWru_w6eF4Xmb5gVuXiSEQ3D_xyOs7vyplU_kbHHw21pS8Np4RRix3TqJDxeUHDURwSrN541IOQuV_6kki8uGmr9FxbhvOs3nVDOqNR9w0YIEesbnqksZMHJ1SWBgWYNYP4Pe-gxPuDEyx5FA_2tXcMt-4G21KvzJiw&amp;access_token=eyJraWQiOiI3c2k0cDdcLzF3Z2xBK0tLOFQzUHZDWldMMkVRV1wvbW5zTkphUVEyMStxUnc9IiwiYWxnIjoiUlMyNTYifQ.eyJzdWIiOiJmYWE2ZjI1NC03NDA1LTRkYjMtYmRiZC0zZGFjMDU5MGUyNmIiLCJ0b2tlbl91c2UiOiJhY2Nlc3MiLCJzY29wZSI6Im9wZW5pZCBlbWFpbCIsImF1dGhfdGltZSI6MTY3OTY4Njk2MSwiaXNzIjoiaHR0cHM6XC9cL2NvZ25pdG8taWRwLnVzLWVhc3QtMS5hbWF6b25hd3MuY29tXC91cy1lYXN0LTFfZXU3R240TEc1IiwiZXhwIjoxNjc5NjkwNTYxLCJpYXQiOjE2Nzk2ODY5NjIsInZlcnNpb24iOjIsImp0aSI6Ijg4MmRlZWM1LTYzMjUtNDc1ZC05MTM2LTUxYWRiNjg1OWExYyIsImNsaWVudF9pZCI6IjUzOW9udjZqYmhzODg5azZ0MGJ0MTNybGdyIiwidXNlcm5hbWUiOiJ5YW5iaW4ifQ.vbbDwi-NbhMhSmaj1Ns05HpTXlRhFNQ8ENvhFYp0Ch5PBwDKM5f8t91TJd8yanL6DdqMjsRKypPbWpOdXxnCei5w8bfKm247tvED8XMOHZBHTHUFCPFKE-YQ2D3jxxY-zjVwXDG9p65wSCxG_7NOkEPPToU1rFFHZr-g48k2ZuQq7oyZVfsPlFjdOJE4WAxODyH-wgjYXFLLa_FNAUR7uTnyElgUnhfeEDIvKF1UucJl1XKYnNLpGYh2YZ9qgejKPbVdW6Cp5A-JHBJA_6sDsUVtwOlvhksfA4ev_SBCjrFqjMI3QbeaHJeLVboWbSSS7UMP0Tn4CRs1LOujQWnrtA&amp;expires_in=3600&amp;token_type=Bearer&amp;state=4I8xO5VVrJP7eiboJhKxCt1DVp5gDtmm
+</blockquote>
+<br/>
+没错，这是一个 GET 请求，是一个网页的客户端重定向。定向到了登陆时链接中给定的 <code>redirect_uri</code> 值，它必须是 Cognito 集成应用时预先设置的一个 callback URL。参数是在 callback URL 后 <code>#</code> 后的键值对。在我们实现的 /login/oauth2/token API 通过解析 URL 就得到了 <code>id_token</code>, <code>access_token</code>, <code>expires_in</code>, <code>token_type</code>。<br/><br/>
+看一下 <code>access_token</code> 是什么样子的，在 jwt.io 中解析后是这样子的<br/><br/>
+<pre class="lang:default decode:true ">{
+  "sub": "faa6f254-7405-4db3-bdbd-3dac0590e26b",
+  "iss": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_eu7Gn4LG5",
+  "version": 2,
+  "client_id": "539onv6jbhs889k6t0bt13rlgr",
+  "event_id": "3f8fcc97-d06b-4051-b7a1-b3691d321aa6",
+  "token_use": "access",
+  "scope": "openid email",
+  "auth_time": 1679685185,
+  "exp": 1679688785,
+  "iat": 1679685185,
+  "jti": "7559e70d-0363-40c6-a66c-dd7b276a60c4",
+  "username": "yanbin"
+}</pre>
+<br/>
+<code>id_token</code> 长这样<br/><br/>
+<pre class="lang:default decode:true">{
+  "at_hash": "XJC1IGvTN1w65CtkyQ-UIA",
+  "sub": "faa6f254-7405-4db3-bdbd-3dac0590e26b",
+  "email_verified": true,
+  "iss": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_eu7Gn4LG5",
+  "cognito:username": "yanbin",
+  "aud": "539onv6jbhs889k6t0bt13rlgr",
+  "event_id": "3f8fcc97-d06b-4051-b7a1-b3691d321aa6",
+  "token_use": "id",
+  "auth_time": 1679685185,
+  "exp": 1679688785,
+  "iat": 1679685185,
+  "jti": "f5d8ebc0-4316-4368-8eec-17aee70b8277",
+  "email": "yabqiu@gmail.com"
+}</pre>
+<br/>
+关于 ID Token 和 Access Token 的区别见 <a href="https://oauth.net/id-tokens-vs-access-tokens/">ID Tokens vs Access Tokens</a><br/><br/>
+<h3>response_type=code 先获得 code, 再请求到 id_token, access_token, 和 access_token</h3><br/><br/>
+然而为什么 <code>refresh_token</code>？原因是我们登陆时的链接传递的 <code>response_type=token</code>, 没有 <code>refresh_token</code> 就无法通过它刷新获得新的 <code>id_token</code> 和 <code>access_token</code>, 在 <code>access_token</code> 到期后将不得不再次输入用户名和密码重新登陆。那么如何才能获得 <code>refresh_token</code> 呢，登陆时链接必须传递 <code>response_type=code</code><br/><br/>
+<blockquote>
+https://my-demo-user.auth.us-east-1.amazoncognito.com/login?redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Flogin%2Foauth2%2Ftoken&amp;response_type=code&amp;client_id=539onv6jbhs889k6t0bt13rlgr&amp;state=4I8xO5VVrJP7eiboJhKxCt1DVp5gDtmm&amp;scope=openid+email
+</blockquote>
+<br/>
+登陆成功后转向到<br/><br/>
+<blockquote>
+http://localhost:8080/login/oauth2/token?code=df9064a7-1afb-40be-a741-0d6015e43b10&amp;state=4I8xO5VVrJP7eiboJhKxCt1DVp5gDtmm
+</blockquote>
+<br/>
+得到一个 query parameter <code>code</code>。光一个 code 是没什么用的，Cognito 还要求我们作进一步请求<br/><br/>
+<pre class="lang:default decode:true ">curl -s -X POST 'https://my-demo-user.auth.us-east-1.amazoncognito.com/oauth2/token' \
+--header 'Content-Type: application/x-www-form-urlencoded' \
+--data-urlencode 'grant_type=authorization_code' \
+--data-urlencode 'client_id=539onv6jbhs889k6t0bt13rlgr' \
+--data-urlencode 'redirect_uri=http://localhost:8080/login/oauth2/token' \
+--data-urlencode 'code=106f6ac9-4a26-43f6-9048-9ee005a0fa0e' | jq .
+{
+  "id_token": "eyJraWQiOiJtUkdxVXh5STI4cDJ3Znc4b011aElXM2EraTd1Q01P...Bw4mbIqjvoLF8BufE6D_S6wQ",
+  "access_token": "eyJraWQiOiI3c2k0cDdcLzF3Z2xBK0tLOFQzUHZDW...W78ula7ldlLLpPu_gvZtgXm2lkVzpGg",
+  "refresh_token": "eyJjdHkiOiJKV1QiLCJlbmMiOiJBMjU2R0NNIiwiYWxnIjoiUlNB...CDz4a8vtYBU6og.ct-mI_BWBqDHk4ZayegoGg",
+  "expires_in": 3600,
+  "token_type": "Bearer"
+}
+</pre>
+<br/>
+(用 jq 对输出进行了格式化，并对 token 作了裁剪显示)<br/><br/>
+现在得到三个 token, <code>id_token</code>, <code>access_token</code>, 和 <code>refresh_token</code>。这里的 <code>refresh_token</code> 另外两个 token 要长得多，这也是为什么在 <code>response_type=token</code> 时不把 <code>refresh_token</code> 放在 callback URL 中的原因，当然安全性也是一个因素。<code>refresh_token</code> 也是一个三段式的 JWT token 格式，然后它的 payload 部分并不是一个 JSON 格式的数据，而又是一段密文。<br/><br/>
+同一个 code 只能使用一次，再次使用相同的 code 请求的话会返回<br/><br/>
+<blockquote>
+HTTP/2 400<br />
+......
+{"error":"invalid_grant"}
+</blockquote>
+<br/>
+<code>access_token</code> 可用来访问受限的 API, 它有一个有效期，如 1 个小时。但在网页上总不能每一个小时都要求用户重新登陆一次，通常 <code>refresh_token</code> 有效时间会比较长，如 24 小时。<br/><br/>
+由 Authorization Code 获得 <code>id_token</code>, <code>access_token</code> 和 <code>refresh_token</code> 的规范可参考官方文档 <a href="https://www.oauth.com/oauth2-servers/access-tokens/authorization-code-request/">Authorization Code Request</a>，他们还提供了一个 <a href="https://www.oauth.com/playground/authorization-code.html">Authorization Code Grant on the OAuth 2.0 Playground</a>。<br/><br/>
+<h3>由 refresh_token 刷新 id_token 和 access_token</h3><br/><br/>
+在为 Cognito 的 UserPool 添加应用集成时, <code>id_token</code>, <code>access_token</code> 的默认有效期是 1 小时，整个认证过期是 3 分钟，比如说拿到 code 到取得 <code>access_token</code> 的时间; 而 <code>refresh_token</code> 的有效期是 30 天，可谓超长待机，只要持有 <code>refresh_token</code> 话 30 天不用登陆。 <br/><br/>
+于是我们就要可用 <code>refresh_token</code> 在 <code>access_token</code> 到期之前刷新获得一个新的 <code>access_token</code>。<br/><br/>
+<pre class="lang:default decode:true">curl -s -X POST 'https://my-demo-user.auth.us-east-1.amazoncognito.com/oauth2/token' \
+--header 'Content-Type: application/x-www-form-urlencoded' \
+--header 'Cookie: XSRF-TOKEN=c42a7fc6-a764-462f-b67c-23e19ecaa23f' \
+--data-urlencode 'grant_type=refresh_token' \
+--data-urlencode 'client_id=539onv6jbhs889k6t0bt13rlgr' \
+--data-urlencode 'redirect_uri=http://localhost:8080/login/oauth2/token' \
+--data-urlencode 'refresh_token=eyJjdHkiOiJKV1QiLCJlbmMiOiJBMjU2R0NNIiwiYWxnIjoiUlNB...CDz4a8vtYBU6og.ct-mI_BWBqDHk4ZayegoGg' | jq .
+{
+  "id_token": "eyJraWQiOiJtUkdxVXh5STI4cDJ3Znc4b011aElXM2EraTd1...dRs-KggawJVDFiDqDqOaq5RXWIBWp0D8eSMf3-CSIaCNUA",
+  "access_token": "eyJraWQiOiI3c2k0cDdcLzF3Z2xBK0tLOFQzU...bWvpxMKvFMv0f-B1Pe99Il82Oirsufe-tjcjHOucC4gK_fE5YINJw",
+  "expires_in": 3600,
+  "token_type": "Bearer"
+}</pre>
+<br/>
+(用 jq 对输出进行了格式化，并对 token 作了裁剪显示)<br/><br/>
+同一个 <code>refresh_token</code> 可多次使用，每次都能获得新的 <code>id_token</code> 和 <code>access_token</code>.<br/><br/>
+AWS 为前端 JS 提供了 <a href="https://github.com/amazon-archives/amazon-cognito-auth-js">amazon-cognito-auth-js</a> 组件, 阅读其中的代码 <a href="https://github.com/amazon-archives/amazon-cognito-auth-js/blob/master/src/CognitoAuth.js">CognitoAuth.js</a>，它能帮我们自动化处理 response_type 为 token 和 code 请求<br/><br/>
+<ol>
+    <li>如果登陆时 response_type=token, 直接获得 <code>id_token</code>, <code>access_token</code>, 并保存在 LocalStorage</li>
+    <li>如果登陆时用的 <code>response_type=code</code> 的话则在登陆后得到  code 后自动进行下一个请求由 code 获得 <code>id_token</code>, <code>access_token</code>, 以及 <code>refresh_token</code>，并在使用 access_token 时若过期的话自动刷新获得新的 <code>id_token</code> 和 <code>access_token</code></li>
+    <li>auth.getSession() 在用户未登陆默认采用 response_type=token, 如果提前调用了 auth.useCodeGrantFlow() 方法则会采用 response_type=code 的方式调用。</li>
+</ol>
+<br/>
+具体用法看官方的 <a href="https://github.com/amazon-archives/amazon-cognito-auth-js/blob/master/README.md">README.md</a>, 目前该项目已归档。<a href="https://www.npmjs.com/package/amazon-cognito-auth-js">amazon-cognito-auth-js</a> 已经是 deprecated, 在 NPM 的该组件页面 <a href="https://www.npmjs.com/package/amazon-cognito-auth-js">https://www.npmjs.com/package/amazon-cognito-auth-js</a> 建议用 <a href="https://www.npmjs.com/package/@aws-amplify/auth">@aws-amplify/auth</a> 或 <a href="https://www.npmjs.com/package/amazon-cognito-identity-js">amazon-cognito-identity-js</a>。<br/><br/>
+在 NodeJS 的服务端可用 <a href="https://www.npmjs.com/package/cognito-express">cognito-express</a> 进行 token 的验证。<br/><br/>
+参考：<br/><br/>
+<ol>
+    <li><a href="https://oauth.net/2/">OAuth 2.0 官网</a></li>
+    <li><a href="https://advancedweb.hu/how-to-use-the-refresh-token-with-cognito/">How to use the refresh token with Cognito</a></li>
+    <li><a href="https://developers.docusign.com/platform/auth/authcode/authcode-get-token/">How to get an access token with Authorization Code Grant</a></li>
+</ol>

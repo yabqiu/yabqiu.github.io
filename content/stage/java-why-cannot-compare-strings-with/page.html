@@ -1,0 +1,69 @@
+---
+title: Java 设计之初为何就不让用 == 比较两字符串呢？
+url: /java-why-cannot-compare-strings-with/
+date: 2014-04-24T00:14:45-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - string
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6400 
+wpStatus: publish
+views: 406
+lastmod: 2014-04-24T00:19:48-05:00
+---
+
+Java 的字符串值比较不能用 == 号这个设计不知道最初是怎么考虑的，它最大的贡献无疑是滋生了一个长久未衰的面试题，加之连 Code Review 都可能被忽略掉的 Bug。本来两个字符串用等号相比较是最自然而然的做法，然而它却是要迫使我们相信想当然很可能是错误的那样一个道理。<br/>
+<br/>
+我一直认为 Java 的字符串比较值不能用 == 而必须用 equals() 方法是个不恰当的设计，这从其他种种语言的现实做法(人家都用 == 比较值)就知道。<br/>
+<br/>
+猜想一下 Java 为何要这样对待字符串，可能 Java 又想类型全部对象化，同时考虑到方便性，仍然保留了 int, short, boolean 等原始类型，它们是可以用 == 比较值，其他真正的对象类型用 equals() 方法比较也是无可厚非的。这时候夹缝中的字符串却被为难到了，它那么的常用，还常以字面量的面目出现，它更该是个基本类型，而实为对象类型，因此不被认可用 == 直接比较值， 而选择了用 equals() 方法来比较字符串值。<br/>
+<br/>
+而另一方面，由于字符串是多例的，所以有些情况下又更令人迷惑，比如下面的种种情况<!--more--><br/>
+<pre class="brush:java">String s1 = "abc";<br/>
+String s2 = "abc";<br/>
+String s3 = new String("abc");<br/>
+String s4 = new String("abc");<br/>
+String s5 = String.valueOf("abc");<br/>
+        <br/>
+System.out.println(s1==s2); //true<br/>
+System.out.println(s3==s1); //false<br/>
+System.out.println(s3==s4); //false<br/>
+System.out.println(s2==s5); //true<br/>
+System.out.println(s4==s5); //false</pre>
+
+因为有以上诸多情况所以有时候你看到代码里有用 == 号来比较字符串时也无需太惊慌，可能它也不会导致 Bug 的产生，比如两个 String.valueOf() 方法产生的 String 用 == 也同样能达到预期的效果。<br/>
+<br/>
+同时对于原始类型和包装类型的比较，因其中有自动装拆箱的存在，所以有时候也是不那么好理解<br/>
+<pre class="brush:java">int i1 = 200;<br/>
+System.out.println(i1==new Integer(200)); //true<br/>
+System.out.println(new Integer(200)==i1); //true<br/>
+System.out.println(new Integer(200)==new Integer(200)); //false<br/>
+System.out.println(Integer.valueOf(127)==Integer.valueOf(127)); //true<br/>
+System.out.println(Integer.valueOf(128)==Integer.valueOf(128)); //false</pre>
+
+因为原始类型与包装类型的类似疑问，在 Groovy 中即使字面 10 也是 Integer 类型，Scala 的 10 也是 Int 类型，C# 中看到是 int, int32 声明的类型其实它们也是对象类型。C# 发扬了它所在操作系统平台那样，类型标识的大小写也不那么敏感。<br/>
+<br/>
+前面说过在其他语言中基本是用 == 来比较值的，C/C++/ObjC 的字符串除外，这三者的字符串应该算自定义的数据类型，可以重载 == 操作符的。<br/>
+<br/>
+C# 也是用 == 比较两字符串的值,  做地址比较用 <code>object.ReferenceEquals (a, b)</code>.<br/>
+<br/>
+Groovy 的 == 比较两个对象都是会转去调用 equals() 或 compareTo() 方法，真正要比较地址用 <code>a.is(b)</code>.<br/>
+<br/>
+Scala  的  == 与 Groovy 的原理一样，它的地址比较用 <code>a eq b</code> 或 <code>a ne b</code>.<br/>
+<br/>
+因为 Groovy 和 Scala 它们都运行在 JVM 之上的，因而这是它们与 Java 进行适配的做法。<br/>
+<br/>
+其他如 Javascript 用 == 比较字符串就更不用说了，Ruby 也是纯对象类型的语言。<br/>
+<br/>
+从某些方面讲也是因为 Java 的不纯对象类型而造成这么种尴尬的局面，如果是纯对象类型就用不着拆箱装箱了。某个语言要往前发展一路要保持住兼容性，是有些负担的，所以基于 JVM 上的其他语言经常要采取一些折中的做法去与 JVM 相匹配。<br/>
+<br/>
+如果单从语言特性来讲，C# 还是把 Java 拉开了一个距离，同样是静态类型，C# 都发展到 var 强力类型推断的阶段，还有匿名类型。Java 的世界里只有 Scala 那样的小语系在自由大胆向前。

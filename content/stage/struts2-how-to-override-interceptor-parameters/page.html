@@ -1,0 +1,98 @@
+---
+title: Struts2 中如何覆盖已内置拦截器的属性(参数)值
+url: /struts2-how-to-override-interceptor-parameters/
+date: 2011-03-06T02:19:01-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Struts
+tags: 
+  - Struts2
+  - 拦截器
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3192 
+wpStatus: publish
+views: 2513
+lastmod: 2021-09-03T13:01:57-05:00
+---
+
+在前面一篇 <a href="http://unmi.cc/struts2-modeldriven-setmodel-nothing" target="_blank" rel="noopener">Struts2 中 ModelDriven Action 的 setModel() 为何不起作用？</a> 中发现最漂亮的办法就是修改 ModelDrivern 的 refreshModelBeforeResult 属性为 true，同时留下一个话题。这里接着，即如何覆盖内置拦截器的属性(参数) 值。</p>
+<br/>
+如果是自定的拦截器，则可以在 struts.xml 中的 &lt;interceptor&gt; 或 &lt;interceptor-ref&gt; 中用 &lt;param name="paramName"&gt;paramValue&lt;/param&gt; 来指定参数。但是对于 struts2 核心包内置的或是第三方的拦截器的参数需要进行重新设置该如何呢？<br/><br/>
+比如在 struts2 包中的 struts-default.xml 中定义很多拦截器，通常我们使用的是其中组织好的 defaultStack 拦截器栈，看 struts-default.xml 中关键几行配置：<!--more--><br/><br/>
+<pre class="lang:default decode:true">&lt;struts&gt;
+    &lt;package name="struts-default" abstract="true"&gt;<br/><br/>
+            &lt;interceptor-stack name="defaultStack"&gt;&lt;!--引用了18个拦截器--&gt;
+                &lt;interceptor-ref name="exception"/&gt;
+                ......
+                &lt;interceptor-ref name="modelDriven"/&gt;
+                &lt;interceptor-ref name="fileUpload"/&gt;
+                &lt;interceptor-ref name="checkbox"/&gt;
+                ......
+            &lt;/interceptor-stack&gt;
+       &lt;/interceptors&gt;<br/><br/>
+        &lt;default-interceptor-ref name="defaultStack"/&gt;<br/><br/>
+    &lt;/package&gt;
+&lt;/struts&gt;</pre>
+<br/>
+在我们自己的 struts.xml 中无特别需求的情况下会直接继承 struts-default 配置，也就是使用了 defaultStack 拦截器栈：<br/><br/>
+<pre class="lang:default decode:true">&lt;package name="default" namespace="/" extends="struts-default"&gt;</pre>
+<br/>
+那么我们可以有两种方式来修改 defaultStack 拦截器栈中某个拦截器的参数，还是以修改 defaultStack 栈中的 modelDriven 拦截器的 refreshModelBeforeResult 属性为例。<br/><br/>
+在 strtus.xml 的每一个 &lt;action&gt; 配置中用 &lt;interceptor-ref name="defaultStack"&gt; 引用默认拦截器栈中修改：<br/><br/>
+<pre class="lang:default decode:true">&lt;action name="hello_unmi"&gt;
+    &lt;interceptor-ref name="defaultStack"&gt;
+     &lt;param name="modelDriven.refreshModelBeforeResult"&gt;true&lt;/param&gt;
+ &lt;/interceptor-ref&gt;
+ &lt;interceptor-ref name="你自己的拦截器或拦截器栈"...........
+&lt;/action&gt;</pre>
+<br/>
+modelDriven.refreshModelBeforeResult 意义是在 defaultStack 拦截器栈中的 modelDriven 拦截器的 refreshModelBeforeResult 属性，设置为 true。而要是你许多的 Action 有这样的需求，显然一个个的设置是无法接受的，还要知道我们默认的全局拦截器栈就是 defaultStack。<br/><br/>
+那我们可以采用第二种办法，设置自己的默认拦截器栈，比如 myDefaultStack，那要在 struts.xml 中这么个写法：<br/><br/>
+<pre class="lang:default decode:true">&lt;package name="default" namespace="/" extends="struts-default"&gt;
+        
+    &lt;interceptors&gt;
+        &lt;interceptor name="userTracking"&gt;
+            &lt;param name="includeAdmin"&gt;true&lt;/param&gt; &lt;!--声明时可设置某一属性--&gt;
+        &lt;/interceptor&gt;
+        &lt;interceptor-stack name="myDefaultStack"&gt;
+            &lt;interceptor-ref name="defaultStack"&gt;
+                &lt;param name="modelDriven.refreshModelBeforeResult"&gt;true&lt;/param&gt;
+            &lt;/interceptor-ref&gt;
+            &lt;interceptor-ref name="userTracking"/&gt;
+                &lt;param name="includeAdmin"&gt;false&lt;/param&gt; &lt;!-- 定义拦截器栈时可以改属性 --&gt;<br/><br/>
+            &lt;/interceptor-ref&gt;
+        &lt;/interceptor-stack&gt;
+    &lt;/interceptors&gt;
+        
+    &lt;default-interceptor-ref name="myDefaultStack"/&gt;<br/><br/>
+    ..........................</pre>
+<br/>
+上面我们看到了多处可以修改拦截器或拦截器栈中的某个拦截器的属性，自然可以用同样的方法来修改自定义拦截器栈中某一拦截器的属性。用 &lt;default-interceptor-ref name="myDefaultStack"/&gt; 定义了新的默认拦截器栈，那么在 default package 中的所有 action 自动应用了这一拦截器栈。如果我们未定义自己的拦截器，而只是想修改 defaultStack 中某个拦截器的属性，只要写成：<br/><br/>
+<pre class="lang:default decode:true">&lt;package name="default" namespace="/" extends="struts-default"&gt;
+        
+    &lt;interceptors&gt;
+        &lt;interceptor-stack name="myDefaultStack"&gt;
+            &lt;interceptor-ref name="defaultStack"&gt;
+                &lt;param name="modelDriven.refreshModelBeforeResult"&gt;true&lt;/param&gt;
+            &lt;/interceptor-ref&gt;
+        &lt;/interceptor-stack&gt;
+    &lt;/interceptors&gt;
+        
+    &lt;default-interceptor-ref name="myDefaultStack"/&gt;<br/><br/>
+    ..........................</pre>
+<br/>
+此时不知有人会否想像到，如果对于 &lt;default-interceptor-ref&gt; 中能用 &lt;param&gt; 来指定某一属性，岂不更妙，想像一下这样子的：<br/><br/>
+<pre class="lang:default decode:true ">&lt;package name="default" namespace="/" extends="struts-default"&gt;<br/><br/>
+    &lt;default-interceptor-ref name="defaultStack"/&gt;
+        &lt;param name="modelDriven.refreshModelBeforeResult"&gt;true&lt;/param&gt;
+    &lt;/default-interceptor-ref&gt;<br/><br/>
+    ..........................</pre>
+<br/>
+能的话比起前面是简洁的多，不需要 &lt;interceptor&gt; 相关的声明，但也是只能说想法很美好，可惜 &lt;default-interceptor-ref&gt; 关没有 &lt;param&gt; 子节点的。<br/><br/>
+参考： 1. <a href="http://lijunjie337.javaeye.com/blog/657006" target="_blank" rel="noopener">Struts中覆盖指定拦截器的参数</a>

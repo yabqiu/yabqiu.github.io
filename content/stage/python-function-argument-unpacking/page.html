@@ -1,0 +1,148 @@
+---
+title: Python 函数参数的拆解
+url: /python-function-argument-unpacking/
+date: 2019-02-06T00:59:41-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - function
+  - unpacking
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9305 
+wpStatus: publish
+views: 561
+lastmod: 2020-07-02T22:18:58-05:00
+---
+
+本文为阅读 《Python Tricks: The Book》一书的 3.5 Function Argument Unpacking 的笔记与扩充理解。函数参数拆解是定义可变参数(VarArgs) <code>*args</code> 和 <code>**kwargs</code> 的反向特性。<br/><br/>
+<code>*args</code> 和 <code>**kwars</code> 是函数可定义一个形参来接收传入的不定数量的实参。<br/><br/>
+而这里的函数参数拆解是形参定义多个，在调用时只传入一个集合类型对象(带上 * 或 ** 前缀)，如 <code>list</code>, <code>tuple</code>, <code>dict</code>, 甚至是 <code>generator</code>, 然后函数能自动从集合对象中取得对应的值。<br/><br/>
+如果能理解下面赋值时的参数拆解和 Python 3.5 的新增 <code>*</code> <code>**</code> 操作，那么于本文讲述的特性就好理解了。<br/><br/>
+唯一的不同时作为参数的集合传入函数时必须前面加上 <code>*</code> 或 <code>**</code>, 以此宣告该参数将被拆解，而非一个整体作为一个函数参数。加上 <code>*</code> 或 <code>**</code> 与 Java 的 <code>@SafeVarargs</code> 有类似的功效，最接近的是 Scala 的 `foo(Array[String]("d", "e") : <span style="color: #800000;">_*</span>)` 写法。参见：<a href="https://yanbin.blog/java-scala-call-varargs-method/">Java 和 Scala 调用变参的方式</a><!--more--><br/><br/>
+<h3>Python 的赋值拆解操作</h3><br/><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; a, b = [1, 2]    # a, b = (1, 2) 也是一样的效果
+>&gt;&gt; print(a, b)
+1 2
+>&gt;&gt; a, b = {'x': 1, 'y':2}
+>&gt;&gt; print(a, b)
+x y
+>&gt;&gt; a, b = {'x': 1, 'y':2}.keys()
+>&gt;&gt; print(a, b)
+x y
+>&gt;&gt; a, b = {'x': 1, 'y':2}.values()
+>&gt;&gt; print(a, b)
+1 2
+>&gt;&gt; a, b = (x * x for x in range(2))
+>&gt;&gt; print(a, b)
+0 1</pre>
+<br/>
+<h3>Python 3.5 的新增拆解操作</h3><br/><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; [1, 2, *range(3), *[4, 5], *(6, 7)]    # * 号能把集合打散，flatten(unwrap)
+[1, 2, 0, 1, 2, 4, 5, 6, 7]
+>&gt;&gt; {'x': 1, **{'y': 2, 'z': 3}}           # ** 把字典打散, flatten(unwrap) 操作
+{'x': 1, 'y': 2, 'z': 3}</pre>
+<br/>
+有些像是函数编程中的 <code>flatten</code> 或 <code>unwrap</code> 操作。<br/><br/>
+有了上面的基础后，再回到原书中的例子，当我们定义如下打印 3-D 坐标的函数<br/><br/>
+<pre class="lang:default decode:true ">def print_vector(x, y, z):
+    print('&lt;%s, %s, %s&gt;' % (x, y, z))</pre>
+<br/>
+依次传入三个参数的方式就不值不提了，现在就看如何利用函数的参数拆解特性，只传入一个集合参数，让该 <code>print_vector</code> 函数准确从集合中获得相应的 <code>x</code>, <code>y</code>, 和 <code>z</code> 的值。<br/><br/>
+<h3>函数参数拆解的调用举例</h3><br/><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; list_vec = [2, 1, 3]
+>&gt;&gt; print_vector(*list_vec)
+&lt;2, 1, 3&gt;
+>&gt;&gt; print_vector(*(2, 1, 3))
+&lt;2, 1, 3&gt;
+>&gt;&gt; dict_vec = {'y': 2, 'z': 1, 'x': 3}
+>&gt;&gt; print_vector(*dict_vec)    # 相当于  print_vector(*dict_vec.keys())
+&lt;y, z, x&gt;
+>&gt;&gt; print_vector(**dict_vec)   # 相当于 print_vector(dict_vec['x'], dict_vec['y'], dict_vec['z']
+&lt;3, 2, 1&gt;
+>&gt;&gt; genexpr = (x * x for x in range(3))
+>&gt;&gt; print_vector(*genexpr)
+&lt;0, 1, 4&gt;
+>&gt;&gt; print_vector(*dict_vec.values())  # 即 print_vector(*list(dict_vec.values()))
+&lt;2, 1, 3&gt;</pre>
+<br/>
+注意 <code>**dict_vec</code> 有点不一样，它的内容必须是函数 <code>print_vector</code> 的形参 <code>'x'</code>, <code>'y'</code>, <code>'z'</code> 作为 key 的三个元素。<br/><br/>
+<h3>以下是各种错误</h3><br/><br/>
+<code>**dict_vec</code> 元素个数不对，或 key 不匹配时的错误<br/><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; print_vector(**{'y': 2, 'z': 1, 'x': 3})
+&lt;3, 2, 1&gt;
+>&gt;&gt; print_vector(**{'y': 2, 'z': 1, 'a': 3})        #元素个数是3 个，但出现 x, y, z 之外的 key
+Traceback (most recent call last):
+  File "&lt;pyshell#39&gt;", line 1, in &lt;module&gt;
+    print_vector(**{'y': 2, 'z': 1, 'a': 3})
+TypeError: print_vector() got an unexpected keyword argument 'a'
+>&gt;&gt; print_vector(**{'y': 2, 'z': 1, 'x': 3, 'a': 4}) # 包含有 x, y, z, 但有四个元素，key 'a' 不能识别
+Traceback (most recent call last):
+  File "&lt;pyshell#40&gt;", line 1, in &lt;module&gt;
+    print_vector(**{'y': 2, 'z': 1, 'x': 3, 'a': 4})
+TypeError: print_vector() got an unexpected keyword argument 'a'
+>&gt;&gt; print_vector(**{'y': 2, 'z': 1})         # 缺少 key 'x' 对应的元素
+Traceback (most recent call last):
+  File "&lt;pyshell#41&gt;", line 1, in &lt;module&gt;
+    print_vector(**{'y': 2, 'z': 1})
+TypeError: print_vector() missing 1 required positional argument: 'x'</pre>
+<br/>
+<h4>不带星星的错误</h4><br/><br/>
+<pre class="lang:default decode:true ">&gt;&gt;&gt; print_vector([2, 1, 3])
+Traceback (most recent call last):
+  File "&lt;pyshell#44&gt;", line 1, in &lt;module&gt;
+    print_vector([2, 1, 3])
+TypeError: print_vector() missing 2 required positional arguments: 'y' and 'z'</pre>
+<br/>
+把集合对象整体作为第一个参数，所以未传入 y 和 z，因此必须用前缀 <code>*</code> 或 <code>**</code> 通告函数进行参数拆解<br/><br/>
+<h4>集合长度与函数参数个数不匹配时的错误</h4><br/><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; print_vector(*[2, 1])               # 拆成了 x=2, y=1, 然后 z 呢？
+Traceback (most recent call last):
+  File "&lt;pyshell#47&gt;", line 1, in &lt;module&gt;
+    print_vector(*[2, 1])
+TypeError: print_vector() missing 1 required positional argument: 'z'
+>&gt;&gt; print_vector(*[2, 1, 3, 4])       # 虽然拆出了 x=2, y=1, z=3, 但也别想强塞第四个元素给该函数(只定义的三个参数)
+Traceback (most recent call last):
+  File "&lt;pyshell#48&gt;", line 1, in &lt;module&gt;
+    print_vector(*[2, 1, 3, 4])
+TypeError: print_vector() takes 3 positional arguments but 4 were given</pre>
+<br/>
+上面这两个错误与赋值时的拆解因元素个数不匹配时的错误是相对应的<br/><br/>
+<pre class="lang:default decode:true ">&gt;&gt;&gt; a, b = [1]
+Traceback (most recent call last):
+  File "&lt;pyshell#54&gt;", line 1, in &lt;module&gt;
+    a, b = [1]
+ValueError: not enough values to unpack (expected 2, got 1)
+>&gt;&gt; a, b = [1, 2, 3]
+Traceback (most recent call last):
+  File "&lt;pyshell#55&gt;", line 1, in &lt;module&gt;
+    a, b = [1, 2, 3]
+ValueError: too many values to unpack (expected 2)</pre>
+<br/>
+当然在赋值时 Python 可以像下面那样做<br/><br/>
+<pre class="lang:default decode:true">a, b, *c = [1, 2, 3, 4]
+>&gt;&gt; print(a, b, c)
+1 2 [3, 4]</pre>
+<br/>
+<hr /><br/><br/>
+补充(2020-07-02): 迭代的拆解在 Python 中的术语是 Iterable Unpacking, 找到两个相关的 PEP 448, PEP 3132。在实际上用处还是很大的，比如在拆分字符串时只关系自己有兴趣的字段<br/><br/>
+<pre class="lang:default decode:true ">line = '2020-06-19 22:14:00       2688 abc.json'
+date, time, size, name = line.split()    # 获得所有字段值
+_, time, _, name = line.split()          # 只对 time 和 name 有兴趣
+date, *_ = line.split()                  # 只对第一个 date 有兴趣
+*_, name = line.split()                  # 只对最后的 name 有兴趣
+date, *_, name = line.split()            # 对两边的 date, name 有兴趣</pre>
+<br/>
+这样就避免了用索引号来引用拆分后的值，如  split[0], splint[2] 等，有名的变量不容易出错。注意到 Python 在拆解时非常聪明，它知道怎么去对应位置，用了星号(*) 的情况，明白如何处理前面跳过多少个，中间跳过多少个，或最后收集多少个元素。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://www.python.org/dev/peps/pep-0448/">PEP 448 -- Additional Unpacking Generalizations</a></li>
+    <li><a href="https://www.python.org/dev/peps/pep-3132/">PEP 3132 -- Extended Iterable Unpacking</a></li>
+</ol>

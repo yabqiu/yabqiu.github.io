@@ -1,0 +1,61 @@
+---
+title: Hibernate 保存对象出现 org.hibernate.NonUniqueObjectException 及解决
+url: /hibernate-save-hibernate-nonuniqueobjectexception/
+date: 2007-08-09T11:29:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/12/hibernate_log.png"
+categories:
+  - Hibernate
+tags: 
+  - Hibernate
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 495 
+wpStatus: publish
+views: 4488
+lastmod: 2019-11-30T09:50:49-06:00
+---
+
+Hibernate save 在 session 中已存在相同 OID(主键) 的对象，会出现异常，详细内容如下：</p>
+<br/>
+<span style="color: #ff0000;">Exception in thread "main" <span style="color: #3333ff;">org.hibernate.NonUniqueObjectException</span>: a different object with the same identifier value was already associated with the session: [com.unmi.LoanDetail#1]<br />
+ at org.hibernate.event.def.AbstractSaveEventListener.performSave(AbstractSaveEventListener.java:168)<br />
+ at org.hibernate.event.def.AbstractSaveEventListener.saveWithGeneratedId(AbstractSaveEventListener.java:121)<br />
+ at org.hibernate.event.def.DefaultSaveOrUpdateEventListener.saveWithGeneratedOrRequestedId(DefaultSaveOrUpdateEventListener.java:187)<br />
+ at org.hibernate.event.def.DefaultSaveEventListener.saveWithGeneratedOrRequestedId(DefaultSaveEventListener.java:33)<br />
+ at org.hibernate.event.def.DefaultSaveOrUpdateEventListener.entityIsTransient<!--more-->(DefaultSaveOrUpdateEventListener.java:172)<br />
+ at org.hibernate.event.def.DefaultSaveEventListener.performSaveOrUpdate(DefaultSaveEventListener.java:27)<br />
+ at org.hibernate.event.def.DefaultSaveOrUpdateEventListener.onSaveOrUpdate(DefaultSaveOrUpdateEventListener.java:70)<br />
+ at org.hibernate.impl.SessionImpl.fireSave(SessionImpl.java:535)<br />
+ at org.hibernate.impl.SessionImpl.save(SessionImpl.java:523)<br />
+ at org.hibernate.impl.SessionImpl.save(SessionImpl.java:519)<br />
+ at com.unmi.Test.main(Test.java:44)</span><br/><br/>
+重现以上错误的代码如下(去除了事物控制的代码行)：<br/><br/>
+<pre class="brush:java">     Session session = HibernateSessionFactory.getSession();<br/><br/>
+     // 加载OID为1L的对象，会被放在session缓存中
+     LoanDetail detail = (LoanDetail)session.get(LoanDetail.class,1L);<br/><br/>
+     // new 一个OID也为1L的临时对象
+     LoanDetail newDetail = new LoanDetail(1L);
+    newDetail.setSubjectId(1000L);<br/><br/>
+     // 持久化一个临时对象，试图放在session的缓存中，因OID冲突出现异常
+     session.save(newDetail);<br/><br/>
+     // 执行saveOrUpdate同样会出现以上的异常
+     // session.saveOrUpdate(newDetail);</pre>
+<br/>
+解决方法：<br />
+   1) 如果用的 hibernate 2, 需要在get/load/query到持久化对象，赋上新的属性值，再 save/update/saveOrupdate.<br />
+      对以上代码就是：不能 new 一个session中已存在OID的对象，直接<br />
+      detail.setSubjectId(1000L);<br />
+      session.save(detail);<br />
+      session.save()一个持久化对象时，会转化成update调用。<br/><br/>
+   2) 使用 hibernate 3 的 merge 方法. session.merge(newDetail)即可，它会在 session 缓存中找到持久化对象，把新对象的属性赋过去，再保存原session中的持久化对象。<br />
+      如果在session或数据库中没有的对象，用merge方法的话，它也能够帮你把记录 insert 到表中，相当于 save 方法。<br/><br/>
+上面是一个简单的例子，实际业务中可能是经过一番复杂的操作后自己也很难搞清楚 new 的一个新对象在 session/数据库中是否已存在。所以第一种方法你需要清楚你的每一个对象状态，第二种方法在 hibernate 3 中就比较通用一些。<br/><br/>
+附 hibernate javadoc 对 session.merge() 方法的注释：<br />
+Copy the state of the given object onto the persistent object with the same identifier. If there is no persistent instance currently associated with the session, it will be loaded. Return the persistent instance. If the given instance is unsaved, save a copy of and return it as a newly persistent instance. The given instance does not become associated with the session. This operation cascades to associated instances if the association is mapped with cascade="merge".<br/><br/>
+The semantics of this method are defined by JSR-220.

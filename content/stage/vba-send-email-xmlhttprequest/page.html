@@ -1,0 +1,99 @@
+---
+title: VBA 中发送邮件（三. 使用 XMLHttpRequest 组件）
+url: /vba-send-email-xmlhttprequest/
+date: 2009-04-03T03:36:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - C++/VB
+tags: 
+  - VBA
+  - xmlhttpre
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 285 
+wpStatus: publish
+views: 970
+lastmod: 2021-09-03T22:57:18-05:00
+---
+
+w3 JMail 组件虽好用，但实际使用过程中还是碰到问题，多数机器上都表现正常，唯独在一台机器上，JMail 的错误信息总是：jmail The message was undeliverable. All servers failed to receive the message。根据经验把病毒软件、防火墙都关了，Telnet 到邮件服务器的 25 端口，或者 Outlook 收发都是正常的，这下有些没辙了，而同事真正又要在那台奇怪的机器上发邮件。<br/><br/>
+再想它法了，对，就是 XMLHttpRequest，把功能分离，Excel 只提交 Http 请求，由 JSP 来完成实际的邮件发送工作，当然也可以实现为其他的形式。所以也就有两部分实现代码，分别为：<br/><br/>
+JSP 代码，使用的是 Apache 的 commons-email 组件，它还需要用到 activation.jar 和 mail.jar，关于 commons-email 的使用可参考前面的一篇：<a href="http://unmi.cc/apache-commons-email-send-mail/" target="_blank" rel="noopener">用 apache commons-email 轻松发送无乱码邮件</a>。比如文件存为 sendmail.jsp，通过浏览器来访问时用的 URL 是 <a href="http://192.168.1.100:8080/WebUtils/sendmail.jsp">http://192.168.1.100:8080/WebUtils/sendmail.jsp</a>：<!--more--><br/><br/>
+<pre class="lang:default decode:true ">&lt;%@ page contentType="text/html; charset=UTF-8"  pageEncoding="UTF-8"%&gt;
+&lt;%@ page import="org.apache.commons.mail.*,java.net.*"%&gt;
+&lt;%<br/><br/>
+/*发送邮件的页面，只允许以 post 方式提交
+  参数说明：
+  to: 邮件接收人
+  subject: 邮件标题
+  body:   邮件正文
+*/<br/><br/>
+String method = request.getMethod();<br/><br/>
+if(method.equalsIgnoreCase("post")){ //只处理 post 请求<br/><br/>
+     //把请求的字符集设为 iso8859-1,然后调用 toUTF8 来解决乱码问题
+     request.setCharacterEncoding("iso8859-1");
+     String to = toUTF8(request.getParameter("to"));
+     String subject = toUTF8(request.getParameter("subject"));
+     String body = toUTF8(request.getParameter("body"));<br/><br/>
+     // 发送带附件及HTML内容的邮件
+     HtmlEmail email = new HtmlEmail();
+     email.setHostName("smtp.sina.com");<br/><br/>
+     // 需要邮件发送服务器验证,用户名/密码
+     email.setAuthentication("fantasia", "xxxxxx");
+     email.addTo(to);
+     email.setFrom("fantasia@sina.com", "Unmi");<br/><br/>
+     // 设置主题的字符集为UTF-8
+     email.setCharset("UTF-8");
+     email.setSubject(subject);
+     try{
+         email.setHtmlMsg(body);
+         email.attach(new URL("file:///c|SendMail.java"), "SendMail.java","SendMail.java");
+         email.buildMimeMessage();
+         email.send();
+         out.print("发送成功");
+     }catch(Exception ex){
+         out.print(ex.getMessage());
+     }
+}
+%&gt;<br/><br/>
+&lt;%!
+    private String toUTF8(String src) throws UnsupportedEncodingException{
+        String dst = new String(src.getBytes("ISO8859-1"),"UTF-8");
+        return dst;
+    }
+%&gt;</pre>
+<br/>
+VBA 代码，在它的 Visual Basic 的编辑器中需要引用 Microsoft XML, v6.0 (或者其他相应版本，如 v2.6、v3.0、v4.0、v5.0)：<br/><br/>
+<pre class="lang:default decode:true ">Function SendEmailByHttp(MailTo, Subject, Body)
+    Dim XmlHttp As New MSXML2.XMLHTTP60 '变量类型视你引用的 MSXML 版本略有不同，如 XMLHTTP50
+    Dim PageUrl, data
+    data = "to=" &amp; MailTo &amp; "subject=" &amp; Subject &amp; "&amp;body=" &amp; Body
+    PageUrl = "http://192.168.1.100:8080/WebUtils/sendmail.jsp"<br/><br/>
+    '假如你的 web 应用配置了诸如 form 验证，则需加上后两个参数
+    XmlHttp.Open "POST", PageUrl, False, "username", "password" '同步方式<br/><br/>
+    'post 提交 form 时需要设置这个请求头
+    XmlHttp.setRequestHeader "Content-Type", "application/x-www-form-urlencoded"<br/><br/>
+    '后面几行有关于设置请求头中的字符集好像解决不了乱码问题
+    'XmlHttp.setRequestHeader "Content-Type", "application/x-www-form-urlencoded;charset=UTF-8"
+    'XmlHttp.setRequestHeader "Accept-Charset", "UTF-8"
+    'XmlHttp.setRequestHeader "charset", "UTF-8"
+    'XmlHttp.setRequestHeader "Content-Type", "charset=UTF-8"<br/><br/>
+    XmlHttp.Send data '发送请求
+    If XmlHttp.Status = 200 Then<br/><br/>
+        '去除 jsp 中输出的回车、换行和两边空格
+        SendEmailByHttp = Trim(Replace(Replace(XmlHttp.responseText, Chr(10), ""), Chr(13), ""))
+    Else
+        SendEmailByHttp = "发送失败!" '请求不正常的失败返回
+    End If
+End Function</pre>
+<br/>
+可以在你的 Excel 表格中加个按钮，一点击按钮，程序循环的取表格中的数据，如参数 MailTo、Subject、Body 由 Excel 来提供。有关于 Excel 表格数据的读取这里就不涉及了。<br/><br/>
+参考：1. <a href="http://www.diybl.com/course/4_webprogram/xml/xml_js/2007111/81586.html" target="_blank" rel="noopener">XmlHttpRequest的Post请求方式示例</a><br />
+        2. <a href="http://www.bigresource.com/VB-Using-xmlHttp-correctly-ddbTZ3nEfQ.html" target="_blank" rel="noopener">Using XmlHttp Correctly</a><br />
+        3. <a href="http://www.w3.org/TR/XMLHttpRequest/" target="_blank" rel="noopener">The XMLHttpRequest Object</a><br/><br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

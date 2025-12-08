@@ -1,0 +1,235 @@
+---
+title: 明明白白Unsupported major.minor version 49.0的错误
+url: /unsupported-major-minor-version-49-0-inside/
+date: 2007-12-03T13:03:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - JVM
+tags: 
+  - 49.0
+  - Unsupported
+  - major
+  - minor
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 462 
+wpStatus: publish
+views: 988
+lastmod: 2019-11-30T10:33:09-06:00
+---
+
+<span style="color: #0000ff;"><strong><span style="font-size: medium;">一：要解决的问题</span><br />
+</strong><br />
+</span>我们在尝鲜 JDK1.5 的时候，相信不少人遇到过 Unsupported major.minor version 49.0 错误，当时定会茫然不知所措。因为刚开始那会儿，网上与此相关的中文资料还不多，现在好了，网上一找就知道是如何解决，大多会告诉你要使用 JDK 1.4 重新编译。那么至于为什么，那个 major.minor 究竟为何物呢？这就是本篇来讲的内容，以使未错而先知。<br/><br/>
+我觉得我是比较幸运的，因为在遇到那个错误之前已研读过《深入 Java 虚拟机》第二版，英文原书名为《Inside the Java Virtual Machine》( Second Edition)，看时已知晓 major.minor 藏匿于何处，但没有切身体会，待到与 Unsupported major.minor version 49.0 真正会面试，正好是给我验证了一个事实。<!--more--><br/><br/>
+首先我们要对 Unsupported major.minor version 49.0 建立的直接感觉是：JDK1.5 编译出来的类不能在 JVM 1.4 下运行，必须编译成 JVM 1.4 下能运行的类。(当然，也许你用的还是 JVM 1.3 或 JVM 1.2，那么就要编译成目标 JVM 能认可的类)。这也解决问题的方向。<br/><br/>
+<strong><span style="color: #0000ff; font-size: medium;">二：major.minor 栖身于何处</span></strong><br/><br/>
+何谓 major.minor，且又居身于何处呢？先感性认识并找到 major.minor 来。<br/><br/>
+写一个 Java Hello World! 代码，然后用 JDK 1.5 的编译器编译成，HelloWorld.java<br/><br/>
+<pre class="brush:java ">package com.unmi;<br/><br/>
+public class HelloWorld
+{
+    public static void main(String[] args)
+    {
+        System.out.println("Hello, World!");
+    }
+}</pre>
+<br/>
+用 JDK 1.5 的 javac -d .  HelloWorld.java 编译出来的字节码 HelloWorld.class 用 UltraEdit 打开来的内容如图所示：<br/><br/>
+<div><img class="aligncenter" style="border: 0px;" src="//yanbin.blog/wp-content/uploads/2011/03/HelloWorldClassUnmi.jpg" alt="HelloWorldClassUnmi.jpg" border="0" /></div>
+<br/>
+从上图中我们看出来了什么是 major.minor version 了，它相当于一个软件的主次版本号，只是在这里是标识的一个 Java Class 的主版本号和次版本号，同时我们看到 minor_version 为 0x0000，major_version 为 0x0031，转换为十制数分别为0 和 49，即 major.minor 就是 49.0 了。<br/><br/>
+<strong><span style="font-size: medium;"><span style="color: #0000ff;">三：何谓 major.minor 以及何用</span><br />
+</span></strong><br />
+Class 文件的第 5-8 字节为 minor_version 和 major_version。Java class 文件格式可能会加入新特性。class 文件格式一旦发生变化，版本号也会随之变化。对于 JVM 来说，版本号确定了特定的 class 文件格式，通常只有给定主版本号和一系列次版本号后，JVM 才能够读取 class 文件。如果 class 文件的版本号超出了 JVM 所能处理的有效范围，JVM 将不会处理该 class 文件。<br/><br/>
+在 Sun 的 JDK 1.0.2 发布版中，JVM 实现支持从 45.0 到 45.3 的 class 文件格式。在所有 JDK 1.1 发布版中的 JVM 都能够支持版本从 45.0 到 45.65535 的 class 文件格式。在 Sun 的 1.2 版本的 SDK 中，JVM 能够支持从版本 45.0 到46.0 的 class 文件格式。<br/><br/>
+1.0 或 1.2 版本的编译器能够产生版本号为 45.3 的 class 文件。在 Sun 的 1.2 版本 SDK 中，Javac 编译器默认产生版本号为 45.3  的 class 文件。但如果在 javac 命令行中指定了 -target 1.2 标志，1.2 版本的编译器将产生版本号为 46.0 的 class 文件。1.0 或 1.1 版本的 JVM 上不能运行使用-target 1.2 标志所产生的 class 文件。<br/><br/>
+JVM 实现的 第二版中修改了对 class 文件主版本号和次版本号的解释。对于第二版而言，class 文件的主版本号与 Java 平台主发布版的版本号保持一致(例如：在 Java 2 平台发布版上，主版本号从 45 升至 46)，次版本号与特定主平台发布版的各个发布版相关。因此，尽管不同的 class 文件格式可以由不同的版本号表示，但版本号不一样并不代表 class 文件格式不同。版本号不同的原因可能只是因为 class 文件由不同发布版本的 java 平台产生，可能 class 文件的格式并没有改变。<br/><br/>
+上面三段节选自《深入 Java 虚拟机》，啰嗦一堆，JDK 1.2 开启了 Java 2 的时代，但那个年代仍然离我们很远，我们当中很多少直接跳在 JDK 1.4 上的，我也差不多，只是项目要求不得不在一段时间里委屈在 JDK 1.3 上。不过大致我们可以得到的信息就是每个版本的 JDK 编译器编译出的 class 文件中都带有一个版本号，不同的 JVM 能接受一个范围 class 版本号，超出范围则要出错。不过一般都是能向后兼容的，知道 Sun 在做 Solaris 的一句口号吗？保持对先前版本的 100% 二进制兼容性，这也是对客户的投资保护。<br/><br/>
+<span style="color: #0000ff; font-size: medium;"><strong>四：其他确定 class 的 major.minor version 办法<br />
+</strong></span><br />
+1）Eclipse 中查看<br />
+      Eclipse 3.3 加入的新特征，当某个类没有关联到源代码，打开它会显示比较详细的类信息，当然还未到源码级别了，看下图是打开 2.0 spring.jar 中 ClasspathXmlApplicationContext.class 显示的信息<br/><br/>
+<div><img class="aligncenter" style="border: 0px;" src="//yanbin.blog/wp-content/uploads/2011/03/eclipseclass1.jpg" alt="eclipseclass1.jpg" width="744" height="252" border="0" /></div>
+<br/>
+2）命令 javap -verbose<br />
+       对于编译出的 class 文件用 javap -verbose 能显示出类的 major.minor 版本，见下图：<br/><br/>
+<div><img class="aligncenter" style="border: 0px;" src="//yanbin.blog/wp-content/uploads/2011/03/JavapVerboseUnmi.jpg" alt="JavapVerboseUnmi.jpg" border="0" /></div>
+<br/>
+3)  MANIFEST 文件<br />
+      把 class 打成的 JAR 包中都会有文件 META-INF\MANIFEST，这个文件一般会有编译器的信息，下面列几个包的 META-INF\MANIFEST 文件内容大家看看<br />
+      ·Velocity-1.5.jar 的 META-INFO\MANIFEST 部份内容<br />
+                  Manifest-Version: 1.0<br />
+                  Ant-Version: Apache Ant 1.7.0<br />
+                  Created-By: Apache Ant<br />
+                  Package: org.apache.velocity<br />
+                  <span style="color: #800080;"><span style="text-decoration: underline;">Build-Jdk: 1.4.2_08<br />
+</span></span>                  Extension-Name: velocity<br />
+            我们看到是用 ant 打包，构建用的JDK是 1.4.2_08，用 1.4 编译的类在 1.4 JVM 中当然能运行。如果那人用 1.5 的 JDK 来编译，然后用 JDK 1.4+ANT 来打包就太无聊了。<br />
+      ·2.0 spring.jar 的 META-INFO\MANIFEST 部份内容<br />
+                  Manifest-Version: 1.0<br />
+                  Ant-Version: Apache Ant 1.6.5<br />
+                  <span style="color: #800080;"><span style="text-decoration: underline;">Created-By: 1.5.0_08-b03 (Sun Microsystems Inc.)</span></span><br />
+                  Implementation-Title: Spring Framework<br />
+           这下要注意啦，它是用的 JDK 1.5 来编译的，那么它是否带了 -target 1.4 或 -target 1.3 来编译的呢？确实是的，可以查看类的二进制文件，这是最保险的。所在 spring-2.0.jar 也可以在 1.4 JVM 中加载执行。<br />
+      ·自已一个项目中用 ant 打的 jar 包的 META-INFO\MANIFEST<br />
+                  Manifest-Version: 1.0<br />
+                  Ant-Version: Apache Ant 1.7.0<br />
+                  <span style="color: #800080;"><span style="text-decoration: underline;">Created-By: 1.4.2-b28 (Sun Microsystems Inc.)<br />
+</span></span>            用的是 JDK 1.4 构建打包的。<br/><br/>
+第一第二种办法能明确知道 major.minor version，而第三种方法应该也没问题，但是碰到变态构建就难说了，比如谁把那个 META-INFO\MANIFEST 打包后换了也未可知。直接查看类的二进制文件的方法可以万分保证，准确无误，就是工具篡改我也认了。<br/><br/>
+<strong><span style="color: #0000ff; font-size: medium;">五：编译器比较及症节之所在</span></strong><br/><br/>
+现在不妨从 JDK 1.1 到 JDK 1.7 编译器编译出的 class 的默认 minor.major version 吧。（又走到 Sun 的网站上翻腾出我从来都没用过的古董来）<br/><br/>
+<table style="border-collapse: collapse;" border="1" width="700" align="center">
+<tbody>
+<tr>
+<td width="20%"><strong>JDK 编译器版本</strong></td>
+<td width="30%"><strong>target 参数</strong></td>
+<td width="25%"><strong>十六进制 minor.major</strong></td>
+<td width="25%"><strong>十进制 minor.major</strong></td>
+</tr>
+<tr>
+<td>jdk1.1.8</td>
+<td>不能带 target 参数</td>
+<td>00 03   00 2D</td>
+<td>45.3</td>
+</tr>
+<tr>
+<td>jdk1.2.2</td>
+<td>不带(默认为 -target 1.1)</td>
+<td>00 03   00 2D</td>
+<td>45.3</td>
+</tr>
+<tr>
+<td>jdk1.2.2</td>
+<td>-target 1.2</td>
+<td>00 00   00 2E</td>
+<td>46.0</td>
+</tr>
+<tr>
+<td>jdk1.3.1_19</td>
+<td>不带(默认为 -target 1.1)</td>
+<td>00 03   00 2D</td>
+<td>45.3</td>
+</tr>
+<tr>
+<td>jdk1.3.1_19</td>
+<td>-target 1.3</td>
+<td>00 00   00 2F</td>
+<td>47.0</td>
+</tr>
+<tr>
+<td>j2sdk1.4.2_10</td>
+<td>不带(默认为 -target 1.2)</td>
+<td>00 00   00 2E</td>
+<td>46.0</td>
+</tr>
+<tr>
+<td>j2sdk1.4.2_10</td>
+<td>-target 1.4</td>
+<td>00 00   00 30</td>
+<td>48.0</td>
+</tr>
+<tr>
+<td>jdk1.5.0_11</td>
+<td>不带(默认为 -target 1.5)</td>
+<td>00 00   00 31</td>
+<td>49.0</td>
+</tr>
+<tr>
+<td>jdk1.5.0_11</td>
+<td>-target 1.4 -source 1.4</td>
+<td>00 00   00 30</td>
+<td>48.0</td>
+</tr>
+<tr>
+<td>jdk1.6.0_01</td>
+<td>不带(默认为 -target 1.6)</td>
+<td>00 00   00 32</td>
+<td>50.0</td>
+</tr>
+<tr>
+<td>jdk1.6.0_01</td>
+<td>-target 1.5</td>
+<td>00 00   00 31</td>
+<td>49.0</td>
+</tr>
+<tr>
+<td>jdk1.6.0_01</td>
+<td>-target 1.4 -source 1.4</td>
+<td>00 00   00 30</td>
+<td>48.0</td>
+</tr>
+<tr>
+<td>jdk1.7.0</td>
+<td>不带(默认为 -target 1.6)</td>
+<td>00 00   00 32</td>
+<td>50.0</td>
+</tr>
+<tr>
+<td>jdk1.7.0</td>
+<td>-target 1.7</td>
+<td>00 00   00 33</td>
+<td>51.0</td>
+</tr>
+<tr>
+<td>jdk1.7.0</td>
+<td>-target 1.4 -source 1.4</td>
+<td>00 00   00 30</td>
+<td>48.0</td>
+</tr>
+<tr>
+<td>Apache Harmony 5.0M3</td>
+<td>不带(默认为 -target 1.2)</td>
+<td>00 00   00 2E</td>
+<td>46.0</td>
+</tr>
+<tr>
+<td>Apache Harmony 5.0M3</td>
+<td>-target 1.4</td>
+<td>00 00   00 30</td>
+<td>48.0</td>
+</tr>
+</tbody>
+</table>
+<br/>
+上面比较是 Windows 平台下的 JDK 编译器的情况，我们可以此作些总结：<br/><br/>
+1) -target 1.1 时 有次版本号，target 为 1.2 及以后都只用主版本号了，次版本号为 0<br />
+2) 从 1.1 到 1.4 语言差异比较小，所以 1.2 到 1.4 默认的 target 都不是自身相对应版本<br />
+3) 1.5 语法变动很大，所以直接默认 target 就是 1.5。也因为如此用 1.5 的 JDK 要生成目标为 1.4 的代码，光有 -target 1.4 不够，必须同时带上 -source 1.4，指定源码的兼容性，1.6/1.7 JDk 生成目标为 1.4 的代码也如此。<br />
+4) 1.6 编译器显得较为激进，默认参数就为 -target 1.6。因为 1.6 和 1.5 的语法无差异，所以用 -target 1.5 时无需跟着 -source 1.5。<br />
+5) 注意 1.7 编译的默认 target 为 1.6<br />
+6) 其他第三方的 JDK 生成的 Class 文件格式版本号同对应 Sun 版本 JDK<br />
+7) 最后一点最重要的，<span style="color: #800080;">某个版本的 JVM 能接受 class 文件的最大主版本号不能超过对应 JDK 带相应 target 参数编译出来的 class 文件的版本号</span>。<br/><br/>
+上面那句话有点长，一口气读过去不是很好理解，举个例子：1.4 的 JVM 能接受最大的 class 文件的主版本号不能超过用 1.4 JDK 带参数 -target 1.4 时编译出的 class 文件的主版本号，也就是 48。<br/><br/>
+因为 1.5 JDK 编译时默认 target 为 1.5，出来的字节码 major.minor version 是 49.0，所以 1.4 的 JVM 是无法接受的，只有抛出错误。<br/><br/>
+那么又<span style="color: #800080;">为什么从 1.1 到 1.2、从 1.2 到 1.3 或者从 1.3 到 1.4 的 JDK 升级不会发生 Unsupported major.minor version 的错误呢，那是因为 1.2/1.3/1.4 都保持了很好的二进制兼容性</span>，看看 1.2/1.3/1.4 的默认 target 分别为 1.1/1.1/1.2 就知道了，也就是默认情况下1.4 JDK 编译出的 class 文件在 JVM 1.2 下都能加载执行，何况于 JVM 1.3 呢？（当然要去除使用了新版本扩充的 API 的因素）<br/><br/>
+<strong><span style="color: #0000ff; font-size: medium;">六：找到问题解决的方法</span><br />
+</strong><br />
+那么现在如果碰到这种问题该知道如何解决了吧，还会像我所见到有些兄弟那样，去找个 1.4 的 JDK 下载安装，然后用其重新编译所有的代码吗？其实大可不必如此费神，我们一定还记得 javac 还有个 -target 参数，对啦，可以继续使用 1.5 JDK，编译时带上参数 -target 1.4 -source 1.4 就 OK 啦，不过你一定要对哪些 API 是 1.5 JDK 加入进来的了如指掌，不能你的 class 文件拿到 JVM 1.4 下就会 method not found。目标 JVM 是 1.3 的话，编译选项就用 -target 1.3 -source 1.3 了。<br/><br/>
+相应的如果使用 ant ，它的 javac 任务也可对应的选择 target 和 source<br/><br/>
+&lt;javac target="1.4" source="1.4" ............................/&gt;<br/><br/>
+如果是在开发中，可以肯定的是现在真正算得上是 JAVA IDE 对于工程也都有编译选项设置目标代码的。例如 Eclipse 的项目属性中的 Java Compiler 设置，如图<br/><br/>
+<div><img class="aligncenter" style="border: 0px;" src="//yanbin.blog/wp-content/uploads/2011/03/EclipseCompiler.jpg" alt="EclipseCompiler.JPG" border="0" /></div>
+<br/>
+自已设定编译选项，你会看到选择不同的 compiler compliance level 是，Generated class files compatibility 和 Source compatibility 也在变，你也可以手动调整那两项，手动设置后你就不用很在乎用的什么版本的编译器了，只要求他生成我们希望的字节码就行了，再引申一下就是即使源代码是用 VB 写的，只要能编译成 JVM 能执行的字节码都不打紧。在其他的 IDE 也能找到相应的设置对话框的。<br/><br/>
+其他时候，你一定要知道当前的 JVM 是什么版本，能接受的字节码主版本号是多少（可对照前面那个表）。获息当前 JVM 版本有两种途径：<br/><br/>
+第一：如果你是直接用 java 命令在控制台执行程序，可以用 java -version 查看当前的 JVM 版本，然后确定能接受的 class 文件版本<br/><br/>
+第二：如果是在容器中执行，而不能明确知道会使用哪个 JVM，那么可以在容器中执行的程序中加入代码　System.getProperty("java.runtime.version"); 或 System.getProperty("java.class.version")，获得 JVM 版本和能接受的 class 的版本号。<br/><br/>
+最后一绝招，如果你不想针对低版本的 JVM 用 target 参数重新编译所有代码；如果你仍然想继续在代码中用新的 API 的话；更有甚者，你还用了 JDK 1.5 的新特性，譬如泛型、自动拆装箱、枚举等的话，那你用 -target 1.4 -source 1.4 就没法编译通过，不得不重新整理代码。那么告诉你最后一招，不需要再从源代码着手，直接转换你所正常编译出的字节码，继续享用那些新的特性，新的 API，那就是：请参考之前的一篇日志：<a href="/retrotranslator-jdk15-run-in-jvm14/">Retrotranslator让你用JDK1.5的特性写出的代码能在JVM1.4中运行</a>，我就是这么用的，做好测试就不会有问题的。<br/><br/>
+<span style="font-size: medium;"><strong><span style="color: #0000ff;">七：再议一个实际发生的相关问题</span></strong><br />
+</span><br />
+这是一个因为拷贝 Tomcat 而产生的 Unsupported major.minor version 49.0 错误。情景是：我本地安装的是 JDK 1.5，然后在网上找了一个 EXE 的 Tomcat 安装文件安装了并且可用。后来同事要一个 Tomcat，不想下载或安装，于是根据我以往的经验是把我的 Tomcat 整个目录拷给他应该就行了，结果是拿到他那里浏览 jsp 文件都出现 Unsupported major.minor version 49.0 错误，可以确定的是他安装的是 1.4 的 JDK，但我还是有些纳闷，先前对这个问题还颇有信心的我傻眼了。惯性思维是编译好的 class 文件拿到低版本的 JVM 会出现如是异常，可现并没有用已 JDK 1.5 编译好的类要执行啊。<br/><br/>
+后来仔细看异常信息，终于发现了 %TOMCAT_HOME%\common\lib\tools.jar 这一眉目，因为 jsp 文件需要依赖它来编译，打来这个 tools.jar 中的一个 class 文件来看看，49.0，很快我就明白原来这个文件是在我的机器上安装 Tomcat 时由 Tomcat 安装程序从 %JDK1.5%\lib 目录拷到 Tomcat 的 lib 目录去的，造成在同事机器上编译 JSP 时是 1.4 的 JVM 配搭着 49.0 的 tools.jar，那能不出错，于是找来 1.4  JDK 的 tools.jar 替换了 Tomcat 的就 OK 啦。<br/><br/>
+<span style="font-size: medium;"><strong><span style="color: #0000ff;">八：小结</span></strong><br />
+</span><br />
+其实理解 major.minor 就像是我们可以这么想像，同样是微软件的程序，32 位的应用程序不能拿到 16 位系统中执行那样。<br/><br/>
+如果我们发布前了解到目标 JVM 版本，知道怎么从 java class 文件中看出 major.minor 版本来，就不用等到服务器报出异常才着手去解决，也就能预知到可能发生的问题。<br/><br/>
+其他时候遇到这个问题应具体解决，总之问题的根由是低版本的  JVM 无法加载高版本的 class 文件造成的，找到高版本的 class 文件处理一下就行了。<br/><br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

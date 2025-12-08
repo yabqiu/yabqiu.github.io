@@ -1,0 +1,169 @@
+---
+title: Kafka Producer 设置 Interceptor 来统计消息
+url: /kafka-producer-interceptor-record-statistics/
+date: 2018-11-01T01:33:56-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/kafka-logo.png"
+categories:
+  - Kafka
+tags: 
+  - Kafka
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9047 
+wpStatus: publish
+views: 1214
+lastmod: 2018-11-01T10:00:00-05:00
+---
+
+<p>Kafka 消息的 Producer 在调用 <code>producer.send()</code> 方法发送消息时会先把消息放到本地缓冲中，然后由  Kafka 网络线程从缓冲中提取消息再送到 Kafka 代理上去。本地缓冲区大小由 <code>buffer.memory</code> 来配置，默认为 32M(32 * 1024 * 1024L)。如果发消息到网络慢于提交消息到缓冲区的话，缓冲区就可能会满就无法接受新的消息，这时候就要依照 <code>block.on.buffer.full</code> 设置是否暂停还是抛出异常，默认为暂停 <code>producer.send()</code>；暂停时间由 <code>max.block.ms</code> 决定，默认为 60 秒。<code>producer.send()</code> 返回一个 <code>Future&lt;RecordMetadata&gt;</code>, 也就是每次调用 <code>send()</code> 方法在缓冲区满后要等待 60 秒才能获得结果(异常)。</p>
+
+<p>这里的关系是 <code>send()</code> --a--&gt; <code>缓冲区</code> --b--&gt; <code>发送到 Kafka 代理</code>，自然要在 <code>a</code> 与 <code>b</code> 之间进行流量控制，如果 <code>b</code> 太慢，缓冲区满的话必须把 <code>a</code> 放慢下来。如果能基于缓冲区已使用大小来放缓 <code>a</code> 也是也行的，留待以后进行研究。本文提供另一种实现参考，为 Producer 配置一个 <code>Interceptor</code> 能够大致统计多少消息提交到缓冲区，多少消息从缓冲区取出。</p>
+
+<p>Kafka 的所有配置项常量可以在这个页面 <a href="https://kafka.apache.org/0100/javadoc/constant-values.html">https://kafka.apache.org/0100/javadoc/constant-values.html</a> 找到。对 `interceptor.classes` 的解释是：可以为 Producer 配置一个或多个 Interceptor(需要实现 ProducerInterceptor)。另外 Consumer 也有自己的  Interceptor(实现 ConsumerInterceptor)。<!--more--></p>
+
+<p><a href="https://kafka.apache.org/0100/javadoc/org/apache/kafka/clients/producer/ProducerInterceptor.html">ProducerInterceptor</a> 有三个接口方法:</p>
+
+<ol>
+
+	<li>void close(): Interceptor 关闭时调用，会在 Producer 关闭前被调用</li>
+
+	<li>ProducerRecord&lt;K,V&gt; onSend(ProducerRecord&lt;K, V&gt; record): 由 KafkaProducer.send(ProducerRecord) 和 KafkaProducer.send(ProducerRecord, Callback) 调用，在序列化 key 和  value 和指定 partition(如果没有指定) 之前调用，就是说在把消息放到缓冲区之前调用。该方法可能再次对消息进行修改。</li>
+
+	<li>void onAcknowledgement(RecordMetadata metadata, Exception exception): 该方法在消息从缓冲区提出来成功发送到了网络，或发送失败后都被调用</li>
+
+	<li>void configure(Map&lt;String, ?&gt; configs): 在创建 KafkaProducer 之前还有一次机会对属性进行配置</li>
+
+</ol>
+
+<p>现在用代码来演示统计提交到缓冲区，发送成功，发送失败的消息记录数</p>
+
+<p>Producer 相关代码</p>
+
+<pre class="lang:default decode:true">public class Main {<br/>
+    private static final Logger logger = LoggerFactory.getLogger(Main.class);<br/>
+<br/>
+    public static void main(String[] args) {<br/>
+        String topic = "test_topic";<br/>
+<br/>
+        Properties props = new Properties();<br/>
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");<br/>
+        props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, "blog.yanbin.StatisticsProducerInterceptor");<br/>
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");<br/>
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringSerializer");<br/>
+<br/>
+        Producer&lt;String, String&gt; producer = new KafkaProducer&lt;&gt;(props);<br/>
+        for (int i = 0; i &lt; 5; i++) {<br/>
+            producer.send(new ProducerRecord&lt;&gt;(topic, String.valueOf(i), String.valueOf(i)));<br/>
+        }<br/>
+<br/>
+        producer.close();<br/>
+<br/>
+        logger.info(StatisticsProducerInterceptor.getRecordStatistics());<br/>
+    }</pre>
+
+<p>上面用 <code>ProducerConfig.INTERCEPTOR_CLASSES_CONFIG</code> 指定了一个 Interceptor 的实现类 <code>StatisticsProducerInterceptor</code>，它的代码如下</p>
+
+<pre class="lang:default decode:true ">public class StatisticsProducerInterceptor implements ProducerInterceptor&lt;String, String&gt; {<br/>
+    private static final Logger logger = LoggerFactory.getLogger(StatisticsProducerInterceptor.class);<br/>
+<br/>
+    private static LongAdder submittedRecords = new LongAdder();<br/>
+    private static LongAdder deliveredRecords = new LongAdder();<br/>
+    private static LongAdder failedRecords = new LongAdder();<br/>
+<br/>
+    @Override<br/>
+    public ProducerRecord&lt;String, String&gt; onSend(ProducerRecord&lt;String, String&gt; record) {<br/>
+        ProducerRecord&lt;String, String&gt; updatedRecord = record.value().compareTo("3") &lt; 0 ? record :<br/>
+            new ProducerRecord&lt;&gt;(record.topic(), record.partition(), record.timestamp(), record.key(),<br/>
+                record.value() + "+U"); //演示修改消息<br/>
+<br/>
+        logger.info("record: {} to be sent, updated value from {} to {}",<br/>
+            updatedRecord, record.value(), updatedRecord.value());<br/>
+<br/>
+        submittedRecords.increment(); //如果消息最终无法被序列化，将不被放到缓冲区，并触发 onAcknowledgement() 方法并带有异常<br/>
+        return updatedRecord;<br/>
+    }<br/>
+<br/>
+    @Override<br/>
+    public void onAcknowledgement(RecordMetadata metadata, Exception exception) {<br/>
+        if(exception == null) {<br/>
+            deliveredRecords.increment();<br/>
+            logger.info("sent message: topic: {}, partition: {}, offset: {}, timestamp: {}, checksum: {}",<br/>
+                metadata.topic(), metadata.partition(), metadata.offset(), metadata.timestamp(), metadata.checksum());<br/>
+        } else {<br/>
+            failedRecords.increment();<br/>
+            logger.error("failed to send message: {}", metadata, exception);<br/>
+        }<br/>
+<br/>
+        logger.info(getRecordStatistics());<br/>
+    }<br/>
+<br/>
+    @Override<br/>
+    public void close() {<br/>
+        logger.info("producer closed");<br/>
+    }<br/>
+<br/>
+    @Override<br/>
+    public void configure(Map&lt;String, ?&gt; configs) {<br/>
+        logger.info("configuration: {}", configs);<br/>
+    }<br/>
+<br/>
+    public static String getRecordStatistics() {<br/>
+        return String.format("record statistics, submitted: %s, delivered: %s, failed: %s",<br/>
+            submittedRecords.longValue(), deliveredRecords.longValue(), failedRecords.longValue());<br/>
+    }<br/>
+}</pre>
+
+<p>执行后效果大概如下</p>
+
+<pre class="lang:default decode:true">00:33:23 [main] - record: ProducerRecord(topic=test_topic, partition=null, key=0, value=0, timestamp=null) to be sent, updated value from 0 to 0<br/>
+00:33:23 [main] - record: ProducerRecord(topic=test_topic, partition=null, key=1, value=1, timestamp=null) to be sent, updated value from 1 to 1<br/>
+00:33:23 [main] - record: ProducerRecord(topic=test_topic, partition=null, key=2, value=2, timestamp=null) to be sent, updated value from 2 to 2<br/>
+00:33:23 [main] - record: ProducerRecord(topic=test_topic, partition=null, key=3, value=3+U, timestamp=null) to be sent, updated value from 3 to 3+U<br/>
+00:33:23 [main] - record: ProducerRecord(topic=test_topic, partition=null, key=4, value=4+U, timestamp=null) to be sent, updated value from 4 to 4+U<br/>
+00:33:23 [main] KafkaProducer - Closing the Kafka producer with timeoutMillis = 9223372036854775807 ms.<br/>
+00:33:23 [kafka-producer-network-thread | producer-1] - sent message: topic: test_topic, partition: 0, offset: 6351, timestamp: 1541050403463, checksum: 1478612472<br/>
+00:33:23 [kafka-producer-network-thread | producer-1] - record statistics, submitted: 5, delivered: 1, failed: 0<br/>
+00:33:23 [kafka-producer-network-thread | producer-1] - sent message: topic: test_topic, partition: 0, offset: 6352, timestamp: 1541050403475, checksum: 4199907714<br/>
+00:33:23 [kafka-producer-network-thread | producer-1] - record statistics, submitted: 5, delivered: 2, failed: 0<br/>
+00:33:23 [kafka-producer-network-thread | producer-1] - sent message: topic: test_topic, partition: 0, offset: 6353, timestamp: 1541050403475, checksum: 3855131286<br/>
+00:33:23 [kafka-producer-network-thread | producer-1] - record statistics, submitted: 5, delivered: 3, failed: 0<br/>
+00:33:23 [kafka-producer-network-thread | producer-1] - sent message: topic: test_topic, partition: 0, offset: 6354, timestamp: 1541050403475, checksum: 1502822821<br/>
+00:33:23 [kafka-producer-network-thread | producer-1] - record statistics, submitted: 5, delivered: 4, failed: 0<br/>
+00:33:23 [kafka-producer-network-thread | producer-1] - sent message: topic: test_topic, partition: 0, offset: 6355, timestamp: 1541050403475, checksum: 3673351358<br/>
+00:33:23 [kafka-producer-network-thread | producer-1] - record statistics, submitted: 5, delivered: 5, failed: 0<br/>
+00:33:23 [main] - producer closed<br/>
+00:33:23 [main] Main - record statistics, submitted: 5, delivered: 5, failed: 0</pre>
+
+<p>从日志中可以看到总共提交了 5 条消息，成功发送了 5 条消息，失败消息数为 0。消息能在 <code>onSend(..)</code> 函数中被修改。而且看起来好像完成把全部消息放到缓冲区后才开始发送消息，main 函数中数字改为 10，也差不多，<code>onSend(..)</code> 调用完 10 才开始真正发送消息到网络。但是注意到  <code>onSend(..)</code> 与 <code>onAcknowledgement(..)</code> 是由不同的线程调用的，所以它们不该存在先后顺序的。</p>
+
+<p>若欲进一步验证，我们可以一次性发送 2000 条消息，修改 main 函数的循环次数为 2000，执行后再查看日志，以下是片断</p>
+
+<pre class="lang:default decode:true ">01:01:40 [main] - record: ProducerRecord(topic=test_topic, partition=null, key=0, value=0, timestamp=null) to be sent, updated value from 0 to 0<br/>
+01:01:40 [main] - record: ProducerRecord(topic=test_topic, partition=null, key=1, value=1, timestamp=null) to be sent, updated value from 1 to 1<br/>
+01:01:40 [main] - record: ProducerRecord(topic=test_topic, partition=null, key=821, value=821+U, timestamp=null) to be sent, updated value from 820 to 820+U<br/>
+01:01:40 [kafka-producer-network-thread | producer-1] - record statistics, submitted: 821, delivered: 1, failed: 0<br/>
+01:01:40 [kafka-producer-network-thread | producer-1] - sent message: topic: test_topic, partition: 0, offset: 19357, timestamp: 1541052100757, checksum: 791494235<br/>
+01:01:40 [main] - record: ProducerRecord(topic=test_topic, partition=null, key=855, value=855+U, timestamp=null) to be sent, updated value from 855 to 855+U<br/>
+01:01:40 [kafka-producer-network-thread | producer-1] - record statistics, submitted: 855, delivered: 2, failed: 0<br/>
+01:01:40 [main] - record: ProducerRecord(topic=test_topic, partition=null, key=1612, value=1612, timestamp=null) to be sent, updated value from 1612 to 1612<br/>
+01:01:40 [kafka-producer-network-thread | producer-1] - record statistics, submitted: 1611, delivered: 242, failed: 0<br/>
+01:01:40 [main] - record: ProducerRecord(topic=test_topic, partition=null, key=1614, value=1614, timestamp=null) to be sent, updated value from 1614 to 1614<br/>
+01:01:40 [main] - record: ProducerRecord(topic=test_topic, partition=null, key=1999, value=1999, timestamp=null) to be sent, updated value from 1999 to 1999<br/>
+01:01:40 [main] KafkaProducer - Closing the Kafka producer with timeoutMillis = 9223372036854775807 ms.<br/>
+01:01:41 [kafka-producer-network-thread | producer-1] - record statistics, submitted: 2000, delivered: 1999, failed: 0<br/>
+01:01:41 [kafka-producer-network-thread | producer-1] - sent message: topic: test_topic, partition: 0, offset: 21355, timestamp: 1541052100856, checksum: 2489747570<br/>
+01:01:41 [kafka-producer-network-thread | producer-1] - record statistics, submitted: 2000, delivered: 2000, failed: 0<br/>
+01:01:41 [main] - producer closed<br/>
+01:01:41 [main] Main - record statistics, submitted: 2000, delivered: 2000, failed: 0</pre>
+
+<p>日志说明了，从缓冲区中取消息发送到网络上并不需要等待所有的消息都放到缓冲区后再进行，它们是不同的两个线程。最终的结果是，待发送的消息都成功的发送到了 Kafka 代理上。</p>
+
+<p>使用 ProducerInterceptor 还是可以比较准确的统计到待发送消息与成功送到网络的记录数，如果消息不能被序列化将直接带异常的触发 <code>onAcknowledgement(..)</code> 方法，并统计为发送失败记录。这也是我们想要的结果。</p>
+
+<p>进一步，由以上三个数字，我们能够计算出在本地缓冲区中有多少待发送的记录，基于此可以进行前面 <code>a</code> 处的流量控制。比如说假设缓冲区中有 5000 条记录积压，那么完全可以让 <code>producer.send(..)</code> 方法停下来，等缓冲区降下来再继续。</p>

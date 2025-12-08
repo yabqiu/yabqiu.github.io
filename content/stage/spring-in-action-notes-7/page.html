@@ -1,0 +1,99 @@
+---
+title: Spring 学习点滴，《Spring in Action》笔记（七）
+url: /spring-in-action-notes-7/
+date: 2008-10-07T10:12:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Spring
+tags: 
+  - Spring
+  - Action
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 319 
+wpStatus: publish
+views: 743
+lastmod: 2021-09-03T21:03:53-05:00
+---
+
+<ol>
+<li>Spring MVC 还提供了一个特别点的 Controller 类型就是 ThrowawayController，它自成一个接口，ThrowawayController 和 Controller 的关系是平行的。什么叫做 ThrowawayController 呢，中文叫做一次性控制器，也就像一次性筷子那样用完即丢，下次要用又拿新的。表现在实例上就是相应 Bean 配置为 singleton="false"，每次初始化一个新实例。与其他 Controller 的区别完全就是 WebWork 或 Struts2 的 Action 与 Struts1 的 Action 的区别。因为它是多例的，所以可以用实例变量来接受请求参数，执行方法无参数；而不像其他的 Controller ，因为共享实例，所以需要通过执行方法的来传递请求参数以保证线程安全（P273）</p></li>
+</ol>
+<br/>
+92. 在《Spring in Action》第一版 274 页说 DispatcherServlet 使用缺省 ControllerHandlerAdapter 时只会把控制权分发给 Controller 接口类型的类，而要配置 ThrowawayControllerHandlerAdapter 后，Dispatcherservlet 就把控制权分发给 ThrowawayController，配置如下：<!--more--><br/><br/>
+<pre class="lang:default decode:true">&lt;bean id="throwawayHandler" class="org.springframework.web.servlet.mvc.throwaway.ThrowawayControllerHandlerAdapter" /&gt;</pre>
+<br/>
+同时要是应用系统中要混用两种控制器的话，还得在前面的基础上配置一个 SimpleControllerHandlerAdapter，配置如下：<br/><br/>
+<pre class="lang:default decode:true">&lt;bean id="simpleHandler" class="org.springframework.web.servlet.mvc.SimpleControllerHandlerAdapter" /&gt;</pre>
+<br/>
+然而我在实际测试中，仍用缺省的 ControllerHandlerAdapter，同样能在一个应用中混合使用两种类型的控制器，尚不知不加上面那两个配置会出什么问题(P274)<br/><br/>
+93. 视图解析器(实现接口 org.springframework.web.servlet.ViewResolver) 用来把 ModelAndView 对象的逻辑视图名解析成一个用于将结果渲染给用户的视图 Bean。Spring 有 4 种 ViewResolver 实现，相当于不同 Struts2 的 result 类型：<br/><br/>
+·InternalResourceViewResolver -- 将逻辑视图名解析为一个用模板文件(如 JSP 和 Velocity 等模板) 渲染的视图对象。<br />
+·BeanNameViewResolver         --                          解析为一个 DispatcherServlet 应用上下文中的视图 Bean<br />
+·ResourceBundleViewResolver  --                         解析为 ResourceBundler 中的视图对象<br />
+·XmlViewResolver                    --  从一个 XML 文件中解析视图 Bean，这个文件是从 DispatcherServlet 应用上下文中分离出来的。<br/><br/>
+注意：在 org.springframework.web.servlet.view 包下只有 XmlViewResolver，而没有 XmlViewResolver，书中是笔误。<br/><br/>
+94. InternalResourceViewResolver 的使用，假如 Controller 中是 return new ModelAndView("userDetail")，要转向到 /WEB-INF/jsp/userDetail.jsp 时应配置为：<br/><br/>
+<pre class="lang:default decode:true">&lt;bean id="viewResolver"    class="org.springframework.web.servlet.view.InternalResourceViewResolver"&gt;
+    &lt;property name="prefix"&gt;&lt;value&gt;/WEB-INF/jsp/&lt;/value&gt;&lt;/property&gt;
+    &lt;property name="suffix"&gt;&lt;value&gt;.jsp&lt;/value&gt;&lt;/property&gt;
+&lt;/bean&gt;</pre>
+<br/>
+"/WEB-INF/jsp/userDetail.jsp" 中分别包含了前面指定的前缀、视图逻辑名和后缀名。<br/><br/>
+如果这个 JSP 中使用了 JSTL 标签，就应该为 InternalResourceViewResolver 指定 viewClass 属性为 JstlView，这时候的配置如下：<br/><br/>
+<pre class="lang:default decode:true">&lt;bean id="viewResolver"    class="org.springframework.web.servlet.view.InternalResourceViewResolver"&gt;
+    &lt;property name="viewClass"&gt;&lt;value&gt;org.springframework.web.servlet.view.JstlView&lt;/value&gt;&lt;/property&gt;
+    &lt;property name="prefix"&gt;&lt;value&gt;/WEB-INF/jsp/&lt;/value&gt;&lt;/property&gt;
+    &lt;property name="suffix"&gt;&lt;value&gt;.jsp&lt;/value&gt;&lt;/property&gt;
+&lt;/bean&gt;</pre>
+<br/>
+这个 JstlView 就能解析 JSTL 特定的请求属性，也就让你可以在 JSP 中利用 JSTL 的化支持了(P276)<br/><br/>
+95. BeanNameViewResolver 的使用，用如下的配置：<br/><br/>
+<pre class="lang:default decode:true">&lt;bean id="beanNameViewResolver"    class="org.springframework.web.servlet.view.BeanNameViewResolver"/&gt;
+&lt;bean id="courseList" class="com.unmi.controller.CourseListPdfview"/&gt;</pre>
+<br/>
+对于 return new ModelAndView("courseList"); 就会被 beanNameViewResolver 解析到 courseList 来显示结果(P278)<br/><br/>
+96. XmlViewResolver 与 BeanNameViewResolver 的工作方式类似，只不过它不是从主应用上下文中寻找视图 Bean，而是在一个独立的 XML 文件中查找，用法如下：<br/><br/>
+<pre class="lang:default decode:true ">&lt;bean id="xmlViewResolver" class="org.springframework.web.servlet.view.XmlViewResolver"&gt;
+    &lt;property name="location"&gt;&lt;value&gt;/WEB-INF/training-views.xml&lt;/value&gt;&lt;/property&gt;
+&lt;/bean&gt;</pre>
+<br/>
+这时候，对于 return new ModelAndView("courseList"); 就会到 /WEB-INF/training-views.xml 中寻找 courseList 的 Bean。XmlViewResolver 的缺少 location 属性值为 /WEB-INF/views.xml(P278) <br/><br/>
+97. ResourceBundleViewResolver，一看这名字中的 ResourceBundle 就是跟属性文件、国际化有关。来看看这样一个配置：<br/><br/>
+<pre class="lang:default decode:true">&lt;bean name="bundleViewResolver" class="org.springframework.web.servlet.view.ResourceBundleViewResolver"&gt;
+    &lt;property name="basename"&gt;&lt;value&gt;views&lt;/value&gt;&lt;/property&gt;
+&lt;/bean&gt;</pre>
+<br/>
+并在 classpath 下有四个属性文件，文件名及内容分别是：<br/><br/>
+views.properties 文件和 views_zh_CN.properties 文件的内容是：<br/><br/>
+<pre class="brush:xml">courseList.class=com.unmi.training.mvc.CourseListPdfView</pre>
+<br/>
+views_en_US.properties 文件内容是：<br/><br/>
+<pre class="brush:xml">courseList.class=com.unmi.training.mvc.CourseListExcelView</pre>
+<br/>
+views_de_DE.properties 文件的内容是：<br/><br/>
+<pre class="brush:c#">courseList.class=org.springframework.web.servlet.view.JstlView
+#这下面就是设置 JstlView 的 url 属性
+courseList.url=/WEB-INF/jsp/courseList.jsp</pre>
+<br/>
+很好也很自然的理解，通过上面的配置就能根据不同区域的用户用不同类型的视图呈现给用户，例如对于 new ModelAndView("courseList")，中国人访问解析到了 CourseListPdfView(PDF 展示)，美国人访问显示了一个 Excel 表格(CourseListExcelView)，给德国的是一个使用 JSTL 标签 JSP 页面。也了解到视图 Bean 是根据 properties 文件中的配置来初始化的(P279)<br/><br/>
+98. 项目中使用模板页面居多，所以常用的是 InternalResourceViewResolver。不过我常见得这一视图解析器比起 Struts 和 WebWork 有不足之处resolver是，它的逻辑视图名还携速了文件名信息，要导向到别的 JSP 文件还得修改代码。其他三个视图解析器 BeanNameViewResolver、XmlViewResolver 和 ResoureBundlerViewResolver 的区别只在它们从哪儿获得视图实现，应根据实际情况选用。<br/><br/>
+      如果一个系统中要多个视图解析器，该怎么办呢？那就在配置文件中配置多个了，用 order 属性指定应用的顺序，从小至大，即 ViewResolver 的:<br/><br/>
+      &lt;property name="order"&gt;&lt;value&gt;1&lt;/value&gt;&lt;/property&gt;<br/><br/>
+书中 P281 中给 InternalResourceViewResolver 配置了 order 属性，而我查过 Spring 1.2.4/1.2.8/1.2.9 的 InternalResourceViewResolver 代码，它并没有直接或简接的实现 Ordered 接口，也就是不能对它配置 order 属性。在 Spring 2.0 的 InternalResourceViewResolver 才简接的实现了 Ordered 接口，看得出这本书确有些超前。那还有一个问题，一个逻辑视图名，给哪个视图解析器都是能执行的，那优先级低的视图解析器在什么时机能应用上（P281）<br/><br/>
+99. 关于 spring.tld 标签，只提供了初步的功能，还难用，且必须搭配 JSTL 标签。要显示一个信息特麻烦，每显示个东西都要先 &lt;spring:bind/&gt; 一下，再 &lt;c:out/&gt;。绑定到的 status 有三个属性 expression、value 和 errorMessages。因此有条件的话还是用 Spring 2.x 的 spring-form.tld 标签，只能用 spring 1.x 时可考虑把 spring-form.tld 移植过来。<br/><br/>
+100. 每一套 MVC 框架都少不得异常处理机制，都有相应的配置来处理异常。Spring MCV 也一样，直接看如下的配置吧：<br/><br/>
+<pre class="lang:default decode:true">&lt;bean id="exceptionResolver" class="org.springframework.web.servlet.handler.SimpleMappingExceptionResolver"&gt;
+    &lt;property name="exceptionMappings"&gt;
+        &lt;props&gt;
+            &lt;prop key="java.lang.Exception"&gt;friendlyError&lt;/prop&gt;
+        &lt;/props&gt;
+    &lt;/property&gt;
+&lt;/bean&gt;</pre>
+<br/>
+exceptionMappings 属性是一个 java.util.Properties，它映射了异常类名和逻辑视图名。这样任何从 Spring MVC 控制器抛出来的 java.lang.Exception 异常被 SimpleMappingExceptionResolver 获得，然后得到相应的逻辑视图名，逻辑视图名由视图解析器导向到显示错误的页面，或是别的视图 Bean。exceptionMappings 中可以对多种异常作不同的映射(P283)

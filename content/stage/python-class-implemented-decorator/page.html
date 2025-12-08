@@ -1,0 +1,288 @@
+---
+title: Python 类实现的装饰器及简陋 REST API
+url: /python-class-implemented-decorator/
+date: 2022-01-05T01:54:50-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - decorator
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12118 
+wpStatus: publish
+views: 505
+lastmod: 2022-01-05T10:48:57-06:00
+---
+
+学习了函数实现的 Python 装饰器后，关于装饰器的内容还没完。Python 装饰器还是属于元编程的范畴，一谈到元(Meta), 元编程，往往能用简单的方式实现比较神奇的效果 -- 小渣男的非死不可除外。Python 还允许用类来实现装饰器，原理上就是能让 Python 对象函数用，见之前的一篇 <a href="https://yanbin.blog/add-python-methods-dynamically/">Python 对象当函数使用及动态添加方法</a>。关键就是类实现 <code>__call__</code> 函数，对象就变成 <code>callable</code>, 与函数的装饰器实现归纳起来就是：一个 Python 类型能不能用 @ 当作装饰器来用只需看它是否是 <code>callable</code>。<br/><br/>
+<pre class="lang:default decode:true ">class Duck:
+    def __call__(self):
+        print('quack')
+        
+duck = Duck()
+print(callable(duck))  # True
+duck()</pre>
+<br/>
+而且因为有了类，带属性的装饰器也会更简单，装饰器的属性就是构造函数的参数。还是来看怎么用类重新实现前面的 <code>my_decorator</code> 装饰器<!--more--><br/><br/>
+<pre class="lang:default decode:true">from functools import wraps<br/><br/>
+def my_decorator(func):
+   
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        print(f"before calling {func.__name__}")
+        func(*args, **kwargs)
+        print(f"after calling {func.__name__}")
+ 
+    return wrapper
+ 
+ 
+@my_decorator
+def say_hello(firstname, lastname, **kwargs):
+    print(f"Hello {firstname} {lastname}!", kwargs)
+ 
+ 
+say_hello("Steve", "Jobs", company="Apple", country="USA")</pre>
+<br/>
+<h3>用类实现装饰器</h3><br/><br/>
+<pre class="lang:default decode:true">class MyDecorator:
+    def __init__(self, func):
+        self.func = func
+    
+    def __call__(self, *args, **kwargs):
+        print(f"before calling {self.func.__name__}")
+        self.func(*args, **kwargs)
+        print(f"after calling {self.func.__name__}")
+ 
+ 
+@MyDecorator         # my_decorator = MyDecorator(say_hello)
+def say_hello(firstname, lastname, **kwargs):
+    print(f"Hello {firstname} {lastname}!", kwargs)
+ 
+ 
+say_hello("Steve", "Jobs", company="Apple", country="USA")</pre>
+<br/>
+执行后输出是一样的<br/><br/>
+<blockquote>
+before calling say_hello<br />
+Hello Steve Jobs! {'company': 'Apple', 'country': 'USA'}<br />
+after calling say_hello
+</blockquote>
+<br/>
+声明 @MyDecorator 的时候会调用 <code>__init__(self, func)</code> 函数，并注册当前函数, 返回 MyDecorator 的一个对象。当调用 <code>say_hello</code> 时调用对象 <code>my_decorator</code> 的 <code>__call__(self, *args, **kwargs)</code> 函数。<br/><br/>
+<h3>带属性的类实现的装饰器</h3><br/><br/>
+继续往前，想要创建一个 <code>MyDecorator(101)</code> 那样带属性装饰器，我的本能反应是在构造函数中做文章，可能是这样<br/><br/>
+<pre class="lang:default decode:true">def __init__(self, func, size):
+    self.func = func
+    self.size = size</pre>
+<br/>
+然而现在写成 <code>@MyDecorator(101)</code> 时就会有错了<br/><br/>
+<blockquote>
+TypeError: __init__() missing 1 required positional argument: 'size'
+</blockquote>
+<br/>
+此路不通。正确的做法是要把 <code>func</code> 的传入移到 <code>__call__()</code> 函数中去<br/><br/>
+<pre class="lang:default decode:true">from functools import wraps<br/><br/>
+class MyDecorator:
+    def __init__(self, size):
+        self.size = size
+    
+    def __call__(self, func):
+        @wraps(func)
+        def decorator(*args, **kwargs):
+            print(f"{self.size}")
+            print(f"before calling {func.__name__}")
+            func(*args, **kwargs)
+            print(f"after calling {func.__name__}")
+        return decorator
+ 
+ 
+@MyDecorator(101)        # my_decorator = MyDecorator(101)
+def say_hello(firstname, lastname, **kwargs):
+    print(f"Hello {firstname} {lastname}!", kwargs)
+ 
+ 
+say_hello("Steve", "Jobs", company="Apple", country="USA")</pre>
+<br/>
+执行输出<br/><br/>
+<blockquote>
+101<br />
+before calling say_hello<br />
+Hello Steve Jobs! {'company': 'Apple', 'country': 'USA'}<br />
+after calling say_hello
+</blockquote>
+<br/>
+这种加个属性就要把  <code>func</code> 从 <code>__init__()</code> 转移到 <code>__call__()</code> 中的变化，有些不好理解。<br/><br/>
+<span style="color: #800000;">我们其实可以统一写法，不管装饰器带不带属性都能采用第二种写法，构造函数中放属性，<code>__call__()</code> 中放被装饰的函数，就是在其中要返回一个函数</span>。<br/><br/>
+注：我们用 <code>@wraps(func)</code> 加注，并不会改变函数的执行行为，只是用 <code>help(say_hello)</code> 看到的是<br/><br/>
+<blockquote>
+Help on function say_hello in module __main__:
+say_hello(firstname, lastname, **kwargs)
+</blockquote>
+<br/>
+而不会是<br/><br/>
+<blockquote>
+Help on function decorator in module __main__:
+decorator(*args, **kwargs)
+</blockquote>
+<br/>
+<h3>更强类实现的 Decorator</h3><br/><br/>
+由于类实现的 Decorator 运行期存在一个装饰器实例，可以保存状态数据，所以比单纯函数实现的装饰器更强大，我们从一个注册回调函数的例子开始。摘自网上的一个实例<br/><br/>
+<pre class="lang:default decode:true ">class FunctionManager:
+    def __init__(self):
+        print("初始化")
+        self.functions = []
+        
+    def execute_all(self):
+        for func in self.functions:
+            func()
+        
+    def register(self, func):
+        self.functions.append(func)<br/><br/>
+        
+fm = FunctionManager()<br/><br/>
+@fm.register
+def t1():
+    print("t1")<br/><br/>
+@fm.register
+def t2():
+    print("t2")<br/><br/>
+@fm.register
+def t3():
+    print("t3")<br/><br/>
+fm.execute_all()</pre>
+<br/>
+执行结果是<br/><br/>
+<blockquote>
+初始化<br />
+t1<br />
+t2<br />
+t3
+</blockquote>
+<br/>
+<h3>用装饰器实现一个简陋的 REST API</h3><br/><br/>
+现在是不是感觉和 Flask 或 FastAPI 用装饰器声明 endpoint 的实现很接近了啊，在 Flask 中我们可以这么写<br/><br/>
+<pre class="lang:default decode:true ">app = Flask(__name__)<br/><br/>
+@app.get('/')
+def index():
+    return "hello world!"<br/><br/>
+@app.get('/users')
+def list_users():
+    return "user list"</pre>
+<br/>
+我们自己来实现一个极度简陋的 REST API <code>Chilli</code><br/><br/>
+<pre class="lang:default decode:true">from http.server import HTTPServer, BaseHTTPRequestHandler
+from urllib import parse<br/><br/>
+class Chilli:
+    def __init__(self):
+        self.routes = {}<br/><br/>
+    def get(self, path):
+        def route_decorator(func):
+            self.routes[path] = func
+        return route_decorator<br/><br/>
+    def run(self):
+        server = HTTPServer(('localhost', 8080), MyHttpHandler)
+        print('Starting server at 8080, use &lt;Ctrl-C&gt; to stop')
+        server.serve_forever()<br/><br/>
+
+class MyHttpHandler(BaseHTTPRequestHandler):<br/><br/>
+    def do_GET(self) -&gt; None:
+        parsed_path = parse.urlparse(self.path).path
+        self.send_response(200)
+        self.send_header('Content-Type', 'text/plain; charset=utf-8')
+        self.end_headers()
+        func = app.routes[parsed_path]
+        self.wfile.write(f'{func()}\r\n'.encode('utf-8'))<br/><br/>
+app = Chilli()<br/><br/>
+@app.get('/')
+def index():
+    return 'hello world!'<br/><br/>
+@app.get('/users')
+def users():
+    return 'user list'<br/><br/>
+if __name__ == '__main__':
+    app.run()</pre>
+<br/>
+运行后，访问 / 或 /users 的效果图如下<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/01/ugly-rest-api.png"><img class="aligncenter wp-image-12122" src="https://yanbin.blog/wp-content/uploads/2022/01/ugly-rest-api-800x77.png" alt="" width="745" height="72" /></a><br/><br/>
+这里只实现了 GET, 也没有参数处理，但基本上用装饰器声明 endpoint 时有一点点模样了。<br/><br/>
+<h3>装饰器修饰类</h3><br/><br/>
+装饰器除了修饰函数外，可以修饰类，这时候捕获的就不是 func，而是 cls<br/><br/>
+<pre class="lang:default decode:true ">def class_info():
+    def wrapper(cls):
+        print(f'class name {cls.__name__}')
+    return wrapper<br/><br/>
+@class_info()     # Test = class_info(Test)
+class Test:
+    pass</pre>
+<br/>
+执行输出为<br/><br/>
+<blockquote>
+class name Test
+</blockquote>
+<br/>
+<h3>总结</h3><br/><br/>
+最后，记住一点，能不能加上 @ 当作装饰器来用，满足的条件只要它是一个 callable 的类型，函数或实现了 <code>__call__()</code> 的对象。<br/><br/>
+<h4>无属性的装饰器</h4><br/><br/>
+当装饰器为 class 时<br/><br/>
+<pre class="lang:default decode:true">@MyDecorator   # 调用 __init__(self, func)，返回它的对象, 假设是 my_decorator
+def say_hello(name):
+    print(f'Hello {name}')<br/><br/>
+say_hello('world')  # 会调用  my_decorator.__call__(self) 函数</pre>
+<br/>
+Python 解释到 @MyDecorator 行时会执行类的 <code>__init__(self, func)</code> 初始化函数，也就是会把当前函数名作为参数。然后在实际调用 <code>say_hello()</code> 函数时会调用 <code>__call__()</code> 函数<br/><br/>
+最终调用 say_hello('world') 的效果是<br/><br/>
+<pre class="lang:default decode:true">MyDecorator(say_hello)('world')</pre>
+<br/>
+当装饰器为函数时<br/><br/>
+<pre class="lang:default decode:true">@my_decorator       # 调用 my_decorator(func) 函数, 假设是 wrapper
+def say_hello(name):
+    print(f'Hello {name}')<br/><br/>
+say_hello('world')   # 会调用 my_decorator(func) 返回的函数 wrapper()</pre>
+<br/>
+Python 解释到 @my_decorator 行时会调用 <code>my_decorator(func)</code> 函数，并要求它的返回值是 callable 类型，即还是函数(或实现了 <code>__call__()</code> 函数的对象)。也是在实际调用 <code>say_hello()</code> 函数时才会调用 <code>my_decorator(func)</code> 返回的函数(或实现了 __call__() 的对象)<br/><br/>
+最终调用 say_hello('world') 的效果是<br/><br/>
+<pre class="lang:default decode:true">my_decorator(say_hello)('world')</pre>
+<br/>
+<span style="color: #800000;">留意到，我们都是在实际调用 <code>say_hello()</code> 函数时才会去调用 @MyDecorator 或 @my_decorator 返回的 callable 对象(函数或实现了 <code>__call__()</code> 函数的对象)。如果我们只用装饰器来注册信息而不真的去调用被装饰的函数，让装饰器返回 callable 对象也就不是必须的。</span><br/><br/>
+<h4>带属性的装饰器</h4><br/><br/>
+当装饰器为 class 时<br/><br/>
+<pre class="lang:default decode:true">@MyDecorator(size=101)   # 调用类 MyDecorator 的 __init__self, size) 函数，返回它的对象, 假设对象为 my_decorator
+def say_hello(name):
+    pass<br/><br/>
+say_hello('world')     # 会调用 my_decorator.__call__(self, func) 返回的函数 wrapper()</pre>
+<br/>
+Python 解释 @MyDecorator(size=101) 时只管装饰器的属性，而不管当前被修饰的函数，待到调用 <code>say_hello('world')</code> 时才有 func 的信息<br/><br/>
+最终调用 say_hello('world') 的效果是<br/><br/>
+<pre class="lang:default decode:true">my_decorator(size=101)(say_hello)('world')</pre>
+<br/>
+当装饰器为函数时<br/><br/>
+<pre class="lang:default decode:true">@my_decorator(size=101)   # 调用 my_decorator(size) 函数，得到一个返回值又是函数的函数，假设是 wrapper
+def say_hello(name):
+    pass<br/><br/>
+say_hello('world')   # 会调用 wrapper(func)('world')</pre>
+<br/>
+最终调用 say_hello('world') 的效果是<br/><br/>
+<pre class="lang:default decode:true">my_decorator(size=101)(say_hello)('world')</pre>
+<br/>
+学习 Python 的装饰到现在，由最开始对 @ 符号感到既熟悉又陌生，难免会把它与 Java 的注释联系起来，其实毫无关系。随着对它的特性及实现的深入，如带属性的装饰器，被装饰的函数有参数，或有返回值的情况; 它还能装饰类，仿佛不断的越陷越深，对它的理解愈加混乱。最后把思维又往回拉，重新回到 Python 装饰器的初心上来，一切又变得豁然开朗起来。说到底 Python 的装饰器就是对函数的包装再调用，罗列上面的调用效果到一块来<br/><br/>
+<blockquote>
+MyDecorator(say_hello)('world')<br />
+my_decorator(say_hello)('world')<br />
+MyDecorator(size=101)(say_hello)('world')<br />
+my_decorator(size=101)(say_hello)('world')
+</blockquote>
+<br/>
+上面用 MyDecorator 和 my_decorator 分别表示类和函数，my_decorator 对应的是 MyDecorator 构造函数，没有别的区别。明白了装饰器的整个调用过程，实现上哪一步是否要返回一个 callable 对象就变得一目了然了。如此理解起来，Python 的装饰器比 Java 的注解变得简单的多，Java 的注解本身不代表什么，复杂的是后面的处理器。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://stackoverflow.com/questions/9416947/python-class-based-decorator-with-parameters-that-can-decorate-a-method-or-a-fun">Python Class Based Decorator with parameters that can decorate a method or a function</a></li>
+    <li><a href="https://www.pythonf.cn/read/62985">Python decorator实现的函数注册和类decorator,python,装饰,器</a></li>
+    <li><a href="https://python3-cookbook.readthedocs.io/zh_CN/latest/chapters/p09_meta_programming.html">Python 元编程</a></li>
+</ol>

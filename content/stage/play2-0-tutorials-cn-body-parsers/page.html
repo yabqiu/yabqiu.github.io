@@ -1,0 +1,156 @@
+---
+title: Play 2.0 中文资料 - Body 解析器
+url: /play2-0-tutorials-cn-body-parsers/
+date: 2012-10-12T09:02:05-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PlayFramework
+tags: 
+  - 翻译
+  - Scala
+  - PlayFramework
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4891 
+wpStatus: publish
+views: 1328
+lastmod: 2021-06-01T16:24:53-05:00
+---
+
+<strong><span style="font-size: medium;">什么是 Body 解析器?</span></strong><br/><br/>
+HTTP PUT 或 POST 请求含有一个请求体(Body). 请求体可以使用任何格式, 只要在请求头中指定相应的 <code>Content-Type</code> 即可. 在 Play 中, 一个<strong> Body 解析器</strong> 转换请求体为对应的 Scala 值.<br/><br/>
+然而，HTTP 请求体可能非常的大，这时候<strong> Body 解析器</strong> 不可能在解析之前光等着把数据全部加载到内存. <code>BodyParser[A]</code> 是个基本的 <code>Iteratee[Array[Byte],A]</code>, 这就是说它一块一块的接收数据 (只要 Web 浏览器在上传数据) 并计算出类型为 A 的值作为结果.<br/><br/>
+让我们考虑一下几个例子.<br/><br/>
+<ul>
+    <li>一个<strong>文本</strong>型 Body 解析器能够把逐块的字节数据连缀成一个字符串, 并把计算得到的字符串作为结果 (<code>Iteratee[Array[Byte],String]</code>).</li>
+    <li>一个<strong>文件</strong>型 Body 解析器能够把逐块的字节数据存为一个本地文件, 并以 <code>java.io.File</code> 引用作为结果 (<code>Iteratee[Array[Byte],File]</code>).</li>
+    <li>一个 <strong>s3</strong> 型 Body 解析器能够把逐块的字节数据推送给 Amazon S3 并以 S3 对象 ID 作为结果 (<code>Iteratee[Array[Byte],S3ObjectId]</code>).<!--more--></li>
+</ul><br/><br/>
+此外，<strong>Body解析器</strong>在开始解析数据之前已经访问了 HTTP 请求头, 因而有了机会运行一些先决条件的检查. 例如, Body 解析器能检查一些 HTTP 头是否正确设置了, 或者用户试图上传一个大文件时要检查是否有权限这么做.<br/><br/>
+<span style="color: #0000ff;">Unmi 注：这上面又提了一通 Iteratee，那什么是 Iteratee 呢？ 关于 Iteratee IO, 可参考：<a href="http://www.haskell.org/haskellwiki/Iteratee_I/O" target="_blank" rel="noopener"><span style="color: #0000ff;">Iteratee I/O</span></a> 和 <a href="http://blog.higher-order.com/blog/2010/10/14/scalaz-tutorial-enumeration-based-io-with-iteratees/" target="_blank" rel="noopener"><span style="color: #0000ff;">Scalaz Tutorial: Enumeration-Based I/O with Iteratees</span></a>，Iteratee 是什么意思呢，查不到这个单词，只记得原来看适配器模式时，Adapter 是适配器，Adaptee 是适适配者，同理 Iterator 是迭代器，Iteratee 应该是被迭器者了。</span><br/><br/>
+<blockquote>
+<strong>注</strong>: 那就是为什么 Body 解析器不是一个真正的 <code>Iteratee[Array[Byte],A]</code>，确切的说是一个 <code>Iteratee[Array[Byte],Either[Result,A]]</code>, 这就是说它在无法为请求体计算出正确的值时，有能力亲自发出 HTTP 状态码 (像 <code>400 BAD_REQUEST</code>, <code>412 PRECONDITION_FAILED</code> 或者 <code>413 REQUEST_ENTITY_TOO_LARGE</code>)
+</blockquote>
+<br/>
+一旦 Body 解析器完成了它的工作且返回了类型为 A 的值<code>时</code>, 相应的 <code>Action</code> 函数就会被执行并计算出请求体中的数据值.<br/><br/>
+<strong><span style="font-size: medium;">更多 Action 的内容</span></strong><br/><br/>
+前面我们说  <code>Action</code> 是一个 <code>Request =&gt; Result</code> 函数. 这不完全是对的. 让我们更深入地看下 <code>Action</code> 特质:<br/><br/>
+<pre class="lang:default decode:true">trait Action[A] extends (Request[A] =&gt; Result) {
+  def parser: BodyParser[A]
+}</pre>
+<br/>
+首先我们看到有一个类型 <code>A</code>, 然后这个 Action 必须定义一个 <code>BodyParser[A] 类型</code>. <code>Request[A]</code> 的定义如下:<br/><br/>
+<pre class="brush:scala">trait Request[+A] extends RequestHeader {
+  def body: A
+}</pre>
+<br/>
+<code>A</code> 是请求体的类型. 我们可以使用任何 Scala 类型作为请求体的类型, 例如 <code>String</code>, <code>NodeSeq</code>, <code>Array[Byte]</code>, <code>JsonValue</code>, 或是 <code>java.io.File</code>, 只要我们有一个 Body 解析器能够处理它.<br/><br/>
+概括一下就是, <code>Action[A]</code> 用返回类型为 <code>BodyParser[A]</code> 的方法去从 HTTP 请求中获取类型为 A 的值, 并构建出 <code>Request[A]</code> 类型的对象传递给 Action 代码.<br/><br/>
+<strong><span style="font-size: medium;">默认的 Body 解析器: AnyContent</span></strong><br/><br/>
+在我们前面的例子中还从未指定过 Body 解析器. 所以它是怎么工作的呢? 如果你不指定自己的 Body 解析器, Play 就会使用默认的, 它把请求体处理成一个 <code>play.api.mvc.AnyContent 实例</code>.<br/><br/>
+Body 解析通过检查 <code>Content-Type</code> 头来决定要处理的 Body 类型:<br/><br/>
+<ul>
+    <li><strong>text/plain</strong>: <code>String</code></li>
+    <li><strong>application/json</strong>: <code>JsValue</code></li>
+    <li><strong>text/xml</strong>: <code>NodeSeq</code></li>
+    <li><strong>application/form-url-encoded</strong>: <code>Map[String, Seq[String]]</code></li>
+    <li><strong>multipart/form-data</strong>: <code>MultipartFormData[TemporaryFile]</code></li>
+    <li>任何其他的 content type 类型: <code>RawBuffer</code></li>
+</ul><br/><br/>
+例如:<br/><br/>
+<pre class="lang:default decode:true">def save = Action { request =&gt;
+  val body: AnyContent = request.body
+  val textBody: Option[String] = body.asText <br/><br/>
+  // Expecting text body
+  textBody.map { text =&gt;
+    Ok("Got: " + text)
+  }.getOrElse {
+    BadRequest("Expecting text/plain request body")  
+  }
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: Body 解析器的大致工作过程是，解析请求体中的数据为相应的类型，然后赋值给 request.body，透明化掉 Body 解析器就是你只要正确去使用 request.body 就行，所以你最终要关注的也就是 request.body。request.body 是 AnyContent 类型，它有 asText, asXml, asJson, asRaw, asFormUrlEncoded 和 asMultipartFormData 方法。</span><br/><br/>
+<strong><span style="font-size: medium;">指定一个 Body 解析器</span></strong><br/><br/>
+Play 中可用的 Body 解析器定义在 <code>play.api.mvc.BodyParsers.parse</code> 中. <span style="color: #0000ff;">Unmi 注:    即定义在 ContentTypes.scala 文件中。</span><br/><br/>
+所以像本例那样, 定义了一个期望 Text Body 类型的 Action (类似前面示例中那样):<br/><br/>
+<pre class="lang:default decode:true">def save = Action(parse.text) { request =&gt; 
+   Ok("Got: " + request.body) 
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 上面方法的原型是来自于 Action.scala 中的 ActionBuilder 里定义的：</span><br/><br/>
+<pre class="lang:default decode:true">def apply[A](bodyParser: BodyParser[A])(block: Request[A] =&gt; Result): Action[A] = new Action[A] {
+    def parser = bodyParser
+    def apply(ctx: Request[A]) = block(ctx)
+}</pre>
+<br/>
+<span style="color: #0000ff;">上面括号里的 parse.text 位置能使用什么还是看看 play.api.mvc.BodyParsers.parse 中定义的方法，见：<a href="http://www.playframework.org/documentation/api/2.0/scala/index.html#play.api.mvc.BodyParsers$parse$" target="_blank" rel="noopener"><span style="color: #0000ff;">http://www.playframework.org/documentation/api/2.0/scala/index.html#play.api.mvc.BodyParsers$parse$</span></a>，其中有</span><br/><br/>
+<span style="color: #0000ff;">parse.xml, parse.json, parse.temporaryFile, parse.toLerantText, 或者那些带参数的  parse.file (to: File) 等等 </span><br/><br/>
+<span style="color: #0000ff;">前面 parse.text 方法的原型是：</span><br/><br/>
+<pre class="brush:scala">/**
+ * Parse the body as text if the Content-Type is text/plain.
+ */
+def text: BodyParser[String] = text(DEFAULT_MAX_TEXT_LENGTH)</pre>
+<br/>
+是不是觉得为什么代码这么简单呢? 这是因为 <code>parse.text</code> Body 解析在出问题时会发送 <code>400 BAD_REQUEST</code> 响应. 我们不必在自己的 Action 代码中再次检查, 我们可以安全的假定 <code>request.body</code> 中包含的是有效的 <code>String</code> 数据.<br/><br/>
+<span style="color: #0000ff;">Unmi 注: 也就是如果用 parse.text 时，如果发送的请求未指定 Content-Type 为 "text/plain" 时，就会报 400 错，不管实际上发送的是字符串，而用 parse.toLerantText 就不会报错，强行按照 text/plain 来解析。</span><br/><br/>
+另外，我们也可以用:<br/><br/>
+<pre class="lang:default decode:true">def save = Action(parse.tolerantText) { request =&gt;
+  Ok("Got: " + request.body)
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: parse.toLerantText 方法的代码是：</span><br/><br/>
+<pre class="brush:scala">/**
+ * Parse the body as text without checking the Content-Type.
+ */
+def tolerantText: BodyParser[String] = tolerantText(DEFAULT_MAX_TEXT_LENGTH)</pre>
+<br/>
+这个方法不会检查 <code>Content-Type</code> 头，且总是把请求体加载为字符串<code></code>.<br/><br/>
+<blockquote>
+<strong>小贴士:</strong> 在 Play 中所有的 Body 解析都提供有 <code>tolerant</code> 样式的方法.
+</blockquote>
+<br/>
+这是另一个例子, 它将把请求存为一个文件:<br/><br/>
+<pre class="lang:default decode:true">def save = Action(parse.file(to = new File("/tmp/upload"))) { request =&gt;
+  Ok("Saved the request content to " + request.body)
+}</pre>
+<br/>
+<strong><span style="font-size: medium;">组合 Body 解析器</span></strong><br/><br/>
+在上一个例子中, 所有的请求体都会存到同一个文件去. 这会产生难以预料的问题，不是吗? 我们来写一个定制的 Body 解析器，它会从请求会话中抽取到用户名, 并以此作为种个用户的唯一文件名:<br/><br/>
+<pre class="lang:default decode:true">val storeInUserFile = parse.using { request =&gt;
+  request.session.get("username").map { user =&gt;
+    file(to = new File("/tmp/" + user + ".upload"))
+  }.getOrElse {
+    error(Unauthorized("You don't have the right to upload here"))
+  }
+}<br/><br/>
+def save = Action(storeInUserFile) { request =&gt;
+  Ok("Saved the request content to " + request.body)  
+}</pre>
+<br/>
+<blockquote>
+<strong>注:</strong> 这里我们并没有真正的书写自己的 BodyParser, 只不过是组合了现有的. 这样做通常足够了，能应付多数情况. 从头而写一个 <code>BodyParser</code> 那要在高级话题部份才会涉及到.
+</blockquote>
+<br/>
+<strong><span style="font-size: medium;">最大内容长度</span></strong><br/><br/>
+基于文本的 Body 解析器 (如 <strong>text</strong>, <strong>json</strong>, <strong>xml</strong> 或 <strong>formUrlEncoded</strong>) 可使用最大内容长度，因为它们要加载所有内容到内存中.<br/><br/>
+有一个默认的内容长度 (默认为 100KB), 但是你也可以内联的指定它:<br/><br/>
+<pre class="lang:default decode:true">// Accept only 10KB of data.
+def save = Action(parse.text(maxLength = 1024 * 10)) { request =&gt;
+  Ok("Got: " + text)
+}</pre>
+<br/>
+<blockquote>
+<strong>小贴士:</strong> 默认的内容大小可在 <code>application.conf 中定义</code>:
+<code>parsers.text.maxLength=128K</code>
+</blockquote>
+<br/>
+你还可以在任何的 Body 解析器中用 <code>maxLength 来指定</code>:<br/><br/>
+<pre class="lang:default decode:true ">// Accept only 10KB of data.
+def save = Action(maxLength(1024 * 10, parser = storeInUserFile)) { request =&gt;
+  Ok("Saved the request content to " + request.body)  
+}</pre>

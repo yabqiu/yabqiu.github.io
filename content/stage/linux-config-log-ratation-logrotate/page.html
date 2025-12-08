@@ -1,0 +1,233 @@
+---
+title: Linux 下配置滚动日志之 logrotate
+url: /linux-config-log-ratation-logrotate/
+date: 2018-06-01T02:07:41-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/linux-logo.png"
+categories:
+  - Linux/Unix
+tags: 
+  - log rotation
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8826 
+wpStatus: publish
+views: 2503
+lastmod: 2018-06-04T11:53:24-05:00
+---
+
+<p>日志是个好东西，便于定位历史问题，但记录太多，不滚动，不除旧总暴盘的时候。如果是用日志框架输出的日志，像 Log4j 或 Logback 通过选择具有滚动特性的 Appender 就能实现日志的滚动，并删除旧的归档日志文件。但也有在程序当中难以控制的日志输出文件，这用的话必须采取事后补救措施，程序尽管往一个日志文件里写，由另一个程序来对该日志文件进行归档，清理操作。</p>
+
+<p>与此相关的工具，我们可以找到以下几个</p>
+
+<ol>
+
+	<li><a href="https://linux.die.net/man/8/logrotate">logrotate</a>, 如今的多数 Linux 发布版都自带了，感觉有一种主场优势。github 上 <a href="https://github.com/logrotate/logrotate">logrotate/logrotate</a> 仍活跃着</li>
+
+	<li><a href="https://www.newsyslog.org/manual.html">newsyslog</a>,  FreeBSD 和  Mac 系统自带，应该不常用。Mac OS 下可以看下配置文件 <code>/etc/newsyslog.conf</code></li>
+
+	<li><a href="http://oldzipsarchive.dreamhosters.com/apache/log_rotation/cronolog_faq.htm">cronolog</a>, 原本的官网 www.cronolog.org 全是日文了，找到它的快照 <a href="http://oldzipsarchive.dreamhosters.com/apache/log_rotation/cronolog_faq.htm">fleible web log rotation</a>, github 上 <a href="https://github.com/fordmason/cronolog">fordmason/cronolog</a> 最近更新是五年前</li>
+
+	<li><a href="https://httpd.apache.org/docs/2.4/programs/rotatelogs.html">rotatelogs</a>, 出自于 Apache HTTP 项目, Apache HTTP server 用它滚动访问和错误日志</li>
+
+</ol>
+
+<p>本人最为推崇使用第一个工具 <code>logrotate</code>, 因为多数 Linux 系统自带，不像 cronolog 和 rotatelogs 需要额外安装。它也有着更完备的功能，下面慢慢领略</p>
+
+<h3>logrotate 的工作机制</h3><br/>
+<p>Linux 下默认有一个每日执行的 Cron Job，配置在 <code>/etc/cron.daily/logrotate</code>，文件内容为(以 centos7 为例)<!--more--></p>
+
+<pre class="lang:default decode:true">#!/bin/sh<br/>
+<br/>
+/usr/sbin/logrotate -s /var/lib/logrotate/logrotate.status /etc/logrotate.conf<br/>
+EXITVALUE=$?<br/>
+if [ $EXITVALUE != 0 ]; then<br/>
+    /usr/bin/logger -t logrotate "ALERT exited abnormally with [$EXITVALUE]"<br/>
+fi<br/>
+exit 0</pre>
+
+<p>上面的意思是说，Linux 每日使用配置文件 <code>/etc/logrotate.conf</code> 执行命令 <code>logrotate</code>, 并且执行的状态写在 <code>/var/lib/logrotate/logrotate.status</code> 文件中。我们可以查看该状态记录文件以确认 logrotate 的实际行为。</p>
+
+<p><code>logrotate</code> 本身默认执行间隔都是每日一次，所以即使在自己配置中用了 <code>hourly</code> 也是没用的，除非我们把上面的 <code>logrotate</code> 从 <code>/etc/cron.daily</code> 移入到 <code>/etc/cron.hourly</code> 目录中去。</p>
+
+<p>在 Ubuntu 中的  <code>/etc/cron.daily/logrotate</code> 也类似，总之都是要应用 <code>/etc/logrotate.conf</code> 配置文件。该配置文件主要内容参考如下</p>
+
+<pre class="lang:default decode:true">#以下五行是日志滚动的全局默认配置<br/>
+weekly #默认每周一个日志归档<br/>
+rotate 4 #最多保存 4 个归档<br/>
+create #日志滚动后创建一个新的日志文件<br/>
+dateext #归档文件名加上日期后缀<br/>
+#compress #归档文件是否启用压缩<br/>
+<br/>
+# 包含 /etc/logrotate.d/ 目录中的所有配置文件<br/>
+include /etc/logrotate.d<br/>
+<br/>
+# 这是一个指定日志文件归档配置样例<br/>
+/var/log/wtmp {<br/>
+    monthly<br/>
+    create 0664 root utmp<br/>
+	minsize 1M<br/>
+    rotate 1<br/>
+}<br/>
+<br/>
+....</pre>
+
+<p>所以我们希望对某个日志文件进行自动归档，配置可以直接写在 <code>/etc/logrotate.conf</code> 文件中，像 <code>/var/log/wtmp {...</code> 那段一样，也可以在目录 <code>/etc/logrotate.conf</code> 中创建一个单独的配置文件，强烈建议采用后者。</p>
+
+<h3>创建自己的 logrotate 配置</h3><br/>
+<p>配置文件可以参考 <code>/etc/logrotate.d</code> 目录中的几个现实例子，在 <code>Centos7</code> 下可以看到 bootlog, chrony, syslog, wpa_supplicant, yum 这样的配置文件。完整配置说明请参照 <a href="https://linux.die.net/man/8/logrotate">logrotate(8) - Linux man page</a>。</p>
+
+<p>假如，我们需要对 httpd 的访问日志进行滚动，可以在 <code>/etc/logrotate.d/</code> 目录中创建文件 <code>httpd_access_log</code>, 内容放上</p>
+
+<pre class="lang:default decode:true">/var/log/httpd/access.log {<br/>
+    rotate 5<br/>
+    size 20M<br/>
+    compress<br/>
+    copytruncate<br/>
+    dateext<br/>
+    sharedscripts<br/>
+    postrotate<br/>
+        /usr/bin/killall -HUP httpd<br/>
+    endscript<br/>
+}<br/>
+</pre>
+
+<p>上面的配置可以在每一天，如果日志文件 <code>/var/log/httpd/access.log</code> 达到 20 M 的话，就会进行归档生成</p>
+
+<blockquote><br/>
+<p>/var/log/httpd/access-20180601.gz</p>
+
+</blockquote>
+
+<p>并且把原日志文件 <code>/var/log/httpd/access.log</code> 清空，还给 httpd 进程发送一个 HUP 信号。</p>
+
+<p>最多保留有 5 个归档日志文件，如果上面没有 <code>dateext</code> 配置项的话，生成的归档文件将会是 <code>access.1.gz</code>, <code>access.2.gz</code>  这样的文件名。</p>
+
+<p>配置文件中更多配置选项还是请参考 <a href="https://linux.die.net/man/8/logrotate">logrotate(8) - Linux man page</a>，这里不具体解释它的选项，只简单举例说明一下借助配置项可以实现什么</p>
+
+<ul><br/>
+	<li>可以在归档的时候发送邮件</li>
+
+	<li>可以设定归档文件后缀中的日期格式</li>
+
+	<li>归档日志可存储到别的目录中，默认存在同一目录中</li>
+
+	<li>归档前后都可以执行自定义的脚本</li>
+
+	<li>匹配多个日志文件是可指定脚本是针对每个日志文件触发，还是只触发一次</li>
+
+</ul><br/>
+<p>文件 <code>/etc/logrotate.d/httpd_access_log</code> 创建好了静静的躺在哪儿即可，<strong>不需要作任何的服务重启操作，第二天就可以看到结果</strong>，实在是等不及的话就用 <code>date</code> 命令修改系统时间，需谨慎，别造成运行中程序日期错乱。</p>
+
+<h3>调试配置文件</h3><br/>
+<p>要用到 <code>logrotate</code> 命令了，可以 <code>logrotate /etc/logrotate.conf</code>, 这会触发到所有所有的日志滚动操作，应该不是我们想要的，所以应该简单的</p>
+
+<blockquote><br/>
+<p>logrotate -d -f /etc/logrotate.d/httpd_access_log</p>
+
+</blockquote>
+
+<p>加了一个 -d (--debug), 相当于干运行，能看到下面的模拟操作输出</p>
+
+<blockquote><br/>
+<p>$ logrotate -d -f /etc/logrotate.d/httpd_access_log<br /><br/>
+reading config file /etc/logrotate.d/httpd_access_log<br /><br/>
+Allocating hash table for state file, size 15360 B</p>
+
+<p>Handling 1 logs</p>
+
+<p>rotating pattern: /var/log/httpd/access.log forced from command line (5 rotations)<br /><br/>
+empty log files are rotated, old logs are removed<br /><br/>
+considering log /var/log/httpd/access.log<br /><br/>
+    log needs rotating<br /><br/>
+rotating log /var/log/httpd/access.log, log-&gt;rotateCount is 5<br /><br/>
+dateext suffix '-20180601'<br /><br/>
+glob pattern '-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'<br /><br/>
+glob finding old rotated logs failed<br /><br/>
+copying /var/log/httpd/access.log to /var/log/httpd/access.log-20180601<br /><br/>
+truncating /var/log/httpd/access.log<br /><br/>
+compressing log with: /bin/gzip</p>
+
+</blockquote>
+
+<p>如果想看到它的实际效果的话就把其中的 <code>-d</code> 去掉</p>
+
+<blockquote><br/>
+<p>$ logrotate -f /etc/logrotate.d/httpd_access_log</p>
+
+</blockquote>
+
+<p>注意，前面加上了一个 <code>-f</code> (--force), 就是把不管日志文件大小是否符合要求，强制执行日志滚动操作</p>
+
+<p>激进一点的话，还可以修改系统时间来触发 Cron Job 中 <code>logrotate</code> 的执行，比如今天是 2018-06-02, 改成 2 号</p>
+
+<blockquote><br/>
+<p>$ sudo date -s 2018-06-02</p>
+
+</blockquote>
+
+<p>过一会就可以去查看日志文件是否滚动了，或是 logrotate 本身的状态日志 <code>/var/lib/logrotate/logrotate.status</code>。</p>
+
+<h3>多日志文件与通配符</h3><br/>
+<p>一个配置条目 <code>日志文件 { 配置项 }</code> 不仅仅支持一个日志文件，可以配置多个文件或使用通配符，如</p>
+
+<pre class="lang:default decode:true ">/var/log/httpd/access.log /var/log/httpd/error.log {<br/>
+....<br/>
+}<br/>
+<br/>
+# 或<br/>
+/var/log/httpd/access.log<br/>
+/var/log/httpd/error.log {<br/>
+...<br/>
+}</pre>
+
+<p>通配符的形式</p>
+
+<pre class="lang:default decode:true ">/var/log/news/* {<br/>
+...<br/>
+}<br/>
+<br/>
+/var/log/news/*.log {<br/>
+...<br/>
+}<br/>
+<br/>
+/var/log/*/stdout.log {<br/>
+...<br/>
+}<br/>
+<br/>
+/var/log/*/*.log {<br/>
+...<br/>
+}</pre>
+
+<p>不仅文件名处可以用通配符，目录处也能用通配符。例如最后那个配置 <code>/var/log/*/*.log {...}</code> 将会对 <code>/var/log/</code> 下所有目录中的 <code>*.log</code> 文件产生效果。比如下面那样的文件</p>
+
+<blockquote><br/>
+<p>/var/log/aa/x.log<br /><br/>
+/var/log/bb/y.log<br /><br/>
+/var/log/cc/z.log</p>
+
+</blockquote>
+
+<p>针对多个日志文件时，归档文件也会生成在相应日志所在目录中。有了多日志文件与通配符的支持，能够通过一个配置对系统中众多日志文件采取一致的行动。</p>
+
+<p>相关链接</p>
+
+<ol>
+
+	<li><a href="https://www.digitalocean.com/community/tutorials/how-to-manage-log-files-with-logrotate-on-ubuntu-12-10">How To Mange Log Files With Logrotate On Ubuntu 12.10</a></li>
+
+	<li><a href="https://support.rackspace.com/how-to/understanding-logrotate-utility/">Understanding logrotate utility</a></li>
+
+	<li><a href="https://linux.die.net/man/8/logrotate">logrotate(8) - Linux man page</a></li>
+
+</ol>
+
+<hr /><br/>
+<p>补充(2018-06-04): </p>
+
+<p>如果是用 <code>&gt;</code> 重定向输出的日志，如 <code>test_app &gt; stdout.log</code>, <code>copytruncate</code> 则无法裁剪原始日志文件 <code>stdout.log</code>, 它将持续增涨下去。而用 <code>&gt;&gt;</code> 就没问题了，<code>test-app &gt;&gt; stdout.log</code>，日志滚动后 <code>stdout.log</code> 大小将变为零。</p>

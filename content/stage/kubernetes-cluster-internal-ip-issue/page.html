@@ -1,0 +1,114 @@
+---
+title: Kubernetes 集群中节点的 INTERNAL-IP 问题
+url: /kubernetes-cluster-internal-ip-issue/
+date: 2020-04-08T23:46:22-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2020/03/kubernetes_logo.png"
+categories:
+  - Kubernetes
+tags: 
+  - Network
+  - Docker
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10102 
+wpStatus: publish
+views: 5442
+lastmod: 2020-04-09T22:55:28-05:00
+---
+
+用自己 <a href="https://yanbin.blog/kubernetes-learning-1/">Kubernetes 学习笔记(一) - 初上手</a> 一文中的方法用 Vagrant 虚拟机安装的 Kubernetes 集群，部署应用什么的都没问题，然而却在用<br/><br/>
+<blockquote>
+$ kubectl exec -it &lt;pod-name&gt; -- sh
+</blockquote>
+<br/>
+试图登陆 docker 容器时出问题了，总是报错说<br/><br/>
+<blockquote>
+error: unable to upgrade connection: pod does not exist
+</blockquote>
+<br/>
+kubectl 登陆不了 docker 容器，而且  kubectl logs 也会报一样的错，必须到具体的工作节点上用 docker exec 或 docker logs 才能访问到该节点上的容器信息。<br/><br/>
+这就不太对头，网上找了下原因，结果是因为节点间通信时选错了 IP 地址。<br/><br/>
+比如三个 Vagrant 虚拟机分别是<br/><br/>
+<ol>
+    <li>k8s-master (172.28.128.14)</li>
+    <li>k8s-node1 (172.28.128.10)</li>
+    <li>k8s-node2 (172.28.128.11)</li>
+</ol>
+<br/>
+在 k8s-master 中初始集群时用的命令也是指定的 172.28.128.14 IP 地址<!--more--><br/><br/>
+<blockquote>
+$ kubeadm init --pod-network-cidr=10.244.0.0/16 --apiserver-advertise-address 172.28.128.14
+</blockquote>
+<br/>
+然后 k8s-node1 和  k8s-node2 用上面产生的 token 也正常加入了集群，连后面部署应用都能够到达两个工作节点上。但当时确实未注意 <code>kubectl get nodes -o wide</code>  的输出，现在看到了是下面的样子<br/><br/>
+<pre class="lang:default decode:true "># kubectl get nodes -o wide
+NAME         STATUS   ROLES    AGE   VERSION   INTERNAL-IP   EXTERNAL-IP  ...
+k8s-master   Ready    master   95m   v1.18.0   10.0.2.15     &lt;none&gt;       ...
+k8s-node1    Ready    &lt;none&gt;   93m   v1.17.4   10.0.2.15     &lt;none&gt;       ...
+k8s-node2    Ready    &lt;none&gt;   93m   v1.17.4   10.0.2.15     &lt;none&gt;       ...</pre>
+<br/>
+查看任意一个节点看看<br/><br/>
+<blockquote>
+$ kubectl get nodes k8s-node1 -o yaml<br />
+status:<br />
+    addresses:<br />
+    -  address: 10.0.2.15<br />
+        type: InternalIP<br />
+    -  address: k8s-node1
+</blockquote>
+<br/>
+看到的 address 是 10.0.2.15. 那是否能用 <code>kubectl edit nodes k8s-node1</code> 修改后保存应用呢？可以改也能保存(提示  node/k8s-node1 edited)，但再次查看又变化原样。<br/><br/>
+怎么三个节点的  INTERNA-IP 都是一样的啊，10.0.2.15, 这个 IP 从哪里来的，分别进到 k8s-master, k8s-node1 和  k8s-node2 三个节点，ifconfig 发现第三个位置的网络设备都是 10.0.2.15 这个 IP。以下是 k8s-master 中的 ifconfig 前部分输出, docker0 和 enp0s3 上的 IP 地址在三个节点上是一样的，而 kubeadm 在初始化和加入集群时恰恰就选取了第三个设备 enp0s3 上的 IP 地址，全部是一样的 10.0.2.15。<br/><br/>
+<pre class="lang:default decode:true">cni0: flags=4163&lt;UP,BROADCAST,RUNNING,MULTICAST&gt;  mtu 1450    //在 k8s-node1 和 k8s-node2 中分别为 10.244.1.1, 10.244.2.1
+        inet 10.244.0.1  netmask 255.255.255.0  broadcast 0.0.0.0  
+......<br/><br/>
+docker0: flags=4099&lt;UP,BROADCAST,MULTICAST&gt;  mtu 1500
+        inet 172.17.0.1  netmask 255.255.0.0  broadcast 172.17.255.255
+......<br/><br/>
+enp0s3: flags=4163&lt;UP,BROADCAST,RUNNING,MULTICAST&gt;  mtu 1500
+        inet 10.0.2.15  netmask 255.255.255.0  broadcast 10.0.2.255
+......<br/><br/>
+enp0s8: flags=4163&lt;UP,BROADCAST,RUNNING,MULTICAST&gt;  mtu 1500 //在 k8s-node1 和 k8s-node2 中分别为 172.28.128.10, 172.28.128.11
+        inet 172.28.128.14  netmask 255.255.255.0  broadcast 172.28.128.255</pre>
+<br/>
+所以造成了 kubectl exec 和 kubectl logs 无法工作。<br/><br/>
+解决办法<br/><br/>
+在所有的节点上，包括 master 和  worker 节点，做同样的事情<br/><br/>
+<blockquote>
+# vi /etc/systemd/system/kubelet.service.d/10-kubeadm.conf<br />
+EnvironmentFile=-/etc/default/kubelet<br />
+<span style="background-color: #ffff99;">Environment="KUBELET_EXTRA_ARGS=--node-ip=&lt;各自 172.28.128.xx 段的 IP&gt;"</span><br />
+ExecStart=
+</blockquote>
+<br/>
+只需要加上高亮的那一行，然后再重启两个服务<br/><br/>
+<blockquote>
+# systemctl daemon-reload<br />
+# systemctl restart kubelet
+</blockquote>
+<br/>
+现在再来看下 <code>kubectl get nodes -o wide</code> 显示什么了<br/><br/>
+<pre class="lang:default decode:true"># kubectl get nodes -o wide
+NAME         STATUS   ROLES    AGE     VERSION   INTERNAL-IP     EXTERNAL-IP ...
+k8s-master   Ready    master   3h41m   v1.18.0   172.28.128.14   &lt;none&gt;      ...
+k8s-node1    Ready    &lt;none&gt;   3h39m   v1.17.4   172.28.128.10   &lt;none&gt;      ...
+k8s-node2    Ready    &lt;none&gt;   3h38m   v1.17.4   172.28.128.11   &lt;none&gt;      ...</pre>
+<br/>
+INTERNAL-IP 都显示正常了，再来试下 <code>kubectl exec</code> 命令<br/><br/>
+<blockquote>
+root@k8s-master:# kubectl exec -it python-web-app-68d7bbd7f5-k5mvc -- sh<br />
+/ # hostname<br />
+python-web-app-68d7bbd7f5-dzjxf
+</blockquote>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://medium.com/@kanrangsan/how-to-specify-internal-ip-for-kubernetes-worker-node-24790b2884fd">How to specify Internal-IP for kubernetes worker node</a></li>
+    <li><a href="https://medium.com/@joatmon08/playing-with-kubeadm-in-vagrant-machines-part-2-bac431095706">Playing with kuberadm in Vagrant Machines, Part 2</a></li>
+</ol>

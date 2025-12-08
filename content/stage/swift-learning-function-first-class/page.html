@@ -1,0 +1,88 @@
+---
+title: Swift 学习笔记(函数第一等)
+url: /swift-learning-function-first-class/
+date: 2015-11-23T02:04:26-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Swift
+tags: 
+  - Swift
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7059 
+wpStatus: publish
+views: 599
+lastmod: 2021-09-03T17:35:56-05:00
+---
+
+正好前段时间在发力理解函数式编程，学习 Swift 至今就想看看 Swift 对函数式编程的支持如何。从变量声明用 let, 以及函数参数的 let 和 var 都非常适合于函数式编程，它们对实例保护的很好。let 和 var 类型的函数参数保证了函数内部操作的是传入参数的深拷贝。</p>
+<br/>
+在 Objective-C 中要调用一个函数，除了通过对像为媒介，还能 perform 一个  selector, selector 其实也是定位函数的方式，这更像是反射。其实 C/C++ 的函数指针概念更不错，用于直接定位函数。<br/><br/>
+所以进一步，函数要成为第一等公民，它本身可以很容易的作为参数传入或作为返回值，即能构成高阶函数。这在 Swift 也是没问题的，我们可以定义函数类型的变量，例如：<br/><br/>
+<pre class="lang:default decode:true">func addTwoInts(a: Int, _ b: Int) -&gt; Int {
+    return a + b
+}<br/><br/>
+var addFunction: (Int, Int) -&gt; Int = addTwoInts  //addTwoInts 函数类型表示 (Int, Int) -&gt; Int
+print(addFunction(1, 2))
+let add = addTwoInts       //自动推断出 add 函数的类型<br/><br/>
+func foo() {
+  print(123)
+}
+let f:()-&gt;Void = foo</pre>
+<br/>
+<!--more-->从上面我们要理解函数类型的表示方式，参数列表到结果的映射, 空参数无返回值就表示为 ()-&gt;Void；并且从上懂得了通过函数变量如果调用函数，和 Javascript 一样的，就是后面直接加括号，带参数就行。<br/><br/>
+注意上面的 addTwoInts(a: Int, _ b: Int) 第二个参数的外部参数名可省略，不然调用  addFunction(1, 2) 时同样要写成  addFunction(1, b: 2)。同时它的 selector 表示法是 addTwoInts(_:, _:)。<br/><br/>
+有了现在的前提，搞清楚了函数类型的表示法，我们就可以构造出高阶函数，即函数怎么作为参数或怎么返回一个函数<br/><br/>
+<strong>函数作为参数</strong><br/><br/>
+<pre class="lang:default decode:true">func addTwoInts(a: Int, b: Int) -&gt; Int {
+    return a + b
+}<br/><br/>
+func printMathResult(mathFunction: (Int, Int) -&gt; Int, _ a: Int, _ b: Int) {
+    print("Result: \(mathFunction(a, b))")
+}
+printMathResult(addTwoInts, 3, 5)  //输出  8</pre>
+<br/>
+<strong>返回函数</strong><br/><br/>
+<pre class="lang:default decode:true">func step(input: Int) -&gt; Int {
+    return input + 1
+}<br/><br/>
+func stepFunction() -&gt; (Int)-&gt;Int { //这里出现两个 -&gt;，写成 func stepFunction() -&gt; ((Int)-&gt;Int) { 好看些
+   return step
+}<br/><br/>
+stepFunction()(100)  //值为 101</pre>
+<br/>
+<strong>嵌套函数</strong><br/><br/>
+函数可以嵌套定义，像 Javascript 那样<br/><br/>
+<pre class="lang:default decode:true">func stepFunction(steps: Int) -&gt; ((Int)-&gt;Int) {
+    func step(input: Int) -&gt; Int {
+        return input + steps
+    }
+    return step
+}<br/><br/>
+stepFunction(5)(100)  //值为 105</pre>
+<br/>
+例子中我们又稍稍往前踏了一步，这的确嵌套函数的定义，并且内部函数捕获了一个外部变量，也是一个闭包。我们仍然是用 func 先定义好 step 函数再用 return step 返回，那么我们能不能像 Javascript 那样返回一个匿名的函数呢？类似 Javascript 的<br/><br/>
+<pre class="lang:default decode:true">return function(x, y) { return x + y;}</pre>
+<br/>
+那要立即上手一下 Swift 的 Lambda 语法<br/><br/>
+<span style="color: #800000;">    { (<code>parameters</code>) -&gt; <code>return type</code> in</span><br />
+<span style="color: #800000;">        </span><code>statements</code><br />
+<span style="color: #800000;">    }</span><br/><br/>
+于是前面的嵌套函数可以写成<br/><br/>
+<pre class="lang:default decode:true ">func stepFunction(steps: Int) -&gt; ((Int)-&gt;Int) {
+    return {input in           //这行是省略写法
+        return input + steps
+    }
+}<br/><br/>
+stepFunction(20)(100)  //值为 120</pre>
+<br/>
+上方代码第一个 return 行中是省略写法，可以写成以下三种形式<br/><br/>
+<span style="color: #800000;">return { (input) -&gt; Int in</span><br />
+<span style="color: #800000;">return { (input: Int) in</span><br />
+<span style="color: #800000;">return { (input: Int) -&gt; Int in</span><br/><br/>
+参考：<a href="https://developer.apple.com/library/prerelease/ios/documentation/Swift/Conceptual/Swift_Programming_Language/Functions.html#//apple_ref/doc/uid/TP40014097-CH10-ID158" target="_blank" rel="noopener">Functions</a>

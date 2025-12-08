@@ -1,0 +1,69 @@
+---
+title: Unmi 的 Struts2 学习笔记(十二)
+url: /unmi-study-struts2-12/
+date: 2008-05-09T22:59:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/05/struts-logo.jpeg"
+categories:
+  - Struts
+tags: 
+  - Struts2
+  - Struts
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 400 
+wpStatus: publish
+views: 378
+lastmod: 2020-03-22T11:27:09-05:00
+---
+
+上有所好，下必甚之。君不见屠宰场的墙头“以三个代表指导我们的屠宰工作!” 发挥到极致；近来更是“和谐”泛滥，褒贬难分，诸如“创建人水和谐” 等比比皆是。程序开发更需要务实，任凭天花乱坠都糊弄不了梗直的机器。<br/><br/>
+1. 初见 Struts2 的表单标签有 tooltip 以及 tooltipConfig 下的 tooltipBgColor 等属性，有一种砰然心动的感，本能的以为例如一个输入框，鼠标悬停其中便出现一个 JS Tip 层，还可控制这个层的样式。用了才知道头脑其实有点过热，不过是在输入框前加下图标，鼠标要放在那个图标上才显示 tooltip 指定的内容，而且如果不给 form 加上 tooltipConfig="#{'jsTooltipEnabled':'true'}"，也就用 alt/title 来实现，没什么新意。加了tooltipConfig="#{'jsTooltipEnabled':'true'}" 的话还要人命的是 JS 提示层会出来，alt/title 也会迸出来，产生重叠。同时还必须加上 &lt;s:head/&gt; 否则出现 dojo 的错误，即使 jsTooltipEnabled 为 false 亦如此，没来由。<!--more--><br/><br/>
+2. 前面讲过表单域标签的 tooltipConfig 有许多子属性控制 JS Tip 层的样格，如 tootipBgColor、toolFontSize，具体属性可见<a href="http://wiki.opensymphony.com/display/WW/Form+Tags">http://wiki.opensymphony.com/display/WW/Form+Tags</a>(中文 <a href="http://wiki.javascud.org/display/ww2cndoc/Form+Tags">http://wiki.javascud.org/display/ww2cndoc/Form+Tags</a>)。可是我试过几个属性，那 JS Tip 层总老样土黄底黑字，煞费苦心，也颇受打击，尚不明就理，待明人释点。<br />
+虽如此，还是说一下 tooltipConfig 的子属性的配置方式，有三：<br />
+1) OGNL 方式<br />
+&lt;s:textfield label="Address" tooltip="Enter your address"<br />
+     tooltipConfig="#{'tooltipBgColor':'#FF0000','tooltipFontSize':'20px'}" /&gt;<br />
+&lt;/s:form&gt;<br />
+2) &lt;s:param&gt; 子标签<br />
+&lt;s:textfield label="Customer Name" tooltip="One of our customer Details'"&gt;<br />
+     &lt;s:param name="tooltipConfig"&gt;<br />
+          tooltipWidth = 150 | tooltipAboveMousePointer = false |  tooltipLeftOfMousePointer = false<br />
+     &lt;/s:param&gt;<br />
+&lt;/s:textfield&gt;<br />
+3)&lt;s:param&gt; 子标签加 OGNL<br />
+&lt;s:textfield label="Customer Address"  tooltip="Enter The Customer Address"&gt;<br />
+     &lt;s:param name="tooltipConfig"  value="#{'tooltipStatic':'true','tooltipSticky':'true','tooltipTitle':'false','tooltipShadowColor':'false'}" /&gt;<br />
+&lt;/s:textfield&gt;<br/><br/>
+关于 ToolTip 的使用前面还单独写了 <a href="http://unmi.cc/struts2-tag-tooltip-tooltipconfig/" target="_blank" rel="noopener noreferrer">为何我的 Struts2 标签 tooltip 和 tooltipConfig 是这种效果呢？</a><br/><br/>
+3. JSP 中 &lt;s:head them="ajax"/&gt; &lt;s:textfield tooltip="Input your name" label="Name"/&gt;  ..., 访问时页面出现错误：Could not load 'dojo.widget.html.Tooltip'; last tried '__package__.js'，原因是 Struts 2.0.6 的 Bug。修改 struts2-core-2.0.6.jar 中的 template/simple/form-close.ftl 和 template/ajax/form-close.ftl，把其中的 dojo.widget.html.Tooltip 替换为 dojo.widget.Tooltip 即可。其实原来只是提示出错，倒不影响什么，说是这个 Bug 在 2.1.0 中已消除(<a href="https://issues.apache.org/struts/browse/WW-1895">https://issues.apache.org/struts/browse/WW-1895</a>)。<br/><br/>
+4. 前面讲的都是表单标签的通用属性，其中还有一个值得提的属性是 required 属性，设置为 true 则会在表单域前面加上红色的星号(*) 表示必填项，用 requiredposition 指定星号出现于相对 Label 的位置，left 或 right。<br/><br/>
+5. &lt;s:checkboxlist&gt; 会根据 list 所定的集合(含数组)来显示一组 checkbox。listKey 指定集合对象的某个属性作为 value，listValue 指定集合对象的某个属性作为 Lable，和想当然的理解可能又会出现偏差。若集合是 Map，则listKey/listValue 分别用 key 和 value来对应。例子：<br />
+1) &lt;s:checkboxlist name="a" list="{'a','b','c'}"/&gt;<br />
+2) &lt;s:checkboxlist name="b" list="#{'a':'1','b':'2'}" listKey="key" listValue="value"/&gt;<br />
+3) &lt;s:checkboxlist name="c" list="#books" listKey="name" listValue="author"/&gt;<br />
+&lt;s:checkboxlist.../&gt; 显示的 checkbox 可点击标签文字来勾选或不选。其实就是这种label for 的写法(鼠标点 I am OK 就能选上框)<br />
+ &lt;input type="checkbox" name="a" value="Yes" id="a-1"/&gt;<br />
+&lt;label for="a-1" class="checkboxLabel"&gt;I am OK&lt;/label&gt;<br/><br/>
+6. &lt;s:combobox.../&gt; 说它是个 combobox 有点言过其实，说白就一个输入框对应一个下拉框，下拉框变化时当前值填到输入框里。下拉框没有 name 属性，所以不产生请求。&lt;s:combobox&gt; 也用 list/listKey/listValue 属性。<br/><br/>
+7. &lt;s:datetimepicker.../&gt; 倒是个前所未有的标签，用 type="date|time" 指定是日期还是时间选择，可惜不能同时具有日期和时间。toggleType="plain|wipe|explode|fade" 设置选择框的出现、隐藏动态效果。displayFormat 指定显示格式，如yyyy-MM-dd。这个标签解决的一个问题是不被下拉框遮挡，但问题很多，如选择时间时文本框里显示不是 11:30 而是 上午:30，不可捉摸。日期选择框月份两边的上下三角与中国人的操作习惯不相符，单击下三角是跳到后一个月去。和 tooltip 一样，不太成熟，还比不上业界的 JS 日历控件。<br/><br/>
+8. &lt;s:head.../&gt; 用于对某些 CSS 和 JavaScript 的引用，如要使用 ajax 就写成 &lt;s:head theme="ajax"/&gt;，debug 属性打开调试功能。<br/><br/>
+9. &lt;s:doubleselect.../&gt; 产生一个能联动的两个下拉框，name/list/listKey/listValue 用于第一个下拉框，意义同 checkboxlist 的类似属性。相应的有第二个下拉框的用doubleName/doubleList/doubleListKey/doubleListValue。其他的带double 前缀的都是指定第二个下拉框的属性。注意 doubleList 中表达式的写法。例如：<br />
+     &lt;s:doubleselect name="group" list="{'one','two'}" doubleName="detail"<br />
+    doubleList="top=='one'?{'apple','pear'}:{'blue','red'}"/&gt;<br />
+   doubleList 中的 top 暗指第一个下拉框的所选值，这里用的是一个三元操作符，根据第一个下拉框选项来决定第二个下拉框要显示的列表。如果第一个下拉框中有三个及以上的项数，对应的 doubleList 就要麻烦一些，要用嵌套的三元操作符了，如：<br />
+ &lt;s:doubleselect name="group" list="{'one','two','three'}" doubleName="detail"<br />
+   doubleList="top=='one'?{'apple','pear'}:(top=='two'?{'blue','red'}:{'pine','willow'})"/&gt;<br />
+如果用一个 Map 来预先定义一个 Key-List 集合，则用起来要简单多了。<br />
+&lt;s:set name="bs" value="#{'one':{'apple','pear'},'two':{'blue','red'},'three':{'pine','willow'}}"/&gt;<br />
+&lt;s:doubleselect ........ list="#bs.keySet()" doubleList="#bs[top]"/&gt;<br />
+其他属性未写出，同样，top 是第一个下拉框所选值。<br />
+用 &lt;s:doubleselect.../&gt; 标签时，Struts2 会把所有的选项值都放到页面的 JS 变量中，所以如果列表项太多的话就不适合于用这个标签了，那就要用 Ajax 的相应标签了。<br />
+当第一个下拉只有两项时，刚进到页面时，那两个下拉框是紧紧挨在一起来，改变过第一个下拉框后，中间才会有空一行，也是 Struts2 的一个 Bug，第一个下拉框是三项及以上时倒没问题。<br/><br/>
+10. 明白了 doubleselect 的话，那么 &lt;s:select.../&gt; 用起来就简单了，也是有 listKey/listValue。还就也是对前面的补充，下拉框都有 size 属性(显示的行数)，和 multiple 属性(是否允许多选)。对应到标签的属性就会是，size/multiple，doubleselect 的第二个框相应的 doubleSize/doubleMultiple。<br/><br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

@@ -1,0 +1,158 @@
+---
+title: Python 包管理及虚拟环境的应用(三: pipenv)
+url: /python-package-manager-venv-virtualenv-3/
+date: 2019-01-03T02:30:22-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - virtualenv
+  - venv
+  - pipenv
+  - pyvenv
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9214 
+wpStatus: publish
+views: 656
+lastmod: 2022-07-06T14:13:27-05:00
+---
+
+前两篇分别学习了 Python 如何进行依赖的管理，以及结合虚拟环境来使用 <code>pip</code> 进行依赖管理。而有人觉得把 <code>virtualenv</code> 与 <code>pip</code> 分开来操作太麻烦了，而且 <code>requirements.txt</code> 描述依赖的方式十分笨拙，所以在前两者之上创建了 <code>pipenv</code>, 也谈不上重新发明了轮子吧。<br/><br/>
+<h2>3. Pipenv: 新一代依赖管理与虚拟环境</h2><br/><br/>
+倘若不是经由 <code>virtualenv</code>, <code>venv</code> 而来到 <code>pipenv</code>，没有对比也就无法体会到 <code>pipenv</code> 的妙处的。<code>pipenv</code> 在总结了 <code>virtualenv/venv</code> 的缺点之后由 Kenneth Reitz 于 2017 年 1 月发布的新型 Python 依赖管理器。<br/><br/>
+<ol>
+    <li>它不再需要单独用 <code>virtualenv</code> 和 <code>pip</code>，只要一条命令 <code>pipenv</code> 完成所有的事</li>
+    <li>不用手动管理 <code>requirements.txt</code> 文件，而是由  <code>pipenv</code> 自动维护 <code>Pipfile</code> 和 <code>Pipfile.lock</code> 文件</li>
+    <li>自动创建虚拟环境，并且虚拟环境与项目文件分离</li>
+    <li>更详尽的依赖图(例如 <code>pipenv graph</code>)，像 <code>mvn dependency:tree</code> 那样显示依赖树</li>
+    <li>控制台下输出颜色更丰富</li>
+</ol>
+<br/>
+<!--more--><br/><br/>
+下面来体验体验 <code>pipenv</code> <br/><br/>
+<h3>3.1 安装 pipenv</h3><br/><br/>
+<blockquote>
+pip3 install pipenv --user
+</blockquote>
+<br/>
+安装完后如果直接执行 <code>pipenv</code> 命令，提示 <code>pipenv</code> 找不到，并且 <code>pip3</code> 也不能用了<br/><br/>
+<blockquote>
+vagrant@ubuntu-bionic:~$ pip3<br />
+Traceback (most recent call last):<br />
+File "/usr/bin/pip3", line 9, in &lt;module&gt;<br />
+from pip import main<br />
+ImportError: cannot import name 'main'
+</blockquote>
+<br/>
+这时候也许应该重启 shell 应用新的路径环境，因 <code>pip</code> 安装的命令会放到 <code>~/.local/bin</code> 目录中。看 <code>~/.profile</code> 文件<br/><br/>
+<pre class="lang:sh decode:true "># set PATH so it includes user's private bin if it exists
+if [ -d "$HOME/.local/bin" ] ; then
+    PATH="$HOME/.local/bin:$PATH"
+fi</pre>
+<br/>
+因为 <code>pip</code> 安装 <code>pipenv</code> 之前目录 <code>/.local/bin</code> 可能不存在，<code>pipenv</code> 安装之后在  <code>/.local/bin</code> 中多出了以下几个命令<br/><br/>
+<blockquote>
+easy_install easy_install-3.6 pip pip3 pip3.6 pipenv pipenv-resolver virtualenv virtualenv-clone
+</blockquote>
+<br/>
+其中的 <code>pip3</code> 要替代 <code>/usr/bin/pip3</code>。重启 shell，<code>pipenv</code> 等命令将能使用。从 <code>pipenv</code> 所安装的命令也能看出 <code>pipenv</code> 实质是建筑在 <code>virtualenv</code> 和 <code>pip</code> 之上的壳。<br/><br/>
+Linux 下能也能通过 <a href="https://linuxbrew.sh/"><code>Linuxbrew</code></a> 来安装  <code>pipenv</code><br/><br/>
+<blockquote>
+sudo apt-get install linuxbrew-wrapper<br />
+brew install pipenv   # 如果不能运行 pipenv 的话也考虑重启 shell 应用路径环境
+</blockquote>
+<br/>
+Mac OS X 下也是用 <code>brew install pipenv</code> 安装。<br/><br/>
+<h3>3.2 使用 pipenv</h3><br/><br/>
+使用过程先以一张图片直观的展现出来<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2019/01/python-venv-4.png"><img class="aligncenter wp-image-9209 size-full" src="https://yanbin.blog/wp-content/uploads/2019/01/python-venv-4.png" alt="" width="917" height="1010" /></a><br/><br/>
+下面再简单分解说明<br/><br/>
+<h4>3.2.1 创建虚拟环境</h4><br/><br/>
+<blockquote>
+pipenv install
+</blockquote>
+<br/>
+自动创建虚拟环境，并生成 <code>Pipfile</code> 和 <code>Pipfile.lock</code> 文件。如果已有相对应的虚拟环境则检查 <code>Pipfile</code> 中是否有更新，有新的依赖则下载安装。<br/><br/>
+<h4>3.2.2 激活虚拟环境</h4><br/><br/>
+<blockquote>
+pipenv shell
+</blockquote>
+<br/>
+从上图中也是 source 了相应虚拟环境的 <code>bin/activate</code> 文件，因为底层就是一个 <code>virtualenv</code>。进到虚拟环境后，通过对 <code>$VIRTUAL_ENV</code> 或 <code>pipenv --env</code> 查看到它相对应的虚拟环境不在当前目录中，而是分离到了 <code>~/.local/share/virtualenvs/demo-PtmYtcbd/</code> 中，这也使得项目本身更干净了。<br/><br/>
+<h4>3.2.3 安装依赖</h4><br/><br/>
+<blockquote>
+pipenv install requests
+</blockquote>
+<br/>
+和创建虚拟环境类似，所以我们也可以一步到位的创建虚拟环境并安装指定的模块。由 <code>sys.path</code> 显示出的内容可知模块会安装到虚拟环境下的目录 <code>~/.local/share/virtualenvs/demo-PtmYtcbD/lib/python3.6/site-packages</code> 下。<br/><br/>
+依赖安装后自动更新 <code>Pipfile</code> 文件。我们也可以手工编辑该 <code>Pipfile</code> 文件，加入更多的依赖，保存后再次运行 <code>pipenv install</code> 即下载安装指定的依赖。<br/><br/>
+<h4>3.2.4 显示依赖树</h4><br/><br/>
+假设我们还用 <code>pipenv install boto3</code> 安装了 <code>boto3</code>，显示依赖树用命令<br/><br/>
+<blockquote>
+pipenv graph
+</blockquote>
+<br/>
+<a href="https://yanbin.blog/wp-content/uploads/2019/01/python-venv-6.png"><img class="aligncenter size-full wp-image-9220" src="https://yanbin.blog/wp-content/uploads/2019/01/python-venv-6.png" alt="" width="604" height="400" /></a><br/><br/>
+<h4>3.2.5 移除依赖</h4><br/><br/>
+<blockquote>
+pipenv uninstall boto3
+</blockquote>
+<br/>
+相当于执行了 <code>pip uninstall boto3</code>。这时候我们查看  <code>Pipfile</code> 文件确实是移到了 <code>boto3 = "*"</code> 这一行，并且 <code>boto3</code> 也从  <code>~/.local/share/virtualenvs/demo-PtmYtcbD/lib/python3.6/site-packages</code> 中删掉了。但是它所依赖的包依旧在，所以再次显示依赖树变成下面的样子<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2019/01/python-venv-7.png"><img class="aligncenter size-full wp-image-9221" src="https://yanbin.blog/wp-content/uploads/2019/01/python-venv-7.png" alt="" width="585" height="237" /></a><br/><br/>
+要想干净的清除或许得 <code>botocore</code>, <code>s3transfer</code>, <code>docutils</code> ..... 逐个干掉，但不实际。<code>pipenv graph</code> 并非解析 <code>Pipfile</code> 生成的，而是扫描虚拟环境中的 <code>site-packages</code> 获得的。<br/><br/>
+若要得到真实的依赖树，应该坚决的把虚拟环境删了，再生成，反正之前下载的依赖在本地有缓存的。命令如下<br/><br/>
+<blockquote>
+pipenv --rm<br />
+pipenv install<br />
+pipenv graph
+</blockquote>
+<br/>
+<a href="https://yanbin.blog/wp-content/uploads/2019/01/python-venv-8.png"><img class="aligncenter wp-image-9222 size-full" src="https://yanbin.blog/wp-content/uploads/2019/01/python-venv-8.png" alt="" width="835" height="432" /></a><br/><br/>
+<h4>3.2.6 退出虚拟环境</h4><br/><br/>
+<blockquote>
+deactivate
+</blockquote>
+<br/>
+因为本质上在执行 <code>pipenv shell</code> 时就是 source 了虚拟环境的 <code>bin/activate</code> 文件，所以退出方式与 <code>virtualenv</code> 是一样的。也能用 <code>exit</code>, 有时候 <code>exit</code> 后不进行换行。<br/><br/>
+<h4>3.2.7 其他功能</h4><br/><br/>
+<code>pipenv</code> 支持不同的 Python 版本<br/><br/>
+<blockquote>
+pipenv --two<br />
+pipenv --three<br />
+pipenv --python 2.7.14<br />
+pipenv --python path/to/python
+</blockquote>
+<br/>
+<code>pipenv</code> 支持不同的代码环境，在 <code>Pipfile</code> 可以分组 <code>[dev-packages]</code>, <code>[packages]</code> 分别指定不同的依赖，比如 dev 时才需要的测试相关的模块。安装依赖的时候可以用  <code>pipenv install --dev</code>，这很像 <code>npm</code><br/><br/>
+自定义的虚拟环境目录<br/><br/>
+假如在项目目录中创建一个 <code>.venv</code> 目录，那么运行 <code>pipenv install</code> 后虚拟环境就会创建到该 <code>.venv</code> 目录中，而不是在 <code>~.local/share/virtualenvs/</code> 目录下。<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2019/01/python-venv-9.png"><img class="aligncenter size-full wp-image-9224" src="https://yanbin.blog/wp-content/uploads/2019/01/python-venv-9.png" alt="" width="585" height="308" /></a><br/><br/>
+<code>pipenv</code> 支持 <code>.evn</code> 文件设定环境变量<br/><br/>
+不显式激活虚拟环境直接用 <code>pipenv</code> 命令在虚拟环境中运行代码，如 <code>pipenv run python test.py</code><br/><br/>
+<h2>4. 结论</h2><br/><br/>
+<ol>
+    <li><code>venv</code> 和 <code>virtualenv</code> 基本可看成是同一个东西，只是使用格式上的不同。通常情况下我们统称为 <code>virtualenv</code></li>
+    <li><code>pipenv</code> 是 <code>pip</code> 与 <code>virtualenv</code> 的组合体，底层的实现仍然是后两者，所以使用 <code>pipenv</code> 最好对后两者要有一定的了解</li>
+    <li>确实，最佳的虚拟环境选择顺序应该是 <code>pipenv</code> -&gt; <code>venv(因为自带)</code> -&gt; <code>virtualenv</code>。<code>pipenv</code> 和 <code>virtualenv</code> 都能支持 Python 2 和 Python 3</li>
+    <li>研究了那么多依赖管理与虚拟环境，Python 还是没有一个比较趁手的分发打包工具。有时候不得不用最原始的 zip 命令</li>
+</ol>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://packaging.python.org/guides/installing-using-pip-and-virtualenv/#">Install packages using pip and virtualenv</a></li>
+    <li><a href="https://docs.python.org/3/library/venv.html#">venv -- Creation of virtual environments</a></li>
+    <li><a href="https://medium.com/@dakota.lillie/an-introduction-to-virtual-environments-in-python-ce16cda92853">An Introduction to Virtual Environments in Python</a></li>
+    <li><a href="https://medium.com/@dakota.lillie/an-introduction-to-virtual-environments-in-python-ce16cda92853">Basic Usage of Pipenv</a></li>
+    <li><a href="https://zhuanlan.zhihu.com/p/37581807">Pipenv: 新一代Python项目环境与依赖管理工具</a></li>
+    <li><a href="https://pipenv.readthedocs.io/en/latest/">Pipenv: Python Dev Workflow for Humans</a></li>
+    <li><a href="https://www.youtube.com/watch?v=GBQAKldqgZs">Kenneth Reitz - Pipenv: The Future of Python Dependency Management - PyCon 2018</a></li>
+    <li><a href="https://github.com/pypa/pipenv/blob/master/docs/advanced.rst">Advanced Usage of Pipenv</a></li>
+</ol>

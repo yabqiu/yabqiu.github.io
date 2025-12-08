@@ -1,0 +1,50 @@
+---
+title: Java 使用 dom4j 来获得 XML 文档的 innerXML
+url: /java-dom4j-get-innerxml/
+date: 2012-07-17T07:27:01-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - XML/DOM
+  - Java/JEE
+tags: 
+  - Java
+  - xml
+  - dom4j
+  - innerXML
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4654 
+wpStatus: publish
+views: 1322
+lastmod: 2021-06-17T11:02:25-05:00
+---
+
+在网页的 Document 中如果想要获得某个结点的 innerHTML 就行，而在 Java 处理 XML 文档时想要获得某个节点的的 innerXML 就没那么简单的，标准的 org.w3c.Element 和  org.w3c.Node 均未提供类似 innerXML 的方法。</p>
+<br/>
+幸好，我们常用的 dom4j 里的 org.dom4j.Node 有一个方法是 String asXML()，不过它的意义相当于是 outerXML，也就是说它返回的内容还包括节点本身。<br/><br/>
+比如有这么在个 XML 文档：<br/><br/>
+<pre class="lang:default decode:true">&lt;BookList&gt;
+    description of book 1
+    &lt;Book id="1"&gt;Unmi&lt;/Book&gt;
+&lt;/BookList&gt;</pre>
+<br/>
+<!--more-->上面文档，如果生成一个 org.dom4j.Node(节点是 BookList)，那么它的 asXML() 结果就是上面内容本身，含前后的 &lt;BookList&gt; 和 &lt;/BookList&gt;。要是想要得到真正的 innerXML 该如何做呢，很直接，把前后的节点 &lt;BookList&gt; 和 &lt;/BookList&gt; 去了就是，于是有下面的完整实现代码：<br/><br/>
+<pre class="lang:default decode:true ">package cc.unmi.utils;<br/><br/>
+import org.dom4j.Node;<br/><br/>
+public class XmlUtil{
+    public String getInnerXML(Node node){
+        String nodeName = node.getName(); //确定节点名
+        String outerXML = node.asXML(); //得到 outerXML<br/><br/>
+        //注意起始节点可能会带属性
+        String innerXML = outerXML.replaceAll("^&lt;"+nodeName+".*?&gt;|&lt;/"+nodeName+"&gt;$", "");
+        return innerXML;
+    }
+}</pre>
+<br/>
+有些地方介绍的是用递归循环子节点的办法进行字符串拼接的，还必须判断是否是文本节点。<br/><br/>
+其实我们还可以换一步来思考，既然 dom4j 提供了 asXML() 来得到 outerXML，它又是开源的，偷窥一下它的 outerXML 就能够实现一个自己更干净的 innerXML() 方法，也就是在 outerXML() 实现中直接忽略掉自身节点名。

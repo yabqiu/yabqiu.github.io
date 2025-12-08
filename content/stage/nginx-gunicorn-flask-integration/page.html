@@ -1,0 +1,112 @@
+---
+title: Nginx + Gunicorn + Flask 集成配置
+url: /nginx-gunicorn-flask-integration/
+date: 2020-07-18T01:48:53-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2020/07/flask-logo.png"
+categories:
+  - Flask
+tags: 
+  - Flask
+  - uWSGI
+  - ASGI
+  - Gunicorn
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10409 
+wpStatus: publish
+views: 2304
+lastmod: 2021-12-07T22:31:40-06:00
+---
+
+想要配置好 Apache + mod_wsgi + Flask 问题真是太多了，随便换一个 Linux 发行版，或者不同的 Python 版本就得让 Google 排很多温室气体。Nginx 可以使用 uWSGI 和  Flask 串联起来，配置起来第一直觉好像也不容易，所以打算换一种方式，直接用一个 Python 的 WSGI HTTP Server, 必要的话再往前面加一个反向代理的 Nginx。这里就来试下 Nginx + Gunicorn + Flask  的完整配置。<br/><br/>
+在 Flask 的官方网站 <a href="https://flask.palletsprojects.com/en/1.1.x/deploying/#deployment">Deployment Options</a> 提到了各种生产环境下的部署办法，与 <a href="https://gunicorn.org/">Gunicorn</a> 类似的工具还有 <a href="https://uwsgi-docs.readthedocs.io/en/latest/">uWSGI</a>, <a href="http://www.gevent.org/">Gevent</a>, <a href="https://twistedmatrix.com/trac/wiki/TwistedWeb">Twited Web</a>, <a href="https://pgjones.gitlab.io/hypercorn/">Hypercorn</a>, <a href="https://www.uvicorn.org/">Uvicorn</a>, <a href="https://github.com/django/daphne">Daphne</a>(来自于 django)<!--more--><br/><br/>
+<h3>安装  Gunicorn</h3><br/><br/>
+用 yum 或 apt 可以直接安装 <code>gunicorn</code>, 但可能会安装到不是自己的 Python 版本用的，我会选择用 Python 虚拟环境中的 pip 来安装<br/><br/>
+<blockquote>
+pip install gunicorn
+</blockquote>
+<br/>
+<h3>Flask Hello World程序</h3><br/><br/>
+照例，需要一个 Flask 最简单的的程序来演示，文件命名为 <code>hello_world.py</code>, 内容为<br/><br/>
+<pre class="lang:default decode:true">from flask import Flask<br/><br/>
+app = Flask(__name__)<br/><br/>
+@app.route('/')
+def index():
+    return 'Hello World!'</pre>
+<br/>
+由于不直接启动该 Flask  应用，可不加 Flask 的启动代码<br/><br/>
+<pre class="lang:default decode:true ">if __name__ == '__main__':
+    app.run()</pre>
+<br/>
+加了也无妨，因为接下来要通过 gunicorn 来启动 <code>hello_world.py</code> 的话，<code>__name__</code> 不再是 <code>__main__</code> 了，也就不会执行 <code>app.run()</code> 代码的。<br/><br/>
+<h3>该 Gunicorn 上场了</h3><br/><br/>
+命令如下，并启动后命令行显示<br/><br/>
+<blockquote>
+$ gunicorn -w 3 hello_world:app<br />
+[2020-07-18 05:54:09 +0000] [12779] [INFO] Starting gunicorn 20.0.4<br />
+[2020-07-18 05:54:09 +0000] [12779] [INFO] Listening at: http://127.0.0.1:8000 (12779)<br />
+[2020-07-18 05:54:09 +0000] [12779] [INFO] Using worker: sync<br />
+[2020-07-18 05:54:09 +0000] [12781] [INFO] Booting worker with pid: 12781<br />
+[2020-07-18 05:54:09 +0000] [12782] [INFO] Booting worker with pid: 12782<br />
+[2020-07-18 05:54:10 +0000] [12783] [INFO] Booting worker with pid: 12783 
+</blockquote>
+<br/>
+<code>hello_world:app</code> 为模块名:Flask 对象， 默认启动在 8000 端口上，试下访问服务<br/><br/>
+<blockquote>
+$ curl localhost:8000<br />
+Hwllo World!
+</blockquote>
+<br/>
+ <code>gunicorn --help</code> 会显示出大量的启动参数，简单说明 <code>gunicorn</code> 命令的常用参数<br/><br/>
+<ol>
+    <li>-w, --workers: 启动多个个 worker</li>
+    <li>-b, --bind: 绑定到 IP 和端口，默认为 127.0.0.1:8000, 比如可以 -b 0.0.0.0:80</li>
+    <li>--reload: 代码有变化时自动重启 Worker</li>
+    <li>-D, --daemon: 这个很有用，把 gunicorn 服务在后台启动</li>
+    <li>-u, --user; -g, --group:  启动时用的用户名和用户组</li>
+    <li>--access-logfile, --error-logfile, ...... 等很多日志相关的参数</li>
+    <li>--keyfile, --certfile, ..... gunicorn 可以配置启用 HTTPS 服务</li>
+    <li>-c, --config: 可以把所有的配置放在一个配置文件中去</li>
+</ol>
+<br/>
+为了下面的 Nginx 反向代理，我们把 gunicorn 放到后台去，且不用暴露 gunicorn 服务(绑定在 127.0.0.1:5000 上)，命令为<br/><br/>
+<blockquote>
+$ gunicorn -D -w 5 -b 127.0.0.1:5000 main:app 
+</blockquote>
+<br/>
+如果不使 Nginx 的话，可以用 gunicorn 把服务启动  0.0.0.0:80 上<br/><br/>
+<h3>使用 Nginx 反向代理本地的 Gunicorn 服务</h3><br/><br/>
+在 Nginx 配置文件，比如 <code>/etc/nginx/conf.d/default.conf</code> 中加上<br/><br/>
+<pre class="lang:default decode:true">server {
+    listen       80;
+    server_name test.yanbin.blog;
+    location / {
+        proxy_pass http://127.0.0.1:5000;
+        proxy_redirect off;
+        proxy_set_header Host $host:80;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+</pre>
+<br/>
+对 <code>test.yanbin.blog</code> 域名的访问代理到 <code>http://127.0.0.1:5000</code>  上去。试下<br/><br/>
+<blockquote>
+$ curl test.yanbin.blog<br />
+Hello World!
+</blockquote>
+<br/>
+现在对外的服务都由 Nginx 来管理了，如果要启用 HTTPS 服务，也只需要在 Nginx 单方面配置，Nginx 与 Gunicorn 服务(Flask 就用) 之间是本地通信。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://www.bobobk.com/456.html">生产环境利gunicorn部署Flask的python web服务</a></li>
+    <li><a href="https://www.jianshu.com/p/be2b587a900e">nginx+uwsgi 和nginx+gunicorn区别、如何部署</a></li>
+    <li><a href="https://juejin.im/post/5e304b705188254dc74a4989">Flask 部署项目nginx + gunicorn + flask</a></li>
+    <li><a href="https://www.cnblogs.com/Ray-liang/p/4173923.html">阿里云部署 Flask + WSGI + Nginx 详解</a></li>
+</ol>

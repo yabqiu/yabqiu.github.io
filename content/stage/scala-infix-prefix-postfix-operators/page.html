@@ -1,0 +1,71 @@
+---
+title: Scala 中置, 前置, 后置操作符
+url: /scala-infix-prefix-postfix-operators/
+date: 2016-07-20T02:21:41-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - Scala
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7387 
+wpStatus: publish
+views: 894
+lastmod: 2016-07-20T02:24:55-05:00
+---
+
+<p>拟此篇以温习 Scala 对方法调用上的一些约定. 标题中说是关于操作符的事, 其实 Scala 像有了访问方法和属性的一致性原则一样, 可以说操作符与方法更是统一的, 或者说只有方法调用. 此处所称的操作符只不过是 Scala 对无参(prrameterless), 或只有一个参数的方法, 和特殊的四个 <code>unary_+</code>, <code>unary_-</code>, <code>unary_!</code>, <code>unary_~</code> 方法的便捷的调用约定格式.</p><p><span style="color: #0000ff; font-size: 12pt;"><strong>一. 中置操作符(对只有一个参数方法的调用约定, <code>a plus b</code>)</strong></span></p><blockquote><p>case class MyNumber(value: Int) {<br />  def +(that: MyNumber) = MyNumber(this.value + that.value)<br />}</p></blockquote><p>调用方式</p><pre class="brush:scala">MyNumber(10).+(MyNumber(20))   //标准调用格式<br/>
+MyNumber(10) + MyNumber(20)    //只有一个参数时, 不用点, 不用括号</pre><p>第一行是用点语法的标准方法调用格式, <strong>Scala 在当方法只有一个参数时, 可以省略点, 以及括号</strong>, 因此可写为上面第二行种的格式. 所以方法 <code>+</code> 就化身为了中置操作符了.<!--more--></p><p><code>+</code> 只是一个普通的方法名而已, 因为 Scala 可以用很多符号来定义方法. 所以对于任何的只有一个参数的方法调用可以这么写, 假如 <code>MyNumber</code> 定义了方法</p><pre class="brush:scala">def plus(added: Int) = MyNumber(this.value + added)</pre><p>应用同样的规则可写成</p><pre class="brush:scala">MyNumber(10) plus 20  //而可不必写成  MyNumber(10).plus(20)</pre><p>这个约定十分有利于写出 DSL 风格的代码, 例如我们在测试中用 <code>MustMatchers</code> 时这么断言</p><pre class="brush:scala">actualList must have size 10</pre><p>上面其实就是进行连续了三次是置操作符调用 size, have, 和 must.</p><p>除中置操作符外, 另外两种前置与后置操作符又统称为一元操作符, 因为它是不带参数的, 首先来看后置操作符</p><p><span style="color: #0000ff; font-size: 12pt;"><strong>二. 后置操作符(对于无参数的方法的调用约定, <code>a next</code>)</strong></span></p><p>当函数无参数时, 调用时规则约定其实和只有一个参数时是一样的, 省略点以及括号, 既然一个参数都没有, 所以就只有方法名了. 例子</p><pre class="brush:scala">case class MyNumber(value: Int) {<br/>
+  def -- = MyNumber(this.value -1)<br/>
+}</pre><p>调用方式</p><pre class="brush:scala">MyNumber(10).--  //这是标准格式<br/>
+MyNumber(10) --  //无参方法的约定格式</pre><p>由于前面定义的 <code>--</code> 是无参方法(Parameterless), 所以调用时不能加括号, <code>MyNumber(10).--()</code> 是错误的. 如果是定义的空参数方法(Empty-Paren), 则既可以 <code>MyNumber(10).--()</code> 也可以写成 <code>MyNumber(10) --</code>, 还能 <code>MyNumber(10).--</code>, 但后两者会有警告.</p><pre class="brush:scala">def --() = MyNumber(this.value -1)  //Empty-paren 方法<br/>
+....<br/>
+MyNumber(10) --      //Warning: Empty-paren method accessed as parameterless<br/>
+MyNumber(10).--     //Warning: Empty-paren method accessed as parameterless<br/>
+MyNumber(10).--()</pre><p>所以对于后置操作符, 特别是无副作用时应该定义为不带括号的无参方法, 形如  <code>def -- = ....</code></p><p>后置的调用方式很常见, 如</p><pre class="brush:scala">a toString  //而不用写成 a.toString() 或 a.toString<br/>
+a mkString</pre><p><strong><span style="color: #0000ff; font-size: 12pt;">三. 前置操作符(+, -, !, ~ 的几个特例方法而已)</span></strong></p><p>Scala 可以实现在操作数前加  <code>+</code>, <code>-</code>, <code>!</code>, <code>~</code> 操作符, 如 <code>-a</code>, 所以它们叫做前置(prefix) 操作符. Scala 的做法是把它们分别映射到方法 <code>unary_+</code>, <code>unary_-</code>, <code>unary_!</code>, 和 <code>unary_~</code>. 示例</p><pre class="brush:scala">case class MyNumber(value: Int) {<br/>
+  def unary_+ = MyNumber(this.value + 1)<br/>
+}</pre><p>调用时写成</p><pre class="brush:scala">MyNumber.unary_+  //标准调用格式, 或 MyNumber unary_+<br/>
++MyNumber(10)    //实际就调用了 unary_+ 方法</pre><p>注意, 前置操作只能映射前面四种操作, 想别的都没有. 比如你是否有冲动在 Scala 中实现出  <code>++a</code> 呢? Scala 是不支持传统的 <code>++</code> 递增操作, 后置的 <code>a++</code> 我们可以用 <code>def ++ = ...</code> 实现. 对于前置的 <code>++a</code> 如果尝试写成</p><pre class="brush:scala">def unary_++ = MyNumber(this.value + 1)<br/>
+....<br/>
+//++MyNumber(10)  //这是无效的, 尝试不会是徒劳的. 只能显式的用下面两种方式调用<br/>
+MyNumber(10).unary_++<br/>
+MyNumber(10) unary_++</pre><hr /><p>下面是测试上面三种方式的完整代码</p><pre class="brush:scala">import scala.language.postfixOps<br/>
+<br/>
+case class MyNumber(value: Int) {<br/>
+<br/>
+ def +(that: MyNumber) = MyNumber(this.value + that.value)<br/>
+<br/>
+ def ++ = MyNumber(this.value + 1) //parameterless<br/>
+<br/>
+ // def -- = MyNumber(this.value - 1) //recommended<br/>
+ def --() = MyNumber(this.value - 1) //Warning: Empty-paren, not recommended for no side-effect method<br/>
+<br/>
+ def unary_- = MyNumber(-this.value)<br/>
+}<br/>
+<br/>
+object Main extends App {<br/>
+<br/>
+ println("Infix: " + (MyNumber(10) + MyNumber(20))) //recommended<br/>
+ println(MyNumber(10).+(MyNumber(20))) //regular method calling style<br/>
+<br/>
+ println("Postfix1: " + (MyNumber(10) ++)) //recommended<br/>
+ println(MyNumber(10).++) //regular method calling style<br/>
+<br/>
+ // MyNumber(10).++() //Compilation error: Application does not take parameters<br/>
+<br/>
+ println("Postfix2: " + (MyNumber(10) --)) //Warning: Empty-paren method accessed as parameterless<br/>
+ println((MyNumber(10).--)) //Warning: Empty-paren method accessed as parameterless<br/>
+ println(MyNumber(10).--()) //regular method calling style<br/>
+<br/>
+ println("Prefix: " + -MyNumber(10))<br/>
+<br/>
+ println(MyNumber(10).unary_-)<br/>
+ println((MyNumber(10) unary_-))<br/>
+}</pre><p>上面代码的输出</p><blockquote><p>Infix: MyNumber(30)<br />MyNumber(30)<br />Postfix1: MyNumber(11)<br />MyNumber(11)<br />Postfix2: MyNumber(9)<br />MyNumber(9)<br />MyNumber(9)<br />Prefix: MyNumber(-10)<br />MyNumber(-10)<br />MyNumber(-10)</p></blockquote>

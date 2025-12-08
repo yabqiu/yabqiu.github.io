@@ -3,7 +3,7 @@ title: {{ post.title }}
 url: /{{ post.name }}/
 date: {{ post.post_date_gmt | date_format }}
 featured: false
-draft: false
+draft: true
 toc: false
 # menu: main
 usePageBundles: true{% if post.feature_image %}

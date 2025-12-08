@@ -1,0 +1,162 @@
+---
+title: Play 2.0 中文资料 - Play JSON 库
+url: /play2-0-tutorials-cn-play-json-library/
+date: 2013-01-13T01:09:05-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2012/10/playframework_log2.png"
+categories:
+  - PlayFramework
+tags: 
+  - 翻译
+  - Scala
+  - PlayFramework
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4899 
+wpStatus: publish
+views: 2686
+lastmod: 2021-05-21T11:06:19-05:00
+---
+
+<ul style="float: right; border-left: solid 1px green; border-bottom: solid 1px green;">
+    <li><strong>使用 Json </strong>
+<ul>
+    <li><a href="/play2-0-tutorials-cn-play-json-library">Play Json 库 </a></li>
+    <li><a href="/play2-0-tutorials-cn-handling-and-serving-json-requests" target="_blank" rel="noopener">处理 Json 请求</a></li>
+    <li><a href="/play2-0-tutorials-cn-json-library-with-generics" target="_blank" rel="noopener">Play Json 库使用泛型 </a></li>
+</ul>
+</li>
+</ul><br/><br/>
+<strong><span style="font-size: medium;">概述</span></strong><br/><br/>
+推荐的处理  JSON 的方式是使用 Play 基于 JSON 库的类型类, 位置在 <code>play.api.libs.json</code>.<br/><br/>
+这个库是构建于 <a href="https://github.com/codahale/jerkson/">Jerkson</a>, 之上的，它又是基于 Java 的超快的 JSON 库 <a href="http://jackson.codehaus.org/">Jackson </a>的 Scala 封闭。<br/><br/>
+<span style="color: #0000ff;">Unmi 注：在 Play 1.x 所用的 JSON 库是 Gson，而 Play 2.0 后更换成了 Jackson。还得 Play 2.0 是基于 SBT 构建的，所以 Play 2.0 的所有的 jar 都是在 $PLAY_HOME/repository/local 目录中。</span><br/><br/>
+这样做的好处是无论是 Java 还是 Scala 的 Play 应用依赖了相同的底层库 (Jackson), 同时 Scala 用户可以享受到  Play’s JSON 所带来的额外的类型安全性.<br/><br/>
+<code>play.api.libs.json</code> 包含有七种 JSON 数据类型:<br/><br/>
+<ul>
+    <li><code>JsObject</code></li>
+    <li><code>JsNull</code></li>
+    <li><code>JsUndefined</code></li>
+    <li><code>JsBoolean</code></li>
+    <li><code>JsNumber</code></li>
+    <li><code>JsArray</code></li>
+    <li><code>JsString</code></li>
+</ul><br/><br/>
+上面的类型都继承自通用的 JSON 值类型, <code>JsValue</code>.<!--more--><br/><br/>
+<strong><span style="font-size: medium;">解析 Json 字符串</span></strong><br/><br/>
+你可很轻易的解析任意的 JSON 字符串为一个 <code>JsValue</code>:<br/><br/>
+<pre class="brush:scala">val json: JsValue = Json.parse(jsonString)</pre>
+<br/>
+<strong><span style="font-size: medium;">遍历  Json 树</span></strong><br/><br/>
+一旦你得到了一个 <code>JsValue</code> 你就可以遍历这个 Json 树. 这个 API 看起来像是  Scala 使用 <code>NodeSeq 进行遍历 XML 文档一样的</code>:<br/><br/>
+<pre class="brush:scala">val json = Json.parse(jsonString)<br/><br/>
+val maybeName = (json \ "user" \ name).asOpt[String]
+val emails = (json \ "user" \\ "emails").map(_.as[String])</pre>
+<br/>
+<blockquote>
+<strong>注</strong> 使用 \ 来导航是不会失败的. 当用 <code>asOpt[T]</code> 不存在值时会返回 <code>None，所以这时候你需要自己来处理错误</code>. 而用 <code>as[T]</code> 时，如果不存在值时就会报出异常.
+<span style="color: #0000ff;">Unmi 注：对于以上的代码我还需要用代码来加以说明：</span>
+<pre class="lang:default decode:true">val jsonString = """ {"users":{
+           "user1":{"name":"Unmi", "email":"fantasia@sina.com"},
+           "user2":{"name":"Unmi.cc", "email":"unmi@unmi.cc"}
+     }
+ } """
+val json = Json.parse(jsonString)
+val maybeName = (json \ "users" \ "user1" \ "name").asOpt[String]
+println(maybeName)
+val emails = (json \ "users" \\ "email").map(_.as[String])
+println(emails)</pre>
+<span style="color: #0000ff;">如果试图访问不存在的属性，如 (json \ "users"  \ "user1"  \ "userLaLa").asOpt[String] 时不会报错，得到的是 None 值。而换成 (json \ "users"  \ "user1"  \ "userLaLa").as[String] 就会有异常 [RuntimeException: String expected] 。</span>
+<span style="color: #0000ff;">继续查看  println(json \ "users" \ "user1" \ "nameLaLa") 输出的是  null</span>
+<span style="color: #0000ff;">上面的 Json 是 play.api.libs.json.Json，不是 play.mvc.Json, 也不是  play.libs.Json，play.libs.Json.parse() 返回的是  JsonNode，而 play.mvc.Json 没有 parse() 方法。</span>
+<span style="color: #0000ff;">\ 和 \\ 是定义在  play.api.libs.json.Json 中的方法，\ 和  XPath 的 / 相似，直接的属性，\\ 和 XPath 的 // 相似，子孙属性</span>
+<span style="color: #0000ff;">前面代码两个 println 语句的输出是：</span>
+<span style="color: #0000ff;">Unmi</span><br />
+<span style="color: #0000ff;">List(fantasia@sina.com, unmi@unmi.cc)</span>
+<span style="color: #0000ff;">对 JSON 字符串的要求还是较严格的，没有 JavaScript 的 JSON 那么随意，属性名一定要加上双引号，单引号都不行。示例中的：</span>
+<span style="color: #0000ff;">(json \ "user" \ name).asOpt[String]</span>
+<span style="color: #0000ff;">name 代表的是前面定义的一个变量，如果是字面常量必须用双引号框上，否则报错：not found: value name。</span>
+</blockquote>
+<br/>
+<strong><span style="font-size: medium;">转换 Scala 值为 Json</span></strong><br/><br/>
+只要你有一个能够被转换为 Json 的 Scala 类型, 那就会非常容易由 Scala 值生成 Json. 例如我们来创建一个简单的 Json 对象:<br/><br/>
+<pre class="brush:scala">val jsonNumber = Json.toJson(4)</pre>
+<br/>
+或者创建一个 json 数组:<br/><br/>
+<pre class="brush:scala">val jsonArray = Json.toJson(Seq(1, 2, 3, 4))</pre>
+<br/>
+这儿把 <code>Seq[Int]</code> 转换成 Json 数组是没有问题的. 然而，假如 Seq 包含了不同的类型值是事情就变得复杂了:<br/><br/>
+<pre class="brush:scala">val jsonArray = Json.toJson(Seq(1, "Bob", 3, 4))</pre>
+<br/>
+因为还没办法把 <code>Seq[Any]</code> 转换为 Json (<code>Any</code> 代表着任何类型，包括 Json 无法支持的类型，不是吗?)<br/><br/>
+<span style="color: #0000ff;">Unmi 注: 报错为 No Json deserializer found for type Seq[Any]. Try to implement an implicit Writes or Format for this type.</span><br/><br/>
+一个简单的解决方案是按照 <code>Seq[JsValue] 来处理</code>:<br/><br/>
+<pre class="brush:scala">val jsonArray = Json.toJson(Seq(
+  toJson(1), toJson("Bob"), toJson(3), toJson(4)
+))</pre>
+<br/>
+现在我们最后来看一个创建复杂 Json 对象的例子:<br/><br/>
+<pre class="lang:default decode:true">val jsonObject = Json.toJson(
+  Map(
+    "users" -&gt; Seq(
+      toJson(
+        Map(
+          "name" -&gt; toJson("Bob"),
+          "age" -&gt; toJson(31),
+          "email" -&gt; toJson("bob@gmail.com")
+        )
+      ),
+      toJson(
+        Map(
+          "name" -&gt; toJson("Kiki"),
+          "age" -&gt; toJson(25),
+          "email" -&gt; JsNull
+        )
+      )
+    )
+  )
+)</pre>
+<br/>
+上面产生的 Json 结果是:<br/><br/>
+<pre class="brush:scala">{
+  "users":[
+    {
+      "name": "Bob",
+      "age": 31.0,
+      "email": "bob@gmail.com"
+    },
+    {
+      "name": "Kiki",
+      "age":  25.0,
+      "email": null
+    }
+  ]
+}</pre>
+<br/>
+<strong><span style="font-size: medium;">序列化 Json</span></strong><br/><br/>
+序列一个 <code>JsValue</code> 为它的 json 字符串表示格式很简单:<br/><br/>
+<pre class="brush:scala">val jsonString: String = Json.stringify(jsValue)</pre>
+<br/>
+<strong><span style="font-size: medium;">其他选择</span></strong><br/><br/>
+虽然我们推荐用上面方案所描述的类型类<span style="color: #0000ff;">(Unmi 注: typeclass 意思是?)</span>, 但是没什么能阻止用户有需求时去使用其他的 JSON 库.<br/><br/>
+例如, 这里一个小片段演示了使用基 <a href=" https://github.com/codahale/jerkson/">Jerkson </a>库的 bundled, 反射机制，来编组原始的 scala 对象成 JSON 并进行传输:<br/><br/>
+<pre class="lang:default decode:true ">import com.codahale.jerkson.Json._<br/><br/>
+val json = generate(
+  Map( 
+    "url"-&gt; "http://nytimes.com",
+    "attributes" -&gt; Map(
+      "name" -&gt; "nytimes", 
+      "country" -&gt; "US",
+      "id" -&gt; 25
+    ), 
+    "links" -&gt; List(
+      "http://link1",
+      "http://link2"
+    )
+  )
+)</pre>

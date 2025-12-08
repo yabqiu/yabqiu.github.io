@@ -1,0 +1,88 @@
+---
+title: Spring JdbcTemplate 调用存储过程
+url: /spring-jdbctemplate-call-procedure/
+date: 2011-01-24T06:49:11-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Spring
+tags: 
+  - Spring
+  - jdbctemplate
+  - dao
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3077 
+wpStatus: publish
+views: 5032
+lastmod: 2021-09-03T12:15:23-05:00
+---
+
+以前一篇中写到了 <a href="http://unmi.cc/hibernate3-call-procedure" target="_blank" rel="noopener">hibernate 调用存储过程</a>，这里介绍 Spring 借道 JdbcTemplate 如何调用数据库存储过程。还是以前面的那个 DB2 存储过程为例，该过程的代码如下：</p>
+<br/>
+<pre class="lang:default decode:true ">CREATE  procedure selectAllUsers(IN piAge INTEGER)
+DYNAMIC RESULT SETS 1
+BEGIN
+      DECLARE temp_cursor1 CURSOR  WITH RETURN TO CLIENT  FOR
+      SELECT * FROM  test where age &lt; piAge;
+      OPEN temp_cursor1;
+END;</pre>
+<br/>
+这个过程中最后一行直接打开了一个游标，也就是返回了一个结果集。调用存储过程的方法应该看看 org.springframework.jdbc.core.JdbcTemplate 的各个 execute() 方法，具体点就是带了 CallableStatementCallback&lt;T&gt; 参数的那两个 execute()，究底的话又归结为其中之一。<!--more-->看下这两个 execute() 方法，摘自代码 Spring 3.0.5 的 org.springframework.jdbc.core.JdbcTemplate:<br/><br/>
+<pre class="lang:default decode:true">public &lt;T&gt; T execute(CallableStatementCreator csc, CallableStatementCallback&lt;T&gt; action) throws DataAccessException
+public &lt;T&gt; T execute(String callString, CallableStatementCallback&lt;T&gt; action) throws DataAccessException {
+    return execute(new SimpleCallableStatementCreator(callString), action);
+}</pre>
+<br/>
+继续倾注于简单方法 public &lt;T&gt; T execute(String callString, CallableStatementCallback&lt;T&gt; action) 的使用。<br/><br/>
+在我们自己的 JdbcDao 的访问方法中，可以这么写：<br/><br/>
+<pre class="lang:default decode:true ">@SuppressWarnings("unchecked")
+public List&lt;String&gt; getUserList(final int maxAge) {
+    
+    String procedure = "{call selectAllUsers(?)}";
+    
+    List&lt;String&gt; users = getJdbcTemplate().execute(procedure, new CallableStatementCallback() {
+        
+        @Override
+        public Object doInCallableStatement(CallableStatement cs)
+                throws SQLException, DataAccessException {
+            
+            cs.setInt(1,maxAge); //设置参数
+            
+            //如果有出口参数就得注册一下，这样后面才能取到
+            //比如第二个出口参数是个整数
+            //cs.registerOutParameter(2, Types.VARCHAR);<br/><br/>
+            cs.execute(); //执行存储过程
+            
+            /**********返回结果的取什方式，用 cs.getResultSet**********/
+            //如果存储过程最后打开的是游标就直接得到 ResultSet
+            ResultSet rs = cs.getResultSet();
+            
+            List&lt;String&gt; userList = new ArrayList&lt;String&gt;();
+            while(rs.next()){
+                System.out.println(rs.getString(1));
+                //.......................
+            }
+            return userList;
+            /*****************THE END*******************************/<br/><br/>
+            /***********以下是注册了出口参数的取值方法,cs.getXxx()
+             *需要前面执行 cs.registerOutParameter() 来注册出口参数类型
+             *为了能让方法合法，这里也假设返回 List&lt;String&gt;
+             List&lt;String&gt; userList = new ArrayList&lt;String&gt;();
+             userList.add(cs.getString(2));
+             return userList;
+             *****************THE END******************************/
+        }
+    });
+            
+    return users;
+}</pre>
+<br/>
+以上代码同时描述了如何应对取出口参数和返回结果集的方式，杂糅在一起可能会影响视觉，对纯粹的学习会带来不便。不过要是你结合到你的实际应用的话就好理解的多。<br/><br/>
+参考：1. <a href="http://unmi.cc/hibernate3-call-procedure" target="_blank" rel="noopener">hibernate 调用存储过程</a><br />
+            2. <a href="http://www.javaeye.com/topic/100417" target="_blank" rel="noopener">spring调用Oracle存储过程,并返回结果集的完整实例</a><br />
+           3. <a href="http://lighter.javaeye.com/blog/138256" target="_blank" rel="noopener">用jdbcTempate调用存储过程,处理BLOB/CLOB小记</a>

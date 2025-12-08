@@ -1,0 +1,65 @@
+---
+title: 修正 FeedBurner Stats by DevMD.com 插件统计图中的月份显示错误
+url: /wordpress-feedbuner-stats-month-issue/
+date: 2010-10-12T05:01:40-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - WordPress
+tags: 
+  - wordpress
+  - FeedBurner
+  - Stats
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2716 
+wpStatus: publish
+views: 286
+lastmod: 2010-10-12T07:27:34-05:00
+---
+
+Feed 的烧制(代理) 程序还是 FeedBurner 有名，结果也是因为它让消息传得太快了，所以被墙了，才有了国内的 FeedSky。如同 Google 当年的遭遇一样才成就了百毒。<br/>
+<br/>
+FeedBurner 在自由的国家里用得还是很广泛，所以你的客户群是那些人的话，还是值得去使用 FeedBurner。假如是用 WordPress 建站的话，你可以安装 <a href="http://wordpress.org/extend/plugins/feedburner-stats-by-devmdcom/" target="_blank">FeedBurner Stats by DevMD.com</a> 插件来查看 Feed 的订阅情况，以统计图形直观的显示。<br/>
+<br/>
+这里是它的界面截图：<a href="http://wordpress.org/extend/plugins/feedburner-stats-by-devmdcom/screenshots/">http://wordpress.org/extend/plugins/feedburner-stats-by-devmdcom/screenshots/</a>。<br/>
+<br/>
+但是对于该插件的当前版本 0.1.6 的统计图在月份显示时还有个 Bug，就是月份相差 1，比如当前是 10 月，图中却显示为 November，11 月。<br/>
+<br/>
+<!--more--><br/>
+<br/>
+<img style="display: block; margin-left: auto; width: 710px; margin-right: auto; height: 334px; text-align: center;" src="http://unmi.cc/wp-content/uploads/2010/10/feedburner_stats_1.jpg" alt="feedburner_stats_1.jpg" width="710" height="334" /><br/>
+<br/>
+当前是 10 月份，图形上却显示为 11 月，如果分析一下数据，可以看到其实显示的都是 10 月份的数据。如果用到 JS 应该要有一种直觉，看到月份相差 1 就要想到在 JS 里是用 0-11 来表示 1 到 12 月份，基于 0 的，这与其他语言是有些特别。而这个插件在使用 <a href="http://code.google.com/apis/charttools/index.html" target="_blank">Google Visualization API</a> 生成图形时，恰恰是通过 PHP 的输出来构造 JS 日期对象的：new Date(&lt;?php echo date('Y, n, j');?&gt;)，问题就在这里了。<br/>
+<br/>
+知道原因就能明确要改哪里了，只要修改该插件的 <strong>stats.php</strong> 文件：有两处需要修改：<br/>
+<br/>
+<strong>1：49 行</strong>，把<br/>
+<br/>
+<span style="color: #993300;">echo ' [new Date('.$tmp[0].', '.(int)$tmp[1].', '.(int)$tmp[2].'), '.$r['circulation'].', '.$r['hits'].', '.$r['reach'].'],'."\n";</span><br/>
+<br/>
+改为<br/>
+<br/>
+<span style="color: #993300;">echo ' [new Date('.$tmp[0].', '.</span><strong><span style="color: #993300;">((int)$tmp[1]-1)</span></strong><span style="color: #993300;">.', '.(int)$tmp[2].'), '.$r['circulation'].', '.$r['hits'].', '.$r['reach'].'],'."\n";</span><br/>
+<br/>
+<strong>2：55-56 行</strong>，把<br/>
+<br/>
+<span style="color: #993300;">var startDate = new Date(&lt;?php echo date('Y, n, j', (time() - (86400*30*6)))?&gt;);<br/>
+var endDate = new Date(&lt;?php echo date('Y, n, j', time())?&gt;);</span><br/>
+<br/>
+改为<br/>
+<br/>
+<span style="color: #993300;">var startDate = new Date(&lt;?php $ss = getdate(time() - (86400*30*6)); echo $ss['year'].','.($ss['mon']-1).','.$ss['mday'];?&gt;);<br/>
+var endDate = new Date(&lt;?php $ee=getdate();echo $ee['year'].','.($ee['mon']-1).','.$ee['mday'];?&gt;);</span><br/>
+<br/>
+保存该文件后，再来浏览一下效果，可以看到：<br/>
+<br/>
+<img style="display: block; margin-left: auto; width: 711px; margin-right: auto; height: 338px; text-align: center;" src="http://unmi.cc/wp-content/uploads/2010/10/feedburner_stats_2.jpg" alt="feedburner_stats_2.jpg" width="711" height="338" /><br/>
+<br/>
+这时候，月份显示是对的了，就是当前的 10 月份，拖动下方的滑块多看看，也是没问题的。<br/>
+<br/>
+从这个插件里还了解到了 <a href="http://code.google.com/apis/charttools/index.html" target="_blank">Google Visualization API</a> 在以后的应用中一定会是很有意义的，这就是 Google，哪像百毒。

@@ -1,0 +1,295 @@
+---
+title: Python 执行系统命令 - subprocess 模块的使用
+url: /python-execute-system-command/
+date: 2019-08-12T22:49:46-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - Shell
+  - system
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9543 
+wpStatus: publish
+views: 2651
+lastmod: 2019-08-12T23:52:37-05:00
+---
+
+<p>Python 可信手拈来写系统脚本，那么在 Python 中调用系统命令应该会比较便捷。所以本文来看看 Python 有几种方式调用系统命令，以及与回味一下其他几种脚本语言的类似操作。简单说来，Python 执行系统命令的方式有四种方式，即</p>
+
+<ol>
+
+	<li>os.system(cmd) (建议用 subprocess 模块)</li>
+
+	<li>os.popen(cmd) (Python 3 中还能用，但不推荐使用了)</li>
+
+	<li><del><a href="https://docs.python.org/2/library/commands.html">commands 模块</a>(在 Python 3 中已移除了该模块，基本是不必去了解它)</del></li>
+
+	<li><span style="color: #ff0000;"><strong>subprocess 模块(总是上面的矛头全指向它的，重点)</strong></span></li>
+
+</ol>
+
+<h3><a href="https://docs.python.org/2/library/os.html#os.system">os.system(cmd)</a></h3><br/>
+<p>启动一个子进程来执行系统命令，可以获得标准输入，不能获到命令输出, 但可以得到一个状态码<!--more--></p>
+
+<pre class="lang:default decode:true">import os<br/>
+status_code = os.system('cat a.py | grep username')<br/>
+# username = input("Username:")</pre>
+
+<p>它是调用 C 函数  system(), 命令直接输出到终端，它返回的错误状态码与直接执行命令的值可能不一样</p>
+
+<h3><a href="https://docs.python.org/2/library/os.html#os.popen">os.popen(cmd)</a></h3><br/>
+<p>建立一个到命令的管道，可以捕获到命令(shell) 执行后的输出</p>
+
+<pre class="lang:default decode:true">import os<br/>
+<br/>
+out = os.popen("cat a.json | grep id")<br/>
+print(out.read())</pre>
+
+<p>不知如何得到状态码，不建议使用了，推荐用 subprocess 模块</p>
+
+<h3><a href="https://docs.python.org/3/library/subprocess.html">subprocess 模块</a></h3><br/>
+<p>从 os.system(cmd) 和 os.popen(cmd) 的官方文档都引导我们去使用 subprocess 模块</p>
+
+<p>关于使用 subprocess 模块，这儿有个很好的学习视频， 隔着墙的朋友们请忍着些日子。</p>
+
+<p>https://www.youtube.com/watch?v=2Fp1N6dof0Y</p>
+
+<p>关于 subprocess 模块的用法基本就是讲述 <code>subprocess.run(...)</code> 函数的用法，了解几个重要的参数。该方法的原型为</p>
+
+<blockquote><br/>
+<p>subprocess.run(args, *, stdin=None, input=None, stdout=None, stderr=None, capture_output=False, shell=False, cwd=None, timeout=None, check=False, encoding=None, errors=None, text=None, env=None, universal_newlines=None)</p>
+
+</blockquote>
+
+<p><code>subprocess.run()</code> 是在 Python 3.5 加入的，之前的版本要调用  <code>subprocess.call()</code> 方法。</p>
+
+<h4>基本用法</h4><br/>
+<pre class="lang:default decode:true">import subprocess<br/>
+<br/>
+p1 = subprocess.run('ls')  # 这行与终端执行 ls 效果一样，直接输出 ls 的结果<br/>
+print('****\n', p1, p1.stdout)</pre>
+
+<blockquote><br/>
+<p>scratch.py<br /><br/>
+scratch_1.py<br /><br/>
+****<br /><br/>
+CompletedProcess(args='ls', returncode=0) None</p>
+
+</blockquote>
+
+<p>我们看到 p1 的类型是一个 <code>CompletedProcess</code>, 此时 <code>p1.stdout</code> 的内容是 <code>None</code>，也就是说我们没有捕获到命令的执行输出</p>
+
+<h4>捕获命令输出</h4><br/>
+<pre class="lang:default decode:true">p1 = subprocess.run('ls', capture_output=True)<br/>
+print('****\n', type(p1.stdout), p1.stdout)  # p1.stdout.decode() 显示文本</pre>
+
+<p>加了 capture_output=True 参数，命令的执行结果不直接打印到控制台，而是可以通过 <code>p1.stdout</code> 获得的</p>
+
+<blockquote><br/>
+<p>****<br /><br/>
+&lt;class 'bytes'&gt; b'scratch.py\nscratch_1.py\n'</p>
+
+</blockquote>
+
+<p><code>capture_output=True</code> 实质上会设置两个参数值 <code>stdout=subprocess.PIPE, stderr=subprocess.PIPE</code>，也就是它同时也会捕获标准错误输出，放置到  <code>p1.stderr</code> 中。如果只需捕获标准输出的话，只要 <code>stdout=subprocess.PIPE</code>.</p>
+
+<p>默认时 <code>p1.stdout</code> 是一个<code>bytes</code> 类型，要显示为文本需要用 <code>p1.stdout.decode()</code>，或者再加上参数 <code>text=True</code> 就无需 <code>stdout.decode()</code> 了。用 <code>encoding="utf-8"</code> 也能免除 <code>decode()</code>。</p>
+
+<pre class="lang:default decode:true">p1 = subprocess.run('ls', capture_output=True, text=True)<br/>
+print('****\n', type(p1.stdout), '\n', p1.stdout)</pre>
+
+<blockquote><br/>
+<p>****<br /><br/>
+&lt;class 'str'&gt; <br /><br/>
+scratch.py<br /><br/>
+scratch_1.py</p>
+
+</blockquote>
+
+<p>加了 <code>text=True</code> 后，<code>p1.stdout</code> 的类型也变成了字符串 <code>str</code>。</p>
+
+<p>命令参数与 shell 命令</p>
+
+<p>前面的命令 <code>ls</code> 没有带参数，那怎么执行带参数的命令呢？先尝试着把命令与参数写在一块</p>
+
+<pre class="lang:default decode:true">subprocess.run('ls -la')</pre>
+
+<p>出错了</p>
+
+<blockquote><br/>
+<p>FileNotFoundError: [Errno 2] No such file or directory: 'ls -la': 'ls -la'</p>
+
+</blockquote>
+
+<p>subprocess.run() 并不知道 <code>ls -la</code> 中的 <code>ls</code> 是命令，其余为参数，而是把整个字符串包括中间的空间当作命令，所以提示找不到 <code>ls -la</code> 这样的命令。解决方法有一，加上 <code>shell=True</code> 参数</p>
+
+<pre class="lang:default decode:true">subprocess.run('ls -la', shell=True)</pre>
+
+<blockquote><br/>
+<p>total 16<br /><br/>
+drwxr-xr-x 4 yanbin 2022363315 128 Aug 12 21:17 .<br /><br/>
+drwxr-xr-x 11 yanbin 2022363315 352 Aug 12 20:49 ..<br /><br/>
+-rw-r--r-- 1 yanbin 2022363315 933 Aug 12 09:59 scratch.py<br /><br/>
+-rw-r--r-- 1 yanbin 2022363315 56 Aug 12 21:17 scratch_1.py</p>
+
+</blockquote>
+
+<p>有了 <code>shell=True</code> 的话，<code>run()</code> 的第一个参数可以写的更复杂，管道操作也行，如下</p>
+
+<pre class="lang:default decode:true ">subprocess.run('ls -la; pwd &amp;&amp; ls | grep scratch', shell=True)</pre>
+
+<p>但 <code>shell=True</code> 不那么安全，比如说对于 <code>ls</code> 命令，它后面的目录部分是用户输入的话就可被注入</p>
+
+<pre class="lang:default decode:true">subprocess.run(f'ls -la ${folder}', shell=True)</pre>
+
+<p>假如用户输入的 <code>folder="; rm -rf /</code>, 就能随意的干活了。当 <code>shell=True</code> 是可以借助于 <a href="https://docs.python.org/3.7/library/shlex.html#shlex.quote"><code>shlex.quote()</code></a> 函数来抵御不安全的输入。</p>
+
+<p>为安全起见，我们可保持默认的 <code>shell=False</code> 值，命令参数则必须以列表形式提供</p>
+
+<pre class="lang:default decode:true ">subprocess.run(['ls', '-la', folder])</pre>
+
+<p>列表第一个元素为命令，其他为参数，这时候 <code>folder</code> 能够防御住攻击了。</p>
+
+<h4>输出重定向(文件或设备)</h4><br/>
+<pre class="lang:default decode:true">with open('output.txt', 'w') as file:<br/>
+    subprocess.run(['ls', '-la'], stdout=file, text=True)</pre>
+
+<p>现在命令的输出进到文件 <code>output.txt</code> 中了。要让标准错误输出也重定向到文件的话，就加上 <code>stderr=file</code>，或者 <code>stdout=file, stderr=subprocess.STDOUT</code>。这一连贯的操作就好比执行如下的 shell  命令</p>
+
+<pre class="lang:default mark:6 decode:true">with open('output.txt', 'w') as file:<br/>
+    p1 = subprocess.run(['ls', '-la', 'lala'], stdout=file, stderr=subprocess.STDOUT text=True)<br/>
+    print(p1.returncode)<br/>
+<br/>
+# 上面的代码效果与这个 shell 命令差不多, 2 为标准错误输出，1 为标准输出<br/>
+ls -la lala&gt; output.txt 2&gt;&amp;1</pre>
+
+<p>由于 <code>lala</code> 目录不存在，所以 <code>p1.returncode</code> 为 <code>1</code>, 非零即为有错误，看看  <code>output.txt</code> 中的内容为</p>
+
+<blockquote><br/>
+<p>ls: abc: No such file or directory</p>
+
+</blockquote>
+
+<p>如果想忽略错误输出，例如一个程序中既有标准输出又有标准错误输出，且返回状态码为 2，用下面 Python 程序来模拟</p>
+
+<pre class="lang:default decode:true">#!/usr/bin/env python3<br/>
+<br/>
+import sys<br/>
+<br/>
+print('hello stdout')<br/>
+print('hello stderr', file=sys.stderr)<br/>
+exit(2)</pre>
+
+<p>想要执行出下方第四行中命令的效果</p>
+
+<pre class="lang:default mark:4 decode:true ">$ ./test.py<br/>
+hello stdout<br/>
+hello stderr<br/>
+$ ./test.py &gt; output.txt 2&gt; /dev/null<br/>
+$ echo $?<br/>
+2<br/>
+$ cat output.txt<br/>
+hello stdout</pre>
+
+<p>相应的 <code>subprocess.run()</code> 代码如下</p>
+
+<pre class="lang:default mark:3 decode:true">with open('output.txt', 'w') as file:<br/>
+    p1 = subprocess.run('./test.py', stdout=file, text=True,<br/>
+                        stderr=subprocess.DEVNULL)<br/>
+    print(p1.returncode) # 这时候的 p1.stderr 就是 None</pre>
+
+<h4>报告错误</h4><br/>
+<p>如果我们捕获了输出后，<code>subprocess.run()</code> 执行命令出错时不会报告给  Python 解释器</p>
+
+<pre class="lang:default decode:true ">p1 = subprocess.run(['ls', '-la', 'lala'], capture_output=True, text=True)</pre>
+
+<p><code>lala</code> 目录不存在，但上面的代码会没有任何输出，我们只得在执行后检查 <code>p1</code> 的返回码及 <code>p1.stderr</code> 的值</p>
+
+<pre class="lang:default decode:true ">if p1.returncode != 0:<br/>
+    print(p1.stderr)</pre>
+
+<p>输出</p>
+
+<blockquote><br/>
+<p>ls: lala: No such file or directory</p>
+
+</blockquote>
+
+<p>要是加上 <code>check=True</code> 参数就不一样的了</p>
+
+<pre class="lang:default decode:true ">subprocess.run(['ls', '-la', 'lala'], capture_output=True, text=True, check=True)</pre>
+
+<p>直接报告异常</p>
+
+<blockquote><br/>
+<p>Traceback (most recent call last):<br /><br/>
+File "/Users/yanbin/Library/Preferences/PyCharmCE2019.1/scratches/scratch_1.py", line 4, in &lt;module&gt;<br /><br/>
+p1 = subprocess.run(['ls', '-la', 'lala'], capture_output=True, text=True, check=True)<br /><br/>
+File "/usr/local/Cellar/python/3.7.3/Frameworks/Python.framework/Versions/3.7/lib/python3.7/subprocess.py", line 487, in run<br /><br/>
+output=stdout, stderr=stderr)<br /><br/>
+subprocess.CalledProcessError: Command '['ls', '-la', 'lala']' returned non-zero exit status 1.</p>
+
+</blockquote>
+
+<p>这对于希望在有任何命令执行异常时退出很有用</p>
+
+<h4>管道操作</h4><br/>
+<p>前面提到过，用 <code>subprocess.run()</code> 设置 <code>shell=True</code> 时，命令中可以随意使用复杂的 shell 命令，包括管道操作。如果 <code>shell=False</code> 默认值时，管道操作就需要显式的执行多个 <code>subprocess.run()</code> 操作并且通过像 <code>input=p1.stdout</code> 这样串联起来，这原本就是管道的意义</p>
+
+<pre class="lang:default decode:true">p1 = subprocess.run(['cat', 'a.json'], capture_output=True, text=True)<br/>
+p2 = subprocess.run(['grep', 'id'], capture_output=True, text=True, input=p1.stdout)<br/>
+print(p2.stdout)</pre>
+
+<p>相当于执行了 shell  命令</p>
+
+<pre class="lang:default decode:true">cat a.json | grep id</pre>
+
+<h4>其他</h4><br/>
+<p>encoding 和 errors 参数是 Python 3.6 加入的。<code>encoding='utf-8'</code> 与 <code>text=True</code> 有着类似的功效</p>
+
+<p>text, universal_newlines 和  capture_output 是 Python 3.7 加入的，之前版本捕获输出就要用 <code>stdout=subprocess.PIPE</code>, 且得到的 stdout 是 <code>bytes</code> 类型，stderr 相类似。 </p>
+
+<p>timeout=&lt;in seconds&gt; 会在多少秒之后还没执行完命令后得到 <code>TimeoutExpired</code> 异常，并且终止掉该命令的执行</p>
+
+<h3>其他脚本语言参考</h3><br/>
+<p>学习过了 Python 调用系统命令之后不妨顺道体验一下 Perl, Groovy, Scala 怎么操作的</p>
+
+<h4>Perl 执行系统命令</h4><br/>
+<pre class="lang:default decode:true">$out = `ls -l | grep http`;  # 捕获输出到 $out 变量，不会输出到控制台<br/>
+print $out;<br/>
+<br/>
+$code = system('ls -l | grep http');  # 直接输出到控制台，返回值只是一个状态码<br/>
+print $code;<br/>
+<br/>
+exec('ls -l | grep http');   # 直接输出到控制台，没有返回值<br/>
+</pre>
+
+<p>Perl 执行的是 shell 命令，所以直接支持管道操作</p>
+
+<h4>Groovy 执行系统命令</h4><br/>
+<pre class="lang:default decode:true">def p1 = 'ls -l'.execute().text  //不能直接执行 'ls -l | grep http'<br/>
+print(p1)<br/>
+<br/>
+def p2 = 'ls -l'.execute() | 'grep http'.execute()  //管道操作<br/>
+print(p2.text)</pre>
+
+<p>Scala 执行系统命令</p>
+
+<pre class="lang:default decode:true">import scala.sys.process._<br/>
+import scala.language.postfixOps<br/>
+<br/>
+val code = "ls -l" !  //直接输出到控制台，返回值为状态码<br/>
+val out = "ls -l" !!  //返回值为命令的输出<br/>
+<br/>
+val code = "ls -l" #| "grep http" !  //管道操作 <br/>
+val out1 = "ls -l" #| "grep http" !! //管道操作</pre>
+
+<p>管道操作要用 <code>#|</code> 操作符，不能在一个字符串中用管道连接多个命令，这不是一个 shell</p>

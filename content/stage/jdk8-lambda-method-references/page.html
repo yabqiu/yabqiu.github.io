@@ -1,0 +1,124 @@
+---
+title: JDK8 的 Lambda 表达式 -- 方法引用
+url: /jdk8-lambda-method-references/
+date: 2013-10-17T08:15:52-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - jdk8
+  - lambda
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5774 
+wpStatus: publish
+views: 715
+lastmod: 2021-09-03T14:50:14-05:00
+---
+
+Lambda 允许我们定义匿名方法(即那个 Lambda 表达式，或叫闭包)，作为一个功能性接口的实例。如果你不想把一个 Lambda 表达式写得过大，那么你可以把表达式的内容分离出来写在一个方法中，然后在放置 Lambda 表达式的位置上填上对那个方法的引用。</p>
+<br/>
+方法引用也应看作是一个 Lambda 表达式，所以它也需要一个明确的目标类型充当功能性接口的实例。简单说就是被引用的方法要与功能接口的 SAM(Single Abstract Method) 参数、返回类型相匹配。方法引用的引入避免了 Lambda 写复杂了可读性的问题，也使得逻辑更清晰。<br/><br/>
+为了应对方法引用这一概念， JDK8 又重新借用了 C++ 的那个 “::” 域操作符，全称为作用域解析操作符。<br/><br/>
+上面的表述也许不好明白，我看官方的那份 State of the Lambda 也觉得不怎么容易理解，特别是它举了那个例子很难让人望文生意。我用个自己写的例子来说明一下吧。<br/><br/>
+目前的 Eclipse-JDK8 版还不能支持方法引用的特性，幸好就是在昨天正式版的 NetBeans IDE 7.4 对 JDK8 有了较好的支持，所以在 NetBeans 7.4 中写测试代码。<!--more--><br/><br/>
+<pre class="lang:default decode:true">package testjdk8;<br/><br/>
+/**
+ *
+ * @author Unmi
+ */
+public class TestJdk8 {<br/><br/>
+    public static void main(String[] args) {
+        //使用 Lambda 表达式，输出： 16: send email
+        start((id, task) -&gt; id + ": " + task);
+        //或者
+        Machine m1 = (id, task) -&gt; id + ": " + task;
+        m1.doSomething(16, "send email");
+        
+        //使用方法引用，输出： Hello 16: send email
+        start(TestJdk8::hello);
+        //或者
+        Machine m2 = TestJdk8::hello;
+        m2.doSomething(16, "send email");
+    }
+    
+    private static void start(Machine machine){
+        String result = machine.doSomething(16, "send email");
+        System.out.println(result);
+    }
+    
+    public static String hello(int id, String task){
+        return "Hello " + id +": " + task;
+    }
+}<br/><br/>
+@FunctionalInterface
+interface Machine {
+    public String doSomething(int id, String task);
+}
+</pre>
+<br/>
+说明：<br/><br/>
+1. Machine 是一个功能性接口，它只有一个抽象方法<br />
+2. start(Machine machine) 方法为 Lambda 表达式提供了一个上下文，表明它期盼接收一个 Machine 的功能性接口类型<br />
+3. start((id, task) -&gt; id + ": " + task), 是传递了一个 Lambda 表达式给 start() 方法<br />
+4. start(TestJdk8::hello) 是把指向 TestJdk8::hello 方法的引用传递给了 start() 方法，这里可以理解 hello() 方法是 Lambda 表达式的另一种表现形式。<br/><br/>
+对应一下两个 start() 方法调用的参数，Lambda 表达式的参数列表 (id, task) 与 hello 方法的参数 (int id, String task) 是一致的，返回值类型也是一致的。<br/><br/>
+想像一下如果一个 Lambda 表达式的代码量很大，全部挤在一起作为 start() 方法的参数部分，混乱也不太方便于单步调试。所以可以把 Lambda 的实现挪出来放在一个单独的方法中，在使用处只放置一个对该方法的引用即可。借助于方法引用，JDK8  把方法与 Lambda 表达式巧妙的结合了起来，直接的说 Lambda 表达就是一个方法，它用自己的方法列表和返回值。<br/><br/>
+<strong>那么符合什么条件的方法可以作为 Lambda 表达式来用呢</strong>？答：方法签名与功能性接口的 SAM 一致即可。比如，可以进行下面的赋值：<br/><br/>
+<pre class="lang:default decode:true">Consumer&lt;Integer&gt; b1 = System::exit //void exit(int status) 与 Consumer 的 SAM void accept(T t) 相匹配
+Runnable r = MyProgram::main;      //void main(String... args) 与 run() 方法能配上对</pre>
+<br/>
+<strong>有些什么样子的方法引用：</strong><br/><br/>
+<ol>
+    <li>静态方法 (ClassName::methName)</li>
+    <li>对象的实例方法 (instanceRef::methName)</li>
+    <li>对象的super 方法 (super::methName)</li>
+    <li>类型的实例方法 (ClassName::methName, 引用时和静态方法是一样的，但这里的 methName 是个实例方法)</li>
+    <li>类的构造方法 (ClassName::new)</li>
+    <li>数组的构造方法 (TypeName[]::new)</li>
+</ol>
+<br/>
+第 1 条，静态方法以 ClassName 为作用域好理解，第 4 条中实例方法也可以用 ClassName::methName 的方式去引用，那么这里又有个约定了：如果实例方法用类型来引用的时候，那么调用时第一个参数将作为该引用方法的接收者，其余参数依次作为引用方法的参数。举个例子：<br/><br/>
+<pre class="lang:default decode:true">package testjdk8;<br/><br/>
+import java.util.function.Function;<br/><br/>
+/**
+ *
+ * @author Unmi
+ */
+public class TestJdk8 {<br/><br/>
+    public static void main(String[] args) {
+        Function&lt;String, String&gt; upperfier = String::toUpperCase;
+        System.out.println(upperfier.apply("Hello")); //HELLO
+        
+        Machine m = TestJdk8::hello; //hello 是实例方法
+        TestJdk8 test = new TestJdk8();
+        //test 作为 hello 方法的接收者，"Unmi" 作为 task 参数
+        System.out.println(m.doSomething(test, "Unmi")); //Hello Unmi
+    }
+    
+    public String hello(String task){
+        return "Hello " + task;
+    }
+}<br/><br/>
+@FunctionalInterface
+interface Machine {
+    public String doSomething(TestJdk8 test, String task);
+}
+</pre>
+<br/>
+上面的代码应该能有助于理解实例方法用类型来引用，如果引用的是泛型方法，类型写在 :: 之前。<br/><br/>
+同样当然对于第 2 条，引用实例方法时，SAM 的第一个参数也作为接收者，其作参数依次填充过去。<br/><br/>
+第 5 条，类的构造方法要用类型去引用，new 相当一个返回当前类型实例的实例方法，所以<br/><br/>
+<pre class="brush:java">SocketImplFactory factory = MySocketImpl::new;
+SocketImpl socketImpl = factory.createSocketImpl();</pre>
+<br/>
+数组是种类型，可以认为数组的构造方法是只接受一个整形参数，所以能这样引用数组的构造方法：<br/><br/>
+<pre class="lang:default decode:true ">IntFunction&lt;int[]&gt; arrayMaker = int[]::new;
+int[] array = arrayMaker.apply(10); // creates an int[10]</pre>
+<br/>
+小结：Lambda 表达式就是一个功能性接口的实例，因而调用方式参照功能性接口。Lambda 表达式可抽取到一个方法中，然后用方法引用指向这个方法，被引用的方法签名与功能性接口的 SAM 的一致性，注意引用实例方法时，SAM 的第一个参数将作为引用方法的接收者。我们把数组理解为有一个接收整数的构造方法。

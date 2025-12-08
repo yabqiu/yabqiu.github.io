@@ -1,0 +1,56 @@
+---
+title: Docker attach 后断开时不退出容器
+url: /docker-attach-deattach-without-exit-container/
+date: 2020-06-29T19:53:26-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2014/05/homepage-docker-logo.png"
+categories:
+  - Docker
+tags: 
+  - Docker
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10298 
+wpStatus: publish
+views: 3732
+lastmod: 2020-06-29T19:53:26-05:00
+---
+
+<code>docker attach</code> 可以连接上 Docker 容器的标准输入，输出和错误输出。比如 <code>docker attach</code> 连接后就能显示容器中用 ENTRYPOINT/CMD 启动进程的输出内容内容。想要断开会话连接怎么做呢？<code>ctrl - c</code>, 控制台是不再显示了，可以容器也被终止了，显然这是一个危险的操作。</p>
+<br/>
+<code>ctrl - c</code> 不仅仅关闭了 <code>docker attach</code> 本身，因为它的默认参数 <code>--sig-proxy</code> 是 <code>true</code>，所以 <code>SIGKILL</code> 信号同时传递到了 ENTRYPOINT/CMD 的 PID 1 的进程，所以形成了双杀的效果。我们来试一下<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/06/docker-attach-1.png"><img class="aligncenter wp-image-10303" src="https://yanbin.blog/wp-content/uploads/2020/06/docker-attach-1-800x244.png" alt="" width="786" height="240" /></a><br/><br/>
+如果是在生产环境下，用 <code>docker attach</code> 连接下控制台看下输出，然后不小心像终止 <code>tail -f</code> 命令一样用 <code>ctrl - c</code>  退出，结果服务断了。所以更为小心的操作还是用 <code>docker logs</code>。 <code>docker attach</code> 的优势只是在于能查看实时的控制台输出。<!--more--><br/><br/>
+不想关闭容器的话，千万不要用 <code>ctrl - c</code>, 那么有什么办法只断开 <code>docker attach</code> 而不退出容器呢？<br/><br/>
+<h3>一：关闭执行 <code>docker attach</code> 终端窗口</h3><br/><br/>
+是不是太土了，这样做只会影响到 <code>docker attach</code> 进程本身，如果 <code>docker attach</code>  连接的是远端的  docker 容器，关闭电脑都行。只要不像对应 docker 容器发送终止信号<br/><br/>
+<h3>二：杀死 <code>docker attach</code>  对应的进程</h3><br/><br/>
+这需要两个终端窗口(或者 tmux) 来配合，<code>docker attach</code> 后，开一个新的窗口找到 <code>docker attach</code> 进程，然后 kill 它。这种操作实质上与关闭 <code>docker attach</code>  所在窗口是一样的。<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/06/docker-attach-2.png"><img class="aligncenter wp-image-10306" src="https://yanbin.blog/wp-content/uploads/2020/06/docker-attach-2-800x384.png" alt="" width="696" height="334" /></a><br/><br/>
+<h3>三：<code>--sig-proxy=false</code> ，直接 ctrl + c</h3><br/><br/>
+也两种方式也许会令人觉得不太正经的方式，那么用 <code>docker attach --sig-proxy=false</code> 连接会话后，再用 <code>ctrl - c</code> 终止 <code>docker attach</code> 就显得优雅许多了<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/06/docker-attach-3.png"><img class="aligncenter wp-image-10301" src="https://yanbin.blog/wp-content/uploads/2020/06/docker-attach-3-800x240.png" alt="" width="700" height="210" /></a><br/><br/>
+<code>docker attach</code> 的 <code>--sig-proxy</code> 参数默认为 <code>true</code>，就是对 <code>docker attach</code> 发送的信号会代理给容器内的 <code>PS 1</code> 进程。<code>--sig-proxy=false</code> 就不会转发该信号给容器内的进程了。<br/><br/>
+<h3>四：只用 <code>-t</code> 启动的容器也能  ctrl - c</h3><br/><br/>
+如果启动容器时只用了 <code>-t</code> 参数，不能有 <code>-i</code>, <code>docker attach</code> 后直接  <code>ctrl - c</code> 退出会话也不会关闭相应的容器。因为 <code>docker attach</code> 连接 <code>-t</code> 启动的容器禁用了它的标准输入，所以也接收不到 <code>SIGKILL</code> 信号。下面还有话说<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/06/docker-attach-5.png"><img class="aligncenter wp-image-10307" src="https://yanbin.blog/wp-content/uploads/2020/06/docker-attach-5-800x403.png" alt="" width="696" height="351" /></a><br/><br/>
+<h3>五：<code>-it</code>  的容器可用 <code>ctrl-p, ctrl-q</code> 退出 <code>docker attach</code></h3><br/><br/>
+这个要求有点高，都使用了 <code>-i</code> 和  <code>-t</code> 来启动容器，对于 <code>docker attach</code>  的需求就不那么的高，除非多个终端同时监控  docker 容器中的会话。所以 <code>ctrl-p, ctrl-q</code> 的操作方式也需要在另一个窗口中进行<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/06/docker-attach-4.png"><img class="aligncenter wp-image-10305" src="https://yanbin.blog/wp-content/uploads/2020/06/docker-attach-4-800x459.png" alt="" width="700" height="402" /></a><br/><br/>
+在下面的窗口按下 <code>ctrl-p, ctrl-q</code> 后显示 <code>read escape sequence</code> 只退出 <code>docker attach</code> 进程而不影响 docker 容器。<br/><br/>
+<h3>另外</h3><br/><br/>
+<code>docker attach</code> 还能用 <code>--detach-keys</code> 重定义断开会话的快捷键，用以替换标准的 <code>ctrl-p, ctrl-q</code>。<code>--no-stdin</code> 不让 <code>docker attach</code> 连接标准输入，但却阻挡不了 <code>ctrl - c</code> 结束 <code>docker attach</code> 时同时消灭了相应的容器。<br/><br/>
+小结一下，断开 <code>docker attach</code> 会话而不关闭 docker 容器的方法主要有<br/><br/>
+<ol>
+    <li>暴力杀死 <code>docker attach</code> 进程，关它的运行窗口或 kill <code>docker attach</code>  进程</li>
+    <li><code>docker run -t ...</code> 启动的容器可用 <code>ctrl - c</code> 断开 <code>docker attache</code>  会话</li>
+    <li><strong><span style="color: #ff0000;">用 <code>docker attach --sig-proxy=false</code> 连接的会话也可用 <code>ctrl - c</code> 断开（强烈选择它是因为不必理会容器是怎么启动的）</span></strong></li>
+    <li>用 <code>docker run -it ...</code> 启动的容器可用预置的 <code>ctrl - p, ctrl - q</code> 断开会话 </li>
+</ol>
+<br/>
+链接：<a href="https://docs.docker.com/engine/reference/commandline/attach/">docker attach</a>

@@ -1,0 +1,90 @@
+---
+title: Scala 的 apply 和 update 方法的应用
+url: /scala-apply-update-methods/
+date: 2012-09-30T12:57:34-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - Scala
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4742 
+wpStatus: publish
+views: 3569
+lastmod: 2021-06-02T23:32:23-05:00
+---
+
+Scala 是构建在 JVM 上的静态类型的脚本语言，而脚本语言总是会有些约定来增强灵活性。灵活性可以让掌握了它的人如鱼得水，也会让初学者不知所措。比如说 Scala 为配合 DSL 在方法调用时有这么一条约定：</p>
+<br/>
+<blockquote>
+在明确了方法调用的接收者的情况下，若方法只有一个参数时，调用的时候就可以省略点及括号。如 “0 to 2”，实际完整调用是 “0.to(2)”。但 “println(2)” 不能写成 “println 10“”，因为未写出方法调用的接收者 Console，所以可以写成 “Console println 10”
+</blockquote>
+<br/>
+到这里就要讲到 apply 和 update 方法相关的约定，描述的是直接在对象(对象)后直接加圆括号的代码的情况下，那就是:<br/><br/>
+<blockquote>
+用括号传递给变量(对象)一个或多个参数时，Scala 会把它转换成对 apply 方法的调用；与此相似的，当对带有括号并包括一到若干参数的进行赋值时，编译器将使用对象的 update 方法对括号里的参数和等号右边的对象执行调用。
+</blockquote>
+<br/>
+对上面那段话的解释可由下面几个例子得到很好的理解<br/><br/>
+1. theArray(0), 取数组的第一个元素的操作会转换成 theArray.apply(0) 操作，这也能解释为什么 Scala 数组取值不用中括号括下标的方式，因为它也是一次方法调用<!--more--><br/><br/>
+2. anyObject("key1") 会被转换成 anyObject.apply("key") 操作，这也会让我们想到 Map 的取值操作，的确如此。我们可以作个例子：<br/><br/>
+<pre class="lang:default decode:true">class SomeClass {
+    def apply(key: String): String = {
+        println("apply method called, key is: " + key)
+        "Hello World!"
+    }
+}<br/><br/>
+val anyObject = new SomeClass
+println(anyObject("key1"))</pre>
+<br/>
+执行后输出结果是：<br/><br/>
+<span style="color: #800000;">apply method called, key is: key1</span><br />
+<span style="color: #800000;"> Hello World!</span><br/><br/>
+说明是调用到了相应的 apply 方法的。<br/><br/>
+3. 我们在构造 Array 或  Map 时，会简单的写成<br/><br/>
+<pre class="brush:scala">val numNames = Array("zero", "one", "two")</pre>
+<br/>
+这里也是调用的 apply 方法，我们看起来好像是作用在类 Array 上的，其实不然，而是作用在 Array 的伴生对象(object Array)上的，调用的是伴生对象 Array 的  apply 方法，即：<br/><br/>
+<pre class="brush:scala">val numNames = Array.apply("zero", "one", "two")</pre>
+<br/>
+上面的功效像是调用的 Array 类的 apply 工厂方法。同样看个单例对象的例子，也解释了伴生对象的 apply 方法的调用<br/><br/>
+<pre class="lang:default decode:true">object EMail {
+    def apply(user: String, domain: String): String = {
+        println("apply method called")
+        user + "@" + domain
+    }
+}<br/><br/>
+val email = EMail("fantasia", "sina.com")
+println(email)</pre>
+<br/>
+上面代码执行后输出结果是：<br/><br/>
+<span style="color: #800000;">apply method called</span><br />
+<span style="color: #800000;">fantasia@sina.com</span><br/><br/>
+有了前面 apply 方法的理解，下面对 update 方法的理解就很顺畅了，比如：<br/><br/>
+<pre class="brush:scala">greetStrings(0) = "Hello"</pre>
+<br/>
+会转换成调用<br/><br/>
+<pre class="brush:scala">greetStrings.update(0, "Hello")</pre>
+<br/>
+来个复杂的 Demo，赋值时等号左边带两个参数，并且赋值操作会产生返回值的情况(纯粹用于演示)<br/><br/>
+<pre class="lang:default decode:true">class SomeClass {
+    def update(arg1: Int, arg2: String, arg3: String): String = {
+        println("update method called")
+        arg1 + "|" + arg2 + "|" + arg3
+    }
+}<br/><br/>
+val obj = new SomeClass
+val result = (obj(1, "key1") = "Hello")
+println(result)</pre>
+<br/>
+执行后输出结果为：<br/><br/>
+<span style="color: #800000;">update method called</span><br />
+<span style="color: #800000;">1|key1|Hello</span><br/><br/>
+在应用 apply 和 update 规则时，关键是转换后的调用要找到相应的方法原型。再就是应用 update 时，等号右边的值会作为 update 方法的最后一个参数。<br/><br/>
+因为这样的行为，apply 方法又被称为注入方法，因为它可以传入一些参数并生成指定子集的元素。在以后的学习中会遇到它对偶的方法 unapply，被称为抽取方法，因为它可以传入相同子集的元素并抽取其中的部分，这是后话。

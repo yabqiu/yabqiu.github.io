@@ -1,0 +1,96 @@
+---
+title: Unmi 的 Struts2 学习笔记(十三)
+url: /unmi-study-struts2-13/
+date: 2008-05-17T11:18:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/05/struts-logo.jpeg"
+categories:
+  - Struts
+tags: 
+  - Struts2
+  - study
+  - unmi
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 393 
+wpStatus: publish
+views: 438
+lastmod: 2021-05-03T00:00:54-05:00
+---
+
+柏杨在形容中国人不团结，喜欢窝里斗用了这样的话：每一个中国人都是一条龙,但是三个中国人加在一起──三条龙加在一起，就成了一条猪、一条虫，甚至连虫都不如--《<a href="http://book.sina.com.cn/longbook/sal/1099295539_chouloudezhongguoren/5.shtml" target="_blank" rel="noopener noreferrer">丑陋的中国人</a>》。可是他老人家走得走，要是能多有半个月的阳寿，不知作有何感想。</p>
+<br/>
+1. &lt;s:optiontransferselect.../&gt; 正是考虑到通常使用而新加的用于创建两个下拉框，可以来回移动列表项。有属性设置是否显示 "选定左移"、"全部左移"、"选定右移"、"全部右移" 按钮以及各按钮上的文本，其他的 list/listKey/listValue/doubleList/doubleKey/doubleValue 等属性同 &lt;s:doubleselect.../&gt; 的是一样的。还可设置 allowUpDownOnLeft/allowUpDownOnRight 是否出现相应框的上下移动选择的按钮(true/false)。<br/><br/>
+2. &lt;s:radio.../&gt; 的用法与 &lt;s:checkboxlist.../&gt; 完全一样，只页面表现不一样，一个多选，一个单选。<!--more--><br/><br/>
+3. &lt;s:optgroup.../&gt; 要放在 &lt;s:select.../&gt; 中使用，选项分组，属性有 list/listKey/listValue，不再说明它们的意义了，参考前篇笔记对 &lt;s:checkboxlist.../&gt; 对应属性的描述，它生成 html 的 &lt;optgroup&gt; 标签。<br/><br/>
+4. &lt;s:token/&gt; 生成如下的内容：(struts.token.name 标识哪个隐藏域存了 token 值)<br />
+        &lt;input type="hidden" name="struts.token.name" value="struts.token"/&gt;<br />
+        &lt;input type="hidden" name="struts.token" value="7GXL55LPSGU19SDC9D3VP54I20XT3BVA"/&gt;<br/><br/>
+注意自定义的表单域别重名了。它的作用是防止表单重复提交，每次加载页面 struts.token 的值都不一样，如果两次提交时该值一样，则认为是重复提交。此时要启用 TokenInterceptor(token) 拦截器，最好是也启用 TokenSessionStoreInterceptor(token-session) 拦截器，不然后台会出现错误提示：<br/><br/>
+2008-5-17 22:39:21 com.opensymphony.xwork2.interceptor.ParametersInterceptor setParameters<br />
+严重: ParametersInterceptor - [setParameters]: Unexpected Exception catched: Error setting expression 'struts.token' with value '[Ljava.lang.String;@1c2e163'<br />
+2008-5-17 22:39:21 com.opensymphony.xwork2.interceptor.ParametersInterceptor setParameters<br />
+严重: ParametersInterceptor - [setParameters]: Unexpected Exception catched: Error setting expression 'struts.token.name' with value '[Ljava.lang.String;@abaf8c'<br/><br/>
+但不影响使用。不过如果只有 token-session 拦截器却是不行的。<br/><br/>
+token 和 token-session 拦截器的启用，是在 struts.xml 配置文件中，既可以为包启用，也可以单独为某个 action 启用：<br/><br/>
+1) 为包启用 token 和 token-session<br/><br/>
+<pre class="lang:default decode:true">&lt;package name="TestStruts" extends="struts-default"&gt;
+    &lt;interceptors&gt;
+    &lt;interceptor-stack name="myStack"&gt;
+        &lt;interceptor-ref name="token"/&gt;
+        &lt;interceptor-ref name="token-session"/&gt;
+    &lt;interceptor-ref name="defaultStack" /&gt;
+    &lt;/interceptor-stack&gt;
+    &lt;/interceptors&gt;
+    &lt;default-interceptor-ref name="myStack" /&gt;
+    &lt;action name="Login" class="com.unmi.struts2.action.LoginAction"&gt;
+        &lt;result name="input"&gt;/login.jsp&lt;/result&gt;
+        &lt;result name="invalid.token"&gt;/exception.jsp&lt;/result&gt;
+    &lt;/action&gt;
+............................................................................</pre>
+<br/>
+2) 为 Action 启用 token 和 token-session<br/><br/>
+<pre class="lang:default decode:true">&lt;action name="Login" class="com.unmi.struts2.action.LoginAction"&gt;
+    &lt;interceptor-ref name="token" /&gt;
+    &lt;interceptor-ref name="token-session" /&gt;
+    &lt;interceptor-ref name="defaultStack" /&gt;
+    &lt;result name="input"&gt;/login.jsp&lt;/result&gt;
+    &lt;result name="invalid.token"&gt;/exception.jsp&lt;/result&gt;
+&lt;/action&gt;</pre>
+<br/>
+注意 token、token-session 和 defaultStack 的顺序要保证，还需要加上名为 "invalid.token" 的 result，当发现重复提交时转向到这个逻辑页，如 /exception.jsp，在 /exception.jsp 加上 &lt;s:actionerror /&gt; 在出现重复提交时就会提示：<span class="errorMessage"><span style="color: #800080;">The form has already been processed or no token was supplied, please try again.<span style="color: #800080;"><span style="color: #800080;"> </span></span></span></span><br/><br/>
+<span style="color: #000000;">5. 熟悉了 &lt;s:optiontransferselect.../&gt; 的话，&lt;s:updownselect.../&gt; 就很简单了，它不过就是能让选项上下移动的下拉框，可控制上移、下移、全选按钮是否显示及其文本。emptyOption="true" 能会列表框加一个空选项。6. 除前面的外还有一些非表单标签。&lt;s:a.../&gt; 生成一个超链接，&lt;s:div.../&gt; 生成一个 div 片段。</span><br/><br/>
+7. &lt;s:actionerror/&gt; 在 Action 实例的 getActionErrors() 返回不为 null 时输出该方法返回的系列错误。&lt;s:actionmessage/&gt; 在 Action 实例的 getActionMessages() 返回不为 null 时输出该方法返回的系列消息。在 Action 中可用   addActionError("错误");  addActionMessage("消息"); 加入错误或消息，或是捕获了重复提交是会执行 addActionError()。&lt;s:fielderror/&gt; 默认列表显示所有的类型转换错误或校验错误，如果用<br/><br/>
+8. &lt;s:fielderror&gt;&lt;s:param&gt;username&lt;/s:param&gt;&lt;/s:fielderror&gt; 则只显示对 username 输入框的转换或校验错误，用于 simple 主题，跟在每个输入框后只显示相应一条错误是很有用。<br/><br/>
+9. &lt;s:component.../&gt; 用于直接取用 ftl/jsp/vm 模板，theme/templateDir/template 分别指定主题、主题目录、主题名。用嵌套的 &lt;s:param name="paramName" value="paramValue"/&gt; 设置参数值，然后在模板中能用 $parameters.paramName 或 $parameters['paramName'] 取到这个值。例如 index.jsp 文件中：<br/><br/>
+<pre class="lang:default decode:true ">&lt;s:component theme="customTheme" templateDir="customTemplateDir"
+    template="jspCustomTemplate.jsp"&gt;
+    &lt;s:param name="list" value="{'one','two','three'}"/&gt;
+&lt;/s:component&gt;</pre>
+<br/>
+就会取用模板 web 目录/customTemplateDir/customTheme/jspCustomTemplate.jsp 文件，其他 ftl 和 vm 类似。jspCustomTemplate.jsp 的内容如下：<br/><br/>
+<pre class="lang:default decode:true">&lt;%@ page contentType="text/html; charset=UTF-8" pageEncoding="UTF-8"%&gt;
+&lt;%@taglib prefix="s" uri="/struts-tags" %&gt;<br/><br/>
+&lt;div style="background-color:#eeeeee;"&gt;
+    &lt;b&gt;JSP自定义模板&lt;br&gt;
+    &lt;s:select list="parameters.list"/&gt;
+&lt;/div&gt;</pre>
+<br/>
+这样在浏览 index.jsp 时会显示出一个下拉框来，&lt;s:component.../&gt; 对于相似内容的显示很有用处的。<br/><br/>
+10. &lt;s:tree.../&gt; 和 &lt;s:treenode.../&gt; 初步，先看一个例子：<br/><br/>
+<pre class="lang:default decode:true ">&lt;s:tree theme="ajax" label="中国" showGrid="true"&gt;
+    &lt;s:treenode theme="ajax" label="江西"&gt;
+        &lt;s:treenode theme="ajax" label="吉安"&gt;&lt;/s:treenode&gt;
+    &lt;/s:treenode&gt;
+    &lt;s:treenode theme="ajax" label="广东"&gt;
+        &lt;s:treenode theme="ajax" label="深圳"&gt;&lt;/s:treenode&gt;
+    &lt;/s:treenode&gt;
+&lt;/s:tree&gt;</pre>
+<br/>
+<span class="errorMessage"><span style="color: #000000;"><span class="errorMessage"><span style="color: #000000;"><br />
+tree 和 treenode 有点像 menu 和 menuitem，但是 tree 下是 treenode，treenode 下不能有 tree，只要 treenode 下又有 treenode 则表示它为树枝节点，否则为叶子节点。因为默认主题 xhtml 下没有 tree-close.ftl 和 treenode-close.ftl 模板，所以必须为 tree 和 treenode 指定 ajax 主题，不然就会出问题。&lt;s:tree.../&gt; 还有更多的控制属性，如展开或收缩时图片，网格图片、nodeIdProperty、nodeTitleProperty 属性等，用到时再细究。</span></span></span></span>

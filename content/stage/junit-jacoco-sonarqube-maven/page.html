@@ -1,0 +1,330 @@
+---
+title: 理解 JUnit, JaCoCo 到 SonarQube 的过程及 Maven 配置
+url: /junit-jacoco-sonarqube-maven/
+date: 2023-11-22T00:09:58-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2023/11/sonarqube-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - JUnit
+  - SonarQube
+  - JaCoCo
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13287 
+wpStatus: publish
+views: 936
+lastmod: 2023-11-22T12:48:41-06:00
+---
+
+Java 项目需要产生单元测试及代码覆盖率的话一直都是走的 JUnit 单元测试，JaCoCo 基于测试产生测试覆盖率，然后送到 SonarQube 去展示这条路子。当然 SonarQube 还可以帮我们进行代码的静态分析。但对其中的具体使用及过程知晓的并不深，基本就是在 pom.xml 中依葫芦画瓢。本文稍加深入的理解每一步的功效与配置，以 Maven 管理的 Java 项目为例，JUnit 采用是众多旧项目仍然无法摆脱的 JUnit 4。<br/><br/>
+示例项目名称为 JaCoCoSonar, 创建一个 Calc 类，其中有 int add(int op1, int op2) 方法，为其写一个单元测试 CalcTest<br/><br/>
+<pre class="lang:default decode:true">public class CalcTest {<br/><br/>
+    @Test
+    public void testAdd() {
+        Assert.assertEquals(3, Calc.add(1, 2));
+    }
+}</pre>
+<br/>
+<h3>单元测试实际是被 maven-surefire-plugin 插件执行的</h3><br/><br/>
+现在开始第一步，执行 <code>mvn test</code> 看会发生什么，执行过程中控制台显示<!--more--><br/><br/>
+<blockquote>
+[INFO] --- surefire:3.1.2:test (default-test) @ JaCoCoSonar ---<br />
+[INFO] Using auto detected provider org.apache.maven.surefire.junit4.JUnit4Provider
+</blockquote>
+<br/>
+说明 Maven 使用 surefire 插件来运行单元测试(以上 JaCoCoSnoar 是本项目的名称)，并且选择的 Provider 是 JUnit4Provider。倘若项目中同时引入了 JUnit 4 和 JUnit 5 依赖，<code>mvn test</code> 无法发现 JUnit 4 的单元测试时需注意 surefire 插件是用的哪个 Provider。<br/><br/>
+注：在 pom.xml 可能根本没有配置 maven-surefire-plugin 插件啊，可以 <code>mvn test</code> 就是知道用哪个插件，这是 Maven 内部事件。Maven 的约定是官方插件命名为 maven-xxx-plugin, 而第三方插件用 xxx-maven-plugin，当执行 <code>mvn xxx:foo</code> 命令时，Maven 会试图查找 <code>org.apache.maven.plugins:maven-xxx-plugin</code> 或 <code>org.codehaus.mojo:maven-xxx-plugin</code>，并执行插件  <code>maven-xxx-plugin</code> 的 <code>foo</code> goal, 所以 <code>mvn test</code> 也可以写成 <code>mvn surefire:test</code><br/><br/>
+完后回到 Maven 项目目录,  <code>mvn test</code> 为该单元测试 CalcTest 生成了<br/><br/>
+<blockquote>
+target/surefire-reports<br />
+├── TEST-org.example.CalcTest.xml<br />
+└── org.example.CalcTest.txt
+</blockquote>
+<br/>
+一些可视化展示单元测试报告的工具可读取 target/surefire-reports 中内容。<br/><br/>
+<h3>JaCoCo 如何产生代码覆盖率报告的</h3><br/><br/>
+单元测试报告产生后，我们再过度到 Maven 中如何使用 JaCoCo。JaCoCo 是由 EclEmma 团队创建的生成 Java 代码覆盖率报告的工具，记得以前用过 Emma 和 JCoverage 生成过覆盖率报告，不知 Emma 与 EclEmma 与之前的 Emma 有何关系。<br/><br/>
+执行一个 Maven 第三方插件，非官方插件(插件命令格式为 maven-xxx-plugin)若不在 pom.xml 中配置的话，在执行时可直接指定插件的 groupId:artifactId:version:goal, 如<br/><br/>
+<blockquote>
+mvn org.jacoco:jacoco-maven-plugin:0.8.1:help<br />
+mvn help:describe -Dplugin=org.jacoco:jacoco-maven-plugin -Ddetail
+</blockquote>
+<br/>
+或者定义一个环境变量, 也能达到简约的效果，如<br/><br/>
+<blockquote>
+export jacoco=org.jacoco:jacoco-maven-plugin:0.8.1<br />
+mvn ${jacoco}:help
+</blockquote>
+<br/>
+为了避免书写冗长的 mvn 命令，或使用命令更友好，还是有必要在 pom.xml 中引入 JaCoCo 插件，在 build/plugins 中加上<br/><br/>
+<pre class="lang:default decode:true">&lt;plugin&gt;
+  &lt;groupId&gt;org.jacoco&lt;/groupId&gt;
+  &lt;artifactId&gt;jacoco-maven-plugin&lt;/artifactId&gt;
+  &lt;version&gt;0.8.11&lt;/version&gt;
+&lt;/plugin&gt;</pre>
+<br/>
+现在可以简单的执行命令了，如<br/><br/>
+<blockquote>
+mvn jacoco:help
+</blockquote>
+<br/>
+它显示的 JaCoCo Maven 插件的使用帮助与前面执行的那两命令显示的结果是一致的<br/><br/>
+<code>mvn jacoco:help</code> 列举出来的 Maven goal 有<br/><br/>
+<ol>
+    <li><a href="https://www.eclemma.org/jacoco/trunk/doc/help-mojo.html">jacoco:check</a></li>
+    <li><a href="https://www.eclemma.org/jacoco/trunk/doc/dump-mojo.html">jacoco:dump</a></li>
+    <li><a href="https://www.eclemma.org/jacoco/trunk/doc/help-mojo.html">jacoco:help</a></li>
+    <li><a href="https://www.eclemma.org/jacoco/trunk/doc/instrument-mojo.html">jacoco:instrument</a></li>
+    <li><a href="https://www.eclemma.org/jacoco/trunk/doc/merge-mojo.html">jacoco:merge</a></li>
+    <li><a href="https://www.eclemma.org/jacoco/trunk/doc/prepare-agent-mojo.html">jacoco:prepare-agent</a></li>
+    <li><a href="https://www.eclemma.org/jacoco/trunk/doc/prepare-agent-integration-mojo.html">jacoco:prepare-agent-integration</a></li>
+    <li><a href="https://www.eclemma.org/jacoco/trunk/doc/report-mojo.html">jacoco:report</a></li>
+    <li><a href="https://www.eclemma.org/jacoco/trunk/doc/report-aggregate-mojo.html">jacoco:report-aggregate</a></li>
+    <li><a href="https://www.eclemma.org/jacoco/trunk/doc/report-integration-mojo.html">jacoco:report-integration</a></li>
+    <li><a href="https://www.eclemma.org/jacoco/trunk/doc/restore-instrumented-classes-mojo.html">jacoco:restore-instrumented-classes</a></li>
+</ol>
+<br/>
+现在 pom.xml 中有 JaCoCo 插件后，再次执行之前的 <code>mvn test</code>， 还是老样子, target 目录中并没有产生新的目录或文件<br/><br/>
+比如说现在没有 Google, 光从 jacoco:help 会想当然的尝试什么命令呢？<br/><br/>
+既然是产生代码覆盖率报告的工具，那先试下 <code>mvn jacoco:report</code>:<br/><br/>
+<blockquote>
+[INFO] --- jacoco:0.8.11:report (default-cli) @ JaCoCoSonar ---<br />
+[INFO] Skipping JaCoCo execution due to missing execution data file.
+</blockquote>
+<br/>
+提示说缺 data file. 那如何产生 JaCoCo 的 data file 呢？提前说明一下 jacoco 与 surefire 插件是如何协同工作的, surefire 运行测试时, jacoco 将以 agent 身份产生 JaCoCo 的 data file, 即 jacoco.exec. 所以再试下 <code>mvn jacoco:prepare-agent</code>:<br/><br/>
+<blockquote>
+[INFO] --- jacoco:0.8.11:prepare-agent (default-cli) @ JaCoCoSonar ---<br />
+[INFO] argLine set to -javaagent:/Users/yanbin/.m2/repository/org/jacoco/org.jacoco.agent/0.8.11/org.jacoco.agent-0.8.11-runtime.jar=destfile=/Users/yanbin/Workspaces/tests/JaCoCoSonar/target/jacoco.exec
+</blockquote>
+<br/>
+上面向我们报告的就是它会设置  argLine 为值 <code>-javaagent....</code>，正好 maven-surefire-plugin 的默认 &lt;argLine&gt; 配置引用的就是 ${argLine}，这样 JaCoCo 就完美的嵌入到了 surefire 当中的。我们可在命令行中一口气执行上两个任务<br/><br/>
+<blockquote>
+mvn jacoco:prepare-agent test
+</blockquote>
+<br/>
+这时候在 target 目录中就会产生 <code>jacoco.exec</code> 文件，这是一个二进制文件，需要用 <code>mvn jacoco:report</code> 进一步生成友好的覆盖率测试报告。它会在 target 中生成 site/jacoco 目录<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2023/11/jacoco-report-site.png"><img class="aligncenter wp-image-13290" src="https://yanbin.blog/wp-content/uploads/2023/11/jacoco-report-site.png" alt="" width="264" height="326" /></a><br/><br/>
+在网页中打开 target/site/jacoco/index.html 文件<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2023/11/jacoco-report-2.png"><img class="aligncenter wp-image-13291" src="https://yanbin.blog/wp-content/uploads/2023/11/jacoco-report-2-800x211.png" alt="" width="620" height="164" /></a>点击包名 org.example 一路可查到测试方法，并能在源代码中显示覆盖的代码行。<br/><br/>
+学习到这里的话，如果想要一次性为 surefire 配置 argLine, 运行测试，生成测试报告，jacoco.exec 文件及覆盖率报告的 mvn 命令就是<br/><br/>
+<blockquote>
+mvn jacoco:prepare-agent test jacoco:report
+</blockquote>
+<br/>
+在 pom.xml 只需要引入 jacoco 插件并连续执行多个 Maven 任务就能得到我们的所需。不过，多数人大概不希望在构建时输入太长的命令，那么自动执行的步骤可以配置到 pom.xml 的插件当中。<br/><br/>
+我们唯一要做的就是配置 jacoco 插件的 prepare-agent goal<br/><br/>
+<pre class="lang:default decode:true">&lt;plugin&gt;
+    &lt;groupId&gt;org.jacoco&lt;/groupId&gt;
+    &lt;artifactId&gt;jacoco-maven-plugin&lt;/artifactId&gt;
+    &lt;version&gt;0.8.11&lt;/version&gt;
+    &lt;executions&gt;
+        &lt;execution&gt;
+            &lt;id&gt;prepare-agent&lt;/id&gt;
+            &lt;goals&gt;
+                &lt;goal&gt;prepare-agent&lt;/goal&gt;
+            &lt;/goals&gt;
+        &lt;/execution&gt;
+        &lt;execution&gt;
+            &lt;id&gt;report&lt;/id&gt;
+            &lt;goals&gt;
+                &lt;goal&gt;report&lt;/goal&gt;
+            &lt;/goals&gt;
+        &lt;/execution&gt;
+    &lt;/executions&gt;
+&lt;/plugin&gt;
+</pre>
+<br/>
+我们查看它的源代码 <a href="https://github.com/jacoco/jacoco/blob/master/jacoco-maven-plugin/src/org/jacoco/maven/AgentMojo.java">jacoco/jacoco-maven-plugin/src/org/jacoco/maven/AgentMojo.java</a> 可知 <code>prepare-agent</code> 绑定到的 Maven 的 phase 是 LifecyclePhase.INITIALIZE. 而 report 是绑定在  LifecyclePhase.VERIFY.<br/><br/>
+现在，与 <code>mvn jacoco:prepare-agent test jacoco:report</code> 等效的命令就只需用 <code>mvn verify</code> 了，中间步骤在 INITIALIZE 阶段中自动完成, 最后产生 JaCoCo 代码覆盖率报告。<br/><br/>
+我们可以在单元测试中插入代码获取输入的 JVM 参数<br/><br/>
+<pre class="lang:default decode:true">// import java.lang.management.*;<br/><br/>
+RuntimeMXBean runtimeMxBean = ManagementFactory.getRuntimeMXBean();
+List&lt;String&gt; listOfArguments = runtimeMxBean.getInputArguments();<br/><br/>
+for (String arg: listOfArguments) {
+    System.out.println("ARG: " + arg);
+}</pre>
+<br/>
+执行单元测试时有如下输出<br/><br/>
+<blockquote>
+ARG: -javaagent:/Users/yanbin/.m2/repository/org/jacoco/org.jacoco.agent/0.8.11/org.jacoco.agent-0.8.11-runtime.jar=destfile=/Users/yanbin/Workspaces/tests/JaCoCoSonar/target/jacoco.exec
+</blockquote>
+<br/>
+如果使用 jacoco  goal 时不想使用默认配置的话，可以自定义。执行 mvn 命令时加上 <code>-X</code> 参数可得到非常详尽的输出信息<br/><br/>
+<blockquote>
+mvn -X test
+</blockquote>
+<br/>
+此时就会在控制台中看到非常冗余的信息，搜索可以找到<br/><br/>
+<pre class="lang:default decode:true">[DEBUG] Goal:          org.jacoco:jacoco-maven-plugin:0.8.11:prepare-agent (prepare-agent)
+[DEBUG] Style:         Regular
+[DEBUG] Configuration: &lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;configuration&gt;
+  &lt;address&gt;${jacoco.address}&lt;/address&gt;
+  &lt;append&gt;${jacoco.append}&lt;/append&gt;
+  &lt;classDumpDir&gt;${jacoco.classDumpDir}&lt;/classDumpDir&gt;
+  &lt;destFile default-value="${project.build.directory}/jacoco.exec"&gt;${jacoco.destFile}&lt;/destFile&gt;
+  &lt;dumpOnExit&gt;${jacoco.dumpOnExit}&lt;/dumpOnExit&gt;
+  &lt;exclClassLoaders&gt;${jacoco.exclClassLoaders}&lt;/exclClassLoaders&gt;
+  &lt;inclBootstrapClasses&gt;${jacoco.inclBootstrapClasses}&lt;/inclBootstrapClasses&gt;
+  &lt;inclNoLocationClasses&gt;${jacoco.inclNoLocationClasses}&lt;/inclNoLocationClasses&gt;
+  &lt;jmx&gt;${jacoco.jmx}&lt;/jmx&gt;
+  &lt;output&gt;${jacoco.output}&lt;/output&gt;
+  &lt;pluginArtifactMap&gt;${plugin.artifactMap}&lt;/pluginArtifactMap&gt;
+  &lt;port&gt;${jacoco.port}&lt;/port&gt;
+  &lt;project&gt;${project}&lt;/project&gt;
+  &lt;propertyName&gt;${jacoco.propertyName}&lt;/propertyName&gt;
+  &lt;sessionId&gt;${jacoco.sessionId}&lt;/sessionId&gt;
+  &lt;skip default-value="false"&gt;${jacoco.skip}&lt;/skip&gt;
+&lt;/configuration&gt;</pre>
+<br/>
+这些就是当前所用的默认参数，我们可对 jacoco:prepare-agent 进行定制，如 jacoco.exec 数据文件的路径，或在 &lt;configuration&gt; 中配置，或定义成 Maven 的属性值。<br/><br/>
+实际项目中看过不少类似于如下方式的配置<br/><br/>
+<pre class="lang:default decode:true">&lt;build&gt;
+    &lt;plugins&gt;
+        &lt;plugin&gt;
+            &lt;groupId&gt;org.jacoco&lt;/groupId&gt;
+            &lt;artifactId&gt;jacoco-maven-plugin&lt;/artifactId&gt;
+            &lt;version&gt;0.8.11&lt;/version&gt;
+            &lt;executions&gt;
+                &lt;execution&gt;
+                    &lt;id&gt;prepare-agent&lt;/id&gt;
+                    &lt;goals&gt;
+                        &lt;goal&gt;prepare-agent&lt;/goal&gt;
+                    &lt;/goals&gt;
+                    &lt;configuration&gt;
+                        &lt;propertyName&gt;surefireArgLine&lt;/propertyName&gt;
+                    &lt;/configuration&gt;
+                &lt;/execution&gt;
+            &lt;/executions&gt;
+        &lt;/plugin&gt;
+        &lt;plugin&gt;
+            &lt;groupId&gt;org.apache.maven.plugins&lt;/groupId&gt;
+            &lt;artifactId&gt;maven-surefire-plugin&lt;/artifactId&gt;
+            &lt;version&gt;3.1.2&lt;/version&gt;
+            &lt;configuration&gt;
+                &lt;argLine&gt;${surefireArgLine}&lt;/argLine&gt;
+            &lt;/configuration&gt;
+        &lt;/plugin&gt;
+    &lt;/plugins&gt;
+&lt;/build&gt;
+</pre>
+<br/>
+如果 surefire 插件没有额外参数的话就保持用默认的 argLine 就行, 而要是对 surefire 配置了 &lt;argLine&gt;，只需在 ${argLine} 基础之上附加别的内容， 例如在升级 JDK 到版本 17 后可能需要修改 surefire 插件的 &lt;argLine&gt; 属性<br/><br/>
+<pre class="lang:default decode:true">&lt;plugin&gt;
+    &lt;artifactId&gt;maven-surefire-plugin&lt;/artifactId&gt;
+    &lt;version&gt;3.1.2&lt;/version&gt;
+    &lt;dependencies&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.apache.maven.surefire&lt;/groupId&gt;
+            &lt;artifactId&gt;surefire-junit4&lt;/artifactId&gt;
+            &lt;version&gt;${surefire.plugin.version}&lt;/version&gt;
+        &lt;/dependency&gt;
+    &lt;/dependencies&gt;
+    &lt;configuration&gt;
+        &lt;argLine&gt;
+            ${argLine}
+            --add-opens java.base/java.lang=ALL-UNNAMED
+            --add-opens java.base/java.time=ALL-UNNAMED
+            --add-opens java.base/java.time.format=ALL-UNNAMED
+            --add-opens java.base/java.util=ALL-UNNAMED
+        &lt;/argLine&gt;
+    &lt;/configuration&gt;
+&lt;/plugin&gt;
+</pre>
+<br/>
+或许这时候在 jacoco 插件中声明一个 propertyName: surefireArgLine(或声明一个 Maven 全局属性 jacoco.propertyName=surefireArgLine ), 接着在 surefire 中使用 ${surefireArgLine} 作为 &lt;argLine&gt;  一部分会友好些。<br/><br/>
+对于多模块的 Maven 项目，jacoco 和 surefire 插件可配置在最顶层的 parent 模块(pom type), 运行 <code>mvn test</code> 后，<code>jacoco.exec</code> 会生成在每一个叶子模块的 target 目录中。使用 <code>mvn jacoco:report-aggregate</code>  能够把每一个叶子模块的覆盖率报告汇集生成了主模块的 target/site/jacoco-aggregate 目录中。<br/><br/>
+<h3> JaCoCo 与 SonarQube 的集成</h3><br/><br/>
+SonarQube 是围绕着代码质量的综合性分析，报告工具，它可详细的展示单元测试和代码覆盖率报告，以及对代码进行静态分析，支持许多的编程语言。关于 SonarQube 与 Java 项目的集成 请可参考它的官方文档 <a href="https://docs.sonarsource.com/sonarqube/9.8/analyzing-source-code/test-coverage/java-test-coverage/">SonarQube - Java test coverage</a> 及 <a href="https://docs.sonarsource.com/sonarqube/9.8/analyzing-source-code/scanners/sonarscanner-for-maven/">SonarScanner for Maven</a><br/><br/>
+首先我们用 Docker 启动一个  SonarQube  容器，选择当前的 LTS 社区版镜像  sonarqube:9-community<br/><br/>
+<blockquote>
+docker run -it -p 9000:9000 sonarqube:9-community
+</blockquote>
+<br/>
+SonarQube 容器启动可能要花一分钟，启动后浏览器中打开 http://localhost:9000/ 访问，初始用户名和密码是 admin/admin，登陆后要求修改密码，我们改为 password(和没改一样)。<br/><br/>
+在等待 SonarQube 完全就绪前先了解一下 Maven 项目, JaCoCo 集成 SonarQube 时需经历的以下几个步骤<br/><br/>
+<ol>
+    <li>mvn jacoco:prepare-agent: 为 surefire 插件准备好  JaCoCo agent 参数</li>
+    <li>mvn test: surefire 插件应用 JaCoCo agent 运行单元测试，生成  target/jacoco.exec</li>
+    <li>mvn jacoco:report, 在 target 下生成  site/jacoco/jacoco.xml 文件</li>
+    <li>mvn sonar:sonar 把单元测试的结果，覆盖率数据及源代码送到 SonarQube 并产生报告。它实际上调用的是插件 org.sonarsource.scanner.maven:sonar-maven-plugin 的 goal sonar</li>
+</ol>
+<br/>
+如果在 pom.xml 中没有配置 jacoco 插件的 &lt;executions&gt; 的话，可以执行下面一系列的 Maven task 来生成 Sonar 报告<br/><br/>
+<blockquote>
+mvn clean jacoco:prepare-agent test jacoco:report sonar:sonar -Dsonar.login=admin -Dsonar.password=password -Dsonar.host.url=http://localhost:9000
+</blockquote>
+<br/>
+注：<br/><br/>
+<ol>
+    <li>如果 sonar.host.url 是 http://localhost:9000, 可省略该属性</li>
+    <li>Sonar 配置了 user token 的话, -Dsonar.login=admin -Dsonar.password=password 可被替换为 -Dsonar.login=&lt;user-token&gt;</li>
+    <li>因此，mvn 命令可相应的变为<br/><br/>
+<blockquote>mvn clean jacoco:prepare-agent test jacoco:report sonar:sonar -Dsonar.login=sqp_528352b3f2eeb0189b0e853ddb0f6d9a005237df</blockquote>
+</li>
+</ol>
+<br/>
+SonarQube 分析完后，我们就可以看到<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2023/11/jacoco-sonar-1.png"><img class="wp-image-13296 aligncenter" src="https://yanbin.blog/wp-content/uploads/2023/11/jacoco-sonar-1-800x381.png" alt="" width="850" height="405" /></a><br/><br/>
+&nbsp;<br/><br/>
+如果我们在 pom.xml 中对 jacoco 插件进行一些配置<br/><br/>
+<pre class="lang:default decode:true">&lt;plugin&gt;
+     &lt;groupId&gt;org.jacoco&lt;/groupId&gt;
+     &lt;artifactId&gt;jacoco-maven-plugin&lt;/artifactId&gt;
+     &lt;version&gt;0.8.11&lt;/version&gt;
+     &lt;executions&gt;
+         &lt;execution&gt;
+             &lt;id&gt;prepare-agent&lt;/id&gt;
+             &lt;goals&gt;
+                 &lt;goal&gt;prepare-agent&lt;/goal&gt;
+             &lt;/goals&gt;
+         &lt;/execution&gt;
+         &lt;execution&gt;
+             &lt;id&gt;report&lt;/id&gt;
+             &lt;goals&gt;
+                 &lt;goal&gt;report&lt;/goal&gt;
+             &lt;/goals&gt;
+             &lt;configuration&gt;
+                 &lt;formats&gt;
+                     &lt;format&gt;XML&lt;/format&gt;
+                 &lt;/formats&gt;
+             &lt;/configuration&gt;
+         &lt;/execution&gt;
+     &lt;/executions&gt;
+ &lt;/plugin&gt;
+</pre>
+<br/>
+现在要把代码覆盖率送到 SonarQube 的 Maven 命令<br/><br/>
+<blockquote>
+mvn clean verify sonar:sonar -Dsonar.login=sqp_528352b3f2eeb0189b0e853ddb0f6d9a005237df
+</blockquote>
+<br/>
+如果是多模块的 Maven 项目，须先执行 mvn install，如<br/><br/>
+<blockquote>
+mvn clean install sonar:sonar -Dsonar.login=sqp_528352b3f2eeb0189b0e853ddb0f6d9a005237df
+</blockquote>
+<br/>
+<code>install</code> 会触发 <code>verify</code><br/><br/>
+大体上整个 JUnit, JaCoCo 到 SonarQube 的整个过程就是这样子，剩下的就是怎么定制 jacoco 插件，比如定制 argLine 的名称，jacoco.exec 的路径，或在 pom.xml 配置名为 coverage 的 profile 才执行 JaCoCo, Sonar 任务，或在  settings.xml 中配置  sonar.host.url 和  sonar.login 属性，或用 jacoco:prepare-agent-integration, jacoco:report-integration, 搭配插件 maven-failsafe-plugin 为集成测试产生代码覆盖率报告<br/><br/>
+<h3>Maven, JaCoCo, SonarQube 问题诊断</h3><br/><br/>
+如果在 SonarQube 上显示的代码覆盖率为 0%，可进行如下排查<br/><br/>
+<ol>
+    <li>在 target 目录中是否生成了  jacoco.exec 和 site/jacoco/jacoco.xml 文件</li>
+    <li>mvn 执行过程中是否执行了 jacoco:prepare-agent, jacoco:report 任务 -- 检查 mvn 控制台</li>
+    <li>mvn -X 开启详尽的执行过程信息，从中能看到实际的 jacoco:prepare-agent, jacoco:report 具体的配置</li>
+    <li>如果 sonar:sonar 执行过程中出现 OutOfMemoryError, 请为 Maven 配置更多的堆内存，而不是默认物理内存的 1/4。配置环境变量 MAVEN_OPTS="-Xmx512M"</li>
+</ol>
+<br/>
+参考：<br/><br/>
+<ol>
+    <li><a href="https://juejin.cn/post/6844903999473188877">使用 JaCoCo Maven插件创建代码覆盖率报告</a></li>
+    <li><a href="https://www.baeldung.com/jacoco">Intro to JaCoCo</a></li>
+</ol>

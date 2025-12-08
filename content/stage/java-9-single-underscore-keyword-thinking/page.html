@@ -1,0 +1,88 @@
+---
+title: 对 Java 9 把单个下划线作为关键字的猜想
+url: /java-9-single-underscore-keyword-thinking/
+date: 2018-05-27T12:27:59-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/java9-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Java 9
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8810 
+wpStatus: publish
+views: 675
+lastmod: 2018-05-27T12:28:22-05:00
+---
+
+<p>我们知道 Java 的合法命名是以字母或下划线开头的字符串，当然，以前单个下划线 <code>_</code> 也是一个合法的变量命名。但是自 Java 8 的第一个版本开始，单个下划线的变量名编译时会有警告</p>
+
+<blockquote><br/>
+<p>int _ = 99;</p>
+
+</blockquote>
+
+<p>用 Java 8 编译时提示警告：</p>
+
+<blockquote><br/>
+<p>Test.java:2: warning: '_' used as an identifier<br /><br/>
+    int _ = 99; <br /><br/>
+         ^<br /><br/>
+    (use of '_' as an identifier might not be supported in releases after Java SE 8)<br /><br/>
+1 warning</p>
+
+</blockquote>
+
+<p>这正是为 Java 9 作的预谋，以一个 LTS 版的 Java 8 作为过渡。因此，来到了 Java 9 后，单个下划线不再担当普通变量名的角色，变成了一个保留关键字，只说是另有任用。</p>
+
+<p>先来看下 Java 9 中的单个下划线变量名编译时的错误提示</p>
+
+<blockquote><br/>
+<p>Test.java:2: error: as of release 9, '_' is a keyword, and may not be used as an identifier<br /><br/>
+    int _ = 99; <br /><br/>
+         ^<br /><br/>
+1 error</p>
+
+</blockquote>
+
+<p>到底单下划线会作为什么用途呢? 已发布的 Java 10 没有给出答案，正在演进中的 Java 11 也没有相关的信息。<!--more--></p>
+
+<p>于是我对单个下划线的保留功能的猜测，像 Scala 那样可能是要把 <code>_</code> 用作匿名参数(或者叫做参数点位符)</p>
+
+<pre class="lang:default decode:true ">List("a", "b")<br/>
+  .map(_.toUpperCase + "X")<br/>
+  .foreach(println(_))</pre>
+
+<p>上面的 Scala 代码中，<code>_</code> 代表遍历的元素本身，完整写法是</p>
+
+<pre class="lang:default decode:true ">List("a", "b")<br/>
+  .map(e =&gt; e.toUpperCase + "X")<br/>
+  .foreach(e =&gt; println(e))</pre>
+
+<p>Java 也有一个比 Scala 高级的地方，那就是方法引用。类似的用 Java 的方法引用改写上面的代码</p>
+
+<pre class="lang:default decode:true ">List.of("a", "b")<br/>
+    .map(String::toUpperCase)<br/>
+    .foreach(System.out::println)</pre>
+
+<p>Java 的 Lambda 只能做到这样的了，它的方法引用容不得更多的转换操作。对于</p>
+
+<pre class="lang:default decode:true">e -&gt; e.toUpperCase() + "X"<br/>
+//或<br/>
+e -&gt; System.out.println(e.toSupperCase())</pre>
+
+<p>凡是操作前的参数变化或操作后结果需变化的 Lambda  都无法转换成方法引用。</p>
+
+<p>Groovy 也有类似 Scala 的 <code>_</code> 用法，只是它用的变量名是 <code>it</code>, 它不完全是 Groovy 的关键字</p>
+
+<pre class="lang:default decode:true">["a", "b"].forEach {<br/>
+   println(it.toLowerCase())<br/>
+}</pre>
+
+<p>Scala 除了 Lambda 中用作点位符外，还能用在模式匹配中，类似于 switch..case 语句中的 <code>default</code> 部分。</p>

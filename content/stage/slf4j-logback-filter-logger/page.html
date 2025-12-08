@@ -1,0 +1,65 @@
+---
+title: Slf4j + Logback 怎么过滤掉第三方包中的日志显示
+url: /slf4j-logback-filter-logger/
+date: 2010-12-06T06:17:52-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - SLF4J
+  - Logger
+  - Logback
+  - Log
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2922 
+wpStatus: publish
+views: 17628
+lastmod: 2021-09-03T12:02:30-05:00
+---
+
+其实这跟 Slf4J 通用日志框架没什么关系，单单是 Logback 的事，把 Slf4J 扯进来只因它们是对黄金组合。</p>
+<br/>
+我们在 log4j 中想要不显示第三方包的非常冗余的日志输出时，只要在 log4j.properties 中写上：<br/><br/>
+<pre class="brush:text">log4j.logger.org.hibernate=ERROR</pre>
+<br/>
+这样在 hibernate 里的日志级别在 ERROR 以下的 TRACE、DEBUG、WARN 和 INFO 将不被输出，控制台会比较的干净。<br/><br/>
+Logback 的配置文件是 logback.xml，曾经在里面给 &lt;appender&gt; 加的 &lt;pattern&gt; 是：<!--more--><br/><br/>
+<pre class="lang:default decode:true">&lt;pattern&gt;%-4relative [%thread] %-5level %logger{35} - %msg%n&lt;/pattern&gt;</pre>
+<br/>
+logger 名显示 35 字符，类名优先显示全，类全限名超过总长度则取前面若干包名的首字母连接起来，于是产生了像下面那样的日志输出：<br/><br/>
+7937 [main] DEBUG o.s.b.f.s.DefaultListableBeanFactory - Returning cached instance of singleton<br />
+7781 [main] DEBUG o.h.loader.entity.EntityLoader - Static select for entity<br/><br/>
+这在 Log4J 中是未曾见过的。当时还以为日志名就是 o.s.b.f 这样的东西，于是在 logback.xml 中用<br/><br/>
+<pre class="lang:default decode:true">&lt;logger name="o.s.b" level="WARN"/&gt;
+&lt;logger name="o.h" level="WARN"/&gt;</pre>
+<br/>
+这样的代码来进行封锁，根本就无济于事，大量的 spring、hibernate 的 DEBUG、INFO 等日志照样输出。这时惦记起 Logback 的 filter 功能来了，配置上：<br/><br/>
+<pre class="lang:default decode:true">&lt;filter&gt;      
+    &lt;evaluator&gt; &lt;!-- defaults to type ch.qos.logback.classic.boolex.JaninoEventEvaluator --&gt;
+        &lt;expression&gt;&lt;![CDATA[
+           event.getThreadName().contains("Catalina")
+           || event.getLoggerName().contains("o.s.b.f")
+           || event.getLoggerName().contains("o.h.")
+        ]]&gt;&lt;/expression&gt;
+    &lt;/evaluator&gt;
+    &lt;OnMismatch&gt;NEUTRAL&lt;/OnMismatch&gt;
+    &lt;OnMatch&gt;DENY&lt;/OnMatch&gt;
+&lt;/filter&gt;</pre>
+<br/>
+也是没有效果的。想来 Logback 与 Log4J 相比不会这么差劲的，再怎么也是出自一人之手，想来思路应是一致的，还是该回到 &lt;logger&gt; 的配置上来。<br/><br/>
+还是 Google 威武，找到答案了：<a href="http://stackoverflow.com/questions/2564792/logback-per-logger-configuration-is-not-working" target="_blank" rel="noopener">logback per-logger configuration is not working</a>。原来像 "o.s.b.f" 和 "o.h." 这样的东西只是神马浮云，假象而已，它们实际所代表的 logger 名并未变，分别是:<br/><br/>
+org.springframework.beans.factory.support.DefaultListableBeanFactory<br />
+org.hibernate.loader.entity.EntityLoader<br/><br/>
+所以呢，在 logback.xml 中像 Log4J 一样写上<br/><br/>
+<pre class="lang:default decode:true ">&lt;logger name="org.hibernate" level="WARN"/&gt;
+&lt;logger name="org.springframework" level="WARN"/&gt;</pre>
+<br/>
+就把 Spring 和 Hibernate 的日志输出稍加过滤了，都是 %logger{35} 中的那个 {35} 惹的祸，不过也靠它多了解了一点东西。如果只写成 %logger 话那时候当然可以很快的解决问题的。<br/><br/>
+参考：1. <a href="http://stackoverflow.com/questions/2564792/logback-per-logger-configuration-is-not-working" target="_blank" rel="noopener">logback per-logger configuration is not working</a><br />
+             2. <a href="http://unmi.cc/java-web-slf4j-logback" target="_blank" rel="noopener">在 Java Web 项目中选择使用 Slf4J 通用日志框架</a>(在这篇中用的就是繁琐的 &lt;filter&gt; 配置，现在要稍微解放一下了)

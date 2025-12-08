@@ -1,0 +1,95 @@
+---
+title: 解决 jvisualvm 启动后长时间 Computing description... 的问题
+url: /fix-jvisualvm-stuck-at-computing-description-issue/
+date: 2020-08-18T20:20:02-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - JVM
+tags: 
+  - JVM
+  - jvisualvm
+  - jmc
+  - jconsole
+  - profiling
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10492 
+wpStatus: publish
+views: 1461
+lastmod: 2020-08-18T20:35:47-05:00
+---
+
+Java 虚拟机分析工具用 JDK 自带的 <code>jconsole</code>, <code>jvisualvm</code>, 和  <code>jmc</code>(Java Mission Control) 就已经非常好了，还真极少情况下(甚至没有)非得用商业的 Profiler 工具如 YourKit Java Profiler 或 JProfiler 的情况。用于实时观察 JVM 的内存, CPU, 线程等运行状况，对比 Heap 快照，发现线程死锁的应用情景，我比较喜欢用 <code>jvisualvm</code>(VisualVM)。<br/><br/>
+有很长一段时间，因为在家办公司，只要连接到公司的 VPN 后再执行 <code>jvisualvm</code> 来打开 VisualVM 时，会有很长的时间(可能长达 10 几分钟)卡在窗口右下角状态栏的 <code>Computing description...</code>，要等到它消失后才能开始连接 JVM，这时候我的 Java 应用可能早就退出了。要是本地不连 VPN 的话就正常，启动 VisualVM 是正常的，但调试有些工作项目又必须连接公司的 VPN。<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/08/jvisualvm_computing_description.png"><img class="aligncenter wp-image-10493" src="https://yanbin.blog/wp-content/uploads/2020/08/jvisualvm_computing_description-800x71.png" alt="" width="404" height="36" /></a><br/><br/>
+这种使用 VisualVM 的体验有如恶梦一般，还是有经常要用到 VisualVM 的需求，所以再也不能忍受这种无谓的等待。依然是 Google + StackOverflow 的模式，找到原来罪魁祸首是 <code>/etc/hosts</code> 中的 <code>127.0.0.1</code> 这个条目。<!--more--><br/><br/>
+首先用 <code>hostname</code> 命令找到机器名称，比如是 <code>yanbin-mac</code>, 然后在 <code>/etc/hosts</code> 中要有下面的第三行<br/><br/>
+<pre class="lang:default mark:3 decode:true">127.0.0.1         localhost
+255.255.255.255   broadcasthost
+127.0.0.1         yanbin-mac</pre>
+<br/>
+而我的机器名还常常变化，所以时不时的要瞧瞧 <code>/etc/hosts</code> 中的内容。<br/><br/>
+这时候运气好的话，再次运行 <code>jvisualvm</code> 打开 VisualVM 后应该能立即可用。<br/><br/>
+<h3>给 VisualVM 加上调试日志输出</h3><br/><br/>
+想要知道 jvisualvm 启动时后台在做些什么，可以加一个日志配置文件，然后启动时指定该配置文件，它是一个 JUL 的日志配置。比如我们在当前目录下创建文件 <code>logging.properties</code>, 内容如下：<br/><br/>
+<pre class="lang:default decode:true ">handlers= java.util.logging.ConsoleHandler
+.level= INFO
+java.util.logging.ConsoleHandler.level = INFO
+java.util.logging.ConsoleHandler.formatter = java.util.logging.SimpleFormatter</pre>
+<br/>
+这时我们启动 <code>jvisualvm</code>  的命令就是<br/><br/>
+<blockquote>
+$ jvisualvm -J-Djava.util.logging.config.file=logging.properties
+</blockquote>
+<br/>
+这启该该 jvisualvm 的终端就能看到 <code>VisualVM</code> 的运行时日志输出，比如不正常时看到类似这样的信息<br/><br/>
+<blockquote>
+java.rmi.ConnectException: Connection refused to host: xxx.xx.xx.xx; nested exception is:<br />
+        java.net.ConnectException: Operation timed out (Connection timed out)<br />
+        at sun.rmi.transport.tcp.TCPEndpoint.newSocket(TCPEndpoint.java:619)<br />
+        at sun.rmi.transport.tcp.TCPChannel.createConnection(TCPChannel.java:216)<br />
+        at sun.rmi.transport.tcp.TCPChannel.newConnection(TCPChannel.java:202)<br />
+        at sun.rmi.server.UnicastRef.invoke(UnicastRef.java:129)<br />
+        at java.rmi.server.RemoteObjectInvocationHandler.invokeRemoteMethod(RemoteObjectInvocationHandler.java:227)<br />
+        at java.rmi.server.RemoteObjectInvocationHandler.invoke(RemoteObjectInvocationHandler.java:179)<br />
+        at com.sun.proxy.$Proxy10.newClient(Unknown Source)
+</blockquote>
+<br/>
+信息中的 <code>xxx.xx.xx.xx</code> 就是连接 VPN 后的网段，VPN 上有防火墙设置，<code>Computing descrition...</code> 估计就发生在此处的 <code>Operation timed out</code> 上。<br/><br/>
+<h3>JConsole 可以使用同样的日志配置</h3><br/><br/>
+如果是启动 JConsole, 可使用相同的日志配置文件，但需要加上额外的 <code>-debug</code> 命令，完速启动命令如下：<br/><br/>
+<blockquote>
+$ jconsole -J-Djava.util.logging.config.file=logging.properties -debug
+</blockquote>
+<br/>
+与 VisualVM 稍有不同的是，JConsole 不在启动它的终端显示调试日志，而是打开自己的一个 <code>JConsole: Output</code> 窗口来显示日志。<br/><br/>
+下面另一个 <code>logging.properties</code> 的文件内容参考<br/><br/>
+<pre class="lang:default decode:true">handlers=java.util.logging.ConsoleHandler<br/><br/>
+.level=INFO
+java.util.logging.ConsoleHandler.level=FINEST
+java.util.logging.ConsoleHandler.formatter=java.util.logging.SimpleFormatter
+javax.management.level=FINEST
+javax.management.remote.level=FINEST</pre>
+<br/>
+<h3>其他</h3><br/><br/>
+单独安装的 VisualVM 的配置文件在 /Applications/VisualVM.app/Contents/Resources/visualvm/etc/visualvm.conf. 可尝试用以下两个命令查看是否是有用的信息<br/><br/>
+<blockquote>
+$  lsof -p $(ps auxww | awk '$0 !~ /awk/ &amp;&amp; $0 ~ /java.*visualvm/ {print $2}') | awk -F "/" '/hsperf/ {print $NF}'<br />
+$ jstack -l $(ps auxww | awk '$0 !~ /awk/ &amp;&amp; $0 ~ /java.*visualvm/ {print $2}')
+</blockquote>
+<br/>
+如果是单独安装的 VisualVM 把前两命令的 <code>visualvm</code> 改为 <code>VisualVM.app</code><br/><br/>
+另外，借机记录一个 Mac OS X 平台下 JMC 在 JDK 8u162 开始的一个 bug, 就是运行 <code>jmc</code> 命令后容器一直龟缩在 dock 上显示不出来，用 JDK 8u152 没问题，8u211 问题依然存在，JDK 9 已解决。因为 JMC 的界面是用的 SWT，它与 JDK 版本存在兼容性问题。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://github.com/oracle/visualvm/issues/82">Stuck in "Computing description..." #82</a></li>
+    <li><a href="https://access.redhat.com/solutions/962343">How to enable DEBUG logging for JConsole or JVisualVM</a></li>
+    <li><a href="https://dzone.com/articles/profiling-with-jvisualvm">Profiling With JVisualVM</a></li>
+    <li><a href="https://stackoverflow.com/questions/48400346/java-mission-control-from-jdk-1-8-0-161-frozen-upon-startup-on-mac-os-x">Java Mission Control from JDK 1.8.0_161 frozen upon startup on Mac OS X</a></li>
+</ol>

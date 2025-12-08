@@ -1,0 +1,102 @@
+---
+title: 初始化 Gradle 工程目录
+url: /initialize-gradle-project-layout/
+date: 2014-04-21T23:37:55-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2014/04/gradle_logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Gradle
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6376 
+wpStatus: publish
+views: 4641
+lastmod: 2021-09-03T18:20:49-05:00
+---
+
+最近重新在 Eclipse 中打开旧的 Maven 项目，总有些什么错误，备受折磨。期间试手了 Ant+Ivy, 现今试用了下 Gradle，感觉不错，它应该才是我真想要的，Maven 差不多该扔到一边去了。</p>
+<br/>
+Gradle 像 sbt 构建工具一样，也不会帮我们生成默认的目录布局，这些要自己来做。这不是什么麻烦事，因为只需做一次，可预先写好初始化脚本，幸好本人已习惯 shell 操作。<br/><br/>
+假设我们有这样的 <code>build.gradle</code> 文件<br/><br/>
+<blockquote>
+apply plugin: 'java'<br />
+apply plugin: 'war'    //有这行时我们需要创建 src/main/webapp 目录<br />
+apply plugin: 'eclipse'
+</blockquote>
+<br/>
+我们执行 <code>gradle eclipse</code> 后是不会生成<code>src</code> 目录的，工程下的源文件目录是需要自己来生成的。Gradle 参考 Maven 的标准目录布局，即<br/><br/>
+<pre class="brush:text">src
+ ├── main
+ │   ├── java
+ │   ├── resources
+ │   └── webapp
+ └── test
+     ├── java
+     └── resources</pre>
+<br/>
+我们有两种办法初始化目录布局<!--more--><br/><br/>
+<span style="color: #0000ff;"><strong>1. 纯手工打造</strong></span>，在工程目录中执行<br/><br/>
+<blockquote>
+mkdir -p src/main/{java,resources}<br />
+mkdir -p src/test/{java,resources}
+#如果是 web 项目还要生成 webapp 目录<br />
+mkdir -p src/main/webapp
+</blockquote>
+<br/>
+可以把它们合成一条命令，比如<br/><br/>
+<blockquote>
+mkdir -p src/main/{java,resources} src/test/{java,resources}<br />
+#或者 mkdir -p src/{main,test}/{java,resources}
+</blockquote>
+<br/>
+或者<br/><br/>
+<blockquote>
+mkdir -p src/main/{java,resources,webapp} src/test/{java,resource}<br />
+#或者  mkdir -p src{main,test}/{java,resources} src/webapp
+</blockquote>
+<br/>
+然后再执行 gradle eclipse 命令即可。<br/><br/>
+<span style="color: #0000ff;"><strong>2. 用 Gradle 任务来初始化工程目录</strong></span><br/><br/>
+普通 Java 项目，这样的 build.gradle<br/><br/>
+<pre class="lang:default decode:true">apply plugin: 'java'
+apply plugin: 'eclipse'<br/><br/>
+task createJavaProject &lt;&lt; {
+    sourceSets*.java.srcDirs*.each { it.mkdirs() }
+    sourceSets*.resources.srcDirs*.each { it.mkdirs()}
+}</pre>
+<br/>
+第一次建立目录时需执行<br/><br/>
+<blockquote>
+gradle createJavaProject<br />
+gradle eclipse
+#或者合成一条指令<br />
+gradle createJavaProject eclipse
+</blockquote>
+<br/>
+Java Web 项目，这个 build.gradle<br/><br/>
+<pre class="lang:default decode:true ">apply plugin: 'java'
+apply plugin: 'eclipse'
+apply plugin: 'war'<br/><br/>
+task createJavaProject &lt;&lt; {
+    sourceSets*.java.srcDirs*.each { it.mkdirs() }
+    sourceSets*.resources.srcDirs*.each { it.mkdirs()}
+}<br/><br/>
+task createWebProject(dependsOn: 'createJavaProject') &lt;&lt; {
+    def webAppDir = file("$webAppDirName")
+    webAppDir.mkdirs()
+}</pre>
+<br/>
+执行下面命令<br/><br/>
+<blockquote>
+gradle createWebProject eclipse
+</blockquote>
+<br/>
+上面可以建立我们需要的目录布局。<br/><br/>
+综合以上，个人觉得对于那样的一锤子的买卖，用 Shell 命令初始化一次目录就行了，真没必要写在 build.gradle 文件里去招人眼目。而且是不是在创建好了基本的目录之后立即把 createJavaProject 和  createWebProject 这两任务删去了呢，应该的。

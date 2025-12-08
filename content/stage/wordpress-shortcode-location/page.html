@@ -1,0 +1,63 @@
+---
+title: 关于 WordPress Shortcode 以及在 the_content 之外使用
+url: /wordpress-shortcode-location/
+date: 2010-04-26T13:54:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - WordPress
+tags: 
+  - wordpress
+  - php
+  - shortcode
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 187 
+wpStatus: publish
+views: 674
+lastmod: 2021-09-02T10:52:43-05:00
+---
+
+Wordpress 中可以用 Shortcode 来创建宏代码，并且是高度可定制的，例如，有 PHP 代码：</p>
+<br/>
+<pre class="lang:default decode:true">// [bartag foo="foo-value"]
+function bartag_func($atts) {
+    extract(shortcode_atts(array(
+        'foo' =&gt; 'no foo',
+        'bar' =&gt; 'default bar',
+    ), $atts));<br/><br/>
+    return "foo = {$foo}";
+}
+add_shortcode('bartag', 'bartag_func');</pre>
+<br/>
+那么只要在你的 post 中输入，[bartag foo="foo-value"]，显示该文章的时候此处就被 bartag_func() 函数替换为：foo = foo-value。来个更实用的，比如欲定义一个[unmi_blog] 的标签，定义代码写成如下：<br/><br/>
+<pre class="lang:default decode:true ">// [unmi_blog]
+function unmi_blog_func($atts) {
+    return "&lt;a href='http://unmi.cc'&gt;隔叶黄莺 The Blog of Unmi&lt;/a&gt;";
+}
+add_shortcode('unmi_blog', 'unmi_blog_func');</pre>
+<br/>
+那么在文章中的 [unmi_blog] 的会显示为：<a href="http://unmi.cc">隔叶黄莺 Unmi Blog</a>。<br/><br/>
+还能用 Shortcode 打照更强大的自定义标签，如 [YouTube id='1234'] 就显示 id=1234 的视频等等，只是 Shortcode 似乎又太局限了。在文中 <a href="http://codex.wordpress.org/Shortcode_API">http://codex.wordpress.org/Shortcode_API</a> 详细介绍了 Shortcode 的用法，并且说在 the_content 显示的时候，Shortcode API 就会去解析已注册的 Shortcode，这就让 Shortcode 不能轻易的用在别处，不是在 post 里写 [unmi_blog] 将会原样显示出 [unmi_blog] 来，其实也就是在 Wordpress 系统里有:<br/><br/>
+add_filter('the_content', 'do_shortcode'); <br/><br/>
+但是人是活的，那些代码原本就是人编写的，我们可以假以巧妙的 Hack 让 Shortcode 应用在别处。<br/><br/>
+1. Customer Field 中应用 Shortcode <a href="http://nspeaks.com/978/insert-shortcodes-into-your-custom-fields/" target="_blank" rel="noopener">Parse Shortcodes in your Custom Fields</a><br />
+2. Sidebar 里的 Text Widget 中 <a href="http://englishmike.net/2008/07/07/wordpress-quick-tips-3adding-a-shortcode-to-a-sidebar-widget/" target="_blank" rel="noopener">Adding a Shortcode to a Sidebar Widget</a><br />
+3. 任意地方 $text = yourShortCodeFunction("[your shortcode tag here]");echo $text; 外大括号，里小括号<br/><br/>
+ /*&lt;?php wp_show_surveys(1);?&gt;*/<br />
+ function wp_show_survey($survey_id=''){<br />
+  $short_code = '[SURVEYS '.$survey_id . ']';<br />
+  $output = apply_filters('show_survey', $short_code);<br />
+  echo $output;<br />
+ }<br/><br/>
+add_filter('show_survey','do_shortcode');<br/><br/>
+function custom_show_survey($content=''){<br />
+ //echo "&lt;script&gt;alert(123)&lt;/script&gt;";<br />
+ return $content;<br />
+}<br/><br/>
+//add_filter('show_survey','custom_show_survey');<br/><br/>
+参考: 1. <a href="http://codex.wordpress.org/Shortcode_API" target="_blank" rel="noopener">Shortcode API</a>

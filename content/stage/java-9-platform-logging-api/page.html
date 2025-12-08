@@ -1,0 +1,146 @@
+---
+title: Java 9 - 平台日志 API
+url: /java-9-platform-logging-api/
+date: 2018-05-26T12:19:54-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/java9-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Java 9
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8794 
+wpStatus: publish
+views: 1382
+lastmod: 2021-09-10T12:31:52-05:00
+---
+
+关于 Java 9 的新特性从某本书的最后一个说起：平台日志 API。个人没感觉这个有什么实质的用途，所谓的平台日志是指 JDK 自身代码，或者是 JVM 组件中的日志输出，而在自己应用程序代码中却不会去用这个平台日志 API。这个所谓的 Platform Logging API 名称的意义也就是在这里，平台用的，在诊断时用来观察 JDK 类或 JVM 中的日志输出，比如应该可以截获到  JVM 本地代码实现中的日志输出。对我们在项目中如何处理日志并不会有什么影响，该怎么还是怎么，不过了解多一点东西应该不会浪费脑容量的。<br/><br/>
+新加的平台日志体现在 <code>java.lang.System</code> 中新加的几个方法和类<br/><br/>
+<a href="/wp-content/uploads/2018/05/java9-platform-logging-1.png"><img class="aligncenter size-full wp-image-8800" src="/wp-content/uploads/2018/05/java9-platform-logging-1.png" alt="" width="558" height="96" /></a><br/><br/>
+我们可以尝试着在代码使用一下它<br/><br/>
+<pre class="lang:default decode:true">System.Logger logger = System.getLogger(TestLogging.class.getName());
+logger.log(System.Logger.Level.INFO, "Hello Java 9 Platform Logging API");</pre>
+<br/>
+输出如下<br/><br/>
+<blockquote>
+May 26, 2018 10:56:51 AM cc.unmi.TestLogging main<br />
+INFO: Hello Java 9 Platform Logging API
+</blockquote>
+<br/>
+<!--more-->新 API 有 <br/><br/>
+<blockquote>
+java.lang.System.Logger 接口<br />
+java.lang.System.LoggerFinder 用来查找上面 Logger 的实现类<br />
+java.lang.System.getLogger(...) 方法，它们会通过 LoggerFinder 找到相应的 Logger 实现
+</blockquote>
+<br/>
+默认的，System.getLogger(...) 会使用 JDK 的 <code>java.util.logging</code> (如果该模块存在时，即 JUL，它默认只输入 INFO 及更高级别的日志) 作为它的日志实现，所以前面的日志输出其实就是 JUL 的输出。见包 <code>sun.util.logging.internal</code> 中的<br/><br/>
+<pre class="lang:default decode:true">public final class LoggingProviderImpl extends DefaultLoggerFinder {
+    ........
+    static final class JULWrapper extends LoggerConfiguration
+            implements System.Logger, PlatformLogger.Bridge,
+                                      PlatformLogger.ConfigurableBridge {
+        ........
+    }
+}</pre>
+<br/>
+System.LoggerFinder 和  System.Logger 默认就是这两个实现类。<br/><br/>
+如果 JUL 模块不存在，<code>System.Logger</code> 将把 INFO 及更高级别的日志输出到 <code>System.err</code> 标准错误输出。<br/><br/>
+由此我们看到 <code>System.Logger</code> 也就是作为 JUL 的一个门面，老实说它提供的日志输出方法还不如 JUL 的 <code>java.util.logging.Logger</code> 友好。<code>System.Logger</code> 的每个日志方法都要带上日志级别<br/><br/>
+<a href="/wp-content/uploads/2018/05/java9-platform-logging-2.png"><img class="aligncenter size-full wp-image-8801" src="/wp-content/uploads/2018/05/java9-platform-logging-2.png" alt="" width="629" height="212" /></a><br/><br/>
+<code>JUL</code> 的 Logger 除了提供带日志级别为参数的通用 <code>log(Level, ...)</code> 方法外，还为每一个日志级别提供了像下面那些便利方法(以 warning 为例)<br/><br/>
+<blockquote>
+warning(String msg)<br />
+warning(Supplier&lt;String&gt; msgSuppiler)
+</blockquote>
+<br/>
+既然 <code>System.Logger</code> 是一个门面，那么它通过自定的 <code>System.Logger</code> 和 <code>System.LoggerFinder</code> 也能让它的日志桥接到其他日志框架上去，如 Apache Commong Logging(JCL - Jakarta Commons Logging), SLF4J, 或具体的日志实现 Log4j 或 Logback 去。<br/><br/>
+Java 9 新加这么一个日志框架门面显得有些累赘了，<code>JUL</code> 我们就不会去用它，有了更好的 SLF4J 更不会去用 <code>System.Logger</code>。不过它也说了 JDK 自己的代码会用 <code>System.Logger</code>, 那么我们有可能要做的就是如何把 JDK 中的 <code>System.Logger</code> 日志输出导向到我们熟悉的日志框架中来。<br/><br/>
+日志框架越发复杂了，应该说来，目前更广为人知的用法还是 SLF4J + Log4J 或 SLF4J + Logback, 我更推崇后者。至于 JCL + Log4J 的用法越发稀少，而 Logback 比之 JCL 是个新鲜事物，它基本就是为 SLF4J 设计的。当前业界为了各个组件中使用的不同日志框架而统一日志输出目标，产生了诸如以下适配器<br/><br/>
+<blockquote>
+ jcl-over-slf4j, slf4j-jcl, log4j-over-slf4j, slf4j-log4j12, jul-to-slf4j
+</blockquote>
+<br/>
+倒是没有找到 slf4j-over-jcl 这样的东西，因此 SLF4J 作为日志框架的门面还是当前趋势。简单项目中直接用 Log4J 或 Logback 也是可以的，Logback  自身就依赖了 SLF4J。 <br/><br/>
+因为 JDK/JVM 用 <code>System.Logger</code> 来输出日志,它默认使用 JUL(当该模块存在时) 实现，所以我们只要用 <code>jul-to-slf4j bridge</code> 就能按需把 JDK/JVM 的日志输出到我们想要的地方去。<br/><br/>
+附：前面说了 JUL 默认只显示 INFO 或更高级别的日志，也就是 CONFIG, FINE, FINER, FINEST 的日志不会显示，那么要降低日志输出级别该怎么做呢？下面代码将开启所有日志输出<br/><br/>
+<pre class="lang:default decode:true ">Logger rootLogger = LogManager.getLogManager().getLogger("");
+rootLogger.setLevel(Level.ALL);
+for (Handler hander : rootLogger.getHandlers()) {
+    hander.setLevel(Level.ALL);
+}</pre>
+<br/>
+JUL 的日志级别还与 <code>System.Logger</code>  的日志级别还有差异(它们原本就不是一家人)<br/><br/>
+JUL 的日志级别：OFF, SEVERE, WARNING, INFO, CONFIG, FINE, FINER, FINEST, ALL<br/><br/>
+System.Logger 的日志级别分别是：OFF, ERROR, WARNING, INFO, DEBUG, TRACE, ALL   ---- 这个更符合主流意识形态<br/><br/>
+当 <code>System.Logger</code> 默认采用 JUL 来输出日志时，它们的日志级别映射关系可查看 <code>sun.util.logging.PlatformLogger</code><br/><br/>
+<pre class="lang:default decode:true">  ALL(System.Logger.Level.ALL),
+  FINEST(System.Logger.Level.TRACE),
+  FINER(System.Logger.Level.TRACE),
+  FINE(System.Logger.Level.DEBUG),
+  CONFIG(System.Logger.Level.DEBUG),
+  INFO(System.Logger.Level.INFO),
+  WARNING(System.Logger.Level.WARNING),
+  SEVERE(System.Logger.Level.ERROR),
+  OFF(System.Logger.Level.OFF);</pre>
+<br/>
+Java 9 的 <code>Platform Logging API</code> 基本上就说这么多了，只是让大家了解一下 Java 9 中有这么一个东西，它能做什么 事。并没有像某书中那样纠缠于如何自定义 <code>System.Logger</code> 和 <code>System.LoggerFinder</code> ，以及应用 <code>SPI</code> 来把平台日志输出到 <code>Log4J</code> 去，因为那么做的现实意义不大，我们项目中只需要专注于 <code>SLF4J + Logback</code> 的应用。<br/><br/>
+<h3>一个 Java 平台类使用 System.Logger 的例子</h3><br/><br/>
+<code>java.util.Currency</code> 类中就使用到了 <code>System.Logger</code>, <br/><br/>
+<pre class="lang:default decode:true ">    private static void info(String message, Throwable t) {
+        PlatformLogger logger = PlatformLogger.getLogger("java.util.Currency");
+        if (logger.isLoggable(PlatformLogger.Level.INFO)) {
+            if (t != null) {
+                logger.info(message, t);
+            } else {
+                logger.info(message);
+            }
+        }
+    }</pre>
+<br/>
+当该类在初始化时如果不能解析文件 <code>JAVA_HOME/lib/currency.properties</code> 文件时就报错<br/><br/>
+<pre class="lang:default decode:true">static {
+    ......
+    // look for the properties file for overrides
+    String propsFile = System.getProperty("java.util.currency.data");
+    if (propsFile == null) {
+        propsFile = System.getProperty("java.home") + File.separator + "lib" +
+            File.separator + "currency.properties";
+    }
+    try {
+        File propFile = new File(propsFile);
+        if (propFile.exists()) {
+            ......//parse currency.properties file
+        }
+    } catch (IOException e) {
+        info("currency.properties is ignored because of an IOException", e);
+    }
+    ......
+}</pre>
+<br/>
+所以假如我们创建文件 <code>JAVA_HOME/lib/currency.properties</code>, 并在其中放入不合法的内容，如<br/><br/>
+<blockquote>
+ABadCurrencyFile
+</blockquote>
+<br/>
+然后执行代码<br/><br/>
+<pre class="lang:default decode:true ">Currency.getInstance("USD");</pre>
+<br/>
+这会去触发 <code>Currency</code> 的 static 块，文件无法解析，控制台可以看到输出<br/><br/>
+<blockquote>
+May 26, 2018 1:19:15 PM java.util.Currency info<br />
+INFO: currency.properties entry for ABADCURENCYFILE is ignored because of the invalid country code.
+</blockquote>
+<br/>
+这就是平台日志的用法，还有新增的虚拟机参数 <code>-Xlog</code> 也是在控制平台的日志输出。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://www.logicbig.com/tutorials/core-java-tutorial/java-9-changes/platform-logging.html">Java 9 - Platform Logging API and Service</a></li>
+</ol>

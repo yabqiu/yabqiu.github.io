@@ -1,0 +1,184 @@
+---
+title: Unmi 学习 Groovy 之 Groovy 和 Swing
+url: /unmi-groovy-swing/
+date: 2008-11-25T09:38:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Groovy
+tags: 
+  - Groovy
+  - Swing
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 311 
+wpStatus: publish
+views: 820
+lastmod: 2021-09-03T20:59:59-05:00
+---
+
+选择一种动态脚本语言，不仅仅是用它来执行一些控制台或是后台任务，还希望能快速建立 GUI 程序，开发自己的小巧实用的工具。而 Groovy 借助于 GroovyMarkup，并巧妙的结合了 Java 2 与生俱来的 Swing 来创建用户图形界面。当界面程序执行过程中，可直接修改脚本代码来调整显示和功能，无须再编译，比之 Java Swing 程序来的便捷。</p>
+<br/>
+其实这还应该是 GroovyMarkup 的内容，本篇也可以叫之 《Unmi 学习 Groovy 之 GroovyMarkup (三)》<br/><br/>
+Groovy 提供了 SwingBuilder 标记类，它使得创建 Swing 用户界面比 Java 更快，代码更省。当然程序的执行性能在小程序方面已无所谓轻重了。还是以实际例子为见：<!--more--><br/><br/>
+<table border="0" width="75%" align="center">
+<tbody>
+<tr>
+<td valign="top">
+<pre class="brush:groovy">import groovy.swing.SwingBuilder;
+import javax.swing.*;
+import java.awt.*;<br/><br/>
+builder = new SwingBuilder();<br/><br/>
+frame = builder.frame(title:'Update balance',size:[200,100]){
+    panel(layout:new FlowLayout()){
+        label(text:'dejan');
+        textField(text:'500',preferredSize:[100,20],
+                horizontalAlignment:SwingConstants.CENTER);
+        button(text:'Update',actionPerformed:{update()});
+    }
+}<br/><br/>
+def update(){
+    pane = builder.optionPane(message:'User data has been updated');
+    dialog = pane.createDialog(frame,'Success');
+    dialog.show();
+}<br/><br/>
+frame.show();</pre>
+</td>
+<td valign="top"><strong>执行该程序的界面如下：</strong><img src="http://unmi.cc/wp-content/uploads/2008/11/GroovySwing4.JPG" alt="GroovySwing4.JPG" width="281" height="251" border="0" /></td>
+</tr>
+</tbody>
+</table>
+<br/>
+上面程序看到 builder.frame 和 builder.optionPane、panel、label 等等就是注册在 SwingBuilder 上的一些 Widget，可以 SwingBuilder 的源码上看到，下面是 SwingBuilder 的代码片断：<br/><br/>
+<pre class="lang:default decode:true ">public SwingBuilder() {
+    registerWidgets()
+    headless = GraphicsEnvironment.isHeadless()
+}<br/><br/>
+protected void registerWidgets() {
+    ..............
+    //
+    // standalone window classes
+    //
+.....................................
+    registerBeanFactory("fileChooser", JFileChooser)
+    registerFactory("frame", new FrameFactory())
+    registerBeanFactory("optionPane", JOptionPane)
+    ........................<br/><br/>
+    //
+    // widgets
+    //
+    registerFactory("button", new RichActionWidgetFactory(JButton))
+    ..........................
+    registerFactory("label", new TextArgWidgetFactory(JLabel))
+    ..................................
+    registerFactory("textField", new TextArgWidgetFactory(JTextField))
+    ..............................
+    registerBeanFactory("colorChooser", JColorChooser)
+    ..........................
+    registerBeanFactory("panel", JPanel)
+    ...........
+    registerFactory("table", new TableFactory())<br/><br/>
+    //
+    // Layouts
+    //
+    .....................
+    registerFactory("flowLayout", new LayoutFactory(FlowLayout))
+    ........................
+    registerFactory("springLayout", new LayoutFactory(SpringLayout))
+    ........................
+}</pre>
+<br/>
+毫无疑问，前面的窗口程序改为用标准的 Java 代码来实现会多很多行的代码(会是两倍)。SwingBuilder 类有着映射到标准 Swing 组件的方法，frame() 方法创建了 javax.swing.JFrame，panel() 方法是 javax.swing.JPanel 等等。请联系着 Java 写的 Swing 程序来理解这些方法的 Map 参数和闭包的意义，写过 Swing 程序的朋友看懂它们不会有任何问题。<br/><br/>
+除了标准的 Swing 组件外，还可以在 groovy.swing.impl 包中找到 TableLayout 组件，我们可以利用它像在网页中画表格那样画 Swing 的表格。<br/><br/>
+<table border="0" width="75%" align="center">
+<tbody>
+<tr>
+<td valign="top">
+<pre class="lang:default decode:true ">import groovy.swing.SwingBuilder;
+import javax.swing.*;
+import java.awt.*;<br/><br/>
+builder = new SwingBuilder();<br/><br/>
+frame = builder.frame(title:'TableLayout Demo',size:[220,100]){
+    tableLayout{ //往下看，和 html 中的表格 &lt;table&gt;&lt;tr&gt;&lt;td&gt;..... 的写法十分相仿
+        tr{  //第一行，可以进一步发掘 tr 可以带什么属性
+            td(align:'center'){ label(text:'Username') }//html 的 align 对齐属性都用上了
+            td(align:'center'){ label(text:'Balance') }
+        }
+        tr{  //第二行
+            td(colfill:true){ textField(text:'Alex') }
+            td(colfill:true){ textField(text:234.15) }
+        }
+        tr{  //第三行
+            td(colfill:true){ textField(text:'Unmi') }
+            td(colfill:true){ textField(text:567.50) }
+        }
+    }
+}<br/><br/>
+frame.show();</pre>
+</td>
+<td valign="top"><strong>执行该程序的界面如下：</strong><img src="http://unmi.cc/wp-content/uploads/2008/11/GroovySwing2.JPG" alt="GroovySwing2.JPG" width="220" height="100" border="0" />
+实际应用中还应深入发掘 tableLayout<br />
+、tr、td、等方法可以接受什么命名参数<br />
+和闭包。对于做过 Web 应用程序开发的<br />
+人员来说，这是一个值得关注的选择。
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+实际我们在 Swing 中应用 JTable 时，会应用 MVC 模式，所以基本要用到  javax.swing.table.TableModel，Groovy 操作 JTable 也不例如。还是看例子：<br/><br/>
+<table border="0" width="75%" align="center">
+<tbody>
+<tr>
+<td valign="top">
+<pre class="lang:default decode:true">import groovy.swing.SwingBuilder;
+import javax.swing.*;
+import java.awt.*;<br/><br/>
+builder = new SwingBuilder();<br/><br/>
+users = [[userid:1,username:'Alex',balance:234.15],
+         [userid:2,username:'Unmi',balance:567.50],
+         [userid:3,username:'Tom',balance:638.75]];<br/><br/>
+updateBalance = {row,value-&gt;
+    //例如，可在此修改数据库中相应记录
+    row.balance = value;
+}<br/><br/>
+frame = builder.frame(title:'TableModel Demo', location:[200,200], size:[220,100]){
+    panel(layout:new BorderLayout()){
+        scrollPane(constraints:BorderLayout.CENTER){
+            table(){
+                tableModel(list:users){
+                    closureColumn(header:'Id',read:{row-&gt;return row.userid});
+                    closureColumn(header:'Username',read:{row-&gt;return row.username});
+                    closureColumn(header:'Balance',read:{row-&gt;return row.balance}
+                        , write:updateBalance);
+                }
+            }
+        }
+    }
+}<br/><br/>
+frame.show();</pre>
+</td>
+<td valign="top"><strong>执行该程序的界面如下：</strong><img src="http://unmi.cc/wp-content/uploads/2008/11/GroovySwing3.JPG" alt="GroovySwing3.JPG" width="220" height="100" border="0" /> <br/><br/>
+表行记录是一个 Map 的 users 列表。表<br />
+模型通过 tableModel 方法在 table() 闭<br />
+包内部定义。模型为每列都定义了<br />
+一个closureColumn() 方法，它接受包含<br />
+下列数据的 map 参数：
+<strong>header</strong> -- 列表题<br />
+<strong>read</strong> -- 填充表的闭包<br />
+<strong>write</strong> -- 结构中更新数据的一个可先闭包。<br />
+如果没有定义 write 参数，列被视为只读<br />
+，反之为可编辑，如适于修改单元格数据<br />
+即更新数据库中记录。
+注意 write 闭包的两个参数：旧数据的<br />
+map 和指定的新值。
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+参考：1. 《Java  脚本编程 语言、框架与模式》 第 5 章，高级的 Groovy 编程

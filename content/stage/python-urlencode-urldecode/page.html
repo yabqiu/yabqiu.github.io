@@ -1,0 +1,98 @@
+---
+title: Python  中的  urlencode 和 urldecode 操作
+url: /python-urlencode-urldecode/
+date: 2019-01-01T20:05:57-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - web
+  - URLencode
+  - urldecode
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9190 
+wpStatus: publish
+views: 4142
+lastmod: 2019-01-01T20:18:26-06:00
+---
+
+<p>Web  编程中由于需要用 Form 或 URL 来传递参数，所以必然会有 urlencode 和 urldecode 的操作，Python Web 也不例外。Python 对 URL 的编解码操作提供了 <code>urllib</code> 模块，下面例子中所使用的 Python 版本是  3.6.7，不同的 Python 版本可能略有差异。</p>
+
+<p>简面言之本文就是关于以下六个函数的使用，更多关于 <code>urllib</code> 的用法请自行进一步研究。</p>
+
+<blockquote><br/>
+<p>from urllib.parse import urlencode, parse_ql, quote, quote_plus, unquote, unquote_plus</p>
+
+</blockquote>
+
+<p>为什么两个 urlencode 和  urldecode 操作会涉及到六个函数的应用呢，分别来讲述</p>
+
+<h3>1. urlencode</h3><br/>
+<p>Python 的  <code>urllib</code> 直接提供了  <code>urlencode</code> 函数，它的操作数是一个字典<!--more--></p>
+
+<pre class="lang:python decode:true">&gt;&gt;&gt; urlencode({'user': "O'Neil", 'message': 'hello world'})<br/>
+'user=O%27Neil&amp;message=hello+world'</pre>
+
+<p>字典中的多个 key-value 值用 <code>&amp;</code> 连接成一个查询字符串。</p>
+
+<p>并且注意到这里的 <code>urlencode</code> 函数，特殊字符编码为 <code>%xx</code> 的形式，并且空格转换为加号 <code>+</code>，而不是编码为 <code>%20</code>, 这有可能造成解码时不一致而把加号 <code>+</code> 作为一个实际的字符来处理。</p>
+
+<p>如果希望空格编译编码为 <code>%20</code>, 而非加号 <code>+</code> 的话，调用  <code>urlencode</code> 函数可以由参数 <code>quote_via</code> 指定为  <code>quote</code>，它的默认值为 <code>quote_plus</code>，即空格替换为加号 <code>+</code>。</p>
+
+<pre class="lang:default decode:true">&gt;&gt;&gt; urlencode({'user': "O'Neil", 'message': 'hello world'}, quote_via=quote)<br/>
+'user=O%27Neil&amp;message=hello%20world'</pre>
+
+<p><code>urlencode</code> 是针对字典的操作，也可以单独对一个字符串值进行编码，基于是否把空格替换为加号 <code>+</code> 的不同行为，分别有  <code>quote</code> 和 <code>quote_plus</code> 操作，分别看下面的例子</p>
+
+<pre class="lang:default decode:true ">&gt;&gt;&gt; quote("O'Neil,Hello World")<br/>
+'O%27Neil%2CHello%20World'<br/>
+&gt;&gt;&gt; quote_plus("O'Neil,Hello World")<br/>
+'O%27Neil%2CHello+World'<br/>
+</pre>
+
+<h3>2. urldecode</h3><br/>
+<p><code>urllib</code> 并没有与 <code>urlencode</code> 函数相对应的 <code>urldecode</code> 函数名，实际上 <code>urlencode</code> 反作用的的函数是 <code>parse_ql</code> ，它把一个查询字符串转换为字典，而且还同时兼容空格的 <code>%20</code> 和 <code>+</code> 的两种表现形式。见下面的例子</p>
+
+<pre class="lang:default decode:true">&gt;&gt;&gt; parse_qs('user=O%27Neil&amp;message=hello%20world')<br/>
+{'user': ["O'Neil"], 'message': ['hello world']}<br/>
+&gt;&gt;&gt; parse_qs('user=O%27Neil&amp;message=hello+world')<br/>
+{'user': ["O'Neil"], 'message': ['hello world']}</pre>
+
+<p>请留意 <code>parse_ql</code> 得到的字典的值是一个列表，因为 HTTP 的查询字符串中相同的 key 可以出现多次，如</p>
+
+<pre class="lang:default decode:true ">&gt;&gt;&gt; parse_qs('user=O%27Neil&amp;message=hello%20world&amp;message=Hello+World')<br/>
+{'user': ["O'Neil"], 'message': ['hello world', 'Hello World']}<br/>
+</pre>
+
+<p>如果确定 querystring 中不会有重复的 key，可以对 <code>parse_ql</code> 得到的字典进一步转换</p>
+
+<pre class="lang:default decode:true ">&gt;&gt;&gt; {key: value[0] for (key, value) in parse_qs('user=O%27Neil&amp;message=hello+world').items()}<br/>
+{'user': "O'Neil", 'message': 'hello world'}<br/>
+</pre>
+
+<p>与 <code>quote</code> 和 <code>quote_plus</code> 相对应的操作有  <code>unquote</code> 和  <code>unquote_plus</code> 应该就好理解了，也是单独对某个字符串的操作，直接看代码就好了</p>
+
+<pre class="lang:default decode:true">&gt;&gt;&gt; unquote("O'lNeil,Hello%20World")<br/>
+"O'lNeil,Hello World"<br/>
+&gt;&gt;&gt; unquote("O'lNeil,Hello+World")<br/>
+"O'lNeil,Hello+World"<br/>
+&gt;&gt;&gt; unquote_plus("O'lNeil,Hello%20World")<br/>
+"O'lNeil,Hello World"<br/>
+&gt;&gt;&gt; unquote_plus("O'lNeil,Hello+World")<br/>
+"O'lNeil,Hello World"<br/>
+&gt;&gt;&gt;<br/>
+<br/>
+&gt;&gt;&gt; unquote_plus('user=O%27Neil&amp;message=hello+world')<br/>
+"user=O'Neil&amp;message=hello world"<br/>
+</pre>
+
+<p><code>unquote</code> 无法把加号 <code>+</code> 还原为空格，而使用 <code>unquote_plus</code> 好像总是更保险。是否有 URL 中的加号不进行编码呢，保持为 <code>+</code>？应该不会，加号 <code>+</code> 也不过是被编码为 <code>%2B</code> 而已。</p>
+
+<p>同时，<code>unquote</code> 或 <code>unquote_plus</code> 对 <code>&amp;</code> 符号是无害的，所以它也能直接对整个查询字符串进行解码。</p>

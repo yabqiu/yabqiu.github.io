@@ -1,0 +1,160 @@
+---
+title: Spring+AspectJ+ 简单方式来拦截方法，监测性能
+url: /spring-aspectj-intercept-method/
+date: 2012-08-15T07:15:48-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Spring
+tags: 
+  - Spring
+  - AspectJ
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4665 
+wpStatus: publish
+views: 2005
+lastmod: 2021-06-17T11:00:48-05:00
+---
+
+还是在很久以前，作过一篇 <a href="http://unmi.cc/aop-spring-aspectj-method-invoke-time" target="_blank" rel="noopener">用 AOP 来记录每个方法的执行时间(Spring 或直接 AspectJ)</a>, 其中例示了三种方法来拦截方法，用以监测方法调用时间它们分别是：</p>
+<br/>
+<strong>1. Spring 2.0 用 AspectJ 实现 AOP</strong><br />
+<strong>2. Spring 通用的方法拦截<br />
+3. 直接用 AspectJ 实现</strong><br/><br/>
+在这里再次使用 &lt;aop:aspect-autoproxy/&gt; 再 @Aspect 注解的方式来写个新的例子。原理与前面基本一致，只是在类里用 @Aspect, @Pointcut, @Before, @After, @Around, @AfterReturning, @AfterThrowing 来写拦截类。<br/><br/>
+局限仍然是必须通过 Spring 的 BeanFactory 获得的实例才能被拦截到，除非是在 Eclipse 里安装 AJDT 或是使用 Maven-AspectJ Plugin 来编译工程。<br/><br/>
+好，我们来看完整的例子，下面列出所有的项目文件，这是一个 Maven 的项目，所以从 pom.xml 开始。<!--more--><br/><br/>
+<strong>1. pom.xml</strong><br/><br/>
+<pre class="lang:default decode:true">&lt;project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"&gt;
+    &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+    &lt;groupId&gt;cc.unmi&lt;/groupId&gt;
+    &lt;artifactId&gt;TestSpring&lt;/artifactId&gt;
+    &lt;version&gt;0.0.1-SNAPSHOT&lt;/version&gt;
+    &lt;name&gt;TestSpring&lt;/name&gt;
+    &lt;dependencies&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.springframework&lt;/groupId&gt;
+            &lt;artifactId&gt;spring-aspects&lt;/artifactId&gt;
+            &lt;version&gt;3.1.2.RELEASE&lt;/version&gt;
+        &lt;/dependency&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;aspectj&lt;/groupId&gt;
+            &lt;artifactId&gt;aspectjrt&lt;/artifactId&gt;
+            &lt;version&gt;1.5.4&lt;/version&gt;
+        &lt;/dependency&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;aspectj&lt;/groupId&gt;
+            &lt;artifactId&gt;aspectjweaver&lt;/artifactId&gt;
+            &lt;version&gt;1.5.4&lt;/version&gt;
+        &lt;/dependency&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;cglib&lt;/groupId&gt;
+            &lt;artifactId&gt;cglib&lt;/artifactId&gt;
+            &lt;version&gt;2.2&lt;/version&gt;
+        &lt;/dependency&gt;
+    &lt;/dependencies&gt;
+&lt;/project&gt;</pre>
+<br/>
+如果这是一个 Eclipse 中的 AJDT 项目，只要 spring-aspects 一个依赖即可。<br/><br/>
+<strong>2. applicatinContext.xml</strong><br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;<br/><br/>
+&lt;beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:aop="http://www.springframework.org/schema/aop"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-2.0.xsd
+         http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-2.0.xsd"&gt;
+    
+    &lt;bean class="cc.unmi.testspringaspectj.MethodExecutionTime"/&gt;
+    &lt;aop:aspectj-autoproxy/&gt;
+    
+    &lt;bean id="stockService" class="cc.unmi.testspringaspectj.StockService"/&gt;
+    &lt;bean id="fundService" class="cc.unmi.testspringaspectj.FundService"/&gt;
+    
+&lt;/beans&gt;</pre>
+<br/>
+spring 从 2.0 起就可支持 aop 标签。&lt;aop:aspectj-autoproxy/&gt; 的作用其实是声明了一个 AnnotationAwareAspectJAutoProxyCreator 自动代理创建器实例，它会根据 MethodExecutionTime 中声明的 @Pointcut 注解中的条件去代理符合条件的实例，这些被代理的实例必须在配置到 spring 中去。<br/><br/>
+<strong>3. MethodExecutionTime.java</strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.testspringaspectj;<br/><br/>
+import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.annotation.Around;
+import org.aspectj.lang.annotation.Aspect;
+import org.aspectj.lang.annotation.Pointcut;
+import org.springframework.util.StopWatch;<br/><br/>
+/**
+ * @author Unmi
+ */<br/><br/>
+@Aspect
+public class MethodExecutionTime {
+       
+    @Pointcut("execution(* *..StockService.getBaseInfo(..))" +
+            " || execution(* *..FundService.getBaseInfo(..))" +
+            ")")
+    public void methodsToBeProfiled(){}
+    
+    @Around("methodsToBeProfiled()")
+    public Object profile(ProceedingJoinPoint pjp) throws Throwable {
+        StopWatch sw = new StopWatch(getClass().getSimpleName());
+        try {
+            sw.start(pjp.getSignature().toShortString());
+            return pjp.proceed();
+        } finally {
+            sw.stop();
+            System.out.println(sw.prettyPrint());
+        }
+    }
+}</pre>
+<br/>
+这个类完全是 AspectJ 的用法范畴了。这个类必须用 @Aspect 标注，@Pointcut 注明拦截条件，支持逻辑操作，例如这里用 || 操作符配置了拦截多个方法。有关 AspectJ 的 Pointcut 语法请参考：<a href="http://www.eclipse.org/aspectj/doc/released/progguide/language.html" target="_blank" rel="noopener">http://www.eclipse.org/aspectj/doc/released/progguide/language.html</a>。<br/><br/>
+如果你的 Eclipse 安装了  AJDT 插件，并且是一个 AspectJ 项目，那么我们现在的这个例子可以完全不需要 spring，即可以不需要 pom.xml 文件，可以不用 applicationContext.xml，也不用在乎你的 StockService/FundService 如何得来的。<br/><br/>
+并且你在 Eclipse 中可以看到如下景象：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter wp-image-4671" title="methodexecutiontime_aspectj" src="http://unmi.cc/wp-content/uploads/2012/08/methodexecutiontime_aspectj.png" alt="" /></p>
+<br/>
+<p style="text-align: center;"><img class="aligncenter wp-image-4674" style="border: 1px solid black;" title="serviceclass_advised" src="http://unmi.cc/wp-content/uploads/2012/08/serviceclass_advised.png" alt="" /></p>
+<br/>
+<strong>4. StockService.java 和 FundService</strong><br/><br/>
+它们都有个 public String getBaseInfo(String ticker) 方法。<br/><br/>
+<strong>5. AspectJTestClient.java</strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.testspringaspectj;<br/><br/>
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.context.support.ClassPathXmlApplicationContext;<br/><br/>
+/**
+ * @author Unmi
+ */
+public class AspectJTestClient {<br/><br/>
+    /**
+     * @param args
+     */
+    public static void main(String[] args) {
+        BeanFactory factory = new ClassPathXmlApplicationContext("applicationContext.xml");
+        
+        StockService stockService = factory.getBean(StockService.class);
+        FundService fundService = factory.getBean(FundService.class);
+        
+        stockService.getBaseInfo("IBM");
+        fundService.getBaseInfo("BBBIX");
+        
+        //cannot be intercepted
+        new StockService().getBaseInfo("MSFT");
+    }
+}</pre>
+<br/>
+这是一个测试类，验证了必须通过 Spring BeanFactory 得到的实例，调用方法时才能被拦截 。执行上面代码的输出如下：<br/><br/>
+<pre class="lang:default decode:true ">StopWatch 'MethodExecutionTime': running time (millis) = 512
+-----------------------------------------
+ms     %     Task name
+-----------------------------------------
+00512  100%  StockService.getBaseInfo(..)<br/><br/>
+StopWatch 'MethodExecutionTime': running time (millis) = 316
+-----------------------------------------
+ms     %     Task name
+-----------------------------------------
+00316  100%  FundService.getBaseInfo(..)</pre>
+<br/>
+可以看出通过 Spring BeanFactory 获得的实例被拦截了，直接初始化的实例不受影响。<br/><br/>
+但如果你的 Eclipse 安装了 AJDT 插件，并且你的项目还是一个 AspectJ 项目，那么不管你是怎么获得的 StockService/FundService 实例，在调用它们的方法时都会被 MethodExecutionTime 拦截到。并且此时在  pom.xml 中只需要保留 spring-aspects 一个依赖即可。

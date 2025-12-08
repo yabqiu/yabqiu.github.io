@@ -1,0 +1,404 @@
+---
+title: Ollama - 简化使用本地大语言模型
+url: /ollama-simple-use-local-llm-model/
+date: 2024-11-11T22:27:42-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2024/11/ollama.png"
+categories:
+  - AI
+tags: 
+  - AI
+  - Llama
+  - Ollama
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13862 
+wpStatus: publish
+views: 748
+lastmod: 2024-11-12T00:35:55-06:00
+---
+
+学习完用 Transformers 和 llama.cpp 使用本地大语言模型后，再继续探索如何使用 Ollama 跑模型。Ollama 让运行和管理大语言模型变得更为简单，它构建在 llama.cpp 之上，并有优化，性能表现同样不俗。下面罗列一下它的特点<br/><br/>
+<ol>
+    <li>从它的 GitHub 项目 <a href="https://github.com/ollama/ollama">ollama/ollama</a>, Go 语言代码 90.8%， C 代码 3.4%</li>
+    <li>Ollama 不仅能运行 Llama 模型，还支持 <a href="https://ollama.com/library/phi3">Phi 3</a>, <a href="https://ollama.com/library/mistral">Mistral</a>, <a href="https://ollama.com/library/gemma2">Gemma 2</a> 及其他</li>
+    <li>Ollama 支持 Linux, Windows, 和 macOS, 安装更简单，不用像 llama.cpp 那样需从源码进行编译，并且直接支持 GPU 的</li>
+    <li>Ollama 有自己的模型仓库，无需申请访问权限，可从 Ollama 拉取所需模型，或 push 自己的模型到 Ollama 仓库pull llama3.2-vision</li>
+    <li>Ollama 仓库的模型是量化过的，某个模型有大量的 tag 可选择下载，如 <a href="https://ollama.com/library/llama3.2/tags">llama3.2 的 tags</a> 有 1b, 3b, 3b-instruct-q3_K_M, 1b-instruct-q8_0, 3b-instruct-fp16 等</li>
+    <li>如果在 Ollama 上没有的模型，可以到 HuggingFace 上下载，或量化后再传到 Ollama 仓库</li>
+</ol>
+<br/>
+其他更多特性我们将在使用当中体验，仍然是在 i9-13900F + 64G 内存 + RTX 4090 + Ubuntu 22.4 台上进行<!--more--><br/><br/>
+<h3>Ollama 在 Ubuntu 上的安装</h3><br/><br/>
+Ollama 的安装方法建议采用官方 <a href="https://ollama.com/download/linux">https://ollama.com/download/linux</a> 的方式<br/><br/>
+<blockquote>
+curl -fsSL https://ollama.com/install.sh | sh
+</blockquote>
+<br/>
+这样安装的 Ollama 能保证是最新版，避免版本落后造成不必要的麻烦。当前(AsOfDate: 2024-11-11) 看到的  Ollama 版本是 0.4.1<br/><br/>
+<blockquote>
+ollama --version<br />
+ollama version is 0.4.1
+</blockquote>
+<br/>
+注：不要用 apt 或 snap 来安装 ollama, 否则可能会安装一个过时的版本，造成 ollama 无法跑模型。本人对此就深有体验，首先尝试了用 apt install ollama, 得到的提示是 apt 没有 ollama, 建议用 snap install ollama 安装，安装是成功了，也能够用 ollama pull llama3.2-vision 拉取远端的相应模型, 但无法运行<br/><br/>
+<blockquote>
+ollama run llama3.2-vision<br />
+Error: llama runner process has terminated: exit status 127
+</blockquote>
+<br/>
+找不到任何详细的错误信息，最后意识到从 snap 安装的版本问题，snap 安装了 0.3.13 版的 Ollama. 终究是费了很大一番功夫才卸载掉  snap 安装的 ollama, 并非 snap remove ollama 就能简单了事，其间使用的停掉 snapd 服务，手工删除目录等手段。<br/><br/>
+<h3>拉取和运行 llama3.2-vision 模型</h3><br/><br/>
+比 huggingface-cli download 要简单的，更像是 docker pull 操作，命令如下：<br/><br/>
+<blockquote>
+ollama pull llama3.2-vision
+</blockquote>
+<br/>
+<a href="https://ollama.com/library/llama3.2-vision">llama3.2-vision</a> 有两种参数的模型可选，11b 和 90b, 它们都是被量化过的，规模为 Q4_K_M 大小<br/><br/>
+Ollama 的模型像 Docker 镜像那样的 tag 方式，以上 <code>ollama pull llama3.2-vision</code> 相当于是 <code>ollama pull llama3.2-vision:latest</code>. tag latest 指向了 11b, 为明确用哪个 tag，最后用<br/><br/>
+<blockquote>
+ollama pull llama3.2-vision:11b
+</blockquote>
+<br/>
+下载后，ollama list 查看本地所有的模型<br/><br/>
+<pre class="lang:default decode:true">ollama list
+NAME                      ID              SIZE      MODIFIED
+llama3.2-vision:11b       38107a0cd119    7.9 GB    44 seconds ago
+llama3.2-vision:latest    38107a0cd119    7.9 GB    About a minute ago</pre>
+<br/>
+如果要下载 70b 的模型就用 ollama pull llama3.2-vision:70b<br/><br/>
+更多 ollama 命令的使用，请参考 <code>ollama --help</code><br/><br/>
+<h3>运行本地模型 - ollama run</h3><br/><br/>
+我们将介绍两种方式，命令行交互模式与 Service 服务模式。启动  Ollama Service 服务模式的话可用 Open WebUI 连接，从而在 Web 界面中有如 ChatGPT 一般的用户体验。<br/><br/>
+<blockquote>
+ollama run llama3.2-vision:11b<br />
+>&gt;&gt; <span style="color: #999999;"><span style="background-color: #99ccff;">S</span>end a message (/? for help)</span>
+</blockquote>
+<br/>
+ollama run 立即进到命令行交互模式，在 Send a message (/? for help) 的 PlaceHolder 处就可以输入问题<br/><br/>
+从我们用 nvidia-smi 观察到的 ollama run llama3.2-vision:11b 前后 GPU 使用状态都是一样的<br/><br/>
+<pre class="lang:default decode:true">+-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 560.35.03              Driver Version: 560.35.03      CUDA Version: 12.6     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 4090        Off |   00000000:01:00.0 Off |                  Off |
+|  0%   39C    P8             20W /  450W |   11616MiB /  24564MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+<br/><br/>
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A      2528      G   /usr/lib/xorg/Xorg                            105MiB |
+|    0   N/A  N/A      2675      G   /usr/bin/gnome-shell                           17MiB |
+|    0   N/A  N/A     60336      C   ...unners/cuda_v12/ollama_llama_server          0MiB |
++-----------------------------------------------------------------------------------------+</pre>
+<br/>
+如果问问题的话，比如还是老问题: USA 5 biggest cities and population?<br/><br/>
+看到的 nvidia-smi  的使用情况是有所波动的<br/><br/>
+<pre class="lang:default decode:true">|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 4090        Off |   00000000:01:00.0 Off |                  Off |
+| 30%   45C    P2            116W /  450W |   11618MiB /  24564MiB |     88%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+</pre>
+<br/>
+说明 GPU 在进行推理操作，即使是输入 <code>hello</code> 打个招呼，GPU 也会介入。感觉 Ollama 在当前机器总是用 GPU 进行推理，尚未找到什么办法让推理只跑在 CPU 上。<br/><br/>
+ollama ps 列出已加载的模型<br/><br/>
+<pre class="lang:default decode:true ">~$ ollama ps
+NAME                   ID              SIZE      PROCESSOR    UNTIL
+llama3.2-vision:11b    38107a0cd119    12 GB     100% GPU     4 minutes from now
+llama3.2:1b            baf6a787fdff    2.7 GB    100% GPU     About a minute from now</pre>
+<br/>
+从中可知是由 100% GPU 处理的。<br/><br/>
+ollama run &lt;model&gt; 不仅仅是启动了一个进程，用 ps 命令查看后台<br/><br/>
+<pre class="lang:default decode:true">~$ ps -ef|grep ollama
+ollama    134689       1  8 20:23 ?        00:00:00 /usr/local/bin/ollama serve
+yanbin    134708    3504  0 20:23 pts/0    00:00:00 ollama run llama3.2-vision:11b
+ollama    134724  134689 24 20:23 ?        00:00:01 /tmp/ollama1091200518/runners/cuda_v12/ollama_llama_server --model /usr/share/ollama/.ollama/models/blobs/sha256-11f274007f093fefeec994a5dbbb33d0733a4feb87f7ab66dcd7c1069fef0068 --ctx-size 2048 --batch-size 512 --n-gpu-layers 41 --mmproj /usr/share/ollama/.ollama/models/blobs/sha256-ece5e659647a20a5c28ab9eea1c12a1ad430bc0f2a27021d00ad103b3bf5206f --threads 8 --parallel 1 --port 41441
+yanbin    134737   57526  0 20:23 pts/1    00:00:00 grep --color=auto ollama
+~$ netstat -na|grep 11434
+tcp        0      0 127.0.0.1:11434         0.0.0.0:*               LISTEN
+tcp        0      0 127.0.0.1:38138         127.0.0.1:11434         ESTABLISHED
+tcp        0      0 127.0.0.1:11434         127.0.0.1:38138         ESTABLISHED
+tcp        0      0 127.0.0.1:11434         127.0.0.1:53004         TIME_WAIT
+~$ lsof -i |grep 11434
+ollama  134708 yanbin    3u  IPv4 373912      0t0  TCP localhost:38138-&gt;localhost:11434 (ESTABLISHED)</pre>
+<br/>
+看到的是 ollama run, 其实在后台还是启动了 ollama serve, 然而真正加载模型的进程是 ollama_llama_server, 用 <code>top -p 134724</code> 看到它占用了 19.4G 的内存。ollama_llama_server 进程是能自动关闭与起动的，当前端有一段时间没有输入问题进行对话, 则 ollama_llama_server  会自动关闭，有对话进来又自动开启。<br/><br/>
+当输入 <code>ollama run &lt;model&gt;</code> 观察后端的进程及端口<br/><br/>
+<pre class="wrap:true lang:default decode:true">~$ ps -ef|grep ollama
+ollama    135202       1  0 20:49 ?        00:00:00 /usr/local/bin/ollama serve
+yanbin    135222    3504  0 20:49 pts/0    00:00:00 ollama run llama3.2-vision:11b
+ollama    135238  135202  0 20:49 ?        00:00:01 /tmp/ollama2514331115/runners/cuda_v12/ollama_llama_server --model /usr/share/ollama/.ollama/models/blobs/sha256-11f274007f093fefeec994a5dbbb33d0733a4feb87f7ab66dcd7c1069fef0068 --ctx-size 2048 --batch-size 512 --n-gpu-layers 41 --mmproj /usr/share/ollama/.ollama/models/blobs/sha256-ece5e659647a20a5c28ab9eea1c12a1ad430bc0f2a27021d00ad103b3bf5206f --threads 8 --parallel 1 --port 42233
+yanbin    135292   57526  0 20:52 pts/1    00:00:00 grep --color=auto ollama
+~$ sudo netstat -tulnp | grep 135202
+tcp        0      0 127.0.0.1:11434         0.0.0.0:*               LISTEN      135202/ollama
+~$ sudo netstat -tulnp | grep 135222
+~$ sudo netstat -tulnp | grep 135238
+tcp        0      0 127.0.0.1:42233         0.0.0.0:*               LISTEN      135238/ollama_llama
+~$ netstat -na|grep 11434
+tcp        0      0 127.0.0.1:11434         0.0.0.0:*               LISTEN
+tcp        0      0 127.0.0.1:39366         127.0.0.1:11434         ESTABLISHED
+tcp        0      0 127.0.0.1:11434         127.0.0.1:39366         ESTABLISHED
+~$ sudo lsof -i :39366
+COMMAND    PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+ollama  135202 ollama    7u  IPv4 378306      0t0  TCP localhost:11434-&gt;localhost:39366 (ESTABLISHED)
+ollama  135222 yanbin    3u  IPv4 370135      0t0  TCP localhost:39366-&gt;localhost:11434 (ESTABLISHED)
+~$ netstat -na|grep 42233
+tcp        0      0 127.0.0.1:42233         0.0.0.0:*               LISTEN
+tcp        0      0 127.0.0.1:39180         127.0.0.1:42233         ESTABLISHED
+tcp        0      0 127.0.0.1:42233         127.0.0.1:39180         ESTABLISHED
+~$ sudo lsof -i :39180
+COMMAND      PID   USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+ollama    135202 ollama   21u  IPv4 379970      0t0  TCP localhost:39180-&gt;localhost:42233 (ESTABLISHED)
+ollama_ll 135238 ollama    4u  IPv4 357340      0t0  TCP localhost:42233-&gt;localhost:39180 (ESTABLISHED)</pre>
+<br/>
+三个进程的关系是:<br/><br/>
+<blockquote>
+ollama run -&gt; ollama serve(监听端口  11434) -&gt; ollama_llama_server(监听端口 42233)
+</blockquote>
+<br/>
+这时，可能你猜想的没错，这里的 ollama_llama_server 就是 llama.cpp 的 llama-server, 只是它由 Ollama 动态管理的，比如在 启动多个  ollama run 或在 Open WebUI 使用多个模型，每个模型会对应一个 ollama_llama_server  进程，某个模型长时间没使用时就会关掉相应的进程。而这里的 <code>ollama serve</code> 正是下一节要介绍的，默认端口为 114343, 并且不能从远程连接，并且应该留意启动 ollama_llama_server 所使用的参数: --ctx-size 2048 --batch-size 512 --n-gpu-layers 41  --threads 8 --parallel 1 --port 42233<br/><br/>
+ollama run 只是作为 ollama serve 的一个客户端, 可以通过环境变量让 ollama run 连接指定的 ollama_serve 服务，如<br/><br/>
+<blockquote>
+OLLAMA_HOST=127.0.0.1:4000 ollama run llama3.2-vision:11b
+</blockquote>
+<br/>
+<h3>使用 ollama serve 服务</h3><br/><br/>
+有了前面的基础到这里就好理解了，ollama serve 将会使用到前面三个进程中的后两个：ollama serve(监听端口  11434) -&gt; ollama_llama_server(监听端口 42233)<br/><br/>
+继续在  ollama 相关的进程观察会发现 ollama serve 是由 systemd 控制的，所以任由你如何 <code>sudo kill -9 &lt;ollama serve 的进程 id&gt;</code> 都会重启新的 ollama serve。<br/><br/>
+<pre class="lang:default decode:true ">yanbin@Ubuntu-Desktop:~$ ps -ef|grep ollama
+ollama    135961       1  0 21:31 ?        00:00:00 /usr/local/bin/ollama serve
+yanbin    135989    3504  0 21:33 pts/0    00:00:00 grep --color=auto ollama
+yanbin@Ubuntu-Desktop:~$ ps -o ppid= -p 135961
+      1
+yanbin@Ubuntu-Desktop:~$ pstree -sp 135961
+systemd(1)───ollama(135961)─┬─{ollama}(135962)
+                            ├─{ollama}(135963)</pre>
+<br/>
+要关掉 systemd 启动的 ollama-serve 必需用 sudo systemctl stop ollama 命令<br/><br/>
+<code>ollama --help</code> 是最友好的助手，我可以看到它可用的命令有<br/><br/>
+<pre class="lang:default decode:true ">Available Commands:
+  serve       Start ollama
+  create      Create a model from a Modelfile
+  show        Show information for a model
+  run         Run a model
+  stop        Stop a running model
+  pull        Pull a model from a registry
+  push        Push a model to a registry
+  list        List models
+  ps          List running models
+  cp          Copy a model
+  rm          Remove a model
+  help        Help about any command</pre>
+<br/>
+特定命令的帮助也是用 --help, 如 <code>ollama serve --help</code>, 可查看到环境变量对该命令的影响<br/><br/>
+<pre class="lang:default decode:true">~$ ollama serve --help
+Start ollama<br/><br/>
+Usage:
+  ollama serve [flags]<br/><br/>
+Aliases:
+  serve, start<br/><br/>
+Flags:
+  -h, --help   help for serve<br/><br/>
+Environment Variables:
+      OLLAMA_DEBUG               Show additional debug information (e.g. OLLAMA_DEBUG=1)
+      OLLAMA_HOST                IP Address for the ollama server (default 127.0.0.1:11434)
+      OLLAMA_KEEP_ALIVE          The duration that models stay loaded in memory (default "5m")
+      OLLAMA_MAX_LOADED_MODELS   Maximum number of loaded models per GPU
+      OLLAMA_MAX_QUEUE           Maximum number of queued requests
+      OLLAMA_MODELS              The path to the models directory
+      OLLAMA_NUM_PARALLEL        Maximum number of parallel requests
+      OLLAMA_NOPRUNE             Do not prune model blobs on startup
+      OLLAMA_ORIGINS             A comma separated list of allowed origins
+      OLLAMA_SCHED_SPREAD        Always schedule model across all GPUs
+      OLLAMA_TMPDIR              Location for temporary files
+      OLLAMA_FLASH_ATTENTION     Enabled flash attention
+      OLLAMA_LLM_LIBRARY         Set LLM library to bypass autodetection
+      OLLAMA_GPU_OVERHEAD        Reserve a portion of VRAM per GPU (bytes)
+      OLLAMA_LOAD_TIMEOUT        How long to allow model loads to stall before giving up (default "5m")</pre>
+<br/>
+那么如果我们在启动  <code>ollama serve</code>, 但不想启动在 127.0.0.1:11434(无法通过远程访问), 并且允许并发访问，命令为<br/><br/>
+<blockquote>
+OLLAMA_HOST=0.0.0.0:4000 OLLAMA_NUM_PARALLEL=5 ollama serve
+</blockquote>
+<br/>
+假如没用 sudo systemctl stop ollama 服务，就会看到两个  ollama serve<br/><br/>
+<pre class="wrap:true lang:default decode:true">~$ ps -ef|grep ollama
+ollama    136061       1  0 21:37 ?        00:00:00 /usr/local/bin/ollama serve
+yanbin    136090    3504  0 21:37 pts/0    00:00:01 ollama serve
+yanbin    136117  136090  5 21:38 pts/0    00:00:05 /tmp/ollama1442856846/runners/cuda_v12/ollama_llama_server --model /home/yanbin/.ollama/models/blobs/sha256-11f274007f093fefeec994a5dbbb33d0733a4feb87f7ab66dcd7c1069fef0068 --ctx-size 2048 --batch-size 512 --n-gpu-layers 41 --mmproj /home/yanbin/.ollama/models/blobs/sha256-ece5e659647a20a5c28ab9eea1c12a1ad430bc0f2a27021d00ad103b3bf5206f --threads 8 --parallel 1 --port 41811
+yanbin    136164   57526  0 21:39 pts/1    00:00:00 ollama run llama3.2-vision:11b
+ollama    136178  136061 10 21:39 ?        00:00:01 /tmp/ollama4120339016/runners/cuda_v12/ollama_llama_server --model /usr/share/ollama/.ollama/models/blobs/sha256-11f274007f093fefeec994a5dbbb33d0733a4feb87f7ab66dcd7c1069fef0068 --ctx-size 2048 --batch-size 512 --n-gpu-layers 41 --mmproj /usr/share/ollama/.ollama/models/blobs/sha256-ece5e659647a20a5c28ab9eea1c12a1ad430bc0f2a27021d00ad103b3bf5206f --threads 8 --parallel 1 --port 36067</pre>
+<br/>
+每个 ollama serve  会管理自己的 ollama_llama_server, 一个模型会有一个对应的 ollama_llama_server 服务。<br/><br/>
+当然通过 export 命令来导出环境变量也行。<a href="https://www.postman.com/postman-student-programs/ollama-api/documentation/suc47x8/ollama-rest-api">Ollama REST API Document</a> 罗列了 Ollama API, Ollama 没有提供与 OpenAI API 相兼容的 completion APIs，下面主要尝试一下 /api/generate, 其他的就不详细展开了。<br/><br/>
+<ol>
+    <li>POST /api/generate: 这是一个 Streaming API, 可看看它的效果<br />
+<pre class="lang:default decode:true">curl -i 'http://192.168.86.42:4000/api/generate' --data '{
+    "model":"llama3.2-vision:11b",
+    "prompt":"hello"
+}'
+HTTP/1.1 200 OK
+Content-Type: application/x-ndjson
+Date: Mon, 11 Nov 2024 23:25:27 GMT
+Transfer-Encoding: chunked<br/><br/>
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.813890703Z","response":"Hello","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.821435957Z","response":"!","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.829057575Z","response":" How","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.836642192Z","response":" are","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.844231003Z","response":" you","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.851870564Z","response":" today","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.859237425Z","response":"?","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.866840884Z","response":" Is","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.874330135Z","response":" there","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.881819128Z","response":" something","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.889275621Z","response":" I","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.89691295Z","response":" can","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.904473679Z","response":" help","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.911987127Z","response":" you","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.919554847Z","response":" with","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.927100238Z","response":" or","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.934637459Z","response":" would","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.942216118Z","response":" you","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.949833649Z","response":" like","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.957408267Z","response":" to","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.964957677Z","response":" chat","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.972552891Z","response":"?","done":false}
+{"model":"llama3.2-vision:11b","created_at":"2024-11-11T23:25:27.981265318Z","response":"","done":true,"done_reason":"stop","context":[128006,882,128007,271,15339,128009,128006,78191,128007,271,9906,0,2650,527,499,3432,30,2209,1070,2555,358,649,1520,499,449,477,1053,499,1093,311,6369,30],"total_duration":194396814,"load_duration":16540876,"prompt_eval_count":11,"prompt_eval_duration":2000000,"eval_count":23,"eval_duration":174000000}</pre>
+这是一个个返回的 chunked 的数据块，这就是为什么会在聊天客户端看到一个一个字(token)蹦出来的效果，对 "hello" 的回答是 "How are you today? Is there something I can help you with or would you like to chat?
+</li>
+    <li>POST /api/chat</li>
+    <li>POST /api/create</li>
+    <li>GET /api/tags</li>
+    <li>POST /api/show</li>
+    <li>GET /api/copy</li>
+    <li>DELETE /api/delete</li>
+    <li>POST /api/pull</li>
+    <li>POST /api/push</li>
+    <li>POST /api/embeddings</li>
+</ol>
+<br/>
+注意：如果你执行过 <code>ollama run &lt;model&gt;</code>, 然后结束进程，再次执行 <code>ollama serve</code> 时就极有可能碰到端口被占用的错误，如<br/><br/>
+<blockquote>
+Error: listen tcp 127.0.0.1:11434: bind: address already in use after running ollama serve
+</blockquote>
+<br/>
+因为停止 <code>ollama run &lt;model&gt;</code> 进程时并未停掉后台对应的 <code>ollama serve</code> 进程，可用 <code>lsof -i |grep 11434</code> 找到相应的进程 ID, kill 掉再执行 <code>ollama serve</code> 就行<br/><br/>
+<h3>Ollama 与 Open WebUI 的配合</h3><br/><br/>
+我们在上一篇中使用过 Open WebUI 连接 llama-server, 由于 llama-server 提供了 OpenAI 相兼容的 APIs, 所以能协同工作。而 Open WebUI 本身就完美的支持 Ollama，还能通过 Open WebUI 来从 Ollama 下载所需的模型。这一回我们不用 <code>pip install open-webui</code> 的方式使用 Open WebUI, 而是用 Docker<br/><br/>
+假说 ollama serve 运行在 http://192.168.86.42:4000, 则启动 Open WebUI 容器的命令用<br/><br/>
+<blockquote>
+docker run -p 3000:8080 -e OLLAMA_BASE_URL=http://192.168.86.42:4000 ghcr.io/open-webui/open-webui:main
+<pre class="lang:default decode:true">$ docker run -p 3000:8080 -e OLLAMA_BASE_URL=http://192.168.86.42:4000 ghcr.io/open-webui/open-webui:main
+Loading WEBUI_SECRET_KEY from file, not provided as an environment variable.
+Generating WEBUI_SECRET_KEY
+Loading WEBUI_SECRET_KEY from .webui_secret_key
+/app/backend/open_webui
+/app/backend
+/app
+Running migrations
+INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -&gt; 7e5b5dc7342b, init
+INFO  [alembic.runtime.migration] Running upgrade 7e5b5dc7342b -&gt; ca81bd47c050, Add config table
+INFO  [alembic.runtime.migration] Running upgrade ca81bd47c050 -&gt; c0fbf31ca0db, Update file table
+INFO  [alembic.runtime.migration] Running upgrade c0fbf31ca0db -&gt; 6a39f3d8e55c, Add knowledge table
+INFO  [alembic.runtime.migration] Running upgrade 6a39f3d8e55c -&gt; 242a2047eae0, Update chat table
+INFO  [alembic.runtime.migration] Running upgrade 242a2047eae0 -&gt; 1af9b942657b, Migrate tags
+INFO  [alembic.runtime.migration] Running upgrade 1af9b942657b -&gt; 3ab32c4b8f59, Update tags
+INFO  [alembic.runtime.migration] Running upgrade 3ab32c4b8f59 -&gt; c69f45358db4, Add folder table
+INFO  [alembic.runtime.migration] Running upgrade c69f45358db4 -&gt; c29facfe716b, Update file table path
+INFO  [alembic.runtime.migration] Running upgrade c29facfe716b -&gt; af906e964978, Add feedback table
+INFO  [alembic.runtime.migration] Running upgrade af906e964978 -&gt; 4ace53fd72c8, Update folder table and change DateTime to BigInteger for timestamp fields
+INFO  [open_webui.env] 'DEFAULT_LOCALE' loaded from the latest database entry
+INFO  [open_webui.env] 'DEFAULT_PROMPT_SUGGESTIONS' loaded from the latest database entry
+WARNI [open_webui.env]<br/><br/>
+WARNING: CORS_ALLOW_ORIGIN IS SET TO '*' - NOT RECOMMENDED FOR PRODUCTION DEPLOYMENTS.<br/><br/>
+INFO  [open_webui.env] Embedding model set: sentence-transformers/all-MiniLM-L6-v2
+INFO  [open_webui.apps.audio.main] whisper_device_type: cpu
+WARNI [langchain_community.utils.user_agent] USER_AGENT environment variable not set, consider setting it to identify your requests.
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8080 (Press CTRL+C to quit)
+INFO  [open_webui.apps.openai.main] get_all_models()
+INFO  [open_webui.apps.ollama.main] get_all_models()
+Creating knowledge table
+Migrating data from document table to knowledge table
+Converting 'chat' column to JSON
+Renaming 'chat' column to 'old_chat'
+Adding new 'chat' column of type JSON
+Dropping 'old_chat' column
+Primary Key: {'name': None, 'constrained_columns': []}
+Unique Constraints: [{'name': 'uq_id_user_id', 'column_names': ['id', 'user_id']}]
+Indexes: [{'name': 'tag_id', 'column_names': ['id'], 'unique': 1, 'dialect_options': {}}]
+Creating new primary key with 'id' and 'user_id'.
+Dropping unique constraint: uq_id_user_id
+Dropping unique index: tag_id<br/><br/>
+  ___                    __        __   _     _   _ ___
+ / _ \ _ __   ___ _ __   \ \      / /__| |__ | | | |_ _|
+| | | | '_ \ / _ \ '_ \   \ \ /\ / / _ \ '_ \| | | || |
+| |_| | |_) |  __/ | | |   \ V  V /  __/ |_) | |_| || |
+ \___/| .__/ \___|_| |_|    \_/\_/ \___|_.__/ \___/|___|
+      |_|<br/><br/>
+
+v0.3.35 - building the best open-source AI user interface.<br/><br/>
+https://github.com/open-webui/open-webui</pre>
+</blockquote>
+<br/>
+从 Open WebUI 启动的控制台输出可以获得很多有用的信息，所以本文中不顾篇幅的保留了下来。<br/><br/>
+现在就可以打开浏览器，输入地址 http://192.168.86.61:3000，进行用户注册，完后登陆<br/><br/>
+在 Admin Setting/Connections 就看到 Ollama API 是 http://192.168.86.42:4000, 在 Models 中的  Pull a model from Ollama.com 输入框中输入 "llama3.2-vision:latest", 点击下载按钮就会从 Ollama.com pull 指定的模型 <br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/11/open-webui-model-settings-1.png"><img class="aligncenter wp-image-13869" src="https://yanbin.blog/wp-content/uploads/2024/11/open-webui-model-settings-1-800x233.png" alt="" width="500" height="145" /></a><br/><br/>
+再回到用户 Settings/Interface 中就能选择 llama3.2-vision:latest 为 Default Model, 或者在 New Chat 时选择想要的模型<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/11/open-webui-ollama-4.png"><img class="size-large wp-image-13874 aligncenter" src="https://yanbin.blog/wp-content/uploads/2024/11/open-webui-ollama-4-800x486.png" alt="" width="800" height="486" /></a><br/><br/>
+开始聊天, 在 <code>How can I help you today?</code> 框中输入自己的问题即可。还能语音文字互转。我们输入<br/><br/>
+<blockquote>
+write rust code to put s3 object
+</blockquote>
+<br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/11/open-webui-ollama-3.png"><img class="size-large wp-image-13873 aligncenter" src="https://yanbin.blog/wp-content/uploads/2024/11/open-webui-ollama-3-800x553.png" alt="" width="800" height="553" /></a><br/><br/>
+正可谓 -vision, 那不妨看看它对图片理解能力吧，来一张现下关于美国大选的图片<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/11/open-webui-ollama-2.png"><img class="aligncenter wp-image-13872" src="https://yanbin.blog/wp-content/uploads/2024/11/open-webui-ollama-2-800x601.png" alt="" width="900" height="676" /></a><br/><br/>
+llama3.2-vision 这个模型还是理解到了是美国大选的事，并且有红州，蓝州，不过毕竟它是出自 Meta 公司，偏向蓝方就不奇怪了。<br/><br/>
+<h3>总结</h3><br/><br/>
+主要还是要加强理解 Ollama 的服务架构，由此懂得 Ollama 如何同时使用多个模型，怎么节约资源。<br/><br/>
+ollama run 或者 http client(如 Open WebUI) 都是 ollama serve 的客户端，ollama serve  根据客户端指定的模型动态管理 ollama_llama_server 进程，同一个 ollama serve 管理之下，每个模型会对应一个 ollama_llama_server 进程，某一模型长时间空闲就会被 ollama serve 停掉，需要时再启动。<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/11/ollama-serve-server-1.png"><img class="size-full wp-image-13880 aligncenter" src="https://yanbin.blog/wp-content/uploads/2024/11/ollama-serve-server-1.png" alt="" width="520" height="449" /></a>这张图应该能说明白 client -&gt; ollama-serve -&gt; ollama_llama_server 之间的关系。客户端可以指定用哪个 ollama-serve, 安装完 ollama 后系统会启动一个在 11434 端口号上监听的 ollama-serve 服务，并且它只能被本地连接，除非修改配置参数才能让系统启动的 ollama-serve 被远程连接。命令  ollama run 默认连接本地的 11434 端口号上的 ollama-serve  服务，可通过环境变量 OLLAMA_HOST 指定 ollama run 连接哪个 ollama-serve 服务。<br/><br/>
+修改 systemd 管理的 ollama-serve 参数的方法是<br/><br/>
+<blockquote>
+sudo vi /etc/systemd/system/ollama.service
+</blockquote>
+<br/>
+在 [Service] 下加上<br/><br/>
+<blockquote>
+Environment="OLLAMA_HOST=0.0.0.0"
+</blockquote>
+<br/>
+[Service] 下可有多个  Environment, 然后<br/><br/>
+<blockquote>
+sudo systemctl daemon-reload<br />
+sudo systemctl restart ollama
+</blockquote>
+<br/>
+这时启动的 ollama-serve 监听在 :::11434, 能从远程访问<br/><br/>
+除 Open WebUI 客户端还有许多，见 Ollama 客户端列表 <a href="https://github.com/ollama/ollama?tab=readme-ov-file#web--desktop">Web &amp; Desktop</a> 和 <a href="https://github.com/ollama/ollama?tab=readme-ov-file#terminal">Terminal</a>.<br/><br/>
+&nbsp;<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://sspai.com/post/85193">用 Ollama 轻松玩转本地大模型</a></li>
+</ol>

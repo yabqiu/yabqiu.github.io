@@ -1,0 +1,215 @@
+---
+title: 用 Spring MVC 来处理向导式复杂表单
+url: /spring-mvc-wizard-page/
+date: 2008-10-02T04:47:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Spring
+tags: 
+  - mvc
+  - Spring
+  - wizard
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 324 
+wpStatus: publish
+views: 911
+lastmod: 2021-05-03T00:14:09-05:00
+---
+
+<div><strong><span style="color: #0000ff; font-size: medium;">引子</span></strong></div>
+<br/>
+<span style="line-height: 1.5em;">我们在网上经常会碰到一些向导式的表单页面，比如 第一步 &gt;&gt; 第二步 &gt;&gt; 第三步…、基本信息 &gt;&gt; 联系方式 &gt;&gt; 兴趣爱好…。它们都是按类型分到多个有序的页面要你来完成填写的。当然，你也可以把它们全部罗列在一个页面里，那样用户就会感觉茫茫然，分不清主次，可能不会很好的予以配合。</span></p>
+<br/>
+然而像 Struts、WebWork 那样的 MVC 框架未提供类似的实现，都需自己采用某种方式来实现向导，可以用层的隐现方式，或逐步把填写的部分数据放 Session 中，最后汇总处理。幸运的是 Spring MVC 考虑到了这种应用需求，它提供了一个 org.springframework.web.servlet.mvc.AbstractWizardFormController 来满足你。<!--more--><br/><br/>
+下面我们来参照 CSDN 的简历向导(界面如下) 来自己动手做个例子<br/><br/>
+<div><img class="aligncenter" style="border: 0px;" src="/wp-content/uploads/2008/10/ResumeWizard.jpg" alt="ResumeWizard.jpg" width="750" height="586" border="0" /></div>
+<br/>
+详细的步骤如下(如何创建 Spring MVC 工程在此不细说，本例中用的是 Spring 2.0，其他版本的 Spring 原理无甚差异，只是 Spring 2.0 开始有很方便使用的 form 标签，而在 Spring 1.0 中要用 spring:bind 和 jstl 结合显示数据着实显得很寒碜，由此可见 Spring 1 的 MVC 还太不成熟)。本页中列出的代码有些非关键之处省去了，文后附上了本例完整的工程文件，可下载。<br/><br/>
+<strong><span style="color: #0000ff; font-size: medium;">一. 定义好需求</span></strong><br/><br/>
+为了使我们尽快掌握 AbstractWizardFormController 的使用，而不至让具体业务所纠缠。故而，这里要对 CSDN 的简历向导大大的简化，简化后的向导页和每页的填写内容如下：<br/><br/>
+1. 求职意向(期望工作地点-必填，期望月薪)<br />
+2. 基本信息(姓名-必填、手机号码-必填)<br />
+3. 工作经历(单个文本框录入)<br />
+4. 项目经验(单个文本框录入)<br />
+5. 完成页，Congratulations<br/><br/>
+每页操作完之后，点击“下一步”按钮进到下一页面，同时要对标识为必填项进行非空验证。用户也可以点“上一步”按钮重填上一页面的信息。用户可以中途点击“取消”按钮取消向导。最后在项目经验向导页面，点击“完成”按钮处理表单数据，成功后显示 Congratulations 页。<br/><br/>
+<strong><span style="color: #0000ff; font-size: medium;">二. 定义接收表单数据的 Command 类(Resume)<br />
+</span></strong><br />
+这里我们定义为 com.unmi.bean.Resume，代码如下：<br/><br/>
+<pre class="brush:java ">package com.unmi.bean;<br/><br/>
+public class Resume {
+    private String workPlace;   //期望工作地点
+    private int salary;         //期望薪水
+    private String name;        //姓名
+    private String mobile;     //手机号码
+    private String experience;  //工作经历
+    private String projects;    //项目此验<br/><br/>
+    //...... 相应的 getter/setter 方法此处略去
+}</pre>
+<br/>
+<strong><span style="color: #0000ff; font-size: medium;">三. 创建向导控制器(ResumeWizardController)<br />
+</span></strong><br/><br/>
+<pre class="brush:java">package com.unmi.webapp.controller;<br/><br/>
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;<br/><br/>
+import org.springframework.validation.BindException;
+import org.springframework.web.servlet.ModelAndView;
+import org.springframework.web.servlet.mvc.AbstractWizardFormController;<br/><br/>
+import com.unmi.bean.Resume;<br/><br/>
+/**
+ * 处理简单向导表单的控制类
+ * @author Unmi
+ */
+public class ResumeWiardController extends AbstractWizardFormController {<br/><br/>
+    public ResumeWiardController(){
+        setCommandClass(Resume.class);  //设置命令类
+    }<br/><br/>
+    //处理表单数据
+    protected ModelAndView processFinish(HttpServletRequest request,
+            HttpServletResponse response, Object command, BindException errors)
+            throws Exception {<br/><br/>
+        //完成表单时获取到所有填写数据，调用业务类来处理
+        Resume resume = (Resume)command;
+        //resumeService.submitResume(resume);<br/><br/>
+        return new ModelAndView("congratulations"); //完了后，转到祝贺页面
+    }<br/><br/>
+    /**
+     * 向导中每一页面都要调用的验证方法，用 page 识别当前面
+     */
+    protected void validatePage(Object command, Errors errors, int page) {
+        ResumeValidator validator = (ResumeValidator)getValidator();<br/><br/>
+        if(page == 0){//验证求职意向页面
+            validator.validateWorkplace("workPlace", errors);
+        }
+        else if(page == 1){//验证档基本信息页面
+            validator.validateName("name", errors);
+            validator.validateMobile("mobile", errors);
+        }
+    }
+}</pre>
+<br/>
+<strong><span style="color: #0000ff; font-size: medium;">四. 还是提一下 web.xml 的配置</span><br />
+</strong><br />
+在 web.xml 增加了 Spring 的 DispatchServlet 来处理 /*.html 的 URL，Servlet Name 为 resume<br/><br/>
+<pre class="lang:default decode:true">  &lt;servlet&gt;
+    &lt;servlet-name&gt;resume&lt;/servlet-name&gt;
+    &lt;servlet-class&gt;org.springframework.web.servlet.DispatcherServlet&lt;/servlet-class&gt;
+  &lt;/servlet&gt;
+  &lt;servlet-mapping&gt;
+    &lt;servlet-name&gt;resume&lt;/servlet-name&gt;
+    &lt;url-pattern&gt;*.html&lt;/url-pattern&gt;
+  &lt;/servlet-mapping&gt;</pre>
+<br/>
+<strong><span style="color: #0000ff; font-size: medium;">五. Spring 配置文件(resume-servlet.xml)<br />
+</span></strong><br />
+因为上面的 Servlet Name 为 resume，所以可以直接在 WEB-INF 目录中直接配置一个文件名为 resume-servlet.xml 的 Spring 配置文件。这是默认行为，当然，你也可以为 DispatcherServlet 用 contextConfigLocation 属性来指定配置文件。<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;<br/><br/>
+&lt;beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-2.0.xsd"&gt;<br/><br/>
+    &lt;bean name="/createResume.html" class="com.unmi.webapp.controller.ResumeWiardController"&gt;
+        &lt;property name="resumeService"&gt;
+            &lt;ref bean="resumeService"/&gt;
+        &lt;/property&gt;
+        &lt;property name="pages"&gt;
+            &lt;list&gt;
+                &lt;value&gt;intention&lt;/value&gt;
+                &lt;value&gt;baseinfo&lt;/value&gt;
+                &lt;value&gt;experience&lt;/value&gt;
+                &lt;value&gt;projects&lt;/value&gt;
+                &lt;value&gt;congratulations&lt;/value&gt;
+            &lt;/list&gt;
+        &lt;/property&gt;
+        &lt;property name="validator"&gt;
+            &lt;bean class="com.unmi.webapp.validator.ResumeValidator"&gt;&lt;/bean&gt;
+        &lt;/property&gt;
+    &lt;/bean&gt;<br/><br/>
+    &lt;bean id="viewResolver" class="org.springframework.web.servlet.view.InternalResourceViewResolver"&gt;
+        &lt;property name="prefix"&gt;
+            &lt;value&gt;/resume/&lt;/value&gt;
+        &lt;/property&gt;
+        &lt;property name="suffix"&gt;
+            &lt;value&gt;.jsp&lt;/value&gt;
+        &lt;/property&gt;
+    &lt;/bean&gt;
+&lt;/beans&gt;</pre>
+<br/>
+上面对 ResumeWizardController  用 pages 指定了一系列的逻辑视图名，他们依序有一个索引号(以 0 为基数)，后面会用到。这些逻辑面在运行时会依据 InternalResourceViewResolver 解析成对应的 jsp 文件名，例如，intention -&gt; /resume/intention.jsp，其余类同。<br/><br/>
+<strong><span style="color: #0000ff; font-size: medium;">六. 分步显示向导中的表单页面</span></strong><br/><br/>
+任何向导控制器显示的第一个页面都是 pages 属性中列表的第一个页面。其后为了判断接下来的是哪个页面， AbstractWizardFormController 询问它的 getTargetPage() 方法。这个方法返回一个整数，它就是 pages 和中设置页面列表的索引值。<br/><br/>
+getTargetPage() 方法的缺省实现是根据请求中的一个参数来决定下一步是哪个页面的，这个参数以 "_target" 开头，以数结尾。getTargetPage() 只取这个数字作为页面列表的索引。一般我们会把该参数命名给相应的提交按钮。例如我们在第二个页面 /resume/baseinfo.jsp 中的“上一步”，“下一步” 按钮的 html 代码这样写：<br/><br/>
+<pre class="lang:default decode:true">    &lt;form action="/createResume.html" method="post"&gt;
+      ......
+      &lt;input type="submit" value="上一步" name="_target0"&gt;
+      &lt;input type="submit" value="下一步" name="_target2"&gt;
+    &lt;/form&gt;</pre>
+<br/>
+<strong><span style="color: #0000ff; font-size: medium;">七. 完成或取消向导</span></strong><br/><br/>
+那么 AbstractWizardFormController 又是如何知道你点击的是完成按钮，要调用 processFinish() 方法处理表单数据，或是点了取消按钮，要调用 processCancel() 来作些清理工作或作部分数据处理呢？它也是依据于特殊的请求参数，它们分别是 “_finish” 和 “_cancel”。因此，相应的 html 代码就要写成：<br/><br/>
+<pre class="lang:default decode:true">    &lt;form action="/createResume.html" method="post"&gt;
+      ......
+      &lt;input type="submit" value="完成" name="_finish"&gt;
+      &lt;input type="submit" value="取消" name="_cancel"&gt;
+    &lt;/form&gt;</pre>
+<br/>
+<span style="color: #0000ff;"><span style="font-size: medium;"><strong>八. 每次验证一个向导表单</strong><br />
+</span></span><br />
+对于这种向导式页面，如果你仍是在最后点完成按钮来验证所有表单数据的话，一旦某个数据有问题，你将很难定位是在哪个向导页输入的，并且转向到哪个出错页面也麻烦。所以我们需要在每填完一个表单，点击 “下一步” 或“完成” 按钮时立即就对当前表单数据进行验证。<br/><br/>
+AbstractWizardFormController 在每次页面跳转时会调用它的 validatePage() 方法。而 validatePage() 方法缺省实现是空的，这要留给你来实现。AbstractWizardFormController  中有两个重载的 validatePage() 方法，代码分别如下：<br/><br/>
+<pre class="lang:default decode:true">  protected void validatePage(Object command, Errors errors, int page) {
+    }<br/><br/>
+    protected void validatePage(Object command, Errors errors, int page, boolean finish) {
+        validatePage(command, errors, page);
+    }</pre>
+<br/>
+你可以选择实现其中一个方法来对表单进行验证。如果你希望在点击“完成” 按钮时，能作一些特别的验证，例如，如多个表单的相关联数据进行一致性检查，那你就应该实现带有 boolean finish 参数的 validatePage() 方法。<br/><br/>
+最好是把验证逻辑单独写在一个实现了 Validator 接口的验证类中，通过 validator 属性配置给你的 ResumeWizardFormController，然后在 validatePage() 方法中取到这个 validator，再调用其中的验证方法 validateXXX()。例如我们前面配置在 resume-servlet.xml 中的 com.unmi.webapp.validator.ResumeValidator。<br/><br/>
+注意，对于 AbstractWizardFormController，它不会调用配置给它的 validator 的标准的 validate() 方法。在点击“下一步”按钮，即向导正向走时，若验证不通过，则停留在当前页，等待重新输入。然而，当点击“上一步”按钮时，也就是页面索引号递减，向导逆向走时，同样会要求对当前页面输入进行验证，只不过这种情况下验证即使不能通过也不会停留在当前页，仍会转向到上一页面。<br/><br/>
+这时候，我们在 ResumeWizardController 的 validatePage(Object command, Errors errors, int page) 就可以参照这么写了：<br/><br/>
+<pre class="brush:java">    protected void validatePage(Object command, Errors errors, int page) {
+        Resume resume = (Resume) command;
+        ResumeValidator validator = (ResumeValidator)getValidator();<br/><br/>
+        if(page == 1){//判断所在的页面来调用相应的验证方法
+            validator.validateName("name", errors);
+        }
+    }</pre>
+<br/>
+对于另一个版本的 validatePage(Object command, Errors errors, int page, boolean finish) 方法，那就是：<br/><br/>
+<pre class="brush:java">    protected void validatePage(Object command, Errors errors, int page,
+            boolean finish) {
+        Resume resume = (Resume) command;
+        ResumeValidator validator = (ResumeValidator)getValidator();<br/><br/>
+        if(page == 1){//判断所在的页面来调用相应的验证方法
+            validator.validateName("name", errors);
+        }<br/><br/>
+        if(finish){//如果是完成向导时，进行自己的验证，这里直接调用了标准的 validate() 方法
+            validator.validate(command,errors);
+        }
+    }</pre>
+<br/>
+<span style="color: #0000ff;"><span style="font-size: medium;"><strong>九. 完整的工程代码</strong><br />
+</span></span><br />
+下载地址：<a href="http://unmi.cc/wp-content/uploads/2008/10/SpringWizardForm.rar" target="_blank" rel="noopener">SpringWizardForm.rar</a><br/><br/>
+本工程未去处理有请求参数 _cancel 时，执行 ResumeWizardController.processCancel() 方法的情形，如果你有这样的需求的话可自己去完善。对 ResumeWizardController，也是只实现了 validatePage(Object command, Errors errors, int page) 这个版本的方法。<br/><br/>
+解压到 Tomcat 下即能运行，浏览 <a href="http://localhost:8080/SpringWizardForm">http://localhost:8080/SpringWizardForm</a> 点链接进到向导。包含源代码和所需的 jar 文件。使用的是 Spring 2.0，jsp 页面中用 spring-form 标签。支持国际化，从资历源文件中获取验证错误信息在输入框下方显示。<br/><br/>
+<strong><span style="color: #0000ff; font-size: medium;">十. 运行效果</span></strong><br/><br/>
+把整个操作过程做成了一个 Gif 动画来展示，能使你一目了然。只恐怕这精彩的部分放在后头，可能鲜有人有此等耐心把滚动条拉至此处。<br/><br/>
+<table class="aligncenter" style="width: 75%;" border="0">
+<tbody>
+<tr style="vertical-align: top;" valign="top">
+<td><img class="aligncenter" style="border: 0px;" src="/wp-content/uploads/2008/10/SpringWizardForm.gif" alt="SpringWizardForm.gif" width="364" height="240" border="0" /></td>
+<td valign="top"><strong>说明：</strong>1. 浏览 <a href="http://localhost:8080/SpringWizardForm">http://localhost:8080/SpringWizardForm</a>，点链接进到向导页2. 操作中测试到了每一个验证的效果，期望工作地点、姓名和手机号码不能为空3. 验证不通过时，从资源文件中取出错误信息，显示在相应输入框之下。并且页面仍留在当前页4. 在向导的进行中，点“上一步”，“下一步”按钮时，只要填写提交过的数据一直保留5. 所有数据填完后，点击“完成”按钮，业务类处理整个表单数据(后台会打印出 resume 信息)，页面显示恭喜.</td>
+</tr>
+</tbody>
+</table>
+<br/>
+参考资料：1. 《Spring in Action》 第一版，第八章<br />
+        2. <a href="/love-sea/archive/2007/07/24/131983.html" target="_blank" rel="noopener">spring标签介绍</a> -- 说的是 Spring 中的 spring.tld 中的标签<br />
+        3. <a href="http://tech.it168.com/j/2007-08-21/200708210930609.shtml">使用Spring MVC表单标签</a> -- 说的是 Spring 2.0 开始的 spring-form.tld 中的标签<br />
+        4. <a href="http://www.diybl.com/course/3_program/java/javashl/2008316/104759.html" target="_blank" rel="noopener">Spring MVC国际化配置</a>

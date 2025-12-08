@@ -1,0 +1,71 @@
+---
+title: Java调用动态库最简便方法和最好用的组件
+url: /java-jnative-dll-concise/
+date: 2006-05-17T13:09:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - dll
+  - JNative
+  - JNI
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 575 
+wpStatus: publish
+views: 2569
+lastmod: 2010-08-19T13:58:19-05:00
+---
+
+记得以前 Java 要调用C/C++写得动态库都是用的 JNI 方式，还需要自己写不少 C/C++ 代码。比如说要在Java中调用已有的动态库，如 Windows 的 user32.dll 的方法 MessageBoxA，具体步骤是 Java 中声明一个 native 方法，然后用 javah 命令生成JNI样式的头文件，再自己实现头文件中声明的方法，在实现方法中装载动态库 user32.dll，调用 MessageBoxA 方法，需要把自己写的这部分 C/C++ 代码封装成一个动态库，如Sample.dll，最后在 java  中装载 Sample.dll，然后执行其中所声明的本地方法。<br/>
+<br/>
+可见，用老实的JNI方式，我们在调用一个已知动态库的时候还需要额外生成一个符合JNI规则的动态库作为桥梁，显得有点多余了。<!--more--><br/>
+<br/>
+下面我将引入一个开源的组件 JNative，在 <a href="http://sourceforge.net/projects/jnative">http://sourceforge.net/projects/jnative</a> 下载（我是通过在sourceforge中输入java dll搜索到的），通过它调用已有动态库中的方法就非常的方便，因为中间的JNI处理过程它都为我们做好了。JNative 现在还是 Beta1 版，期待正式版的出炉，还不知道这个版本将会有什么Bug出现。<br/>
+<br/>
+我们下载到的 jnative 的目录中可以看到三个文件，分别是 JNative.dll，libjnative.so，JNative.jar<br/>
+<br/>
+JNative.dll  为 Windows 平台下用的，可以拷到相应的lib加载路径，如user.dir、path、system32或windows目录下<br/>
+libnative.so 为Linux平台下用的，可以拷到相应的lib加载路径，如user.dir、path目录下<br/>
+JNative.jar　这个就是我们编程时候要用的<br/>
+<br/>
+在下载的 jnatidve 的源代码中有示例代码，观看代码 org\xvolks\test\JNativeTester.java 就知道 jnative 是如何调用动态库方法的<br/>
+<br/>
+如代码行　User32.messageBox(0, "Demonstrates JNative in action with many Win32 calls", "Welcome to JNative", 0);<br/>
+<br/>
+是调用的类 User32 的 messageBox 方法，而messageBox的代码是<br/>
+<pre class="brush:java">public static final int messageBox(int parentHandle, String message,<br/>
+		String caption, int buttons)<br/>
+		throws NativeException, IllegalAccessException {<br/>
+	JNative n = null;<br/>
+	try {<br/>
+		n = new JNative(DLL_NAME, "MessageBoxA"); // 常量DLL_NAME的值为User32.dll<br/>
+<br/>
+                // 构造JNative时完成装载User32.dll,并且定位MessageBoxA方法<br/>
+		n.setRetVal(Type.INT); // 指定返回参数的类型<br/>
+		int i = 0;<br/>
+		n.setParameter(i++, Type.INT, "" + parentHandle);<br/>
+		n.setParameter(i++, Type.STRING, message);<br/>
+		n.setParameter(i++, Type.STRING, caption);<br/>
+		n.setParameter(i++, Type.INT, "" + buttons); // 指定位置上的参数类型和值<br/>
+		n.invoke(); // 调用方法<br/>
+		return Integer.parseInt(n.getRetVal());<br/>
+	} finally {<br/>
+		if (n != null)<br/>
+			n.dispose(); // 记得释放<br/>
+	}<br/>
+}</pre>
+
+上面的注释是我加上去的。<br/>
+<br/>
+Type有一种叫做Type.PSTRUCT枚举值，对C/C++中结构的处理都考虑到了，只要用JNative的Pointer类的实例来与结构对应就行了。org\xvolks\test\SNDPTester.java中演示了如何传递C/C++中的结构相对应的Java数据类型，也就是怎么封装成一个JNative的Pointer类型。<br/>
+<br/>
+还有在JNative中用了JDK1.5的一些特性，如枚举、静态引入等，所以在JDK1.4下是不能用的。<br/>
+<br/>
+<span style="color: #ff1493;">附：JNative 当前版本到了 1.3.2 了<br/>
+版本在 Jan 14 2009 又升致 1.4-RC3 了，看来这东西还很活跃的啊。</span>

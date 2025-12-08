@@ -1,0 +1,135 @@
+---
+title: Spring 中如何向 Bean 注入系统属性或环境变量
+url: /spring-injection-system-properties-env/
+date: 2011-01-26T00:29:03-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Spring
+tags: 
+  - Spring
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3094 
+wpStatus: publish
+views: 16726
+lastmod: 2023-12-13T00:08:51-06:00
+---
+
+在 Spring 中为 javabean 注入属性文件中的属性值一般人都知道的，可以通过 <a href="http://static.springsource.org/spring/docs/3.0.x/javadoc-api/org/springframework/beans/factory/config/PropertyPlaceholderConfigurer.html" target="_blank" rel="noopener">org.springframework.beans.factory.config.PropertyPlaceholderConfigurer</a> 引入一个属性文件，然后给 bean 指定属性的时候就可以用 ${jdbc.url} 方式赋值了。比如在 Spring 中是这样的配置：</p>
+<br/>
+<pre class="lang:default decode:true">&lt;bean id="propertyConfigurer"
+   class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer"&gt;
+    &lt;property name="locations"&gt;
+        &lt;list&gt;
+            &lt;value&gt;classpath:jdbc.properties&lt;/value&gt;
+        &lt;/list&gt;
+    &lt;/property&gt;
+&lt;/bean&gt;<br/><br/>
+&lt;bean id="dataSource" class="org.apache.commons.dbcp.BasicDataSource"
+    destroy-method="close"&gt;
+    &lt;property name="url" value="${jdbc.url}"/&gt;
+    &lt;property name="username" value="${jdbc.username}"/&gt;
+&lt;/bean&gt;</pre>
+<br/>
+只是有时候我们需要给 bean 赋上系统属性(System.getProperties() ) 中的值或环境变量(System.getenv() ) 中的值，根据程序所处的环境产生不同的行为，这样我们无法事先在某个 properties 文件预先设定好值的。<!--more--><br/><br/>
+这种需求也是不怕做不到就怕想不到，基于此，既然上面是用 PropertyPlaceholderConfigurer 来读取属性文件，那么有没有像 EnvironmentPlaceholderConfigurer 类似的东西呢，查下 api 没找到相关的，只是看下它有两个子类：<br/><br/>
+<a href="http://static.springsource.org/spring/docs/3.0.x/javadoc-api/org/springframework/web/context/support/ServletContextPropertyPlaceholderConfigurer.html" target="_blank" rel="noopener">org.springframework.beans.factory.config.PreferencesPlaceholderConfigurer<br />
+org.springframework.web.context.support.ServletContextPropertyPlaceholderConfigurer</a><br/><br/>
+上面那两个类估计以后也是用得着，前面那个应该是从系统配置或注册表里要属性，后面的可以从 ServletContext 取相关属性值。<br/><br/>
+上面的思路应该是这样的，但实际上只要仔细阅读下 <a href="http://static.springsource.org/spring/docs/3.0.x/javadoc-api/org/springframework/beans/factory/config/PropertyPlaceholderConfigurer.html" target="_blank" rel="noopener">org.springframework.beans.factory.config.PropertyPlaceholderConfigurer</a> 的 JavaDoc API 就会发现，它不光能从属性文件里取值，也能从系统属性，甚至是环境变量中取值。<br/><br/>
+<blockquote>
+Default property values can be defined via "properties", to make overriding definitions in properties files optional. A configurer will also check against system properties (e.g. "user.dir") if it cannot resolve a placeholder with any of the specified properties. This can be customized via "systemPropertiesMode".
+</blockquote>
+<br/>
+再往下看：<br/><br/>
+<blockquote>
+public void setSystemPropertiesMode(int systemPropertiesMode)
+Set how to check system properties: as fallback, as override, or never. For example, will resolve ${user.dir} to the "user.dir" system property.<br />
+The default is "fallback": If not being able to resolve a placeholder with the specified properties, a system property will be tried. "override" will check for a system property first, before trying the specified properties. "never" will not check system properties at all.
+---------------------------------------------------------------------
+public void setSearchSystemEnvironment(boolean searchSystemEnvironment)
+Set whether to search for a matching system environment variable if no matching system property has been found. Only applied when "systemPropertyMode" is active (i.e. "fallback" or "override"), right after checking JVM system properties.<br />
+Default is "true". Switch this setting off to never resolve placeholders against system environment variables. Note that it is generally recommended to pass external values in as JVM system properties: This can easily be achieved in a startup script, even for existing environment variables.
+NOTE: Access to environment variables does not work on the Sun VM 1.4, where the corresponding System.getenv(java.lang.String) support was disabled - before it eventually got re-enabled for the Sun VM 1.5. Please upgrade to 1.5 (or higher) if you intend to rely on the environment variable support.
+</blockquote>
+<br/>
+说明了这个类可以从三个地方取属性值，并且可以设置覆盖关系，覆盖关系在此就不细究了。现在可以例子说明如何从系统属性或环境变量中取值了。演示一下从把系统属性 user.dir 和环境变量 COMPUTERNAME 注入到 javabean。<br/><br/>
+一. 要被注入系统属性和环境变量的 Bean<br/><br/>
+<pre class="lang:default decode:true ">package cc.unmi.spring;<br/><br/>
+/**
+ * 通过 Spring 来向其中注入系统属性 workDir(${user.dir}, System.getProperty(""))
+ * 和环境变量 hostName(${COMPUTERNAME}, System.getenv().get("COMPUTERNAME"));
+ * @author Unmi
+ *
+ */
+public class Environments {
+    private String workDir;
+    private String hostName;<br/><br/>
+    public String getHostName() {
+        return hostName;
+    }<br/><br/>
+    public void setHostName(String hostName) {
+        this.hostName = hostName;
+    }<br/><br/>
+    public String getWorkDir() {
+        return workDir;
+    }<br/><br/>
+    public void setWorkDir(String workDir) {
+        this.workDir = workDir;
+    }
+}</pre>
+<br/>
+二. Spring 配置文件<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+           http://www.springframework.org/schema/beans/spring-beans-3.0.xsd"&gt;<br/><br/>
+    &lt;bean id="propertyConfigurer" class="org.springframework.beans.factory.config.PropertyPlaceholderConfigurer"/&gt;<br/><br/>
+    &lt;bean id="env" class="cc.unmi.spring.Environments"&gt;
+        &lt;property name="workDir" value="${user.dir}"/&gt;
+        &lt;property name="hostName" value="${COMPUTERNAME}"/&gt;
+    &lt;/bean&gt;
+&lt;/beans&gt;</pre>
+<br/>
+三. 测试客户端代码<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.spring;<br/><br/>
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.context.support.ClassPathXmlApplicationContext;<br/><br/>
+import cc.unmi.spring.Environments;<br/><br/>
+/**
+ * 测试客户端
+ * @author Unmi
+ */
+public class TestClient {<br/><br/>
+    public static void main(String[] args) {
+        BeanFactory context = new ClassPathXmlApplicationContext("applicationContext.xml");
+        Environments env = context.getBean(Environments.class);
+        System.out.println("Working directory: " + env.getWorkDir());
+        System.out.println("Host name: " + env.getHostName());       
+    }
+}</pre>
+<br/>
+四. 执行上面的 TestClient 后控制台下输出的结果是：<br/><br/>
+Working directory: D:\workspaces\j2ee\TestSpring<br />
+Host name: Unmi-Computer<br/><br/>
+这显示了 Spring 已成功向 Environments 注入了系统属性 user.dir 和环境变量 COMPUTERNAME。<br/><br/>
+注：你可以用 System.getProperties().list(System.out) 打印出系统属性，还不知道系统中可用哪个命令查得到其中的值：显示出来是这样的：<br/><br/>
+-- listing properties --<br />
+java.runtime.name=Java(TM) SE Runtime Environment<br />
+sun.boot.library.path=C:\Program Files\Java\jre6\bin<br />
+java.vm.version=17.1-b03<br />
+java.vm.vendor=Sun Microsystems Inc.<br />
+java.vendor.url=http://java.sun.com/<br />
+path.separator=;<br />
+java.vm.name=Java HotSpot(TM) Client VM<br />
+file.encoding.pkg=sun.io<br />
+user.country=US<br />
+...................................<br/><br/>
+环境变量可以用 System.out.print(System.getenv()) 打印出来，对应着 Windows 中的 set 命令或 Linux  下的 env 输出的值，System.getenv() 是个 Map，所以打印出这样子的：<br/><br/>
+{USERPROFILE=C:\Documents and Settings\Unmi, JAVA_HOME=C:\Program Files\Java\jdk1.6.0_20, TEMP=C:\DOCUME~1\yanbin\LOCALS~1\Temp, OS=Windows_NT, COMPUTERNAME=Unmi-Computer, .......}

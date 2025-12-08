@@ -1,0 +1,67 @@
+---
+title: Spring 学习点滴，《Spring in Action》笔记（三）
+url: /spring-in-action-notes-3/
+date: 2007-06-03T12:11:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - Spring
+  - Notes
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 518 
+wpStatus: publish
+views: 492
+lastmod: 2021-09-03T10:18:16-05:00
+---
+
+<strong>第十章. 使用其他 Web 框架</strong></p>
+<br/>
+<hr /><br/><br/>
+41. Spring 提供了两种与 Struts 集成的方式<br />
+    1) 让你的 Action 继承 org.springframework.web.struts.ActionSupport<br />
+    2) 将请求委托给作为 Spring Bean 管理的 Struts action 来自理(P312)<br/><br/>
+42. 为了让 Struts 能访问 Spring 管理的 Bean，必须在 struts-config.xml 中注册一个知道 Spring 上下文的 ContextLoaderPlugIn，用的是 WebApplicationContext：(P312)<!--more--><br/><br/>
+<pre class="lang:default decode:true">&lt;plug-in className="org.springframework.web.struts.ContextLoaderPlugIn"&gt;
+    &lt;set-property="contextConfigLocation" value="/WEB-INF/training-servlet.xml,/WEB-INF/..."/&gt;
+&lt;/plugin-in&gt;</pre>
+<br/>
+43.  ActionSupport 重载了 setServlet()方法，获取bean的方式为调用 ActionSupport 的 getWebApplicationContext().getBean() (P313)<br/><br/>
+44. 继承 Spring 提供的 ActionSupport 让 Struts与Spring 紧密耦合，而且 Action 还负责查找 Bean，这也违背了IoC原则(P313)<br/><br/>
+45. 使用委托 Action：struts-config.xml 中每个 path 都指定 type 为 org.springframework.web.struts.DelegatingActionProxy，实际的 Action 实例由Spring 来管理，即所有的 Action 实例是配置在 Spring 上下文文件中，它们之间用 path&lt;-&gt;name 来映射，这种方式并不好看(P315)<br/><br/>
+46. 使用请求委托，只在 struts-config.xml 中配置 DelegatingRequestProcess 或 DelegatingTilesRequestProcessor 作为控制器，其余配置不变，如&lt;action path="/listCourses" type="com.unmi.MyCoursesAction"/&gt; 其实 type 属性是被所配置的 controller 忽略掉了，所以可省去 type属性，真正的Action也是由Spring来配置装配，也是通过 path--name 来对应。这种做法就是不需要为每一个 &lt;action .../&gt; 指定 org.springframework.web.struts.DelegatingActionProxy。(P315)<br/><br/>
+47. 感觉 Spring 与 Struts 的搭配总有些牵强，没有一种更完美的方式。个人觉得使用请求委托更合适些，一方面是不需要让 Struts 与 Spring 紧密耦合，其次是不需要为每一个 &lt;action .../&gt; 配置一个重复的 DelegatingActionProxy。<br/><br/>
+48. Spring 集成 Tapestry 的关键用一个知晓 Spring 的引擎替换掉 Tapestry 的缺省引擎。Spring 未提供这个东西，要自己实现，继承自 org.apache.tapestry.engine.BaseEngine，在引擎的 setupForRequest() 方法中，把 Spring 上下文放到 getGlobal() 对象中 让 Tapestry 随时可用。最后用 engine-class 把这个引擎指定给 Tapestry 应用。(P316)<br/><br/>
+49. Spring 在集成 Struts/Tapestyr/JSF/WebWork 都需要在 web.xml 中配置ContextLoaderListener。会对 JSF 有一个独立的项目 JSF-Spring(<a href="http://jsfspring.sourceforget.net">http://jsfspring.sourceforget.net</a>)。集成 WebWork 1，要在 webwork.properties 中配置属性<br />
+webwork.action.factory=webwork.action.factory.SpringActionFactory。集成 WebWork 2 也有一个 XWork/Spring 集成包(<a href="http://www.ryandaigle.com/pebble/images/webwork2-spring.jar">http://www.ryandaigle.com/pebble/images/webwork2-spring.jar</a>)，在 xwork.xml 中的 &lt;package .../&gt; 中配置属性<br />
+ externalReferenceResolver="com.atlassian.xwork.ext.SpringServletContextReferenceResolver"，再加一个拦截器<br />
+class="xwork.interceptor.ExtenalReferenceInterceptor"。---这些真要用到时再细究吧 (P325)<br/><br/>
+50. HibernateDaoSupport 有 getSession() 和closeSessionIfNecessary()，可取得Session作更自由的操作<br/><br/>
+51. DaoSupport有以下实现类：CciDaoSupport, HibernateDaoSupport, JdbcDaoSupport, JdoDaoSupport, PersistenceBrokerDaoSupport, SqlMapClientDaoSupport, SqlMapDaoSupport, TopLinkDaoSupport，据此了解支持哪些类型DB操作<br/><br/>
+<strong>第五章. 事物管理</strong><br/><br/>
+<hr /><br/><br/>
+52. 要用声明式事物，需要用到 TransactionProxyFactoryBean 来包括你的 Service(用 proxyInterfaces 属性指定接口) 类。(P163)<br/><br/>
+53. 能够简单配置被代理的Service的 transactionAttributes 属性声明事物，如下对方法名称为addStudent(可能是多个重载方法)启用事物<br/><br/>
+<pre class="lang:default decode:true ">&lt;property name="transactionAttributes"&gt;
+    &lt;props&gt;
+       &lt;prop key="addStudent"&gt;
+            PROPAGATION_REQUIRES_NEW,ISOLATION_DEFAULT
+       &lt;/prop&gt;
+    &lt;/props&gt;
+&lt;/property&gt;</pre>
+<br/>
+    如果没为某个 service 方法配置事物，它是能自动提交的。<br/><br/>
+54. 配置属性 transactionAttributeSource为 MatchAlwaysTransactionAttributeSource 实例，将使 TransactionProxyFactoryBean 的目标类代理的方法都被执行在一个事务环境中了，默认为 PROGAGATION_REQUIRED,ISOLATION_DEFAULT(P168)<br/><br/>
+55. 可配置 DefaultTransactionAttribute 给 MatchAlwaysTransactionAtributeSoure 的 transactionAttribute 属性，改变 MatchAlwaysTransactionAtributeSoure 的默认事物属性(P169)<br/><br/>
+56. 使用 NameMatchTransactionAttributeSource 可能实现像在 CMT 中那样的事物属性配置。可设定事物回滚规则：默认情况下，发生 Runtime 异常回滚；发生checked exception 不回滚（这也是EJB的行为），可定制，用正（+）或负（+）号写在异常类名前，正异常表示事务仍可提交，负异常表示触发回滚(P170)<br/><br/>
+57. NameMatchTransactionAttributeSource 应该能想像到，支持方法名的通配符形式，如 key="get*"，应用到所有以get开始的方法(P172)<br/><br/>
+58. NameMatchTransactionAttributeSource 的简洁配置，直接配置给 TransactionProxyFactoryBean 的 transactionProperties 属性，形式如它的 properties 属性配置，内部实现是会帮你构造 NameMatchTransactionAttributeSource 实例。在 Spring 1.2.8 中的 TransactionProxyFactoryBean 都没有 transactionProperties 属性，不知哪个版本的有(P173)<br/><br/>
+59. 可以用元数据来书写事物属性，JDK1.5 版以下需借助于 Jakarta Commons Attributes，而且还需要结合 ANT 预编译，麻烦，如果是JDK1.5以上就方便多了。要使用到 AttributesTransactionAttributeSource(P174)<br/><br/>
+60. 使用 Bean 继承可以在父 bean (TransactionProxyFactoryBean)中定义公共的东西，如 transactionManager，transactionAttributeSource 等，子 bean 中只需要定义自己的 target 属性，这样做可以省却很多 XML 配置。注意父 Bean 当抽象类使用，不需要用到它的实例，所以设置 lazy-init="true" 告诉容器不要初始化它

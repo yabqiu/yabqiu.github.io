@@ -1,0 +1,77 @@
+---
+title: Wordpress 插件 All in One SEO Pack 生成中文描述的解决
+url: /wordpress-all-in-one-seo-pack-chinese-description-patch/
+date: 2014-01-04T01:16:11-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - WordPress
+tags: 
+  - plugin
+  - SEO
+  - wordpree
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5936 
+wpStatus: publish
+views: 943
+lastmod: 2021-05-05T15:52:53-05:00
+---
+
+之前也有记录过一篇是针对 All in One SEO Pack 1.6.X 的解决截取中文描述的办法--<a title="让 All in One SEO Pack 插件适用于截取中文描述" href="http://unmi.cc/all-in-one-seo-pack-support-chinese/" target="_blank" rel="noopener">让All in One SEO Pack 插件适用于截取中文描述</a>，随着该插件一直升级到当前的 2.1.2，我的插件仍然滞留在 1.6.x 的版本，原因是未曾了解下 2.x 下如何处理中文描述的问题。现在有幸找来办法整理了下，特记录在下：</p>
+<br/>
+中间插一句，All in One SEO Pack 可真是个吃内存的大户，小心使用。好，和针对 1.6.x  版本的修改一样，对于 2.x 也是要改两个变量值和一个方法，那就是在 aioseop.class.php 文件中<br/><br/>
+改下面两个变量分别为<br/><br/>
+<blockquote>
+var $maximum_description_length = 300;  //原本为 160;<br />
+var $minimum_description_length = 80;//原本为 1;
+</blockquote>
+<br/>
+然后修改方法 trim_excerpt_without_filters($text) 的内容为<!--more--><br/><br/>
+<pre class="lang:default decode:true">function trim_excerpt_without_filters( $text, $max = 0 ) {
+    $text = str_replace( ']]&gt;', ']]&gt;', $text );
+    $text = preg_replace( '|\[(.+?)\](.+?\[/\\1\])?|s', '', $text );
+    $text = strip_tags( $text );
+    if ( !$max ) $max = $this-&gt;maximum_description_length;<br/><br/>
+    if ( $max &lt; $this-&gt;strlen( $text ) ) {
+        while((ord($text[$max]) &amp; 0x80) != 0 &amp;&amp; (ord($text[$max]) &amp; 0x40) == 0
+          &amp;&amp; $max &gt; $this-&gt;minimum_description_length ) {
+            $max--;
+        }
+    }
+    $text = substr( $text, 0, $max );
+    return trim( stripcslashes( $text ) );
+}</pre>
+<br/>
+这样就可以了。<br/><br/>
+我们回顾一下，对于 1.6.x 下该方法的实现我们用<br/><br/>
+<pre class="lang:default decode:true ">function trim_excerpt_without_filters($text) {
+    $text = str_replace(']]&gt;', ']]&gt;', $text);
+    $text = preg_replace( '|\[(.+?)\](.+?\[/\\1\])?|s', '', $text );
+    $text = strip_tags($text);
+    $max = $this-&gt;maximum_description_length;<br/><br/>
+    if ($max &lt; strlen($text)) {
+         while((ord($text[$max]) &amp; 0x80) != 0 &amp;&amp; (ord($text[$max]) &amp; 0x40) == 0
+           &amp;&amp; $max &gt; $this-&gt;minimum_description_length) {
+            $max--;
+        }
+    }<br/><br/>
+    $text = substr($text, 0, $max);
+    return trim(stripcslashes($text));
+}</pre>
+<br/>
+和我前一篇贴出来的代码还有些不一样呢，不过我的 1.6.x 一直也工作的好好的。倒是刚刚升级修改后的 All in One SEO Pack 2.1.2 就开始经常的出问题了好像，难道要逼迫我再回到重前。<br/><br/>
+后台看到一堆类似这样的错误了：<br/><br/>
+<blockquote>
+ALERT - script tried to increase memory_limit to 268435456 bytes which is above the allowed value (attacker '198.98.117.158', file '/var/www/wp-content/plugins/all-in-one-seo-pack/all_in_one_seo_pack.php', line 115)
+</blockquote>
+<br/>
+像是有攻击，其实不是，就是 All in One SEO Pack 自己搞的事，256M 内存要求啊，要想人家 VPS 的总内存才多大呀。并且升级了激活该插件都费了很大的功夫，常常 500 Server Error。<br/><br/>
+在此澄清一下，造成后台经常性的 500 Server Error，并不是 All in One SECO Pack 惹的祸，不能冤枉它，真正的罪魁祸首是这个插件 <a href="http://wordpress.org/plugins/broken-link-checker/" target="_blank" rel="noopener">Broken Link Checker</a>，卸了它就无事。<br/><br/>
+本前当前用的就是修正后的 All in One SEO Pack 2.1.2。<br/><br/>
+参考：1. <a href="http://www.litefeel.com/all-in-one-seo-pack-for-chinese/" target="_blank" rel="noopener">完美解决All in One SEO Pack对中文支持不友好的问题<br />
+</a>        2. <a href="http://www.cnjoel.com/502.html" target="_blank" rel="noopener">WordPress占用较大内存的几款插件</a>

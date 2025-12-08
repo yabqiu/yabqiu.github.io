@@ -1,0 +1,427 @@
+---
+title: Mockito 中被 Mocked 的对象属性及方法的默认值
+url: /mockito-mocked-default-fields-method-returns/
+date: 2017-11-12T00:16:13-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/01/rsz_mockito_logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - mockito
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8359 
+wpStatus: publish
+views: 2953
+lastmod: 2017-11-12T00:18:48-06:00
+---
+
+<p>在 Java 测试中使用 Mockito 有段时日了，以前只是想当然的认为 Mock 的对象属性值和方法返回值都是依据同样的规则。基本类型是 0, 0.0, 或 false, 对象类型都是 null, Mock 对象的默认返回值也应该是一样的。直到最近有一天，有一个返回 <code>Optional&lt;String&gt;</code> 类型的方法，由于忘记对该方法打桩，意外的发现它返回的不是 null, 而 <code>Optional.empty()</code>, 因此才意识到此处定有蹊跷。着实有必要用代码验证一下 Mockito 是怎么决定属性及方法的各种返回类型的默认值的。</p>
+
+<p>此次测试所用的 Mockito 版本是 mockito-core-2.12.0.</p>
+
+<p>于是创建了下面一个类 MyClass 用于生成 Mock 对象，选取了一些典型的数据类型, 包括 int, Double, String, long[], Optional&lt;String&gt;, Collection&lt;String&gt;, Map&lt;String, String&gt;, 同时测试 Mock 对象默认的属性值与方法默认返回值。<!--more--></p>
+
+<p>该类的完整代码如下：</p>
+
+<pre class="lang:default decode:true">package cc.unmi;<br/>
+<br/>
+import java.util.Collection;<br/>
+import java.util.Map;<br/>
+import java.util.Optional;<br/>
+<br/>
+public class MyClass {<br/>
+    public int integer;<br/>
+    public Double aDouble;<br/>
+    public String string;<br/>
+    public long[] array;<br/>
+    public Optional&lt;String&gt; optional;<br/>
+    public Collection&lt;String&gt; collection;<br/>
+    public Map&lt;String, String&gt; map;<br/>
+<br/>
+    public int getInteger() {<br/>
+        return 99;<br/>
+    }<br/>
+<br/>
+    public long[] getArray() {<br/>
+        return new long[]{0};<br/>
+    }<br/>
+<br/>
+    public Double getDouble() {<br/>
+        return 9.9;<br/>
+    }<br/>
+<br/>
+    public String getString() {<br/>
+        return "hello";<br/>
+    }<br/>
+<br/>
+    public Optional&lt;String&gt; getOptional() {<br/>
+        return null;<br/>
+    }<br/>
+<br/>
+    public Collection&lt;String&gt; getCollection() {<br/>
+        return null;<br/>
+    }<br/>
+<br/>
+    public Map&lt;String, String&gt; getMap() {<br/>
+        return null;<br/>
+    }<br/>
+}</pre>
+
+<p>为了认识到调用 Mock 对象时默认情况下不会调用实际方法实现，我们故意让上面的方法返回一些乱七八糟的值。</p>
+
+<p>测试类 <code>MyClassTest</code> 的代码如下</p>
+
+<pre class="lang:default decode:true">package cc.unmi;<br/>
+<br/>
+import org.junit.Test;<br/>
+import org.junit.runner.RunWith;<br/>
+import org.mockito.Mockito;<br/>
+import org.mockito.junit.MockitoJUnitRunner;<br/>
+<br/>
+@RunWith(MockitoJUnitRunner.class)<br/>
+public class MyClassTest {<br/>
+<br/>
+    @Test<br/>
+    public void watchMockedClass() {<br/>
+        MyClass myClass = Mockito.mock(MyClass.class);<br/>
+        printDefaults(myClass);<br/>
+    }<br/>
+<br/>
+    private void printDefaults(MyClass myClass) {<br/>
+        System.out.println("fields ---- ");<br/>
+        System.out.println("integer: " + myClass.integer);<br/>
+        System.out.println("array: " + myClass.array);<br/>
+        System.out.println("double: " + myClass.aDouble);<br/>
+        System.out.println("string: " + myClass.string);<br/>
+        System.out.println("optional: " + myClass.optional);<br/>
+        System.out.println("collection: " + myClass.collection);<br/>
+        System.out.println("map: " + myClass.map);<br/>
+<br/>
+        System.out.println("\nmethods ---- ");<br/>
+        System.out.println("integer: " + myClass.getInteger());<br/>
+        System.out.println("array: " + myClass.getArray());<br/>
+        System.out.println("double: " + myClass.getDouble());<br/>
+        System.out.println("string: " + myClass.getString());<br/>
+        System.out.println("optional: " + myClass.getOptional());<br/>
+        System.out.println("collection: " + myClass.getCollection() + ", " + myClass.getCollection().getClass());<br/>
+        System.out.println("map: " + myClass.getMap() + ", " + myClass.getMap().getClass());<br/>
+    }<br/>
+}</pre>
+
+<p>执行上面的代码输出如下</p>
+
+<blockquote><br/>
+<p>fields ---- <br /><br/>
+ integer: 0<br /><br/>
+ array: null<br /><br/>
+ double: null<br /><br/>
+ string: null<br /><br/>
+ optional: null<br /><br/>
+ collection: null<br /><br/>
+ map: null</p>
+
+<p>methods ---- <br /><br/>
+ integer: 0<br /><br/>
+ array: null<br /><br/>
+ double: 0.0<br /><br/>
+ string: null<br /><br/>
+ optional: Optional.empty<br /><br/>
+ collection: [], class java.util.LinkedList<br /><br/>
+ map: {}, class java.util.HashMap</p>
+
+</blockquote>
+
+<p>Mockito mock 的对象属性的默认值没什么异议，与 Java 初始化对象的规则一致，基本类型的默认值是 0, 0.0, 或 false。但是对于方法默认返回值就不一样了，从上面我们看到</p>
+
+<ol>
+
+	<li>int 类型方法默认返回 0</li>
+
+	<li>long[] 类型方法默认返回 null</li>
+
+	<li>Double 类型方法默认返回 0.0</li>
+
+	<li>string 类型方法默认返回 null</li>
+
+	<li>Optional&lt;String&gt; 类型方法默认返回 Optional.empty</li>
+
+	<li>Collection&lt;String&gt; 类型方法默认返回 new LinkedList&lt;String&gt;(0)</li>
+
+	<li>Map&lt;String, String&gt; 类型方法默认返回 new HashMap&lt;String, String&gt;(0)</li>
+
+</ol>
+
+<p>关于 Mock 对象属性的默认值可以搁一边，那么 Mockito 是如何定义 Mock 对象方法的默认返回值的呢？</p>
+
+<p>通常的，我们创建一个 Mock 对象都是简单的调用 Mockito 的如下方法</p>
+
+<pre class="lang:default decode:true ">public static &lt;T&gt; T mock(Class&lt;T&gt; classToMock) {<br/>
+    return mock(classToMock, withSetting());<br/>
+}</pre>
+
+<p>再看 <code>withSetting()</code> 方法</p>
+
+<pre class="lang:default decode:true ">public static MockSetting withSetting() {<br/>
+    return new MockSettingsImpl().defaultAnswer(RETURNS_DEFAULTS);<br/>
+}</pre>
+
+<p>绕了一圈，基实我们默认采用的 Mock 对象的方式其实就是如下</p>
+
+<pre class="lang:default decode:true ">Mockito.mock(MyClass.class, Answers.RETURNS_DEFAULTS);</pre>
+
+<p>在 <code>org.mockito.Answers</code> 中定义了如下设定方法默认返回值的选项</p>
+
+<ol>
+
+	<li>RETURN_DEFAULTS(new GloballyConfiguredAnswer())  -- 基本对应到 <a href="https://static.javadoc.io/org.mockito/mockito-core/2.0.74-beta/org/mockito/internal/stubbing/defaultanswers/ReturnsEmptyValues.html">ReturnsEmptyValues</a> 实现</li>
+
+	<li>RETURNS_SMART_NULLS(new ReturnsSmartNulls())  -- 最后对应到 <a href="https://static.javadoc.io/org.mockito/mockito-core/2.0.47-beta/org/mockito/internal/stubbing/defaultanswers/ReturnsMoreEmptyValues.html">ReturnsMoreEmptyValues</a> 实现</li>
+
+	<li>RETURN_MOCKS(new ReturnsMocks())</li>
+
+	<li>RETURNS_DEEP_STUBS(new ReturnsDeepStubs())</li>
+
+	<li>CALL_REAL_METHODS(new CallsRealMethods())</li>
+
+	<li>RETURNS_SELF(new TriesToReturnSelf())</li>
+
+</ol>
+
+<p>所以默认情况下的 RETURNS_DEFAULTS, Mock 对象方法返回值就是由 <a href="https://static.javadoc.io/org.mockito/mockito-core/2.0.74-beta/org/mockito/internal/stubbing/defaultanswers/ReturnsEmptyValues.html">ReturnsEmptyValues</a> 类决定的，看这个类的注释</p>
+
+<blockquote><br/>
+<p>Default answer of every Mockito mock.</p>
+
+<ul><br/>
+	<li>Returns appropriate primitive for primitive-returning methods</li>
+
+	<li>Returns consistent values for primitive wrapper classes (e.g. int-returning method retuns 0 and Integer-returning method returns 0, too)</li>
+
+	<li>Returns empty collection for collection-returning methods (works for most commonly used collection types)</li>
+
+	<li>Returns description of mock for toString() method</li>
+
+	<li>Returns zero if references are equals otherwise non-zero for Comparable#compareTo(T other) method (see issue 184)</li>
+
+	<li>Returns null for everything else</li>
+
+</ul><br/>
+</blockquote>
+
+<p>至此，最能说明问题仍然是源代码，很想节约些篇幅，但实在是不行; 欣赏一下 ReturnsEmptyValues 的源代码吧</p>
+
+<pre class="lang:default decode:true ">public class ReturnsEmptyValues implements Answer&lt;Object&gt;, Serializable {<br/>
+<br/>
+    private static final long serialVersionUID = 1998191268711234347L;<br/>
+<br/>
+<br/>
+    /* (non-Javadoc)<br/>
+     * @see org.mockito.stubbing.Answer#answer(org.mockito.invocation.InvocationOnMock)<br/>
+     */<br/>
+    public Object answer(InvocationOnMock invocation) {<br/>
+        if (isToStringMethod(invocation.getMethod())) {<br/>
+            Object mock = invocation.getMock();<br/>
+            MockName name = MockUtil.getMockName(mock);<br/>
+            if (name.isDefault()) {<br/>
+                return "Mock for " + MockUtil.getMockSettings(mock).getTypeToMock().getSimpleName() + ", hashCode: " + mock.hashCode();<br/>
+            } else {<br/>
+                return name.toString();<br/>
+            }<br/>
+        } else if (isCompareToMethod(invocation.getMethod())) {<br/>
+            //see issue 184.<br/>
+            //mocks by default should return 0 if references are the same, otherwise some other value because they are not the same. Hence we return 1 (anything but 0 is good).<br/>
+            //Only for compareTo() method by the Comparable interface<br/>
+            return invocation.getMock() == invocation.getArgument(0) ? 0 : 1;<br/>
+        }<br/>
+<br/>
+        Class&lt;?&gt; returnType = invocation.getMethod().getReturnType();<br/>
+        return returnValueFor(returnType);<br/>
+    }<br/>
+<br/>
+    Object returnValueFor(Class&lt;?&gt; type) {<br/>
+        if (Primitives.isPrimitiveOrWrapper(type)) {<br/>
+            return Primitives.defaultValue(type);<br/>
+            //new instances are used instead of Collections.emptyList(), etc.<br/>
+            //to avoid UnsupportedOperationException if code under test modifies returned collection<br/>
+        } else if (type == Iterable.class) {<br/>
+            return new ArrayList&lt;Object&gt;(0);<br/>
+        } else if (type == Collection.class) {<br/>
+            return new LinkedList&lt;Object&gt;();<br/>
+        } else if (type == Set.class) {<br/>
+            return new HashSet&lt;Object&gt;();<br/>
+        } else if (type == HashSet.class) {<br/>
+            return new HashSet&lt;Object&gt;();<br/>
+        } else if (type == SortedSet.class) {<br/>
+            return new TreeSet&lt;Object&gt;();<br/>
+        } else if (type == TreeSet.class) {<br/>
+            return new TreeSet&lt;Object&gt;();<br/>
+        } else if (type == LinkedHashSet.class) {<br/>
+            return new LinkedHashSet&lt;Object&gt;();<br/>
+        } else if (type == List.class) {<br/>
+            return new LinkedList&lt;Object&gt;();<br/>
+        } else if (type == LinkedList.class) {<br/>
+            return new LinkedList&lt;Object&gt;();<br/>
+        } else if (type == ArrayList.class) {<br/>
+            return new ArrayList&lt;Object&gt;();<br/>
+        } else if (type == Map.class) {<br/>
+            return new HashMap&lt;Object, Object&gt;();<br/>
+        } else if (type == HashMap.class) {<br/>
+            return new HashMap&lt;Object, Object&gt;();<br/>
+        } else if (type == SortedMap.class) {<br/>
+            return new TreeMap&lt;Object, Object&gt;();<br/>
+        } else if (type == TreeMap.class) {<br/>
+            return new TreeMap&lt;Object, Object&gt;();<br/>
+        } else if (type == LinkedHashMap.class) {<br/>
+            return new LinkedHashMap&lt;Object, Object&gt;();<br/>
+        } else if ("java.util.Optional".equals(type.getName())) {<br/>
+            return JavaEightUtil.emptyOptional();<br/>
+        } else if ("java.util.OptionalDouble".equals(type.getName())) {<br/>
+            return JavaEightUtil.emptyOptionalDouble();<br/>
+        } else if ("java.util.OptionalInt".equals(type.getName())) {<br/>
+            return JavaEightUtil.emptyOptionalInt();<br/>
+        } else if ("java.util.OptionalLong".equals(type.getName())) {<br/>
+            return JavaEightUtil.emptyOptionalLong();<br/>
+        } else if ("java.util.stream.Stream".equals(type.getName())) {<br/>
+            return JavaEightUtil.emptyStream();<br/>
+        } else if ("java.util.stream.DoubleStream".equals(type.getName())) {<br/>
+            return JavaEightUtil.emptyDoubleStream();<br/>
+        } else if ("java.util.stream.IntStream".equals(type.getName())) {<br/>
+            return JavaEightUtil.emptyIntStream();<br/>
+        } else if ("java.util.stream.LongStream".equals(type.getName())) {<br/>
+            return JavaEightUtil.emptyLongStream();<br/>
+        }<br/>
+<br/>
+        //Let's not care about the rest of collections.<br/>
+        return null;<br/>
+    }<br/>
+}</pre>
+
+<p>从上可以看到所有列出的方法默认返回值的映射情况，未涉及到的就是 null.</p>
+
+<p>我们还可以关注一下另一个 Answer: RETURN_SMART_NULL, 同样是看相应实现类 ReturnsMoreEmptyValues  的注解 </p>
+
+<blockquote><br/>
+<p>It's likely this implementation will be used by default by every Mockito 3.0.0 mock.<br /><br/>
+ Currently used only by Mockito.RETURNS_SMART_NULLS<br /><br/>
+ Current version of Mockito mocks by default use ReturnsEmptyValues</p>
+
+<ul><br/>
+	<li>Returns appropriate primitive for primitive-returning methods</li>
+
+	<li>Returns consistent values for primitive wrapper classes (e.g. int-returning method returns 0 and Integer-returning method returns 0, too)</li>
+
+	<li>Returns empty collection for collection-returning methods (works for most commonly used collection types)</li>
+
+	<li>Returns empty array for array-returning methods</li>
+
+	<li>Returns "" for String-returning method</li>
+
+	<li>Returns description of mock for toString() method</li>
+
+	<li>Returns non-zero for Comparable#compareTo(T other) method (see issue 184)</li>
+
+	<li>Returns null for everything else</li>
+
+</ul><br/>
+</blockquote>
+
+<p>这还是一个面向未来(Mockito 3.0.9) 的默认的 Answer, 它与 RETURNS_DEFAULTS 有所不同的是数组，字符串不再为 null, 而是空数组和空字符串。</p>
+
+<p>我们可以作一个测试，前面的 MyClassTest 代码，把构造 MyClass Mock  对象那一行从</p>
+
+<pre class="lang:default decode:true ">MyClass myClass = Mockito.mock(MyClass.class);</pre>
+
+<p>改成</p>
+
+<pre class="lang:default decode:true ">MyClass myClass = Mockito.mock(MyClass.class, Mockito.withSettings()<br/>
+    .defaultAnswer(Answers.RETURNS_SMART_NULLS).verboseLogging());</pre>
+
+<p>我们同时开启了调用 Mock 方法时的详细输出，重新运行后，控制台输出</p>
+
+<blockquote><br/>
+<p>fields ---- <br /><br/>
+ integer: 0<br /><br/>
+ array: null<br /><br/>
+ double: null<br /><br/>
+ string: null<br /><br/>
+ optional: null<br /><br/>
+ collection: null<br /><br/>
+ map: null</p>
+
+<p>methods ---- <br /><br/>
+ ############ Logging method invocation #1 on mock/spy ########<br /><br/>
+ myClass.getInteger();<br /><br/>
+ invoked: -&gt; at cc.unmi.MyClassTest.printDefaults(MyClassTest.java:31)<br /><br/>
+ has returned: "0" (java.lang.Integer)</p>
+
+<p>integer: 0<br /><br/>
+ ############ Logging method invocation #2 on mock/spy ########<br /><br/>
+ myClass.getArray();<br /><br/>
+ invoked: -&gt; at cc.unmi.MyClassTest.printDefaults(MyClassTest.java:32)<br /><br/>
+ has returned: "[J@4009e306" ([J)</p>
+
+<p>array: [J@4009e306<br /><br/>
+ ############ Logging method invocation #3 on mock/spy ########<br /><br/>
+ myClass.getDouble();<br /><br/>
+ invoked: -&gt; at cc.unmi.MyClassTest.printDefaults(MyClassTest.java:33)<br /><br/>
+ has returned: "0.0" (java.lang.Double)</p>
+
+<p>double: 0.0<br /><br/>
+ ############ Logging method invocation #4 on mock/spy ########<br /><br/>
+ myClass.getString();<br /><br/>
+ invoked: -&gt; at cc.unmi.MyClassTest.printDefaults(MyClassTest.java:34)<br /><br/>
+ has returned: "" (java.lang.String)</p>
+
+<p>string: <br /><br/>
+ ############ Logging method invocation #5 on mock/spy ########<br /><br/>
+ myClass.getOptional();<br /><br/>
+ invoked: -&gt; at cc.unmi.MyClassTest.printDefaults(MyClassTest.java:35)<br /><br/>
+ has returned: "Optional.empty" (java.util.Optional)</p>
+
+<p>optional: Optional.empty<br /><br/>
+ ############ Logging method invocation #6 on mock/spy ########<br /><br/>
+ myClass.getCollection();<br /><br/>
+ invoked: -&gt; at cc.unmi.MyClassTest.printDefaults(MyClassTest.java:36)<br /><br/>
+ has returned: "[]" (java.util.LinkedList)</p>
+
+<p>############ Logging method invocation #7 on mock/spy ########<br /><br/>
+ myClass.getCollection();<br /><br/>
+ invoked: -&gt; at cc.unmi.MyClassTest.printDefaults(MyClassTest.java:36)<br /><br/>
+ has returned: "[]" (java.util.LinkedList)</p>
+
+<p>collection: [], class java.util.LinkedList<br /><br/>
+ ############ Logging method invocation #8 on mock/spy ########<br /><br/>
+ myClass.getMap();<br /><br/>
+ invoked: -&gt; at cc.unmi.MyClassTest.printDefaults(MyClassTest.java:37)<br /><br/>
+ has returned: "{}" (java.util.HashMap)</p>
+
+<p>############ Logging method invocation #9 on mock/spy ########<br /><br/>
+ myClass.getMap();<br /><br/>
+ invoked: -&gt; at cc.unmi.MyClassTest.printDefaults(MyClassTest.java:37)<br /><br/>
+ has returned: "{}" (java.util.HashMap)</p>
+
+<p>map: {}, class java.util.HashMap</p>
+
+</blockquote>
+
+<p>有所不同的也就是数组默认为空，字符串默认为空字符串，都不再是 null 了。</p>
+
+<p>另外，剩下的几个 Answer，除了 CALL_REAL_METHODS 很容易理解(就是不 Mock 方法了)。其余三个</p>
+
+<ul><br/>
+	<li>RETURN_MOCKS(new ReturnsMocks())</li>
+
+	<li>RETURNS_DEEP_STUBS(new ReturnsDeepStubs())</li>
+
+	<li>RETURNS_SELF(new TriesToReturnSelf())</li>
+
+</ul><br/>
+<p>的具体用意待到有需求时再去扒它们吧。</p>
+
+<p>类比于 Mockito, 我也大致测试了一下 JMockit，也有类似的行为，不在此罗列了。</p>

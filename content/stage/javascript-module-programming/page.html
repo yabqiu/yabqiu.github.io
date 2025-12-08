@@ -1,0 +1,117 @@
+---
+title: JavaScript 模块应用与编程
+url: /javascript-module-programming/
+date: 2013-12-26T03:22:53-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Web/JS
+tags: 
+  - javascript
+  - requirejs
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5830 
+wpStatus: publish
+views: 450
+lastmod: 2021-05-05T15:59:55-05:00
+---
+
+前边有一篇关于 <a href="http://us.unmi.cc/javascript-object-declaration" target="_blank" rel="noopener">JavaScript 对象声明</a>，可以作为是 JavaScript 模块化的一个铺垫。这里会涉及到两个话题模块的定义和引入，对于模块化的编程语言，我们可以用 include, require 或 import 那样的谓词来引入模块。回想下我们对于非模块化的 JavaScript 是怎么引入的，比如在 html 文件里 js 文件，用 &lt;script src="some.js"&gt;&lt;/script&gt;。如果是更动态一点就会用 document.createElement("script"), 再指定它的 src 属性为一个 js 文件，添加加到 DOM 中去的方式来加载 js 文件。</p>
+<br/>
+上面两种方式都不够优雅，我们现在想要实现为 require() 函数来引入 js 库的方式，所以 JavaScript 模块的规范就出现了 <a href="http://wiki.commonjs.org/wiki/Modules/1.1" target="_blank" rel="noopener">CommonJS</a> 和 <a href="https://github.com/amdjs/amdjs-api/wiki/AMD" target="_blank" rel="noopener">AMD</a>(Asynchronous Module Definition) 两种。<br/><br/>
+<span style="color: #0000ff;"><strong>1. CommonJS</strong></span><br/><br/>
+CommonJS 中有一个全局的  require() 方法，它就是执行 require() 代码后马上使用模块提供的属性或方法，它假定执行完 require() 行后，模块即已就绪。例如加载一个 'math' 模块<br/><br/>
+<blockquote>
+<span style="color: #800000;">var math = require('math');</span><br />
+<span style="color: #800000;"> math.add(2, 3);</span>
+</blockquote>
+<br/>
+<!--more-->说明：require('math'), 其实就是装入 math.js 文件，服务端的 node.js 就是就是这样的，如果你打开本机的 html 文件，加载的也是本机的 js 文件，那么也可以这么用。除此之外，你不能保证在执行 math.add(2, 3) 时，变量 math 或是它的 add() 方法是否已就绪的情况下我们就得用 AMD 了。相信不少人碰过类似 undefined 的错误，此处不对这种情况的发生条件进行讨论。<br/><br/>
+<span style="color: #0000ff;"><strong>2. AMD</strong></span><br/><br/>
+AMD 同样有一个 require() 全局方法，另带一个回调函数参数，意义是是在保证加载完第一个参数指定的所有模块之后才去执行回调函数。在进行 Web 网络编程就得采用 AMD，AMD 有两个实现 <a href="http://requirejs.org" target="_blank" rel="noopener">require.js</a>, <a href="https://github.com/cujojs/curl" target="_blank" rel="noopener">curl.js</a>。<br/><br/>
+接下来简单介绍 require.js 的用法<br/><br/>
+网页里我们通常会这么写<br/><br/>
+<blockquote>
+&lt;script src="js/require.js" data-main="js/main"&gt;&lt;/script&gt;
+</blockquote>
+<br/>
+意即引入 js/require.js 之后就加载主模块 js/main，js/main 就是指定文件 js/main.js，当然你可以写成 data-main="js/main.js"，主模块就是代码的入口。main.js 一般是用来加载执行别的模块，例如<br/><br/>
+<pre class="brush:js">//main.jsalert("loaded");<br/><br/>
+require(['jquery', 'underscore', 'backbone'], function($, _, Backbone) {
+    do something here
+});</pre>
+<br/>
+回调函数中的 $, _, Backbone 分别对应用第一个数据参数指定的各个模块所返回的变量值，比如这里的 jquery, underscore 和 backbone，除在最后加 return $, _ 和 Backone 外，同时会把 $, _ 和 Backone 作为 window 的属性，如 window.$ = $ = jQuery，所以也可写成<br/><br/>
+<pre class="lang:default decode:true">require(['jquery', 'underscore', 'backbone'], function() {
+    foo();
+}<br/><br/>
+function foo(){
+    var a = $.trim("  dd ");
+}</pre>
+<br/>
+$ 成了 window 的属性，即全局的好处就是你不需要在回调函数调用其他函数时把像 $ 这个值传递来传递去。<br/><br/>
+模块的配置<br/><br/>
+在调用 require() 前可以用 require.config() 方法预先定义好模块及对应的 js 文件位置。这里我试着只用一段代码囊括数种情形<br/><br/>
+<pre class="brush:js">require.config({    baseUrl: "js/lib",
+    paths: {
+        "jquery": "https://ajax.googleapis.com/ajax/libs/jquery/1.7.2/jquery.min",
+        "underscore": "underscore.min.js",
+        "backbone": "part/backbone.min"
+    }
+});</pre>
+<br/>
+然后执行上面的 require() 方法。说明：baseUrl 用来指定共同的基目录，paths 中可以使用网络上的 js 文件。如果没有指定 baseUrl 属性，则相对于页面文件的位置去加载 js 文件，.js 可以省略。<br/><br/>
+<strong><span style="color: #0000ff;">AMD 模块的写法</span></strong><br/><br/>
+在被 AMD 加载的 js 文件中，你可以像往常一样的写 JavaScript 代码，但最好能按照 AMD 规范来写，例如：<br/><br/>
+<pre class="brush:js">//math.js
+define( function() {
+    var add = function (x, y) {
+        return x + y;
+    };<br/><br/>
+    return {
+        add: add
+    }
+});</pre>
+<br/>
+这要在我们自己的模块代码中掺入 require.js 的方法 define()，有点不爽，所以我还是喜欢 jquery 的做法：<br/><br/>
+<pre class="lang:default decode:true">// Expose jQuery to the global object
+window.jQuery = window.$ = jQuery;<br/><br/>
+if ( typeof define === "function" &amp;&amp; define.amd &amp;&amp; define.amd.jQuery ) {
+   define( "jquery", [], function () { return jQuery; } );
+}</pre>
+<br/>
+把 $, jQuery 做成全局的，同时也是个返回值。<br/><br/>
+如果在模块中依赖了其他的模块，要这样写<br/><br/>
+<pre class="brush:js">define(['myLib'], function(myLib){
+    function foo() {
+        myLib.doSomething();
+    }<br/><br/>
+    return {
+        foo: foo
+    };
+});</pre>
+<br/>
+如果返回值是个全局的，可不用像上面那样写，同样可省不少事。<br/><br/>
+请留意上面 define() 函数的两种使用方式<br/><br/>
+<strong><span style="color: #0000ff;">加载非规范的模块</span></strong><br/><br/>
+要在 require.config() 中用 shim 属行对不规范的库进行修正，例如：<br/><br/>
+<pre class="lang:default decode:true ">require.config({
+    shim: {
+        'underscore': {
+            exports: '_'      //定义输出的变量名为 _
+        },<br/><br/>
+    'backbone': {
+        deps: ['underscore', 'jquery'],  //说明它的依赖性
+            exports: 'Backone'
+        }
+});
+</pre>
+<br/>
+require 的插件可以用来加载 text, html, image 等，还有更强的功能，不在这里讲。<br/><br/>
+参考：1. <a href="http://www.ruanyifeng.com/blog/2012/11/require_js.html" target="_blank" rel="noopener">Javascript模块化编程</a><a href="http://www.ruanyifeng.com/blog/2012/11/require_js.html" target="_blank" rel="noopener"><br />
+</a>            2. <a href="http://www.cnblogs.com/ziyunfei/archive/2012/11/25/2784392.html" target="_blank" rel="noopener">S6:JavaScript中将会有的几个新东西</a>

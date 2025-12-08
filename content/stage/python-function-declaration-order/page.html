@@ -1,0 +1,128 @@
+---
+title: Python 函数声明先后顺序的问题
+url: /python-function-declaration-order/
+date: 2019-07-20T23:25:04-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - Python
+  - function
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9513 
+wpStatus: publish
+views: 2459
+lastmod: 2019-10-15T11:39:08-05:00
+---
+
+<p>在 Python 中如果把函数定义写在调用的下方可能会出错，例如下面的代码</p>
+
+<blockquote><br/>
+<p>foo()</p>
+
+<p>def foo():<br /><br/>
+    print("hello")</p>
+
+</blockquote>
+
+<p>执行时会报出错误</p>
+
+<blockquote><br/>
+<p>NameError: name 'foo' is not defined</p>
+
+</blockquote>
+
+<p>这时候要把 <code>foo()</code> 调用代码放到该函数的声明后面</p>
+
+<blockquote><br/>
+<p>def foo():<br /><br/>
+    print("hello")</p>
+
+<p>foo()</p>
+
+</blockquote>
+
+<p>这样执行就一切正常了。这仿佛像是 C 语言中的函数调用需要提前声明一般，例如在 C 语言中要调用后头的定义的函数要写成<!--more--></p>
+
+<pre class="lang:c decode:true">void foo();<br/>
+<br/>
+int main() {<br/>
+    foo();<br/>
+}<br/>
+<br/>
+void foo() {<br/>
+    printf("Hello");<br/>
+}</pre>
+
+<p>实际上 Python 中并不存在函数提前声明一说，也不能像 Java 那样函数可以写在任意位置，因为 Java 是编译型的语言，Python 是解释型的。</p>
+
+<p>而且也不是一定要求被调用的函数一定要在源代码层面上定义在调用者前方。</p>
+
+<p>Python 中函数声明的顺序据我理解有两条规则</p>
+
+<ol>
+
+	<li><span style="color: #800000;">Python 源代码是由上往下解释的</span></li>
+
+	<li><span style="color: #800000;">找到程序入口(未包含在函数中的代码) 即开始执行，执行到的函数未被先行解释到即报错</span></li>
+
+</ol>
+
+<p>分析下面两段代码</p>
+
+<pre class="lang:default decode:true">def foo():<br/>
+    bar()<br/>
+<br/>
+if __name__ == '__main__':<br/>
+    foo()<br/>
+<br/>
+def bar():<br/>
+    print("hello")</pre>
+
+<p>Python 从第 1 行一直解释到第 4 行的入口，进而往回跳，调用到第 1 行的 foo() 函数，而其中的 bar() 函数还未及被解释到，所以会提示</p>
+
+<blockquote><br/>
+<p>NameError: name 'bar' is not define</p>
+
+</blockquote>
+
+<p>有一个很好的分析工具 <a href="http://pythontutor.com/live.html#mode=edit">http://pythontutor.com/live.html#mode=edit</a>，我们来看上面的代码</p>
+
+<p><a href="https://yanbin.blog/wp-content/uploads/2019/07/python-tutor-1.png"><img class="aligncenter wp-image-9627" src="https://yanbin.blog/wp-content/uploads/2019/07/python-tutor-1-800x403.png" alt="" width="803" height="405" /></a>解释到第二行 bar() 的时候，Global frame 里只有 foo, bar 还不存在</p>
+
+<p>如果把程序入口往后调</p>
+
+<pre class="lang:default decode:true">def foo():<br/>
+    bar()<br/>
+<br/>
+def bar():<br/>
+    print("hello")<br/>
+<br/>
+if __name__ == '__main__':<br/>
+    foo()</pre>
+
+<p>上面代码执行无误，输出</p>
+
+<blockquote><br/>
+<p>hello</p>
+
+</blockquote>
+
+<p>foo() 调用的 bar() 不也是在它下方声明的吗？所以这一点与 C 是有区别的。</p>
+
+<p>也用 <a href="http://pythontutor.com/live.html#mode=edit">http://pythontutor.com/live.html#mode=edit</a> 来看看</p>
+
+<p><a href="https://yanbin.blog/wp-content/uploads/2019/07/python-tutor-2.png"><img class="aligncenter wp-image-9629" src="https://yanbin.blog/wp-content/uploads/2019/07/python-tutor-2-800x290.png" alt="" width="784" height="284" /></a></p>
+
+<p>解释到第 8 行的时候在 Global frame 中 foo, bar 都有了，所以能成功调用。</p>
+
+<p>这时候的理解是这样的，Python 从第 1 行自上往下解释到第 7 行的程序入口时，foo() 并未实际调用 bar()，但 foo() 和 bar() 函数都已解释到了，所以回过头来 foo() 与 bar() 之间怎么调用都无妨。</p>
+
+<p>因此，<span style="color: #800000;">最好的实践方法就是把程序的入口放到代码的最下方，那么它前面的函数不管如何的声明顺序都没有关系</span>。</p>

@@ -1,0 +1,97 @@
+---
+title: Java 8 的 groupingBy 能否产生空的 Map 分组
+url: /java-8-groupingby-howto-generate-empty-map/
+date: 2015-12-25T14:14:14-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java8
+tags: 
+  - java8
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7114 
+wpStatus: publish
+views: 3115
+lastmod: 2021-09-03T17:30:33-05:00
+---
+
+我们在 Java 8 之前用 for-loop 对 List 进行分组的时候，可能会要求产生空的分组。例如对 List&lt;Person&gt; 按性能进行分组，即使给定的 List&lt;Person&gt; 中全是 male, 我们也想得到 Map 包含两个 Key</p>
+<br/>
+<blockquote>
+{male=[person1, person2], female=[]}
+</blockquote>
+<br/>
+而不只是<br/><br/>
+<blockquote>
+{male=[person1, person2]}
+</blockquote>
+<br/>
+这两种表示略有区别，第一种方式暗示着有另一种可能性。看看 for-loop 如何对 List&lt;Person&gt; 进行分组。<br/><br/>
+类 Person 代码<!--more--><br/><br/>
+<pre class="lang:default decode:true">class Person {<br/><br/>
+  public final String name;
+  public final String gender;<br/><br/>
+  public Person(String name, String gender) {
+    this.name = name;
+    this.gender = gender;
+  }<br/><br/>
+  @Override
+  public String toString() {
+    return name;
+  }
+}</pre>
+<br/>
+进行分组<br/><br/>
+<pre class="lang:default decode:true">List&lt;Person&gt; list = Arrays.asList(new Person("Tom", "male"), new Person("Jerry", "male"));
+Map&lt;String, List&lt;Person&gt;&gt; grouped = new HashMap&lt;&gt;();
+List&lt;Person&gt; maleGroup = new ArrayList&lt;&gt;();
+List&lt;Person&gt; femaleGroup = new ArrayList&lt;&gt;();
+for(Person person: list) {
+  if(person.gender.equals("male")) {
+    maleGroup.add(person);
+  } else {
+    femaleGroup.add(person);
+  }
+}
+grouped.put("male", maleGroup);
+grouped.put("female", femaleGroup);
+System.out.println(grouped);</pre>
+<br/>
+得到结果是<br/><br/>
+<blockquote>
+{female=[], male=[Tom, Jerry]}
+</blockquote>
+<br/>
+如果我们换成 Java 8 的 groupingBy 的写法<br/><br/>
+<pre class="lang:default decode:true">List&lt;Person&gt; list = Arrays.asList(new Person("Tom", "male"), new Person("Jerry", "male"));
+Map&lt;String, List&lt;Person&gt;&gt; grouped = list.stream().collect(groupingBy(person -&gt; person.gender));
+System.out.println(grouped);</pre>
+<br/>
+结果中的组只能是列表元素中存在的 gender 属性值<br/><br/>
+<blockquote>
+{male=[Tom, Jerry]}
+</blockquote>
+<br/>
+当然上面从 list 到  groupingBy 时根本不存在 female 的信息，那么能否告知 groupingBy 对不存在 gender 生成空列表呢? 好像无法做到<br/><br/>
+<pre class="lang:default decode:true">Map&lt;String, List&lt;Person&gt;&gt; grouped = list.stream()
+      .collect(groupingBy(person -&gt; "male".equals(person.gender) ? "male" : "female"));</pre>
+<br/>
+怎么才能向 groupingBy 传递要为列表 ["male", "female"] 中的所有元素创建一个分组呢? 即便是某个分组是空的，找不到匹配的元素。<br/><br/>
+慢着，当我读到 Partitioning 部分时，眼前又亮了一下. Partitioning 是给 Stream 分两组，非此即比，如代码<br/><br/>
+<pre class="lang:default decode:true ">List&lt;Person&gt; list = Arrays.asList(new Person("Tom", "male"), new Person("Jerry", "male"));
+Map&lt;Boolean, List&lt;Person&gt;&gt; grouped = list.stream()
+  .collect(partitioningBy(t -&gt; "male".equals(t.name)));
+System.out.println(grouped);</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+{false=[Tom, Jerry], true=[]}
+</blockquote>
+<br/>
+注意到了吗，true 是一个空的列表，说明 partitioning 有能力生成空的列表，进一步猜想 groupingBy 如能稍加打造是否也能做到像 {female=[], make=[Tom, Jerry]} 这样的输出呢？<br/><br/>
+partitioningBy 一启动便预置了两个 key, true 和 false, 对于 grouping 的话恐怕是必须要创建自己的 groupingBy 方法，它能够接受一个列表来预定义 Map 中所有的 key.

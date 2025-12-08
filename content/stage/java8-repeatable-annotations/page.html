@@ -1,0 +1,203 @@
+---
+title: Java 8 可重复注解的理解与应用
+url: /java8-repeatable-annotations/
+date: 2017-01-16T23:08:46-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/12/Java8-Logo.png"
+categories:
+  - Java/JEE
+  - Java8
+tags: 
+  - java8
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7668 
+wpStatus: publish
+views: 4166
+lastmod: 2021-06-03T15:17:12-05:00
+---
+
+<h2>Java 8 之前如何重复使用注解</h2><br/><br/>
+在 Java 8 之前我们不能在一个类型重复使用同一个注解，例如 Spring 的注解 <code>@PropertySource</code> 不能下面那样来引入多个属性文件</p>
+<br/>
+<blockquote>
+@PropertySource("classpath:config.properties")<br />
+@PropertySource("file:application.properties")<br />
+public class MainApp {}
+</blockquote>
+<br/>
+上面的代码无法在 Java 7 下通过编译，错误是: <span style="color: #800000;">Duplicate annotation</span><br/><br/>
+于是我们在 Java 8 之前想到了一个方案来规避 Duplicate Annotation 的错误: 即声明一个新的 Annotation 来包裹 <code>@PropertySource</code>, 如 <code>@PropertySources</code><br/><br/>
+<pre class="brush:java">@Retention(RetentionPolicy.RUNTIME)
+public @interface PropertySources {
+  PropertySource[] value();
+}</pre>
+<br/>
+然后使用时两个注解齐上阵<!--more--><br/><br/>
+<pre class="brush:java">@PropertySources({
+  @PropertySource("classpath:config.properties"),
+  @PropertySource("file:application.properties")
+})
+public class MainApp {
+}</pre>
+<br/>
+看上去确实挺啰嗦的，用上了注解的嵌套形式。<br/><br/>
+该如何获得上面的注解内容呢？<code>getAnnotation(PropertySources.class)</code>, 如<br/><br/>
+<pre class="brush:java">PropertySources annotation = MainApp.class.getAnnotation(PropertySources.class);
+for (PropertySource propertySource: annotation.value()){
+  System.out.println(propertySource.value());
+}</pre>
+<br/>
+输出内容<br/><br/>
+<blockquote>
+classpath:config.properties<br />
+file:application.properties
+</blockquote>
+<br/>
+<h2>Java 8 重复注解的使用改进</h2><br/><br/>
+Java 8 看到了之前实现的繁琐之处，所以引入了一个注解的注解 <code>@Repeatable</code> 用来标识某个注解是可被重复使用的，但是同样需要一个容器注解。基于这里的例子，如果要实现可重复的注解必须要满足两个条件<br/><br/>
+<ol>
+    <li>前面的那个 <code>@PropertySources</code> 实现仍然是必须的，且实现是一样的，用以作为 <code>@PropertySource</code> 的容器注解</li>
+    <li>用 <code>@Repeatable(PropertySources.class)</code> 注解 <code>@PropertySource</code> 用以说明它的容器注解是 <code>@PropertySources</code>.</li>
+</ol>
+<br/>
+所以新的 <code>@PropertySource</code> 实现如下<br/><br/>
+<pre class="brush:java">@Retention(RetentionPolicy.RUNTIME)
+@Repeatable(PropertySources.class) //这行建立了 @PropertySource 与 @PropertySources 的关系
+public @interface PropertySource {
+  String value();
+}</pre>
+<br/>
+<code>@Repeatable</code> 是 Java 8 开始提供的， 现在由它来告诉 Java <code>@PropertySources</code> 是 <code>@PropertySource</code> 的容器注解，而不需要用嵌套的方式来使用它们了，因此我们就能使用本文最初的注解形式，也就是<br/><br/>
+<pre class="brush:java">@PropertySource("classpath:config.properties")
+@PropertySource("file:application.properties")
+public class MainApp {}</pre>
+<br/>
+上面重复使用 <code>@PropertySource</code> 注解在 Java 8 下是合法的，并且实际效果完全等同于 Java 8 之前嵌套的方式。区别就是显式的写出嵌套关系，还是由 <code>@Repeatable</code> 来建立隐含的嵌套关系。<br/><br/>
+注意，如果 <code>@PropertySource</code> 没有用  <code>@Repeatable</code> 注解而重复使用的话，会报出错误：<br/><br/>
+<blockquote>
+Duplicate annotation. The declaration of 'PropertySource' does not have a valid java.lang.annotation.Repeatable annotation
+</blockquote>
+<br/>
+重复注解准备好了，现在来看使用中没有出现 <code>@PropertySources</code> 的情况下该如何反射得到注解内容呢？<br/><br/>
+基于前面对 Java 8 前后对重复注解实现的对比，猜想着 <code>@Repeatable(PropertySources.class)</code> 的 <code>@PropertySource</code> 应该会转换成 <code>@PropertySources({@PropertySource("xxx")})</code> 一样的内容实现，所以运行下上面与之前同样的反射代码<br/><br/>
+<pre class="brush:java">PropertySources annotation = MainApp.class.getAnnotation(PropertySources.class);
+for (PropertySource propertySource: annotation.value()){
+  System.out.println(propertySource.value());
+}</pre>
+<br/>
+果不出所料，输出同样的内容<br/><br/>
+<blockquote>
+classpath:config.properties<br />
+file:application.properties
+</blockquote>
+<br/>
+实际上在字节码中 Java 8 前后对重复注解的内部实现也确实是一样的，<code>@Repeatable</code> 还真就是个语法糖而已。对于在 Java 8 下重复使用 <code>@PropertySource</code> 注解的 <code>MainApp</code> 类我们用 <code>javap -v</code> 来查看生成的字节码，得到如下的结果<br/><br/>
+<blockquote>
+➜ classes javap -v cc.unmi.MainApp<br />
+Classfile /Users/Yanbin/Workspaces/github/test_repeatable_annotation/target/classes/cc/unmi/MainApp.class<br />
+Last modified Jan 16, 2017; size 450 bytes<br />
+MD5 checksum 6727710e42775e09539f1575d347f6e0<br />
+Compiled from "MainApp.java"<br />
+public class cc.unmi.MainApp<br />
+minor version: 0<br />
+major version: 52<br />
+flags: ACC_PUBLIC, ACC_SUPER<br />
+Constant pool:<br />
+#1 = Methodref #3.#19 // java/lang/Object."&lt;init&gt;":()V<br />
+#2 = Class #20 // cc/unmi/MainApp<br />
+#3 = Class #21 // java/lang/Object<br />
+#4 = Utf8 &lt;init&gt;<br />
+#5 = Utf8 ()V<br />
+#6 = Utf8 Code<br />
+#7 = Utf8 LineNumberTable<br />
+#8 = Utf8 LocalVariableTable<br />
+#9 = Utf8 this<br />
+#10 = Utf8 Lcc/unmi/MainApp;<br />
+#11 = Utf8 SourceFile<br />
+#12 = Utf8 MainApp.java<br />
+#13 = Utf8 RuntimeVisibleAnnotations<br />
+<span style="color: #ff0000;">#14 = Utf8 Lcc/unmi/PropertySources;</span><br />
+<span style="color: #ff0000;">#15 = Utf8 value</span><br />
+<span style="color: #ff0000;">#16 = Utf8 Lcc/unmi/PropertySource;</span><br />
+<span style="color: #ff0000;">#17 = Utf8 classpath:config.properties</span><br />
+<span style="color: #ff0000;">#18 = Utf8 file:application.properties</span><br />
+#19 = NameAndType #4:#5 // "&lt;init&gt;":()V<br />
+#20 = Utf8 cc/unmi/MainApp<br />
+#21 = Utf8 java/lang/Object<br />
+{<br />
+public cc.unmi.MainApp();<br />
+descriptor: ()V<br />
+flags: ACC_PUBLIC<br />
+Code:<br />
+stack=1, locals=1, args_size=1<br />
+0: aload_0<br />
+1: invokespecial #1 // Method java/lang/Object."&lt;init&gt;":()V<br />
+4: return<br />
+LineNumberTable:<br />
+line 5: 0<br />
+LocalVariableTable:<br />
+Start Length Slot Name Signature<br />
+0 5 0 this Lcc/unmi/MainApp;<br />
+}<br />
+SourceFile: "MainApp.java"<br />
+<span style="color: #ff0000;">RuntimeVisibleAnnotations:</span><br />
+<span style="color: #ff0000;">0: #14(#15=[@#16(#15=s#17),@#16(#15=s#18)])</span>
+</blockquote>
+<br/>
+最后两行显示了保留在运行时的注解，并且只有一个，内容是<br/><br/>
+<blockquote>
+#14(#15=[@#16(#15=s#17),@#16(#15=s#18)])
+</blockquote>
+<br/>
+按编号对照前面的常量池定义，上面注解可翻译为<br/><br/>
+<blockquote>
+@PropertySources(value=[@PropertySource(value="classpath:config.properties"), @PropertySource(value="file:application.properties")])
+</blockquote>
+<br/>
+这实际上与 Java 8 之前用 <code>@PropertySources</code> 与 <code>@PropertySource</code> 嵌套的写法是完全一致的，只是在字节码描述中注解的数组值是用是用  <code>[]</code> 来表示。<br/><br/>
+<h2>Java 8 下如何反射获得重复注解的内容</h2><br/><br/>
+这个问题在前一节中回答了一部分，依然可通过容器注解像 Java 8 之前一样的办法反射得到重复注解的内容。虽然刚在上一节中演示了，但还是再温习一下，在 Java 8 中对于<br/><br/>
+<pre class="brush:java">@PropertySource("classpath:config.properties")
+@PropertySource("file:application.properties")
+public class MainApp {}</pre>
+<br/>
+源程序中只是重复使用 <code>@PropertySource</code> 注解，然而却是要通过 <code>@PropertySources</code> 来反射得到 <code>@PropertySource</code> 的所有内容<br/><br/>
+<pre class="brush:java">PropertySources annotation = MainApp.class.getAnnotation(PropertySources.class);
+for (PropertySource propertySource: annotation.value()){
+  System.out.println(propertySource.value());  //获得所有的 @PropertySource 注解内容
+}</pre>
+<br/>
+这里会很令人感到诧异的：明明注解时我们使用的是 <code>@PropertySource</code>, 应该是用 <code>getAnnotation(PropertySource.class)</code> 来获得才对，可是<br/><br/>
+<pre class="brush:java">MainApp.class.getAnnotation(PropertySource.class); //得到的是 null
+MainApp.class.getAnnotations();   //得到的仍然是 @PropertySources</pre>
+<br/>
+通过前面的分析，为什么不能直接通过上面的 API 反射得到  <code>@PropertySource</code> 注解的原因当然我们已经知道了，内部实现使然。<br/><br/>
+所以 Java 8 为了避免在使用重复注解时的编码与反射时的尴尬，引入了一个新的反射注解的 API <code>getAnnotationByType(Class&lt;A&gt; annotationClass)</code>, 该 API 的参数可接受 <code>PropertySource.class</code>, 并且返回一个 <code>@PropertySource</code> 的数组。<br/><br/>
+最终 Java 8 推荐我们反射重复注解的途径就是下面那样<br/><br/>
+<pre class="brush:java ">PropertySource[] propertySources = MainApp.class.getAnnotationsByType(PropertySource.class);
+for (PropertySource propertySource: propertySources ){
+  System.out.println(propertySource.value()); //获得所有 @PropertySource 的内容
+}</pre>
+<br/>
+如果我们继续认真下去，窥探一下新的 <code>getAnnotationsByType(Class&lt;A&gt; annotationClass)</code> 在 Class.java 中的实现<br/><br/>
+<pre class="lang:default decode:true">public &lt;A extends Annotation&gt; A[] getAnnotationsByType(Class&lt;A&gt; annotationClass) {
+    Objects.requireNonNull(annotationClass);<br/><br/>
+    AnnotationData annotationData = annotationData();
+    return AnnotationSupport.getAssociatedAnnotations(annotationData.declaredAnnotations,
+                                                      this,
+                                                      annotationClass);
+}</pre>
+<br/>
+解释 <code>MainApp.class.getAnnotationsByType(PropertySource.class)</code> 的执行过程：<br/><br/>
+<ol>
+    <li>如果能找到 <code>@Repeatable</code> 关联的容器注解类 <code>@PropertySources</code>, 就获得 <code>@PropertySources</code> 的所有 value(类型为 <code>@PropertySource</code>) 值组成的数组</li>
+    <li>如果未有关联的容器注解类，则返回 <code>@PropertySource</code> 本身组成的数组(只有一个元素), 此时和 <code>new PropertySource[]{MainApp.class.getAnnotation(PropertySource.class}</code> 一样的。</li>
+</ol>
+<br/>
+因此，在 Java 8 中对于可重复注解应该调用 <code>getAnnotationsByType(Class&lt;A&gt;<a> annotationClass)</a></code> 来反射得到，如果是不可重复注解建议还是调用原来的 <code>getAnnotation(Class&lt;A&gt; annotationClass)</code>, 因为没必要使用 <code>getAnnotationsByType(...)</code> 获得一个空的或 1 个元素的数组。

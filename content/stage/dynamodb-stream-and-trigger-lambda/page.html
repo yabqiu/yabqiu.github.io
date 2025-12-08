@@ -1,0 +1,352 @@
+---
+title: DynamoDB Stream 应用及触发 Lambda 函数
+url: /dynamodb-stream-and-trigger-lambda/
+date: 2021-09-08T23:27:13-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - lambda
+  - DynamoDB
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11299 
+wpStatus: publish
+views: 1093
+lastmod: 2021-09-09T10:38:23-05:00
+---
+
+<p>DynamoDB Stream 的实质就是一个依附于表的流，对表的增删改像关系型数据的触发器一样，以日志形式按顺记录到该流中。我们可以用 API 去读取其中的记录，或用来触发一个 Lambda。DynamoDB Stream 非常类似于 Kinesis 的 Stream, 它们都是有 Shard 的概念，但是 DynamoDB Stream 的 Shard 数目是不太确定的。而且还能用 KCL(Kinesis Client Library) 来操作 DynamoDB Stream。</p>
+
+<p>DynamoDB Stream 和 Kinesis Stream 有几个通用的 API 操作，像 list_streams(), describe_stream(), get_shard_iterator() 和 get_records() 函数。同时呢，在设置 Lambda 的触发器时，选择 DynamoDB Stream 与 Kinesis Stream 时可配置的参数几乎是一样的，有 Batch size, Batch window, Starting position 以及重试策略。而且也是一个 Shard 只能同时启动一个 Lambda 实例，由于 DynamoDB Stream 的 Shard 数目不太确定，所以它能同时启动几个 Lambda 实例也不确定的。</p>
+
+<p>另外， 一个 DynamoDB Stream 只能最多被两个 Consumer 消费，而可用来消费 Kinesis Stream 的 Consumer 数目是不受限的。DynamoDB Stream 中的记录保存时间为 24 小时， Kinesis Stream 中记录保存时间也是可配置的。我们创建一个 DynamoDB 表时还能启用 <code>Amazon Kinesis data stream details</code>, 即把对 DynamoDB 的操作记录直接发送到 Kinesis Stream 中去，这样就能操作熟悉的 Kinesis Stream，Shard 数目可设定，坏处就是 Kinesis Stream 较费钱。<!--more--></p>
+
+<h3>借用几张图来描述各种关系</h3><br/>
+<p style="text-align: center;"><a href="https://yanbin.blog/wp-content/uploads/2021/09/dynamodb-stream-2.png"><img class="aligncenter wp-image-11650 size-large" src="https://yanbin.blog/wp-content/uploads/2021/09/dynamodb-stream-2-800x227.png" alt="" width="800" height="227" /></a>图1：Table-stream-consumers</p>
+
+<p>&nbsp;</p>
+
+<p style="text-align: center;"><a href="https://yanbin.blog/wp-content/uploads/2021/09/dynamodb-stream-3-1.png"><img class="aligncenter wp-image-11652" src="https://yanbin.blog/wp-content/uploads/2021/09/dynamodb-stream-3-1-800x367.png" alt="" width="626" height="287" /></a>图2：Table-partition-stream shard-Lambda instance</p>
+
+<h3> </h3><br/>
+<h3>创建 DynamoDB 表并启用它的 Stream 功能</h3><br/>
+<p>创建一个 DynamoDB 表默认时不会开启 DynamoDB Stream，在  AWS 控制台下需选择 Table, 然后右上角选择 <code>Exports and streams</code>, 在 <code>DynamoDB stream details</code> 区域中点击 <code>Enable</code> 按钮来启用 Stream, View type 中有 4  个选项</p>
+
+<ol>
+
+	<li>Key attributes only: 这是默认项，对表的操作只写入记录的 Key</li>
+
+	<li>New image: 写入完整的新记录信息</li>
+
+	<li>Old image: 写入完整的老记录信息</li>
+
+	<li>New and old images: 写入完整的新，老记录信息</li>
+
+</ol>
+
+<p>如果一个 DynamoDB 未开启 DynamoDB Stream, 在配置 Lambda 的触发器时选择一个 DynamoDB 会自动开启该 Dynamo 表的 Stream，并且 View type 是 <code>New and old images</code>。</p>
+
+<p>DynamoDB 开启了 Stream 后会生成一个 Latest stream ARN, 类似 arn:aws:dynamodb:us-east-1:1234567890:table/yanbin-test/stream/2021-09-09T02:22:59.992</p>
+
+<p>我们可以用一个 <code>aws</code> 命令来创建 DynamoDB 表，并开启 Stream 功能</p>
+
+<blockquote><br/>
+<p>$ aws dynamodb create-table --table-name yanbin-test \<br /><br/>
+--attribute-definitions AttributeName=id,AttributeType=S \<br /><br/>
+--key-schema AttributeName=id,KeyType=HASH \<br /><br/>
+--provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=2 \<br /><br/>
+--stream-specification StreamEnabled=TRUE,StreamViewType=NEW_AND_OLD_IMAGES</p>
+
+</blockquote>
+
+<p>执行后获得一个 JSON 输出，并且能看到它的 <code>LatestStreamArn</code></p>
+
+<pre class="lang:default decode:true">{<br/>
+    "TableDescription": {<br/>
+        "AttributeDefinitions": [<br/>
+            {<br/>
+                "AttributeName": "id",<br/>
+                "AttributeType": "S"<br/>
+            }<br/>
+        ],<br/>
+        "TableName": "yanbin-test",<br/>
+        "KeySchema": [<br/>
+            {<br/>
+                "AttributeName": "id",<br/>
+                "KeyType": "HASH"<br/>
+            }<br/>
+        ],<br/>
+        "TableStatus": "CREATING",<br/>
+        "CreationDateTime": "2021-09-08T21:43:29.390000-05:00",<br/>
+        "ProvisionedThroughput": {<br/>
+            "NumberOfDecreasesToday": 0,<br/>
+            "ReadCapacityUnits": 5,<br/>
+            "WriteCapacityUnits": 2<br/>
+        },<br/>
+        "TableSizeBytes": 0,<br/>
+        "ItemCount": 0,<br/>
+        "TableArn": "arn:aws:dynamodb:us-east-1:1234567890:table/yanbin-test",<br/>
+        "TableId": "f9a0dc8a-b7a9-4a61-8191-adf553dc4e02",<br/>
+        "StreamSpecification": {<br/>
+            "StreamEnabled": true,<br/>
+            "StreamViewType": "NEW_AND_OLD_IMAGES"<br/>
+        },<br/>
+        "LatestStreamLabel": "2021-09-09T02:43:29.390",<br/>
+        "LatestStreamArn": "arn:aws:dynamodb:us-east-1:1234567890:table/yanbin-test/stream/2021-09-09T02:43:29.390"<br/>
+    }<br/>
+}</pre>
+
+<p>在 <code>--key-schema</code> 中可指定多个 AttributeName=X,KeyType=Y 组合，其他的 Key 会作为  Sort key。</p>
+
+<p>而后我们可用其他的  AWS 命令来查看 DynamoDB Table 和 Stream 的信息</p>
+
+<blockquote><br/>
+<p>$ aws dynamodb describe-table --table-name yanbin-test<br /><br/>
+$ aws dynamodbstreams list-streams<br /><br/>
+$ aws dynamodbstreams describe-stream --stream-arn arn:aws:dynamodb:us-east-1:1234567890:table/yanbin-test/stream/2021-09-09T02:43:29.390</p>
+
+</blockquote>
+
+<p><code>describe-stream</code> 命令可以看到 Shard 信息，显示的部分内容如</p>
+
+<pre class="lang:default decode:true ">"Shards": [<br/>
+    {<br/>
+        "ShardId": "shardId-00000001631155413833-a13ee5f7",<br/>
+        "SequenceNumberRange": {<br/>
+            "StartingSequenceNumber": "100000000019980506513"<br/>
+        }<br/>
+    }<br/>
+]</pre>
+
+<p>注意：</p>
+
+<p>当我们为某个表开启了 Stream，然后把该表删除后，用 <code>list-streams</code> 命令看到该 Stream 仍然存在，这是为什么呢？因为 Stream 中的数据需保留 24 小时，所以只有等到 24 小时修该 Stream 才会被删除，其中我们还能从中消费数据。</p>
+
+<p>这儿看到的是一个 Shard, 也就是用它来触发 Lambda 只会同时启动一个 Lambda 实例，但恐怕 Shard 数目还不确定。</p>
+
+<h3>测试 DynamoDB Stream 中的消息</h3><br/>
+<p>创建好了 DynamoDB Stream 后，我们就可以使用它了，当有对 DynamoDB 表中的记录有增删改操作，就会有相应的事件记录写入到对应的 Stream 中去。</p>
+
+<p>我们先启动一个 DynamoDB Stream 的监听器</p>
+
+<pre class="lang:default decode:true">import boto3<br/>
+import json<br/>
+import datetime<br/>
+<br/>
+<br/>
+def datetime_handler(x):<br/>
+    if isinstance(x, datetime.datetime):<br/>
+        return x.isoformat()<br/>
+    raise TypeError("Unknown type")<br/>
+<br/>
+<br/>
+client = boto3.client('dynamodbstreams')<br/>
+list_streams_res = client.list_streams(TableName='yanbin-test')<br/>
+<br/>
+stream_arn = list_streams_res['Streams'][0]['StreamArn']<br/>
+<br/>
+describe_stream_res = client.describe_stream(<br/>
+    StreamArn=stream_arn<br/>
+)<br/>
+<br/>
+shard_id = describe_stream_res['StreamDescription']['Shards'][0]['ShardId']<br/>
+<br/>
+response = client.get_shard_iterator(<br/>
+    StreamArn=stream_arn,<br/>
+    ShardId=shard_id,<br/>
+    ShardIteratorType='LATEST'<br/>
+)<br/>
+<br/>
+next_iter = response['ShardIterator']<br/>
+<br/>
+response = client.get_records(ShardIterator=next_iter, Limit=50)<br/>
+while True:<br/>
+    if response['Records']:<br/>
+        print(len(response['Records']), ':', json.dumps(response['Records'], default=datetime_handler))<br/>
+    next_iter = response.get('NextShardIterator')<br/>
+    if next_iter:<br/>
+        response = client.get_records(ShardIterator=next_iter)<br/>
+    else:<br/>
+        break<br/>
+<br/>
+</pre>
+
+<p>上面的 next_iter 总是有值，所以一直在试图从 DynamoDB Stream 中取数据。我们 <code>get_shard_iterator</code> 指定的 <code>ShardIteratorType</code> 是 <code>LATEST</code>，所以此时一直没有记录输出。</p>
+
+<p>接下我们用代码往该流中添加记录</p>
+
+<pre class="lang:default decode:true">import boto3<br/>
+<br/>
+client = boto3.client('dynamodb')<br/>
+<br/>
+for i in range(100):<br/>
+    client.put_item(<br/>
+        TableName='yanbin-test',<br/>
+        Item={'id':{'S':str(1002+i)},'company':{'S':f'Company {i}'}}<br/>
+    )<br/>
+</pre>
+
+<p>添加记录时我们将会看到前面的监听器输出接收到的记录，类似</p>
+
+<p><a href="https://yanbin.blog/wp-content/uploads/2021/09/dynamodb-stream-1.png"><img class="aligncenter wp-image-11648" src="https://yanbin.blog/wp-content/uploads/2021/09/dynamodb-stream-1-800x206.png" alt="" width="776" height="200" /></a></p>
+
+<p>我们展开一条记录显示如下</p>
+
+<pre class="lang:default decode:true ">{<br/>
+  "eventID": "d2b94a5895d3f1572ee4bb958b17b9d9",<br/>
+  "eventName": "INSERT",<br/>
+  "eventVersion": "1.1",<br/>
+  "eventSource": "aws:dynamodb",<br/>
+  "awsRegion": "us-east-1",<br/>
+  "dynamodb": {<br/>
+    "ApproximateCreationDateTime": "2021-09-08T22:22:39-05:00",<br/>
+    "Keys": {<br/>
+      "id": {<br/>
+        "S": "1004"<br/>
+      }<br/>
+    },<br/>
+    "NewImage": {<br/>
+      "company": {<br/>
+        "S": "Company 2"<br/>
+      },<br/>
+      "id": {<br/>
+        "S": "1004"<br/>
+      }<br/>
+    },<br/>
+    "SequenceNumber": "40300000000019982664376",<br/>
+    "SizeBytes": 28,<br/>
+    "StreamViewType": "NEW_AND_OLD_IMAGES"<br/>
+  }<br/>
+}<br/>
+</pre>
+
+<p><code>eventName</code> 是 <code>INSERT</code> 时是没有 OldImage 的，再试下更新一些记录</p>
+
+<p>更新记录的 Python 代码如下</p>
+
+<pre class="lang:default decode:true">import boto3<br/>
+<br/>
+table = boto3.resource('dynamodb').Table('yanbin-test')<br/>
+<br/>
+for i in range(50):<br/>
+    table.update_item(<br/>
+            Key={'id': str(1002+i)},<br/>
+            UpdateExpression='set company=:cc',<br/>
+            ExpressionAttributeValues={<br/>
+                ':cc': f'XCompnay {i}'<br/>
+                },<br/>
+            ReturnValues='UPDATED_NEW'<br/>
+            )<br/>
+</pre>
+
+<p>在 DynamoDB Stream 的一条记录的信息如下</p>
+
+<pre class="lang:default decode:true ">{<br/>
+  "eventID": "d09757197fc5c586a8006bbec47e1b17",<br/>
+  "eventName": "MODIFY",<br/>
+  "eventVersion": "1.1",<br/>
+  "eventSource": "aws:dynamodb",<br/>
+  "awsRegion": "us-east-1",<br/>
+  "dynamodb": {<br/>
+    "ApproximateCreationDateTime": "2021-09-08T22:45:02-05:00",<br/>
+    "Keys": {<br/>
+      "id": {<br/>
+        "S": "1016"<br/>
+      }<br/>
+    },<br/>
+    "NewImage": {<br/>
+      "company": {<br/>
+        "S": "XCompnay 14"<br/>
+      },<br/>
+      "id": {<br/>
+        "S": "1016"<br/>
+      }<br/>
+    },<br/>
+    "OldImage": {<br/>
+      "company": {<br/>
+        "S": "Company 14"<br/>
+      },<br/>
+      "id": {<br/>
+        "S": "1016"<br/>
+      }<br/>
+    },<br/>
+    "SequenceNumber": "46500000000019983890106",<br/>
+    "SizeBytes": 53,<br/>
+    "StreamViewType": "NEW_AND_OLD_IMAGES"<br/>
+  }<br/>
+}</pre>
+
+<p>会有 OldImage 和  NewImage。</p>
+
+<p>注：DynamoDB 并不是只要调用了 <code>update_item</code> 函数就会放 Stream 中放一条记录，而是会对比是否对实际的内容进行的修改，如果新旧值是一样的则不会往 Stream 中写入任何事件。</p>
+
+<p>当我们删除记录时，eventName 会是 <code>REMOVE</code>, 自然的，此时消息中只会有 <code>OldImage</code>。</p>
+
+<h3>使用 DynamoDB Stream 来触发 Lambda</h3><br/>
+<p>用 DynamoDB Stream 来触发 Lambda 可以完全想像成和使用 Kinesis Stream 触发器是一样的。首先我们选用蓝本 <code>dynamodb-process-stream-python</code> 来创建一个 Lambda, 它的 Python 代码如下：</p>
+
+<pre class="lang:default decode:true ">import json<br/>
+<br/>
+print('Loading function')<br/>
+<br/>
+<br/>
+def lambda_handler(event, context):<br/>
+    #print("Received event: " + json.dumps(event, indent=2))<br/>
+    for record in event['Records']:<br/>
+        print(record['eventID'])<br/>
+        print(record['eventName'])<br/>
+        print("DynamoDB Record: " + json.dumps(record['dynamodb'], indent=2))<br/>
+    return 'Successfully processed {} records.'.format(len(event['Records']))<br/>
+</pre>
+
+<p>接着为该 Lambda 选择一个 DynamoDB table 作为触发器，我们选上 <code>yanbin-test</code> 这个表，其他参数 Batch size 默认为 100, 可选的 Batch window, Starting position 默认为 Latest, 还可选 Trim horizon(即从第一条可用消息开始消费)，以及其他控制重试策略的设置。</p>
+
+<p>因为一个  DynamoDB 的表只关联一个有效的 Stream，所以选择了一个表便能选择上与之相应的 StreamArn，如果表尚未启用 Stream 则会自动创建一个。</p>
+
+<p>此时，如果该 Lambda 的 IAM role 没有对上面 <span style="color: #666666; font-family: monospace;"><span style="background-color: #fafafa;">DynamoDB Stream</span></span> 的 GetRecords, GetShardIterator, DescribeStream, 和 ListStreams 需通通加上。现在只要对 <code>yanbin-test</code> 表进行增删改操作就会往表相应的 DynamoDB Stream 中写入操作日志，同时也会触发该 Lambda 了。至于在 Lambda 中收到事件的格式就无需再重复了，参考前面的内容就是。</p>
+
+<h3>总结一下</h3><br/>
+<ol>
+
+	<li>创建一个 DynamoDB 表后，需开启 Stream 功能，DynamoDB Stream 像 Kinesis Stream 类似，也有 Shard, 消息的 SequenceNumber</li>
+
+	<li>DynamoDB Stream 的 Shard 数目不确定，而 Kinesis Stream 可指定 Shard 数目, 最大为帐号的限制，比如 500</li>
+
+	<li>DynamoDB Stream 中每条消息保持的时间为 24 小时，Kinesis Stream 可自定义该时长，可保存一天至一年  </li>
+
+	<li>一个 DynamoDB Stream Shard 最多可有两个 Consumer, 而 Kinesis Stream 则没有这个限制</li>
+
+	<li>对 DynamoDB 表的增删改操作像关系型数据库的触发器一样记录到它相应的 Stream 中去。可选择的记录 Key, 新值，旧值，或者新旧值。</li>
+
+	<li>更新时，即例调用了 update_item() 操作，如果值保持与原来一样(A 修改为 A)，也不会向 DynamoDB Stream 中写入数据</li>
+
+	<li>如果用 DynamoDB Stream 来驱动 Lambda 的话，和 Kinesis Stream 一样，一个 Shard 只能启动一个 Lambda 实例。重试策略也是一样的</li>
+
+	<li>DynamoDB Stream 中的 <code>everntName</code> 有 <code>INSERT</code>, <code>MODIFY</code>，和 <code>REMOVE</code> 三种类型</li>
+
+	<li>一个 DynamoDB 表只能有一个有效的 Stream 与之关联。被删除的 DynamoDB Stream, 即使是相应表被删后的孤儿 Stream 也会被保留 24 小时</li>
+
+</ol>
+
+<p>链接：</p>
+
+<ol>
+
+	<li><a href="https://2cloudlab.com/nosql/dynamodb-streams/">DynamoDB 的流</a></li>
+
+	<li><a href="https://aws.amazon.com/blogs/big-data/process-large-dynamodb-streams-using-multiple-amazon-kinesis-client-library-kcl-workers/">Process Large DynamoDB sTreams Using Multiple Amazon Kinesis Client Library (KCL) Workers</a></li>
+
+	<li><a href="https://docs.aws.amazon.com/lambda/latest/dg/with-ddb-example.html">Tutorial: Using AWS Lambda with Amazon DynamoDB streams</a></li>
+
+	<li><a href="https://medium.com/event-driven-utopia/aws-dynamodb-streams-change-data-capture-for-dynamodb-tables-d4c92f9639d3">AWS DynamoDB Streams -- Change Data Capture for DynamoDB Tables</a></li>
+
+</ol>
+
+<!-- wp:paragraph --><!-- /wp:paragraph -->

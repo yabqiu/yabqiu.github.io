@@ -1,0 +1,58 @@
+---
+title: 使用JNative,在Java中传递一个C/C++结构参数到动态库中
+url: /jnative-java-pass-struct/
+date: 2006-05-18T10:38:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2006/05/cpp-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - JNative
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 574 
+wpStatus: publish
+views: 1724
+lastmod: 2021-09-03T10:42:38-05:00
+---
+
+用C++写的动态库的导出方法的代码如下：</p>
+<br/>
+<pre class="lang:default decode:true">struct TestStruct {
+     int a;
+     int b;
+};<br/><br/>
+extern "C" __declspec(dllexport) TestStruct* ShowStruct(TestStruct* testStruct)
+{
+   cout &lt;&lt; "在动态库中打印：传入动态库中的结构成员a的值为:" &lt;&lt; testStruct-&gt;a &lt;&lt; endl;<br/><br/>
+   //改变传入结构成员a的值为100
+   testStruct-&gt;a = 100;
+   return testStruct;
+}</pre>
+<br/>
+<!--more-->方法ShowStruct传入一个结构指针，并且反回一个结构指针，这里是同一个结构指针。<br/><br/>
+使用JNative的Java调用动态库中方法ShowStruct的代码如下：<br/><br/>
+<pre class="brush:java ">JNative nm = new JNative("D:\\vcprj\\testDll\\callDll\\Sample.dll", "ShowStruct", false);
+nm.setRetVal(Type.PSTRUCT);
+Pointer pTestStruct = new Pointer(new HeapMemoryBlock(4 + 4));
+pTestStruct.setIntAt(0, 50);
+nm.setParameter(0, pTestStruct);
+nm.invoke();
+System.out.println("Java调用动态库后打印结构成员 a 的值为：" + pTestStruct.getAsInt(0));
+nm.dispose();
+pTestStruct.dispose();</pre>
+<br/>
+从上面的代码可出，Java端需要先new一个Pointer,根据C/C++的相应结构指定多少字节的内存。结构TestStruct是两个int组成，在C/C++中一般也是用4个字节表示一个整数，这里可能要考虑到不同编译器的整数可能长度不一样，结构中字节对齐方式也会影响到对Pointer的声明。<br/><br/>
+设定nm(本地方法NativeMethod)的返回值类型，我还没有搞清楚动态方法中返回的指针类型应如何获取到相应的值<br/><br/>
+再设置本地方法的参数，注意调用完之后要记得释放资源。<br/><br/>
+执行这段调用动态库的Java程序的输出为：<br/><br/>
+<strong>在动态库中打印：传入动态库中的结构成员a的值为:50<br />
+Java调用动态库后打印结构成员a的值为：100</strong><br/><br/>
+由此可知Java确实把C/C++结构指针以Point的方式传入到了动态库的方法中，并且在动态库中也确实改写的结构成员的数据。<br/><br/>
+不过看定位动态库中的方法的方式，难道每次调用同一个动态库的不同方法，每次都需要重新装载这个动态库吗，是否能装载一次动态库，以后都只定位方法，最后释放动态库？

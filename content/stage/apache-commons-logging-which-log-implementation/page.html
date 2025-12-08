@@ -1,0 +1,175 @@
+---
+title: Apache Commons Logging 是如何决定使用哪个日志实现类的
+url: /apache-commons-logging-which-log-implementation/
+date: 2009-05-14T10:23:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Log
+  - Apache
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 272 
+wpStatus: publish
+views: 1298
+lastmod: 2021-09-03T20:53:33-05:00
+---
+
+Apache Commons Logging 像 SLF4J 一样，是个通用日志框架，广泛应用在各个开源组件中。说其通用，是因为它本身只提供了简单的日志输出的实现(org.apache.commons.logging.impl.SimpleLog和org.apache.commons.logging.impl.NoOpLog)，主要是为你统一使用其他专业日志实现(Log4j、jdk1.4 Logger、aavalon-Logkit)的方式，让你在程序中看不到具体日志实现的代码，以配置方式解藕。</p>
+<br/>
+那么 commons-logging 是怎么决定程序执行时该使用哪个具体的日志实现呢？这里 commons-logging 有两个步骤要做：<br/><br/>
+<span style="color: #000080;">1. 定位 org.apache.commons.logging.LogFactory 的实现类(这一步是关键)<br />
+2. 定位到的 LogFactory 实现类决定使用哪个 org.apache.commons.logging.Log 实现<br />
+</span><br />
+那现在我们把注意力主要集中在 commons-logging 如何定位 LogFactory 实现类上来。org.apche.commons.logging.LogFactory 是一个抽象类，所以需要一个 LogFactory 具体类。<!--more--><br/><br/>
+通常我们用使用 commons-logging 时是在代码中声明：<br/><br/>
+<span style="color: #800080;">Log log = LogFactory.getLog(UnmiTestLog.class);<br />
+</span><br />
+在 getLog() 中是通过 getFactory() 方法获得具体的 LogFactory 实现类，究竟也体现在这个方法中，所以这里非常有必要把这个方法的代码拉出来。下面是 commons-loggin1.0.3 的 LogFactory.getFactory() 代码，在新版代码定位 LogFactory 的逻辑是一样的。<br/><br/>
+<pre class="lang:default decode:true ">public static LogFactory getFactory() throws LogConfigurationException {<br/><br/>
+    // Identify the class loader we will be using
+    // 找到应用自身所用的加载器
+    //在 WAS 5.1 下是 com.ibm.ws.classloader.CompoundClassLoader
+    ClassLoader contextClassLoader =
+        (ClassLoader)AccessController.doPrivileged(
+            new PrivilegedAction() {
+                public Object run() {
+                    return getContextClassLoader();
+                }
+            });<br/><br/>
+    // Return any previously registered factory for this class loader
+    // 看看是否有缓存的与此类加载器关联的 LogFactory 实例,有则返回
+    LogFactory factory = getCachedFactory(contextClassLoader);
+    if (factory != null)
+        return factory;<br/><br/>
+    // Load properties file..
+    // will be used one way or another in the end.
+    // 加载应用的 Classpath 下的属性文件 commons-logging.properties
+    // FACTORY_PROPERTIES 常量值是 commons-logging.properties
+    // commons-logging 一般在这个文件里指定 LogFactory 的实现类
+    // 注意，它只是去加载这个属性文件，并不马上用里面配置的 LogFactory 类
+    Properties props=null;
+    try {
+        InputStream stream = getResourceAsStream(contextClassLoader,
+                                                 FACTORY_PROPERTIES);<br/><br/>
+        if (stream != null) {
+            props = new Properties();
+            props.load(stream);
+            stream.close();
+        }
+    } catch (IOException e) {
+    } catch (SecurityException e) {
+    }<br/><br/>
+    /**** 从下面开始就是 commons-logging 按什么顺找到 LogFactory 实现类 ****/<br/><br/>
+    // First, try the system property
+    // 1. 查找系统属性 FACTORY_PROPERTY(org.apache.commons.logging.LogFactory)
+    // 的值所对应的 LogFactory 实现类<br/><br/>
+    try {
+        String factoryClass = System.getProperty(FACTORY_PROPERTY);
+        if (factoryClass != null) {
+            factory = newFactory(factoryClass, contextClassLoader);
+        }
+    } catch (SecurityException e) {
+        ;  // ignore
+    }<br/><br/>
+    // Second, try to find a service by using the JDK1.3 jar
+    // discovery mechanism. This will allow users to plug a logger
+    // by just placing it in the lib/ directory of the webapp ( or in
+    // CLASSPATH or equivalent ). This is similar with the second
+    // step, except that it uses the (standard?) jdk1.3 location in the jar.
+    // 2. 使用 JDK1.3 jar 的 Service Provider Interface(SPI) 类发现机制
+    // 从配置文件 SERVICE_ID(META-INF/services/org.apache.commons.logging.LogFactory)
+    // 的第一行读取 LogFactory 的实现类名
+    // 这个 META-INF 目录可以是 WebRoot 的 META-INF，也可以是 classpath 下的 META-INF 目录<br/><br/>
+    if (factory == null) {
+        try {
+            InputStream is = getResourceAsStream(contextClassLoader,
+                                                 SERVICE_ID);<br/><br/>
+            if( is != null ) {
+                // This code is needed by EBCDIC and other strange systems.
+                // It's a fix for bugs reported in xerces
+                BufferedReader rd;
+                try {
+                    rd = new BufferedReader(new InputStreamReader(is, "UTF-8"));
+                } catch (java.io.UnsupportedEncodingException e) {
+                    rd = new BufferedReader(new InputStreamReader(is));
+                }<br/><br/>
+                String factoryClassName = rd.readLine();
+                rd.close();<br/><br/>
+                if (factoryClassName != null &amp;&amp;
+                    ! "".equals(factoryClassName)) {<br/><br/>
+                    factory= newFactory( factoryClassName, contextClassLoader );
+                }
+            }
+        } catch( Exception ex ) {
+            ;
+        }
+    }<br/><br/>
+    // Third try a properties file.
+    // If the properties file exists, it'll be read and the properties
+    // used. IMHO ( costin ) System property and JDK1.3 jar service
+    // should be enough for detecting the class name. The properties
+    // should be used to set the attributes ( which may be specific to
+    // the webapp, even if a default logger is set at JVM level by a
+    // system property )
+    // 3. 现在才轮到用前面加载的 commons-logging.properties 文件中的
+    // FACTORY_PROPERTY(org.apache.commons.logging.LogFactory) 属性指定的 LogFactory 实现类<br/><br/>
+    if (factory == null  &amp;&amp;  props != null) {
+        String factoryClass = props.getProperty(FACTORY_PROPERTY);
+        if (factoryClass != null) {
+            factory = newFactory(factoryClass, contextClassLoader);
+        }
+    }<br/><br/>
+    // Fourth, try the fallback implementation class
+    // 4. 前面几步没有找到 LogFactory 的实现类或有异常的话就用默认的实现类
+    // 即 LogFactory 为我们准备的 FACTORY_DEFAULT(org.apache.commons.logging.impl.LogFactoryImpl)<br/><br/>
+    if (factory == null) {
+        factory = newFactory(FACTORY_DEFAULT, LogFactory.class.getClassLoader());
+    }<br/><br/>
+    if (factory != null) {
+        /**
+         * Always cache using context class loader..
+         * 缓存所用的实现类，以后直接使用缓冲中的 LogFactory 实现类
+         */
+        cacheFactory(contextClassLoader, factory);<br/><br/>
+        if( props!=null ) {
+            Enumeration names = props.propertyNames();
+            while (names.hasMoreElements()) {
+                String name = (String) names.nextElement();
+                String value = props.getProperty(name);
+                factory.setAttribute(name, value);
+            }
+        }
+    }<br/><br/>
+    return factory;
+}</pre>
+<br/>
+在代码中，我已加上注释，有缓存的 LogFactory 实现类，取缓存中的，注意缓存是与当前应用的类加载器关联的。若缓存中没有的话按 1、2、3、4 的顺序来找，现在就来说说查找 LogFactory 的顺序：<br/><br/>
+<span style="color: #000080;">1. 从系统属性中查找键为 org.apache.commons.logging.LogFactory 的值作为 LogFactory 的实现类；却通过 System.getProperty("org.apache.commons.logging.LogFactory") 获得2.  使用 JDK1.3 jar 的 Service Provider Interface(SPI) 类发现机制，从配置文件 META-INF/services/org.apache.commons.logging.LogFactory 的的第一行读取 LogFactory 的实现类名。这个 META-INF/services/org.apache.commons.logging.LogFactory 文件可以是某个 Web 应用的根目录中；也可以在 classpath 下，如某个 Jar 包中，WebRoot/WEB-INF/classes 中等。这里需多加留心下 META-INF/services/org.apache.commons.logging.LogFactory 这个目录层次及文件名。</span><br/><br/>
+3.  在 Classpath 下的 commons-logging.properties 文件中的，找到 org.apache.commons.logging.LogFactory 属性值作为 LogFactory 实现类<br/><br/>
+<span style="color: #000080;"><span style="color: #000080;">4. 前面三步未找个 LogFactory 的实现类，或有任何异常的情况下，就用默认的实现类，即 LogFactory 为我们准备的 org.apache.commons.logging.impl.LogFactoryImpl</span></span><br/><br/>
+&nbsp;<br/><br/>
+明白了以上的顺序，可以帮助我们理解和解决一些实际的问题，例如，为什么可以不用 commons-logging.properties 也是使用的 log4j 日志实现，部署在 WAS 下的应用 log4j 怎么就不能输出日志了呢？<br/><br/>
+一般，某个具体的 LogFactory 类对应就会使用与其相应的 Logger 实现，如 Log4jFactory.getLog() 得到的是 Log4JLogger 实例，WAS 的 TrLogFactory.getLog() 返回的是 TrLog 实例。<br/><br/>
+老师们教我们用 commons-logging 时也许会让我们在 classpath 下放一个 commons-logging.properties 文件，并在这个文件中写上一行：<br/><br/>
+<span style="color: #800080;">org.apache.commons.logging.LogFactory=org.apache.commons.logging.impl.Log4jFactory</span><br/><br/>
+<span style="color: #0000ff;">Log4jFactory 已不推荐使用，新的建议的用法是 LogFactory 统一用 LogFactoryImpl，然后在 LogFactoryImpl 中决定声明哪个 Log 实现类</span>。<br/><br/>
+或者是这么两行：<br/><br/>
+<span style="color: #800080;">org.apache.cmmons.logging.LogFactory=org.apache.commons.logging.impl.LogFactoryImpl<br />
+org.apache.commons.logging.Log=org.apache.commons.logging.impl.Log4JLogger</span><br/><br/>
+然而我们基本都是用的 Log4j 来输出日志，其实不管 commons-logging.properties 是第一种写法还是第二种写法或许(有时不是) 都是多余的，回望 LogFactory.getFactory() 方法，还要再看看 org.apache.commons.logging.impl.LogFactoryImpl 的 getLogClassName() 方法便可知。<br/><br/>
+LogFactory.getFactory() 在前面三步找不到 LogFactory 实现类时，就会用默认的 LogFactoryImpl，而默认的 LogFactoryImpl.getLog() 时，又会根据以下四个顺序来决定返回什么 Log 实例(Log 实例对应到实际的日志实现)，在 LogFactoryImpl.getLogClassName() 中体现了：<br/><br/>
+<span style="color: #000080;">1. commons-logging.properties 中的 org.apache.commons.logging.Log 指定的 Log 实现类<br />
+2. Log4j 可用就用 org.apache.commons.logging.impl.Log4JLogger<br />
+3. Jdk1.4 Logger 可用就用 org.apcache.commons.logging.impl.Jdk14Logger(JDK1.4 开始自带)<br />
+4. SimpleLog 可用就用 org.apache.commons.logging.impl.SimpleLog(commons-logging 自带)<br />
+</span><br />
+所以这就是为什么了，使用了 commons-logging 的框架类，只要扔个 log4j 的 jar，根本不用 commons-logging.properties 文件就会用 log4j 来输出日志，当然 log4j 自己的配置文件 log4j.xml 或 log4j.properties 是需要的。<br/><br/>
+那为什么在 Tomcat 或别的应用服务器中 log4j  能正常输出日志，一放到 WAS 5 下却不灵了呢？原因是在 $WAS_HOME/lib/ws-commons-logging.jar 中有个文件 commons-logging.properties，其中有一行 org.apache.commons.logging.LogFactory=com.ibm.ws.commons.logging.TrLogFactory，虽然你的应用中可能也有一个 commons-logging.properties，可是很不幸，WAS  自己的 commons-logging.properties 优先了，原因是类加载器的委托机制在作用，所以最终 log4j 没派上用场，被 com.ibm.ws.commons.logging.TrLog 取而代之了，解决办法是要抢在它之前，比系统属性中声明 LogFactory 实现类，或是在 META-INF/services/org.apache.commons.logging.LogFactory 中指名 org.apache.commons.logging.impl.Log4jFactory 或 org.apache.commons.logging.impl.LogFactoryImpl 作为实现类名。<br/><br/>
+以后在使用 commons-logging 通用日志框架时，若出现什么问应具体情况具体分析，相信都不会变离本篇中能解释的情况。

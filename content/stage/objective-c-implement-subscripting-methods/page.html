@@ -1,0 +1,97 @@
+---
+title: Objective-C 实现自己的 Subscripting Methods 下标方法
+url: /objective-c-implement-subscripting-methods/
+date: 2013-01-26T00:56:47-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - index
+  - objective-c
+  - 下标
+  - key
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5443 
+wpStatus: publish
+views: 1490
+lastmod: 2021-05-19T16:15:17-05:00
+---
+
+在前一篇 <a title="Xcode 4.4/4.5 新特性 / LLVM 4.0 新语法" href="http://unmi.cc/xcode-4-4-4-5-new-features" target="_blank" rel="noopener">Xcode 4.4/4.5 新特性 / LLVM 4.0 新语法</a> 提到了 Xcode 4.4 之后对数组和字典的操作可以用下面的方式：</p>
+<br/>
+<span style="color: #800000;">id value = array[i];</span><br />
+<span style="color: #800000;">array[i] = newObj;</span><br />
+<span style="color: #800000;">id value = dictionary[@"key"];</span><br />
+<span style="color: #800000;">dictionary[@"key"] = newObj;</span><br/><br/>
+上面几行语句实际调用的方法分别对应如下：<br/><br/>
+<span style="color: #800000;">NSArray : - (id)objectAtIndexedSubscript: (NSUInteger)index;</span><br />
+<span style="color: #800000;">NSMutableArray : - (void)setObject: (id)obj atIndexedSubscript: (NSUInteger)index;</span><br />
+<span style="color: #800000;">NSDictionary : - (id)objectForKeyedSubscript: (id &lt;NSCopying&gt;)key;</span><br />
+<span style="color: #800000;">NSMutableDictionary : - (void)setObject: (id)anObject forKeyedSubscript: (id &lt;NSCopying&gt;)aKey;</span><br/><br/>
+所以，如果你希望自己定义的类可以支持 obj[i] 和 obj[@"key"] 的方式来读取和设置值的话，就可以实现上面相应的方法，只是要处理好你自己参数和结果类型。现在就来看看下面自定义类 TestClass 的实现和执行效果：<!--more--><br/><br/>
+TestClass.h<br/><br/>
+<pre class="lang:default decode:true">//
+//  TestClass.h
+//  NewXcodeTest
+//
+//  Created by Unmi on 1/22/13.
+//  Copyright (c) 2013 Unmi. All rights reserved.
+//<br/><br/>
+#import &lt;Foundation/Foundation.h&gt;<br/><br/>
+@interface TestClass : NSObject
+- (id) objectAtIndexedSubscript: (NSUInteger)index;
+- (void) setObject: (id)obj atIndexedSubscript: (NSUInteger)index;
+- (id) objectForKeyedSubscript: (id &lt;NSCopying&gt;)key;
+- (void) setObject: (id)anObject forKeyedSubscript: (id &lt;NSCopying&gt;)aKey;
+@end</pre>
+<br/>
+必须在头文件中声明需要用到的读写方法，否则 test[i] 这样用时无法通过编译。<br/><br/>
+TestClass.m<br/><br/>
+<pre class="lang:default decode:true">//
+//  TestClass.m
+//  NewXcodeTest
+//
+//  Created by Unmi on 1/22/13.
+//  Copyright (c) 2013 Unmi. All rights reserved.
+//<br/><br/>
+#import "TestClass.h"<br/><br/>
+@implementation TestClass<br/><br/>
+- (id) objectAtIndexedSubscript: (NSUInteger)index {
+    NSLog(@"get value by index: %d", index);
+    return @"Unmi";
+}
+- (void) setObject: (id)obj atIndexedSubscript: (NSUInteger)index{
+    NSLog(@"set value %@, atIndex: %d", obj, index);
+}<br/><br/>
+- (id) objectForKeyedSubscript: (id &lt;NSCopying&gt;)key {
+    NSLog(@"get value by key: %@", key);
+    return @"http://unmi.cc";
+}<br/><br/>
+- (void) setObject: (id)anObject forKeyedSubscript: (id &lt;NSCopying&gt;)aKey {
+    NSLog(@"set value %@ for key: %@", anObject, aKey);
+}<br/><br/>
+@end</pre>
+<br/>
+使用 TestClass 的代码：<br/><br/>
+<pre class="lang:default decode:true ">TestClass* test = [[TestClass alloc] init];
+id value = test[100];
+test[1] = @200;    
+value = test[@"Name"];
+test[@"Blog"] = @"http://unmi.cc";</pre>
+<br/>
+上面的代码执行效果如下，控制台输出：<br/><br/>
+<span style="color: #800000;">2013-01-26 14:30:00.342 NewXcodeTest[955:c07] get value by index: 100</span><br />
+<span style="color: #800000;">2013-01-26 14:30:00.344 NewXcodeTest[955:c07] set value 200, atIndex: 1</span><br />
+<span style="color: #800000;">2013-01-26 14:30:00.346 NewXcodeTest[955:c07] get value by key: Name</span><br />
+<span style="color: #800000;">2013-01-26 14:30:00.348 NewXcodeTest[955:c07] set value http://unmi.cc for key: Blog</span><br/><br/>
+对应一下，果真如此。<br/><br/>
+实际应用中，你可以在 TestClass 中声明些实例变量，比如数组，字典类型的变量，让以上的四个 Subscripting Methods 下标方法去访问这些实例变量中的值，这样从代码和语义上省去了些麻烦。比如 TestClass 中声明了一个字典实例变量 options 和数组变量 items，我们就无需写成：<br/><br/>
+test.options[@"name"]，而可简单的写成 test[@"name"]，test.items[i] 变成  test[i], 就是这么回事。<br/><br/>
+参考：1. <a href="http://blog.devtang.com/blog/2012/08/05/use-modern-objective-c/" target="_blank" rel="noopener">Objective-C的新特性</a><br />
+            2. <a href="http://www.infoq.com/cn/articles/wwdc2012-objective-c-new-feature" target="_blank" rel="noopener">WWDC2012：Objective-C的新特性 </a>

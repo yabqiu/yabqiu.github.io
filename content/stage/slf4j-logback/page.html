@@ -1,0 +1,123 @@
+---
+title: SLF4J 的几种实际应用模式--之二：SLF4J+Logback
+url: /slf4j-logback/
+date: 2010-04-07T09:04:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Logger
+  - Logback
+  - Log
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 204 
+wpStatus: publish
+views: 7074
+lastmod: 2021-09-02T11:02:36-05:00
+---
+
+前面讲的 SLF4J 的用法之一是 SLF4J+Log4J，而这里要推出的组合是 SLF4J+LogBack。不用 Log4J？难道还有比 Log4J 更好的日志实现吗？是的，答案就是 <a href="http://logback.qos.ch/" target="_blank" rel="noopener">LogBack</a>。假如你知道 LogBack 和 Log4J 是同出一位大师之手，你就不会觉得惊讶了。LogBack 对 Log4J 进行了增强，并投入了 SLF4J 的怀抱，它还被作者认定为 Log4J 的继任者。</p>
+<br/>
+为什么叫做 Logback，我就不知道了，反正不要叫做 Brokeback 就行。这里是推崇用 Logback 替代 Log4J 的十几个理由：<a href="http://logback.qos.ch/reasonsToSwitch.html" target="_blank" rel="noopener">Reasons to prefer logback over log4j</a>，说的大至是更快；好测试；与 SLF4J 关系紧；文档丰富；能自动加载配置文件；多个 JVM 写一个日志文件，或其他 I/O 错误时不影响程序执行；配置文件中加入条件控制；强大的日志过滤；更强的日志切分功能；自动压缩、删除日志文件；异常栈中更多的数据信息。<!--more--><br/><br/>
+Logback 分为三个模块：logback-core，logback-classic，logback-access。logback-core 是核心；logback-classic 改善了 log4j，且自身实现了 SLF4J API，所以即使用 Logback 你仍然可以使用其他的日志实现，如原始的 Log4J，java.util.logging 等；logback-access 让你方便的访问日志信息，如通过 http 的方式。<br/><br/>
+还得提一点，Logback 能更好的放到 OSGI 环境中。好了，简单绍完了 Logback，就来看看具体怎么用它。<br/><br/>
+需要的配置文件和组件包，下面三个 jar 文件和一个 xml文件都是要放在项目的 ClassPath 上。<br/><br/>
+1. slf4j-api-1.5.11.jar<br />
+2. logback-core-0.9.20.jar<br />
+3. logback-classic-0.9.20.jar<br />
+4. logback.xml 或 logback-test.xml (类似于 log4j.properties/log4j.xml)<br/><br/>
+前一个包在 <a href="http://www.slf4j.org/download.html">http://www.slf4j.org/download.html</a> 处下载，第二第三个包在 <a href="http://logback.qos.ch/download.html">http://logback.qos.ch/download.html</a> 下载，可能包文件名中的版本号有些差，不要紧。由于这里不演示 HTTP 访问日志信息，所以不需要用到 logback-access-0.9.20.jar。<br/><br/>
+Logback 先找 logback-test.xml，没有则找 logback.xml 文件，都找不到就使用 BasicConfigurator 基本配置，BasicConfigurator 就是相当于等会贴出的 logback.xml 文件内容的配置。这里我们用 logback.xml 配置文件，以前的 log4j.properties  文件可以用 <a href="http://logback.qos.ch/translator/" target="_blank" rel="noopener">PropertiesTranslator</a> 转换成 logback.xml 文件内容。<br/><br/>
+下面是一个最简单的 logback.xml 文件内容<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;configuration&gt;
+  &lt;appender name="stdout" class="ch.qos.logback.core.ConsoleAppender"&gt;
+      &lt;encoder charset="GBK"&gt;
+          &lt;pattern&gt;%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n&lt;/pattern&gt;
+      &lt;/encoder&gt;
+  &lt;/appender&gt;  <br/><br/>
+  &lt;root level="DEBUG"&gt;
+    &lt;appender-ref ref="stdout" /&gt;
+  &lt;/root&gt;
+&lt;/configuration&gt;</pre>
+<br/>
+在 log4j.xml 能做的配置，logback.xml 中也能做到，而且还增强了诸如 &lt;if&gt;&lt;then&gt;&lt;else&gt;、&lt;filter&gt;、&lt;sift&gt; 等更强的控制，请参考 logback 的手册 <a href="http://logback.qos.ch/manual/index.html">http://logback.qos.ch/manual/index.html</a>。<br/><br/>
+使用 Logback  的代码<br/><br/>
+<pre class="lang:default decode:true ">package com.unmi;<br/><br/>
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;<br/><br/>
+public class TestLogback {
+    private static final Logger logger = LoggerFactory.getLogger(TestLogback.class);<br/><br/>
+    public static void main(String[] args) {
+        logger.info("Hello {}","TestLogback");
+    }
+}</pre>
+<br/>
+可以看到与使用 SLF4J 的代码没有任何区别，因为本来用的通用日志框架就是 SLF4J，说到底，这里的 Logback 就相当于 SLF4J+Log4J 使用方式中的 Log4J 绑定和 Log4J 的功能。<br/><br/>
+执行上面的代码，输出：<br/><br/>
+21:38:43.031 [main] INFO  com.unmi.TestLogback - Hello TestLogback<br/><br/>
+还是和上次一样，这里就拿 SLF4J+Logback 和 SLF4J+Log4J 两种方式作下比较：<br/><br/>
+<table border="1" width="750" align="center">
+<tbody>
+<tr>
+<td><strong>SLF4J+Logback 组合</strong></td>
+<td><strong>对比</strong></td>
+<td><strong>SLF4J+Log4J 组合</strong></td>
+</tr>
+<tr>
+<td>slf4j-api-1.5.11.jar</td>
+<td>一样的，定义高层 API</td>
+<td>slf4j-api-1.5.11.jar</td>
+</tr>
+<tr>
+<td>logback-classic-0.9.20.jar</td>
+<td>都是用绑定，<br />
+左边这里用作<br />
+Logback 绑定</td>
+<td>slf4j-log4j12-1.5.11.jar</td>
+</tr>
+<tr>
+<td>logback-classic-0.9.20.jar</td>
+<td>左边这里用作<br />
+日志实现</td>
+<td>log4j-1.2.15.jar</td>
+</tr>
+<tr>
+<td>logback-test.xml/logback.xml</td>
+<td>相当，logback 增加<br />
+了 log4j</td>
+<td>log4j.properties/log4j.xml</td>
+</tr>
+<tr>
+<td>程序代码中：<br />
+import org.slf4j.Logger;<br />
+import org.slf4j.LoggerFactory; <br/><br/>
+Logger logger = LoggerFactory.getLogger(TestSlf4j.class);<br />
+logger.info("Hello {}","SLF4J");
+</td>
+<td>完全一样，实质上只是<br />
+SLF4J API<br />
+侵入到了应用组件<br />
+中了，与 Logback<br />
+没有关系。</td>
+<td>程序代码中：<br />
+import org.slf4j.Logger;<br />
+import org.slf4j.LoggerFactory; <br/><br/>
+Logger logger = LoggerFactory.getLogger(TestLogback.class);<br />
+logger.info("Hello {}","Logback");
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+通过上面我们更清楚的发现，SLF4J+Logback 这样的组合与 SLF4J+Log4J 这样的用法其实没有什么差异。SLF4J 在使用其他日志实现框架的时候都是 SLF4J+相应绑定+日志实现，这里缩写成的 SLF4J+Log4J，中间是有一个 SLF4J 到 Log4J 的绑定的。完整表述它们就是：<br/><br/>
+SLF4J+Log4J 的方式：    slf4j-api-1.5.11.jar + slf4j-log4j12-1.5.11.jar + log4j-1.2.15.jar<br />
+SLF4J+Logback 的方式：slf4j-api-1.5.11.jar + logback-classic-0.9.20.jar + logback-classic-0.9.20    前一个 logback-classic-0.9.20.jar 是作为绑定用的，后一个是作为日志实现用的，也就是 logback-classic-0.9.20.jar 把前面的 slf4j-log4j12-1.5.11.jar 和 log4j-1.2.15.jar 两个包的功能揉合在了一起。<br/><br/>
+搞明白了 Logback 在其中所担当的角色后，我们就知道，说使用了 Logback 应用组件，实际它们所用的统一日志组件只是 SLF4J。也可以说 Logback 就是 Log4J 那样，只是自身带了绑定的日志实现。<br/><br/>
+在 Logback 官方首页 <a href="http://logback.qos.ch/">http://logback.qos.ch/</a> 面中可以看到使用了 Logback 的项目。

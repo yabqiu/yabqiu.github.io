@@ -1,0 +1,39 @@
+---
+title: 由StringBuffer和StringBuilder的区别而衍生的
+url: /stringbuffer-and-stringbuilder/
+date: 2006-01-11T10:31:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - StringBuffer
+  - StringBuilder
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 593 
+wpStatus: publish
+views: 499
+lastmod: 2021-09-03T10:52:09-05:00
+---
+
+    认识StringBuilder大概是在一年前的八九月份里，还是在JDK1.5从未正式发布始，一直都是关注的它的几大显著特性--泛型、静态引入、装拆箱和不定参等，某些比较细微的差别却没注意到。</p>
+<br/>
+    大家都知道处理字符串连接时StringBuffer比String效率高，因为从编译的字节码中也可以看到String的相加也是要转换为StringBuffer来进行的。<br/><br/>
+    比如对于这几句代码  <span style="color: #ff0000;">①</span>String s = <span style="color: #0066ff;">"Hello"</span>;  <span style="color: #ff0000;">②</span>s=s+<span style="color: #0066ff;">" Java"</span>;  <span style="color: #ff0000;">③</span>s=s+<span style="color: #0066ff;">" World!"</span>; 反编译之后从字节码可以看出虚拟机实际是如何处理的（具体字节码这里就略去了，对于详细字节码的分析我想如果需要的时候以后会单独写一篇来介绍）：<br />
+<!--more--><br />
+    执行第①条语句不消说<br />
+    执行第②条语句时虚拟机会以 s 为参数 new 一个StringBuffer,然后往这个StringBuffer append " Java"到最后，然后 toString() 回字符串赋给s<br />
+    执行第③条语句时虚拟机又以当前的 s 为参数 new 一个StringBuffer,然后往这个StringBuffer append " World!" 到最后，再 toString() 回成字符串赋给s<br/><br/>
+    从以上过程我们就能够预见到，如果更多的字符串连接，中间过程要产生多少个StringBuffer实例啊，这是一个很大的开销，如果换成代码中直接用StringBuffer来处理字符串连接效率就高多了，区别是数量级的，不信你亲自去测试一个两种方式所用的时间值比较，我测过。<br />
+    好啦，联系不是很大的话扯了一大堆了，这里主要是讲 StringBuffer 和 StringBuilder 的区别啊。那是在当我对字符串连接代码转换成字节码时发现，JDK1.5下的字节码不再是StringBuffer,而全是用了JDK1.5才开始有的StringBuilder,如下：<br/><br/>
+    <span style="color: #0909f7;">16:  invokevirtual   #34; //</span><span style="color: #0909f7;">Method java/lang/StringBuilder.append:(Ljava/lang/String;)Ljava/lang/StringBuilder;</span><br/><br/>
+    那么StringBuilder是一个什么东西呢，它和StringBuffer之间有什么区别呢？这个疑问留在我的脑海里一年有余了，主要总想那不是一个很容易理解的东西，我直到现在才开始真正要去琢磨它。说起来这可不是我通常对待新鲜玩艺儿的风格。<br/><br/>
+    现在看了，知道了，太简单了，其实说白了，StringBuffer 和 StringBuilder 的区别就如同 HashTable 和 HashMap 的区别；就如同 ArrayList 和 Vector 的区别。是的，只是区别在同步与非同步上、线程安全与不安全，同时由此影响的单线程环境时的性能上。<br/><br/>
+    StringBuffer 和 StringBuilder 在提供给外部方法是一样的，只是 StringBuffer 的方法前都加有 synchronized 关键字，而 StringBuilder的方法前没有 synchronized 。因此 StringBuilder 比 StringBuffer 处理起来要快。相信刚开始学Java时就有人告诉过你（或者是在面试时被问到过）：推荐使用 ArrayList 来代替 Vector ,同样如果你用 JDK1.5 话也推荐你多用 StringBuilder 而不是 StringBuffer ,因为单线程或多线程但安全的情况比较普遍，就因为 StringBuilder 相比于 StringBuilder 的实例用于多个线程是不安全的。如果需要这样的同步，则建议使用 StringBuffer。<br/><br/>
+    StringBuilder先是在C#中有的东西，Java学来用用。只要是好东西，我们奉行拿来主义，不断完善吗？记得JDK及以前没有泛型，就从C++/C#那儿学来。那些JDK1.5提供的显著新特性还�欢际谴悠渌镅阅嵌韫吹摹Ｏ喾碈#也从Java吸收了不少东西，例如类的定义、继承方式、接口实现、内存管理、单根。<br/><br/>
+    下面想法：StringBuffer,及一些集合类的源代码进行分析，原来只是大概知道集合怎么处理容量的缩减的，但是还没有形成一个更为系统的东西，希望有机会记录下来。必要时再从源码产生的字节码作更深入的了解虚拟机的工作。

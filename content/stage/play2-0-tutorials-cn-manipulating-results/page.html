@@ -1,0 +1,104 @@
+---
+title: Play 2.0 中文资料 - 操控 Result
+url: /play2-0-tutorials-cn-manipulating-results/
+date: 2012-10-10T11:47:29-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PlayFramework
+tags: 
+  - 翻译
+  - Scala
+  - PlayFramework
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4885 
+wpStatus: publish
+views: 771
+lastmod: 2021-06-01T16:28:03-05:00
+---
+
+<strong><span style="font-size: medium;">改变默认的 Content-Type</span></strong></p>
+<br/>
+结果内容的类型能够由你所指定的响应体的 Scala 值自动推断出来.<br/><br/>
+例如:<br/><br/>
+<pre class="lang:default decode:true">val textResult = Ok("Hello World!")</pre>
+<br/>
+将会自动设置 <code>Content-Type</code> 头为 <code>text/plain</code>, 而:<br/><br/>
+<pre class="lang:default decode:true">val xmlResult = Ok(&lt;message&gt;Hello World!&lt;/message&gt;)</pre>
+<br/>
+会设置 Content-Type header 为 <code>text/xml</code>.<br/><br/>
+<blockquote>
+<strong>小贴士:</strong> 这是由 <code>play.api.http.ContentTypeOf</code> 类型类完成的.
+</blockquote>
+<br/>
+这相当有用, 但是有时候你想手工改变它. 只需要调用 Result 的 <code>as(newContentType)</code> 方法来创建一个新的，类似的，具有不同 <code>Content-Type</code>  头的 Result:<br/><br/>
+<pre class="lang:default decode:true">val htmlResult = Ok(&lt;h1&gt;Hello World!&lt;/h1&gt;).as("text/html")</pre>
+<br/>
+或者更好点, 用:<!--more--><br/><br/>
+<pre class="lang:default decode:true">val htmlResult = Ok(&lt;h1&gt;Hello World!&lt;/h1&gt;).as(HTML)</pre>
+<br/>
+<blockquote>
+<strong>注:</strong> 使用 <code>HTML</code> 代替 <code>"text/html"</code> 的好处是会为你自动处理字符集，这时实际的 Content-Type 头会被设置为 <code>text/html; charset=utf-8</code>. 过会儿我们就能看到.
+</blockquote>
+<br/>
+<strong><span style="font-size: medium;">操控 HTTP 头</span></strong><br/><br/>
+你还能添加 (或修改) Result 的任何 HTTP 头:<br/><br/>
+<pre class="lang:default decode:true">Ok("Hello World!").withHeaders(
+  CACHE_CONTROL -&gt; "max-age=3600", 
+  ETAG -&gt; "xx"
+)</pre>
+<br/>
+注：如是对一个 Result 设置了同一个 Header Key 对应的值，后面的会覆盖前面所设置的值.<br/><br/>
+<span style="color: #0000ff;">Unmi:  上面的 <span style="color: #800000;">withHeaders()</span> 方法的原型是 <span style="color: #800000;">Results</span>(.scala) 中的 <span style="color: #800000;">def withHeaders(headers: (String, String)*): A</span> 方法。正如你看到的，<span style="color: #800000;">withHeaders()</span> 接收的是多个 <span style="color: #800000;">(String, String)</span> 元组类型。为什么可写成 <span style="color: #800000;">CACHE_CONTROL</span>，因为它的类型是字符串，字符串的 -&gt; 操作符的返回值就是一个 <span style="color: #800000;">(String, String)</span> 元组类型。更多的 Header Key 定义在 <span style="color: #800000;">play.api.http.HeaderNames</span> 对象中。</span><br/><br/>
+<span style="color: #0000ff;">为了演示相同 Key 时 Header 的覆盖关系，可以试下列代码：</span><br/><br/>
+<pre class="lang:default decode:true">Ok("Hello World!").withHeaders(
+  "author" -&gt; "Unmi",
+  "siteFlag" -&gt; "HongKong"
+).withHeaders(
+  "siteFlag" -&gt; "USA"
+)</pre>
+<br/>
+<span style="color: #0000ff;">查看一下它的 Header 信息：</span><br/><br/>
+<blockquote>
+<span style="color: #800000;">unmi@localhost$ curl -i http://localhost:9000</span><br />
+<span style="color: #800000;">HTTP/1.1 200 OK</span><br />
+<span style="color: #800000;">Content-Type: text/plain; charset=utf-8</span><br />
+<span style="color: #800000;">author: Unmi</span><br />
+<span style="color: #800000;">siteFlag: USA</span><br />
+<span style="color: #800000;">Content-Length: 12</span>
+</blockquote>
+<br/>
+<span style="color: #0000ff;">看到 siteFlag 存在时后面覆盖前面的设置，Key 不同时只添加。</span><br/><br/>
+<strong><span style="font-size: medium;">设置和废弃 Cookie</span></strong><br/><br/>
+Cookie 就是一种特殊的 HTTP 头，但是我们提供了一系列帮助方法简化了操作.<br/><br/>
+你可以很轻易的添加 Cookie 到 HTTP 响应中，使用:<br/><br/>
+<pre class="lang:default decode:true">Ok("Hello world").withCookies(
+  Cookie("theme", "blue")
+)</pre>
+<br/>
+而且, 要废弃先前存储在 Web 浏览器中的 Cookie 可用:<br/><br/>
+<pre class="lang:default decode:true">Ok("Hello world").discardingCookies("theme")</pre>
+<br/>
+<strong><span style="font-size: medium;">改变基于文本的 HTTP 响应的字符集</span></strong><br/><br/>
+对于基于文本的 HTTP 响应，正确处理好字符集是很重要的. Play 处理它的方式是采用 <code>utf-8</code> 为默认字符集.<br/><br/>
+字符集一方面用于转换文本响应成相应的字节通过网络 Socket 传送, 也用于更改 <code>Content-Type</code> 头为适当的 <code>;charset=xxx</code> 扩展.<br/><br/>
+字符集由 <code>play.api.mvc.Codec</code> 类型类自动处理. 仅需要引入一个隐式的 <code>play.api.mvc.Codec</code> 实例到当前作用域中，从而各种操作所用到的字符集:<br/><br/>
+<pre class="lang:default decode:true">object Application extends Controller {<br/><br/>
+  implicit val myCustomCharset = Codec.javaSupported("iso-8859-1")<br/><br/>
+  def index = Action {
+    Ok(&lt;h1&gt;Hello World!&lt;/h1&gt;).as(HTML)
+  }<br/><br/>
+}</pre>
+<br/>
+这里, 因为作用域中存在一个隐式 charset 值, 它会被应用到 <code>Ok(...)</code> 方法来转换 XML 消息成 <code>ISO-8859-1</code> 编码的字节，或者是用于生成值为 <code>text/html; charset=iso-8859-1</code> 的 Content-Type 头.<br/><br/>
+现在，假如你想知道 <code>HTML</code> 方法是怎么工作的, 看看它的定义: <span style="color: #0000ff;">Unmi 注：因为参数用了 implicit 关键字，所以如果在作用域中能找到 implicit 修饰的 Codec 类型变量将被隐式采用。</span><br/><br/>
+<pre class="lang:default decode:true ">def HTML(implicit codec: Codec) = {
+  "text/html; charset=" + codec.charset
+}</pre>
+<br/>
+假如你需要以通用的方式来处理字符集，你可以在自己的 API 中做同样的事情.

@@ -1,0 +1,196 @@
+---
+title: .NET Core 上手体验 Hello World
+url: /net-core-console-hello-world/
+date: 2016-09-02T23:13:14-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - .Net
+tags: 
+  - .NET Core
+  - dotnet
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7404 
+wpStatus: publish
+views: 954
+lastmod: 2022-03-10T00:01:58-06:00
+---
+
+别人开源是种奉献精神, 微软突然把 .Net Framework 也开源, 人们看到的却是一种野心, 现在 .NET Core 开源还真正跨平台了, 真是雄心壮志啊.</p>
+<br/>
+本人 Java 多年, 但不可否认 C# 是一个很好的语言, 我认为单纯从语言上来说要优于 Java 语言, 所以 .NET Core 搭上 C# 力量更是不能小觑, 不得不摸索一下.<br/><br/>
+之前虽有浅尝 .NET Core 的 Hello World,   以及最简单的 ASP.NET 应用, 但未有成文, 在此再作演练一番以备忘.<br/><br/>
+<h2>安装 .NET Core</h2><br/><br/>
+本人所用平台为 Mac, 所以当打开 .NET Core 的首页面 <a href="https://www.microsoft.com/net/core">https://www.microsoft.com/net/core</a> 时直接激活了 Mac 标签, 在这个页面我们知道 .NET Core 支持 Windows, Linux, Mac; 还有现成的 Docker 镜像拉下即用. .NET Core 当前版本是 1.0, 可以照着官方向导来做, 不过我倾向于全控制台来完成. 首先你的 Mac 得先有个 <code>brew</code>,  现在用 <code>port</code> 管理应用比较少了吧.<br/><br/>
+<pre class="brush:bash">$ brew update
+$ brew cask install dotnet</pre>
+<br/>
+说白了, <span style="color: #ff0000;"><strong>安装 .NET Core 只需要用 <code>brew cask install dotnet</code></strong></span>, 第一条命令没事都应该运行一下的, 发现有可升级的就运行一下 <code>brew upgrade</code>.<br/><br/>
+<code>brew cask install dotnet</code> 会检测是否有 <code>openssl</code>, 没有的话自动安装, 接着帮你下载 dotnet 安装包装上:<!--more--><br/><br/>
+<blockquote>
+➜ brew cask install dotnet<br />
+==&gt; Caveats<br />
+The latest version of OpenSSL is required to use .NET Core.<br />
+It was already installed, but you may need to link it:
+ln -s /usr/local/opt/openssl/lib/libcrypto.1.0.0.dylib /usr/local/lib/<br />
+ln -s /usr/local/opt/openssl/lib/libssl.1.0.0.dylib /usr/local/lib/
+Zsh users may need to symlink the dotnet binary:
+ln -s /usr/local/share/dotnet/dotnet /usr/local/bin
+==&gt; Satisfying dependencies<br />
+==&gt; Installing Formula dependencies from Homebrew<br />
+openssl ... done<br />
+complete<br />
+==&gt; Downloading https://download.microsoft.com/download/0/A/3/0A372822-205D-4A86-BFA7-084D2CBE9EDF/dotnet-dev-osx-x64.1.0.0-preview2-003121.<br />
+Already downloaded: /Users/Yanbin/Library/Caches/Homebrew/Cask/dotnet--1.0.0-preview2-003121.pkg<br />
+==&gt; Verifying checksum for Cask dotnet<br />
+==&gt; Running installer for dotnet; your password may be necessary.<br />
+==&gt; Package installers may write to any location; options such as --appdir are ignored.<br />
+Password:<br />
+==&gt; installer: Package name is Microsoft .NET Core 1.0.0 - SDK Preview 2 (x64)<br />
+==&gt; installer: Upgrading at base path /<br />
+==&gt; installer: The upgrade was successful.<br />
+? dotnet was successfully installed!
+</blockquote>
+<br/>
+为什么是 <code>brew cask install dotnet</code> 而不是 <code>brew install dotnet</code> 呢? 没问题, 可以试一下<br/><br/>
+<blockquote>
+➜ brew install dotnet<br />
+Error: No available formula with the name "dotnet"<br />
+==&gt; Searching for similarly named formulae...<br />
+Error: No similarly named formulae found.<br />
+==&gt; Searching taps...<br />
+This formula was found in a tap:<br />
+Caskroom/cask/dotnet<br />
+To install it, run:<br />
+brew install Caskroom/cask/dotnet
+</blockquote>
+<br/>
+<code>brew install Caskroom/cask/dotnet</code> 和  <code>brew cask install dotnet</code> 是一样的. 这里没有遵照官方文档去手工下载那个安装文件 <a href="https://download.microsoft.com/download/0/A/3/0A372822-205D-4A86-BFA7-084D2CBE9EDF/dotnet-dev-osx-x64.1.0.0-preview2-003121.">dotnet-dev-osx-x64.1.0.0-preview2-003121.pkg</a> 来执行, 我们做的更自动化.<br/><br/>
+装好了 <code>openssl</code> 和 <code>.NET Core</code> 之后按照提示运行下<br/><br/>
+<pre class="brush:bash">$ ln -s /usr/local/opt/openssl/lib/libcrypto.1.0.0.dylib /usr/local/lib/
+$ ln -s /usr/local/opt/openssl/lib/libssl.1.0.0.dylib /usr/local/lib/<br/><br/>
+#Zsh users may need to symlink the dotnet binary, 能执行 dotnet 命令就不用了
+$ ln -s /usr/local/share/dotnet/dotnet /usr/local/bin</pre>
+<br/>
+如果不执行上面头两条命令, 我们在后面执行  <code>dotne</code> 命令时就会看到类似于这样的错误<br/><br/>
+<blockquote>
+Unhandled Exception: System.TypeInitializationException: The type initializer for 'Crypto' threw an exception. ---&gt; System.TypeInitializationException: The type initializer for 'CryptoInitializer' threw an exception. ---&gt; System.DllNotFoundException: Unable to load DLL 'System.Security.Cryptography.Native': The specified module could not be found.<br />
+(Exception from HRESULT: 0x8007007E)<br />
+at Interop.CryptoInitializer.EnsureOpenSslInitialized()<br />
+at Interop.CryptoInitializer..cctor()<br />
+...................................................
+</blockquote>
+<br/>
+现在就可以执行 <code>dotnet</code> 命令了, 它是你与 .NET Core 交互的门户, 也是一个构建工具.<br/><br/>
+<h2>创建 Hello World 项目</h2><br/><br/>
+安装过程到此结束, 马上过渡到一个最简单的 Hello World 控制台程序的练习了<br/><br/>
+<pre class="brush:bash">mkdir hwapp
+cd hwapp
+dotnet new</pre>
+<br/>
+第一次执行  <code>dotnet new</code> 命令时间长一点点, 可能一分钟, 以后就快了. 执行完了提示 <code>Created new C# project in /Users/Yanbin/Desktop/hwapp</code>, 并且创建了两个文件<br/><br/>
+<ol>
+    <li>Program.cs  这是一个标准的 Hello World 程序<br />
+<pre class="lang:default decode:true">namespace HelloWorld
+{
+    class Hello {         
+        static void Main(string[] args)
+        {
+            System.Console.WriteLine("Hello World!");
+        }
+    }
+}</pre>
+</li>
+    <li>project.json  这是一个项目配置文件, 内容如下</li>
+</ol>
+<br/>
+<pre class="brush:js">{
+  "version": "1.0.0-*",
+  "buildOptions": {
+    "debugType": "portable",
+    "emitEntryPoint": true
+  },
+  "dependencies": {},
+  "frameworks": {
+    "netcoreapp1.0": {
+      "dependencies": {
+        "Microsoft.NETCore.App": {
+          "type": "platform",
+          "version": "1.0.0"
+        }
+      },
+      "imports": "dnxcore50"
+    }
+  }
+}</pre>
+<br/>
+<h2>运行 Hello World 程序</h2><br/><br/>
+<pre class="brush:bash">dotnet restore
+dotnet run</pre>
+<br/>
+<blockquote>
+➜ hwapp$ dotnet restore<br />
+log : Restoring packages for /Users/Yanbin/Desktop/hwapp/project.json...<br />
+log : Writing lock file to disk. Path: /Users/Yanbin/Desktop/hwapp/project.lock.json<br />
+log : /Users/Yanbin/Desktop/hwapp/project.json<br />
+log : Restore completed in 1273ms.<br />
+hwapp$ dotnet run<br />
+Project hwapp (.NETCoreApp,Version=v1.0) will be compiled because expected outputs are missing<br />
+Compiling hwapp for .NETCoreApp,Version=v1.0
+Compilation succeeded.<br />
+0 Warning(s)<br />
+0 Error(s)
+Time elapsed 00:00:05.7311046
+<br />
+Hello World!
+</blockquote>
+<br/>
+<code>dotnet restore</code> 会生成一个 <code>project.lock.json</code> 文件, 它是 <code>dotnet run</code> 必须的. 它像是 Visual Studio 中的 Solution 文件.<br/><br/>
+实质运行的就是那个  <code>bin/Debug/netcoreapp1.0/hwapp.dll</code> 文件, 比如我们可以执行<br/><br/>
+<blockquote>
+➜ hwapp$ dotnet bin/Debug/netcoreapp1.0/hwapp.dll<br />
+Hello World!
+</blockquote>
+<br/>
+<code>dotnet run</code> 之后生成的文件如下<br/><br/>
+<blockquote>
+➜ hwapp$ tree<br />
+.<br />
+├── Program.cs<br />
+├── bin<br />
+│   └── Debug<br />
+│   └── netcoreapp1.0<br />
+│   ├── hwapp.deps.json<br />
+│   ├── hwapp.dll<br />
+│   ├── hwapp.pdb<br />
+│   ├── hwapp.runtimeconfig.dev.json<br />
+│   └── hwapp.runtimeconfig.json<br />
+├── obj<br />
+│   └── Debug<br />
+│   └── netcoreapp1.0<br />
+│   ├── dotnet-compile-csc.rsp<br />
+│   ├── dotnet-compile.assemblyinfo.cs<br />
+│   └── dotnet-compile.rsp<br />
+├── project.json<br />
+└── project.lock.json
+</blockquote>
+<br/>
+<h2>dotnet 其他命令</h2><br/><br/>
+<code>dotnet</code> 的其他几个命令如下, 用 <code>dotnet --help</code> 查看<br/><br/>
+<blockquote>
+<strong> new</strong> Initialize a basic .NET project<br />
+<strong>restore</strong> Restore dependencies specified in the .NET project<br />
+<strong>build</strong> Builds a .NET project<br />
+<strong>publish</strong> Publishes a .NET project for deployment (including the runtime)<br />
+<strong>run</strong> Compiles and immediately executes a .NET project<br />
+<strong>test</strong> Runs unit tests using the test runner specified in the project<br />
+<strong>pack</strong> Creates a NuGet package
+</blockquote>
+<br/>
+现在对 .NET Core 有了一个基本的感观认识了, 接下来看看如何用 ASP.NET Core, 用 .NET Core 做网站了.<br/><br/>
+附录: <a href="https://docs.microsoft.com/en-us/dotnet/articles/core/tutorials/index">.NET Core Tutorials</a>

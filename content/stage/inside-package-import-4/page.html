@@ -1,0 +1,177 @@
+---
+title: 四、深入下package,import:(摘)
+url: /inside-package-import-4/
+date: 2009-04-10T11:19:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - JVM
+tags: 
+  - Java
+  - JVM
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 280 
+wpStatus: publish
+views: 431
+lastmod: 2010-08-10T10:14:13-05:00
+---
+
+注：因package,import涉及较多内容，另开一个帖子了，但为了保证此贴内容与标题相符，在此也把写上了该部分内容（措辞有整理）<br/>
+ <br/>
+<strong>深入下package,import:</strong><br/>
+<br/>
+    凡是和java设计相关的工具，都会用到package与import，到底这两个东东是做什么的，如何用，它们的内部机理又是如何呢，今仅就个人的理解谈谈看法，里面一些错漏，疑点也请朋友们指出：<br/>
+<br/>
+一， package,import引入原因：<br/>
+<br/>
+package:<br/>
+    我们都熟悉超市，超市虽然庞大，东西繁多，但管理的井井有条，很容易找到某样东东，；之所以能如此，一个很重要的原因就是采用了分类放置，这样既方便了管理，又方便了寻找<br/>
+    Package也是一个分类放置东东的区域，不过它放的不是商品而是java中的类。Java中有各种各样的类，<br/>
+内容丰富，繁多，为了更好的管理，识别，就为每一类型的类建立一个区域，这个区域就是包 <!--more--><br/>
+<br/>
+import:<br/>
+    类放入了包中，在运行时如何才能定位到类呢？，我们知道，类分三种，“系统类”，“扩展类”，“用户类”；前两种的路径由jvm指定； 而用户类是通过 “–classpath”, “classpath”和缺省路径“.”与import配合来查找的，查找顺序如下：<br/>
+    1. -classpath(命令行模式下使用);<br/>
+    2. classpath(在环境变量中设计，当有 –classpath时该路径信息不起作用)<br/>
+    3. 缺省路径”.” 当前目录(当前两步都没有时，才会使用缺省路径)<br/>
+<br/>
+    朋友们不知是否想过这样的问题：<br/>
+          既然“系统类”，“扩展类”，“用户类”java都有机制对应到它们的路径，那为什么还要引入import呢？ 这似乎是个有趣的话题<br/>
+<br/>
+      我们知道，java程序在运行时，除了一些预先载入的类可以通过系统内定的路径（写死）所有的类必须要“精确”（请注意喔，是精确）定义位置，而无论是jvm还是classpath它们对于运行时加载的类的路径指明不具体，很笼统，大致如下：<br/>
+          系统类jvm指定到 jre\lib\jt.jar （jt下有很多的包喔，包下还有包喔）<br/>
+          扩展类jvm指定到 jre\lib\ext  （ext下也有很多个jar包，每个jar包下可能都有一些包层次结构）<br/>
+          用户类jvm根据classpath来指定某个包（包下还可能有包喔）<br/>
+<br/>
+          这么笼统，jvm当然不可能找到了，就好比，张三住在 “中国，河南省，洛阳市，马家庄 17 队”； 如果仅仅仅仅告诉你 “张三在中国，河南省”，让你去找，够你费劲的吧。，java也一个样，为了提高效率，java要求必须提供类的“精确”路径，由是，引入了import这个关键字，它就是类具体地址（具体到最直接的包）的导航，<br/>
+<br/>
+    下面对package,import分编译期，运行期来分析下：<br/>
+     <br/>
+二， 深入编译期的package运作机制<br/>
+    【以下部分引用java深度历险】<br/>
+  为便于说明，先制作一个范例，测试所使用的目录结构如下：<br/>
+        目录:  src<br/>
+                ---目录:comtime                        目录:outer<br/>
+                        ---目录: com                            ---文件:CA.java<br/>
+                                ---文件：CA.java      目录: com<br/>
+                        ---目录: edu                            ---文件:CA.java<br/>
+                                ---文件：CA.java<br/>
+                        ---文件: Main.java<br/>
+                        ---文件: CA.java<br/>
+<br/>
+在上面的测试范例中，总共有六个文件，它们的内容分别如下：<br/>
+<br/>
+Src\comtime\Main.java<br/>
+Public class Main{<br/>
+    Public static void main(string[] args){<br/>
+        CA ca = new CA();<br/>
+    }<br/>
+}<br/>
+<br/>
+Src:\comtime\CA.java<br/>
+Public class CA{ }<br/>
+<br/>
+Src\comtime\edu\CA.java<br/>
+Package edu;<br/>
+Public class CA{ }<br/>
+<br/>
+Src\comtime\com\CA.java<br/>
+Package com;<br/>
+Public class CA{ }<br/>
+<br/>
+Src\outer\CA.java<br/>
+Package outer;<br/>
+Public class CA{ }<br/>
+<br/>
+Src\com\CaA.java<br/>
+Package com;<br/>
+Public class CA{ }<br/>
+<br/>
+在你往下看之前，请务必搞清上面的层次结构喔<br/>
+<br/>
+    接下来，我们使用src\comtime作为根目录（意即：直接放在此目录下的类可以不需要任何package,而属于任何package的类可以以此目录作为相对参考点，根据自己所属的package产生相对应的目录来放置自己）,现在把我们把工作目录切换到src\comtime下，并执行<br/>
+Javac Main.java              -&gt;指令 【1】<br/>
+<br/>
+然后我们发现，不属于任何package的两个类分别被编译成类文件，并都置于<br/>
+  src\comtime目录下<br/>
+      ---Main.class<br/>
+    ---CA.class<br/>
+<br/>
+接下来，我们把Main.java修改为:<br/>
+Import com.*;<br/>
+Import edu.*;<br/>
+Public class Main{<br/>
+Public static void main(string[] args){<br/>
+    CA ca = new CA();<br/>
+}<br/>
+}<br/>
+<br/>
+重新执行<br/>
+Javac Main.java              -&gt;指令 【2】<br/>
+<br/>
+测试结果和指令【1】的相同，从这里，我们不难发现，不管你使用没使用import 指令，存在目前目录下的类都会被编译器优先采用，只要它不属于任何package<br/>
+接下来，我们将src\comtime\CA.java改名为NU.java，代表它不再为我们所用，<br/>
+<br/>
+重新执行<br/>
+Javac Main.java              -&gt;指令 【3】<br/>
+<br/>
+编译时出现错误提示，大意是说编译器出现了疑惑，因为com,edu两个package下都有CA.java，编译器不知道该用哪个，解决的办法就是明确告诉编译器使用哪个，有两种，<br/>
+    第一种，在import处明确声明，也就是把Main.java改成如下<br/>
+Import com.CA;<br/>
+Import edu.*;<br/>
+Public class Main{<br/>
+Public static void main(string[] args){<br/>
+    CA ca = new CA();<br/>
+}<br/>
+}<br/>
+<br/>
+第二种，在引用时详细指明该类的全名（即“包名称.类名称”的组合），也就是把Main.java改成如下<br/>
+Import com.*;<br/>
+Import edu.*;<br/>
+Public class Main{<br/>
+Public static void main(string[] args){<br/>
+    CA ca = new com.CA();<br/>
+}<br/>
+}<br/>
+<br/>
+接下，我们再将Main.java修改成<br/>
+Import com.* ;<br/>
+Import edu.* ;<br/>
+Import outer.* ;<br/>
+Public class Main{<br/>
+Public static void main(string[] args){<br/>
+    CA ca = new CA();<br/>
+}<br/>
+}<br/>
+<br/>
+执行：<br/>
+Javac Main.java              -&gt;指令 【4】<br/>
+之后，就会发现错误信息，大意是找不到outer包<br/>
+<br/>
+为了解决这个问题，我们把指令该为：<br/>
+Javac  ..  Main.java          -&gt;指令 【5】<br/>
+编译还会报错，提示找不到edu这个package，我们再把指令改为:<br/>
+Javac  ..;.  Main.java        -&gt;指令 【6】<br/>
+这时编译器不再出现找不到package, 而是再次出现了不知道该采用哪个CA.java了，解决方式已经谈到了，假设我们把Main.java该为：<br/>
+Import com.CA ;<br/>
+Import edu.* ;<br/>
+Import outer.* ;<br/>
+Public class Main{<br/>
+Public static void main(string[] args){<br/>
+    CA ca = new CA();<br/>
+}<br/>
+}<br/>
+重新使用指令<br/>
+Javac  ..;.  Main.java        -&gt;指令 【7】<br/>
+编译成功通过，我们发现src\com下的CA.java被编译了。<br/>
+<br/>
+如果我们把指令改成:<br/>
+Javac  .;..  Main.java        -&gt;指令 【8】<br/>
+我们发现src\comtime\com下的CA.java被编译了<br/>
+<br/>
+以上的种种测试揭示了编译器的运行情形，当java编译器开始编译某个类的源代码时，首先它会建立一个“类路径引用表”，之后编译器要确定它可以利用类引用表中的数据作为相对起始路径，找到所用到的package

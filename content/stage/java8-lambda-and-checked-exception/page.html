@@ -1,0 +1,136 @@
+---
+title: Java8 Lambda 表达式与 Checked Exception
+url: /java8-lambda-and-checked-exception/
+date: 2017-02-08T23:54:38-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/12/Java8-Logo.png"
+categories:
+  - Java8
+tags: 
+  - Thread
+  - lambda
+  - java8
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7828 
+wpStatus: publish
+views: 3784
+lastmod: 2021-09-03T16:52:47-05:00
+---
+
+当我们在使用 Java 8 的 Lambda 表达式时，表达式内容需要抛出异常，也许还会想当然的让当前方法再往外抛来解决编译问题，如下面的代码</p>
+<br/>
+<img class="aligncenter size-full wp-image-7830" src="/wp-content/uploads/2017/02/java-lambda-exception-1.png" alt="" width="383" height="87" /><br/><br/>
+让 <code>main()</code> 方法抛出 <code>Exception</code> 还是不解决决编译错误，仍然提示 "Unhandled exception: java.io.FileNotFoundException"。<br/><br/>
+因为我们可能保持着惯性思维，忽略了 Lambda 本身就是一个功能性接口方法的实现，所以把上面的代码还原为匿名类的方式<br/><br/>
+<pre class="lang:default decode:true">public void foo() {
+    Stream.of("a", "b").forEach(new Consumer&lt;String&gt;() {
+        @Override
+        public void accept(String s) {
+            new FileInputStream(s).close();
+        }
+});</pre>
+<br/>
+那么对于上面那种情况应该如何处理呢？<!--more--><br/><br/>
+<h3>就地处决或转换为 unchecked 异常</h3><br/><br/>
+现在我们就不会让 <code>foo()</code> 方法去抛出一个异常来捕获 <code>new FileInputStream(s).close()</code> 这一行可能出现的异常，一定是会让 <code>accept()</code> 方法来向外层抛异常，正是因为 <code>Consumer</code> 定义的 <code>accept()</code> 方法定义不抛异常，所以若是用 IntelliJ IDEA 的话, 它会提示我们把会产生异常的那行 catch 起来，像下面那样<br/><br/>
+<pre class="lang:default decode:true">try {
+    new FileInputStream(s).close();
+} catch (IOException e) {
+    e.printStackTrace();
+    //这是我加的，可以在这里抛出一个 unchecked 异常，如
+    throw new RuntimeException("file not found");
+}</pre>
+<br/>
+这种情况似乎只能这样把 checked exception 转换为 unchecked exception 了。对于上面的改动，想要 catch 那个 <code>RuntimeException</code> 的话也没问题<br/><br/>
+<pre class="brush:java">try {
+    foo();
+} catch (Exception ex) {
+    System.out.println(ex.getMessage());  //输出 file not found
+}</pre>
+<br/>
+<h3>使用声明了异常的 SAM，可在外层方法继续抛出</h3><br/><br/>
+如果不想要捕获异常再转换为 unchecked exception 的话，那就不能用 Java 8 内置的 <code>Consumer</code> 接口了，需要有一个声明抛出 Exception 的  <code>accept()</code> 方法的 <code>Consumer</code>. 比如下面的定义的 <code>MyConsumer</code>, 它的 <code>accept()</code> 方法抛出异常，代码如下：<br/><br/>
+<pre class="lang:default decode:true">@FunctionalInterface
+    interface MyConsumer {
+    void accept(String s) throws Exception;
+}<br/><br/>
+public void foo(String f, MyConsumer consumer) throws Exception {
+    consumer.accept(f);
+}<br/><br/>
+public void client() throws Exception{
+    foo("a", s -&gt; new FileInputStream(s).close());
+}</pre>
+<br/>
+上面的 <code>foo()</code> 和 <code>client()</code> 方法就可以声明抛出由 <code>new FileInputStream()</code> 产生的异常，而不需要进行异常转换。<br/><br/>
+<h3>并发操作是 Lambda 的异常处理</h3><br/><br/>
+在单线程模式下，异常还是容易处理，有异常时在当前线程的异常栈中能查找到, 而对于其他线程中抛出的异常在当前线程中是无法捕获到的，就像下面的尝试是不会成功的<br/><br/>
+<pre class="lang:default decode:true">try {
+    new Thread(() -&gt; {
+        throw new RuntimeException("Something wrong");
+    }).start();
+    //这里怎么延时也没用
+} catch(Exception ex) {
+    System.out.println(ex.getMessage()); //上面的异常永远也不关这里的事
+}</pre>
+<br/>
+在我的测试下控制台的输出类似如下<br/><br/>
+<blockquote>
+Exception in thread "Thread-0" java.lang.RuntimeException: Something wrong<br />
+    at cc.unmi.TestLambdaException.lambda$bar$1(TestLambdaException.java:41)<br />
+    at java.lang.Thread.run(Thread.java:745)
+</blockquote>
+<br/>
+那么 Java 8 的 parallelStream() 会把任务分配到其他线程去执行，是不是也无法在调用者线程上捕获到 <code>parallelStream().forEach(Consumer)</code> 中抛出的异常呢？不是的，可正常捕获，因为 Java 8 的 <code>ForkJoinTask</code> 有进行特殊的处理，会在子线程发生异常时把子线程的异常附着到调用者线程上去。我们来运行下面的代码<br/><br/>
+<pre class="lang:default decode:true">public static void main(String[] args) {
+    try {
+        foo();
+    } catch (Exception ex) {
+        System.out.println("Caught exception: " + ex.getMessage());
+        ex.printStackTrace();
+    }
+}<br/><br/>
+private static void foo() {
+    Arrays.asList("a", "b").parallelStream().forEach(s -&gt; {
+        try {
+            new FileInputStream(s).close();
+        } catch (IOException e) {
+            throw new RuntimeException("file not found");
+        }
+    });
+}</pre>
+<br/>
+多次运行上面的代码可以收到两种情况的输出<br/><br/>
+第一种, 只有一层 RuntimeException("file not found")：<br/><br/>
+<img class="aligncenter size-full wp-image-7832" src="/wp-content/uploads/2017/02/java-lambda-exception-2.png" alt="" width="767" height="216" /><br/><br/>
+第二种，有两层的 RuntimeException("file not found")<br/><br/>
+<img class="aligncenter size-full wp-image-7833" src="/wp-content/uploads/2017/02/java-lambda-exception-3.png" alt="" width="770" height="290" /><br/><br/>
+总之，在使用 Java 8 集合框架的 parallelStream() 可以正常的在启动线程中捕获到 Lambda 表达式中产生的异常。<br/><br/>
+由上图中可看到起关键作用的就是 <code>ForkJoinTask</code> 的 <code>invoke()</code>,  <code>reportException()</code>, 和  <code>getThrowableException()</code> 方法，可以大概看下相关的 <code>java.util.concurrent.ForkJoinTask</code>  代码片断：<br/><br/>
+<pre class="lang:default decode:true ">public final V invoke() {
+    int s;
+    if ((s = doInvoke() &amp; DONE_MASK) != NORMAL)
+        reportException(s);
+    return getRawResult();
+}<br/><br/>
+private void reportException(int s) {
+    ...........
+    if (s == EXCEPTIONAL)
+        rethrow(getThrowableException());
+}<br/><br/>
+private Throwable getThrowableException() {
+    //..... 异常表中查找异常
+    Throwable ex;
+    .....
+    if (e.thrower != Thread.currentThread().getId()) {
+        //..... 如果异常的抛出者不是当前线程，把构建出一个异常实例关联实际异常
+    }
+    return ex; //这样就可以把原本在子线程中产生的异常抛到当前线程上来
+}</pre>
+<br/>
+这可以作为我们在实际的多线程应用中异常处理的一个参考。

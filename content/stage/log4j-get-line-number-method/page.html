@@ -1,0 +1,79 @@
+---
+title: Log4J 输出日志时是如何获知当前方法、行号的
+url: /log4j-get-line-number-method/
+date: 2006-06-25T05:43:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2006/03/log4j-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Log4J
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 562 
+wpStatus: publish
+views: 5071
+lastmod: 2021-09-10T13:06:13-05:00
+---
+
+记得最早在项目中用Log4j的时候，也是觉得在每一个要记载日志的类中或者某个上层类中要声明一个Logger属性挺麻烦的</p>
+<br/>
+注(2018-06-30)：本文所展示的 Log4J 如何定们位置信息可参考 Log4J 1.2.13 的源代码，新代码可能有出入。<br/><br/>
+<pre class="brush:java">protected static Log log = LogFactory.getLog(Test.class);</pre>
+<br/>
+或者<br/><br/>
+<pre class="brush:java">protected static Logger log = Logger.getLogger(Test.class);</pre>
+<br/>
+于是就写了一个自己的Logger类UnmiLogger，也就是把Log4j的Logger包装一下，直接调用Logger的日志输出方法，info、debug、warn等，只不过在UnmiLogger中把日志输出方法都改为静态的，让在别的代码中方便使用。<!--more--><br/><br/>
+<pre class="brush:java">public class UnmiLogger<br/><br/>
+{<br/><br/>
+   private static Logger log = Logger.getLogger(Test.class);<br/><br/>
+<br/><br/>
+   public static void debug(Object msg){log.debug(msg);}<br/><br/>
+   public static void debug(Object msg,Throwable t){log.debug(msg,t);}<br/><br/>
+   public static void info(Object msg){log.info(msg);}<br/><br/>
+   public static void info(Object msg,Throwable t){log.info(msg,t);}<br/><br/>
+   //.......//更多日志输出方法，fatal、warn、trace、error<br/><br/>
+}</pre>
+<br/>
+使用起来就只要在需要打印日志的地方用 UnmiLogger.debug("Hello UnmiLogger")就行，但是这样用的话实际输出的日志就会有很多问题的。例如，log4j.properties中配置的输出格式为：<br/><br/>
+<pre class="brush:java">log4j.appender.A1.layout.ConversionPattern =[%p] [%C.%M:%L] %m%n</pre>
+<br/>
+那么输出来的日志信息就总是<br/><br/>
+[main] [UnmiLogger.debug:45] Hello UnmiLogger<br/><br/>
+期望输出的类名和方法名及行号总是指向了UnmiLogger类，而且也不能依包来过滤控制输出，因为Category也总是UnmiLogger。<br/><br/>
+后来就思考如何输出期望的日志信息，如类Test中用代码UnmiLogger.debug("Hello")输出日志时，要让显示的信息为Test类和Test类的哪个方法、哪行代码。于是头脑中也浮现过这样一个问题：<br/><br/>
+执行时，在某一个类的方法中如何能知道是谁(哪个类、哪个方法)调用了它？<br/><br/>
+这个问题很容易让我想到介助于动态代码、或者运行时修改字节码、或者AOP、方法拦截。这里列出来的四个说法基本也是围绕着一个目的。<br/><br/>
+用上面的方法感觉着眼点太大，一下也比较难以吃透，所以没有深究。<br/><br/>
+初写Java代码的人，在处理异常的时候，常常会Catch到某个异常e，然后就只是不负责任的用 e.printStackTrace()，打印一大堆，不作更实际的处理，但是我们也能够从打印的调用栈信息获得启发，异常堆栈信息从里至外显示出每一层是什么类、哪个方法、哪行代码的信息，这不就正能为我的UnmiLogger所用吗！<br/><br/>
+只要在UnmiLogger的日志输出方法，如debug中new一个异常Throwable然后获取取异常栈信息，取上一层就是使用它的类了，从中获取到出异常的类名、方法名、代码行。<br/><br/>
+确定类名、方法名、代码行的工作算是完成了，可也总会想：每打印一条日志都要产生一个异常，然后抠出它的异常栈信息，这样做的成本是不是太高了啊。从此继续反回，在Log4j的代码中它又是如何获取到行号信息呢？<br/><br/>
+至于上面的解决办法如何做到日志按包过滤输出，还留待后叙……<br/><br/>
+不能光想不做，近段时间也闲着也不安，那就奋不顾身的钻到Log4j的源码中去探个究竟吧！<br/><br/>
+在类com.unmi.Test的main方法中写了这样两行代码去追踪<br/><br/>
+<pre class="brush:java">Logger log = Logger.getLogger(Test.class);<br/><br/>
+log.debug("Hello");</pre>
+<br/>
+执行过程中发现在输出代码行数的时候，方法调用栈如下图如示(2018-06-30 补图，原图已找不到)：<br/><br/>
+<a href="/wp-content/uploads/2006/06/log4j-locationinfo.png"><img class="aligncenter size-large wp-image-8814" src="/wp-content/uploads/2006/06/log4j-locationinfo-800x544.png" alt="" width="800" height="544" /></a><br/><br/>
+Log4j是通过LocationInfo类来获知调试代码位置信息的，看到上图上加亮的那行代码就能领悟到，原来，原来Log4j想的跟咱也是一样，它也是 new一个异常Throwable来得到那些信息的。说明我在软件行里混达的还算是块料。<br/><br/>
+再继续看LocationInfo的构造部分代码片断，<br/><br/>
+<pre class="brush:java">  //这两行是LocationInfo的类属性<br/><br/>
+  private static StringWriter sw = new StringWriter();<br/><br/>
+  private static PrintWriter pw = new PrintWriter(sw);<br/><br/>
+<br/><br/>
+  //下面代码是LocationInfo的构造方法片断<br/><br/>
+  t.printStackTrace(pw);<br/><br/>
+  s = sw.toString();<br/><br/>
+  //中间代码略去，是一些处理字符串的代码<br/><br/>
+  this.fullInfo = s.substring(ibegin, iend);</pre>
+<br/>
+这时候可以看到this.fullInfo的值是"com.unmi.Test.main(Test.java:14)"，这就是要输出的信息了，格式化输出时再取子字符串就行了。<br/><br/>
+亲爱的朋友，如果你读到前面这几话的时候，不妨让我们再回到前面写的那个日志工具类UnmiLogger,在debug方法中，为了得到行号等信息,new 过一次Throwable异常了，临到实际调用Logger的debug方法时，又要new一次Throwable了，所以这样看来，自己写的那个日志工具类执行代价还真不小啦。<br/><br/>
+因此，如果以后要写象UnmiLogger那样的日志工具类的话，可以考虑更为大胆的举措：真接修改类LocationInfo的行为。当然还不能忘记要解决前面的一个问题－－日志分包过滤输出，必要时还得在Log4j源码中动些手术，遵照它的开源协议，公开这部分代码也无所谓，更何况真的没必要这么认真的。

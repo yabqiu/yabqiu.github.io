@@ -1,0 +1,54 @@
+---
+title: 切分 Tomcat 的 catalina.out 文件，解决日志文件过大的问题
+url: /split-tomcat-catalina-out-file/
+date: 2012-09-17T03:06:54-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - Tomcat
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4711 
+wpStatus: publish
+views: 5207
+lastmod: 2021-06-03T00:00:24-05:00
+---
+
+Tomcat 下日志文件 catalina.out 过大，几百兆或几个G，进而造成再也无法写入更多的日志内容，至使 Tomcat 无法处理请求。需然你可以在 $TOMCAT_HOME/logs 目录下看到有 catalina.2012-09-16.log 这样分日期的归档，但是主文件 catalina.out 却一直在膨胀。</p>
+<br/>
+你可以每次手工或定时(crontab/计划任务)清理 catalina.out 文件，或是规划好日志输出(终究也会有满的时候)。再就是有两种较好的解决方案去真正的切分 catalina.out 文件，让 catalina.out 只存有最新的日志。<br/><br/>
+一. 改用 Log4J 来输出 Tomcat 日志，借助 Log4J 的各种日志切分的功能。详情可参考： <a href="http://baalwolf.iteye.com/blog/1464093" target="_blank" rel="noopener">http://baalwolf.iteye.com/blog/1464093</a>， <a href="http://tomcat.apache.org/tomcat-6.0-doc/logging.html" target="_blank" rel="noopener">http://tomcat.apache.org/tomcat-6.0-doc/logging.html</a>。<br/><br/>
+二. Linux 下使用 cronolog 工具来切分 catalina.out<br/><br/>
+这里重点介绍这种方法，具体步骤如下：<!--more--><br/><br/>
+1. 下载安装 cronolog，它的主页 <a href="http://cronolog.org/" target="_blank" rel="noopener">http://cronolog.org</a>. 下载的是源码，安装过程就是 ./configure, make, make install，最后一步可直接把 src/cronolog 执行文件拷入到某个适合的目录，如 /usr/local/sbin/ 目录<br/><br/>
+2. 编辑 bin/catalina.sh 文件<br/><br/>
+    1）找到下面行并把它用 # 注释掉<br/><br/>
+<pre class="lang:default decode:true">touch "$CATALINA_BASE"/logs/catalina.out</pre>
+<br/>
+    在新 Tomcat7 的 bin/catalina.sh 文件要注释的行是<br/><br/>
+<pre class="lang:default decode:true">touch "$CATALINA_OUT"</pre>
+<br/>
+    2）替换下面的行(有两处，不过一般在 -security 中的那一行不需要去关注，不妨两处全替换了)<br/><br/>
+<pre class="lang:default decode:true">&gt;&gt; "$CATALINA_BASE"/logs/catalina.out 2&gt;&amp;1 &amp;</pre>
+<br/>
+    为<br/><br/>
+<pre class="lang:default decode:true">2&gt;&amp;1 |/usr/local/sbin/cronolog "$CATALINA_BASE/logs/catalina.%Y-%m-%d.log" &amp;</pre>
+<br/>
+在 Tomcat7 的 bin/catalina.sh 中是需要替换行是<br/><br/>
+<pre class="lang:default decode:true">&gt;&gt; "$CATALINA_OUT" 2&gt;&amp;1 "&amp;"</pre>
+<br/>
+替换后该行的内容与上面是一样的。<br/><br/>
+为什么 Tomcat7 后会有所不同，因为在它的 catalina.sh 文件中有如下定义<br/><br/>
+<pre class="lang:default decode:true ">CATALINA_OUT="$CATALINA_BASE"/logs/catalina.out</pre>
+<br/>
+3. 保存 catalina.sh 文件，重启 Tomcat 即可。<br/><br/>
+以后看到 $TOMCAT_HOME/logs/ 下的就是 catalina-2012-09-16.out, catalina-2012-09-17.out ...... 一系列文件，好像 cronolog 又没提供方式来控制归档的日志文件个数。<br/><br/>
+<span style="text-decoration: underline;">而且这样之后，将不会产生 catalina.out 文件了。</span><br/><br/>
+参考：<a href="http://www.tomcatexpert.com/knowledge-base/rotating-catalinaout-log-files" target="_blank" rel="noopener">http://www.tomcatexpert.com/knowledge-base/rotating-catalinaout-log-files</a>

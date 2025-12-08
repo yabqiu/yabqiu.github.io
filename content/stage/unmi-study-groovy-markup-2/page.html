@@ -1,0 +1,78 @@
+---
+title: Unmi 学习 Groovy 之 GroovyMarkup (二)
+url: /unmi-study-groovy-markup-2/
+date: 2008-11-20T07:38:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Groovy
+tags: 
+  - Groovy
+  - Markup
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 312 
+wpStatus: publish
+views: 336
+lastmod: 2015-07-01T01:59:11-05:00
+---
+
+<p>在前一篇 <a href="http://unmi.cc/unmi-study-groovy-markup-1/" target="_blank">Unmi 学习 Groovy 之 GroovyMarkup (一)</a> 引入了 GroovyMarkup 及介绍了其中的一个 Builder(MarkupBuilder) 的用法。本篇继续。</p><p>groovy.util.NodeBuilder，用来创建一般任意对象的树状结构。看到了，它不在 groovy.xml 包之下，但它是一个 Builder，所以秉承了 Builder 的语法规则，而且还可用路径(对象导航)的方式来访问这个 Builder 实例中的节点或属性值。还是来看例子：</p><pre class="brush:groovy">import groovy.util.NodeBuilder;<br/>
+<br/>
+someBuilder = new NodeBuilder();            //只有这么一个构建方法<br/>
+<br/>
+root = someBuilder.users([balance:100]){    //这一块的语法完全同 MarkupBuilder<br/>
+	user([gender:"male"],"Unmi");<br/>
+	user("Joe"){<br/>
+		order(item:"Book");<br/>
+	}<br/>
+}<br/>
+<br/>
+println root;                     //因为 NodeBuilder 不预示着输出，所以需要显示的 println</pre><p>看看上面程序的输出：<!--more--></p><p>users[attributes={balance=100}; value=[user[attributes={gender=male}; value=Unmi], user[attributes={}; value=[Joe, order[attributes={item=Book}; value=[]]]]]]</p><p>再来看看如何访问 root 的属性、节点、以及节点属性值，像访问 DOM 一样，并且更灵活：</p><pre class="brush:groovy">import groovy.util.NodeBuilder;<br/>
+<br/>
+someBuilder = new NodeBuilder();            //只有这么一个构建方法<br/>
+<br/>
+root = someBuilder.users([balance:100]){    //这一块的语法完全同 MarkupBuilder<br/>
+	user([gender:"male"],"Unmi");<br/>
+	user("Joe"){<br/>
+		order(item:"Book");<br/>
+	}<br/>
+}<br/>
+<br/>
+println root;                     //因为 NodeBuilder 不预示着输出，所以需要显示的 print<br/>
+<br/>
+println("-----访问节点-----");<br/>
+//--get() 方法返回包含指定名称的所有子节点<br/>
+users = root.get("user");                 //就像 DOM 的 getElementsByTagName("user")<br/>
+<br/>
+//--用路径(导航)的方式访问节点<br/>
+//users = root.user;                        //同 root.get("user")<br/>
+<br/>
+users.each(){<br/>
+	println "${it.name()}:${it.value()}"; //用 name() 和 value() 分别访问节点的名称和值<br/>
+}<br/>
+<br/>
+println("-----访问属性-----");<br/>
+//--attributes() 方法返回节点属性的一个 Map<br/>
+println root.attribute("balance");<br/>
+println root.get("@balance");            //也可以用 @ 加属性名来取得属性值<br/>
+<br/>
+println("-----深度优先遍历节点-----");<br/>
+root.depthFirst().each(){<br/>
+	println "${it.name()}:${it.attributes()}";<br/>
+}<br/>
+<br/>
+println("-----广度优先遍历节点-----");<br/>
+root.breadthFirst().each(){<br/>
+	println "${it.name()}:${it.value()}";<br/>
+}<br/>
+<br/>
+println("用 Java 迭代器来遍历一个节点的子节点");<br/>
+it = root.iterator();<br/>
+while(it.hasNext()){<br/>
+	println it.next();<br/>
+}</pre><p>上面代码的输出如下，对照输出可很好的理解：</p><p>users[attributes={balance=100}; value=[user[attributes={gender=male}; value=Unmi], user[attributes={}; value=[Joe, order[attributes={item=Book}; value=[]]]]]]<br /> -----访问节点-----<br /> user:Unmi<br /> user:["Joe", order[attributes={item=Book}; value=[]]]<br /> -----访问属性-----<br /> 100<br /> 100<br /> -----深度优先遍历节点-----<br /> users:["balance":100]<br /> user:["gender":"male"]<br /> user:[:]<br /> order:["item":"Book"]<br /> -----广度优先遍历节点-----<br /> users:[user[attributes={gender=male}; value=Unmi], user[attributes={}; value=[Joe, order[attributes={item=Book}; value=[]]]]]<br /> user:Unmi<br /> user:["Joe", order[attributes={item=Book}; value=[]]]<br /> order:[]<br /> 用 Java 迭代器来遍历一个节点的子节点<br /> user[attributes={gender=male}; value=Unmi]<br /> user[attributes={}; value=[Joe, order[attributes={item=Book}; value=[]]]]</p><p>参考：1. 《Java 脚本编程 语言、框架与模式》 第五章，高级的 Groovy 编程</p><div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

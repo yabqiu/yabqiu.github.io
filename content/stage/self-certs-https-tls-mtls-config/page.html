@@ -1,0 +1,857 @@
+---
+title: 自签发证书配置 HTTPS 单向双向验证
+url: /self-certs-https-tls-mtls-config/
+date: 2024-11-27T12:43:30-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2024/11/https-logo.png"
+categories:
+  - Web/JS
+tags: 
+  - HTTPS
+  - TLS
+  - mTLS
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13908 
+wpStatus: publish
+views: 183
+lastmod: 2024-12-02T21:10:03-06:00
+---
+
+好久以前阅读《HTTP/2 in Action》一书起了个头，又重新放回了书架。近来再次对 HTTPS/TLS 来了劲，自己的博客用的是 Let's Encrypt 签发的证书，这次实践一下自签发证书的过程与配置，并实现单向和双向的认证方式。<br/><br/>
+如果是配置单向认证的过程需要有以下三个证书<br/><br/>
+<ol>
+    <li>根(CA) 证书: root.crt</li>
+    <li>服务端私钥文件: server.key</li>
+    <li>服务端公钥证书: server.crt</li>
+</ol>
+<br/>
+证书是含有组织与域名或(CA) 信息以及公钥的文件, root.key 和 root.crt 将被用于签发其他的证书。这里的 crt 证书是 x509 格式的。<br/><br/>
+浏览器只会信任某些 CA 机构签发的证书，如 DigiCert, GlobalSign, GoDaddy, Amazon Root CA，Let's Encrypt 等。如果是不被信任 CA 签发的证书，我们在浏览器中打开相应的 HTTPS url 就会看到 'Not Secure - Your connection is not private' 的提示，要继续访问需自行承担可能的安全责任。<!--more--><br/><br/>
+如果是公司内部，或相互信任的公司之间的通信，用自签发的证书也不成问题。不过直接用浏览器或其他 HTTPS 客户端信任又免费的 Let's Encrypt 来签发证书可免去浏览器的警告或某些特殊配置。<br/><br/>
+根证书，服务端证书或后面将要讲到的客户端证书的完整生成过程都是三步<br/><br/>
+<ol>
+    <li>openssl genrsa 生成私钥 xxx.key</li>
+    <li>openssl req -new -out xxx.csr -key xxx.key 产生证书请求文件</li>
+    <li>openssl x509 -req in xxx.csr -out xxx.crt -signkey xxx.key -CAcreateserial -days 365 生成相应证书文件。生成根证书时无需指定 -CA 参数，因为自己就是 CA，其他证书则需用 -CA root.crt 让根证书予以签发</li>
+</ol>
+<br/>
+根据不同的情景，以上某些步骤可以合并操作。<br/><br/>
+<h3>生成根(CA)证书</h3><br/><br/>
+最终要得到的 root.key, root.crt 用于签发服务端或客户端证书。如果对中间过程没有兴趣的，可用该节最后的 <code>openssl req -x509...</code> 一条命令完成所有。<br/><br/>
+1. 生成根私钥 root.key<br/><br/>
+<pre class="lang:default decode:true ">openssl genrsa -out root.key 2048</pre>
+<br/>
+虽然 openssl genrsa 支持最小的长度是 512，但 Nginx 要求最短长度为 2048。<br/><br/>
+2. 生成根证书请求文件 root.csr<br/><br/>
+<pre class="lang:default decode:true ">openssl req -new -out root.csr -key root.key \ 
+  -subj "/C=US/ST=Illinois/L=Chicago/O=CA Company/CN=RootCA"</pre>
+<br/>
+<code>-subj</code> 参数指定所有组织相关的信息，免得按提示要多次输入，C, ST, O 分别是国家，省(州), 组织名，这里省略了 OU 部门名称，根据实际进行输入即可。最后 CN，此处是根证书，可随便指定，无需真正的域名。<br/><br/>
+生成证书请求文件是一个中间步骤，目的是准备组织和域名信息，再加上私钥用于签发最后的证书文件(包含公钥)<br/><br/>
+3. 生成自签发的根证书 root.crt<br/><br/>
+CA 就是自己，所以不用指定 -CA 参数<br/><br/>
+<pre class="lang:default decode:true ">openssl x509 -req -in root.csr -out root.crt -signkey root.key -CAcreateserial -days 365</pre>
+<br/>
+<blockquote>
+其实最终只需要 root.key 和 root.csr 文件，所以 #2, #3 两步可合而为一，并且不生成中间过程的 root.csr 请求文件，只生成  root.crt 文件
+<pre class="lang:default decode:true">openssl req -x509 -new -nodes -key root.key -days 365 -out root.crt \
+  -subj "/C=US/ST=Illinois/L=Chicago/O=CA Company/CN=RootCA"</pre>
+</blockquote>
+<br/>
+<strong><span style="color: #0000ff;">** 由于是自签发根证书，只需一条命令便能生成需要的 root.key 和 root.crt 文件</span></strong><br/><br/>
+<pre class="lang:default decode:true">openssl req -x509 -newkey rsa:2048 -nodes -keyout root.key -out root.crt \
+  -subj "/C=US/ST=Illinois/L=Chicago/O=CA Company/CN=RootCA"</pre>
+<br/>
+如果是在 macOS 中可用命令 <code>open root.crt</code> 查看，默认会用 Keychain Access/Add Certificates 打开，然后可看到信息<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/11/rootCA.png"><img class="aligncenter wp-image-13920" src="https://yanbin.blog/wp-content/uploads/2024/11/rootCA-800x468.png" alt="" width="538" height="315" /></a><br/><br/>
+或者用 openssl 查看，下面显示了部分信息<br/><br/>
+<pre class="lang:default decode:true">openssl x509 -noout -text -in root.crt
+Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            34:10:b8:8a:00:86:76:c3:e0:b5:23:4c:0a:79:30:1f:f9:aa:79:17
+        Signature Algorithm: sha256WithRSAEncryption
+        Issuer: C=US, ST=Illinois, L=Chicago, O=CA Company, CN=RootCA
+        Validity
+            Not Before: Nov 27 04:48:07 2024 GMT
+            Not After : Dec 27 04:48:07 2024 GMT
+        Subject: C=US, ST=Illinois, L=Chicago, O=CA Company, CN=RootCA
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+                Modulus:
+                    00:b0:84:85:c5:95:aa:f6:ae:e4:e4:97:43:7c:cb:</pre>
+<br/>
+<h3>生成服务端私钥与证书</h3><br/><br/>
+正常的过程是要先有私钥 server.key，证书请求文件 server.csr, 然后用前面的根(CA)证书 root.key 和 root.crt 签发服务端证书，可参考上节中生成 root.key 和 root.csr 的步骤。<br/><br/>
+1. 生成服务端私钥与证书请求文件<br/><br/>
+这里用一条命令同时生成 server.key 和 server.csr 两文件<br/><br/>
+<pre class="lang:default decode:true ">openssl req -newkey rsa:2048 -nodes -keyout server.key -out server.csr \
+  -subj "/C=US/ST=Illinois/L=Chicago/O=X Company/CN=server.local"</pre>
+<br/>
+<code>-subj</code> 参数要留意 CN 必须与服务器的访问方式对应，如果将用 IP 地址(如 192.168.86.101) 访问, 则 CN=192.168.86.101。这里假设将用 server.local 域名来访问，所以设置 CN=server.local，后面在客户端将通过 /etc/hosts 中配置 <code>127.0.0.1 server.local</code> 来访问本地的 https://server.local 服务。 <br/><br/>
+2. 用根证书签发服务端证书<br/><br/>
+<pre class="lang:default decode:true">openssl x509 -req -in server.csr -out server.crt -CA root.crt -CAkey root.key -CAcreateserial -days 365</pre>
+<br/>
+到现在我们就有了 server.key 和 server.crt 文件，同样的方式可以查看 server.crt 的信息。<br/><br/>
+<h3>私钥，证书请求文件和证书的内容格式</h3><br/><br/>
+不管是私钥，公钥还是证书，或更多我们常见到  key, csr, crt, cer, der, pem, pfx, p12, jks 等扩展名，其实它们内部的格式都差不多，基本像下面那样<br/><br/>
+<blockquote>
+-----BEGIN XXX-----<br />
+&lt;ASCII 字符串, 通常是 BASE64 格式&gt;<br />
+-----END XXX-----
+</blockquote>
+<br/>
+以上扩展名的缩写为<br/><br/>
+<ol>
+    <li>PEM(Privacy-Enhanced Mail)</li>
+    <li>DER(Distinguished Encoding Rules)</li>
+    <li>CRT/CER(Certificate), KEY(key)</li>
+    <li>P12(PKCS#12)</li>
+    <li>PFX(Predecessor of PKCS#12)</li>
+    <li>JKS(Java Key Storage)</li>
+</ol>
+<br/>
+比如我们查看前面生成的 key, csr, crt 文件内部如下：<br/><br/>
+<blockquote>
+cat server.key<br />
+-----BEGIN PRIVATE KEY-----<br />
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCnGmYO71gf4bQF<br />
+......<br />
+3TFxXQvsM5LjL/JCckYRscUiVQiaZzkNi044XeTRLKLrrsEKxOKJ+Dn7R5c4lBIQ<br />
++kP41vHSScLrhltkjKZfQiHQ<br />
+-----END PRIVATE KEY-----
+cat server.csr<br />
+-----BEGIN CERTIFICATE REQUEST-----<br />
+MIICpDCCAYwCAQAwXzELMAkGA1UEBhMCVVMxETAPBgNVBAgMCElsbGlub2lzMRAw<br />
+......<br />
+jr3ySo1hczjdhn4TiYR7AtLMTQj4X8aTnSfDBpn95+/jR1x9KjeCwLBgCJWXmtwo<br />
+Fu5hcsQXfjc=<br />
+-----END CERTIFICATE REQUEST-----
+cat server.crt<br />
+-----BEGIN CERTIFICATE-----<br />
+MIIDhzCCAm+gAwIBAgIUb2sb3c3BaZk+z1fOprzKO6Zcu18wDQYJKoZIhvcNAQEL<br />
+......<br />
+4YXaB54t+I8x/eiYu1W77hJjAG52SsVb/2QiJdbFT0VDwcVrMdMRutMjlg==<br />
+-----END CERTIFICATE-----
+</blockquote>
+<br/>
+在 csr, crt 文件中内容进行 Base64 解码可看到组织及域名信息。有时候我们看到的  *.pem 文件，它可能就是一个 *.crt 文件，比如愿意的外把上面的 server.crt 改名成 server.pem 也行，关键看其中的内容是 BEGIN xxx。<br/><br/>
+<h3>配置 Nginx 支持 HTTPS 单向验证 (TLS)</h3><br/><br/>
+有了前面生成的服务端私钥 server.key, 证书 server.crt 后，首先应用到 Nginx Web 服务中。以 Docker 启用的 Ubuntu:24.04 容器为例, 假定 server.key, server.crt 在当前目录中<br/><br/>
+<pre class="lang:default decode:true">docker run -it -v ${PWD}:/certs -p 443:443 ubuntu:24.04<br/><br/>
+root@3010925dc0b1:/# apt update &amp;&amp; apt install -y nginx
+root@3010925dc0b1:/# echo Ok &gt; /usr/share/nginx/html/index.html</pre>
+<br/>
+覆盖 /usr/shar/nginx/html/index.html 的内容为 "Ok", 以免后的 curl 命令输出过长。<br/><br/>
+编辑 /etc/nginx/nginx.cfg, 在 http 块中加上<br/><br/>
+<pre class="lang:default decode:true">    server {
+        listen 443 ssl;
+        server_name server.local;
+        ssl_certificate server.crt;
+        ssl_certificate_key server.key;
+    }</pre>
+<br/>
+然后启动 nginx 或重新启动 nginx -s reload<br/><br/>
+用 curl 测试<br/><br/>
+已在 /etc/hosts 中配置了 127.0.0.1 server.local 映射。或可在另一个 Docker 容器中测试(docker run -it --net host ubuntu:24.04)<br/><br/>
+<blockquote>
+root@docker-desktop:~# curl https://server.local<br />
+curl: (60) SSL certificate problem: unable to get local issuer certificate<br />
+More details here: https://curl.se/docs/sslcerts.html
+curl failed to verify the legitimacy of the server and therefore could not<br />
+establish a secure connection to it. To learn more about this situation and<br />
+how to fix it, please visit the web page mentioned above.
+</blockquote>
+<br/>
+因为服务器端的证书是自签发的，默认不被信任，需用 -k 信任证书，重试，顺便加上 -v 参数<br/><br/>
+<pre class="lang:default decode:true">root@docker-desktop:~# curl  -kv https://server.local
+* Host server.local:443 was resolved.
+* IPv6: (none)
+* IPv4: 127.0.0.1
+*   Trying 127.0.0.1:443...
+* Connected to server.local (127.0.0.1) port 443
+* ALPN: curl offers h2,http/1.1
+* TLSv1.3 (OUT), TLS handshake, Client hello (1):
+* TLSv1.3 (IN), TLS handshake, Server hello (2):
+* TLSv1.3 (IN), TLS handshake, Encrypted Extensions (8):
+* TLSv1.3 (IN), TLS handshake, Certificate (11):
+* TLSv1.3 (IN), TLS handshake, CERT verify (15):
+* TLSv1.3 (IN), TLS handshake, Finished (20):
+* TLSv1.3 (OUT), TLS change cipher, Change cipher spec (1):
+* TLSv1.3 (OUT), TLS handshake, Finished (20):
+* SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519 / RSASSA-PSS
+* ALPN: server accepted http/1.1
+* Server certificate:
+*  subject: C=US; ST=Illinois; L=Chicago; O=Demo Server; CN=server.local
+*  start date: Nov 27 05:34:22 2024 GMT
+*  expire date: Nov 27 05:34:22 2025 GMT
+*  issuer: C=US; ST=Illinois; L=Chicago; O=CA Company; CN=RootCA
+*  SSL certificate verify result: unable to get local issuer certificate (20), continuing anyway.
+*   Certificate level 0: Public key type RSA (2048/112 Bits/secBits), signed using sha256WithRSAEncryption
+* using HTTP/1.x
+> GET / HTTP/1.1
+> Host: server.local
+> User-Agent: curl/8.5.0
+> Accept: */*
+>
+* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):
+* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):
+* old SSL session ID is stale, removing
+&lt; HTTP/1.1 200 OK
+&lt; Server: nginx/1.24.0 (Ubuntu)
+&lt; Date: Wed, 27 Nov 2024 06:41:10 GMT
+&lt; Content-Type: text/html
+&lt; Content-Length: 3
+&lt; Last-Modified: Wed, 27 Nov 2024 06:38:57 GMT
+&lt; Connection: keep-alive
+&lt; ETag: "6746be81-3"
+&lt; Accept-Ranges: bytes
+&lt;
+Ok</pre>
+<br/>
+控制台输出明确显示了完整的 TLS 握手过程<br/><br/>
+<blockquote>
+* TLSv1.3 (OUT), TLS handshake, Client hello (1):<br />
+* TLSv1.3 (IN), TLS handshake, Server hello (2):<br />
+* TLSv1.3 (IN), TLS handshake, Encrypted Extensions (8):<br />
+* TLSv1.3 (IN), TLS handshake, Certificate (11):<br />
+* TLSv1.3 (IN), TLS handshake, CERT verify (15):<br />
+* TLSv1.3 (IN), TLS handshake, Finished (20):<br />
+* TLSv1.3 (OUT), TLS change cipher, Change cipher spec (1):<br />
+* TLSv1.3 (OUT), TLS handshake, Finished (20): 
+</blockquote>
+<br/>
+用浏览器访问，同样因为我们自己的 rootCA 是不被浏览器信任的，所以看到的是这样<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/11/rootca-chrome.png"><img class="aligncenter wp-image-13912" src="https://yanbin.blog/wp-content/uploads/2024/11/rootca-chrome-800x482.png" alt="" width="651" height="392" /></a><br/><br/>
+点击地址栏 "Not Secure" 可查看服务端证书以及 CA 的信息。点 "Advanced" -&gt; "Processed to server.local (unsafe)" 自担安全的信任该网站 server.local 而访问它的内容<br/><br/>
+还能用 <code>openssl s_client</code> 命令访问<br/><br/>
+<pre class="height-set:true lang:default decode:true">$ openssl s_client -connect server.local:443
+Connecting to 127.0.0.1
+CONNECTED(00000003)
+depth=0 C=US, ST=Illinois, L=Chicago, O=Demo Server, CN=server.local
+verify error:num=20:unable to get local issuer certificate
+verify return:1
+depth=0 C=US, ST=Illinois, L=Chicago, O=Demo Server, CN=server.local
+verify error:num=21:unable to verify the first certificate
+verify return:1
+depth=0 C=US, ST=Illinois, L=Chicago, O=Demo Server, CN=server.local
+verify return:1
+---
+Certificate chain
+ 0 s:C=US, ST=Illinois, L=Chicago, O=Demo Server, CN=server.local
+   i:C=US, ST=Illinois, L=Chicago, O=CA Company, CN=RootCA
+   a:PKEY: rsaEncryption, 2048 (bit); sigalg: RSA-SHA256
+   v:NotBefore: Nov 27 05:34:22 2024 GMT; NotAfter: Nov 27 05:34:22 2025 GMT
+---
+Server certificate
+-----BEGIN CERTIFICATE-----
+MIIDhzCCAm+gAwIBAgIUaVkSmjyS/M/82njsEW5Dgy2Pg8EwDQYJKoZIhvcNAQEL
+BQAwWDELMAkGA1UEBhMCVVMxETAPBgNVBAgMCElsbGlub2lzMRAwDgYDVQQHDAdD
+aGljYWdvMRMwEQYDVQQKDApDQSBDb21wYW55MQ8wDQYDVQQDDAZSb290Q0EwHhcN
+MjQxMTI3MDUzNDIyWhcNMjUxMTI3MDUzNDIyWjBfMQswCQYDVQQGEwJVUzERMA8G
+A1UECAwISWxsaW5vaXMxEDAOBgNVBAcMB0NoaWNhZ28xFDASBgNVBAoMC0RlbW8g
+U2VydmVyMRUwEwYDVQQDDAxzZXJ2ZXIubG9jYWwwggEiMA0GCSqGSIb3DQEBAQUA
+A4IBDwAwggEKAoIBAQDJasqYBxyiMjL6DW6MpiKDloStV4tkFonYaVUMm2fr7ZiY
+Lj5A+rNXcLBvZlaf93hC11EdZljom9l2aIybRRR0ml0NEycE+sGHbOs0PFqtN2nB
+gV/15J5gqTeCO7HpBWkhg3R0+PPj46WK03idz4f0M2Dz9qgnJC+/j3enMX32/t4X
+KG8/lwiah1bAcBq4OU6N6syfpAA10ISljLjg8ztnb0u0WMNOLYgWd6/aOlZk2Wp6
+k7AJrKRiTfjz7Pi3aDMjaTTziQ0Erz+ngD8RYbUhuZIIFDZNGPiJMDSoaj0ffzNz
+fuqVN4TqvMBwGWtKmQ/ofC93cVGXcjZNIUvjSqLrAgMBAAGjQjBAMB0GA1UdDgQW
+BBQzMRYTcWvhMTsRDN4Av2J3Vga6nTAfBgNVHSMEGDAWgBQ5N633VoXMBr+O0TH3
+P8m/B/hHnzANBgkqhkiG9w0BAQsFAAOCAQEAo4cjfmljrr/m9Vsuzw+yD5sp1TPb
+sIp+OF7DWKhRn7CxPv/wnmpexx3RVgBFpJ3erpgFSH+Zu8tP7vRf0t6mqUaWmkMG
+w/iBAJ46tnVlaeiPWEnjkvOUHNb9V1OXFOXQMad0NfyAMulJBHMJiyl73JGqziVP
+fI9U5NgHVWLUtWlvGkdAiukg+RDGSPQYrxaDuwYnsl+vdbmFRw9Yn7I3BxRTqtHo
+FkbWIgTt0URil7dc5t775ZIFVKusH+XC+Kt+wk2Mjp1KCkZ0Kk7auQHfdbjm9mNp
+OJjjwmVs1QeBnuMfdMqLsvEn2FG4pJZ4blq/Z/coLDUHoXo0tk3FDc9vEA==
+-----END CERTIFICATE-----
+subject=C=US, ST=Illinois, L=Chicago, O=Demo Server, CN=server.local
+issuer=C=US, ST=Illinois, L=Chicago, O=CA Company, CN=RootCA
+---
+No client certificate CA names sent
+Peer signing digest: SHA256
+Peer signature type: RSA-PSS
+Server Temp Key: X25519, 253 bits
+---
+SSL handshake has read 1467 bytes and written 403 bytes
+Verification error: unable to verify the first certificate
+---
+New, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384
+Protocol: TLSv1.3
+Server public key is 2048 bit
+This TLS version forbids renegotiation.
+Compression: NONE
+Expansion: NONE
+No ALPN negotiated
+Early data was not sent
+Verify return code: 21 (unable to verify the first certificate)
+---
+---
+Post-Handshake New Session Ticket arrived:
+SSL-Session:
+    Protocol  : TLSv1.3
+    Cipher    : TLS_AES_256_GCM_SHA384
+    Session-ID: 0B11B6BFDDB73E9DD08C3FC42AECF250348B22D3E0EB16A3129AD8D527C0A8F4
+    Session-ID-ctx:
+    Resumption PSK: 002B9CD5B0A52362F873BA3D665106A9FD736FB0A50AA330948984FB1E73EDCEC62CEEAAE44710F409008D73911DAFBE
+    PSK identity: None
+    PSK identity hint: None
+    SRP username: None
+    TLS session ticket lifetime hint: 300 (seconds)
+    TLS session ticket:
+    0000 - 9c 74 9e 82 50 ea 6a 63-98 fc b0 d9 d7 53 01 6b   .t..P.jc.....S.k
+    0010 - 8d 91 b5 e9 0e 48 97 5c-51 d0 a1 3a 0a 61 b0 79   .....H.\Q..:.a.y
+    0020 - 71 9a 59 1d 7f f4 74 9b-aa 3c f3 52 0b 1f 17 c8   q.Y...t..&lt;.R....
+    0030 - 25 cf 37 bf fc f8 93 55-e4 65 fd 5a 5e dc 66 4c   %.7....U.e.Z^.fL
+    0040 - aa 8b 42 a9 46 4f 92 a2-32 25 35 94 ca ad fc 54   ..B.FO..2%5....T
+    0050 - 73 cd 1f 9b ef 31 d3 c8-5d 30 7d c7 28 9e 66 cb   s....1..]0}.(.f.
+    0060 - e9 99 c7 f9 f3 a6 05 04-dc 7e 77 5c 4b f3 d0 e2   .........~w\K...
+    0070 - 1f 7a cd 9c f8 d5 ab c4-dd 20 3e 86 4d ff ce 1a   .z....... &gt;.M...
+    0080 - 4a 88 8e 50 53 e7 74 1a-96 87 c6 02 af 35 7f 4e   J..PS.t......5.N
+    0090 - f5 f3 a8 0f 0d 97 3b 73-d5 ca 22 bf 56 de 60 db   ......;s..".V.`.
+    00a0 - 38 13 e1 bd ac c4 42 1d-58 df f2 eb 84 91 4d 21   8.....B.X.....M!
+    00b0 - 13 2f a3 f6 4f 9f 61 18-44 1f f1 d2 82 88 03 95   ./..O.a.D.......
+    00c0 - f0 5d 88 f7 ee a5 b6 68-7f 73 4f db c8 52 34 84   .].....h.sO..R4.
+    00d0 - a5 ae 39 c3 0f 05 b0 e6-d7 3e 76 32 43 29 54 8f   ..9......&gt;v2C)T.
+    00e0 - 0c 57 af dc a4 ac 08 45-3c 33 85 9a df 59 47 6b   .W.....E&lt;3...YGk<br/><br/>
+    Start Time: 1733008466
+    Timeout   : 7200 (sec)
+    Verify return code: 21 (unable to verify the first certificate)
+    Extended master secret: no
+    Max Early Data: 0
+---
+read R BLOCK
+---
+Post-Handshake New Session Ticket arrived:
+SSL-Session:
+    Protocol  : TLSv1.3
+    Cipher    : TLS_AES_256_GCM_SHA384
+    Session-ID: 224F519D21BCA495AE6008B2EA2322BAFD83FC8D05B93849CA4AF31F74662DD9
+    Session-ID-ctx:
+    Resumption PSK: 31A997D5DE3B4AD430063FC9C2E5EAC9251ED7C6E8B546BCEAC4E6E6364E9897D7119F837639206D344EBBEE6666217A
+    PSK identity: None
+    PSK identity hint: None
+    SRP username: None
+    TLS session ticket lifetime hint: 300 (seconds)
+    TLS session ticket:
+    0000 - 9c 74 9e 82 50 ea 6a 63-98 fc b0 d9 d7 53 01 6b   .t..P.jc.....S.k
+    0010 - f0 db 7b cc e0 30 87 b4-ad 38 35 d8 94 6f dd 90   ..{..0...85..o..
+    0020 - f3 95 f3 99 94 60 c4 db-57 fd 6f 15 d5 d4 97 7a   .....`..W.o....z
+    0030 - b6 2b db f5 aa f1 31 0b-fd 48 87 e1 66 c9 47 cb   .+....1..H..f.G.
+    0040 - f0 1a da 02 b3 db e5 c1-8a 63 74 e6 23 6b 99 09   .........ct.#k..
+    0050 - 9a b4 f2 38 58 65 ab 13-6c c5 3e 56 7b 10 cd cb   ...8Xe..l.&gt;V{...
+    0060 - 05 b2 70 e0 17 4d 06 fc-b3 65 d9 65 a6 1b 74 8b   ..p..M...e.e..t.
+    0070 - a1 fa e8 92 78 4d b8 5a-ef 02 24 6e 9a 1c 05 61   ....xM.Z..$n...a
+    0080 - 35 a6 4d 6a a0 08 bb 7e-48 f5 c9 71 4c 11 34 b9   5.Mj...~H..qL.4.
+    0090 - 39 36 77 69 3b bf 25 33-fd ca 19 5a 07 0a cd d3   96wi;.%3...Z....
+    00a0 - ae 5c 45 66 7d 16 6c 7d-3c 60 fd 96 1a c3 56 52   .\Ef}.l}&lt;`....VR
+    00b0 - 43 75 cf 70 d2 b0 4f f3-99 08 15 35 41 6f 34 ad   Cu.p..O....5Ao4.
+    00c0 - c9 a0 69 6c ed 60 70 c3-19 62 0c 43 4d 1d 1a 36   ..il.`p..b.CM..6
+    00d0 - be e8 5a e9 a5 1a 93 ef-11 db 10 9a 03 a2 71 55   ..Z...........qU
+    00e0 - fa 3e 59 d5 89 c2 88 8b-94 a3 47 00 66 6f 96 d6   .&gt;Y.......G.fo..<br/><br/>
+    Start Time: 1733008466
+    Timeout   : 7200 (sec)
+    Verify return code: 21 (unable to verify the first certificate)
+    Extended master secret: no
+    Max Early Data: 0
+---
+read R BLOCK</pre>
+<br/>
+用 <code>openssl s_client</code> 更有助于我们理解 TLS 握手的详细过程。<br/><br/>
+<h3>Apache2 中的配置 HTTPS</h3><br/><br/>
+和 Nginx 差不多，先要启用相应的模块和站点<br/><br/>
+<pre class="lang:default decode:true ">a2enmod ssl
+a2ensite default-ssl</pre>
+<br/>
+再编辑 default-ssl.conf，配置一个 443 虚拟机<br/><br/>
+<pre class="lang:default decode:true">&lt;VirtualHost *:443&gt;
+    ServerName server.local
+    DocumentRoot /var/www/html<br/><br/>
+    SSLEngine on
+    SSLCertificateFile /etc/ssl/certs/server.crt
+    SSLCertificateKeyFile /etc/ssl/private/server.key
+    ....
+&lt;/VirtualHost&gt;</pre>
+<br/>
+apachectl -k restart 重启即可<br/><br/>
+<h3>SpringBoot Tomcat 中的配置</h3><br/><br/>
+如果开发的一个 SpringBoot Web 应用直接面对客户，它的前面没有 Nginx/Apache 或其他的 Load Balancer, 这一节或许对我们会有所帮助。所有的关于 <code>server.ssl</code> 的配置可参考 SpringBoot 官方文档 <a href="https://docs.spring.io/spring-boot/appendix/application-properties/index.html#appendix.application-properties.server">Common Application Properties / Server Properties</a>。<br/><br/>
+相关的配置项有<br/><br/>
+<pre class="lang:default decode:true ">server.ssl.bundle: The name of a configured SSL bundle.
+server.ssl.certificate: Path to a PEM-encoded SSL certificate file.
+server.ssl.certificate-private-key: Path to a PEM-encoded private key file for the SSL certificate.
+server.ssl.ciphers: Supported SSL ciphers.
+server.ssl.client-auth: Client authentication mode. Requires a trust store.
+server.ssl.enabled: Whether to enable SSL support. default: true
+server.ssl.enabled-protocols: Enabled SSL protocols. 
+server.ssl.key-alias: Alias that identifies the key in the key store.
+server.ssl.key-password: Password used to access the key in the key store.
+server.ssl.key-store: Path to the key store that holds the SSL certificate (typically a jks file).
+server.ssl.key-store-password: Password used to access the key store.
+server.ssl.key-store-provider: Provider for the key store.
+server.ssl.key-store-type: Type of the key store.
+server.ssl.protocol: SSL protocol to use. default: TLS
+server.ssl.server-name-bundles: Mapping of host names to SSL bundles for SNI configuration.
+server.ssl.trust-certificate: Path to a PEM-encoded SSL certificate authority file.
+server.ssl.trust-certificate-private-key: Path to a PEM-encoded private key file for the SSL certificate authority.
+server.ssl.trust-store: Trust store that holds SSL certificates.
+server.ssl.trust-store-password: Password used to access the trust store.
+server.ssl.trust-store-provider: Provider for the trust store.
+server.ssl.trust-store-type: Type of the trust store.</pre>
+<br/>
+从中我们发现 <code>server.ssl.certificate</code> 和 <code>server.ssl.certificate-private-key</code> 可实现与 Nginx/Apache 类似的配置<br/><br/>
+试着在 application.properties 中加上<br/><br/>
+<pre class="lang:default decode:true">server.ssl.certificate=/certs/server.crt
+server.ssl.certificate-private-key=/certs/server.key</pre>
+<br/>
+启动 SpringBoot Web 项目，看到控制台输出<br/><br/>
+<blockquote>
+Tomcat started on port 8080 (https) with context path '/'
+</blockquote>
+<br/>
+测试<br/><br/>
+<blockquote>
+curl -kv https://server.local:8080/
+</blockquote>
+<br/>
+没问题，一样的效果，需要注意的是 SpringBoot Tomcat 不同时启动 HTTP 和 HTTPS 服务，配置了相应的 server.ssl 则只启动 HTTPS 服务，并且端口号复用 <code>server.port</code> 的配置。<br/><br/>
+如果采用 key-store 的配置方式则要用 Java 的 keytool 命令把 openssl 生成的  server.key, server.crt 生成 keystore.jks 文件，或者直接用 keytool 替代 openssl 来生成它所需的 keystore.jks 文件。<br/><br/>
+<h3>配置 Nginx 支持 HTTPS 双向验证 (mTLS)</h3><br/><br/>
+为配置 mTLS(mutual TLS)，除了前面的 root.key, root.crt, server.key, server.crt 外，还需要为客户端生成相应的 key 与证书。何谓双向验证是除了传统的客户端信任服务端，服务端还要检查客户端的证书，决定是否信任，是否提供服务给该客户端。我们可以为不同的客户生独立的客户端私钥与证书，或多个客户可共享。服务端单向验证在客户端可选择信任或不信任，即使不信任也可以使用服务; 而双向认证让服务端更有主动权，服务认为是一个非法的客户(未提供客户端证书或提供了非法的客户端证书)能够拒绝服务。双向认证让 HTTPS 通信更安全，不易被中间人攻击，以至于让无比缺德的 <a href="https://www.zscaler.com/">zscaler</a> 都会无能为力。<br/><br/>
+生成客户端 client1.key, client1.crt<br/><br/>
+<pre class="lang:default decode:true">openssl req -newkey rsa:2048 -nodes -keyout client1.key -out client1.csr -subj "/C=US/ST=Illinois/L=Chicago/O=Company 1/CN=client1"
+openssl x509 -req -in client1.csr -out client1.crt -CA root.crt -CAkey root.key -CAcreateserial -days 365</pre>
+<br/>
+编辑 /etc/nginx/nginx.cfg, server {} 块<br/><br/>
+<pre class="lang:default decode:true">    server {
+        listen 443 ssl;
+        server_name server.local;
+        ssl_certificate server.crt;
+        ssl_certificate_key server.key;<br/><br/>
+        ssl_client_certificate /certs/root.crt;
+        ssl_verify_client on;
+    }</pre>
+<br/>
+nginx -s reload<br/><br/>
+现在用  curl -k 完全信息服务端也没用，服务端可不买这个账<br/><br/>
+<pre class="lang:default decode:true">root@docker-desktop:~# curl  -kv https://server.local
+* Host server.local:443 was resolved.
+* IPv6: (none)
+* IPv4: 127.0.0.1
+*   Trying 127.0.0.1:443...
+* Connected to server.local (127.0.0.1) port 443
+* ALPN: curl offers h2,http/1.1
+* TLSv1.3 (OUT), TLS handshake, Client hello (1):
+* TLSv1.3 (IN), TLS handshake, Server hello (2):
+* TLSv1.3 (IN), TLS handshake, Encrypted Extensions (8):
+* TLSv1.3 (IN), TLS handshake, Request CERT (13):
+* TLSv1.3 (IN), TLS handshake, Certificate (11):
+* TLSv1.3 (IN), TLS handshake, CERT verify (15):
+* TLSv1.3 (IN), TLS handshake, Finished (20):
+* TLSv1.3 (OUT), TLS change cipher, Change cipher spec (1):
+* TLSv1.3 (OUT), TLS handshake, Certificate (11):
+* TLSv1.3 (OUT), TLS handshake, Finished (20):
+* SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519 / RSASSA-PSS
+* ALPN: server accepted http/1.1
+* Server certificate:
+*  subject: C=US; ST=Illinois; L=Chicago; O=Demo Server; CN=server.local
+*  start date: Nov 27 05:34:22 2024 GMT
+*  expire date: Nov 27 05:34:22 2025 GMT
+*  issuer: C=US; ST=Illinois; L=Chicago; O=CA Company; CN=RootCA
+*  SSL certificate verify result: unable to get local issuer certificate (20), continuing anyway.
+*   Certificate level 0: Public key type RSA (2048/112 Bits/secBits), signed using sha256WithRSAEncryption
+* using HTTP/1.x
+> GET / HTTP/1.1
+> Host: server.local
+> User-Agent: curl/8.5.0
+> Accept: */*
+>
+* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):
+* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):
+* old SSL session ID is stale, removing
+&lt; HTTP/1.1 400 Bad Request
+&lt; Server: nginx/1.24.0 (Ubuntu)
+&lt; Date: Wed, 27 Nov 2024 06:41:48 GMT
+&lt; Content-Type: text/html
+&lt; Content-Length: 246
+&lt; Connection: close
+&lt;
+&lt;html&gt;
+&lt;head&gt;&lt;title&gt;400 No required SSL certificate was sent&lt;/title&gt;&lt;/head&gt;
+&lt;body&gt;
+&lt;center&gt;&lt;h1&gt;400 Bad Request&lt;/h1&gt;&lt;/center&gt;
+&lt;center&gt;No required SSL certificate was sent&lt;/center&gt;
+&lt;hr&gt;&lt;center&gt;nginx/1.24.0 (Ubuntu)&lt;/center&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+* Closing connection
+* TLSv1.3 (IN), TLS alert, close notify (256):
+* TLSv1.3 (OUT), TLS alert, close notify (256):</pre>
+<br/>
+400 Bad Request, 因为 No required SSL certificate was sent<br/><br/>
+主动带上 client1.key 和  client1.crt 就行，只要服务端的证书是不被广泛接受的，就要用 <code>-k</code> 来手动接受证书，即使是服务端与客户端相互承认也不能省略 <code>-k</code><br/><br/>
+<pre class="lang:default decode:true">root@docker-desktop:~# curl --cert client1.crt --key client1.key -kv https://server.local
+* Host server.local:443 was resolved.
+* IPv6: (none)
+* IPv4: 127.0.0.1
+*   Trying 127.0.0.1:443...
+* Connected to server.local (127.0.0.1) port 443
+* ALPN: curl offers h2,http/1.1
+* TLSv1.3 (OUT), TLS handshake, Client hello (1):
+* TLSv1.3 (IN), TLS handshake, Server hello (2):
+* TLSv1.3 (IN), TLS handshake, Encrypted Extensions (8):
+* TLSv1.3 (IN), TLS handshake, Request CERT (13):
+* TLSv1.3 (IN), TLS handshake, Certificate (11):
+* TLSv1.3 (IN), TLS handshake, CERT verify (15):
+* TLSv1.3 (IN), TLS handshake, Finished (20):
+* TLSv1.3 (OUT), TLS change cipher, Change cipher spec (1):
+* TLSv1.3 (OUT), TLS handshake, Certificate (11):
+* TLSv1.3 (OUT), TLS handshake, CERT verify (15):
+* TLSv1.3 (OUT), TLS handshake, Finished (20):
+* SSL connection using TLSv1.3 / TLS_AES_256_GCM_SHA384 / X25519 / RSASSA-PSS
+* ALPN: server accepted http/1.1
+* Server certificate:
+*  subject: C=US; ST=Illinois; L=Chicago; O=Demo Server; CN=server.local
+*  start date: Nov 27 05:34:22 2024 GMT
+*  expire date: Nov 27 05:34:22 2025 GMT
+*  issuer: C=US; ST=Illinois; L=Chicago; O=CA Company; CN=RootCA
+*  SSL certificate verify result: unable to get local issuer certificate (20), continuing anyway.
+*   Certificate level 0: Public key type RSA (2048/112 Bits/secBits), signed using sha256WithRSAEncryption
+* using HTTP/1.x
+> GET / HTTP/1.1
+> Host: server.local
+> User-Agent: curl/8.5.0
+> Accept: */*
+>
+* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):
+* TLSv1.3 (IN), TLS handshake, Newsession Ticket (4):
+* old SSL session ID is stale, removing
+&lt; HTTP/1.1 200 OK
+&lt; Server: nginx/1.24.0 (Ubuntu)
+&lt; Date: Wed, 27 Nov 2024 06:42:04 GMT
+&lt; Content-Type: text/html
+&lt; Content-Length: 3
+&lt; Last-Modified: Wed, 27 Nov 2024 06:38:57 GMT
+&lt; Connection: keep-alive
+&lt; ETag: "6746be81-3"
+&lt; Accept-Ranges: bytes
+&lt;
+Ok</pre>
+<br/>
+除了用命令 curl，同样可用 <code>openssl s_clinet</code> 携带 client1.key 和 client1.crt 来访问<br/><br/>
+<blockquote>
+openssl s_client -connect server.local:443 -key client1.key -cert client1.crt
+<pre class="height-set:true lang:default decode:true ">openssl s_client -connect server.local:443 -key client1.key -cert client1.crt
+Connecting to 127.0.0.1
+CONNECTED(00000003)
+depth=0 C=US, ST=Illinois, L=Chicago, O=Demo Server, CN=server.local
+verify error:num=20:unable to get local issuer certificate
+verify return:1
+depth=0 C=US, ST=Illinois, L=Chicago, O=Demo Server, CN=server.local
+verify error:num=21:unable to verify the first certificate
+verify return:1
+depth=0 C=US, ST=Illinois, L=Chicago, O=Demo Server, CN=server.local
+verify return:1
+---
+Certificate chain
+ 0 s:C=US, ST=Illinois, L=Chicago, O=Demo Server, CN=server.local
+   i:C=US, ST=Illinois, L=Chicago, O=CA Company, CN=RootCA
+   a:PKEY: rsaEncryption, 2048 (bit); sigalg: RSA-SHA256
+   v:NotBefore: Nov 27 05:34:22 2024 GMT; NotAfter: Nov 27 05:34:22 2025 GMT
+---
+Server certificate
+-----BEGIN CERTIFICATE-----
+MIIDhzCCAm+gAwIBAgIUaVkSmjyS/M/82njsEW5Dgy2Pg8EwDQYJKoZIhvcNAQEL
+BQAwWDELMAkGA1UEBhMCVVMxETAPBgNVBAgMCElsbGlub2lzMRAwDgYDVQQHDAdD
+aGljYWdvMRMwEQYDVQQKDApDQSBDb21wYW55MQ8wDQYDVQQDDAZSb290Q0EwHhcN
+MjQxMTI3MDUzNDIyWhcNMjUxMTI3MDUzNDIyWjBfMQswCQYDVQQGEwJVUzERMA8G
+A1UECAwISWxsaW5vaXMxEDAOBgNVBAcMB0NoaWNhZ28xFDASBgNVBAoMC0RlbW8g
+U2VydmVyMRUwEwYDVQQDDAxzZXJ2ZXIubG9jYWwwggEiMA0GCSqGSIb3DQEBAQUA
+A4IBDwAwggEKAoIBAQDJasqYBxyiMjL6DW6MpiKDloStV4tkFonYaVUMm2fr7ZiY
+Lj5A+rNXcLBvZlaf93hC11EdZljom9l2aIybRRR0ml0NEycE+sGHbOs0PFqtN2nB
+gV/15J5gqTeCO7HpBWkhg3R0+PPj46WK03idz4f0M2Dz9qgnJC+/j3enMX32/t4X
+KG8/lwiah1bAcBq4OU6N6syfpAA10ISljLjg8ztnb0u0WMNOLYgWd6/aOlZk2Wp6
+k7AJrKRiTfjz7Pi3aDMjaTTziQ0Erz+ngD8RYbUhuZIIFDZNGPiJMDSoaj0ffzNz
+fuqVN4TqvMBwGWtKmQ/ofC93cVGXcjZNIUvjSqLrAgMBAAGjQjBAMB0GA1UdDgQW
+BBQzMRYTcWvhMTsRDN4Av2J3Vga6nTAfBgNVHSMEGDAWgBQ5N633VoXMBr+O0TH3
+P8m/B/hHnzANBgkqhkiG9w0BAQsFAAOCAQEAo4cjfmljrr/m9Vsuzw+yD5sp1TPb
+sIp+OF7DWKhRn7CxPv/wnmpexx3RVgBFpJ3erpgFSH+Zu8tP7vRf0t6mqUaWmkMG
+w/iBAJ46tnVlaeiPWEnjkvOUHNb9V1OXFOXQMad0NfyAMulJBHMJiyl73JGqziVP
+fI9U5NgHVWLUtWlvGkdAiukg+RDGSPQYrxaDuwYnsl+vdbmFRw9Yn7I3BxRTqtHo
+FkbWIgTt0URil7dc5t775ZIFVKusH+XC+Kt+wk2Mjp1KCkZ0Kk7auQHfdbjm9mNp
+OJjjwmVs1QeBnuMfdMqLsvEn2FG4pJZ4blq/Z/coLDUHoXo0tk3FDc9vEA==
+-----END CERTIFICATE-----
+subject=C=US, ST=Illinois, L=Chicago, O=Demo Server, CN=server.local
+issuer=C=US, ST=Illinois, L=Chicago, O=CA Company, CN=RootCA
+---
+Acceptable client certificate CA names
+C=US, ST=Illinois, L=Chicago, O=CA Company, CN=RootCA
+Requested Signature Algorithms: ECDSA+SHA256:ECDSA+SHA384:ECDSA+SHA512:Ed25519:Ed448:RSA-PSS+SHA256:RSA-PSS+SHA384:RSA-PSS+SHA512:RSA-PSS+SHA256:RSA-PSS+SHA384:RSA-PSS+SHA512:RSA+SHA256:RSA+SHA384:RSA+SHA512:ECDSA+SHA224:RSA+SHA224
+Shared Requested Signature Algorithms: ECDSA+SHA256:ECDSA+SHA384:ECDSA+SHA512:Ed25519:Ed448:RSA-PSS+SHA256:RSA-PSS+SHA384:RSA-PSS+SHA512:RSA-PSS+SHA256:RSA-PSS+SHA384:RSA-PSS+SHA512:RSA+SHA256:RSA+SHA384:RSA+SHA512
+Peer signing digest: SHA256
+Peer signature type: RSA-PSS
+Server Temp Key: X25519, 253 bits
+---
+SSL handshake has read 1632 bytes and written 1624 bytes
+Verification error: unable to verify the first certificate
+---
+New, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384
+Protocol: TLSv1.3
+Server public key is 2048 bit
+This TLS version forbids renegotiation.
+Compression: NONE
+Expansion: NONE
+No ALPN negotiated
+Early data was not sent
+Verify return code: 21 (unable to verify the first certificate)
+---
+---
+Post-Handshake New Session Ticket arrived:
+SSL-Session:
+    Protocol  : TLSv1.3
+    Cipher    : TLS_AES_256_GCM_SHA384
+    Session-ID: C60065DBCD8AFF88C350CB29F9076F57A95E7290534C518EBB9BF617EBFF0863
+    Session-ID-ctx:
+    Resumption PSK: 6D54823943FE7170A07CE3A7770B014EB6182BCD336B43D8A8AFEFB41E424CAD149143C0D6D5E04A793F0E40A47411FB
+    PSK identity: None
+    PSK identity hint: None
+    SRP username: None
+    TLS session ticket lifetime hint: 300 (seconds)
+    TLS session ticket:
+    0000 - 38 07 5a 8e ad d0 49 f4-67 f0 aa a2 e2 82 ae 57   8.Z...I.g......W
+    0010 - 0d e8 fc 3a 97 ad eb 17-f0 1c 1b 30 d7 13 47 c5   ...:.......0..G.
+    0020 - 6c 08 7b 91 f6 51 b0 2d-82 05 c6 04 9e f4 a4 1f   l.{..Q.-........
+    0030 - 31 ef 95 6f 9e b3 ed 15-25 31 59 00 bc 11 d8 b9   1..o....%1Y.....
+    0040 - 58 00 e3 d7 54 92 77 8e-59 5e 02 f1 11 e7 32 d9   X...T.w.Y^....2.
+    0050 - 97 03 1e b5 ec ed 4a 6f-1b 2b 44 6b 0d b2 a0 6b   ......Jo.+Dk...k
+    0060 - 27 10 ae 11 e4 66 6e 55-1d 69 95 05 72 0d cc 63   '....fnU.i..r..c
+    0070 - cc 36 df 05 06 c6 d0 73-48 af 83 eb 12 de a9 73   .6.....sH......s
+    0080 - 51 1c ff a1 2a ed e6 4f-25 11 03 9d 6c a0 28 e4   Q...*..O%...l.(.
+    0090 - d7 b3 c9 c9 8f 45 da d1-53 c5 63 2e 90 25 67 e0   .....E..S.c..%g.
+    00a0 - b4 77 dc 42 99 25 9d 9a-10 ab c5 79 30 bd 42 e2   .w.B.%.....y0.B.
+    00b0 - 1c 71 90 40 d9 09 70 8d-61 7b a3 e8 c5 41 95 43   .q.@..p.a{...A.C
+    00c0 - 10 b6 d1 45 c1 61 02 29-b7 28 80 65 53 3b 8f 79   ...E.a.).(.eS;.y
+    00d0 - cc fa 1a 61 bb 32 e1 8b-e3 c3 7e 38 38 f0 d7 8c   ...a.2....~88...
+    00e0 - 3b d3 79 23 1c 3b 99 f0-8f 86 2f 09 50 cc 6f 97   ;.y#.;..../.P.o.
+    00f0 - a8 a4 63 00 c8 9e a5 25-d0 0b 18 b8 92 5f 2c 65   ..c....%....._,e
+    0100 - 3f b8 7c 91 1d a6 7b 72-c9 a9 8b 00 e0 e3 ce cb   ?.|...{r........
+    0110 - c1 74 34 78 e6 42 08 57-20 77 2f 70 45 79 bd 63   .t4x.B.W w/pEy.c
+    0120 - 0a f3 60 08 da 37 c3 6b-b3 07 8f c8 7e 8e a5 a1   ..`..7.k....~...
+    0130 - a2 f4 6d f4 f2 3f 97 e5-75 1a 30 19 d2 14 7a 76   ..m..?..u.0...zv
+    0140 - 53 3e e6 75 a0 23 50 c5-39 05 60 c7 8f 44 b0 de   S&gt;.u.#P.9.`..D..
+    0150 - 25 3f 06 86 23 19 a4 54-d5 da b2 45 29 c4 3e f0   %?..#..T...E).&gt;.
+    0160 - 98 36 6c 62 6c 74 20 b8-7a 8c f6 08 a0 15 81 1e   .6lblt .z.......
+    0170 - 40 07 62 7d f9 cf 9e 93-55 fe 1d 4f 22 b9 e1 1d   @.b}....U..O"...
+    0180 - 98 78 fe 64 50 31 fb 0c-a8 5d 1a 7a 89 22 da 06   .x.dP1...].z."..
+    0190 - bf 98 28 5d 60 ff a9 2d-76 70 8a 6b 24 11 27 77   ..(]`..-vp.k$.'w
+    01a0 - d1 02 8d 32 ca fd f3 53-0a 1f cd 63 63 b3 92 c7   ...2...S...cc...
+    01b0 - 7c ba 2d cf f8 bf 7e d2-39 f3 19 cf c1 3b 1f 0b   |.-...~.9....;..
+    01c0 - 8c a5 be 4a 64 d5 b7 f6-43 f2 fe fe d8 90 42 cf   ...Jd...C.....B.
+    01d0 - e5 86 1c c6 41 b3 2f 8f-3f cb 7e 27 1e 47 3c 88   ....A./.?.~'.G&lt;.
+    01e0 - ca 00 20 e7 f6 ac ef 25-63 7e f1 59 15 d3 b9 6c   .. ....%c~.Y...l
+    01f0 - b4 99 f5 f3 4e 0b 32 f2-3d 71 36 3e 30 fb e4 5a   ....N.2.=q6&gt;0..Z
+    0200 - 90 74 ae 32 8a 6d eb 05-cf 44 69 dd ba bc 9c 89   .t.2.m...Di.....
+    0210 - 6e 66 61 85 81 42 d6 ad-89 2d be b2 59 d7 d2 15   nfa..B...-..Y...
+    0220 - 6e 2d fe f4 b0 24 7c 15-ff d9 a7 70 f0 af fb f0   n-...$|....p....
+    0230 - 50 53 93 34 d6 58 26 7d-2f d7 2b 03 33 78 37 20   PS.4.X&amp;}/.+.3x7
+    0240 - 21 50 1a 49 d7 aa 28 5f-4d ef d5 ea 39 c7 0b a2   !P.I..(_M...9...
+    0250 - fc e7 4f b1 6f 26 cc cc-e9 59 69 ab 22 dd 5f 5b   ..O.o&amp;...Yi."._[
+    0260 - 38 aa 06 f5 d4 7e be 8d-42 83 7c 30 e0 5d 61 4a   8....~..B.|0.]aJ
+    0270 - c9 78 32 c9 e0 54 1e 64-3e 85 41 96 e0 be ed 4c   .x2..T.d&gt;.A....L
+    0280 - ff 3e 82 fe 87 88 3d 90-b0 33 5a 0a 9c 43 c4 75   .&gt;....=..3Z..C.u
+    0290 - 82 31 4e c7 a1 c9 86 73-8e 38 84 38 73 0e aa 48   .1N....s.8.8s..H
+    02a0 - 50 bd db 58 e9 8d 84 2b-f6 b1 4e 2d b4 08 04 ab   P..X...+..N-....
+    02b0 - 05 26 22 89 7a 91 a1 fc-11 a6 c2 98 19 3c 8e 56   .&amp;".z........&lt;.V
+    02c0 - 29 6d 44 99 1a a3 a5 94-8a f4 8b ea 60 c0 27 01   )mD.........`.'.
+    02d0 - ee 37 c4 e4 30 2d f2 68-fd a2 44 72 d8 af ad 96   .7..0-.h..Dr....
+    02e0 - 65 28 7c 47 b7 15 69 39-7a 02 64 d6 44 33 37 70   e(|G..i9z.d.D37p
+    02f0 - e7 33 61 ae 0a 62 97 89-01 b2 3b 33 57 71 48 fc   .3a..b....;3WqH.
+    0300 - 05 97 b2 2a c7 ec ca d1-87 ec de 5e b9 2d 3e 3a   ...*.......^.-&gt;:
+    0310 - 24 9b e7 b4 b5 17 9c 33-9d 9b 52 21 9e 9b 2f 66   $......3..R!../f
+    0320 - 85 9d 85 1c 1e ce 83 ab-c6 92 1d da 7b 1c fc 25   ............{..%
+    0330 - 84 29 a8 f0 fd 4c c4 26-d8 d5 db 85 e5 03 a4 86   .)...L.&amp;........
+    0340 - ef 0f 8b ed ce 40 57 06-34 3d 23 81 bc 56 67 06   .....@W.4=#..Vg.
+    0350 - 4c 18 ba eb eb 3c 5d b9-ca 9d 7e 4d 61 99 70 98   L....&lt;]...~Ma.p.
+    0360 - e9 9e e0 6c 7e 92 bd 81-ff f3 b1 0a 50 9d 85 3c   ...l~.......P..&lt;
+    0370 - af 25 35 f0 ba 9f 06 b5-21 46 0e 14 8a d0 fe c7   .%5.....!F......
+    0380 - 56 53 97 55 ad d7 9a e6-ea e1 a9 95 17 56 0a 6e   VS.U.........V.n
+    0390 - 46 61 42 6d 29 14 3a 59-78 b7 6f 30 aa 4d a5 e0   FaBm).:Yx.o0.M..
+    03a0 - f4 f7 ec 21 11 ee fa 80-08 61 9c 53 86 ea 7b 02   ...!.....a.S..{.
+    03b0 - d8 69 fb 39 50 13 dc ad-07 86 86 e4 f6 17 18 af   .i.9P...........
+    03c0 - f2 d9 60 f2 66 eb 58 50-b7 2f 41 73 b1 2b c0 b1   ..`.f.XP./As.+..
+    03d0 - 54 48 b9 e4 35 95 10 fc-4d b2 7d 2b 2d d0 ca 68   TH..5...M.}+-..h
+    03e0 - be 04 02 11 14 65 08 c7-c4 fe 98 cd 2d 3e 13 48   .....e......-&gt;.H
+    03f0 - f1 2c 69 42 a5 d3 ac ec-03 4a f9 2e ad 27 7b 96   .,iB.....J...'{.
+    0400 - 81 b4 aa 74 d0 23 6b f8-1c c0 fd 70 00 cc 7f 5b   ...t.#k....p...[
+    0410 - 1e cb bd df b3 c1 83 61-af 2f 81 1d fe f4 de 95   .......a./......
+    0420 - 37 6e 8c 67 2a 8a 27 cc-6c 9b 70 db 7f a4 96 d4   7n.g*.'.l.p.....
+    0430 - 65 ef 07 68 17 df 86 8e-9b ac 27 e8 d0 3c 21 78   e..h......'..&lt;!x
+    0440 - 7b 61 2e 71 3b 99 4b 4c-81 4d 54 5c 67 a7 45 38   {a.q;.KL.MT\g.E8
+    0450 - a0 04 d9 3b c8 0a f2 8b-50 4c 2c d7 a2 5d c0 48   ...;....PL,..].H
+    0460 - fd 38 ca 75 c1 50 53 80-48 64 eb 22 62 7e 62 14   .8.u.PS.Hd."b~b.<br/><br/>
+    Start Time: 1733008819
+    Timeout   : 7200 (sec)
+    Verify return code: 21 (unable to verify the first certificate)
+    Extended master secret: no
+    Max Early Data: 0
+---
+read R BLOCK
+---
+Post-Handshake New Session Ticket arrived:
+SSL-Session:
+    Protocol  : TLSv1.3
+    Cipher    : TLS_AES_256_GCM_SHA384
+    Session-ID: EEFDEAF0CA2B63A2C27D92CCBFF99004E2FBC173147833C923060155B7F066CD
+    Session-ID-ctx:
+    Resumption PSK: 0DA3469A6889259B9E4D679C94DE33ED35B749E75CBA7D9BC30BD4718A84FFFECB8CE825CE012FCD56A1FE4AD1F7256E
+    PSK identity: None
+    PSK identity hint: None
+    SRP username: None
+    TLS session ticket lifetime hint: 300 (seconds)
+    TLS session ticket:
+    0000 - 38 07 5a 8e ad d0 49 f4-67 f0 aa a2 e2 82 ae 57   8.Z...I.g......W
+    0010 - 2b db e4 2a 84 d0 dc 89-75 5d 9e 3a d2 b2 95 bf   +..*....u].:....
+    0020 - e1 40 be 1b 1f fb bf 10-ab 8b 6c 02 62 cc 91 64   .@........l.b..d
+    0030 - de 97 13 a4 52 2d 55 35-f6 96 af 15 37 c0 c3 ff   ....R-U5....7...
+    0040 - b6 3b f3 85 1c 26 b2 84-cf f6 14 85 f8 5d 47 fd   .;...&amp;.......]G.
+    0050 - 29 aa 71 3e 36 af 75 3f-5c 5c 3a d4 41 f3 fc fd   ).q&gt;6.u?\\:.A...
+    0060 - b4 57 73 6d 4f c4 91 f3-7b 3f 8f 14 ac de f3 12   .WsmO...{?......
+    0070 - 8b 53 27 b8 bc eb 85 c3-c7 5e 62 63 7f c6 c6 44   .S'......^bc...D
+    0080 - 3e 06 79 9e 75 b9 84 7a-d9 73 7f e9 e5 f2 ce a9   &gt;.y.u..z.s......
+    0090 - 7e c4 ed 98 d1 ec a0 11-22 d5 2e c3 43 ed 17 ca   ~......."...C...
+    00a0 - ed 2d 6e c6 92 55 ff 38-69 b1 75 54 8c e1 8a b9   .-n..U.8i.uT....
+    00b0 - c8 c1 7f 54 90 46 c0 cb-d2 1e f0 b4 41 de d3 27   ...T.F......A..'
+    00c0 - b3 2e 2c 6d ff 7c c0 5e-f7 75 31 c3 e1 4b 8d e4   ..,m.|.^.u1..K..
+    00d0 - 85 05 a9 d1 f7 14 e7 45-60 f8 86 d8 e7 1e f2 83   .......E`.......
+    00e0 - 66 b6 52 4c fb 81 48 be-f6 24 5f 94 31 91 e3 d8   f.RL..H..$_.1...
+    00f0 - 5f 56 f1 7d 2d f0 b4 6f-d1 04 fa 5a 5c cd d8 03   _V.}-..o...Z\...
+    0100 - f0 2f a4 7e af ee ae 0c-69 71 b6 22 b1 af 0f be   ./.~....iq."....
+    0110 - 15 7a 0b 78 55 6c 8b 09-6b e2 9f 39 e3 2f a1 0d   .z.xUl..k..9./..
+    0120 - 5f b1 ac 81 ff 50 43 f0-32 5d 14 1b 82 3c c6 5e   _....PC.2]...&lt;.^
+    0130 - 7b 1b 27 81 a0 62 77 6c-ae 12 56 b8 85 d5 a8 f2   {.'..bwl..V.....
+    0140 - c7 db ef bc 3e 63 8d 58-82 50 16 a5 9d a4 e7 c4   ....&gt;c.X.P......
+    0150 - 3c c1 21 87 41 eb 17 b9-7e 55 10 e5 d4 8e e1 72   &lt;.!.A...~U.....r
+    0160 - b3 2c 28 3d 98 a8 51 96-63 7c 15 6d 06 6b e8 74   .,(=..Q.c|.m.k.t
+    0170 - a4 2e 6c 38 ab cb 93 94-d4 f8 c0 84 20 5a db ce   ..l8........ Z..
+    0180 - f8 79 88 6f fc 67 58 8b-09 23 6b 2f 6b 99 08 85   .y.o.gX..#k/k...
+    0190 - cb 1b ac f8 64 31 eb 91-e1 74 d1 da 64 2f 0f 9f   ....d1...t..d/..
+    01a0 - 2b df 97 ca 3e 12 f6 54-41 84 0e 26 0b af 5f 6f   +...&gt;..TA..&amp;.._o
+    01b0 - 7f fd 16 a2 f4 7f 1a af-b4 9d b5 58 46 09 d5 7c   ...........XF..|
+    01c0 - 79 6b 16 9a 4a f3 d4 9d-10 ac 18 c2 ae eb a2 24   yk..J..........$
+    01d0 - 8e 4c 45 26 57 82 fb d5-9a 24 c3 08 9b cd e1 b7   .LE&amp;W....$......
+    01e0 - 30 85 73 71 09 5d d1 78-0d 16 33 11 0d 10 63 8e   0.sq.].x..3...c.
+    01f0 - ed d3 3b d8 2a 04 72 ac-76 1d 6c 83 b3 8e e8 25   ..;.*.r.v.l....%
+    0200 - aa da ad c5 24 17 04 c1-0a ef 10 41 a5 25 0d d7   ....$......A.%..
+    0210 - 12 8c 68 e8 10 e8 41 8c-92 07 8f 08 97 1f 8e 1a   ..h...A.........
+    0220 - a5 fa 47 b7 96 f9 29 d6-00 71 6e e4 bb 90 6e 4a   ..G...)..qn...nJ
+    0230 - 31 f8 af de a7 b0 34 c3-68 d2 a4 5c c6 42 6a 14   1.....4.h..\.Bj.
+    0240 - 9e d4 85 ee 11 b7 8e b2-58 d1 55 ac 5c cd 9b 36   ........X.U.\..6
+    0250 - 82 f1 dd 0e bb fe 5b 9c-14 b9 51 2b 9a 8d e3 28   ......[...Q+...(
+    0260 - 9f f6 e1 67 a3 9a 9c 93-27 54 7c ce 0f 54 18 c5   ...g....'T|..T..
+    0270 - 4a 00 95 0c 75 ee df ef-29 1b 2c 3d c5 f3 d9 50   J...u...).,=...P
+    0280 - 4d 91 3d 07 81 63 6e e0-5c 79 b8 bc 56 c9 b5 eb   M.=..cn.\y..V...
+    0290 - 10 95 70 48 46 f5 4c 20-48 ef 43 a8 fc 58 ae 08   ..pHF.L H.C..X..
+    02a0 - 80 0e 3d ee 37 eb be 55-61 80 50 22 f2 34 5a bf   ..=.7..Ua.P".4Z.
+    02b0 - 12 08 9a d9 44 c0 a3 2c-08 32 96 c5 62 7b 97 15   ....D..,.2..b{..
+    02c0 - 7f c8 07 48 ad 4f 01 83-60 bf d6 90 54 3f e3 c4   ...H.O..`...T?..
+    02d0 - 3d 2e b6 18 33 ad b0 09-a8 db e5 1e 94 98 7c 71   =...3.........|q
+    02e0 - 5d 91 84 a9 93 2f d1 87-cf dc cd fc 3e 80 4b ff   ]..../......&gt;.K.
+    02f0 - 97 4b e7 d1 fd 29 59 69-7c 46 b3 86 48 ec bd 40   .K...)Yi|F..H..@
+    0300 - 89 4b 74 c7 2d eb 19 16-ca b6 8c 0c 88 39 fa c9   .Kt.-........9..
+    0310 - b2 ca f9 b6 d6 c8 58 c1-b5 f5 20 c1 33 6e 1f ee   ......X... .3n..
+    0320 - 8a 32 e3 51 9d 1f a7 f7-14 58 a8 c8 6f c6 0d 6f   .2.Q.....X..o..o
+    0330 - dd b5 5f 44 29 bd 17 fc-cd f9 d1 78 ad 92 7b 8b   .._D)......x..{.
+    0340 - 36 5d ce f0 8a 9d b8 94-9e f7 2d 7e 7e 95 59 c8   6]........-~~.Y.
+    0350 - 43 7b 8c fd ed 3e cf dd-37 8b 24 32 62 24 ac 64   C{...&gt;..7.$2b$.d
+    0360 - 4d 16 cf c2 13 19 7d 67-0e 25 57 31 47 e4 ed 2c   M.....}g.%W1G..,
+    0370 - f7 93 64 61 b9 98 1f 11-53 69 75 1d 85 3c 54 48   ..da....Siu..&lt;TH
+    0380 - c8 69 a6 be d7 d0 1e 9c-e4 41 30 53 f4 96 a6 34   .i.......A0S...4
+    0390 - 38 f0 98 00 17 d0 fa cf-26 b9 15 3f 20 d9 d9 80   8.......&amp;..? ...
+    03a0 - 3a f4 e0 f6 19 da 69 99-e9 8f 4d 1e ba d5 27 8b   :.....i...M...'.
+    03b0 - 4c 13 51 1f 99 bc 82 ff-cf 0f 73 97 7f 35 61 d1   L.Q.......s..5a.
+    03c0 - 1b 5d 80 6b 0b fd 4c 95-33 74 9a bb 33 a5 6a fe   .].k..L.3t..3.j.
+    03d0 - 3c 68 77 58 bd 00 9e 93-db 6c 62 95 3b c8 0b 3a   &lt;hwX.....lb.;..:
+    03e0 - 25 9d c2 7f 7f ba 19 7d-a5 f5 19 c8 cd db a6 f6   %......}........
+    03f0 - d0 cb 23 c7 c8 cb 5e e2-25 7f 25 88 82 2e b6 19   ..#...^.%.%.....
+    0400 - 11 a3 70 63 e3 8e 5b 79-08 4e ab e8 c8 47 5c 0f   ..pc..[y.N...G\.
+    0410 - 03 4e 18 47 8b c9 9c e4-e5 16 f7 77 90 fe 70 f8   .N.G.......w..p.
+    0420 - ad 4b b4 a2 2a 92 55 5c-0e 52 e4 67 dd d1 84 0c   .K..*.U\.R.g....
+    0430 - 90 cc 82 3c 47 90 c7 46-02 46 7f 34 07 2d cf 4a   ...&lt;G..F.F.4.-.J
+    0440 - 72 f0 d3 3a 4c 5c dd ee-13 a9 7b ca ad e2 28 71   r..:L\....{...(q
+    0450 - 90 2f 98 1c ea 61 05 16-58 f0 f6 ad 72 9d 5b 94   ./...a..X...r.[.
+    0460 - ae 27 ec 83 05 b0 92 e9-5a 0a a5 b6 84 91 f3 2d   .'......Z......-<br/><br/>
+    Start Time: 1733008819
+    Timeout   : 7200 (sec)
+    Verify return code: 21 (unable to verify the first certificate)
+    Extended master secret: no
+    Max Early Data: 0
+---
+read R BLOCK
+closed</pre>
+</blockquote>
+<br/>
+那浏览器该怎么办呢？<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/11/mtls-chrome-3.png"><img class="aligncenter wp-image-13931" src="https://yanbin.blog/wp-content/uploads/2024/11/mtls-chrome-3-800x283.png" alt="" width="669" height="237" /></a><br/><br/>
+我们可用 openssl 由 client1.crt 和 client1.key 生成 PKCS#12 格式的客户端证书上，然后导入到浏览器当中<br/><br/>
+<pre class="lang:default decode:true">openssl pkcs12 -export  -in client1.crt -inkey client1.key -out client1.p12
+Enter Export Password:
+Verifying - Enter Export Password:</pre>
+<br/>
+如果不想设置的密码的话在两次提示输入密码时直接回车跳过，生成 client1.p12<br/><br/>
+比如在 Chrome 浏览器，可找到 Settings/Privacy and security/Security/Advanced/Manage certificates/Personal/Imports..., 然后导入前面生成的 client1.p12 文件，有密码的话就输入相同的密码。再浏览 https://server.local 就没问题了。 <br/><br/>
+用 Postman 直接浏览 https://server.local 也同样得到 400 Bad Request 的错误，也需要配置客户端证书才能正常访问。Postman 同时支持 client1.crt，client1.key 组合，和 client1.p12(有密码则输入), 请看下方的截图<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/11/mtls-postman.png"><img class="size-large wp-image-13934 aligncenter" src="https://yanbin.blog/wp-content/uploads/2024/11/mtls-postman-800x495.png" alt="" width="800" height="495" /></a><br/><br/>
+完后 Postman 就能看到 https://server.local 的正确输出了。<br/><br/>
+curl 也可以用 p12 格式的证书<br/><br/>
+<pre class="lang:default decode:true">curl --cert-type P12 --cert client1.p12 -kv https://server.local<br/><br/>
+# 如有密码
+curl --cert-type P12 --cert client1.p12:&lt;password&gt; -kv https://server.local</pre>
+<br/>
+<h3>Apache2 中的 mTLS 双向认证配置</h3><br/><br/>
+类似的在 Apache2 中的配置就是在启用 HTTPS 单向验证的基础上于 default-ssl.conf 中再加上<br/><br/>
+<pre class="lang:default decode:true"># 指定 CA 证书
+SSLCACertificateFile /certs/root.crt<br/><br/>
+# 启用客户端认证
+SSLVerifyClient require            
+# SSLVerifyDepth 2</pre>
+<br/>
+<h3>SpringBoot Tomcat 的 mTLS 双向认证</h3><br/><br/>
+在启用了 HTTPS 单身验证的情况下加上 server.ssl.trust-certificate 和  server.ssl.client-auth 配置，完整的相关配置是<br/><br/>
+<pre class="lang:default decode:true">server.ssl.certificate=/certs/server.crt
+server.ssl.certificate-private-key=/certs/server.key
+server.ssl.trust-certificate=/certs/root.crt
+server.ssl.client-auth=need</pre>
+<br/>
+可分别用下面的 curl  进行测试<br/><br/>
+<blockquote>
+$ curl -k https://server.local:8080<br />
+curl: (56) LibreSSL SSL_read: LibreSSL/3.3.6: error:1404C412:SSL routines:ST_OK:sslv3 alert bad certificate, errno 0<br />
+$ curl --cert client1.crt --key client1.key -k https://server.local:8080<br />
+Ok
+</blockquote>
+<br/>
+<h3>其他相关内容</h3><br/><br/>
+以下相关内容在本文中不作详细展开，具体做法可参考 <a href="https://koca.szkingdom.com/forum/t/topic/213">基于证书的双向认证（mTLS）技术方案</a>。比<br/><br/>
+<ol>
+    <li>keytool 替代 openssl 生成证书，在 crt, jdk, p12 之间的证书转换</li>
+    <li>Tomcat 中如何使用 key-store 方式配置 HTTPS</li>
+    <li>Tomcat 中启用了 HTTPS 后，@EnableWebSecurity 之后如何信任 x509 证书</li>
+    <li>Java 作为客户端调用相应服务，如何处理 TLS 和 mTLS</li>
+    <li>Nginx 作反向代理时作为 HTTPS 客户端时的配置</li>
+</ol>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://koca.szkingdom.com/forum/t/topic/213">基于证书的双向认证（mTLS）技术方案</a></li>
+    <li><a href="https://kunyuan.tech/archives/1230">nginx 自签证书实现配置 https 双向认证</a></li>
+    <li><a href="https://blog.csdn.net/easylife206/article/details/107776854">巧用 Nginx 快速实现 HTTPS 双向认证</a></li>
+    <li><a href="https://blog.csdn.net/lqk1603/article/details/126632495">springboot2.0 配置ssl证书详解</a></li>
+</ol>

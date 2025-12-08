@@ -1,0 +1,932 @@
+---
+title: oracle定时任务[转]
+url: /oracle-schedule-job/
+date: 2008-11-11T21:42:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Database
+tags: 
+  - database
+  - Job
+  - Oracle
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 314 
+wpStatus: publish
+views: 744
+lastmod: 2010-08-10T10:54:01-05:00
+---
+
+<p class="content">DBMS_JOB系统包是Oracle“任务队列”子系统的API编程接口。DBMS_JOB包对于任务队列提供了下面这些功能：提交并且执行一个任务、改变任务的执行参数以及删除或者临时挂起任务等。</p>
+
+<p class="content">DBMS_JOB包是由ORACLE_HOME目录下的rdbms/admin子目录下的DBMSJOB.SQL和PRVTJOB.PLB 这两个脚本文件创建的。这两个文件被CATPROC.SQL脚本文件调用，而CATPROC.SQL这个文件一般是在数据库创建后立即执行的。脚本为DBMS_JOB包创建了一个公共同义词，并给该包授予了公共的可执行权限，所以所有的Oracle用户均可以使用这个包。<!--more--></p>
+
+<p class="content">下面几个数据字典视图是关于任务队列信息的，主要有DBA_JOBS, USER_JOBS和DBA_JOBS_RUNNING。这些字典视图是由名为CATJOBQ.SQL的脚本文件创建的。该脚本文件和创建DBMS_JOB包的脚本文件一样在ORACLE_HOME目录的rdbms/admin子目录中，同样也是由脚本文件CATPROC.SQL调用。</p>
+
+<p class="content">最后，要使任务队列能正常运行，还必须启动它自己专有的后台过程。启动后台过程是通过在初始化文件init*.ora(实例不同，初始化文件名也略有不同)中设置初始化参数来进行的。下面就是该参数：</p>
+
+<p class="content">JOB_QUEUE_PROCESSES = n </p>
+
+<p class="content">其中，n可以是0到36之间的任何一个数。除了该参数以外，还有几个关于任务队列的初始化参数，本文后面将会对其进行详细讨论。</p>
+
+<p class="content">DBMS_JOB包中包含有许多过程，见表1所示。</p>
+
+<p class="content">表1 DBMS_JOB包</p>
+
+<br/>
+<table style="border-collapse: collapse;" border="1" cellspacing="0" cellpadding="2" width="80%" align="center" bordercolor="#111111">
+
+<tbody>
+
+<tr>
+
+<td class="code" valign="top" bgcolor="#999999"><span style="color: #800000;"><br/>
+<strong>名称</strong><br/>
+</span></td>
+
+<td class="code" valign="top" bgcolor="#999999"><span style="color: #800000;"><br/>
+<strong>类型</strong><br/>
+</span></td>
+
+<td class="code" valign="top" bgcolor="#999999"><span style="color: #800000;"><br/>
+<strong>描述</strong><br/>
+</span></td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">DBMS_JOB.ISUBMIT</td>
+
+<td class="code" valign="top">过程</td>
+
+<td class="code" valign="top">提交一个新任务，用户指定一个任务号</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">DBMS_JOB.SUBMIT</td>
+
+<td class="code" valign="top">过程</td>
+
+<td class="code" valign="top">提交一个新任务，系统指定一个任务号</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">DBMS_JOB.REMOVE</td>
+
+<td class="code" valign="top">过程</td>
+
+<td class="code" valign="top">从队列中删除一个已经存在的任务</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">DBMS_JOB.CHANGE</td>
+
+<td class="code" valign="top">过程</td>
+
+<td class="code" valign="top">更改用户设定的任务参数</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">DBMS_JOB.WHAT</td>
+
+<td class="code" valign="top">过程</td>
+
+<td class="code" valign="top">更改PL/SQL任务定义</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">DBMS_JOB.NEXT_DATE</td>
+
+<td class="code" valign="top">过程</td>
+
+<td class="code" valign="top">更改任务下一次运行时间</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">DBMS_JOB.INTERVAL</td>
+
+<td class="code" valign="top">过程</td>
+
+<td class="code" valign="top">更改任务运行的时间间隔</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">DBMS_JOB.BROKEN</td>
+
+<td class="code" valign="top">过程</td>
+
+<td class="code" valign="top">将任务挂起，不让其重复运行</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">DBMS_JOB.RUN</td>
+
+<td class="code" valign="top">过程</td>
+
+<td class="code" valign="top">在当前会话中立即执行任务</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">DBMS_JOB.USER_EXPORT</td>
+
+<td class="code" valign="top">过程</td>
+
+<td class="code" valign="top">创建文字字符串，用于重新创建一个任务</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<h3><strong>三、DBMS_JOB包参数</strong></h3><br/>
+<p class="content">DBMS_JOB包中所有的过程都有一组相同的公共参数，用于定义任务，任务的运行时间以及任务定时运行的时间间隔。这些公共任务定义参数见表2所示。</p>
+
+<p class="content">表2 DBMS_JOB过程的公共参数</p>
+
+<br/>
+<table style="border-collapse: collapse;" border="1" cellspacing="0" cellpadding="2" width="80%" align="center" bordercolor="#111111">
+
+<tbody>
+
+<tr>
+
+<td class="code" valign="top" bgcolor="#999999"><span style="color: #800000;"><br/>
+<strong>名称</strong><br/>
+</span></td>
+
+<td class="code" valign="top" bgcolor="#999999"><span style="color: #800000;"><br/>
+<strong>类型</strong><br/>
+</span></td>
+
+<td class="code" valign="top" bgcolor="#999999"><span style="color: #800000;"><br/>
+<strong>注释</strong><br/>
+</span></td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">Job</td>
+
+<td class="code" valign="top">BINARY_INTEGER</td>
+
+<td class="code" valign="top">任务的唯一识别号</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">What</td>
+
+<td class="code" valign="top">VARCHAR2</td>
+
+<td class="code" valign="top">作为任务执行的PL/SQL代码</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">Next_date</td>
+
+<td class="code" valign="top">VARCHAR2</td>
+
+<td class="code" valign="top">任务下一次运行的时间</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">Interval</td>
+
+<td class="code" valign="top">VARCHAR2</td>
+
+<td class="code" valign="top">日期表达式，用来计算下一次任务运行的时间</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<p class="content">下面我们来详细讨论这些参数的意义及用法。</p>
+
+<br/>
+<h4><strong>1、job</strong></h4><br/>
+<p class="content">参数job是一个整数，用来唯一地标示一个任务。该参数既可由用户指定也可由系统自动赋予，这完全取决于提交任务时选用了那一个任务提交过程。DBMS_JOB.SUBMIT过程通过获得序列SYS.JOBSEQ的下一个值来自动赋予一个任务号。该任务号是作为一个OUT参数返回的，所以调用者随后可以识别出提交的任务。而DBMS_JOB.ISUBMIT过程则由调用者给任务指定一个识别号，这时候，任务号的唯一性就完全取决于调用者了。</p>
+
+<p class="content">除了删除或者重新提交任务，一般来说任务号是不能改变的。即使当数据库被导出或者被导入这样极端的情况，任务号也将被保留下来。所以在执行含有任务的数据的导入/导出操作时很可能会发生任务号冲突的现象。</p>
+
+<br/>
+<h4><strong>2、what</strong></h4><br/>
+<p class="content">what参数是一个可以转化为合法PL/SQL调用的字符串，该调用将被任务队列自动执行。在what参数中，如果使用文字字符串，则该字符串必须用单引号括起来。 what参数也可以使用包含我们所需要字符串值的VARCHAR2变量。实际的PL/SQL调用必须用分号隔开。在PL/SQL调用中如果要嵌入文字字符串，则必须使用两个单引号。</p>
+
+<p class="content">what参数的长度在Oracle7.3中限制在2000个字节以内，在Oracle 8.0以后，扩大到了4000个字节，这对于一般的应用已完全足够。该参数的值一般情况下都是对一个PL/SQL存储过程的调用。在实际应用中，尽管可以使用大匿名Pl/SQL块，但建议大家最好不要这样使用。还有一个实际经验就是最好将存储过程调用封装在一个匿名块中，这样可以避免一些比较莫名错误的产生。我来举一个例子，一般情况下，what参数可以这样引用：</p>
+
+<br/>
+<table id="AutoNumber1" style="border-collapse: collapse;" border="1" cellspacing="0" cellpadding="3" width="80%" align="center" bordercolor="#111111">
+
+<tbody>
+
+<tr>
+
+<td class="code" width="100%" bgcolor="#e9e9e9">what =&gt;’my_procedure(parameter1);’</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<p class="content">但是比较安全的引用，应该这样写：</p>
+
+<br/>
+<div>
+
+<table id="AutoNumber2" style="border-collapse: collapse;" border="1" cellspacing="0" cellpadding="3" width="80%" align="center" bordercolor="#111111">
+
+<tbody>
+
+<tr>
+
+<td class="code" width="100%" bgcolor="#e9e9e9">what =&gt;’begin my_procedure(parameter1); end;’</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+</div>
+
+<p class="content">任何时候，我们只要通过更改what参数就可以达到更改任务定义的目的。但是有一点需要注意，通过改变what参数来改变任务定义时，用户当前的会话设置也被记录下来并成为任务运行环境的一部分。如果当前会话设置和最初提交任务时的会话设置不同，就有可能改变任务的运行行为。意识到这个潜在的副作用是非常重要的，无论何时只要应用到任何DBMS_JOB过程中的what参数时就一定要确保会话设置的正确。</p>
+
+<br/>
+<h4><strong>3、next_date</strong></h4><br/>
+<p class="content">Next_date参数是用来调度任务队列中该任务下一次运行的时间。这个参数对于DBMS_JOB.SUBMIT和DBMS_JOB.BROKEN这两个过程确省为系统当前时间，也就是说任务将立即运行。</p>
+
+<p class="content">当将一个任务的next_date参数赋值为null时，则该任务下一次运行的时间将被指定为4000年1月1日，也就是说该任务将永远不再运行。在大多数情况下，这可能是我们不愿意看到的情形。但是，换一个角度来考虑，如果想在任务队列中保留该任务而又不想让其运行，将next_date设置为null却是一个非常简单的办法。</p>
+
+<p class="content">Next_date也可以设置为过去的一个时间。这里要注意，系统任务的执行顺序是根据它们下一次的执行时间来确定的，于是将next_date参数设置回去就可以达到将该任务排在任务队列前面的目的。这在任务队列进程不能跟上将要执行的任务并且一个特定的任务需要尽快执行时是非常有用的。</p>
+
+<br/>
+<h4><strong>4、Interval</strong></h4><br/>
+<p class="content">Internal参数是一个表示Oracle合法日期表达式的字符串。这个日期字符串的值在每次任务被执行时算出，算出的日期表达式有两种可能，要么是未来的一个时间要么就是null。这里要强调一点：很多开发者都没有意识到next_date是在一个任务开始时算出的，而不是在任务成功完成时算出的。</p>
+
+<p class="content">当任务成功完成时，系统通过更新任务队列目录表将前面算出的next_date值置为下一次任务要运行的时间。当由interval表达式算出next_date是null时，任务自动从任务队列中移出，不会再继续执行。因此，如果传递一个null值给interval参数，则该任务仅仅执行一次。</p>
+
+<p class="content">通过给interval参数赋各种不同的值，可以设计出复杂运行时间计划的任务。本文后面的“任务间隔和日期算法”将对interval表达式进行详细讨论，并给出一个实际有用interval表达式的例子。</p>
+
+<br/>
+<h3><strong>四、任务队列架构和运行环境</strong></h3><br/>
+<p class="content">任务队列在Oracle系统中其实是一个子系统，它具有自己特定的后台过程和目录表。该子系统设计的目的是为了能不在用户干预下自动运行PL/SQL过程。</p>
+
+<br/>
+<h4><strong>1、任务队列后台过程</strong></h4><br/>
+<p class="content">任务队列（SNP）后台过程随着Oracle实例的启动而同时启动。在文章前面已经谈到初始化文件init.ora中的参数JOB_QUEUE_PROCESSES，用来设置有几个队列过程。这里设置了几个过程，系统中就会有几个SNP过程被启动。JOB_QUEUE_PROCESSES这个参数，可以是0到36中的任何一个数，也就是说对于每个Oracle实例最多可以有36个SNP过程，也可以不支持队列过程（＝0）。在大多数操作系统中，SNP三个字母常作为过程名的一部分出现。如，在unix系统中，如果该Oracle实例名为ora8，有三个任务队列过程，则这三个任务队列过程名称为：</p>
+
+<br/>
+<table id="AutoNumber3" style="border-collapse: collapse;" border="1" cellspacing="0" cellpadding="3" width="80%" align="center" bordercolor="#111111">
+
+<tbody>
+
+<tr>
+
+<td class="code" width="100%" bgcolor="#e9e9e9">ora_ora8_snp0<br/>
+ora_ora8_snp1<br/>
+ora_ora8_snp2</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<p class="content">SNP后台过程和其他的Oracle后台过程的一个重要区别就是杀掉一个SNP过程不会影响到Oracle实例。当一个任务队列过程失控或者消耗太多的资源时，就可以将其杀掉，当然这种情况不是经常遇到的。当一个SNP过程被杀掉或者失败时，Oracle就自动启动一个新的SNP过程来代替它。</p>
+
+<br/>
+<h4><strong>2、有关任务队列的初始化参数</strong></h4><br/>
+<p class="content">初始化文件init.ora中的几个参数控制着任务队列后台的运行，下面我们将对其进行详细讨论。</p>
+
+<br/>
+<h4>（1）、JOB_QUEUE_INTERVAL</h4><br/>
+<p class="content">任务队列过程定期唤醒并检查任务队列目录表是否有任务需要执行。参数JOB_QUEUE_INTERVAL决定SNP过程两次检查目录表之间“休眠”多长时间（单位为秒）。间隔设的太小会造成由于SNP过程不断检查目录表而导致不必要的系统吞吐量。相反如果间隔设得太大，SNP过程在特定的时间没有被唤醒，那个时间的任务就不会能被运行。最佳的时间间隔设置要综合考虑系统环境中不同的任务，60秒的确省设置可以满足大多数的应用。</p>
+
+<br/>
+<h4>（2）、JOB_QUEUE_KEEP_CONNECTIONS</h4><br/>
+<p class="content">除了前面介绍的JOB_QUEUE_PROCESS和JOB_QUEUE_INTERVAL两个参数以外，影响SNP后台过程行为的第三个参数是JOB_QUEUE_KEEP_CONNECTIONS。当该参数为TRUE时，SNP过程在两个任务的运行期间（也就是休眠期间），仍然和Oracle保持开放的连接。相反，如果为FALSE时，SNP过程将和数据库断开连接，当唤醒时刻到来时又重新连接并检查任务队列。</p>
+
+<p class="content">选择这两种方法中的那一种，主要是考虑任务队列的有效性和数据库关闭方法。长期保持连接的效率比较高，但任务队列会受到正常关闭数据库的影响。这是因为任务队列过程对于服务器管理器看来和一个普通用户的过程没有什么不同，而正常的关闭数据库需要让所有的用户都断开连接。而断开连接和重新连接又给数据库增加了负荷，但是可定期地使数据库没有可连接SNP过程，也就可以使数据库正常关闭。对于有很多任务或者是任务重复执行的时间间隔较短（一个小时或者更少）的环境，一般将JOB_QUEUE_KEEP_CONNECTIOONS设置为TRUE，并修改关闭数据库的脚本为立即关闭。对于严格要求采用正常方式关闭的数据库或者是任务较少，重复间隔较长的环境，一般将该参数设置为FALSE。最好，要提醒一句，SNP过程仅在没有任何任务运行时才断开，这种情况下，那些需要比较长时间运行的任务SNP将在它们的生命周期内一致保持开放的连接，这就延迟了正常关闭数据库的时间。</p>
+
+<br/>
+<h4><strong>3、建立运行环境</strong></h4><br/>
+<p class="content">当SNP过程唤醒时，它首先查看任务队列目录中所有的任务是否当前的时间超过了下一次运行的日期时间。SNP检测到需要该时间立即执行的任务后，这些任务按照下一次执行日期的顺序依次执行。当SNP过程开始执行一个任务时，其过程如下：</p>
+
+<br/>
+<ol>
+
+	<li>以任务所有者的用户名开始一个新的数据库会话。</li>
+
+	<li>当任务第一次提交或是最后一次被修改时，更改会话NLS设置和目前就绪的任务相匹配。</li>
+
+	<li>通过interval日期表达式和系统时间，计算下一次执行时间。</li>
+
+	<li>执行任务定义的PL/SQL</li>
+
+	<li>如果运行成功，任务的下一次执行日期（next_date）被更新，否则，失败计数加1。</li>
+
+	<li>经过JOB_QUEUS_INTERVAL秒后，又到了另一个任务的运行时间，重复上面的过程。</li>
+
+</ol>
+
+<p class="content">在前两步中，SNP过程创建了一个模仿用户运行任务定义的PL/SQL的会话环境。然而，这个模仿的运行环境并不是和用户实际会话环境完全一样，需要注意以下两点：第一，在任务提交时任何可用的非确省角色都将在任务运行环境中不可用。因此，那些想从非确省角色中取得权限的任务不能提交，用户确省角色的修改可以通过在任务未来运行期间动态修改来完成。第二，任何任务定义本身或者过程执行中需要的数据库联接都必须完全满足远程的用户名和密码。SNP过程不能在没有显式指明口令的情况下初始化一个远程会话。显然，SNP过程不能假定将本地用户的口令作为远程运行环境会话设置的一部分。</p>
+
+<p class="content">提交的任务如果运行失败会怎么样呢？当任务运行失败时，SNP过程在1分钟后将再次试图运行该任务。如果这次运行又失败了，下一次尝试将在2分钟后进行，再下一次在4分钟以后。任务队列每次加倍重试间隔直到它超过了正常的运行间隔。在连续16次失败后，任务就被标记为中断的（broken），如果没有用户干预，任务队列将不再重复执行。</p>
+
+<br/>
+<h3><strong>五、任务队列字典表和视图</strong></h3><br/>
+<p class="content">任务队列中的任务信息可以通过表3所示的几个字典视图来查看，这些视图是由CATJOBQ.sql脚本创建的。表4和5是各个视图每个字段的含义。</p>
+
+<p class="content">表3. 任务队列中关于任务的数据字典视图</p>
+
+<br/>
+<table style="border-collapse: collapse;" border="1" cellspacing="0" cellpadding="2" width="80%" align="center" bordercolor="#111111">
+
+<tbody>
+
+<tr>
+
+<td class="code" align="center" valign="top" bgcolor="#999999"><strong><br/>
+<span style="color: #800000;">视图名</span><br/>
+</strong></td>
+
+<td class="code" align="center" valign="top" bgcolor="#999999"><strong><br/>
+<span style="color: #800000;">描述</span><br/>
+</strong></td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">DBA_JOBS</td>
+
+<td class="code" valign="top">本数据库中定义到任务队列中的任务</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">DBA_JOBS_RUNNING</td>
+
+<td class="code" valign="top">目前正在运行的任务</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">USER_JOBS</td>
+
+<td class="code" valign="top">当前用户拥有的任务</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<p class="content">表4. DBA_JOBS 和 USER_JOBS.字典视图的字段含义</p>
+
+<br/>
+<table style="border-collapse: collapse;" border="1" cellspacing="0" cellpadding="2" width="80%" align="center" bordercolor="#111111">
+
+<tbody>
+
+<tr>
+
+<td class="code" bgcolor="#999999"><span style="color: #800000;"><br/>
+<strong>字段（列）</strong><br/>
+</span></td>
+
+<td class="code" bgcolor="#999999"><span style="color: #800000;"><br/>
+<strong>类型</strong><br/>
+</span></td>
+
+<td class="code" bgcolor="#999999"><span style="color: #800000;"><br/>
+<strong>描述</strong><br/>
+</span></td>
+
+</tr>
+
+<tr>
+
+<td class="code">JOB</td>
+
+<td class="code">NUMBER</td>
+
+<td class="code">任务的唯一标示号</td>
+
+</tr>
+
+<tr>
+
+<td class="code">LOG_USER</td>
+
+<td class="code">VARCHAR2(30)</td>
+
+<td class="code">提交任务的用户</td>
+
+</tr>
+
+<tr>
+
+<td class="code">PRIV_USER</td>
+
+<td class="code">VARCHAR2(30)</td>
+
+<td class="code">赋予任务权限的用户</td>
+
+</tr>
+
+<tr>
+
+<td class="code">SCHEMA_USER</td>
+
+<td class="code">VARCHAR2(30)</td>
+
+<td class="code">对任务作语法分析的用户模式</td>
+
+</tr>
+
+<tr>
+
+<td class="code">LAST_DATE</td>
+
+<td class="code">DATE</td>
+
+<td class="code">最后一次成功运行任务的时间</td>
+
+</tr>
+
+<tr>
+
+<td class="code">LAST_SEC</td>
+
+<td class="code">VARCHAR2(8)</td>
+
+<td class="code">如HH24:MM:SS格式的last_date日期的小时，分钟和秒</td>
+
+</tr>
+
+<tr>
+
+<td class="code">THIS_DATE</td>
+
+<td class="code">DATE</td>
+
+<td class="code">正在运行任务的开始时间，如果没有运行任务则为null</td>
+
+</tr>
+
+<tr>
+
+<td class="code">THIS_SEC</td>
+
+<td class="code">VARCHAR2(8)</td>
+
+<td class="code">如HH24:MM:SS格式的this_date日期的小时，分钟和秒</td>
+
+</tr>
+
+<tr>
+
+<td class="code">NEXT_DATE</td>
+
+<td class="code">DATE</td>
+
+<td class="code">下一次定时运行任务的时间</td>
+
+</tr>
+
+<tr>
+
+<td class="code">NEXT_SEC</td>
+
+<td class="code">VARCHAR2(8)</td>
+
+<td class="code">如HH24:MM:SS格式的next_date日期的小时，分钟和秒</td>
+
+</tr>
+
+<tr>
+
+<td class="code">TOTAL_TIME</td>
+
+<td class="code">NUMBER</td>
+
+<td class="code">该任务运行所需要的总时间，单位为秒</td>
+
+</tr>
+
+<tr>
+
+<td class="code">BROKEN</td>
+
+<td class="code">VARCHAR2(1)</td>
+
+<td class="code">标志参数，Y标示任务中断，以后不会运行</td>
+
+</tr>
+
+<tr>
+
+<td class="code">INTERVAL</td>
+
+<td class="code">VARCHAR2(200)</td>
+
+<td class="code">用于计算下一运行时间的表达式</td>
+
+</tr>
+
+<tr>
+
+<td class="code">FAILURES</td>
+
+<td class="code">NUMBER</td>
+
+<td class="code">任务运行连续没有成功的次数</td>
+
+</tr>
+
+<tr>
+
+<td class="code">WHAT</td>
+
+<td class="code">VARCHAR2(2000)</td>
+
+<td class="code">执行任务的PL/SQL块</td>
+
+</tr>
+
+<tr>
+
+<td class="code">CURRENT_SESSION_LABEL</td>
+
+<td class="code">RAW MLSLABEL</td>
+
+<td class="code">该任务的信任Oracle会话符</td>
+
+</tr>
+
+<tr>
+
+<td class="code">CLEARANCE_HI</td>
+
+<td class="code">RAW MLSLABEL</td>
+
+<td class="code">该任务可信任的Oracle最大间隙</td>
+
+</tr>
+
+<tr>
+
+<td class="code">CLEARANCE_LO</td>
+
+<td class="code">RAW MLSLABEL</td>
+
+<td class="code">该任务可信任的Oracle最小间隙</td>
+
+</tr>
+
+<tr>
+
+<td class="code">NLS_ENV</td>
+
+<td class="code">VARCHAR2(2000)</td>
+
+<td class="code">任务运行的NLS会话设置</td>
+
+</tr>
+
+<tr>
+
+<td class="code">MISC_ENV</td>
+
+<td class="code">RAW(32)</td>
+
+<td class="code">任务运行的其他一些会话参数</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<p class="content">表 5. 视图DBA_JOBS_RUNNING的字段含义</p>
+
+<br/>
+<table style="border-collapse: collapse;" border="1" cellspacing="0" cellpadding="2" width="80%" align="center" bordercolor="#111111">
+
+<tbody>
+
+<tr>
+
+<td class="code" bgcolor="#999999"><span style="color: #800000;"><br/>
+<strong>列</strong><br/>
+</span></td>
+
+<td class="code" bgcolor="#999999"><span style="color: #800000;"><br/>
+<strong>数据类型</strong><br/>
+</span></td>
+
+<td class="code" valign="top" bgcolor="#999999"><span style="color: #800000;"><br/>
+<strong>描述</strong><br/>
+</span></td>
+
+</tr>
+
+<tr>
+
+<td class="code">SID</td>
+
+<td class="code">NUMBER</td>
+
+<td class="code" valign="top">目前正在运行任务的会话ID</td>
+
+</tr>
+
+<tr>
+
+<td class="code">JOB</td>
+
+<td class="code">NUMBER</td>
+
+<td class="code" valign="top">任务的唯一标示符</td>
+
+</tr>
+
+<tr>
+
+<td class="code">FAILURES</td>
+
+<td class="code">NUMBER</td>
+
+<td class="code" valign="top">连续不成功执行的累计次数</td>
+
+</tr>
+
+<tr>
+
+<td class="code">LAST_DATE</td>
+
+<td class="code">DATE</td>
+
+<td class="code" valign="top">最后一次成功执行的日期</td>
+
+</tr>
+
+<tr>
+
+<td class="code">LAST_SEC</td>
+
+<td class="code">VARCHAR2(8)</td>
+
+<td class="code" valign="top">如HH24:MM:SS格式的last_date日期的小时，分钟和秒</td>
+
+</tr>
+
+<tr>
+
+<td class="code">THIS_DATE</td>
+
+<td class="code">DATE</td>
+
+<td class="code" valign="top">目前正在运行任务的开始日期</td>
+
+</tr>
+
+<tr>
+
+<td class="code">THIS_SEC</td>
+
+<td class="code">VARCHAR2(8)</td>
+
+<td class="code" valign="top">如HH24:MM:SS格式的this_date日期的小时，分钟和秒</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<h3><strong>六、任务重复运行间隔和间隔设计算法</strong></h3><br/>
+<p class="content">任务重复运行的时间间隔取决于interval参数中设置的日期表达式。下面就来详细谈谈该如何设置interval参数才能准确满足我们的任务需求。一般来讲，对于一个任务的定时执行，有三种定时要求。</p>
+
+<br/>
+<ol>
+
+	<li>在一个特定的时间间隔后，重复运行该任务。</li>
+
+	<li>在特定的日期和时间运行任务。</li>
+
+	<li>任务成功完成后，下一次执行应该在一个特定的时间间隔之后。</li>
+
+</ol>
+
+<p class="content">第一种调度任务需求的日期算法比较简单，即'SYSDATE+n',这里n是一个以天为单位的时间间隔。表6给出了一些这种时间间隔设置的例子。</p>
+
+<p class="content">表6 一些简单的interval参数设置例子</p>
+
+<br/>
+<table style="border-collapse: collapse;" border="1" cellspacing="0" cellpadding="2" width="80%" align="center" bordercolor="#111111">
+
+<tbody>
+
+<tr>
+
+<td class="code" valign="top" bgcolor="#999999"><strong><br/>
+<span style="color: #800000;">描述</span><br/>
+</strong></td>
+
+<td class="code" valign="top" bgcolor="#999999"><strong><br/>
+<span style="color: #800000;">Interval参数值</span><br/>
+</strong></td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">每天运行一次</td>
+
+<td class="code" valign="top">'SYSDATE + 1'</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">每小时运行一次</td>
+
+<td class="code" valign="top">'SYSDATE + 1/24'</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">每10分钟运行一次</td>
+
+<td class="code" valign="top">'SYSDATE + 10/（60*24）'</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">每30秒运行一次</td>
+
+<td class="code" valign="top">'SYSDATE + 30/(60*24*60)'</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">每隔一星期运行一次</td>
+
+<td class="code" valign="top">'SYSDATE + 7'</td>
+
+</tr>
+
+<tr>
+
+<td class="code" valign="top">不再运行该任务并删除它</td>
+
+<td class="code" valign="top">NULL</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<p class="content">表6所示的任务间隔表达式不能保证任务的下一次运行时间在一个特定的日期或者时间，仅仅能够指定一个任务两次运行之间的时间间隔。例如，如果一个任务第一次运行是在凌晨12点，interval指定为'SYSDATE + 1',则该任务将被计划在第二天的凌晨12点执行。但是，如果某用户在下午4点手工（DBMS_JOB.RUN）执行了该任务，那么该任务将被重新定时到第二天的下午4点。还有一个可能的原因是如果数据库关闭或者说任务队列非常的忙以至于任务不能在计划的那个时间点准时执行。在这种情况下，任务将试图尽快运行，也就是说只要数据库一打开或者是任务队列不忙就开始执行，但是这时，运行时间已经从原来的提交时间漂移到了后来真正的运行时间。这种下一次运行时间的不断“漂移”是采用简单时间间隔表达式的典型特征。</p>
+
+<p class="content">第二种调度任务需求相对于第一种就需要更复杂的时间间隔（interval）表达式，表7是一些要求在特定的时间运行任务的interval设置例子。</p>
+
+<p class="content">表 7. 定时到特定日期或时间的任务例子</p>
+
+<br/>
+<table style="border-collapse: collapse;" border="1" cellspacing="0" cellpadding="2" width="80%" align="center" bordercolor="#111111">
+
+<tbody>
+
+<tr>
+
+<td class="code" bgcolor="#999999"><span style="color: #800000;"><br/>
+<strong>描述</strong><br/>
+</span></td>
+
+<td class="code" valign="top" bgcolor="#999999"><span style="color: #800000;"><br/>
+<strong>INTERVAL参数值</strong><br/>
+</span></td>
+
+</tr>
+
+<tr>
+
+<td class="code">每天午夜12点</td>
+
+<td class="code" valign="top">'TRUNC(SYSDATE + 1)'</td>
+
+</tr>
+
+<tr>
+
+<td class="code">每天早上8点30分</td>
+
+<td class="code" valign="top">'TRUNC(SYSDATE + 1) + （8*60+30）/(24*60)'</td>
+
+</tr>
+
+<tr>
+
+<td class="code">每星期二中午12点</td>
+
+<td class="code" valign="top">'NEXT_DAY(TRUNC(SYSDATE ), ''TUESDAY'' ) + 12/24'</td>
+
+</tr>
+
+<tr>
+
+<td class="code">每个月第一天的午夜12点</td>
+
+<td class="code" valign="top">'TRUNC(LAST_DAY(SYSDATE ) + 1)'</td>
+
+</tr>
+
+<tr>
+
+<td class="code">每个季度最后一天的晚上11点</td>
+
+<td class="code" valign="top">'TRUNC(ADD_MONTHS(SYSDATE + 2/24, 3 ), 'Q' ) -1/24'</td>
+
+</tr>
+
+<tr>
+
+<td class="code">每星期六和日早上6点10分</td>
+
+<td class="code" valign="top">'TRUNC(LEAST(NEXT_DAY(SYSDATE, ''SATURDAY"), NEXT_DAY(SYSDATE, "SUNDAY"))) + （6×60+10）/（24×60）'</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<p class="content">第三种调度任务需求无论通过怎样设置interval日期表达式也不能满足要求。这时因为一个任务的下一次运行时间在任务开始时才计算，而在此时是不知道任务在何时结束的。遇到这种情况怎么办呢？当然办法肯定是有的，我们可以通过为任务队列写过程的办法来实现。这里我只是简单介绍以下，可以在前一个任务队列执行的过程中，取得任务完成的系统时间，然后加上指定的时间间隔，拿这个时间来控制下一个要执行的任务。这里有一个前提条件，就是目前运行的任务本身必须要严格遵守自己的时间计划。</p>
+
+<br/>
+<h3>结论</h3><br/>
+<p class="content">Oracle中的定时任务是在Oracle系统中是一个非常重要的子系统，运用得当，可以极大的提高我们的系统运行和维护能力。而Oracle数据复制的延迟事务队列管理完全是基于Oracle的队列任务，对其的深刻理解有助于我们更好地管理数据复制。</p>
+
+原文地址：<a href="http://blog.csdn.net/li_guang/archive/2008/06/04/2510846.aspx">http://blog.csdn.net/li_guang/archive/2008/06/04/2510846.aspx</a><br/>
+<br/>
+<hr /><br/>
+可以在控制台杀除相应的 snp 调度 Job 的进程<br/>
+<br/>
+<a href="mailto:root@erp">root@erp</a> # ps -ef|grep snp<br/>
+  ora805  3745     1  6 10:51:52 ?        9:17 ora_snp1_PROD<br/>
+  ora805  3749     1  4 10:51:52 ?        3:23 ora_snp3_PROD<br/>
+  ora805  3751     1  6 10:51:52 ?        6:52 ora_snp4_PROD<br/>
+  ora805  3747     1  6 10:51:52 ?        8:58 ora_snp2_PROD<br/>
+  ora805  3770     1  4 10:52:56 ?        4:36 ora_snp0_PROD<br/>
+<br/>
+<a href="mailto:root@erp">root@erp</a> # kill -9 3745 3749<br/>
+<br/>
+杀了某些 job_queue_process 后 Oracle 又会自动启动相应数据的 snp 进程。<br/>
+<br/>
+sqlplus 中可用 select * from dba_jobs_running 显示正在执行的 Job，记录数一般就是 job_queue_processes 参数的数量。<br/>
+<br/>
+show parameter job_queue_processes 显示进程数<br/>
+alter system set job_queue_processes=10 [scope=memory|scope=spfile|scope=both] 来设置调度 job 的进程数。

@@ -1,0 +1,62 @@
+---
+title: Hibernate 的 formula 简单用法
+url: /hibernate-formula-simple/
+date: 2011-02-23T07:26:51-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Hibernate
+tags: 
+  - Hibernate
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3224 
+wpStatus: publish
+views: 2165
+lastmod: 2021-09-03T13:10:06-05:00
+---
+
+Hibernate 3 之后，formula(公式，Excel 里常见的) 得到了更广泛的应用，不过这里还是简单记录一下它在 &lt;property&gt; 中的应用。</p>
+<br/>
+假如我们要映射这么一个类：<br/><br/>
+package cc.unmi.model;<br/><br/>
+public class User {<br />
+    private int id;<br />
+    private String name;<br />
+    Private Set&lt;Order&gt; orders = new HashSet&lt;Order&gt;();<br/><br/>
+    //setter &amp; getter ......<br />
+}<!--more--><br/><br/>
+User 与 Order 建立了一对多的关联，那么它在 hbm 映射文件的写法大概就是：<br/><br/>
+<pre class="lang:default decode:true">&lt;property name="name" type="string" column="name"&gt;
+&lt;set name="orders"&gt;
+    &lt;key column="user_id"/&gt;
+    &lt;one-to-many/&gt;
+&lt;/set&gt;</pre>
+<br/>
+没错，这两个对象进行的关联，通过 user.getOrders() 可以取得与此用户关联的所有 order，user.getOrders().size() 得到订单数量。<br/><br/>
+不过有时候，我们并不关心 User 有哪些 Oder 对象，或者太多，或是待下次请求再具体查询。而是在查询 User 时只想要只道订单的数量，也是这样一个 User 对象：<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.model;<br/><br/>
+public class User {
+    private int id;
+    private String name;
+    Private int orderNumber;<br/><br/>
+    //setter &amp; getter ......
+}</pre>
+<br/>
+显然，orderNumber 属性在数据库表中没有相应的字段对应，如果是在 SQL 中我们可以用 count(*) ... group by id 来关联查询，其实在 hbm 映射文件中还更简单，那就是要用到 formula 了，参考配置如下：<br/><br/>
+<pre class="lang:default decode:true ">&lt;property name="orderCount" type="int"&gt;
+    &lt;formula&gt;(select count(s.id) from order s where s.user_id=id)&lt;/formula&gt;
+&lt;/property&gt;</pre>
+<br/>
+formula 也可以作为 property 的属性的。注意有几点，这里的 (select <span style="color: #ff0000;">count(s.id)</span> from <span style="color: #ff0000;">order s</span> where <span style="color: #ff0000;">s.user_id</span>=<span style="color: #0000ff;">id</span>)<br/><br/>
+1. 这是一个 sql 和 hql 的混合体<br />
+2. 红色部分为 sql 的范畴，所以要对应于数据库的表或字段<br />
+3. 蓝色的 id 出自于 hql，即当前 User bean 的 id 属性<br />
+4. 不要忘记了两边的括号哦, 因为它会作为 select * from <span style="color: #ff0000;"><strong>HERE</strong></span> 的子查询的。<br/><br/>
+让它出错，出错了看输出信息会是好事。也不定总要 select 开头，比如像 (concat(first_name, last_name)) 也是可以的。<br/><br/>
+参考：1. <a href="http://blog.csdn.net/tolys/archive/2007/12/18/1946147.aspx">Hibernate 3中的formula<br />
+</a>        2. <a href="http://joezheng123.javaeye.com/blog/752920" target="_blank" rel="noopener">hibernate的formula的初级使用</a>

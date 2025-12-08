@@ -1,0 +1,78 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第九章. 使用 Quartz 的远程方式 (第一部分)
+url: /quartz-job-scheduling-framework-9-1/
+date: 2007-11-21T10:20:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/10/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 470 
+wpStatus: publish
+views: 500
+lastmod: 2019-11-30T10:21:28-06:00
+---
+
+<strong>第九章. 使用 Quartz 的远程方式</strong></p>
+<br/>
+以独立方式运行的 Quartz 应用程序，仅限于在 JVM 内部访问调度器。和其他任何 J2SE 程序一样，不使用其他某种机制的话，是决不允许从外部访问 JVM 中的对象的。<br/><br/>
+幸运的是，有几种技术(机制) 可让你做到这一点。Quartz 框架很好的支持其中一种机制－－远程方法调用(RMI)。本章就是关注于如何部署 Quartz 为一个 RMI 服务，以便于你能够从  JVM 外部访问到调度器。这样做有几个好处，这也是我们本章要讨论内容。<!--more--><br/><br/>
+<strong>1. 为什么要把 RMI 和 Quartz 相结合<br />
+</strong><br />
+想像一下，你需要构建一个这样的作业调度器，它要应多个客户端请求进行动态 Job 部署。在这个案例中，一个单一的、自包容的 Quartz 调度器是没法做到的，因为这些客户端程序在自己所在的地址空间或者说 JVM 中需要以一种方式与调度器交谈。<br/><br/>
+借助于 RMI，运行在一个地址空间(或JVM) 的对象可自由的调用另一 JVM 中的对象。这也扩充了 Quartz 这一工具集，使这一框架更有利。<br/><br/>
+<strong>2. Java RMI 概览<br />
+</strong><br />
+假如 RMI 对你来说还是个新鲜玩艺，那么在进一步具体理解 Quartz 中使用 RMI 之前值得对它作个大概的了解。如果你完全适应了RMI，特别是能灵活运用它了，可以跳过这一节。<br/><br/>
+RMI 是一种允行在一个地址空间的对象与别一地址空间的对象进行通行的机制。这两个地址空间可能存在于同一机器上或者根本就在不同的机器上。一般而言，你可以认为 RMI 是一种面向对象的远程过程调用(RPC) 机制。<br/><br/>
+RMI 并不是特定于 Java 东西，但是 Java 有自己的实现：Java RMI，这是作为 Sun(<a href="http://java.sun.com/products/jdk/rmi">http://java.sun.com/products/jdk/rmi</a>) Java SDK 的一部份发布并提供支持的。Java RMI 允许运行在一个 JVM 中的对象与运行在另一 JVM 中的对象通信或调用其方法。这两个 JVM 可运行在同一机器，或者更有意义的就是让它们分布在不同的机器上。它们甚至是在不同的平台之上的。例如，一个 JVM 运行在 Windows 平台，而另一个在 Linux 上。使用 RMI 的话，这些都不在乎。图 9.1 描绘了这个场景。<br/><br/>
+<div><strong>图9.1. Java RMI 允许开发者创建分布式应用</strong>RMI 是基于职责分离原则的。接口定义与实现分离。这很好的符合了 RMI 的目标：允许一个主要关注于接口定义的客户端与实现了接口定义的服务端分离(可能是物理上的)。换句话就是，客户端有一个接口，通过接口可以调用到服务，然而服务的实现是驻留在另一台机器上的。图9.2 描绘了这种 Java 编程语言的分离实现。</div>
+<br/>
+<div> </div>
+<br/>
+<div>
+<div style="text-align: center;"><strong>图 9.2 Java 支持的服务接口定义与实现的分离</strong></div>
+<div>
+<div><img class=" aligncenter" src="http://unmi.cc/wp-content/uploads/2007/11/QuartzFigure9.2.JPG" alt="QuartzFigure9.2.JPG" width="299" height="282" border="0" /></div>
+当 RMI 客户端调用一个对象上的方法时，它实际上调用的是客户端 JVM 的一个代理对象的方法。这个代理对象知道如何与服务器上的对象进行通信。所有的通信，包括数值传递给服务器对像和返回都是经由代理对象进行的。这一过程请看图 9.3。
+<div style="text-align: center;"><strong>图 9.3. 所有的从客户端到服务端的通信都要走代理对象</strong></div>
+<img class=" aligncenter" src="http://unmi.cc/wp-content/uploads/2007/11/QuartzFigure9.3.JPG" alt="QuartzFigure9.3.JPG" width="406" height="220" border="0" />
+<strong><br />
+·Java RMI 应用的组成<br />
+</strong><br />
+每一人 Java RMI 应用都包括以下三部分
+    ·RMI 服务程序
+    ·RMI 客户程序
+    ·RMI 对象注册表
+<strong>·RMI 服务器</strong>
+RMI 服务器的责任是创建服务对象(客户端要调用其上的方法) 并使之对于远程客户端来说是可见的。RMI 服务器跑在一个标准的 JVM 中。这些服务对象也是标准的 Java 对象，不仅提供远程调用，也能在本地调用。
+<strong>·RMI 客户端</strong>
+RMI 客户端是一个跑在(典型的) 不同于服务器的JVM 中的Java 程序；它可以是与 RMI 服务端同在一台机器，或者是分布在不同的机器上。客户端程序通过从 RMI 注册表中查找获取到服务对象的引用。
+<strong>·RMI 对象注册表</strong>
+RMI 客户端和服务器都要用到 RMI  对象注册表。当服务端想要使一个对象对远程客户端可用时，它就要把这个对象(连同一个唯一名称) 注册到注册表上。服务对象注册之后，RMI客户端和在这个对象上调用的方法就能被找到了。
+<strong>3. RMI 必须具备的<br />
+</strong><br />
+RMI 是 Java 库很好的特性。一个 JVM 中对象的方法能够被世界另一个角落的机器上的 JVM 来调用的能力确实很强大。但是要让 RMI 工作起来，有几件事情必须统筹起来。Java 是一个动态编程语言。它支持(运行时) 下载未在 JVM 的类路径上定义的新的类文件。灵活性的同时也带来了危险性。你可以想象一个糟糕的情形就是假如你的程序会下载别人写的类，而你却不知道他会在这个类中作些什么。
+<strong>·使用 <span style="color: #800080;">RMISecurityManager</span></strong>
+使用 RMI 时，不存在客户端的代码可从服务器程序中动态下载。默认的，RMI 应用是不安装安全管理器(<span style="color: #800080;">SecurityManager</span>) 的。假如一个没有任何防范的客户端下载到了恶意的代码那会是很危险的。为保障应用的安全性，RMI 服务程序必须安装一个特定的安全管理器(<span style="color: #800080;">SecurityManger</span>) 叫做 <span style="color: #800080;">RMISecurityManager</span>。
+<span style="color: #800080;">RMISecurityManager</span> 运用了 Java 安全策略文件来决定什么权限应赋予 RMI 应用。默认的，Java 查找 <span style="color: #800080;">JAVA.HOME/lib/security</span> 目录下的策略文件。一个策略文件的配置条目示例如下：
+<span style="color: #800080;">grant {<br />
+  permission java.security.AllPermission;<br />
+};<br />
+</span><br />
+上面这个策略文件配置条目给予了程序完全的访问权限。你可以用上面的设置让程序先工作起来，而后再紧缩你的安全策略。
+[译者注] 图9.2 中的“框架”是单词 “Skeleton” 的翻译，不是很贴切，但比较通用的译法就是这样子的。“桩”是 “Stub” 的翻译。RMIRegistry 这里译作 RMI 注册表，后面又为 RMI 注册服务，感觉后者要贴切一些。
+本章内容对于理解 RMI 也是不错的。
+</div>
+</div>
+<br/>
+<img class=" aligncenter" src="http://unmi.cc/wp-content/uploads/2007/11/QuartzFigure9.1.JPG" alt="QuartzFigure9.1.JPG" width="383" height="257" border="0" />

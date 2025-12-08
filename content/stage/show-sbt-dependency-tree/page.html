@@ -1,0 +1,179 @@
+---
+title: 查看  sbt 项目的依赖关系树
+url: /show-sbt-dependency-tree/
+date: 2016-04-05T00:40:42-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - Scala
+  - sbt
+  - play2
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7176 
+wpStatus: publish
+views: 3764
+lastmod: 2023-12-13T00:06:24-06:00
+---
+
+sbt 是借助于 ivy 来管理项目依赖, 像 Maven 项目中可以用 <code>dependency:tree</code> 来显示依赖树, 那么对于 sbt 项目该如何查看项目依赖关系呢? 本文提及了三种方式来显示项目依赖, 它们是 Shell 脚本, 自定义 sbt 任务, 和 sbt-dependency-plugin 方式. 最后一个办法使得我们也能用 dependencyTree 显示出 Maven 的  dependency:tree 效果来, 还有更酷的的.</p>
+<br/>
+<blockquote>
+&gt; dependencyTree<br />
+[info] default:test_2.10:0.1-SNAPSHOT [S]<br />
+[info]   +-ch.qos.logback:logback-classic:1.0.13<br />
+[info]     +-ch.qos.logback:logback-core:1.0.13<br />
+[info]     +-org.slf4j:slf4j-api:1.7.5<br />
+[info]<br />
+[success] Total time: 0 s, completed Apr 5, 2016 12:29:53 AM
+</blockquote>
+<br/>
+下面是探索的全部过程.<br/><br/>
+通过 sbt 控制台的 tab  自动完成或用 <code>help .*[Dd]ependenc.*</code> 命令再进一步过滤出与依赖比较接近 sbt 控制台任务<!--more--><br/><br/>
+<blockquote>
+<strong>dependencyClasspath  The classpath consisting of internal and external, managed and unmanaged dependencies.<br />
+externalDependencyClasspath  The classpath consisting of library dependencies, both managed and unmanaged.<br />
+internalDependencyClasspath  The internal (inter-project) classpath.</strong><br />
+projectDependencies  Inter-project dependencies.<br />
+excludeDependencies  Declares managed dependency exclusions.<br />
+dependencyCacheDirectory  The base directory for cached dependencies.<br />
+allDependencies  Inter-project and library dependencies.<br />
+libraryDependencies  Declares managed dependencies.<br />
+dependencyOverrides  Declares managed dependency overrides.<br />
+trackInternalDependencies  The level of tracking for the internal (inter-project) dependency.<br />
+dependencyPositions  Source positions where the dependencies are defined.
+</blockquote>
+<br/>
+来深入, 我们建立一个简单的项目, 文件目录如下<br/><br/>
+<blockquote>
+test<br />
+├── build.sbt<br />
+└── lib<br />
+    └── guava-18.0.jar
+</blockquote>
+<br/>
+build.sbt 文件的内容是<br/><br/>
+<blockquote>
+libraryDependencies ++= Seq(<br />
+  "ch.qos.logback" % "logback-classic" % "1.0.13"<br />
+)
+</blockquote>
+<br/>
+我们来看看 sbt 的  dependencyClasspath, externalDependencyClasspath, 和 internalDependencyClasspath 的输出<br/><br/>
+<pre class="lang:default decode:true">&gt; show dependencyClasspath
+[info] List(Attributed(/Users/yanbin/test/lib/guava-18.0.jar), Attributed(/Users/yanbin/.sbt/boot/scala-2.10.6/lib/scala-library.jar), Attributed(/Users/yanbin/.ivy2/cache/ch.qos.logback/logback-classic/jars/logback-classic-1.0.13.jar), Attributed(/Users/yanbin/.ivy2/cache/ch.qos.logback/logback-core/jars/logback-core-1.0.13.jar), Attributed(/Users/yanbin/.ivy2/cache/org.slf4j/slf4j-api/jars/slf4j-api-1.7.5.jar))
+[success] Total time: 0 s, completed Apr 4, 2016 11:54:57 PM
+> show externalDependencyClasspath
+[info] List(Attributed(/Users/yanbin/test/lib/guava-18.0.jar), Attributed(/Users/yanbin/.sbt/boot/scala-2.10.6/lib/scala-library.jar), Attributed(/Users/yanbin/.ivy2/cache/ch.qos.logback/logback-classic/jars/logback-classic-1.0.13.jar), Attributed(/Users/yanbin/.ivy2/cache/ch.qos.logback/logback-core/jars/logback-core-1.0.13.jar), Attributed(/Users/yanbin/.ivy2/cache/org.slf4j/slf4j-api/jars/slf4j-api-1.7.5.jar))
+[success] Total time: 0 s, completed Apr 4, 2016 11:55:03 PM
+> show internalDependencyClasspath
+[info] List()
+[success] Total time: 0 s, completed Apr 4, 2016 11:55:10 PM</pre>
+<br/>
+这里我们没有定义子项目, 所以 internalDependencyClasspath 为空, dependencyClasspath 和  externalDependencyClasspath 是一样的.<br/><br/>
+一般来说我们关心的是 externalDependencyClasspath 的内容, 上面显示的是 List[Attribute[String]] 类型的内容, 为了可读性, 可以用 Shell 脚本或自定义 sbt 任务来格式化显示它.<br/><br/>
+<span style="color: #0000ff;"><strong>Shell 脚本显示</strong></span>, 在项目目录下创建 dependencies.sh, 内容如下:<br/><br/>
+<pre class="lang:default decode:true ">#!/bin/bash<br/><br/>
+echo "Direct dependencies"
+sbt 'show all-dependencies' | gawk 'match($0, /List\((.*)\)/, a) {print a[1]}' | tr -d ' ' | tr ',' '\n' | sort -t ':' | \
+  tr ':' '\t' | expand -t 30<br/><br/>
+echo -e "\nAll dependencies, including transitive dependencies"
+sbt 'show managed-classpath' | tr -d ' ' | tr ',' '\n' | gawk 'match($0, /Attributed\((.*)\)/, a) {print a[1]}' | \
+  tr -d '()' | sed "s^$HOME/.ivy2/cache/^^g" | sed "s^/jars^^" | \
+  gawk -F / '{print $1, $3}' | sort | tr ' ' '\t' | expand -t 30
+</pre>
+<br/>
+Mac 下虽安装 gawk, 可用命令  brew install gawk 安装, 并用 chmod +x dependencies.sh 加上可执行属性, 完整命令如下:<br/><br/>
+<pre class="brush:bash">brew install gawk
+chmod +x dependencies.sh
+./dependencies.sh</pre>
+<br/>
+显示结果大致如下:<br/><br/>
+<pre class="lang:default decode:true">Direct dependencies
+ch.qos.logback                logback-classic               1.0.13
+optional(default)
+optional(default)
+org.scala-lang                scala-compiler                2.10.6                        scala-tool-&gt;default
+org.scala-lang                scala-library                 2.10.6
+org.scala-lang                scala-library                 2.10.6                        scala-tool-&gt;default<br/><br/>
+All dependencies, including transitive dependencies
+                              yanbin
+ch.qos.logback                logback-classic-1.0.13.jar
+ch.qos.logback                logback-core-1.0.13.jar
+org.slf4j                     slf4j-api-1.7.5.jar
+</pre>
+<br/>
+<span style="color: #0000ff;"><strong>自定义 sbt 任务</strong></span>, 在 build.sbt 中加入如下内容:<br/><br/>
+<pre class="lang:default decode:true ">lazy val versionReport = TaskKey[String]("version-report")<br/><br/>
+// Add this setting to your project.
+versionReport &lt;&lt;= (externalDependencyClasspath in Compile, streams) map {
+   (cp: Seq[Attributed[File]], streams) =&gt;
+     val report = cp.map {
+       attributed =&gt;
+         attributed.get(Keys.moduleID.key) match {
+           case Some(moduleId) =&gt; "%40s %20s %10s %10s".format(
+             moduleId.organization,
+             moduleId.name,
+             moduleId.revision,
+             moduleId.configurations.getOrElse("")
+           )
+           case None           =&gt;
+             // unmanaged JAR, just
+             attributed.data.getAbsolutePath
+         }
+     }.mkString("\n")
+     streams.log.info(report)
+     report
+  }
+</pre>
+<br/>
+重新运行 sbt 或 reload 之后执行 versionReport 任务, 输出如下:<br/><br/>
+<pre class="lang:default decode:true">&gt; versionReport
+[info] /Users/yanbin/test/lib/guava-18.0.jar
+[info]                           org.scala-lang        scala-library     2.10.6
+[info]                           ch.qos.logback      logback-classic     1.0.13
+[info]                           ch.qos.logback         logback-core     1.0.13
+[info]                                org.slf4j            slf4j-api      1.7.5
+</pre>
+<br/>
+这能让我们看到所有的依赖, 但并未显示成树状关系图, 还没有达到本文标题所称的目标, 所以终极办法也是最简单的办法就是不重新发明轮子, 使用现有的插件 <a href="https://github.com/jrudolph/sbt-dependency-graph">https://github.com/jrudolph/sbt-dependency-graph</a>.<br/><br/>
+<span style="color: #0000ff;"><strong>sbt 插件显示依赖树</strong></span><br/><br/>
+可以在 ~/.sbt/0.13/plugins/plugins.sbt 或项目中新建 project/plugins.sbt 中加入行<br/><br/>
+<pre class="brush:scala">addSbtPlugin("net.virtual-void" % "sbt-dependency-graph" % "0.8.2")</pre>
+<br/>
+这时在 sbt 的控制台下就增加了好多任务,<br/><br/>
+<pre class="lang:default decode:true">dependencyTree: Shows an ASCII tree representation of the project's dependencies
+dependencyBrowseGraph: Opens a browser window with a visualization of the dependency graph (courtesy of graphlib-dot + dagre-d3).
+dependencyGraph: Shows an ASCII graph of the project's dependencies on the sbt console
+dependencyList: Shows a flat list of all transitive dependencies on the sbt console (sorted by organization and name)
+whatDependsOn &lt;organization&gt; &lt;module&gt; &lt;revision&gt;: Find out what depends on an artifact. Shows a reverse dependency tree for the selected module.
+dependencyLicenseInfo: show dependencies grouped by declared license
+dependencyStats: Shows a table with each module a row with (transitive) Jar sizes and number of dependencies
+dependencyGraphMl: Generates a .graphml file with the project's dependencies to target/dependencies-&lt;config&gt;.graphml. Use e.g. yEd to format the graph to your needs.
+dependencyDot: Generates a .dot file with the project's dependencies to target/dependencies-&lt;config&gt;.dot. Use graphviz to render it to your preferred graphic format.
+ivyReport: let's ivy generate the resolution report for you project. Use show ivyReport for the filename of the generated report</pre>
+<br/>
+我比较感兴趣的是 dependencyTree(显示像  Maven 的  dependency:tree 那样) 和 dependencyBrowseGraph(打开浏览器显示一个依赖关系图)<br/><br/>
+<pre class="lang:default decode:true">&gt; dependencyTree
+[info] default:test_2.10:0.1-SNAPSHOT [S]
+[info]   +-ch.qos.logback:logback-classic:1.0.13
+[info]     +-ch.qos.logback:logback-core:1.0.13
+[info]     +-org.slf4j:slf4j-api:1.7.5
+[info]
+[success] Total time: 0 s, completed Apr 5, 2016 12:29:53 AM
+</pre>
+<br/>
+或者执行 dependencyBrowseGraph 后打开一个浏览器<br/><br/>
+<img class="aligncenter wp-image-7178" src="/wp-content/uploads/2016/04/dependencyBroweGraph-800x367.png" alt="dependencyBroweGraph" width="700" height="321" /><br/><br/>
+还有 dependencyGraph 任务输出为文本图形, dependencyDot 能生成 dot 文件, 等等.<br/><br/>
+用 sbt-dependency-graph 插件的办法是最强大也是最简单, 而且如果在 ~/.sbt/0.13/plugins/plugins.sbt 加载该插件更可谓是一劳永逸的做法.<br/><br/>
+参考: 1. <a href="https://groups.google.com/forum/#!topic/simple-build-tool/rcPh-lWbDtk">https://groups.google.com/forum/#!topic/simple-build-tool/rcPh-lWbDtk</a><br />
+        2. <a href="https://github.com/jrudolph/sbt-dependency-graph">https://github.com/jrudolph/sbt-dependency-graph</a><br />
+        3. <a href="http://mikeslinn.blogspot.com/2012/07/bash-script-to-update-all-git.html">http://mikeslinn.blogspot.com/2012/07/bash-script-to-update-all-git.html</a><br/><br/>
+&nbsp;

@@ -1,0 +1,192 @@
+---
+title: 使用 XStream 在 JavaBean 与 XML/JSON 之间相互转换
+url: /xstream-javabean-xml-json/
+date: 2009-08-11T08:18:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - XStream
+  - xml
+  - json
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 239 
+wpStatus: publish
+views: 1186
+lastmod: 2021-09-02T11:24:08-05:00
+---
+
+XML 和 JSON 是当今常用的两种数据描述与传输的格式，特别是涉及到 JS 时使用 JSON 颇为频繁。自然，在 Java  的世界里少不了完成 JavaBean 与这两种格式相互转换的组件，那就是 XStream 和 JSON-lib。这里我简单记下 XStream  的用法。</p>
+<br/>
+其实相类似的工具早已有之。如果用过 DWR 的同志，一定有印像，DWR 进行远程方法调用时也能为你完成 JavaBean 和 JSON 格式的双向转换的，所依赖的是它的各种 Converter。再要是对 Struts1 的细节有所注意的话，Struts1 的 ActionServlet 在初始化 struts-config.xml 时是通过 <a href="http://commons.apache.org/digester/" target="_blank" rel="noopener">commons-digester</a> 来完成 XML 到 JavaBean 转换的。相应的 Apache 也有一个 <a href="http://commons.apache.org/betwixt/" target="_blank" rel="noopener">commons-betwixt</a> 实现了 JavaBean 到 XML 的生成。<!--more--><br/><br/>
+而我这里要说的 XStream(<a href="http://xstream.codehaus.org">http://xstream.codehaus.org</a>) 把 JavaBean 与 XML/JSON 间的双向转换统统实现了，而 JSON-lib 则如其名，功能太显简陋了。要使用 XStream，需下载到 <a href="http://repository.codehaus.org/com/thoughtworks/xstream/xstream-distribution/1.3.1/xstream-distribution-1.3.1-bin.zip" target="_blank" rel="noopener">xstream</a>包，当前版本是 1.3.1。然后把 xstream-1.x.x.jar 添加到项目的 Classpath 上，可不依赖于其他包。在某些有要求时候才需要用到 lib 目录中的其他包，下面会提到。<br/><br/>
+简单说明 XStream 的使用吧，分为 JavaBean -&gt; XML、JavaBean -&gt; JSON、 XML -&gt; JavaBean、JSON -&gt; JavaBean 几部分内容。在开始例子之前，先定义三个类(都在 com.unmi.model 包中)：<br/><br/>
+<pre class="lang:default decode:true">public class Customer {
+    private int custId;
+    private String custName;
+    private List&lt;Order&gt; orders;
+    //setter/getter 和构造方法略
+}<br/><br/>
+public class Order {
+    private int orderId;
+    private String orderName;
+    private Product[] products;
+    //setter/getter 和构造方法略
+}<br/><br/>
+public class Product {
+    private int prodId;
+    private String prodName;
+    private double prodPrice;
+    //setter/getter 和构造方法略
+}</pre>
+<br/>
+Customer/Order/Product，它们之间的关系，依次是一对多、一对多的，为演示目的，分别用了 List 和数组作为聚合属性。<br/><br/>
+<strong>1. JavaBean -&gt; XML<br />
+</strong><br/><br/>
+<pre class="lang:default decode:true">public static void main(String[] args) {<br/><br/>
+    //构造接近实际的 Customer 对象
+    Product p1 = new Product(1001,"电脑",4000);
+    Product p2 = new Product(1002,"空调",2000);
+    Product[] prods1 = new Product[]{p1,p2};<br/><br/>
+    Order order1 = new Order(101,"电器类",prods1);<br/><br/>
+    List&lt;Order&gt; orders = new ArrayList&lt;Order&gt;();
+    orders.add(order1);
+    Customer customer = new Customer(1,"Unmi",orders);<br/><br/>
+    //XStream xstream = new XStream();
+    XStream xstream = new XStream(new DomDriver());<br/><br/>
+    String xml = xstream.toXML(customer);//转换成 xml 格式<br/><br/>
+    System.out.println(xml); //输出 xml 字符串
+}</pre>
+<br/>
+代码说明：XStream 对象的构造，可无参，或传入某一 DomDriver 实例，如 XppDomDriver、JDomDriver、Dom4JDriver，它们的用途我想不必多说，注意要引入相应的 jar 包，无参或 DomDriver 则是用 JDK 默认的解析 XML 的实现。<br/><br/>
+toXML() 还有两个重载方法，分别是：toXML(Object obj, OutputStream out) 和  toXML(Object obj, Writer out)，可用于自定义输出目的地。<br/><br/>
+来看看上面程序的输出：<br/><br/>
+<pre class="lang:default decode:true">&lt;com.unmi.model.Customer&gt;
+  &lt;custId&gt;1&lt;/custId&gt;
+  &lt;custName&gt;Unmi&lt;/custName&gt;
+  &lt;orders&gt;
+    &lt;com.unmi.model.Order&gt;
+      &lt;orderId&gt;101&lt;/orderId&gt;
+      &lt;orderName&gt;电器类&lt;/orderName&gt;
+      &lt;products&gt;
+        &lt;com.unmi.model.Product&gt;
+          &lt;prodId&gt;1001&lt;/prodId&gt;
+          &lt;prodName&gt;电脑&lt;/prodName&gt;
+          &lt;prodPrice&gt;4000.0&lt;/prodPrice&gt;
+        &lt;/com.unmi.model.Product&gt;
+        &lt;com.unmi.model.Product&gt;
+          &lt;prodId&gt;1002&lt;/prodId&gt;
+          &lt;prodName&gt;空调&lt;/prodName&gt;
+          &lt;prodPrice&gt;2000.0&lt;/prodPrice&gt;
+        &lt;/com.unmi.model.Product&gt;
+      &lt;/products&gt;
+    &lt;/com.unmi.model.Order&gt;
+  &lt;/orders&gt;
+&lt;/com.unmi.model.Customer&gt;</pre>
+<br/>
+应该发现了，节点名用了类的全限名，有些难看，不过我们可以用别名来解决，只要在 toXML() 之前加上三行代码：<br/><br/>
+<pre class="brush:java">xstream.alias("customer", Customer.class);
+xstream.alias("order", Order.class);
+xstream.alias("product", Product.class);</pre>
+<br/>
+执行，再来看看生成的 XML 内容，漂亮多了吧：<br/><br/>
+<pre class="lang:default decode:true">&lt;customer&gt;
+  &lt;custId&gt;1&lt;/custId&gt;
+  &lt;custName&gt;Unmi&lt;/custName&gt;
+  &lt;orders&gt;
+    &lt;order&gt;
+      &lt;orderId&gt;101&lt;/orderId&gt;
+      &lt;orderName&gt;电器类&lt;/orderName&gt;
+      &lt;products&gt;
+        &lt;product&gt;
+          &lt;prodId&gt;1001&lt;/prodId&gt;
+          &lt;prodName&gt;电脑&lt;/prodName&gt;
+          &lt;prodPrice&gt;4000.0&lt;/prodPrice&gt;
+        &lt;/product&gt;
+        &lt;product&gt;
+          &lt;prodId&gt;1002&lt;/prodId&gt;
+          &lt;prodName&gt;空调&lt;/prodName&gt;
+          &lt;prodPrice&gt;2000.0&lt;/prodPrice&gt;
+        &lt;/product&gt;
+      &lt;/products&gt;
+    &lt;/order&gt;
+  &lt;/orders&gt;
+&lt;/customer&gt;</pre>
+<br/>
+<strong>2. JavaBean - &gt; JSON</strong><br/><br/>
+前面 main() 方法中构造好 Customer 对象后的代码换成如下：<br/><br/>
+<pre class="brush:java">XStream xstream = new XStream(new JsonHierarchicalStreamDriver());
+xstream.alias("customer", Customer.class);
+xstream.alias("order", Order.class);
+xstream.alias("product", Product.class);
+xstream.toXML(customer, new PrintWriter(System.out));</pre>
+<br/>
+代码说明：这里对于 XStream 实例只是构造时换成了 JsonHierarchicalStreamDriver 实例，也可以用 JettisonMappedXmlDriver(需要引入 jettison-1.x.x.jar 包)。别名机制与前面的情况是一样的。仍然用 toXML() 方法，没有 toJSON() 方法，统一了接口方法以，用起来却让人有些费解。<br/><br/>
+看输出：<br/><br/>
+<pre class="brush:js">{"customer": {
+  "custId": 1,
+  "custName": "Unmi",
+  "orders": [
+    {
+      "orderId": 101,
+      "orderName": "电器类",
+      "products": [
+        {
+          "prodId": 1001,
+          "prodName": "电脑",
+          "prodPrice": 4000.0
+        },
+        {
+          "prodId": 1002,
+          "prodName": "空调",
+          "prodPrice": 2000.0
+        }
+      ]
+    }
+  ]
+}}</pre>
+<br/>
+如果使用的是 JettisonMappedXmlDriver，你会看到输出的内容全在一行。<br/><br/>
+前面用于演示 JavaBean 到 XML/JSON 的转换的例子，还稍显复杂，涉及到了 List 和数组类型。其实 XStream 是通过反射来获取属性的，即使是私有的，而不依赖于 getter 方法，这点上比JSON-lib 要强。XStream 使用了像 JDBC Driver 的模式，通过更换 Driver 的方式来达成不同的内部实现。和 DWR/Struts 一样，它也是用 Converter 来做到数据类型的转换。<br/><br/>
+<strong>3. XML -&gt; JavaBean<br />
+</strong><br/><br/>
+<pre class="lang:default decode:true">public static void main(String[] args) {<br/><br/>
+    XStream xstream = new XStream(new DomDriver());<br/><br/>
+    //设置了这个别名才能识别下面 xml 中的 product 节点，否则要用类全限名称
+    xstream.alias("product", Product.class);
+    String xml = "&lt;product&gt;&lt;prodId&gt;1001&lt;/prodId&gt;&lt;prodName&gt;电脑" +
+            "&lt;/prodName&gt;&lt;prodPrice&gt;4000.0&lt;/prodPrice&gt;&lt;/product&gt;";
+    Product prod = (Product)xstream.fromXML(xml);
+    System.out.println(prod.getProdName());
+}</pre>
+<br/>
+执行上面的程序，能够输出产品名称“电脑”来，说明，由 XML 描述创建对象是成功的。相对于生成 XML 用的是 toXML()，通过 XML 构建对象用的方法是 fromXML()，同样要留意它的其他重载方法：<br/><br/>
+Object fromXML(InputStream input);<br />
+Object fromXML(InputStream xml, Object root);<br />
+Object fromXML(Reader xml);<br />
+Object fromXML(Reader xml, Object root);<br />
+Object fromXML(String xml);<br />
+Object fromXML(String xml, Object root);<br/><br/>
+它们能从不同的输入源，可指定根节点来构建对象。<br/><br/>
+<strong>4. JSON -&gt; JavaBean<br />
+</strong><br/><br/>
+<pre class="lang:default decode:true">public static void main(String[] args) {
+    // 这里不能用 JsonHierarchicalStreamDriver 了，它只能用于 JavaBean-&gt;JSON
+    XStream xstream = new XStream(new JettisonMappedXmlDriver());<br/><br/>
+    // 设置了这个别名才能识别下面 xml 中的 product 节点，否则要用类全限名称
+    xstream.alias("product", Product.class);
+    String json = "{product:{prodId: 1001,prodName: '电脑', prodPrice: 4000.0}}";
+    Product prod = (Product) xstream.fromXML(json);
+    System.out.println(prod.getProdName());
+}</pre>
+<br/>
+可以看到也输出了“电脑”，说明工作正常。注意这里只能用 JettisonMappedXmlDriver。<br/><br/>
+相比于 JavaBean 到 XML/JSON 的转换，下面两个例子要简单多了，JavaBean 未涉及到关联关系。复杂的 XStream 也做得到，就看前两个例子，XStream 能够把复杂的 JavaBean 生成 XML/JSON，它也有这个能耐把生成的东西还原回去的。而且 XStream 在由 XML/JSON 生成 JavaBean 时不依赖于 setter 方法和构造方法的。<br/><br/>
+我们在实际中使用 XStream 时应该还会对它进行细究，或作进一步的扩展，如把某个 JavaBean 属性生成 XML 时作为另一属性生成的 XML 节点的属性，而不是子节点；或加入自己的 Converter、甚至是自己的 DomDriver、JsonDriver 等等。

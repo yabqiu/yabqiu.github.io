@@ -1,0 +1,149 @@
+---
+title: Python 的模块搜索路径
+url: /python-module-search-path/
+date: 2018-11-22T03:09:06-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - Python
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9127 
+wpStatus: publish
+views: 1325
+lastmod: 2018-11-22T13:24:58-06:00
+---
+
+<p>一种语言要使用到外部库(模块) 时必然会涉及到从哪里以及按何顺序加载依赖，就像 LD_LIBRARY_PATH, CLASSPATH 那样，Python 也有其默认的模块搜索顺序, 依序找到想要的模块即停止。Python 中 <code>sys.path</code> 返回的列表包含了模块搜索的顺序，我们可以程序中修改该列表，或用 <code>PYTHONPATH</code> 环境变量前插路径，甚至是用  <code>.pth</code> 文件来附加路径。</p>
+
+<p>简单的，可以执行命令 <code>python3 -c "import sys; print(str(sys.path).replace(',', '\n'))"</code> 来查看 python3 交互 shell 下的模块搜索路径，类似结果如下：</p>
+
+<blockquote><br/>
+<p>[''<br /><br/>
+'/usr/lib/python36.zip'<br /><br/>
+'/usr/lib/python3.6'<br /><br/>
+'/usr/lib/python3.6/lib-dynload'<br /><br/>
+'/home/yanbin/.local/lib/python3.6/site-packages'<br /><br/>
+'/usr/local/lib/python3.6/dist-packages'<br /><br/>
+'/usr/lib/python3/dist-packages'<br /><br/>
+'/usr/lib/python3.6/dist-packages']</p>
+
+</blockquote>
+
+<p>注意，第一个元素是个空字符串，代表进入 python3 shell 时的当前目录。</p>
+
+<p>如果在通过一个 py 脚本文件来打印 <code>sys.path</code> 的话显示稍微有所差异。比如在目录 <code>/home/yanbin/Developers/</code> 下创建 <code>test.py</code> 文件，内容为<!--more--></p>
+
+<pre class="lang:default decode:true  ">import sys<br/>
+<br/>
+for line in sys.path:<br/>
+    print(f"'{line}'")<br/>
+<br/>
+</pre>
+
+<p>而我们退到 <code>/home/yanbin</code> 为当前目录来执行 <code>python3 Developers/test.py</code>, 显示出来的搜索路径如下：</p>
+
+<blockquote><br/>
+<p>'/home/yanbin/Developers'<br /><br/>
+'/usr/lib/python36.zip'<br /><br/>
+'/usr/lib/python3.6'<br /><br/>
+'/usr/lib/python3.6/lib-dynload'<br /><br/>
+'/home/yanbin/.local/lib/python3.6/site-packages'<br /><br/>
+'/usr/local/lib/python3.6/dist-packages'<br /><br/>
+'/usr/lib/python3/dist-packages'<br /><br/>
+'/usr/lib/python3.6/dist-packages'</p>
+
+</blockquote>
+
+<p>第一行的路径有所不同了，变成了一个绝对路径，也就是说 <code>test.py</code> 可以从它所在目录上加载模块。比如在  <code>/home/yanbin/Developers</code> 下有 <code>mymath.py</code>, 在 <code>test.py</code> 中能够直接 <code>import mymath</code> 成功。但是把  <code>mymath.py</code> 放到当前目录 <code>/home/yanbin</code> 下就加载不到了。除非用 <code>PYTHONPATH</code> 指定当前目录 <code>.</code>, 后面会讲到。</p>
+
+<p>再次重复一下 Python shell 与执行脚本文件时，模块搜索路径第一个路径显示方式不一样，Python shell 下用空字符串表示进行 shell 时的当前目录，执行脚本时第一个路径是脚本文件所在的目录。Shell 启动时目录或脚本所以在目录总是最高优先级的模块搜索路径。</p>
+
+<p>接下来介绍如何动态修改 <code>sys.path</code> 以及用环境变量 <code>PYTHONPATH</code> 如何影响 <code>sys.path</code> 来增加新的搜索路径。至于用 <code>.pth</code> 文件附加路径的方式后面会另立新篇。</p>
+
+<h3>动态修改 <code>sys.path</code></h3><br/>
+<p><code>sys.path</code> 是一个可变的列表，所以运行时可以随便修改它的内容，比如说想要加载 <code>/home/yanbin/test</code> 下的  mymath 模块，但是它没出现在  <code>sys.path</code> 列表中，我们可以这样做</p>
+
+<pre class="lang:default decode:true">import sys<br/>
+<br/>
+sys.path.append('/home/yanbin/test')<br/>
+import mymath<br/>
+print(mymath.pi)</pre>
+
+<p>这只是一条路子，程序中不应该经常性的这么做，因为 <code>sys.path</code> 是一个全局变量，如果运行时想改就改，最终不知道模块是从哪儿加载过来的。相比，下面的 <code>PYTHONPATH</code> 比较实用些。</p>
+
+<p>理解 Python 的模块路径有助于理解 Python 的依赖管理工具的实现原理，像  <code>easy_install</code>, <code>pip</code>, <code>pipenv</code>, <code>virtualenv</code> 等，它们通过各种途径最终修改最终影响到 <code>sys.path</code> 列表。它们在还会使用 <code>.pth</code> 文件来进一步增强 <code>sys.path</code> 列表。</p>
+
+<h3><code>PYTHONPATH</code> 环境变量向前添加模块搜索路径</h3><br/>
+<p>如果用环境变量 <code>PYTHONPATH</code> 设置了模块搜索路径，它的内容将被向前添加到 <code>sys.path</code> 列表中去，准确来讲是插入到 <code>sys.path</code> 的第一个元素后面。<code>PYTHONPATH</code> 中可以使用绝对路径和相对路径，相对路径是相对于 Shell 启动时的目录或脚本文件所在的目录。</p>
+
+<p>举例来看</p>
+
+<h4>python shell</h4><br/>
+<pre class="lang:default mark:1,9,10 decode:true">$ export PYTHONPATH=/home/yanbin/test:extra_modules<br/>
+$ cd /<br/>
+$ python3<br/>
+&gt;&gt;&gt; import sys<br/>
+&gt;&gt;&gt; for line in sys.path:<br/>
+...     print(f"'{line}'")<br/>
+... <br/>
+''<br/>
+'/home/yanbin/test'<br/>
+'/extra_modules'<br/>
+'/usr/lib/python36.zip'<br/>
+'/usr/lib/python3.6'<br/>
+'/usr/lib/python3.6/lib-dynload'<br/>
+'/home/yanbin/.local/lib/python3.6/site-packages'<br/>
+'/usr/local/lib/python3.6/dist-packages'<br/>
+'/usr/lib/python3/dist-packages'<br/>
+'/usr/lib/python3.6/dist-packages'</pre>
+
+<p>看到相对路径 <code>extra_modules</code> 相对于进入 shell 前的  <code>/</code> 目录，效果上相当于</p>
+
+<pre class="lang:default decode:true">sys.path[1:1] = ['/home/yanbin/test', '/extra_modules']</pre>
+
+<h4>脚本文件的方式</h4><br/>
+<p>这一次我们在 <code>PYTHONPATH</code> 中把当前路径给加上</p>
+
+<pre class="lang:default mark:1-2 decode:true">$ export PYTHONPATH=.:/home/yanbin/test:extra_modules<br/>
+$ cd /home/yanbin<br/>
+$ python3 Developers/test.py</pre>
+
+<p>输出如下</p>
+
+<pre class="lang:default mark:2-4 decode:true">'/home/yanbin/Developers'<br/>
+'/home/yanbin'<br/>
+'/home/yanbin/test'<br/>
+'/home/yanbin/extra_modules'<br/>
+'/usr/lib/python36.zip'<br/>
+'/usr/lib/python3.6'<br/>
+'/usr/lib/python3.6/lib-dynload'<br/>
+'/home/yanbin/.local/lib/python3.6/site-packages'<br/>
+'/usr/local/lib/python3.6/dist-packages'<br/>
+'/usr/lib/python3/dist-packages'<br/>
+'/usr/lib/python3.6/dist-packages'</pre>
+
+<p>第一行为脚本文件所在的目录，<code>/home/yanbin</code> 为 <code>PYTHONPATH</code> 中的  <code>.</code>。这样我们既能够从脚本所在的目录，也可以从当前工作目录中加载模块了，惊喜就是 cd 切换一下目录后代码就可能不工作了。</p>
+
+<p>小结：</p>
+
+<ol>
+
+	<li>sys.path 能列出模块搜索顺序，Python REPL 中第一个路径为空字符串，代表 Shell 启动时的目录，执行脚本文件时第一个路径是脚本文件所在的目录</li>
+
+	<li><code>PYTHONPATH</code> 环境变量可以使用绝对和相对路径。相对路径相对于 Shell 启动时目录或程序脚本文件所在目录</li>
+
+	<li><code>PYTHONPATH</code> 中的所有路径会以 <code>sys.path[1:1] = &lt;paths in PYTHONPATH&gt;</code> 的方式添加到 <code>sys.path</code> 搜索路径列表中</li>
+
+	<li>动态的改动 <code>sys.path</code> 自己应该尽量少用吧，依赖管理工具除外</li>
+
+	<li>可由此理解依赖管理工具，如 <code>easy_install</code>，<code>pip</code>, <code>pipenv</code>, 和 <code>virtualenv</code> 是如何工作的，最终的搜索路径是由 <code>sys.path</code> 决定的。</li>
+
+</ol>

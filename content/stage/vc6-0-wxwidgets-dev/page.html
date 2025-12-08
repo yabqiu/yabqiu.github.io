@@ -1,0 +1,109 @@
+---
+title: VC++6.0 下搭建 wxWidgets 开发环境
+url: /vc6-0-wxwidgets-dev/
+date: 2008-05-02T13:20:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2006/05/cpp-logo.png"
+categories:
+  - C++/VB
+tags: 
+  - VC
+  - wxWidgets
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 403 
+wpStatus: publish
+views: 662
+lastmod: 2020-03-22T11:18:59-05:00
+---
+
+和 GTK、QT、SWT、SWING 一样，wxWidgets 也是一种开源跨平台的 GUI 框架。因 wxWidgets 和 MFC 有些渊源，有些亲近，故要体验一番 wxWidgets。现在最新版是 2.8.7。wxWidgets 程序还可运行于 Windows CE、Palm OS。不但包括 GUI，还有 Media、Socket、ODBC 等库。</p>
+<br/>
+详情请见 wxWidgets 的官方网站是：<a href="http://www.wxwidgets.org">http://www.wxwidgets.org</a><br/><br/>
+本篇介绍 VC++6.0 下如何搭建 wxWidgets 的开发环境，包括编译 wxWidgets 源码和配置 VC 环境。所用 wxWidgets 的版本是 2.8.7。<br/><br/>
+<strong>第一步：下载并安装 wxWidgets<br />
+</strong><br />
+在 <a href="http://www.wxwidgets.org/downloads/">http://www.wxwidgets.org/downloads/</a> 下载到 wxWidgets 源码。<!--more--><br />
+你可以下载 Windows 安装版 <a href="http://prdownloads.sourceforge.net/wxwindows/wxMSW-2.8.7-Setup.exe">http://prdownloads.sourceforge.net/wxwindows/wxMSW-2.8.7-Setup.exe</a> (11.9M)<br />
+或者是 Zip 压缩版 <a href="http://prdownloads.sourceforge.net/wxwindows/wxMSW-2.8.7.zip">http://prdownloads.sourceforge.net/wxwindows/wxMSW-2.8.7.zip</a> (15.9M)<br/><br/>
+假如我们下载的是 wxMSW-2.8.7-Setup.exe，就可运行它，过程中我们假定选择的安装目录是 <span style="color: #800080;">d:\wxWidgets-2.8.7</span>。 完成后，我们看到安装目录所在空间的大不是 127M。<br/><br/>
+注意要给 wxWidgets 有足够的剩余空间，单是编译一个版本的静态库就会增至300多M，如果还要编译动态库再选择上 DEBUG 或者 RELEASE、ASCII 或是 UNICODE 等，还要编译 sample 的话，最后空间能够暴到 2G。<br/><br/>
+<strong>第二步：编译 wxWidgets</strong>编译方式有两种，一种是在 VC++ 中打开 wx.dsw 进行编译，另一种是用 nmake 在命令行下编译。<br/><br/>
+1) nmake 编译<br/><br/>
+运行 cmd.exe 来到命令行下，进入到目录 d:\wxWidgets-2.8.7，然后执行<br/><br/>
+D:\wxWidgets-2.8.7&gt;<span style="color: #800080;">nmake -f makefile.vc<br />
+</span><br />
+默认是编译成 DEBUG 版的静态库。也许我们在编译之前需要根据自己的需要进行一些设置：<br/><br/>
+打开 <span style="color: #000000;">D:\wxWidgets-2.8.7</span><span style="color: #800080;">\include\wx\msw\setup.h<br />
+</span><br />
+保证第 110 行的 <span style="color: #800080;">#define wxUSE_DEBUG_NEW_ALWAYS</span> 设置为 0。默认是 0 的。<br />
+将 1137 行的 <span style="color: #800080;">#define wxUSE_IOSTREAMH</span> 设置为 0，否则无法使用 VC 的模板库(不能用 std 命名空间下的)。默认是 1。<br />
+如果要使用 wxWidgets 提供支持数据库的 ODBC 类，将 <span style="color: #800080;">#define wxUSE_ODBC</span> 设为 1。默认是 1。<br/><br/>
+如果你想生成动态库，或生成的是 Release 版的，你可以修改 D:\wxWidgets-2.8.7<span style="color: #800080;">\build\msw\config.vc</span> 文件。打开该文件你能看到可以更改的选项，其中重要的几个如下：<br/><br/>
+# What type of library to build? [0,1] -- 生成库的类型，0为静态库，1为动态库<br />
+SHARED = 0<br/><br/>
+# Compile Unicode build of wxWidgets? [0,1] -- 是否使和 UNICODE，0 否，1 是<br />
+UNICODE = 0<br/><br/>
+# Type of compiled binaries [debug,release] -- 是 debug 还是 release<br />
+BUILD = debug<br/><br/>
+其中还有许多顾名思义的选项，请根据需求修改。<br/><br/>
+对于 config.vc 中的选项也可以通过命令行覆盖掉配置文件中的值，如编译命令用<br/><br/>
+D:\wxWidgets-2.8.7&gt;<span style="color: #800080;">nmake -f makefile.vc SHARED=1 UNICODE=1 BUILD=release</span><br/><br/>
+就是编译 release 版，支持 UNICODE 的动态库了。<br/><br/>
+动态库和静态库的不同体现在使用上，静态库中的代码能编译进应用程序的 exe 文件中，这个 exe 文件可单独发布，但体积较庞大。动态库可让 exe 文件执行时加载，虽然 exe 文件体积小了，但发布时必须带着相应的动态库文件。<br/><br/>
+2) VC 编译<br />
+还可用 VC++ 打开 D:\wxWidgets-2.8.7\build\msw\wx.dsw，然后选择 Build-&gt;Batch Build... ，我们看到每个工程都有 16 个配置，请根据应用需求勾选你的配置，如所有工程的 Win32 Release 和 Win32 Debug 版本，然后 Build，如果你照单全收，编译将非常耗时而占空间。这种编译方式就是可以一下操作帮你编译出所有需要的版本。<br/><br/>
+好，等等编译完之后，在目录 D:\wxWidgets-2.8.7\lib\ 会有产生一个目录：vc_lib 是静态库的目录，默认编译有 17 个静态。如果是编译成动态库则会产生目录 vc_dll。在 vc_lib 中有 mswd 目录，release 版对应的是 msw，里面含有 Debug 和 Release 版的 setup.h。<br/><br/>
+注意到 Debug 版和 Release 以及和 UNICODE 、动态库、静态库组合条件编译生成的文件和目录名。<br />
+静态库编译到 D:\wxWidgets-2.8.7\lib\vc_lib 目录中<br />
+动态库编译到 D:\wxWidgets-2.8.7\lib\vc_dll 目录中<br />
+文件命名为 wxmsw28d_core.lib 文件为例：<br />
+wxmsw28_core.lib         ---- Release，非 UNICODE  版<br />
+wxmsw28d_core.lib       ---- Debug，非 UNICODE  版<br />
+wxmsw28u_core.lib       ---- Release，UNICODE  版<br />
+wxmsw28ud_core.lib     ---- Debug，UNICODE  版<br />
+对于 dll 文件的命名规范也一样的。<br />
+在 vc_lib 和 vc_dll 下如果全编译了会有四个目录，msw、mswd、mswu、mswud 意义同上。<br/><br/>
+编译完后可以把那些过程中的目标文件删了，它们占的空间实在是太大。要是你还想以后重新编译用就留着吧。<br/><br/>
+<strong>第三步：创建 wxWidgets 项目<br />
+</strong><br />
+创建一个 Win32 Application 的空项目，项目名为 wxHello<br />
+Proejct-&gt;Settings (Alt+F7) 进入项目设置<br />
+1. C/C++选项卡-&gt;Code Generation -&gt; use run-time library 设置为: <span style="color: #800080;">Debug MutilThread DLL</span><br />
+2. C/C++选项卡-&gt; PreProcessor -&gt; PreProcessor Definitions 设置加上 <span style="color: #800080;">__WXMSW__,__WXDEBUG__</span> ,如果是 Release 版,则只需加上 <span style="color: #800080;">__WXMSW__</span>。<br />
+3. C/C++选项卡-&gt; PreProcessor -&gt; Additional include directories 设置为 <span style="color: #800080;">D:\wxWidgets-2.8.7\include,D:\wxWidgets-2.8.7\include\lib\vc_lib\mswd</span>,  这是设置附加 Include 路径。<br />
+4. Link 选项卡-&gt; Input -&gt; Object/library modules 设置加上 <span style="color: #800080;">wxmsw28d_core.lib wxbase28d.lib wxtiffd.lib wxjpegd.lib wxpngd.lib wxzlibd.lib wxregexd.lib wxexpatd.lib</span> 这些 Lib(没有这四个 lib <span style="color: #800080;"><strong>comctl32.lib rpcrt4.lib</strong> winmm.lib wsock32.lib</span> 的话请加上，关键是前两个)。如果要使用 wxODBC 就加上<span style="color: #800080;">wxbase28d_odbc.lib</span><span style="color: #000000;">。</span><br />
+5. Link 选项卡-&gt; Input -&gt; Addtional library path 设置为: D:\wxWidgets-2.8.7\lib\vc_lib。<br/><br/>
+<span style="color: #0000ff;">注意：编译成不同版的执行代码应填入相应的 Additional include directories 和 Addtional library path。<br />
+编译成依赖 DLL 的执行文件还需要加上预处理指令 </span><span style="color: #ff0000;"><strong>WXUSINGDLL<br />
+</strong><span style="color: #0000ff;">用UNICODE 编译则需要加上预处理指令 </span></span><span style="color: #ff0000;"><strong>_UNICODE<br />
+</strong></span><span style="color: #0000ff;">还有一种 </span><span style="color: #800080;"><strong>Universal </strong></span><span style="color: #0000ff;">编译，要加上预处理指令 </span><span style="color: #ff0000;"><strong>__WXUNIVERSAL__</strong></span><br/><br/>
+这样一个普通的WxWdigets项目就设置好了.<br/><br/>
+我们测试 WxWidgets 自带的例子 minimal。新建一个 minimal.cpp 文件，内容同 D:\wxWidgets-2.8.7\samples\minimal\minimal.cpp，编译，不出意外，成功了!<br/><br/>
+<strong>也可设置全局的目录</strong>前面我们是为项目配置 Additional Include Directories 和 Additional library path。我们可以把这设置成全局的。就可以不用在项目中单独设置。全局设置有其缺陷，无法分开是 vc_lib 还是 vc_dll 中的 lib，是 mswd 还是 msw 中的 wx/setup.h 文件。在这里设置 Source Files 还是必要的。并且在下面前两个 Include Files 放在全局设置里也较合适。<br/><br/>
+进到 VC++ 的 Tools-&gt;Options-&gt;Directories，选择 "Include Files" 后，添加<br />
+D:\wxWidgets-2.8.7\include<br />
+D:\wxWidgets-2.8.7\contrib\include<br />
+D:\wxWidgets-2.8.7\lib\vc_lib\mswd<br/><br/>
+对应于 Project Settings -&gt; C/C++ Tab-&gt;Preprocessor 中的 Additional include directories<br/><br/>
+再选择 "Libraries Files"，添加<br />
+D:\wxWidgets-2.8.7\vc_lib<br/><br/>
+对应于 Project Settings -&gt; Link Tab -&gt; Input 中的 Additional library path<br/><br/>
+再选择 "Source Files"，添加<br />
+D:\wxWidgets-2.8.7\src<br/><br/>
+<strong>最后大致比较一下生成程序的大小</strong><br/><br/>
+Release 静态库版(vc_msw) minimal.exe 1.11M，可单独发布<br />
+Debug  静态库版(vc_mswd) minimal.exe 2.52M，可单独发布<br />
+Release 动态库版(vc_mswdll)   minimal.exe 68K，加上wxmsw28_core_vc_custom.dll (2.85M) 和 wxbase28_vc_custom.dll (1.11M)，共 4M<br />
+Debug 动态库版(vc_mswddll)  minimal.exe 96K，加上wxmsw28d_core_vc_custom.dll (4.26M) 和 wxbase28d_vc_custom.dll (1.82M)，共 6.1M<br/><br/>
+这是一个简单的 wxWidgets 程序，只用到了两个动态库的情况。在用到 wxWidgets 库较少时用静态库来编译发布文件会小一些，若是用到组件多的时候，可能用动态库方便些，请酌情决定。<br/><br/>
+参考：1. <a href="http://blog.csdn.net/atomic_age/archive/2006/08/09/1043122.aspx" target="_blank" rel="noopener noreferrer">C++开源跨平台类库集</a><br />
+        2. <a href="http://www.douban.com/group/topic/1517077/" target="_blank" rel="noopener noreferrer">wxWidgets-2.8.3编译和在VC中的配置</a><br />
+        3. <a href="http://debugerror.blog.ccidnet.com/blog-htm-itemid-279851-do-showone-type-blog-uid-68775.html" target="_blank" rel="noopener noreferrer">vc++6.0下wxWidgets程序开发环境的设置</a><br />
+        4. <a href="http://blog.csdn.net/zzk8994073/archive/2006/03/15/624992.aspx" target="_blank" rel="noopener noreferrer">在Visual C++ 6 中配置wxWidgets 项目</a><br />
+        5. <a id="AjaxHolder_ctl01_TitleUrl" href="http://www.cnblogs.com/cy163/archive/2005/12/19/300525.html">如何调用DLL (基于Visual C++6.0的DLL编程实现)</a>

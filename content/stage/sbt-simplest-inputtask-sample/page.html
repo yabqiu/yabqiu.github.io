@@ -1,0 +1,36 @@
+---
+title: sbt 最简单的带输入任务 inputTask
+url: /sbt-simplest-inputtask-sample/
+date: 2016-05-17T00:57:52-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - Scala
+  - sbt
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7270 
+wpStatus: publish
+views: 446
+lastmod: 2016-05-19T21:45:06-05:00
+---
+
+<p>在 sbt 中我们可以定义 settingKey, taskKey 和 inputKey. inputKey 接收输入的任务更具灵活性，虽然在 sbt 中 taskKey 和  inputKey 数量比例为 25:1，但仍然不可忽视了 inputKey 的贡献。</p><p>起初在阅读 sbt 关于 inputKey 的资料时，一不小心就被带入到 Parser 上去了。其实还不如开门见山，先跳过 Parser 部份，示范 inputKey 任务中直接处理用户的原生输入。</p><p>这里有两个最简单的 sbt inputKey 的示例</p><p><span style="color: #000080;"><strong>一. 命令后非空格起全部输入当作一个字符串</strong></span></p><pre class="brush:scala">import complete.DefaultParsers._<br/>
+<br/>
+val demo1 = inputKey[Unit]("Demo1 inputTask")<br/>
+demo1 := {<br/>
+ val input = trimmed(any.* map(_.mkString)).parsed<br/>
+ println(input)<br/>
+}</pre><p>trimmed() 方法能去除了两边的空格，如果是 token(any.* map(_.mkString)).parse 则两边空格都会算上，在 <code>demo1 abc </code> 的 abc 两边的空格也都会算在输入参数里</p><blockquote><p>&gt; demo1 abc "abc"<br />abc "abc"</p></blockquote><hr /><p><span style="color: #ff0000;">sbt  的  input task  参数居然默认是紧接着命令开始的，如上面如果输入是 <code>demo1xxx</code>, demo1 任务接收到的参数是 <code>xxx</code>. 如果同时也定义了另一个任务是 <code>demo1x</code>, 那么输入 <code>demo1xx</code> 就会执行 <code>demo1x</code> 任务，参数是 <code>xx</code>. 从后往前进行匹配任务名。这个还有点奇怪，因为我以前任何时候都是自然的把命令与参数用空格分开，它却可以把命令与参数写在一起。</span></p><p>&nbsp;</p><hr /><p><strong><span style="color: #0000ff;">二. 像调用 main 方法一样传入参数</span></strong></p><p><!--more--></p><pre class="brush:scala">import complete.DefaultParsers._<br/>
+<br/>
+val demo2 = inputKey[Unit]("Demo2 inputTask")<br/>
+demo2 := {<br/>
+ val args: Seq[String] = spaceDelimited("Input your argument(s)").parsed<br/>
+ args foreach println<br/>
+}</pre><p>我们知道在调用 Java 的主方法时参数可以用空格或 tab 分开，最络作为数组传递到主方法，单个参数若有空格或tab可以用双引号括起来。</p><blockquote><p>&gt; demo2 abc "b cd" 'cde'<br />abc<br />b cd<br />'cde'</p></blockquote><p>从前面我们看到在使用参数之前调用了 Parser 的 parsed 得到合适类型的输入。现在可以开始理解 Parser 的功能了，它其实就像是 FormBean 那样的 Converter, 就是针对输入的字符串，你可以用 Parser[T] 把它转换为任何类型，如字符串到文件类型, 或 Boolean 型等等。sbt 内置了一引起 Parser, 见 <a href="http://www.scala-sbt.org/0.13/api/index.html#sbt.complete.DefaultParsers$">DefaultParsers</a>，我们可以在此基础或完全自定义 Parser。</p><p>参考： <a href="http://www.scala-sbt.org/0.13/docs/Input-Tasks.html">http://www.scala-sbt.org/0.13/docs/Input-Tasks.html</a></p>

@@ -1,0 +1,259 @@
+---
+title: AWS S3 Key 前缀分布优化数据请求的性能
+url: /aws-s3-key-prefix-distribution-performance/
+date: 2017-05-12T00:53:04-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - S3
+  - AWS
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8047 
+wpStatus: publish
+views: 2677
+lastmod: 2021-05-05T15:41:42-05:00
+---
+
+很早就想写下这篇日志的，因为实际使用 AWS S3 来存取文件使用什么样的 Key 对性能的影响是极其大的。当然，如果你对 S3 的并发请求在 50 以内是无所谓的，要是并发要求很高的话，Key 的选择就变得至关重要的，不可不察。S3 Key 从第一个字符算起的任意长度子字符串都被称作前缀(prefix), 而对 S3 文件访问性能影响不在完整的 Key, 恰恰是那个前缀。<br/><br/>
+背景：我们最初在使用 S3 时，存储的文件的 Key 直接用了数据库的自增 ID，于是保存到 Bucket 中大概下面那样子的<br/><br/>
+<blockquote>
+examplebucket/<span style="color: #ff0000;">1213485</span>0.csv<br />
+examplebucket/<span style="color: #ff0000;">1213485</span>1.csv<br />
+examplebucket/<span style="color: #ff0000;">1213485</span>2.csv<br />
+examplebucket/<span style="color: #ff0000;">1213485</span>3.csv<br />
+examplebucket/<span style="color: #ff0000;">1213485</span>4.csv<br />
+examplebucket/<span style="color: #ff0000;">1213485</span>5.csv<br />
+examplebucket/<span style="color: #ff0000;">1213485</span>6.csv<br />
+examplebucket/<span style="color: #ff0000;">1213485</span>7.csv<br />
+examplebucket/<span style="color: #ff0000;">1213485</span>8.csv
+</blockquote>
+<br/>
+Bucket 中有百万个文件，当初测试时 60 个左右的 Lambda 实例同时访问这个 Bucket 中不同的文件时，加载每个 S3 文件的时间大约在几百毫秒，然后并发上到 70， 80 后加载同样大小的 S3 文件的时间陡然增加到 10 秒以上，并发继续上到 100 以上直接导致众多 S3 的请求超时。后来了解到虽然一个 Bucket 中放多少个文件是没有限制的，而且官方文档说了文件多了并不影响访问的性能，但背后却有一个文件的分区存储机制，这个才是关键。<br/><br/>
+S3 的分区存储就像是硬盘分区，或文件分布在不同硬盘上的效果。试想一下，如果我们多个线程同时从一块硬盘上读取数据，每个线程需共同一个磁头来读取数据，性能就差; 但如果那些线程同时从不同的硬盘上读取各自的数据，那性能就大大提升了，它们互不干扰。在使用机械硬盘时我有过这样的体验，在同一个磁盘上拷贝文件比从一个磁盘拷贝到另一个磁盘要慢很多。<!--more--><br/><br/>
+S3 的文件分区也是类似这样的原理，知道有这么一个概念在里头，再回到上面的文件。一开始还为为 S3 在分区时只有一个层次，像 Map 一样即以整个 S3 Key 算出一个 Hash 把文件一次性分布，类似于 Kafka 的分区，假设有 5 个分区，想当然是下面的分区行为<br/><br/>
+<table>
+<tbody>
+<tr>
+<td>Partition 1</td>
+<td>Partition 2</td>
+<td>Partition 3</td>
+<td>Partition 4</td>
+<td>Partition 5</td>
+</tr>
+<tr>
+<td>12134850.csv</td>
+<td>12134851.csv</td>
+<td>12134852.csv</td>
+<td>12134853.csv</td>
+<td>12134854.csv</td>
+</tr>
+<tr>
+<td>12134855.csv</td>
+<td>12134856.csv</td>
+<td>12134857.csv</td>
+<td>12134858.csv</td>
+<td>&nbsp;</td>
+</tr>
+</tbody>
+</table>
+<br/>
+其实不然。如果这样的话我们又何须考虑用什么样的 Key(关键是前缀) 呢？又为什么会明显妨碍到我们的并发呢？<br/><br/>
+实质上 S3 在分区时是采用的树状层级结构，并且是依据 S3 Key 逐字母(也就是我们说的前缀)进行分布的，因此上面的文件实际分布是下面那样子的(我们暂且忽略掉后缀 .csv)<br/><br/>
+<img class="aligncenter size-full wp-image-8051" src="/wp-content/uploads/2017/05/s3-partition-1-1.png" alt="" width="247" height="297" /><br/><br/>
+由于自增 ID 的因素，S3 Key 的左边基本没什么变化，它们共享了一个大前缀, 发现直到第 8 层才见分晓，所以用序列命名的文件拼命集中在 <code>1/2/1/3/4/8/5</code> 这条路径上的分区中，从而致使并发请求多命中到一个狭窄的分区上，性能的低劣就是这样造成的。<br/><br/>
+基于序列的变化只发生在尾部，有一个简单的办法是把序列号翻转过来，即把后缀转变为前缀，变成下面的 Key 命名方式<br/><br/>
+<blockquote>
+examplebucket/<span style="color: #ff0000;">0</span>5843121.csv<br />
+examplebucket/<span style="color: #ff0000;">1</span>5843121.csv<br />
+examplebucket/<span style="color: #ff0000;">2</span>5843121.csv<br />
+examplebucket/<span style="color: #ff0000;">3</span>5843121.csv<br />
+examplebucket/<span style="color: #ff0000;">4</span>5843121.csv<br />
+examplebucket/<span style="color: #ff0000;">5</span>5843121.csv<br />
+examplebucket/<span style="color: #ff0000;">6</span>5843121.csv<br />
+examplebucket/<span style="color: #ff0000;">7</span>5843121.csv<br />
+examplebucket/<span style="color: #ff0000;">8</span>5843121.csv
+</blockquote>
+<br/>
+那么这时候依照前缀来分区效果又会如何呢？见下图<br/><br/>
+<img class="aligncenter wp-image-8053" src="/wp-content/uploads/2017/05/s3-partition-2-1-800x171.png" alt="" width="915" height="196" /><br/><br/>
+上图是翻转过来显示的，看的时候可以头往左平摆，有助于防止颈椎病。由于第一个字符的不同，在第一层上的分区让上图看起来舒展多了，这应该也比较明显的提升并发性能，到 150 不会有问题。<br/><br/>
+上面的方案只是作了一个翻转，但作为十进制的数字，第一位的可能性只有 0 - 9 十种。实践证明在 S3 文件分区的表现上第一个字符尤其重要，第一个步子迈得要尽可能的大，不用担心会扯到蛋的。拓宽第一个字符的办法要采用更大的进位制，于是我们希望把字符分布到<br/><br/>
+<blockquote>
+0 - 9<br />
+A - Z<br />
+a - z
+</blockquote>
+<br/>
+上去，也就是需要实现一个 62 进制的数值表示法。而且我们依然需要事先对原始数字进行翻转，否则即使我们采用 128 位进制，由于前面五六位雷打不动，产生的第一个字符也会是一样的。这儿还有一个细节，而于数值的翻转而成为新的数值，会丢失本来是末尾的零，例如<br/><br/>
+<blockquote>
+100000<br />
+10
+</blockquote>
+<br/>
+这两个数值翻转后为新的数值时都是 1, 所以在编码时必须记录下去掉的零的数目，如此才能保证编码是可逆的。这个翻转的 62 进制的编码实现代码如下<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.aws;<br/><br/>
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.stream.IntStream;<br/><br/>
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkState;<br/><br/>
+public class S3KeyGen {<br/><br/>
+  private static List&lt;Character&gt; baseChars = new ArrayList&lt;&gt;(62);<br/><br/>
+  static {
+    IntStream.rangeClosed('0', '9').forEach(value -&gt; baseChars.add((char) value));
+    IntStream.rangeClosed('A', 'Z').forEach(value -&gt; baseChars.add((char) value));
+    IntStream.rangeClosed('a', 'z').forEach(value -&gt; baseChars.add((char) value));
+  }<br/><br/>
+  public static String encode(long number) {
+    checkArgument(number &gt;= 0, "Should be a positive number");<br/><br/>
+    long reversed = Long.parseLong(reverse(String.valueOf(number)));
+    int zeros = String.valueOf(number).length() - String.valueOf(reversed).length();<br/><br/>
+    if(zeros &gt; 1) {
+      reversed *= (long) Math.pow(10, zeros - 1);
+    }<br/><br/>
+    StringBuilder key = new StringBuilder();
+    encode(key, reversed);<br/><br/>
+    if (zeros &gt; 1) {
+      key.append("-").append(baseChars.get(zeros - 1));
+    }
+    return key.toString();
+  }<br/><br/>
+  private static void encode(StringBuilder sb, long number) {
+    char c = baseChars.get((int) (number % baseChars.size()));<br/><br/>
+    sb.append(c);<br/><br/>
+    long quotient = number / baseChars.size();
+    if (quotient &gt;= baseChars.size()) {
+      encode(sb, quotient);
+    } else if (quotient != 0) {
+      sb.append((char) baseChars.get((int) quotient));
+    }
+  }<br/><br/>
+  public static long decode(String encodedS3key) {
+    checkArgument(encodedS3key != null, "Encoded S3 key cannot be null");<br/><br/>
+    encodedS3key.chars().forEach(value -&gt; {
+      char c = (char) value;
+      checkArgument(c == '-' || baseChars.contains(c), "Not a valid encoded S3 Key");
+    });<br/><br/>
+    String[] split = encodedS3key.split("-");<br/><br/>
+    checkState(split.length &lt;= 2, "Could_not contain more than one -");<br/><br/>
+    long sum = 0;
+    char[] chars = reverse(split[0]).toCharArray();<br/><br/>
+    for (int i = 0; i &lt; chars.length; i++) {
+      int index = Collections.binarySearch(baseChars, chars[i]);
+      sum += index * (long)Math.pow(baseChars.size(), chars.length - 1 - i);
+    }<br/><br/>
+    checkState(sum &gt;= 0, "No a valid long number in string");<br/><br/>
+    StringBuilder result = new StringBuilder(reverse(String.valueOf(sum)));<br/><br/>
+    if (split.length == 2) {
+      IntStream.range(0, Collections.binarySearch(baseChars, (char)(split[1].charAt(0) + 1)))
+          .forEach(value -&gt; result.append("0"));
+    }<br/><br/>
+    return Long.parseLong(result.toString());
+  }<br/><br/>
+  private static String reverse(String str) {
+    return str == null?null:(new StringBuilder(str)).reverse().toString();
+  }
+}
+</pre>
+<br/>
+上面提供了两个方法<br/><br/>
+<blockquote>
+String encode(long number)<br />
+long decode(String encodedS3Key)
+</blockquote>
+<br/>
+分别是用来把数值编码为 S3 Key 和从 S3 Key 解码为一个数值<br/><br/>
+现在我们假设有 20 个 ID (12134850 - 12134870) 对应的文件需要放到 S3 上去, 那么进行编码后放文件名如下<br/><br/>
+<blockquote>
+examplebucket/<span style="color: #ff0000;">t</span>3WO.csv<br />
+examplebucket/<span style="color: #ff0000;">D</span>WT41.csv<br />
+examplebucket/<span style="color: #ff0000;">X</span>yQk1.csv<br />
+examplebucket/<span style="color: #ff0000;">r</span>QOQ2.csv<br />
+examplebucket/<span style="color: #ff0000;">B</span>tL63.csv<br />
+examplebucket/<span style="color: #ff0000;">V</span>LJm3.csv<br />
+examplebucket/<span style="color: #ff0000;">p</span>nGS4.csv<br />
+examplebucket/<span style="color: #ff0000;">9</span>GE85.csv<br />
+examplebucket/<span style="color: #ff0000;">T</span>iBo5.csv<br />
+examplebucket/<span style="color: #ff0000;">n</span>A9U6.csv<br />
+examplebucket/<span style="color: #ff0000;">v</span>CiS.csv<br />
+examplebucket/<span style="color: #ff0000;">F</span>ff81.csv<br />
+examplebucket/<span style="color: #ff0000;">Z</span>7do1.csv<br />
+examplebucket/tZaU2.csv<br />
+examplebucket/D2YA3.csv<br />
+examplebucket/XUVq3.csv<br />
+examplebucket/rwSW4.csv<br />
+examplebucket/BPQC5.csv<br />
+examplebucket/VrNs5.csv<br />
+examplebucket/pJLY6.csv<br />
+examplebucket/xLuW.csv
+</blockquote>
+<br/>
+因为翻转后进行了 62 进位制，加大采样的话，编码后在第一个字符上可以把文件平均分布到 62 个分区上去，而不只是 10 个，这对并发访问的性能提升是不言而喻的。<br/><br/>
+这里也有完整的实现 <a href="https://github.com/yabqiu/s3keygen">https://github.com/yabqiu/s3keygen</a>，还有测试用例，在对 0 - 90000 间的数字进行编码后基本上每一位都平均分布到了 0 - 9, A - Z, 和 a - z 的 62 个字符上。<br/><br/>
+这里也有完整的实现，还有测试用例，在对 0 - 90000 间的数字进行编码后每一位基本平均分布到了 0 - 9, A - Z, 和 a - z 的 62 个字符上。<br/><br/>
+这种编码方式可以让每一位都错落有致，如果不翻转，只是每次取余顺序推到 StringBuilder 中的话，<br/><br/>
+<pre class="lang:default decode:true ">public static String encode(long number) {         
+    StringBuilder key = new StringBuilder();         
+    encode(key, number);         
+    return key.toString();       
+}        
+private static void encode(StringBuilder sb, long number) {      
+    char c = baseChars.get((int) (number % baseChars.size()));       
+    sb.append(c);        
+    long quotient = number / baseChars.size();       
+    if (quotient &gt;= baseChars.size()) {       
+        encode(sb, quotient);        
+    } else if (quotient != 0) {      
+        sb.append((char) baseChars.get((int) quotient));         
+    }        
+}</pre>
+<br/>
+同样对 12134850 - 12134870 进行编码，出来的结果是这样子的<br/><br/>
+<blockquote>
+<span style="color: #ff0000;">O</span>puo<br />
+<span style="color: #ff0000;">P</span>puo<br />
+<span style="color: #ff0000;">Q</span>puo<br />
+<span style="color: #ff0000;">R</span>puo<br />
+<span style="color: #ff0000;">S</span>puo<br />
+<span style="color: #ff0000;">T</span>puo<br />
+<span style="color: #ff0000;">U</span>puo<br />
+<span style="color: #ff0000;">V</span>puo<br />
+<span style="color: #ff0000;">W</span>puo<br />
+<span style="color: #ff0000;">X</span>puo<br />
+<span style="color: #ff0000;">Y</span>puo<br />
+<span style="color: #ff0000;">Z</span>puo<br />
+<span style="color: #ff0000;">a</span>puo<br />
+<span style="color: #ff0000;">b</span>puo<br />
+<span style="color: #ff0000;">c</span>puo<br />
+<span style="color: #ff0000;">d</span>puo<br />
+<span style="color: #ff0000;">e</span>puo<br />
+<span style="color: #ff0000;">f</span>puo<br />
+<span style="color: #ff0000;">g</span>puo<br />
+<span style="color: #ff0000;">h</span>puo<br />
+<span style="color: #ff0000;">i</span>puo
+</blockquote>
+<br/>
+虽然第一位能依次排开，但取余之后剩下的数越来越接近。<br/><br/>
+注意：在生成 S3 Key 的时候最好是使用以上那 62 个字符，虽然 S3 Key 对于 S3 来说只是用来计算 Hash 的，可使用任意字符; 但要考虑到 Bucket 中的文件下载到本地后特殊字符会被自动更名的情况，例如像字符 <code>:</code>, <code>*</code> 等在 Windows 文件名中是非法的字符。还有在进行 S3Event 触发 Lambda 时，像 <code>=</code>, <code>+</code> 等虽然可以作为 Windows 下的文件名，但是它会被进行 URL Encode，所以尽量使用不会作任何转换的字符放到 S3 Key 中，如 <code>-</code>  和 <code>_</code> 任何时候都是很安全的。<br/><br/>
+参考：<br/><br/>
+<ol>
+    <li><a href="http://docs.aws.amazon.com/AmazonS3/latest/dev/request-rate-perf-considerations.html">Request Rate and Performance Considerations</a></li>
+    <li><a href="http://docs.aws.amazon.com/AmazonS3/latest/dev/UsingMetadata.html">Object Key and Metadata</a></li>
+    <li><a href="https://aws.amazon.com/blogs/aws/amazon-s3-performance-tips-tricks-seattle-hiring-event/">Amazon S3 Performance Tips &amp; Tricks + Seattle S3 Hiring Event</a></li>
+</ol>
+<br/>
+<hr /><br/><br/>
+后注(2018-10-29): Jul 17, 2018, 宣布不需要使用随机 S3 前缀来优化存取性能，S3 会自动处理好对象分布，想用什么 Key 都行。<br/><br/>
+<ol>
+    <li><a href="https://aws.amazon.com/about-aws/whats-new/2018/07/amazon-s3-announces-increased-request-rate-performance/">Amazon S3 Announces Increased Request Rate Performance</a></li>
+    <li><a href="https://www.infoq.com/news/2018/10/amazon-s3-performance-increase">Amazon S3 Increases Request Rate Performance and Drops Randomized Prefix Requirement</a></li>
+</ol>

@@ -1,0 +1,137 @@
+---
+title: 几种简单安装 Kubernetes 集群的方法
+url: /several-method-installing-kubernetes-cluster/
+date: 2020-03-29T19:00:19-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2020/03/kubernetes_logo.png"
+categories:
+  - Kubernetes
+tags: 
+  - minikube
+  - kind
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10034 
+wpStatus: publish
+views: 1528
+lastmod: 2020-04-06T16:19:22-05:00
+---
+
+在 <a href="https://yanbin.blog/kubernetes-learning-1/">Kubernetes 学习笔记(一) - 初上手</a> 中一上手就尝试了最原始级的安装 Kubernetes 的方式，花了不少时间，好处是能更好的理解 Kubernete 的组成以及各节点是如何协同工作的。从《Kubernetes in Action》第二版中了解了几种简单的方法，为什么要把以下几种方式列出来呢？为了让看到上篇的同学们不至于对 Kubernetes 的安装过程望而却步。下面的前两种方式都是创立的单节点的 Kubernetes 集群。<br/><br/>
+<h3>一：启用 Docker Desktop 的 Kubernetes 特性</h3><br/><br/>
+Docker Desktop 的 Community 版本从  18.06.0-ce-mac70 2018-07-25 开始加入了对 Kubernetes 的支持，在 2018-11-19 后，Docker Desktop 开始用 2.0.0.0 这样的版本。当前的 Docker Desktop Community 版是 2.2.0.4，所带的 Kubernetes 是 v1.15.5，要启用它只要进到它的 <code>Preferences...</code>,<!--more--><br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/docker-desktop-kubernetes.png"><img class="aligncenter wp-image-10036" src="https://yanbin.blog/wp-content/uploads/2020/03/docker-desktop-kubernetes-800x321.png" alt="" width="720" height="289" /></a><br/><br/>
+选择 Enable Kubernetes 就行，选上 Show system container(advanced) 将决定在 <code>docker ps</code> 能否看到 Kubernetes 所需的容器，例如 dns, proxy 相关的。Apply &amp; Restart 后稍等一会，初始化完成可以查看一下 Nodes 和 Pods<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/docker-desktop-kubernetes-1.png"><img class="aligncenter wp-image-10037" src="https://yanbin.blog/wp-content/uploads/2020/03/docker-desktop-kubernetes-1-800x334.png" alt="" width="621" height="259" /></a><br/><br/>
+完成。就这么简单。<br/><br/>
+在 Docker Desktop 下节点 docker-desktop 是一个虚拟机，可用如下命令进入后查看机器名来验证一下<br/><br/>
+<blockquote>
+$ docker run --net=host --ipc=host --uts=host --pid=host --privileged \<br />
+--security-opt=seccomp=unconfined -it --rm -v /:/host alpine chroot /host<br />
+/ # hostname<br />
+<span style="color: #0000ff;">docker-desktop</span>
+</blockquote>
+<br/>
+这涉及到了 Docker 与 Namespace 的话题，详情请参考前一篇 <a href="https://yanbin.blog/docker-process-namespace/">Docker 容器内进程与 Namespace</a>。<br/><br/>
+<h3>二：Minikube 集群安装</h3><br/><br/>
+Minikube 支持 macOS, Linux 和 Windows, 它是一个单二进制文件，在 Mac 下可由 <code>brew install minikube</code> 安装。安装后启动一个 Kubernetes 会集群十分容易<br/><br/>
+<blockquote>
+$ minikube start<br />
+😄 minikube v1.9.0 on Darwin 10.14.4<br />
+✨ Using the hyperkit driver based on existing profile<br />
+🔄 Retarting existing hyperkit VM for "minikube" ...<br />
+🐳 Preparing Kubernetes v1.18.0 on Docker 19.03.8 ...<br />
+🌟 Enabling addons: default-storageclass, storage-provisioner<br />
+🏄 Done! kubectl is now configured to use "minikube"
+❗ /usr/local/bin/kubectl is v1.15.5, which may be incompatible with Kubernetes v1.18.0.<br />
+💡 You can also use 'minikube kubectl -- get pods' to invoke a matching version
+</blockquote>
+<br/>
+如果是在 Mac 或 Windows 上运行 minikube，它也会创建一个虚拟机，在 Linux 下可用  <code>minikube start --vm-driver none</code> 以当前主机系统为宿主机。<br/><br/>
+检查一下节点和 Pod 的运行情况：<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/minikube-kubernetes-1.png"><img class="aligncenter wp-image-10038" src="https://yanbin.blog/wp-content/uploads/2020/03/minikube-kubernetes-1-800x315.png" alt="" width="584" height="230" /></a><br/><br/>
+它的状态可由  <code>minikube status</code> 查看，<code>minikube ssh</code> 能直接登陆到它创建的中间虚拟机中<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/minikube-kubernetes-2.png"><img class="aligncenter wp-image-10039" src="https://yanbin.blog/wp-content/uploads/2020/03/minikube-kubernetes-2.png" alt="" width="380" height="174" /></a><br/><br/>
+它还有一个更诱人的功能是执行 <code>minikube dashboard</code> 后马上给你打开浏览器进到 Kubernetes Dashboard，登陆也免了。<br/><br/>
+<blockquote>
+$ minikube dashboard<br />
+🔌 Enabling dashboard ...<br />
+🤔 Verifying dashboard health ...<br />
+🚀 Launching proxy ...<br />
+🤔 Verifying proxy health ...<br />
+🎉 Opening http://127.0.0.1:56889/api/v1/namespaces/kubernetes-dashboard/services/http:kubernetes-dashboard:/proxy/ in your default browser...
+</blockquote>
+<br/>
+停止集群用 <code>minikube stop</code><br/><br/>
+<blockquote>
+$ minikube stop<br />
+✋ Stopping "minikube" in hyperkit ...<br />
+🛑 Node "m01" stopped.
+</blockquote>
+<br/>
+<h3>三：用 kind(Kubernetes in Docker) 运行本地集群</h3><br/><br/>
+这种方式下 Kubernetes 节点也是由 Docker 容器来运行，启动多个 Docker 容器也就很容易创建的多建了多节点的 Kubernetes 集群。kind  也是一个单一可以可执行文件。在 Mac 下也可用 <code>brew install kind</code> 安装，安装后运行 <code>kind create cluster</code> 创建 Kubernetes 集群<br/><br/>
+<blockquote>
+$ kind create cluster<br />
+Creating cluster "kind" ...<br />
+✓ Ensuring node image (kindest/node:v1.17.0) 🖼<br />
+✓ Preparing nodes 📦<br />
+✓ Writing configuration 📜<br />
+✓ Starting control-plane 🕹️<br />
+✓ Installing CNI 🔌<br />
+✓ Installing StorageClass 💾<br />
+Set kubectl context to "kind-kind"<br />
+You can now use your cluster with:
+kubectl cluster-info --context kind-kind
+Have a nice day! 👋
+</blockquote>
+<br/>
+查看一下<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/kind-kubernetes-1.png"><img class="aligncenter wp-image-10042" src="https://yanbin.blog/wp-content/uploads/2020/03/kind-kubernetes-1-800x329.png" alt="" width="715" height="294" /></a><br/><br/>
+删除集群的命令是 <code>kind delete cluster</code><br/><br/>
+它还能创建多节点的集群，需要用一个 yaml 文件来描述，如创建一个 kind-multi-node.yaml 文件，内容如下<br/><br/>
+<pre class="lang:default decode:true">kind: Cluster
+apiVersion: kind.sigs.k8s.io/v1alpha3
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker
+</pre>
+<br/>
+用 <code>kind create cluster --config kind-multi-node.yaml</code> 命令就能创建一个 Master 和两个 worker 的 Kubernetes 集群。<br/><br/>
+<blockquote>
+$ kind create cluster --config kind-multi-node.yaml<br />
+Creating cluster "kind" ...<br />
+✓ Ensuring node image (kindest/node:v1.17.0) 🖼<br />
+✓ Preparing nodes 📦 📦 📦<br />
+✓ Writing configuration 📜<br />
+✓ Starting control-plane 🕹️<br />
+✓ Installing CNI 🔌<br />
+✓ Installing StorageClass 💾<br />
+✓ Joining worker nodes 🚜<br />
+Set kubectl context to "kind-kind"<br />
+You can now use your cluster with:
+kubectl cluster-info --context kind-kind
+Have a question, bug, or feature request? Let us know! https://kind.sigs.k8s.io/#community 🙂
+</blockquote>
+<br/>
+检查节点，Pod<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/kind-kubernetes-2.png"><img class="aligncenter wp-image-10043" src="https://yanbin.blog/wp-content/uploads/2020/03/kind-kubernetes-2-800x465.png" alt="" width="714" height="415" /></a><br/><br/>
+kind 未内置 Dashboard 支持，需要的自己安装。<br/><br/>
+小结一下三种安装简单安装 Kubernete 的简单方法<br/><br/>
+<ol>
+    <li>Docker Desktop Kubernetes: 单节点集群，当前最新的 Docker Desktop 2.2.0.4 所带的 Kubernetes 仍然是 v1.15.5。节点为 Docker 的宿主虚拟机</li>
+    <li>minikube：单节点集群，当前 minikube v1.9.0, 所带 Kubernetes 是新的 1.18.0。并且自带 Dashboard, 只要 minikube dashboard 就能打开，非常的便利。节点为 minikube 新建的虚拟机</li>
+    <li>kind(Kubernetes in Docker): 支持多节点集群，目前 kind v0.7.0 所带的 Kubernetes 是 v1.17.0。每个节点都是一个 Docker 容器。 </li>
+</ol>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://github.com/kubernetes/minikube">kubernetes/minikube on github</a></li>
+    <li><a href="https://kind.sigs.k8s.io/docs/user/quick-start/">kind Quick Start</a></li>
+</ol>

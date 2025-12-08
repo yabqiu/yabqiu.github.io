@@ -1,0 +1,93 @@
+---
+title: 手工处理 Struts2 框架上传的文件
+url: /manual-struts2-file-upload/
+date: 2008-05-15T04:16:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/05/struts-logo.jpeg"
+categories:
+  - Struts
+tags: 
+  - Struts2
+  - upload
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 396 
+wpStatus: publish
+views: 3648
+lastmod: 2021-09-02T14:40:05-05:00
+---
+
+在使用了 Struts2 框架的系统中，对于处理像下面这种表单上传文件时：</p>
+<br/>
+<pre class="lang:default decode:true">&lt;form action="..." enctype="multipart/form-data"&gt;
+    文件：&lt;input type="file" name="upload"&gt;&lt;br&gt;
+    描述：&lt;input type="text" name="desc"&gt;&lt;/br&gt;
+    &lt;input type="submit" value="提交"&gt;
+&lt;/form&gt;</pre>
+<br/>
+自然而然的想法就是在 Action 中声明变量 File upload 和 String desc，请求提交到这个 Action 后，在 execute() 方法中就能直接使用 upload 和 desc 了，它们已被 Struts2 框架(<span style="color: #800080;">org.apache.struts2.interceptor.FileUploadInterceptor</span> 监听器) 赋上了相应的值了。<!--more--><br/><br/>
+因为维护的是一个古老的项目，请求都是直接提交给 jsp。在这个项目中套上了 Struts2 已是不易了。原来项目是用的 jspSmartUpload 来处理上传文件的，Struts2 一上 jspSmartUpload 便不能正常工作了，因为 Struts2 的过滤器 <span style="color: #800080;">org.apache.struts2.dispatcher.FilterDispatcher</span> 拦截的是所有的请求,在交把请求交给 jspSmartUpload 之前请求 request 就已被处理过了，即使是把 struts2-core-2.x.x.jar 中的 <span style="color: #800080;">struts-default.xml</span> fileUpload 取消了也是如此。<br/><br/>
+暂时又不想再新加一个 Action，声明 upload:File 和 desc:String 直接接收参数，这样改动的话实在是大，现在 <span style="color: #800080;">struts.xml</span> 和 <span style="color: #800080;">struts.properties</span> 文件还是空的呢。所以姑且在原来那个 jsp 中处理吧。<br/><br/>
+最早做过 jsp 文件上传的人都知道，给 form 加上 <span style="color: #800080;">enctype="multipart/form-data"</span> 属性后，<span style="color: #800080;">request.getParameter("desc")</span> 取输入框的值就失灵了，因为页面请求数据是以流的形式发送给服务器的，所以 jspSmartUpload 用了它自己的 Request， <span style="color: #800080;">com.jspsmart.upload.SmartUpload.getRequest().getParameter("desc")</span> 来接收文本框数据，但对于 Struts2 处理过的 request jspSmartUpload 就无能为力了。<br/><br/>
+那么在 Struts2 中的 jsp 如何获取到 <span style="color: #800080;">enctype="multipart/form-data"</span> 表单传递过来的文本输入和文件呢？<br/><br/>
+<strong><br />
+<span style="color: #0000ff;">·获取文本框的值</span><br />
+</strong>，仍然可用 <span style="color: #800080;">request.getParameter("desc")</span>，因为此时的 request 是由 <span style="color: #800080;">org.apache.struts2.dispatcher.multipart.MultiPartRequestWrapper</span> 实现的。<br/><br/>
+对比一下不同时候 request 的具体实现类(Tomcat 环境中)<br/><br/>
+<table border="0" width="700" align="center">
+<tbody>
+<tr>
+<td><strong>form enctype</strong></td>
+<td><strong>multipart/form-data</strong></td>
+<td><strong>application/x-www-form-urlencoded</strong></td>
+</tr>
+<tr>
+<td><strong>Struts2</strong></td>
+<td><span style="color: #800080;">org.apache.struts2.dispatcher.multipart<br />
+.MultiPartRequestWrapper</span></td>
+<td><span style="color: #800080;">org.apache.struts2.dispatcher<br />
+.StrutsRequestWrapper</span></td>
+</tr>
+<tr>
+<td><strong>Struts1</strong></td>
+<td><span style="color: #800080;">org.apache.struts.upload<br />
+.MultipartRequestWrapper</span></td>
+<td><span style="color: #800080;">org.apache.coyote.tomcat5<br />
+.CoyoteRequestFacade</span></td>
+</tr>
+<tr>
+<td><strong>无框架</strong></td>
+<td><span style="color: #800080;">org.apache.coyote.tomcat5<br />
+.CoyoteRequestFacade</span></td>
+<td><span style="color: #800080;">org.apache.coyote.tomcat5<br />
+.CoyoteRequestFacade</span></td>
+</tr>
+</tbody>
+</table>
+<br/>
+<strong><br />
+<span style="color: #0000ff;">·获取上传来的文件</span><br />
+</strong>用就要对 request 作个转型，才能调用到相应的方法<br/><br/>
+<pre class="brush:java">MultiPartRequestWrapper mpRequest = (MultiPartRequestWrapper)request; <br/><br/>
+File[] files = mpRequest.getFiles("upload");    //文件现在还在临时目录中
+String[] fileNames = mpRequest.getFileNames("upload");<br/><br/>
+//然后就可以处理你的业务了</pre>
+<br/>
+其他方法可以查看 <span style="color: #800080;">MultiPartRequestWrapper</span> API，<span style="color: #800080;">MultiPartRequestWrapper</span> 是继承自 <span style="color: #800080;">org.apache.struts2.dispatcher.StrutsRequestWrapper</span> 的。<br/><br/>
+最后，用了 Struts2 来上传文件，最好在 web.xml 中加上 <span style="color: #800080;">ActionContextCleanUp</span> 过滤器以避免一些未不预知的异常。<br/><br/>
+<pre class="lang:default decode:true "> &lt;filter&gt;
+     &lt;filter-name&gt;struts-cleanup&lt;/filter-name&gt;
+     &lt;filter-class&gt;org.apache.struts2.dispatcher.ActionContextCleanUp&lt;/filter-class&gt;
+ &lt;/filter&gt;<br/><br/>
+ &lt;filter-mapping&gt;
+     &lt;filter-name&gt;struts-cleanup&lt;/filter-name&gt;
+     &lt;url-pattern&gt;/*&lt;/url-pattern&gt;
+ &lt;/filter-mapping&gt;</pre>
+<br/>
+网上有人说是要加 <span style="color: #800080;">ActionContextCleanUp</span> 过滤器的，<span style="color: #800080;">ActionContextCleanUp</span> 的代码注释是它易于同 SiteMesh 的整合，至于为何与文件上传扯上关系，我以后也会关注的。<br/><br/>
+对了还要在项目中引入 commons-fileupload-x.x.x.jar 和 commons-io-x.x.jar 包，其他没有什么特别的配置，默认即可。相信本文的实用性不强，不会有人用 jsp 来处理这些事情，参考价值可能还有一些。

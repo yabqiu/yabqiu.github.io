@@ -1,0 +1,171 @@
+---
+title: JAVA RMI 快速入门实例
+url: /java-rmi-get-started/
+date: 2006-06-24T01:29:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - Rmi
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 565 
+wpStatus: publish
+views: 306
+lastmod: 2023-02-17T19:39:42-06:00
+---
+
+本实例为参考多篇文章写就而成，网上及书上各类文章介绍如何使用RMI有多种实例可参考，譬如有：</p>
+<br/>
+1. 用命令rmiregistry启动RMI注册服务的<br />
+2. 同时创建存根(stub)和骨架(skeleton)的<br />
+3. 只创建存根类的(jdk1.2以后版本)<br />
+4. 通过RemoteRef和rmi://协议字串方式的<br />
+5. 比较少讲到的用LocateRegistry直接在代码上启动RMI注册服务的。<br/><br/>
+以上描述并非明显分类，比如，你总是可以选择用rmiregistry或者代码LocateRegistry启动RMI注册服务<br/><br/>
+下面我将介绍一个完整的实例，让初学者能快速体验RMI的功用。<br/><br/>
+分为以下四个步骤<!--more--><br/><br/>
+1. 创建远程接口及声明远程方法（HelloInterface.java）<br />
+2. 实现远程接口及远程方法（继承UnicastRemoteObject）(Hello.java)<br />
+3. 启动RMI注册服务，并注册远程对象（HelloServer.java）<br />
+4. 客户端查找远程对象，并调用远程方法（HelloClient）<br />
+5. 执行程序：启动服务HelloServer；运行客户端HelloClient进行调用<br/><br/>
+具体代码及对应步骤如下：<br/><br/>
+<strong>1. 创建远程接口及声明远程方法</strong>（HelloInterface.java）<br/><br/>
+<pre class="brush:java">package com.unmi;<br/><br/>
+import java.rmi.*;<br/><br/>
+/**
+ * 远程接口必须扩展接口java.rmi.Remote
+ */
+public interface HelloInterface extends Remote
+{
+   /**
+    * 远程接口方法必须抛出 java.rmi.RemoteException
+    */
+   public String say() throws RemoteException;
+}</pre>
+<br/>
+<strong>2. 实现远程接口及远程方法</strong>（继承UnicastRemoteObject）(Hello.java)<br/><br/>
+<pre class="brush:java">package com.unmi;<br/><br/>
+import java.rmi.*;
+import java.rmi.server.*;<br/><br/>
+/**
+ * 扩展了UnicastRemoteObject类，并实现远程接口 HelloInterface
+ */
+public class Hello extends UnicastRemoteObject implements HelloInterface
+{
+   private String message;<br/><br/>
+   /**
+    * 必须定义构造方法，即使是默认构造方法，也必须把它明确地写出来，因为它必须抛出出RemoteException异常
+    */
+   public Hello(String msg) throws RemoteException
+   {
+      message = msg;
+   }<br/><br/>
+   /**
+    * 远程接口方法的实现
+    */
+   public String say() throws RemoteException
+   {
+      System.out.println("Called by HelloClient");
+      return message;
+   }
+}</pre>
+<br/>
+<strong>3. 启动RMI注册服务，并注册远程对象</strong>（HelloServer.java）<br/><br/>
+<pre class="brush:java">package com.unmi;<br/><br/>
+import java.rmi.Naming;
+import java.rmi.registry.LocateRegistry;<br/><br/>
+public class HelloServer
+{
+   /**
+    * 启动 RMI 注册服务并进行对象注册
+    */
+   public static void main(String[] argv)
+   {
+      try
+      {
+         //启动RMI注册服务，指定端口为1099　（1099为默认端口）
+         //也可以通过命令 $java_home/bin/rmiregistry 1099启动
+         //这里用这种方式避免了再打开一个DOS窗口
+         //而且用命令rmiregistry启动注册服务还必须事先用RMIC生成一个stub类为它所用
+         LocateRegistry.createRegistry(1099);<br/><br/>
+         //创建远程对象的一个或多个实例，下面是hello对象
+         //可以用不同名字注册不同的实例
+         HelloInterface hello = new Hello("Hello, world!"); <br/><br/>
+         //把hello注册到RMI注册服务器上，命名为Hello
+         Naming.rebind("Hello", hello);<br/><br/>
+         //如果要把hello实例注册到另一台启动了RMI注册服务的机器上
+         //Naming.rebind("//192.168.1.105:1099/Hello",hello);<br/><br/>
+         System.out.println("Hello Server is ready.");
+      }
+      catch (Exception e)
+      {
+         System.out.println("Hello Server failed: " + e);
+      }
+   }
+}</pre>
+<br/>
+<strong>4. 客户端查找远程对象，并调用远程方法</strong>（HelloClient）<br/><br/>
+<pre class="brush:java">package com.unmi;<br/><br/>
+import java.rmi.Naming;<br/><br/>
+public class HelloClient
+{
+   /**
+    * 查找远程对象并调用远程方法
+    */
+   public static void main(String[] argv)
+   {
+      try
+      {
+         HelloInterface hello = (HelloInterface) Naming.lookup("Hello");<br/><br/>
+         //如果要从另一台启动了RMI注册服务的机器上查找hello实例
+         //HelloInterface hello = (HelloInterface)Naming.lookup("//192.168.1.105:1099/Hello");<br/><br/>
+         //调用远程方法
+         System.out.println(hello.say());
+      }
+      catch (Exception e)
+      {
+         System.out.println("HelloClient exception: " + e);
+      }
+   }
+}</pre>
+<br/>
+<strong>5. 执行程序：启动服务HelloServer；运行客户端HelloClient进行调用</strong><br/><br/>
+代码如何编译这里就不细讲<br/><br/>
+(1)打开一个Dos窗口执行命令 java com.unmi.HelloServer 启动服务HelloServer<br/><br/>
+<span style="color: #ffffff;"><span style="background-color: #000000;">E:\workspace\TestRMI\bin&gt;java com.unmi.HelloServer<br />
+Hello Server is ready                                             </span>.</span><br/><br/>
+运行成功则可以看到 Hello Server is ready<br/><br/>
+(2)打开另一个Dos窗口执行命令 java com.unmi.HelloClient 运行客户端程序<br/><br/>
+<span style="background-color: #000000; color: #ffffff;">E:\workspace\TestRMI\bin&gt;java com.unmi.HelloClient<br />
+Hello, world!                                                       </span><br/><br/>
+调用成功则可以看到　Hello, world!<br/><br/>
+并且在启动服务端的窗口中看到紧跟 Hello Server is ready. 打印出<br/><br/>
+<span style="background-color: #000000; color: #ffffff;">Called by HelloClient                                             </span><br/><br/>
+如果您能一路顺畅的执行到这里，恭喜！您已度过了一个轻快的RMI之旅。<br/><br/>
+最后来个说明：<br/><br/>
+本实例中并没有用到JDK所带的命令 rmic 编译实现类得到存根(Stub)类，也没用命令 rmiregistry 命令来启动RMI注册服务。在启动 rmiregistry之前必须能让它加载到相应的stub类，这就是造成**_Stub 类找不到的原因。<br/><br/>
+如果只是按上面的代码，则服务程序 HelloServer 和客户端程序 HelloClient 都必须运行在本机(如此则RMI有何意义呢？)；别急，只要修改HelloClient类，使用第二种形式的lookup查找远程实例,注释第一条lookup语句，取消注释第二条lookup语句<br/><br/>
+<pre class="brush:java">//HelloInterface hello = (HelloInterface) Naming.lookup("Hello");<br/><br/>
+//如果要从另一台启动了RMI注册服务的机器上查找hello实例
+HelloInterface hello = (HelloInterface)Naming.lookup("//192.168.1.105:1099/Hello");</pre>
+<br/>
+其中的IP地址和端口号1099为 RMI 注册服务器的IP和端口号，这样你的HelloClient就可以在另一台机器运行了，当然HelloInterface类必须能找到（但也可指定参数-Djava.rmi.server.codebase从网络加载HelloInterface类）。lookup("Hello")默认为从本机127.0.0.1的1099端口上查找Hello命令对象，如果第二条语句写成lookup("192.168.1.105/Hello")与原语句是同等的，因为默认端口号就是1099。<br/><br/>
+代码中 HelloServer 和 HelloClient 省略了设置安全管理器的过程　System.setSecurityManager(new RMISecurityManager());　，如果设置的安全管理则必须编写相应的访问策略文件，并且在执行时指定参数<br/><br/>
+无论是启动服务端还是客户端都可以用参数 -Djava.rmi.server.codebase=http://unmi.blogcn.cn/bin 的形式，像JNP一样从网络上加载类，这样更方便于RMI客户端的部署，如RMI客户端是一个Applet<br/><br/>
+可以拿单独一台机器运行 rmiregistry (它需要能加载到相应的stub类，设置classpath)或用LocateRegistry.createRegistry(port)，只作为RMI远程对象的RMI集中注册的服务器，真正提供服务对象只往上注册，客户端只需从注册服务器上查找远程对象引用，然后调用远程方法，具体由谁提供服务由注册服务器来帮助联络。<br/><br/>
+还可以用 RMI Activation 编程方式来实现RMI远程方法调用，具体请参考　<a href="http://java.sun.com/j2se/1.4.2/docs/guide/rmi/activation.html">http://java.sun.com/j2se/1.4.2/docs/guide/rmi/activation.html</a><br/><br/>
+把HelloServer和HelloClient中的 <em><span style="color: #008000;">"//192.168.1.105:1099/Hello </span></em>写成 <em><span style="color: #008000;">rmi:/192.168.1.105:1099/Hello </span></em>感觉会好看一些，因为直接感觉就是在处理rmi协议。<br/><br/>
+参考资料：<br />
+1. <a href="http://www.ccs.neu.edu/home/kenb/com3337/rmi_tut.html">Java RMI Tutorial</a><br />
+2. <a href="http://java.sun.com/j2se/1.4.2/docs/guide/rmi/getstart.doc.html">Getting Started Using RMI</a><br />
+3. <a href="http://www.huihoo.com/java/rmi/index.html">JavaRMI入门实战</a><br />
+4. <a href="http://www.huihoo.com/corba/java/rmi_corba.html">使用RMI和CORBA进行分布式java程序设计</a><br />
+5. Think in java中网络编程RMI部分

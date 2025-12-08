@@ -1,0 +1,104 @@
+---
+title: 在 Java 中操作 Windows 注册表
+url: /java-access-windows-registry/
+date: 2007-09-02T08:41:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - Registry
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 491 
+wpStatus: publish
+views: 1303
+lastmod: 2019-11-30T09:53:21-06:00
+---
+
+想做个东西，要获IE的代理设置，看网上介绍基本都是读取注册表的方式，没提到说借助于特定的 Win32 API。而 JDK 提供操作 Windows 的 API 也就是 Preferences，因为这个 API 也是跨平台的，所功能比较弱，在 Win32 下只能用来操作 HKCU\Software\JavaSoft 和 HKLM\Software\JavaSoft 下及子节点的数据。</p>
+<br/>
+自由访问注册表其他键的值光用 Java 是做不到的，必然方案就是 JNI，一开始也自己来实现这个 JNI 动态库，后来懒了一下，想着网上应该用现成的实现，Google 了一下，果然不出所望，就是 <a href="http://www.trustice.com/java/jnireg/index.shtml">http://www.trustice.com/java/jnireg/index.shtml</a> 下的 <a href="http://www.gjt.org/download/time/java/jnireg/registry-3.1.3.zip">registry-3.1.3.zip</a>(包含源代码)。可以利用它访问、修改、导出注册表项到文件等。解开 registry-3.1.3.zip，在 bin 目录中可以看到两个文件 ICE_JNIRegistry.dll 和 registry.jar，动态库就是本地代码实现。<br/><br/>
+<!--more--><br/><br/>
+com.ice.jni.registry.Registry.main() 就是 registry 的示例代码，动态库 ICE_JNIRegistry.dll 也是在这个类的静态块中被加载的，记得要把 ICE_JNIRegistry.dll 放在它能够被加载的位置上，比如你把 registry-3.1.3.zip 解压到 c:\registry-3.1.3，在命令行下你可以进入到这个目录中，并执行<br/><br/>
+c:\registry-3.1.3&gt;java -cp registry.jar com.ice.jni.registry.Registry<br/><br/>
+就可以在 command: 提示符下输入命令操作注册表了，输入 help 会打印出所有能用指令：<br/><br/>
+<span style="color: #3333ff;">keys regKey -- print the key names</span><br/><br/>
+values regKey -- print the value names<br/><br/>
+data regKey subKey -- print the key's data<br/><br/>
+string regKey subKey -- print REG_SZ key's string<br/><br/>
+setbin regKey subKey  binaryString -- set REG_BINARY<br/><br/>
+setdw regKey subKey int -- set REG_DWORD<br/><br/>
+setstr regKey subKey string -- set REG_SZ<br/><br/>
+setmulti regKey subKey semiColonString -- set REG_MULTI_SZ<br/><br/>
+delkey regKey subKey -- delete key 'subKey' of regKey<br/><br/>
+delval regKey subKey -- delete value 'subKey' of regKey<br/><br/>
+export regKey fileName -- export registry key to fileName<br/><br/>
+expand regKey valueName -- expand string value<br/><br/>
+<span style="color: #3333ff;">!! -- repeats last command</span><br/><br/>
+$$ -- re-uses previous keyname<br/><br/>
+Predefined Key Prefixes: (e.g. $0-9)<br/><br/>
+   $0=HKLM\System\CurrentControlSet\control<br/><br/>
+   $1=HKLM\Software<br/><br/>
+   $2=HKLM\Software\Miscrosoft<br/><br/>
+   $3=HKLM\Software\Microsoft\Windows\CurrentVersion<br/><br/>
+   $4=HKLM\Software\Microsoft\Windows\CurrentVersion\ProfileList<br/><br/>
+   $5=HKCU\Software<br/><br/>
+   $6=HKCU\Software\Microsoft<br/><br/>
+   $7=HKCU\AppEvents<br/><br/>
+   $8=HKCU\AppEvents\Schemes<br/><br/>
+   $9=HKCU\AppEvents\Schemes<br/><br/>
+比如要读取 IE 是否启用代理设置就可以输入指令<br/><br/>
+<span style="color: #3333ff;"><span style="color: #ff0000;">command:</span> data "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings\\" ProxyEnable</span><br/><br/>
+显示结果为：<br/><br/>
+<span style="color: #3333ff;">Value 'ProxyEnable' is [type=4,name=ProxyEnable]</span><br/><br/>
+REG_DWORD '0' [x00000000]<br/><br/>
+'0' 表示未启用 IE 代理设置，如果启用了代理设置，通过其他几个字符串值可获取到具体的代理设置。如<br/><br/>
+<span style="color: #3333ff;"><span style="color: #ff0000;">command:</span> data "%6\\Windows\\CurrentVersion\\Internet Settings\\" ProxyServer</span><br/><br/>
+Value 'ProxyServer' is [type=1,name=ProxyServer]<br/><br/>
+REG_SZ 'ftp=proxy.unmi.com:21;gopher=proxy.unmi.com:8080;http=proxy.unmi.com:8080;https=proxy.unmi.com:8080'<br/><br/>
+上面用了一个内置变量 %6 来代表 HKCU\Software\Microsoft。<br/><br/>
+其他的指令，大家可以尝试一下，这里我主要是关注于读取键值的操作，接下来呢，我们来看看自己写代码如何来获取键值。应好好的参考 Registry 类的实现。<br/><br/>
+<pre class="brush:java">package com.unmi;  <br/><br/>
+import com.ice.jni.registry.*;   <br/><br/>
+/**  
+ * @author Unmi  
+ */
+public class RegistryManager   
+{   <br/><br/>
+    /**  
+     * @param args  
+     * @throws RegistryException   
+     * @throws NoSuchKeyException   
+     */
+     public static void main(String[] args) throws
+        NoSuchKeyException, RegistryException   
+     {   
+        RegistryKey registryKey = Registry.openSubkey(Registry.HKEY_CURRENT_USER,              
+             "Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings",   
+             RegistryKey.ACCESS_READ);   
+        RegistryValue registryValue = registryKey.getValue("ProxyEnable");   
+        boolean proxyEnable = ((RegDWordValue)registryValue).getData()!= 0;   <br/><br/>
+        System.out.println("IE 是否启用了代理设置: "+proxyEnable);   <br/><br/>
+        if(proxyEnable)   
+        {   
+            registryValue = registryKey.getValue("ProxyServer");   
+            System.out.println("IE 代理服务器是: "+new String(registryValue.getByteData()));   
+        }   
+    }   
+} </pre>
+<br/>
+我在 IE 中为不同协议设置了代理后，执行上面程序的输出为(如果要取出 http 代理设置就分隔进行字符串处理了)：&lt;<br/><br/>
+<span style="color: #3333ff;">IE 是否启用了代理设置: true</span><br/><br/>
+IE 代理服务器是: ftp=proxy.unmi.com:21;gopher=proxy.unmi.com:8080;http=proxy.unmi.com:8080;https=proxy.unmi.com:8080<br/><br/>
+如果对所有服务器均使用相同的代理服务器设置后，执行上面程序的输出为(默认就是 http 代理设置了)：<br/><br/>
+<span style="color: #3333ff;">IE 是否启用了代理设置: true</span><br/><br/>
+IE 代理服务器是: proxy.unmi.com:80<br/><br/>
+大家可以继续挖掘 registry 的修改键值及创建子键的功能。<br/><br/>
+自己来补上一个在网上又一个读取 Windows 注册表的 JNI 实现：<a href="http://www.sf.net/projects/jregistrykey">http://www.sf.net/projects/jregistrykey</a>

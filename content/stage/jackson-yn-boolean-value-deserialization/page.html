@@ -1,0 +1,113 @@
+---
+title: Jackson 反序列化 "Y"/"N" 为相应的布尔值
+url: /jackson-yn-boolean-value-deserialization/
+date: 2018-12-16T16:07:49-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - json
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9176 
+wpStatus: publish
+views: 2813
+lastmod: 2018-12-16T16:07:49-06:00
+---
+
+<p>JSON 表示布尔值标准的形式是 <code>true</code>  和  <code>false</code>，如果 Java 对应的类型是对象  Boolean，那么在 JSON 中也可以是  <code>null</code>。如果收到 JSON 数据是用 'Y'/'N', 或 'Yes'/'No' 来表示布尔值的，那么使用 Java 的 Jackson 库如何把它们反序列化为相应的布尔属性值呢？</p>
+
+<p>如果按照 JSON 规范必须把内容中的布尔值全部转换为 <code>true</code> 或 <code>false</code>, 然而再反序列化，否则需要定制 <code>Boolean</code> 类型的反序列化类，可应用到全局的 boolean 类型，或指派给特定的 boolean 类型属性。</p>
+
+<p>如果尝试反序列化 <code>Y</code>, 或 <code>N</code> 为 Java 的 boolean 值，会有只接受  true 或 false 的异常：</p>
+
+<blockquote><br/>
+<p>com.fasterxml.jackson.databind.exc.InvalidFormatException: Can not deserialize value of type java.lang.Boolean from String "Y": only "true" or "false" recognized</p>
+
+</blockquote>
+
+<p>具体步骤是：<!--more--></p>
+
+<h3>先创建一个 YNBooleanDeserializer 类</h3><br/>
+<pre class="lang:default decode:true">package blog.yanbin.jsonutils;<br/>
+<br/>
+import com.fasterxml.jackson.core.*;<br/>
+import com.fasterxml.jackson.databind.*;<br/>
+import java.io.IOException;<br/>
+<br/>
+public class YNBooleanDeserializer extends JsonDeserializer&lt;Boolean&gt; {<br/>
+<br/>
+    @Override<br/>
+    public Boolean deserialize(JsonParser jp, DeserializationContext ctxt) throws IOException {<br/>
+        JsonToken currentToken = jp.getCurrentToken();<br/>
+<br/>
+        if (currentToken.equals(JsonToken.VALUE_STRING)) {<br/>
+            String text = jp.getText();<br/>
+<br/>
+            if ("Y".equals(text)) {<br/>
+                return Boolean.TRUE;<br/>
+            } else if ("N".equals(text)) {<br/>
+                return Boolean.FALSE;<br/>
+            }<br/>
+<br/>
+            throw ctxt.weirdStringException(text, Boolean.class,<br/>
+                "Only \"" + YES + "\" or \"" + NO + "\" values supported");<br/>
+        } else if (currentToken.equals(JsonToken.VALUE_NULL)) {<br/>
+            return Boolean.FALSE;<br/>
+            //return null<br/>
+        }<br/>
+<br/>
+        throw ctxt.mappingException("Can't parse boolean value: " + jp.getText());<br/>
+    }<br/>
+}</pre>
+
+<h3>应用到相应的 Boolean 属性上</h3><br/>
+<pre class="lang:default decode:true ">class User {<br/>
+<br/>
+    @JsonDeserialize(using = YNBooleanDeserializer.class)<br/>
+    public Boolean isAlive;<br/>
+}</pre>
+
+<h3>测试代码</h3><br/>
+<pre class="lang:default decode:true">ObjectMapper objectMapper = new ObjectMapper() ;<br/>
+String json = "{\"isAlive\":\"Y\"}";<br/>
+User user = objectMapper.readValue(json, User.class);<br/>
+System.out.println(user.isAlive);</pre>
+
+<p>可以得到 <code>user.isAlive</code> 属性值为 <code>true</code>。</p>
+
+<h3>其他问题引申</h3><br/>
+<p>上面代码只是给某些个别的属性使用 <code>YNBooleanDeserializer</code> 来反序列化 JSON 中的 boolean 值，如果 JSON 中全部的 boolean 值都是用  <code>Y</code>/<code>N</code> 来表示的，那么可以为 <code>ObjectMapper</code> 注册一个模块，完整代码如下：</p>
+
+<pre class="lang:default decode:true ">ObjectMapper objectMapper = new ObjectMapper() ;<br/>
+        <br/>
+SimpleModule boolModule = new SimpleModule();<br/>
+boolModule.addDeserializer(Boolean.class, new YNBooleanDeserializer());<br/>
+objectMapper.registerModule(boolModule);<br/>
+<br/>
+String json = "{\"isAlive\":\"Y\"}";<br/>
+User user = objectMapper.readValue(json, User.class);<br/>
+System.out.println(user.isAlive);</pre>
+
+<p>这时候在  <code>User</code> 中就不需要 <code>JsonDeserialize(using = YNBooleanDeserializer.class)</code> 注解了。</p>
+
+<p>再一步引申，如果希望序列化时也用  <code>Y</code>/<code>N</code> 来表示 boolean 值，可用的方法与上面差不多，只是反着方向来的。比如特定属性上用</p>
+
+<blockquote><br/>
+<p>@JsonSerialize(using = YBNooleanSerializer.class)</p>
+
+</blockquote>
+
+<p>或是全局的模块中设定</p>
+
+<blockquote><br/>
+<p>booleanModule.addSerializer(Boolean.class, new YNBooleanSerializer());</p>
+
+</blockquote>
+
+<p>具体代码不再一一列出了，请参考上面的代码实现。</p>

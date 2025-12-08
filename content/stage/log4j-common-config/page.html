@@ -1,0 +1,118 @@
+---
+title: 常用log4j配置
+url: /log4j-common-config/
+date: 2006-03-23T10:35:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2006/03/log4j-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Log4J
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 581 
+wpStatus: publish
+views: 1285
+lastmod: 2021-09-04T10:49:05-05:00
+---
+
+常用log4j配置，一般可以采用两种方式，.properties和.xml,下面举两个简单的例子：</p>
+<br/>
+最简单的配置是只要取下面的log4j.properties文件中带下划线的四行就行，它完成日志输出到控制台。<br/><br/>
+<strong>一、log4j.properties</strong> <!--more--><br/><br/>
+<pre class="brush:javascript">### 设置com.unmi域对应的级别INFO,DEBUG,WARN,ERROR和输出地A1，A2 ##
+log4j.category.com.unmi = ERROR,A1
+log4j.category.com.unmi = INFO,A2  <br/><br/>
+### 一般把上面两行写如下方式，统一控制日志输出,再用log4j.logger设置包独立的输出级别 ##
+log4j.rootLogger = DEBUG,A1
+log4j.logger.com.unmi.special = ERROR<br/><br/>
+### 设置输出地A1，为ConsoleAppender(控制台) ##
+log4j.appender.A1 = org.apache.log4j.ConsoleAppender <br/><br/>
+### 设置A1的输出布局格式PatterLayout,(可以灵活地指定布局模式）##
+log4j.appender.A1.layout = org.apache.log4j.PatternLayout <br/><br/>
+### 配置日志输出的格式##
+log4j.appender.A1.layout.ConversionPattern = %d{yyyy-MM-dd HH:mm:ss,SSS} [%c]-[%p] %m%n <br/><br/>
+### 设置输出地A2到文件（文件大小到达指定尺寸的时候产生一个新的文件）##
+log4j.appender.A2 = org.apache.log4j.RollingFileAppender <br/><br/>
+### 文件位置##
+log4j.appender.A2.File = E:/study/log4j/log.html <br/><br/>
+### 文件大小##
+log4j.appender.A2.MaxFileSize = 500KB <br/><br/>
+log4j.appender.A2.MaxBackupIndex = 1 <br/><br/>
+##指定采用html方式输出
+log4j.appender.A2.layout = org.apache.log4j.HTMLLayout</pre>
+<br/>
+<strong>二、log4j.xml</strong><br/><br/>
+<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="GB2312" ?&gt;
+&lt;!DOCTYPE log4j:configuration SYSTEM "log4j.dtd"&gt;<br/><br/>
+&lt;log4j:configuration xmlns:log4j = "http://jakarta.apache.org/log4j/" &gt;<br/><br/>
+    &lt;appender name = "com.unmi.all" class = "org.apache.log4j.RollingFileAppender" &gt;<br/><br/>
+      &lt;!-- 设置 appender Name:com.unmi.all和输出方式：org.apache.log4j.RollingFileAppender --&gt;
+       &lt;param name = "File" value = "E:/study/log4j/all.output.log" / &gt;&lt;!-- 设置File参数：日志输出文件名 --&gt;
+       &lt;param name = "Append" value = "false" / &gt;&lt;!-- 设置是否在重新启动服务时，在原有日志的基础添加新日志 --&gt;
+       &lt;param name = "MaxBackupIndex" value = "10" / &gt;
+       &lt;layout class = "org.apache.log4j.PatternLayout" &gt;
+           &lt;param name = "ConversionPattern" value = "%p (%c:%L)- %m%n" / &gt;&lt;!-- 设置输出文件项目和格式 --&gt;
+       &lt;/layout &gt;
+    &lt;/appender &gt;<br/><br/>
+    &lt;appender name = "com.unmi.xyz" class = "org.apache.log4j.RollingFileAppender" &gt;
+       &lt;param name = "File" value = "E:/study/log4j/xyz.output.log" / &gt;
+       &lt;param name = "Append" value = "true" / &gt;
+       &lt;param name = "MaxFileSize" value = "10240" / &gt; &lt;!-- 设置文件大小 --&gt;
+       &lt;param name = "MaxBackupIndex" value = "10" / &gt;
+       &lt;layout class = "org.apache.log4j.PatternLayout" &gt;
+           &lt;param name = "ConversionPattern" value = "%p (%c:%L)- %m%n" / &gt;
+       &lt;/layout &gt;
+    &lt;/appender &gt;<br/><br/>
+    &lt;logger name = "unmi.log" &gt; &lt;!-- 设置包名限制，即unmi.log域及以下的日志均输出到下面对应的 appender 中 --&gt;
+       &lt;level value = "debug" / &gt;&lt;!-- 设置级别 --&gt;
+       &lt;appender-ref ref = "com.unmi.xyz" / &gt;&lt;!-- 与前面的配置的 appender name 相对应 --&gt;
+    &lt;/logger &gt;<br/><br/>
+    &lt;root &gt; &lt;!-- 设置接收所有输出的 appender --&gt;
+       &lt;appender-ref ref = "com.unmi.all" / &gt;&lt;!-- 与前面的 appender name 相对应 --&gt;
+    &lt;/root &gt;<br/><br/>
+&lt;/log4j:configuration&gt;</pre>
+<br/>
+<span style="font-family: Courier; color: #ff0000; font-size: xx-small;"> </span><br/><br/>
+<strong>三、配置文件加载方法：</strong><br/><br/>
+对于properties文件，一般都不用手工去加载，由Log4j第一次初始化时自动就加载了<br/><br/>
+<pre class="brush:java ">import  org.apache.log4j.Logger;
+import  org.apache.log4j.PropertyConfigurator;
+import  org.apache.log4j.xml.DOMConfigurator;<br/><br/>
+public class Log4jApp {
+   public static void main(String[] args) {
+       DOMConfigurator.configure("E:/study/log4j/log4j.xml"); //加载.xml文件
+       //PropertyConfigurator.configure("E:/study/log4j/log4j.properties");//加载.properties文件<br/><br/>
+       Logger log = Logger.getLogger("com.unmi.test");
+       log.info("测试");
+    }
+}</pre>
+<br/>
+<strong>四、项目使用log4j<br />
+</strong><br/><br/>
+在web应用中，可以将配置文件的加载放在一个单独的servlet中，并在web.xml中配置该servlet在应用启动时候加载。对于在多人项目中，可以给每一个人设置一个输出通道，这样在每个人在构建Logger时，用自己的域名称，让调试信息输出到自己的log文件中。<br />
+<strong>五、常用输出格式</strong><br/><br/>
+<strong>%c</strong>   列出logger名字空间的全称，如加上{&lt;层数&gt;}表示出从最内层算起的指定层数的名字空间<br />
+<strong>%X</strong>  按MDC（Mapped Diagnostic Context,线程映射表）输出日志。通常用于多个客户端连接同一台服务器，方便服务器区分是那个客户端访问留下来的日志。<br />
+<strong>%p  </strong>日志信息级别<br />
+<strong>%d</strong>   %d{&lt;日期格式&gt;}:日志信息产生时间,使用ISO8601定义的日期格式<br />
+<strong>%C</strong>   日志信息所在地（全限类名）<br />
+<strong>%m</strong>   产生的日志具体信息<br />
+<strong>%n</strong>    输出日志信息换行<br />
+<strong>%F</strong>　显示调用logger的源文件名<br />
+<strong>%l</strong>     输出日志事件的发生位置，包括类目名、发生的线程，以及在代码中的行数<br />
+<strong>%L</strong>    显示调用logger的代码行<br />
+<strong>%M</strong>   显示调用logger的方法名<br />
+<strong>%r</strong>     显示从程序启动时到记录该条日志时已经经过的毫秒数<br />
+<strong>%t</strong>     输出产生该日志事件的线程名<br />
+<strong>%%</strong>　显示一个百分号<br/><br/>
+<hr /><br/><br/>
+补充：在配置文件中可以用变量用于引用系统属性，如<br/><br/>
+log4j.appender.A2.File = ${user.home}/${app.name}.log<br />
+如果你在启动程序时加了 -Dapp.name=UnmiLog4jTest  JVM 参数，或者在初始化 Log4j 之前，往 System.getProperties() 中 put 了 "app.name" 属性为 UnmiLog4jTest，那么就会输出日志文件到用户主目录/UnmiLog4jTest.log。user.home 属性一般都存在于系统属性中，你也可以在程序中改变它。<br/><br/>
+如果在 web.xml 中初始化 log4j，你可以在 log4j 的配置文件中更轻松的取到 web 应用的绝对路径。

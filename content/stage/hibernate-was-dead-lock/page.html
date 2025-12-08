@@ -1,0 +1,150 @@
+---
+title: Hibernate应用程序部署在WebSphere AS 上出现记录死锁的分析与解决
+url: /hibernate-was-dead-lock/
+date: 2007-04-13T11:09:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/12/hibernate_log.png"
+categories:
+  - Hibernate
+tags: 
+  - WAS
+  - Hibernate
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 528 
+wpStatus: publish
+views: 584
+lastmod: 2021-07-21T22:45:39-05:00
+---
+
+有一个项目，是用Hibernate开发的部署在WebSphere Application Server 5.1下，总是会出现数据库记录被死锁的情况，即使是一个简单的更新动作，都有可能造成。</p>
+<br/>
+这个问题，困扰我许久，检查过所有代码，事物一定要提交或者回滚，Session及时释放，怀疑过是否是因为是部署在集群环境，但好像那些措施总于事无补，百思不得其解。<br/><br/>
+就差没有使用容器提供的事物了。<!--more--><br/><br/>
+突然间想到去各自的官网，查查有没有人碰到过类似的信息，于是在 <a href="http://www.hibernate.org">http://www.hibernate.org</a> 网站找到了<a href="http://www.hibernate.org/204.html">Hibernate in WAS 5.x - fixes possible deadlock problem</a>，其中提到要定制一个 ConnectionProvider，名之为 WSDataSourceConnectionProvider，代码如下：<br/><br/>
+<pre class="brush:java">package com.unmi.db;<br/><br/>
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.Properties;<br/><br/>
+import org.apache.log4j.Logger;
+import org.hibernate.HibernateException;
+import org.hibernate.cfg.Environment;
+import org.hibernate.connection.ConnectionProvider;
+import org.hibernate.util.NamingHelper;<br/><br/>
+import com.ibm.websphere.rsadapter.JDBCConnectionSpec;
+import com.ibm.websphere.rsadapter.WSCallHelper;
+import com.ibm.websphere.rsadapter.WSDataSource;
+import com.ibm.websphere.rsadapter.WSRRAFactory;
+import com.ibm.ws.rsadapter.jdbc.WSJdbcConnection;
+import com.ibm.ws.rsadapter.jdbc.WSJdbcUtil;<br/><br/>
+/**
+ * ConnectionProvider implementation that implements WSDataSource specific
+ * Transaction Isolation level settings for the connection. Modified from the
+ * original DatasourceConnectionProvider class by Lari Hotari
+ *
+ */
+public class WSDataSourceConnectionProvider implements ConnectionProvider {
+    public boolean supportsAggressiveRelease() {
+        return false;
+    }<br/><br/>
+    private WSDataSource ds;
+    private String user;
+    private String pass;
+    private Integer isolation;<br/><br/>
+    private static final Logger log = Logger
+            .getLogger(WSDataSourceConnectionProvider.class);<br/><br/>
+    public void configure(Properties props) throws HibernateException {<br/><br/>
+        String jndiName = props.getProperty(Environment.DATASOURCE);
+        if (jndiName == null) {
+            String msg = "datasource JNDI name was not specified by property "
+                    + Environment.DATASOURCE;
+            log.fatal(msg);
+            throw new HibernateException(msg);
+        }<br/><br/>
+        user = props.getProperty(Environment.USER);
+        pass = props.getProperty(Environment.PASS);<br/><br/>
+        String i = props.getProperty(Environment.ISOLATION);
+        if (i == null) {
+            isolation = null;
+        } else {
+            isolation = new Integer(i);
+            log.info("JDBC isolation level: "
+                    + Environment.isolationLevelToString(isolation.intValue()));
+        }<br/><br/>
+        try {
+            ds = (WSDataSource) NamingHelper.getInitialContext(props).lookup(
+                    jndiName);
+        } catch (Exception e) {
+            log.fatal("Could not find datasource: " + jndiName, e);
+            throw new HibernateException("Could not find datasource", e);
+        }
+        if (ds == null)
+            throw new HibernateException("Could not find datasource: "
+                    + jndiName);
+        log.info("Using datasource: " + jndiName);
+    }<br/><br/>
+    public Connection getConnection() throws SQLException {
+        if (log.isDebugEnabled()) {
+            log.debug("getConnection()");
+        }
+        Connection connection = ds.getConnection(createJDBCConnectionSpec());<br/><br/>
+        if (log.isDebugEnabled()) {
+            if (connection != null) {
+                log.debug("Returning connection, System.identityHashCode="
+                        + System.identityHashCode(connection));
+                log.debug("Connection=" + connection);
+                log.debug("Shareable=" + WSCallHelper.isShareable(connection));
+                log.debug("Class=" + connection.getClass());
+                Connection nativeConnection = (Connection) WSJdbcUtil
+                        .getNativeConnection((WSJdbcConnection) connection);
+                log.debug("Native connection=" + nativeConnection);
+                log.debug("Native connection, System.identityHashCode="
+                        + System.identityHashCode(nativeConnection)
+                        + ", class=" + nativeConnection.getClass());
+            } else {
+                log.debug("Returning null");
+            }
+        }
+        return connection;
+    }<br/><br/>
+    public void closeConnection(Connection conn) throws SQLException {
+        conn.close();
+    }<br/><br/>
+    public void close() {
+    }<br/><br/>
+    protected JDBCConnectionSpec createJDBCConnectionSpec() {
+        JDBCConnectionSpec connSpec = WSRRAFactory.createJDBCConnectionSpec();<br/><br/>
+        // 设置事称隔离级别
+        if (isolation != null) {
+            connSpec.setTransactionIsolation(isolation);
+        }<br/><br/>
+        if (user != null || pass != null) {
+            connSpec.setUserName(user);
+            connSpec.setPassword(pass);
+        }
+        return connSpec;
+    }
+}</pre>
+<br/>
+以上代码中类 WSRRAFactory、JDBCConnectionSpec 用到了 $WAS_HOME/lib/rsaexternal.jar；类WSJdbcConnection、WSJdbcUtil 用到了 $WAS_HOME/lib/rsadapterspi.jar，所以需要在编译时 $WAS_HOME/lib　中两那两个包引用进来。<br/><br/>
+同时，在 hibernate.cfg.xml 中要有如下配置，记得在 WAS 还需配置相应的连接池 <span style="color: #800080;">jdbc/unmiDs</span>。<br/><br/>
+<pre class="lang:default decode:true ">&lt;property name="connection.datasource"&gt;jdbc/unmiDs&lt;/property&gt;
+&lt;property name="dialect"&gt;org.hibernate.dialect.OracleDialect&lt;/property&gt;<br/><br/>
+&lt;property name="hibernate.connection.provider_class"&gt;
+    com.unmi.db.WSDataSourceConnectionProvider
+&lt;/property&gt;<br/><br/>
+&lt;property name="connection.username"&gt;user&lt;/property&gt;
+&lt;property name="connection.password"&gt;password&lt;/property&gt;</pre>
+<br/>
+文中又有链接提到 <a href="http://www-128.ibm.com/developerworks/websphere/library/techarticles/0404_tang/0404_tang.html">Sharing connections in WebSphere Application Server V5</a><br/><br/>
+大致说到的是，在WAS环境中Hibernate应用程序运行时可能一个事物使用的并非是同一个链接，无形中搞出个分布式事物来吧，具体情况和解决办法还有待细究，希望这个就是我想要的结果。<br/><br/>
+OK，明天再来分析上面那两篇文章吧，期望找到一个治本的解决方案。<br/><br/>
+好像与现今使用的C3P0连接池也有关系，有建议说换成最近新版的<br/><br/>
+文中 <a class="maintitle" href="http://forum.hibernate.org/viewtopic.php?t=955443&amp;start=0&amp;postdays=0&amp;postorder=asc&amp;highlight=deadlock"><strong><span style="color: #256b87; font-size: small;">c3p0 problem</span></strong></a> 也有提到把 maxStatements 和 maxStatementsPerConnection 设置为零<br />
+c3p0.maxStatements=0<br />
+c3p0.maxStatementsPerConnection=0

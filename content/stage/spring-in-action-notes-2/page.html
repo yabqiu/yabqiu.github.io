@@ -1,0 +1,52 @@
+---
+title: Spring 学习点滴，《Spring in Action》笔记（二）
+url: /spring-in-action-notes-2/
+date: 2007-06-03T09:06:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - Spring
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 519 
+wpStatus: publish
+views: 372
+lastmod: 2019-11-13T16:32:50-06:00
+---
+
+<strong>第四章. 征服数据库</strong></p>
+<br/>
+<hr /><br/><br/>
+31. Spring 把数据访问流程中的固定部分和可变部分分开，分别映射成两截然不同的类，模板（Template）和回调（Callback），模板管事物控制、资源管理以及异常处理；回调实现特定于应用的部分--创建 statement、绑定参数、以及整理结果集。模板方法模式的优秀应用（P123）<br/><br/>
+32. JdbcTemplate template = new JdbcTemplate(myDataSource); 构造。 所有 Spring Dao 模板类是线程安全的，可以为每一个 DAO 配置一个 JdbcTemplate 属性，也可以让 DAO 类继承 JdbcDaoSupport，然后在 DAO 类中用 getJdbcTemplate() 获取到 JdbcTemplate 进行数据库操作。书中的做法是给每个 Dao 加一个 JdbcTemplate 属性，记录的日志略有不同，实际中注意(P127)<!--more--><br/><br/>
+33. JdbcTemplate 的 execute() 方法不可带 sql  参数，即不存在 execute(String sql, Object[] params) 方法，而 update 才有 update(String sql, Object[] params) 方法可以，还能指定每一字段的类型(通过第三个参数 int[] argTypes)，保证了类型安全，130页说 JdbcTemplate 提供了 execute(String sql, Object[] params) 是错误的。(P130)<br/><br/>
+34. JdbcTemplate 类创建了 PreparedStatementCreator(createPreparedStatementCreator(Connection conn)) 和 PreparedStatementSetter(setValues(PreparedStatement ps)),  批量更新时需要创建自己的 BatchPreparedStatementCreator 类：<br/><br/>
+<pre class="brush:java">BatchPreparedStatementSetter setter = new BatchPreparedStatementSetter(){
+    public int getBatchSize(){ return persons.size();}
+    public void setValues(PreparedStatement ps, int index) throws SQLException{
+        Person person = (Person) persons.get(index);
+        ps.setInt(0,person.getId().intValue());
+        ......
+   }
+};
+getJdbcTemplate().batchUpdate(sql,setter);</pre>
+<br/>
+    把传入的List&lt;Person&gt;批量的进行数据库相应操作(P131)<br/><br/>
+35. 用JdbcTemplate读数据，可以用 JdbcTemplate.query(sql,params, rowCallbackHandler), 实现 RowCallbackHandler的 processRow(ResultSet rs) 组装查询到的一个对象。实现自己的 RowMapper把 ResultSet 中一条记录映射成一个对象，用JdbcTemplate.query(sql, params, new MyRowMapper())能够返回查询整理后的对象列表，书中 133 页的带 RowMapperResultReader的query方法已经不存在了，在 Spring 2.x 中连 RowMapperResultReader 这个类也没啦，敬请关注 RowMapper。由此可见，即使是只返回一条记录的查询也可用带 RowMapper的query方法，只需返回第一条记录就行。(P132)<br/><br/>
+36. JdbcTemplate的 queryForXXX可更快捷返回简单的查询值，如一个 count, 只返回一条记录的一个字段的值。书上没说这个，看 JdbcTemplate 代码的方法发现的。<br/><br/>
+37. JdbcTemplate 调用存储过程： jdbcTemplate.execute("{ARCHIVE_STUDENTS}", new CallableStatementCallback(){.....}); 看清了，就是要实现自己的 CallableStatementCallback的一个方法（P134）<br/><br/>
+<pre class="brush:java">public Object doInCallableStatement(CallableStatement cs){
+    cs.execute();
+    return null;
+}</pre>
+<br/>
+38. 可以不使用 JdbcTemplate, 而扩展 SqlUpdate 和 MappingSqlQuery 把操作创建成对象，这种做法可以可以让你的代码几乎不和 JDBC API 进行交互，不过我还是觉得用 JdbcTemplate 通俗易懂。扩展 DataFieldMaxValueIncrementer 取得自增键值，有三个方法 nextIntValue()、nextLongValue()、nextStringValue()，根据实际数据库可以用不同的实现，如 Oracle、PostgreSQL、MySQL 和 Hypersonic 等数据库的序列机制的实现或自己写的实现。 <br/><br/>
+39. Spring 只需提供 ORM 框架的整合点，以及一些附加的服务：整合事务处理、异常处理、线程安全，轻量级模板、便利的支持类、资源管理。Spring 整合 Hibernate 的关键在于对 LocalSessionFactoryBean 的配置，不再需要 hibernate.cfg.xml(或 hibernate.properties) 了。可用 LocalSessionFactoryBean 的 mappingDirectoryLocations 属性加载某一路径下的所有 *.hbm.xml 文件。最后留意 HibernateTemplate(它的 HibernateCallback 接口) 和 HibernateDaoSupport 的使用。(P139)<br/><br/>
+40. Spring 与 JDO 和 OBJ 的整合使用较少，先跳过。Spring 支持两种版本的 iBatis：1.3 和 2.0；1.3 的类命名为 SqlMapXxx，2.0 的类命名为 SqlMapClientXxx。对 SqlMap 的整合要配置一个 SqlMapClientFactoryBean，仍然保留 sqlMap-config.xml 文件，并通过 configLocation 属性配置给 SqlMapClientFactoryBean，它相当于 LocalSessionFactoryBean。关注 SqlMapClientTemplate 的配置和使用，还有一个 SqlMapClientCallbak 接口可扩展。(P149)

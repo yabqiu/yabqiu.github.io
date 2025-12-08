@@ -1,0 +1,76 @@
+---
+title: Unmi 学习 Groovy 之多线程
+url: /unmi-study-groovy-multithread/
+date: 2008-09-25T20:21:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Groovy
+tags: 
+  - multithread
+  - Groovy
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 326 
+wpStatus: publish
+views: 667
+lastmod: 2021-07-21T22:36:11-05:00
+---
+
+Java 的一个很值得称道的特性是在语言级支持多线程。定义了 Runnable 接口，并在根类 Object 中提供了 wait/notify 方法，还有 synchronized 关键字的支持。我们常说实现多线程的方式有两种：继承 Thread 和实现 Runnable，实质上工作者线程执行的都是 Runnable 接口中定义的 run() 方法，Thread 本身实现了 Runnable 接口，它不过是为线程的调度使用提供了许多有用的方法。</p>
+<br/>
+而 Groovy 作为 Java 家族的皇储(安心做储君就行了)，多线程方面自然不会甘拜下风。Groovy 通过 MetaClass 对 <span style="color: #800080;">java.lang.Thread</span> 进行了扩展，即所谓的 <a href="http://groovy.codehaus.org/groovy-jdk">GDK</a> - Groovy methods added to Java SE classes。<br/><br/>
+在原 java.lang.Thread 类中增加了两个方法，分别是：<!--more--><br/><br/>
+<span style="color: #800080;">static Thread start(Closure closure);<br />
+static Thread startDaemon(Closure closure);</span> //对应的是 Daemon 线程<br/><br/>
+这两个方法接受的参数是闭包，要知道所有的闭包都是继承自 <span style="color: #800080;">groovy.lang.Closure</span>，而它是实现了 <span style="color: #800080;">java.lang.Thread</span> 的。所以使用闭包很容易实现 Groovy 中的多线程。具体到代码上就有以下几种写法：<br/><br/>
+<pre class="brush:groovy">t = new Thread() {/* Closure body */};
+t.start();<br/><br/>
+Thread.start { /* Closure body */};<br/><br/>
+Thread.startDaemon { /* Closure body */};</pre>
+<br/>
+这样，闭包中的代码就会在一个新的线程中执行。真的是这样吗？最能加深印象的做法是我们用一段代码来测试一下，可以从两方面来观察，满足一项即可：<br/><br/>
+1. 闭包外部和内总分别打印出当前的线程名看是否不一样，是则为不同线程<br/><br/>
+2. 看闭包中的操作是否要阻塞主线程，不会则表示在新线程中执行的闭包<br/><br/>
+<pre class="brush:groovy">println "Outter thread: "+Thread.currentThread().getName();
+Thread.start {
+    println "Inner thread: "+Thread.currentThread().getName();
+    "How are you?".each {
+        print it;
+    }
+}
+println "Fine, thank you.";</pre>
+<br/>
+我执行后的输出都是：<br/><br/>
+<span style="color: #800080;">Outter thread: main<br />
+Fine, thank you.<br />
+Inner thread: Thread-1<br />
+How are you?<br />
+</span><br />
+线程名不一样，并且最后一行代码有机会在闭包执行之前或之中执行，从这两者中任一条件说明了闭包是在新线程中执行的。试着以通常的方式调用闭包，就是不一样的情况了。<br/><br/>
+Java 中可以使用 Timer 和 TimerTask 来实现定时任务－－在新线程中执行。Groovy 对此 <span style="color: #800080;">java.util.Timer</span> 也有相应的扩展，增加了 <span style="color: #800080;">runafter(int delay,Closure closure)</span> 方法。因此在 Groovy 中应用 Timer 也能实现多线程：<br/><br/>
+<pre class="brush:groovy">new Timer().runAfter(1000) { /* Closure body */}</pre>
+<br/>
+其他与线程相关 wait/notify 和 synchronized 控制，在使用上与 Java 差不多的。<br/><br/>
+知其然，然后总希望知其所以然，否则不免觉得有物梗梗于心头似的。至少能大概了解一下 Groovy 对于多线程的实现原理。<br/><br/>
+<span style="color: #800080;">Thread.start()</span> 和 <span style="color: #800080;">Thread.startDaemon()</span> 最终实际调用的是 <span style="color: #800080;">org.codehaus.groovy.runtime.DefaultGroovyStaticMethods</span> 的相应两个方法：<br/><br/>
+<span style="color: #800080;"> public static Thread start(Thread self, Closure closure);<br />
+ public static Thread startDaemon(Thread self, Closure closure)<br />
+</span><br />
+在 IDE 中，引入 Groovy 的源代码，在这两个方法上打上两个断点就能发现 Thread.start() 大约是循着，以下路径到来的：<br/><br/>
+<span style="color: #800080;">ScriptBytecodeAdapter.invokeMethodN()-&gt;InvokerHelper.invokeMethod()-&gt;MetaClassImpl.invodeStaticMethod()-&gt;...-&gt;NewStaticMetaMethod.invoke()-&gt;...-&gt;DelegatingMethodAccessorImpl.invoke()-&gt;..-&gt;NativeMethodAccessorImpl.invoke0()-&gt;DefaultGroovyStaticMethods.start();</span><br/><br/>
+而 <span style="color: #800080;">Timer.runAfter()</span> 方法最终调用的是 <span style="color: #800080;">org.codehaus.groovy.runtime.DefaultGroovyMethods</span> 的<br/><br/>
+<span style="color: #800080;">public staic TimerTask runAfter(Timer timer, Closure closure)</span> 方法。<br/><br/>
+这些新方法是在 Groovy 运行时通过 MetaClass 新引入到原有 Java 类中的，或是对已引入过的方法会从 <span style="color: #800080;">CacheMethod</span> 中取用。<br/><br/>
+由此及彼，通过对上面过程的了解，我们发现了有几个 Groovy 类很值得去关注的，那就是：<br/><br/>
+<span style="color: #800080;">org.codehaus.groovy.runtime.DefaultGroovyMethodsorg.codehaus.groovy.runtime.DefaultGroovyStaticMethods</span><br />
+留意这三个类(尤其是第一个类)中的方法，你会发现所有的 Groovy 对 Java 类的扩展都能在其中找到。或许能称之为 GDK 扩展。瞧瞧 <span style="color: #800080;">DefaultGroovyMethod</span> 的个头，一万多行代码，再看看 Groovy 对 <span style="color: #800080;">DefaultGroovyMethod</span> 的类说明：<br/><br/>
+<span style="color: #800080;"><span style="color: #800080;">org.codehaus.groovy.runtime.DefaultGroovyMethodsSupport<span style="color: #800080;"><span style="color: #800080;"><span style="color: #800080;"><span style="color: #800080;"> </span></span></span></span></span></span><br/><br/>
+<span style="color: #800080;">This class defines all the new groovy methods which appear on normal JDK classes inside the Groovy environment. Static methods are used with the first parameter the destination class.<br />
+</span><br />
+这让您觉得像 Groovy 中类似 <span style="color: #800080;">each()</span>、<span style="color: #800080;">splitEachLine()</span>、<span style="color: #800080;">any()</span> 这样的方法大可不必如先前那般惊讶了。<br/><br/>
+参考：1. 《Groovy in Action》 (2007.1) 9.3 Working with threads and processes

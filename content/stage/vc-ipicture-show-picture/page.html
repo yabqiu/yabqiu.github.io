@@ -1,0 +1,248 @@
+---
+title: VC 中用 IPicture 在窗口中显示图片文件
+url: /vc-ipicture-show-picture/
+date: 2007-11-30T12:51:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2006/05/cpp-logo.png"
+categories:
+  - C++/VB
+tags: 
+  - VC
+  - IPicture
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 464 
+wpStatus: publish
+views: 482
+lastmod: 2021-09-03T10:01:19-05:00
+---
+
+想做个东西，用VC，希望是在程序界面上能把指定 URL 的图片显示出来，还没找到如何显示 HTTP 资源的图片，先还是让本地图片能在 VC 的窗口(包括各种控件)中显示出来吧。在网上搜索了一番，大家代码都如出一辙，我也不能生搬硬载，不由又亲手实践了一下，并连同原来学过的 Window SDK 做窗口程序也复习了一遍，没有使用到 MFC，只需存成单个源文件，甚至用 CL 命令来编译都无须打开 VC 的，在 VC6 中测试通过。<br />
+<br />
+效果图如下：<!--more--></p>
+<br/>
+<div><img class=" aligncenter" src="//yanbin.blog/wp-content/uploads/2007/12/ShowPicture.JPG" alt="ShowPicture.JPG" width="508" height="367" border="0" /></div>
+<br/>
+代码如下：(仅需关键最后一个方法 ShowPic(char *lpstrFile, HWND hWnd))<br />
+<br /><br/><br/>
+
+<pre class="lang:default decode:true ">#include &lt;windows.h&gt;  // Windows SDK 要用到的   
+#include &lt;commdlg.h&gt;  // 打开文件的窗口要包含这个头文件   
+  
+//用到了 IPicture 接口，要包含下面两个 头文件   
+#include &lt;ocidl.h&gt;    
+#include &lt;olectl.h&gt;    
+  
+// 声明窗口函数的原型   
+LRESULT CALLBACK MainWndProc (HWND, UINT, WPARAM, LPARAM);   
+  
+// 声明显示图片的函数原型   
+HRESULT ShowPic(char *lpstrFile,HWND hWnd) ;   
+  
+//图片文件名   
+char lpstrFile[MAX_PATH]="";   
+  
+  
+int WINAPI WinMain (HINSTANCE hThisInstance,   
+                    HINSTANCE hPrevInstance,   
+                    LPSTR lpszArgument,   
+                    int nFunsterStil)   
+                       
+{   
+    // 窗口类名   
+    char szClassName[ ] = "ShowPicture";   
+       
+    WNDCLASSEX windclass;   
+       
+    //用描述主窗口的参数填充 WNDCLASSEX 结构   
+    windclass.cbSize = sizeof(windclass);  //结构大小   
+    windclass.hInstance = hThisInstance;   //实例句酚   
+    windclass.lpszClassName = szClassName;   
+    windclass.lpfnWndProc = MainWndProc;   //窗口函数指针   
+    windclass.style = CS_DBLCLKS;          //捕获双击事件   
+    windclass.cbSize = sizeof (WNDCLASSEX);   
+       
+    windclass.hIcon = LoadIcon (NULL, IDI_APPLICATION); //使用预定义图标   
+    windclass.hIconSm = LoadIcon (NULL, IDI_APPLICATION); //使用预定义类的小图标   
+    windclass.hCursor = LoadCursor (NULL, IDC_ARROW); //使用预定义光标   
+    windclass.lpszMenuName = NULL;                 //不指定主菜单   
+    windclass.cbClsExtra = 0;                      //没有额外的类内存   
+    windclass.cbWndExtra = 0;                      //没有额外的窗口内存   
+       
+    windclass.hbrBackground = (HBRUSH) COLOR_BACKGROUND; //使用预定义背景画刷   
+       
+    //注册这个窗口类，如果失败直接退出程序    
+    if (!RegisterClassEx (&amp;windclass))   
+        return 0;   
+       
+    //创建主窗口   
+    HWND hWnd = CreateWindowEx (   
+        0,                   //dwExStyle, 扩展样式   
+        szClassName,         //lpClassName, 类名   
+        "显示图片 -- 鼠标双击浏览图片文件      -- Author:Unmi", //lpWindowName, 标题   
+        WS_OVERLAPPEDWINDOW, //dwStyle, 窗口风格   
+        CW_USEDEFAULT,       //X, 初始 X 坐标   
+        CW_USEDEFAULT,       //Y, 初始 YX 坐标   
+        640,                 //nWidth, 宽度   
+        480,                 //nHeight, 高度   
+        HWND_DESKTOP,        //hWndParent, 父窗口句柄   
+        NULL,                //hMenu, 菜单句柄   
+        hThisInstance,       //hInstance, 程序实例句柄   
+        NULL                 //lpParam, 用户数据   
+        );   
+       
+    //显示窗口，刷新窗口客户区   
+    ShowWindow (hWnd, nFunsterStil);   
+       
+    // 从消息队列中取出消息，交给窗口函数处理   
+    // 直到 GetMessage 取出的消息是 WM_QUIT，即FALSE,则结束消息循环   
+    MSG messages;       
+    while (GetMessage (&amp;messages, NULL, 0, 0))   
+    {   
+        //转换键盘消息，把虚拟键转换为字符消息   
+        TranslateMessage(&amp;messages);   
+           
+        //将消息发送到相应的窗口函数   
+        DispatchMessage(&amp;messages);   
+    }   
+       
+    // GetMessage 返回 FALSE,程序结束 PostQuitMessage() 发出这一消息   
+    return messages.wParam;   
+}   
+  
+  
+// 窗口函数，消息由 DispatchMessage 派发   
+LRESULT CALLBACK MainWndProc (HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)   
+{   
+    switch (message) //处理消息   
+    {   
+    case WM_DESTROY:   
+        //向消息队列投递一个 WM_QUIT 消息，促使 GetMessage 函数返回0，结束消息循环   
+        PostQuitMessage (0);   
+        break;   
+    case WM_LBUTTONDBLCLK:   
+        {   
+            OPENFILENAME file = {0};   
+            file.lStructSize = sizeof(file);   
+            file.lpstrTitle = "请选择一个图片文件";   
+            file.lpstrFile = lpstrFile;   
+            file.nMaxFile = MAX_PATH;   
+            file.lpstrFilter = "Pictures(*.jpg,*.gif,*.bmp)\0*.jpg;*.gif;*.bmp\0\0";   
+            if(::GetOpenFileName(&amp;file))   
+            {          
+                //清除原来的图像   
+                HDC hdc=GetDC(hWnd);    
+                RECT rect;   
+                ::GetWindowRect(hWnd,&amp;rect);   
+                ::FillRect(hdc,&amp;rect,(HBRUSH) COLOR_BACKGROUND);   
+                   
+                ::SendMessage(hWnd,WM_PAINT,NULL,NULL);   
+            }   
+        }   
+        break;   
+    case WM_PAINT:   
+        ShowPic(lpstrFile,hWnd);   
+        break;   
+    default:   
+           
+        //将我们不处理的消息交给系统 做默认处理   
+        return DefWindowProc (hWnd, message, wParam, lParam);   
+    }   
+       
+    return 0;   
+}   
+  
+// 显示图片，此文的重点之所在了, lpstrFile 为图片文件名，hWnd 为窗口句柄   
+HRESULT ShowPic(char *lpstrFile,HWND hWnd)    
+{    
+    HDC hDC_Temp=GetDC(hWnd);    
+       
+    IPicture *pPic;    
+    IStream *pStm;    
+       
+    BOOL bResult;    
+       
+    HANDLE hFile=NULL;    
+    DWORD dwFileSize,dwByteRead;    
+       
+    //打开图形文件    
+    hFile=CreateFile(lpstrFile,GENERIC_READ,    
+        FILE_SHARE_READ,NULL,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,NULL);    
+       
+    if (hFile!=INVALID_HANDLE_VALUE)    
+    {    
+        dwFileSize=GetFileSize(hFile,NULL);//获取文件字节数    
+           
+        if (dwFileSize==0xFFFFFFFF)    
+            return E_FAIL;    
+    }    
+    else    
+    {    
+        return E_FAIL;    
+    }    
+       
+       
+    //分配全局存储空间    
+    HGLOBAL hGlobal = GlobalAlloc(GMEM_MOVEABLE, dwFileSize);    
+    LPVOID pvData = NULL;    
+       
+    if (hGlobal == NULL)    
+        return E_FAIL;    
+       
+    if ((pvData = GlobalLock(hGlobal)) == NULL)//锁定分配内存块    
+        return E_FAIL;    
+       
+    ReadFile(hFile,pvData,dwFileSize,&amp;dwByteRead,NULL);//把文件读入内存缓冲区    
+       
+    GlobalUnlock(hGlobal);    
+       
+    CreateStreamOnHGlobal(hGlobal, TRUE, &amp;pStm);    
+       
+    //装入图形文件    
+    bResult=OleLoadPicture(pStm,dwFileSize,TRUE,IID_IPicture,(LPVOID*)&amp;pPic);    
+       
+    if(FAILED(bResult))    
+        return E_FAIL;    
+       
+    OLE_XSIZE_HIMETRIC hmWidth; //图片的真实宽度, 单位为英寸   
+    OLE_YSIZE_HIMETRIC hmHeight; //图片的真实高度, 单位为英寸   
+    pPic-&gt;get_Width(&amp;hmWidth);    
+    pPic-&gt;get_Height(&amp;hmHeight);    
+       
+    //转换hmWidth和hmHeight为pixels距离，1英寸=25.4毫米   
+    int nWidth = MulDiv(hmWidth,GetDeviceCaps(hDC_Temp,LOGPIXELSX),2540);   
+    int nHeight = MulDiv(hmHeight,GetDeviceCaps(hDC_Temp,LOGPIXELSY),2540);   
+       
+    //将图形输出到屏幕上（有点像BitBlt）    
+    bResult=pPic-&gt;Render(hDC_Temp,0,0,nWidth,nHeight,    
+        0,hmHeight,hmWidth,-hmHeight,NULL);    
+       
+    pPic-&gt;Release();    
+       
+    CloseHandle(hFile);//关闭打开的文件    
+       
+    if (SUCCEEDED(bResult))    
+    {    
+        return S_OK;    
+    }    
+    else    
+    {    
+        return E_FAIL;    
+    }    
+}</pre>
+<br/>
+<span class="datatypes"><br />
+函数 HRESULT</span> ShowPic(<span class="datatypes">char</span> *lpstrFile,<span class="datatypes">HWND</span> hWnd) 是本日志要义之所在，传入文件名和窗口句柄(比如按或者静态文本框的句柄亦可)，然后会在指定窗口中按图片实际尺寸显示出来。<br/><br/>
+注意，必须包含头文件 ocidl.h 和 olectl.h 。关键的方法只有 ShowPic，其余的代码只不过为我练手之用，权可当是累赘。以上实现的是在主窗口中显示图片，图片格式暂定为允许选择JPG/GIF/BMP三种，其他没一一尝试，不过我想只要 IE 中能支持的图片式在此应无问题。<br/><br/>
+操作方法是：在窗口中双击鼠标左键就会弹出图片选择窗口，选择适当的图片就会在窗口中显示。目前只是读取图片文件显示，期待中的是下一步显示内存中的图片数据字节数组或流，进而给个 HTTP 协议的图片 URL 就能正确显示，那么在这个小范围内的研究对我说算是一个小突破。<br/><br/>
+现在想来，好像都不是问题，只是不同的 File HANDLE 而已，通过 CInternetSession 读取图片 URL 也会是生成一个 FILE HANDLE，交给 ReadFile 去读取就行了，晚上回去试一试。<br/><br/>
+参考：1. <a href="http://www.vckbase.com/document/viewdoc/?id=446">在MFC程序中显示JPG/GIF图像</a><br />
+        2. <a href="http://dev.csdn.net/article/82284.shtm">用IPicture显示图片</a><br />
+        3. <a href="http://www.cppblog.com/TechLab/archive/2005/10/20/758.aspx">利用IPicture接口加载、显示图片</a><br />
+        4. <a href="http://www.bc-cn.net/Article/kfyy/vc/jszl/200601/3010.html">VC下显示JPEG、GIF图像的简便方法</a><br />
+        5. <a href="http://blog.csdn.net/ShowMan/archive/2001/04/16/9050.aspx">cool !!!! 在VC中显示JPEG和GIF图像</a>

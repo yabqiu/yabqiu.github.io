@@ -1,0 +1,77 @@
+---
+title: 利用JDOM把两个XML合并生得到一个Document对象
+url: /jdom-combine-xml-one-document/
+date: 2007-09-23T03:58:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/09/xml-logo.png"
+categories:
+  - XML/DOM
+  - Java/JEE
+tags: 
+  - xml
+  - JDom
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 486 
+wpStatus: publish
+views: 1007
+lastmod: 2021-09-03T10:07:05-05:00
+---
+
+通常一些应用框架都会用 XML 作为配置，而且很多都支持多个 XML 文件，例如 Struts 框架可以配置多个 struts-config-xxx.xml 文件，Spring 也允许你用多个 applicationContext-xxx.xml 文件，再比如 DWR 也是可以由多个 dwr-xxx.xml 依功能或其他方式分开来配置。我们知道，这样的多个 XML 有相同的规范定义，那么程序如何一并解析它们呢？我看过 ActionServlet 是对 struts-config-xxx.xml 逐个解析的。我这里介绍的一种方法是把那些有着相同规范定义的 XML 合成一个 Document 然后对这个 Document 对象进行处理，如 XPath 查找、进行 DOM 对象操作，就不需要每次到多个 Document 中去查找一遍。</p>
+<br/>
+众所周知，对 XML 的操作有两种方式，DOM：XML 映射在内存中一颗树；SAX：基于事件的方式。常用的 XML Java 解析组件有 DOM4J(Apache的)、JDOM、和JAXP(Sun的)，它们都提供了 DOM 和 SAX 实现和 Xpath 查找。<!--more--><br/><br/>
+下面我就介绍用 JDOM 完成对多个 XML 文件进行合并得到一个 Document 对象，实现代码如下：<br/><br/>
+<pre class="lang:default decode:true ">/*
+ * Created on Sep 23, 2007
+ */
+package com.unmi;   <br/><br/>
+import java.io.IOException;
+import java.util.List;   <br/><br/>
+import org.jdom.Document;
+import org.jdom.Element;
+import org.jdom.JDOMException;
+import org.jdom.input.SAXBuilder;   <br/><br/>
+/**
+ * Combine two or more XML together as one document
+ * I put this operation into main method.
+ * @author Unmi
+ */
+public class CombineXML
+{   <br/><br/>
+    /**
+     * @param args
+     * @throws Exception
+     */
+    public static void main(String[] args) throws Exception
+    {
+        Document document = null;
+        try {
+            SAXBuilder dbf = new SAXBuilder();
+            document = (Document) dbf.build(args[0]);
+            Element docRoot = document.getRootElement();   <br/><br/>
+            for (int i = 1; i &lt; args.length; i++) {
+                Document tmpdoc = dbf.build(args[i]);
+                List&lt;Element&gt; nlt = tmpdoc.getRootElement().getChildren();
+                for (int j = 0; j &lt; nlt.size(); ) {
+                    Element el = nlt.get(0);
+                    // get free element
+                    el.detach();
+                    docRoot.addContent(el);
+                }
+            }
+        } catch (IOException e) {
+            throw new Exception("File not readable.");
+        } catch (JDOMException e) {
+            throw new Exception("File parsed error.");
+        }   <br/><br/>
+        //TODO, You can process that document now.
+    }
+}</pre>
+<br/>
+研究这个的目的是，我想做一个工具合并多个 Struts-config 配置文件，然后输入 nath、nction、norward、name 或 type 等中的一个属性值查找到相关的其他属性值，这样能方便程序调试，比如看到哪个 aciton.do 就知道会转向到哪些个页面，附着了哪个 formbean，以及其他相关的属性值是什么。

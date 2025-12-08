@@ -1,0 +1,107 @@
+---
+title: 创建 AWS EC2 实例时 userdata 的一些知识
+url: /launch-aws-ec2-instance-userdata-knowledge/
+date: 2021-09-18T22:51:25-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - AWS
+  - Cloud
+  - EC2
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11723 
+wpStatus: publish
+views: 1505
+lastmod: 2021-12-01T18:58:48-06:00
+---
+
+我们在初始一个 AWS EC2 实例时，可以通过 user data 让 EC2 第一次启动后做些事情，可以放置 shell script 或 cloud-init 指令。在控制台设置 user data 可用明文文本，由 awscli 创建时可使用一个文件，或者通过 API 用 base64 编码的内容。<br/><br/>
+下面是 user data 被执行时需知晓的一些知识<br/><br/>
+<ol>
+    <li>是脚本时必须以 <code>#!</code> 开始，俗称 Shebang, 如 <code>#!/bin/bash</code></li>
+    <li>user data是以 <code>root</code> 身份执行，所以不要用 <code>sudo</code>, 当然创建的目录或文件的 owner 也是 <code>root</code>，需要 <code>ec2-user</code> 用户访问的话需要 <code>chmod</code> 修改文件权限，或者直接用 <code>chown ec2-user:ec2-user -R abc</code> 修改文件的所有者()</li>
+    <li>脚本不能交互，有交互时必须想办法跳过用户输入，如 <code>apt install -y xzy</code>, 带个  <code>-y</code> 标记</li>
+    <li>如果脚本中需访问 AWS 资源，权限由 Instance Profile 所指定的 IAM role 决定</li>
+    <li>user data 中的脚本会被存储在  <code>/var/lib/cloud/instances/&lt;instance-id&gt;/user-data.txt</code> 文件中，因此也可以从这里验证 user data 是否设置正确。或者在 EC2 实例上访问 http://169.254.169.254/latest/user-data 也能看到 user data 的内容。并且在 EC2 实例初始化后不被删除，所以以此实例为基础来创建一个新的 AMI 需把它删除了</li>
+    <li>user data 的大小限制为 16 KB, 指 base64 编码前的大小</li>
+    <li>cloud-init 的输出日志在 <code>/var/log/cloud-init-output.log</code>, 它会捕获 cloud-init 控制台的输出内容</li>
+</ol>
+<br/>
+<!--more-->user data 的内容通常在创建好实例后，还得等一会才完全生效，马上用 SSH 登陆新创建后的实例一般还看不到效果，有可能得等分把钟。<br/><br/>
+下面是在一个选择了 Ubuntu 18.04 镜像的 EC2 实例的 user data 样例 -- 用来安装 Python 3.9, 并创建虚拟环境, 安装 Python 组件<br/><br/>
+<pre class="lang:default decode:true">#!/bin/bash
+apt update
+apt install awscli -y
+apt install software-properties-common -y
+add-apt-repository ppa:deadsnakes/ppa -y
+apt update
+apt install python3.9 python3.9-venv -y
+python3.9 -m venv /home/ec2-user/py3.9-venv
+/home/ec2-user/py3.9-venv/bin/pip install boto3 pymongo psycopg2-binary
+chown -R ec2-user:ec2-user /home/ec2-user/py3.9-venv</pre>
+<br/>
+脚本的内容会存储在 EC2 实例上，但它执行的控制台输出却没地方找，如果脚本执行过程中有问题就难以诊断了，这里有个办法可记录下 user data 中脚本执行的控制台输出，需在 user data 中加上一行，最后把调试也打开<br/><br/>
+<pre class="lang:default mark:2 decode:true">#!/bin/bash -ex
+exec &gt; &gt;(tee /var/log/user-data.log|logger -t user-data -s 2&gt;/dev/console) 2&gt;&amp;1
+apt update
+......</pre>
+<br/>
+对，你没有看错，上面的 <code>exec &gt; &gt;(...</code> 两个大括号之间有空格<br/><br/>
+这样就能在实例的 <code>/var/log/user-data.log</code> 中看到所有 user data 中脚本执行的控制台输出了，错在哪一步也就能有的放矢的修正。<br/><br/>
+比如本人有一次发现 user data 中的脚本没发生作用，就查看 <code>/var/log/user-data.log</code> 中的内容发现错误信息<br/><br/>
+<blockquote>
+E: Could not get lock /var/lib/dpkg/lock-frontend - open (11: Resource temporarily unavailable)<br />
+E: Unable to acquire the dpkg frontend lock (/var/lib/dpkg/lock-frontend), is another process using it?
+</blockquote>
+<br/>
+原来是还有一个进程也在执行 apt，继而 Google 到 apt-daily.service 启动的时候在干那事，查看它的日志<br/><br/>
+<blockquote>
+$ journalctl -u apt-daily.service<br />
+-- Logs begin at Thu 2021-09-09 07:38:01 UTC, end at Sat 2021-09-18 17:29:41 UTC. --<br />
+Sep 18 17:23:21 lin-0aff3d81.mstarext.com systemd[1]: Starting Daily apt download activities...<br />
+Sep 18 17:23:46 lin-0aff3d81.mstarext.com systemd[1]: Started Daily apt download activities.
+</blockquote>
+<br/>
+所以在 user data 需要避开它，我们的 user data 可以加一个  <code>sleep 30</code> 进行延迟执行，30 不够的话就 <code>sleep 60</code>。<br/><br/>
+已启动 EC2 实例的 user data 只允许在实例停止后被修改，但修改后的内容并不会在重启后得到执行，只不过是更新了一下文件 <code>/var/lib/cloud/instances/&lt;instance-id&gt;/user-data.txt</code> 中内容，无用功，难道是在掩盖现场？<br/><br/>
+<a href="https://aws.amazon.com/premiumsupport/knowledge-center/execute-user-data-ec2/">How can I utilize user data to automatically run a script with every restart of my Amazon EC2 Linux instance?</a>(user data 设计为只在第一次初始化 EC2 实例时起作用，有人曲折的方式让实例每次重启时也执行 user data 中的内容，个人觉得没多大意义，每次启动执行何不做成一个服务呢？)<br/><br/>
+<h3>关于 cloud-init 指令式的 user data</h3><br/><br/>
+要在 user data 中放置 <code><a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/user-data.html#user-data-cloud-init">cloud-init</a></code> 指令, 需在 user data 的第一行写上 <code>#cloud-config</code>。cloud-init 的用户可比脚本复杂了，它能做一些更高级的事情。这里就不深究，暂时还感觉不到非得用 <code>cloud init</code> 指令不成的境地，下面只看一个节选自官方的例子<br/><br/>
+<pre class="lang:default decode:true ">#cloud-config
+repo_update: true
+repo_upgrade: all<br/><br/>
+packages:
+ - httpd
+ - mariadb-server<br/><br/>
+runcmd:
+ - [ sh, -c, "amazon-linux-extras install -y lamp-mariadb10.2-php7.2 php7.2" ]
+ - systemctl start httpd
+ - sudo systemctl enable httpd
+ - [ sh, -c, "usermod -a -G apache ec2-user" ]
+ - [ sh, -c, "chown -R ec2-user:apache /var/www" ]
+ - chmod 2775 /var/www
+ - [ find, /var/www, -type, d, -exec, chmod, 2775, {}, \; ]
+ - [ find, /var/www, -type, f, -exec, chmod, 0664, {}, \; ]
+ - [ sh, -c, 'echo "&lt;?php phpinfo(); ?&gt;" &gt; /var/www/html/phpinfo.php' ]</pre>
+<br/>
+它是 YAML 文件格式，比起用脚本可难看多了， runcmd 中一会用 sh 加中括号参数的形式，一会又直接 shell 脚本。个人认为上面的 <code>sudo</code> 是不需要的。<br/><br/>
+cloud-init 指令应该与系统中的 <code>cloud-init</code> 命令是相关的，EC2 实例中可以看到一个配置文件 <code>/etc/cloud/cloud.cfg</code>.<br/><br/>
+<code>#cloud-config</code> 形式的执行输出到控制台的内容会写到 <code>/var/log/cloud-init-out.log</code> 文件中，希望它记录下更多 cloud-init 执行时调试信息的话，在 user data 的  cloud-init 指令中加上一句<br/><br/>
+<pre class="lang:default decode:true">output : { all : '| tee -a /var/log/cloud-init-output.log' }</pre>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-add-user-data.html">Work with instance user data</a></li>
+    <li><a href="https://alestic.com/2010/12/ec2-user-data-output/">Logging user-data Script Output on EC2 Instances</a></li>
+    <li><a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/user-data.html">Run commands on your Linux instance at launch</a></li>
+    <li><a href="https://itsfoss.com/could-not-get-lock-error/">How to Fix 'E: Could not get lock /var/lib/dpkg/lock/log' Error in Ubuntu Linux</a></li>
+    <li><a href="https://aws.amazon.com/premiumsupport/knowledge-center/execute-user-data-ec2/">How can I utilize user data to automatically run a script with every restart of my Amazon EC2 Linux instance?</a></li>
+</ol>

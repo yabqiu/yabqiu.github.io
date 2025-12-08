@@ -1,0 +1,313 @@
+---
+title: Python 多线程编程
+url: /python-programming-with-threads/
+date: 2019-01-04T19:31:19-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - multithread
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9239 
+wpStatus: publish
+views: 769
+lastmod: 2022-09-14T14:20:30-05:00
+---
+
+这几天一直浸淫在对 Python 的学习当中，对于一个更习惯 Java 语言的人来说，在接接触 Python 各种概念时会不停的与 Java 进行碰撞。譬如这里要说到的线程，Python 能如何像 Java 一样创建并执行单个线程，以及是否也能使用线程池来进行多作务的执行呢？<br/><br/>
+整个读完了《THE Quick Python Book》一书也只字未提多线程，然而对于有长时间的 IO 等待的程序，对于当今普及的多核以及核内超线程的 CPU 来说，不使用多线程来并行或并发处理任务是万万不能的，否则效率的差别是数量级的。<br/><br/>
+基于与 Java 多线程编程进行的比较，主要着力于两个问题：1）创建并执行新的线程，2）线程池中执行任务<br/><br/>
+<h3>创建并执行新的线程</h3><br/><br/>
+默认的，代码是在主线程中执行，主线程名称为 <code>MainThread</code>。如果要创建一个子线程并执行需要用到模块 <code>threading</code>。下面的是基本的代码<!--more--><br/><br/>
+<pre class="lang:default mark:9,10 decode:true">import threading<br/><br/>
+
+def play_music():
+    print(threading.current_thread().name,  " - playing music")<br/><br/>
+
+print(threading.current_thread().name, " - main")
+thread = threading.Thread(target=play_music)
+thread.start()</pre>
+<br/>
+程序执行输出<br/><br/>
+<blockquote>
+MainThread - main<br />
+Thread-1 - playing music
+</blockquote>
+<br/>
+是不是感觉 Python 创建并启动新线程的方式与 Java 基本是一样的，Java 用的是 <code>new Thread(runnable).start()</code>。只是因为 Python 里函数是第一类对象，所以可以为子线程直接指定要执行的函数，而无需像 Java 那样由一个 Runnable 的 run 方法来指定操作。<br/><br/>
+Python 中也是分两步走：<br/><br/>
+<ol>
+    <li>threading.Thread(target=play_music), 创建子线程并用 <code>target</code> 指定子线程中要操作的函数</li>
+    <li>thread.start(), 调用线程的 <code>start()</code> 方法来启动一个线程，这里的 <code>thread</code> 也有 <code>run()</code> 方法，与 Java Runnable 的 <code>run()</code> 是一样的，调用它只会在当前线程中执行 <code>play_music()</code>, 而不会启动子线程</li>
+</ol>
+<br/>
+如果深入看 Thread 类的 <code>run()</code> 方法，它实际上就是执行的 <code>target</code> 参数所指示的函数。<br/><br/>
+通过 <code>threading.current_thread().name</code> 打印的当前线程名称可以看出 <code>play_music</code> 函数是在子线程中执行，但是从控制台的输出我们无法感受到主线程与子线程是否并发执行。我们可以对上面的程序稍稍修改一下：<br/><br/>
+<pre class="lang:default decode:true">import time
+import threading<br/><br/>
+
+def play_music():
+    for i in range(5):
+        print(threading.current_thread().name, i)
+        time.sleep(1)<br/><br/>
+
+thread = threading.Thread(target=play_music)
+thread.start()<br/><br/>
+for j in range(5):
+    print(threading.current_thread().name, j)
+    time.sleep(1)</pre>
+<br/>
+这时候程序执行后的输出<br/><br/>
+<blockquote>
+Thread-1 0<br />
+MainThread 0<br />
+Thread-1 1<br />
+MainThread 1<br />
+Thread-1 2<br />
+MainThread 2<br />
+Thread-1 3<br />
+MainThread 3<br />
+Thread-1 4<br />
+MainThread 4
+</blockquote>
+<br/>
+循环中加上延时能够看到主线程与子线程同时执行的效果。当然，启动的多个子线程也是一样的同时执行。<br/><br/>
+<h3>关于线程的其他一些说明</h3><br/><br/>
+继续用 Python 的线程与 Java 的相类比，它们的线程的行为基本是一致的。<br/><br/>
+<h4>完整的 <code>Thread</code> 类初始化方法是</h4><br/><br/>
+<pre class="lang:default decode:true ">def __init__(self, group=None, target=None, name=None,
+             args=(), kwargs=None, *, daemon=None):</pre>
+<br/>
+<h4>参数传递</h4><br/><br/>
+也可以向 target 函数传递参数，因为运行方法的参数是不定的，所以传递时可以通过 tuple 或 list 向运行方法传递一个或多个参数，运行方法是从 tuple  或 list 中拆解出参数的。<br/><br/>
+<pre class="lang:default decode:true">def play_music(a):
+    pass<br/><br/>
+threading.Thread(target=play_music, args=(8,))
+threading.Thread(target=play_music, args=[8])</pre>
+<br/>
+不能用 threading.Thread(target=play_music, args=8), 因为 play_music 没有名为 args 的形参。当 args 是只有一个元素的 tuple 时，必须附加一个逗号，否则 <code>args=(8)</code> 和 <code>args=8</code> 是一个效果<br/><br/>
+多个参数时，用 tuple 或 list 传递即可<br/><br/>
+<pre class="lang:default decode:true">def play_music(a, b):
+   pass<br/><br/>
+threading.Thread(target=play_music, args=(8,9))
+threading.Thread(target=play_music, args=[8,9])</pre>
+<br/>
+有关于函数参数拆解的内容可参考 <a href="https://yanbin.blog/python-function-argument-unpacking/">https://yanbin.blog/python-function-argument-unpacking/</a><br/><br/>
+<h4>关于守护线程</h4><br/><br/>
+创建线程的时候可以指定线程组，线程名(默认为 Thread-N)，是否守护线程(daemon)。在线程初始化也可以修线程名和 daemon 属性<br/><br/>
+这样创建的线程的  daemon 默认为 False，这与 Java new Thread() 创建的线程是一样的，也就是说子线程没退出的话程序运行也不会结束。这与 Java 线程的行为是一样的。<br/><br/>
+<pre class="lang:default decode:true">import time
+import atexit
+import threading<br/><br/>
+
+def play_music():
+    for i in range(3):
+        print(threading.current_thread().name, i)
+        time.sleep(1)<br/><br/>
+
+atexit.register(lambda: print("program exit"))<br/><br/>
+print("main start")
+thread = threading.Thread(target=play_music)
+thread.start()
+print("subthread started")
+</pre>
+<br/>
+这段程序执行后输出：<br/><br/>
+<blockquote>
+main start<br />
+Thread-1 0<br />
+subthread started<br />
+Thread-1 1<br />
+Thread-1 2<br />
+program exit
+</blockquote>
+<br/>
+而如果创建线程时指定 daemon=True, 修改创建线程的代码行为<br/><br/>
+<pre class="lang:default decode:true ">thread = threading.Thread(target=play_music, daemon=True)</pre>
+<br/>
+再执行后输出为：<br/><br/>
+<blockquote>
+main start<br />
+Thread-1 0<br />
+subthread started<br />
+program exit
+</blockquote>
+<br/>
+子线程无法阻止主线程的退出，主线程退出后，正在执行的子线程也立即中断。<br/><br/>
+<h4>封装自己的线程类</h4><br/><br/>
+看到有基于 Python 的 <code>threading.Thread</code> 封装自己的线程类，大致代码如下<br/><br/>
+<pre class="lang:default decode:true ">class MyThread(threading.Thread):<br/><br/>
+    def run(self):
+        for i in range(5):
+            print(self.name, i)
+            time.sleep(1)<br/><br/>
+
+MyThread().start()</pre>
+<br/>
+仿照的像个 Java 的 Thread 一样，其实个人觉得没有太大的必要性，因为用 <code>threading.Thread(target=func)</code> 的方式比创建的 MyThread 类还更方便灵活。<br/><br/>
+<h3>使用 Python 线程池</h3><br/><br/>
+如果多任务处理每次都要创建线程，启动，运行，结束，这会带来不少问题。创建线程需要时间与空间的消耗，如果任务耗时，可能会创建过多的线程占用系统资源；线程数量少了，效率又是个问题。<br/><br/>
+就是比较难以一资源与效率之间平衡，这时候就需要线程池的实现了，根据系统资源与效率初始化一定数量的线程放在池子里，线程可以得到重用，避免了频繁的创建新的线程，同时线程数量也是可控的。<br/><br/>
+Java 的实现方式是一般是创建 <code>ExecutorService</code> 线程池(ThreadPoolExecutor)，而后只管往线程池提交任务，剩下的事情交给线程池去处理。Python 也借用了同样的实现方式，要用到  <code>concurrent.futures</code> 模块的 <code>ThreadPoolExecutor</code>, 连名称都一样的。<br/><br/>
+<pre class="lang:default decode:true">import time
+import threading
+import atexit
+from concurrent.futures import ThreadPoolExecutor<br/><br/>
+
+def play_music(num):
+    print(threading.current_thread().name, " daemon: ", threading.current_thread().isDaemon())
+    for k in range(2):
+        print(threading.current_thread().name, num)
+        time.sleep(1)<br/><br/>
+
+atexit.register(lambda: print("program exit"))<br/><br/>
+thread_pool = ThreadPoolExecutor(2)
+for i in range(3):
+    thread_pool.submit(play_music, i)  # 同时演示了如何向任务函数传递参数<br/><br/>
+# thread_pool.shutdown()</pre>
+<br/>
+上面代码执行后输出大致如下：<br/><br/>
+<blockquote>
+ThreadPoolExecutor-0_0 daemon: True<br />
+ThreadPoolExecutor-0_0 0<br />
+ThreadPoolExecutor-0_1 daemon: True<br />
+ThreadPoolExecutor-0_1 1<br />
+program exit<br />
+ThreadPoolExecutor-0_1 1<br />
+ThreadPoolExecutor-0_0 0<br />
+ThreadPoolExecutor-0_1 daemon: True<br />
+ThreadPoolExecutor-0_1 2<br />
+ThreadPoolExecutor-0_1 2
+</blockquote>
+<br/>
+<code>ThreadPoolExecutor</code> 池中的线程  daemon 是 True，我们看到注册的 <code>ShutdownHook</code> 已经输出了 <code>program exit</code>，本来是宣告程序结束了，可实际上提交到线程池中的任务还必须执行完。这个行为与 Java 的 daemon 全为 true 的 <code>ForkJoinPool</code> 线程池的行为是不一样的，Java 的主线程一旦结束，已提交到 <code>ForkJoinPool</code> 中的任务也会终止掉。<br/><br/>
+这让人有些迷惑，是什么原因呢？偶然间查看 <code>thread</code> 模块的代码，发现它也注册了一个 <code>ShutdownHook</code><br/><br/>
+<pre class="lang:default decode:true ">def _python_exit():
+    global _shutdown
+    _shutdown = True
+    items = list(_threads_queues.items())
+    for t, q in items:
+        q.put(None)
+    for t, q in items:
+        t.join()<br/><br/>
+atexit.register(_python_exit)</pre>
+<br/>
+这使得主线程在退出前触发了这个 <code>_python_exit</code> 函数，其中确保了已提交到线程池中的任务仍然要完成。<br/><br/>
+如果前面的  <code>thread_pool.shutdown()</code> 行启用，执行的结果像下面那样<br/><br/>
+<blockquote>
+ThreadPoolExecutor-0_0 daemon: True<br />
+ThreadPoolExecutor-0_1 daemon: True<br />
+ThreadPoolExecutor-0_1 1<br />
+ThreadPoolExecutor-0_0 0<br />
+ThreadPoolExecutor-0_0 0<br />
+ThreadPoolExecutor-0_1 1<br />
+ThreadPoolExecutor-0_0 daemon: True<br />
+ThreadPoolExecutor-0_0 2<br />
+ThreadPoolExecutor-0_0 2<br />
+program exit
+</blockquote>
+<br/>
+必须是所有的任务执行结束才会触发 <code>ShutdownHook</code>。这是正常的线程池行为，因为执行 <code>ThreadPoolExecutor</code> 的 <code>shutdown()</code> 后，必须等待已提交的任务执行完。<br/><br/>
+另外，<code>submit()</code> 也是有返回值的，即任务的返回值，能够由以下方式获得结果<br/><br/>
+<pre class="lang:default decode:true">future = thread_pool.submit(play_music, 20)
+result =future.result()</pre>
+<br/>
+<h4>线程池与 <code>with</code> 关键字</h4><br/><br/>
+<code>ThreadPoolExecutor</code> 的 <code>shutdown()</code> 是可以工作上下文管理器中的。<code>ThreadPoolExecutor</code> 继承自 <code>_base.Executor</code>，该类中有这样的定义<br/><br/>
+<pre class="lang:default decode:true">def __enter__(self):
+    return self<br/><br/>
+def __exit__(self, exc_type, exc_val, exc_tb):
+    self.shutdown(wait=True)
+    return False</pre>
+<br/>
+改写上面的试验代码使用 <code>with</code> 关键字<br/><br/>
+<pre class="lang:default decode:true">import time
+import threading
+import atexit
+from concurrent.futures import ThreadPoolExecutor<br/><br/>
+
+def play_music(num):
+    print(threading.current_thread().name, " daemon: ", threading.current_thread().isDaemon())
+    for k in range(2):
+        print(threading.current_thread().name, num)
+        time.sleep(1)<br/><br/>
+
+atexit.register(lambda: print("program exit"))<br/><br/>
+with ThreadPoolExecutor(2) as thread_pool:
+    for i in range(3):
+        thread_pool.submit(play_music, i)</pre>
+<br/>
+这时候的执行行为与调用了 <code>thread_pool.shutdown()</code> 方法的是一致的，输出类似下面<br/><br/>
+<blockquote>
+ThreadPoolExecutor-0_0 daemon: True<br />
+ThreadPoolExecutor-0_0 0<br />
+ThreadPoolExecutor-0_1 daemon: True<br />
+ThreadPoolExecutor-0_1 1<br />
+ThreadPoolExecutor-0_0 0<br />
+ThreadPoolExecutor-0_1 1<br />
+ThreadPoolExecutor-0_0 daemon: True<br />
+ThreadPoolExecutor-0_0 2<br />
+ThreadPoolExecutor-0_0 2<br />
+program exit
+</blockquote>
+<br/>
+也就是在所有提交的任务完成后当前程序才会结束。<br/><br/>
+<h3>其他线程相关话题</h3><br/><br/>
+涉及到线程的话就会有不同线程之间的协作问题，比如线程安全，通知，等待等问题。这些也还是留待以后有需求时再作研究。但一些通常问题还是有必要现在就解决掉，如提提交了多个任务到线程，必须在全部任务完成后才能进行下一步行动<br/><br/>
+<h4>wait 所有任务</h4><br/><br/>
+可以用 <code>concurrent.futures</code> 的 <code>wait</code> 方法来等待多个任务，条件可以是 <code>FIRST_COMPLETED</code>, <code>FIRST_EXCEPTION</code> 或 <code>ALL_COMPLETED</code>，默认为 <code>ALL_COMPLETED</code>。<br/><br/>
+<pre class="lang:default mark:10 decode:true">from concurrent.futures import ThreadPoolExecutor, wait
+......<br/><br/>
+futures = []
+executor = ThreadPoolExecutor(2)
+for i in range(3):
+    futures.append(executor.submit(play_music, i))<br/><br/>
+wait(futures)  # 所有任务完成后遍历任务结果
+# wait(futures, return_when='FIRST_COMPLETED') # 比如从多处查询结果，只要有一个结果就行
+for future in futures:
+    print(future.result())</pre>
+<br/>
+没有 <code>wait(futures)</code> 的话在提交完任务后会立即执行 <code>for future in futures:</code> 这一行，当然用 <code>with ThreadPoolExecutor(2) as executor:</code> 也能保证在退出这个  <code>with</code> 上下文时所有的任务是完成了的。 <br/><br/>
+<h4>使用 map 得到结果</h4><br/><br/>
+其他函数式编程我们可以习惯了用 <code>map</code> 函数，Python 的线程结果也能用 <code>map</code> 函数，看下面的例子<br/><br/>
+<pre class="lang:default mark:3 decode:true">results = []
+with ThreadPoolExecutor(2) as executor:
+    results.extend(executor.map(play_music, [1, 2, 3]))<br/><br/>
+
+for result in results:
+    print(result)</pre>
+<br/>
+<code>executor.map(play_music, [1, 2, 3])</code> 实现了提交多个任务到线程池，分别应用列表中的元素为任务参数，并把最终结合任务结果为一个列表。<br/><br/>
+<h4>Future 相关操作</h4><br/><br/>
+往线程池中提交一个任务后会返回一下个 <code>concurrent.futures.Future</code> 对象。前面我们调用过 <code>future.result()</code> 获得执行结果，还有<br/><br/>
+<ul>
+    <li>.done() 是否已执行完成</li>
+    <li>.add_done_call() 任务执行完的回调函数，可利用它在某个任务执行完后触发下一个操作</li>
+    <li>.running(), cancelled() 查看状态</li>
+    <li>.cancel() 取消任务</li>
+</ul><br/><br/>
+还能用 <code>futures.as_complete(futures)</code> 来等待多个任务<br/><br/>
+<pre class="lang:default decode:true">from concurrent.futures import ThreadPoolExecutor, as_completed
+....<br/><br/>
+executor = ThreadPoolExecutor(2)
+futures = []
+for i in range(5):
+    to_do.append(executor.submit(play_music))
+    
+for future in as_completed(futures):
+    print(future.result())</pre>
+<br/>
+以上的内容将来用以指导多线程编程应该是具很好的引子。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="http://www.cnblogs.com/zhangfengxian/p/python-thread.html">python多任务-线程</a></li>
+    <li><a href="https://segmentfault.com/a/1190000007926055">Python并发编程之线程池/进程池</a></li>
+    <li><a href="https://python3-cookbook.readthedocs.io/zh_CN/latest/c12/p07_creating_thread_pool.html">12.7 创建一个线程池</a></li>
+</ol>

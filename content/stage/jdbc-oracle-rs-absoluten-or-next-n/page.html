@@ -1,0 +1,177 @@
+---
+title: JDBC 连接 Oracle 时，用 rs.absolute(n) 真的不如 n 次 next() 性能好
+url: /jdbc-oracle-rs-absoluten-or-next-n/
+date: 2008-07-24T09:16:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - Database
+tags: 
+  - JDBC
+  - database
+  - Oracle
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 360 
+wpStatus: publish
+views: 1114
+lastmod: 2021-09-04T09:32:20-05:00
+---
+
+前面写过一篇：<a id="viewpost1_TitleUrl" href="http://unmi.cc/oracle-low-jdbc-version-unknow-chars/">Oracle 驱动版本引起的显示字段奇怪编码问题</a>。讲到因 Oracle 8.0.5 不支持子查询排序，为改善原来那种每次翻页时都捋出所有数据成对象到 List 中，然后从中拣取页面实际要显示的记录的性能问题时，采用了 rs.absolute() 直接跳到起始记录游标的方法，但又引入了乱码问题，例如："无效"，变成了 "0xE697A0E69588"。<br/><br/>
+虽说，换个驱动，如 8.1.7.0.0 以上版本的驱动就能解决乱码的问题，但这一换又怕会影响到其他的应用。有朋友评论说，其实循环 next() 到某处比 absolute() 定位要好，乍一看，有些牵强，不过试试就知道了。下面就来做样一个测试，测试代码如下：<!--more--><br/><br/>
+<pre class="lang:default decode:true ">public static void main(String[] args) throws Exception {<br/><br/>
+    int startCursor = 10000;   //要直接移动到的游标位置
+    boolean stepByStep = true; //true 为 循环 next()，false 为 absolute() 定位<br/><br/>
+    String url = "jdbc:oracle:thin:@10.128.39.23:1521:prod";
+    oracle.jdbc.driver.OracleDriver.class.newInstance();
+    Connection conn = DriverManager.getConnection(url, "user", "password");<br/><br/>
+    Statement stmt = null;
+    if(stepByStep){
+        stmt = conn.createStatement();
+    }else{ //要能执行 rs.absolute()，必须这么创建 Statement
+        stmt = conn.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE,
+                  ResultSet.CONCUR_READ_ONLY);
+    }<br/><br/>
+    ResultSet rs = null;
+    for (int j = 1; j &lt;= 12; j++) {
+        long start = System.currentTimeMillis();
+        rs = stmt.executeQuery("SELECT * FROM customers");
+        if(stepByStep){ //循环 next() 移动游标
+            for (int i = 0; i &lt; startCursor; i++) {
+                rs.next();
+            }
+        }else{ //直接定位游标
+            rs.absolute(startCursor);
+        }<br/><br/>
+        System.out.print(j+": 游标定位耗时："+(System.currentTimeMillis() - start)+"毫秒，");
+        start = System.currentTimeMillis();<br/><br/>
+        for (int i = 0; i &lt; 10000 &amp;&amp; rs.next(); i++) {
+            rs.getObject(1);
+            rs.getObject(2);
+            rs.getObject(3);
+            rs.getObject(4);
+            rs.getObject(5);
+        }<br/><br/>
+        System.out.println(" 获取数据耗时 :" + (System.currentTimeMillis() - start)+ " 毫秒.");
+    }<br/><br/>
+    //释放资源，省去了
+}</pre>
+<br/>
+测试环境：<br />
+Oracle 数据库 8.0.5.1.0<br />
+驱动文件：classes12.zip<br />
+驱动版本：8.1.6.0.0<br />
+驱动类：oracle.jdbc.driver.OracleDriver<br/><br/>
+测试数据(未列出每一次的测试数据，只求了不同条件下的平均值，startCuror 为定位的游标位置，stepByStep 表示是用 n 次 next() 移动游标，还是用 absolute(n) 直接定位，true 为前者)：<br/><br/>
+<table style="border-collapse: collapse;" border="1" align="center">
+<tbody>
+<tr>
+<td>&nbsp;</td>
+<td><strong><br />
+<span style="color: #0000ff;">游标定位平均耗时</span><br />
+</strong></td>
+<td><strong><br />
+<span style="color: #0000ff;">获取数据平均耗时</span><br />
+</strong></td>
+<td>&nbsp;</td>
+<td><strong><br />
+<span style="color: #0000ff;">游标定位平均耗时</span><br />
+</strong></td>
+<td><strong><br />
+<span style="color: #0000ff;">获取数据平均耗时</span><br />
+</strong></td>
+</tr>
+<tr>
+<td> <strong><span style="color: #0000ff;">1</span></strong></td>
+<td colspan="2"><span style="color: #000080;">条件：startCursor = 1000; stepByStep = true;</span></td>
+<td>&nbsp;</td>
+<td colspan="2"><span style="color: #000080;">条件：int startCursor = 1000; stepByStep = false;</span></td>
+</tr>
+<tr>
+<td>&nbsp;</td>
+<td>161.222 毫秒</td>
+<td>1547.111 毫秒</td>
+<td>&nbsp;</td>
+<td>183.889 毫秒</td>
+<td>1670.333 毫秒</td>
+</tr>
+<tr>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+</tr>
+<tr>
+<td><strong> <span style="color: #0000ff;">2</span></strong></td>
+<td colspan="2"><span style="color: #000080;">条件：startCursor = 10000; stepByStep = true;</span></td>
+<td>&nbsp;</td>
+<td colspan="2"><span style="color: #000080;">条件：startCursor = 10000; stepByStep = false;</span></td>
+</tr>
+<tr>
+<td>&nbsp;</td>
+<td>1445.25 毫秒</td>
+<td>1541.667 毫秒</td>
+<td>&nbsp;</td>
+<td>1532.667 毫秒</td>
+<td>1717.417 毫秒</td>
+</tr>
+<tr>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+</tr>
+<tr>
+<td><strong> <span style="color: #0000ff;">3</span></strong></td>
+<td colspan="2"><span style="color: #000080;">条件：startCursor = 100000; stepByStep = true;</span></td>
+<td>&nbsp;</td>
+<td colspan="2"><span style="color: #000080;">条件：startCursor = 100000; stepByStep = false;</span></td>
+</tr>
+<tr>
+<td>&nbsp;</td>
+<td>11719.17 毫秒</td>
+<td>1225.333 毫秒</td>
+<td>&nbsp;</td>
+<td>11894.67 毫秒</td>
+<td>1290.25 毫秒</td>
+</tr>
+<tr>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+<td>&nbsp;</td>
+</tr>
+<tr>
+<td><strong> <span style="color: #0000ff;">4</span></strong></td>
+<td colspan="2"><span style="color: #000080;">条件：startCursor = 500000; stepByStep = true;</span></td>
+<td>&nbsp;</td>
+<td colspan="2"><span style="color: #000080;">条件：startCursor = 500000; stepByStep = false;</span></td>
+</tr>
+<tr>
+<td>&nbsp;</td>
+<td>56653.83 毫秒</td>
+<td>1225.083 毫秒</td>
+<td>&nbsp;</td>
+<td colspan="2"><span style="color: #ff1493;">java.lang.OutOfMemoryError: Java heap space</span></td>
+</tr>
+</tbody>
+</table>
+<br/>
+换着用 8.1.7.0.0, 9.0.1.1.0 这两个版本的驱动，和连接到 9.2.0.1.0 版本的数据库测试得出来的数据都相仿。由测试数据大致可以得出如下结论：<br/><br/>
+1. 用 absolute(n) 比循环 n 次 next() 定位游标的时间要稍长，但不是很明显。也许这只是跟　 ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY 类型的 Statement 有关。<br/><br/>
+2. 创建了 ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY 类型的 Statement 时，取数据记录的时候也会慢一些，也不是很明显。<br/><br/>
+3. 但最后一点是始料未及的－－居然产生了内存溢出。移动游标到 500000 的位置时，用 next() 循环没问题，用 absolute 无论是连接 Oracle 8.0.5.1.0 还是 Oracle 9.2.0.1.0 时均告 OutOfMemoryError。可见 absolute，或者是 ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY 类型的 Statement 占用内存会比较大。看起来似乎真的在执行 absolute(n) 方法的时候预读了数据到内存中。<br/><br/>
+前面一直是关注 absolute(n) 和 n 次 next() 的速度问题，未考虑到 Statement 本身类型的问题，所以还需看看对 ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY 类型的 Statement 进行 n 次 next() 效果，会如何，是否在 500000 次 next() 也会像 absolute(500000) 那样产生 OutOfMemoryError 堆内存溢出异常，这还有待于求证。<br/><br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

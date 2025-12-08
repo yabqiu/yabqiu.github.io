@@ -1,0 +1,110 @@
+---
+title: Scala 自身类型(self-type) 解析
+url: /scala-self-type-understanding/
+date: 2018-02-13T00:33:59-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2017/11/scala-logo.png"
+categories:
+  - Scala
+tags: 
+  - Scala
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8528 
+wpStatus: publish
+views: 1262
+lastmod: 2021-09-10T12:51:15-05:00
+---
+
+Scala 有一个自身类型(<a href="https://docs.scala-lang.org/tour/self-types.html">self-type</a>) 的东西，由来已久，居然今天才发现。如果一个类或 trait 指明了 self-type 类型(包括类和特质)，它的子类型或是对象也必须是相应的类型。它产生的效果与继承(或 mixin) 颇有几分相似。self-type 的语法是 <code>this 的别名: 某一类型(class 或 trait)</code>, 直接看一个例子：<br/><br/>
+<pre class="lang:default decode:true ">class User(val name: String)<br/><br/>
+trait Tweeter {
+  this: User =&gt;  //这个表示 Tweeter 本身也必须是一个 User，它的子类型必须想办法符合这一要求
+  def tweet(tweetText: String) = {
+    println(s"$name: $tweetText")
+  }
+}<br/><br/>
+class VerifiedTweeter(val username: String)
+  extends User(username) with Tweeter {  //Tweeter 要求这个类必须是一个 User, 所以需要继承自 User 类
+}<br/><br/>
+val v = new VerifiedTweeter("Yanbin")
+v.tweet("Hello")</pre>
+<br/>
+上面 <code>this: User =&gt;</code> 中的 <code>this</code> 只是一个别名，可以是 <code>self</code> 或任何有效标识(如  <code>abc: User</code>)，这里使用 <code>this</code> 等于未指定别名，与原本的 this 重叠了。如果声明为非 <code>this</code> 的话则可以这么用<!--more--><br/><br/>
+<pre class="lang:default decode:true">trait Tweeter {
+  abc: User =&gt;
+  def tweet(tweetText: String) = {
+    println(s"${this.name}-${abc.name}: $tweetText")
+  }
+}</pre>
+<br/>
+<code>this</code> 永远都在，同时 <code>abc</code> 与 <code>this</code> 是完全一样的效果。<br/><br/>
+<hr /><br/><br/>
+注(2018-02-14): 这个语法只是用作 this 别名的话，后面可以不用接类型，例如<br/><br/>
+<pre class="lang:scala decode:true ">trait Tweeter {
+  abc =&gt;
+  .... //代码中 abc 就是 this 的别名，它们是等效的
+}</pre>
+<br/>
+<hr /><br/><br/>
+如果在声明 <code>VerifiedTweeter</code> 类只是混入 Tweeter 特质会怎么样呢？以下两种声明都将产生同样的编译错误<br/><br/>
+<a href="/wp-content/uploads/2018/02/scala-self-type-1.png"><img class="aligncenter size-full wp-image-8529" src="/wp-content/uploads/2018/02/scala-self-type-1.png" alt="" width="518" height="82" /></a><br/><br/>
+&nbsp;<br/><br/>
+如果 <code>User</code> 也是一个 trait，那么声明 <code>VerifiedTweeter1</code> 时可以同时混入 <code>User</code>, 即<br/><br/>
+<pre class="lang:default decode:true ">trait VerifiedTweeter1 extends Tweeter with User</pre>
+<br/>
+由于前面 <code>User</code> 也是一个类，所以需要让 mixin <code>Tweeter</code> 的类继承自 <code>User</code> , 就是<br/><br/>
+<pre class="lang:default decode:true ">class VerifiedTweeter(val username: String)
+  extends User(username) with Tweeter {
+}</pre>
+<br/>
+<code>self-type</code> 可以指定多重类型，那么声明子类型或创建实例时也要符合多种类型<br/><br/>
+<pre class="lang:default decode:true ">trait User
+trait Animal<br/><br/>
+trait Tweeter {
+  this: User with Animal =&gt;
+}<br/><br/>
+class VerifiedTweeter extends Tweeter with User with Animal<br/><br/>
+//直接创建实例
+new Tweeter with User with Animal</pre>
+<br/>
+还有一种结构类型的 <code>self-type</code>, 更像是匿名类型的 <code>self-type</code>, 不是指定类型名而是类型必须实现的方法，例如<br/><br/>
+<a href="/wp-content/uploads/2018/02/scala-selt-type-2.png"><img class="aligncenter size-full wp-image-8530" src="/wp-content/uploads/2018/02/scala-selt-type-2.png" alt="" width="481" height="159" /></a>定义中声明了<br/><br/>
+<blockquote>
+ this: {def say: Unit} =&gt;
+</blockquote>
+<br/>
+要求在 Tweeter 中必须实现该方法，如<br/><br/>
+<pre class="lang:default decode:true ">class Tweeter extends User {
+  def say: Unit = {
+    println("say something")
+  }
+}<br/><br/>
+//或者创建匿名的 User 类及实例
+val user = new User {
+  def say: Unit = {
+    println("say something")
+  } 
+}</pre>
+<br/>
+最后，注意一下 <code>this: User =&gt;</code> 这个语法后不能用大括号括起后续的代码<br/><br/>
+<pre class="lang:default decode:true  ">trait Tweeter {
+  this: User =&gt; {
+    def tweet(tweetText: String) = {
+      println(s"$name: $tweetText")
+    }
+  }
+}</pre>
+<br/>
+以上代码编译没有问题，但创建的 <code>Tweeter</code> 实例是看不到 <code>tweet(...)</code> 方法的。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://docs.scala-lang.org/tour/self-types.html">TOUR OF SCALA SELF-TYPE</a></li>
+    <li><a href="http://ktoso.github.io/scala-types-of-types/#self-type-annotation">Self Type Annotation</a></li>
+    <li><a href="https://hongjiang.info/scala-type-system-self-type/">scala类型系统：9) this别名&amp;自身类型</a></li>
+</ol>

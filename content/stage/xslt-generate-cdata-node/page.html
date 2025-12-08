@@ -1,0 +1,58 @@
+---
+title: XSLT 生成 XML 中带 CDATA 的节点
+url: /xslt-generate-cdata-node/
+date: 2010-08-09T11:32:57-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - XML/DOM
+tags: 
+  - xslt
+  - cdata
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 792 
+wpStatus: publish
+views: 2305
+lastmod: 2021-09-03T10:59:26-05:00
+---
+
+原来曾经都是用代码或是像 Velocity 样的模板来转换生成 XML的，自从接触了 XSLT 后，已把它当成了 XML 到其他许多数据格式的不二之选了。有时候因为特殊字符等因素，需要转换后的数据在新节点中用 <span style="color: #800000;">&lt;![CDATA[...]]&gt;</span> 包裹起来更好看且不易出错，或者还需对生成的 XML 进一步处理时，用 <span style="color: #800000;">&lt;![[CDATA[...]]&gt;</span> 会更保险些 。</p>
+<br/>
+通常我们在 xslt 文件中会这么写：<br/><br/>
+<span style="color: #800000;">&lt;description&gt;&lt;xsl:value-of select="Description"/&gt;&lt;/description&gt;</span><br/><br/>
+如果原来的 Description 中有特殊字符，如 &lt; 等，转换后，&lt; 会自动变为 &amp;lt; 的，即得到<br/><br/>
+<span style="color: #800000;">&lt;description&gt;Hello&amp;lt;Unmi&lt;/description&gt;<!--more--></span><br/><br/>
+如果其中是一大段的 html 代码全部变为 &amp;lt; &amp;gt; 等就不怎么直观了，如果用 <span style="color: #800000;">&lt;![[CDATA[...]]&gt;</span> 就可呈现为原形。再有种情况，如果给 <span style="color: #800000;">&lt;xsl:value-of&gt;</span> 加个 <span style="color: #800000;">disable-output-escaping= "yes "</span> 属性，即不对 &lt; 和 &gt; 等符号转义，生成的新的 &lt;description&gt; 将可能是不合法的，例如:<br/><br/>
+<span style="color: #800000;">&lt;description&gt;Hello&lt;Unmi&lt;/description&gt;</span>，节点间含 &lt; 等符号，不能正确解析。<br/><br/>
+再者，如果要对生成的 XML 数据作一次纯字符串的操作，不小心置入了特殊字符，该份 XML 将是非法的，所以还是用 <span style="color: #800000;">&lt;![[CDTA[...]]&gt;</span> 要稳妥。是不直接想过写成这样：<br/><br/>
+<span style="color: #800000;">&lt;description&gt;&lt;![CDATA[&lt;xsl:value-of select="Description"/&gt;]]&gt;&lt;/description&gt;</span><br/><br/>
+因为 xslt 本身就是个 XML 文档，上面等于把其中的 <span style="color: #800000;">&lt;xsl:value-of select="Description&gt;</span> 给注释掉了，生成的数据将会是：<br/><br/>
+<span style="color: #800000;">&lt;description&gt;&amp;lt;xsl:value-of select="Description"/&amp;gt;&lt;/description&gt;</span><br/><br/>
+那么给 <span style="color: #800000;">&lt;![CDATA[...]]&gt;</span> 的 &lt; 和 &gt; 号转义如何，也就是写成:<br/><br/>
+<span style="color: #800000;">&lt;description&gt;&amp;lt;![CDATA[&lt;xsl:value-of select="Description"/&gt;]]&amp;gt;&lt;/description&gt;</span><br/><br/>
+得到的结果将会是：<br/><br/>
+<span style="color: #800000;">&lt;description&gt; &amp;lt;![CDATA[Hello Unmi&amp;gt;&lt;/description&gt;</span><br/><br/>
+所以说，事情还没有到想当然中那么简单，有什么不决多问问香港的 Google，可以总结出以下两种方法：<br/><br/>
+<span style="text-decoration: underline;"><strong>1. <span style="color: #800000;">cdata-section-elements</span> 里写上要用 <span style="color: #800000;">&lt;![CDATA[...]]&gt;</span> 包裹内容的标签</strong></span><br/><br/>
+要写在 &lt;xsl:output 中，比如要让 &lt;description&gt; 标签中的内容包裹上 <span style="color: #800000;">&lt;![CDATA[...]]&gt;</span> 的话，就写成：<br/><br/>
+<span style="color: #800000;">&lt;xsl:output method="xml" cdata-section-elements="description"/&gt;</span><br/><br/>
+那么在模板中，仍旧用 <span style="color: #800000;">&lt;description&gt;&lt;xsl:value-of select="Description"/&gt;&lt;/description&gt;</span>，生成新的 &lt;description&gt; 节点就会是:<br/><br/>
+<span style="color: #800000;">&lt;description&gt;&lt;![CDATA[Hello Unmi]]&gt;&lt;/description&gt;</span><br/><br/>
+要是多个节点要使用 <span style="color: #800000;">&lt;![CDATA[...]]&gt;</span>，那就全部列在 <span style="color: #800000;">cdata-section-elements</span> 中即可，记得是用空格隔开。例如，还有个带命名空间的节点有同样的需求，这样写：<br/><br/>
+<span style="color: #800000;">&lt;xsl:output method="xml" indent="yes" cdata-section-elements="description content:encoded"/&gt;</span><br/><br/>
+这样可使得 <span style="color: #800000;">description</span> 和 <span style="color: #800000;">content:encoded</span> 的数据内容都是 CDATA。有了 <span style="color: #800000;">&lt;![CDATA[...]]&gt;</span> 的护航，为 <span style="color: #800000;">&lt;xsl:value-of</span> 里写上 <span style="color: #800000;">disable-output-escaping="yes"</span> 都不怕了。<br/><br/>
+<span style="text-decoration: underline;"><strong>2. 手工加上前后的 &lt;![CDATA[ 和 ]]&gt;，用到 <span style="color: #800000;">disable-output-escaping="yes"</span></strong></span><br/><br/>
+正好可以从前面的例子认识到了 <span style="color: #800000;">disable-output-escaping="yes"</span> 的效果，是否转义特殊字符，默认为 false，yes 为不转义，是 &lt; 就显示为 &lt;，而不是 &amp;lt; 。具体写的代码复杂了些，多了几行：<br/><br/>
+<pre class="lang:default decode:true">&lt;description&gt;
+    &lt;xsl:text disable-output-escaping= "yes"&gt;&amp;lt;![CDATA[&lt;/xsl:text&gt;
+    &lt;xsl:value-of select="Description"/&gt;
+    &lt;xsl:text disable-output-escaping= "yes"&gt;]]&amp;gt;&lt;/xsl:text&gt;
+&lt;/description&gt;</pre>
+<br/>
+这么多行，也就是和 <span style="color: #800000;">&lt;xsl:output method="xml" cdata-section-elements="description"/&gt;</span> 一样的效果，毋庸置疑，大家都会去选第一种方法。也许你可以让这里的 disable-output-escaping 在其他地方派上用场。<br/><br/>
+参考：<a href="http://topic.csdn.net/t/20061013/10/5079437.html" target="_blank" rel="noopener">http://topic.csdn.net/t/20061013/10/5079437.html</a>

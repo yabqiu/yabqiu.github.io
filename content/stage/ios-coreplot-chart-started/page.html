@@ -1,0 +1,102 @@
+---
+title: iOS 使用 Core Plot 绘制统计图表入门
+url: /ios-coreplot-chart-started/
+date: 2011-08-17T12:24:24-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - ios
+  - objective-c
+  - CorePlot
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3735 
+wpStatus: publish
+views: 17460
+lastmod: 2021-09-03T14:22:21-05:00
+---
+
+iOS(iPhone/iPad) 下图形组件有两个有名的，<a title="s7graphview" href="http://code.google.com/p/s7graphview/" target="_blank" rel="noopener">s7graphview</a> 和 <a title="Core Plot" href="http://code.google.com/p/core-plot/" target="_blank" rel="noopener">Core Plot</a>，它们都是在 Google 上托管的代码，听说 Core Plot 比较强，因为前者仅支持曲线图，后者呢曲线图、饼图、柱状图等通吃，且较活跃。那就专注下 Core Plot 的使用。它提供了 Mac OS X 和 iOS 下的组件库，我只用到它的 iOS 图表库。</p>
+<br/>
+Core Plot 能画出来图表的效果应该多看看：http://code.google.com/p/core-plot/wiki/PlotExamples，相信看过之后绝大多数的 iOS 下的图表可以用它来满足你了。<br/><br/>
+配置其实很简单的，先从 http://code.google.com/p/core-plot/downloads/list 下载最新版的 Core Plot，比如当前是：CorePlot_0.4.zip，解压开，然后就两步：<br/><br/>
+1. 把目录 CorePlot_0.4/Binaries/iOS 中的 libCorePlotCocoaTouch.a 和整个子目录 CorePlotHeaders 从 Finder 中一并拖入到当前项目中，选择 Copy item into destination group's folder (if needed)，Add to targets 里选上相应的 target。此时你可以在项目的 target 中 Build Phases 页里 Link Binary With Libraries 中看到有了 libCorePlot-CocoaTouch.a.<br/><br/>
+2. 再到相应 Target 的 Build Settings 页里，Other Linker Flags 项中加上 -ObjC -all_load<!--more--><br/><br/>
+［注］我所用的 Xcode 是 4.1 版本的。Xcode 3 的 Target 设置项位置稍有不同。<br/><br/>
+配置就这么完成了，使用时只需要 ＃import "CorePlot-CocoaTouch.h"，下面来体验一个最简单的例子，下载的 CorePlot 包中虽然有一些例子，但还是需要一个能让人好理解并获得最快速体验的。比如像这下图中这么一个最简单的曲线图，最基本的代码要素应该有哪些呢？<br/><br/>
+<p style="text-align: center;"><img class="aligncenter" src="http://unmi.cc/wp-content/uploads/2011/08/CorePlot_1.png" alt="CorePlot Unmi" /></p>
+<br/>
+主要代码就是下面那样：<br/><br/>
+<pre class="lang:default decode:true ">//
+//  Created by Unmi Qiu on 8/11/11.
+//  Copyright 2011 . All rights reserved.
+//<br/><br/>
+#import &lt;UIKit/UIKit.h&gt;
+#import "CorePlot-CocoaTouch.h"<br/><br/>
+@interface TestCorePlotViewController : UIViewController&lt;CPTPlotDataSource&gt; {
+    NSMutableArray *dataArray;
+}
+@end<br/><br/>
+@implementation TestCorePlotViewController<br/><br/>
+#pragma mark - View lifecycle<br/><br/>
+- (void) viewDidAppear:(BOOL)animated {<br/><br/>
+    //初始化数组，并放入十个 0 － 20 间的随机数
+    dataArray = [[NSMutableArray alloc] init];
+    for(int i=0; i&lt; 10; i++){
+        [dataArray addObject:[NSNumber numberWithInt:rand()%20]];
+    }<br/><br/>
+    CGRect frame = CGRectMake(10,10, 300,100);<br/><br/>
+    //图形要放在一个 CPTGraphHostingView 中，CPTGraphHostingView 继承自 UIView
+    CPTGraphHostingView *hostView = [[CPTGraphHostingView alloc] initWithFrame:frame];<br/><br/>
+    //把 CPTGraphHostingView 加到你自己的 View 中
+    [self.view addSubview:hostView];
+    hostView.backgroundColor = [UIColor blueColor];<br/><br/>
+    //在 CPTGraph 中画图，这里的 CPTXYGraph 是个曲线图
+    //要指定 CPTGraphHostingView 的 hostedGraph 属性来关联
+    CPTXYGraph *graph = [[CPTXYGraph alloc] initWithFrame:hostView.frame];
+    hostView.hostedGraph = graph;<br/><br/>
+    CPTScatterPlot *scatterPlot = [[CPTScatterPlot alloc] initWithFrame:graph.bounds];
+    [graph addPlot:scatterPlot];
+    scatterPlot.dataSource = self; //设定数据源，需应用 CPTPlotDataSource 协议<br/><br/>
+    //设置 PlotSpace，这里的 xRange 和 yRange 要理解好，它决定了点是否落在图形的可见区域
+    //location 值表示坐标起始值，一般可以设置元素中的最小值
+    //length 值表示从起始值上浮多少，一般可以用最大值减去最小值的结果
+    //其实我倒觉得，CPTPlotRange:(NSRange) range 好理解些，可以表示值从 0 到 20
+    CPTXYPlotSpace *plotSpace = (CPTXYPlotSpace *) scatterPlot.plotSpace;
+    plotSpace.xRange = [CPTPlotRange plotRangeWithLocation:CPTDecimalFromFloat(0)
+                                                    length:CPTDecimalFromFloat([dataArray count]-1)];
+    plotSpace.yRange = [CPTPlotRange plotRangeWithLocation:CPTDecimalFromFloat(0)
+                                                    length:CPTDecimalFromFloat(20)];<br/><br/>
+    //下面省去了坐标与线型及其他图形风格的代码<br/><br/>
+    [plotSpace release];
+    [graph release];
+    [hostView release];
+}<br/><br/>
+//询问有多少个数据，在 CPTPlotDataSource 中声明的
+- (NSUInteger) numberOfRecordsForPlot:(CPTPlot *)plot {
+    return [dataArray count];
+}<br/><br/>
+//询问一个个数据值，在 CPTPlotDataSource 中声明的
+- (NSNumber *) numberForPlot:(CPTPlot *)plot field:(NSUInteger)fieldEnum recordIndex:(NSUInteger)index {
+    if(fieldEnum == CPTScatterPlotFieldY){    //询问 Y 值时
+        return [dataArray objectAtIndex:index];
+    }else{                                    //询问 X 值时
+        return [NSNumber numberWithInt:index];
+    }
+}<br/><br/>
+- (void) dealloc {
+    [dataArray release];
+    [super dealloc];
+}<br/><br/>
+@end</pre>
+<br/>
+关于更详细的 Core Plot 使用，下面还会继续作介绍的。<br/><br/>
+参考：1. <a href="//www.e-string.com/content/simple-graph-using-core-plot" target="_blank" rel="noopener">http://www.e-string.com/content/simple-graph-using-core-plot</a><br />
+2. <a href="http://www.e-string.com/content/simple-bar-chart-core-plot" target="_blank" rel="noopener">http://www.e-string.com/content/simple-bar-chart-core-plot</a><br />
+3. <a href="http://www.jaysonjc.com/programming/pie-chart-drawing-in-iphone-using-core-plot-library.html" target="_blank" rel="noopener">http://www.jaysonjc.com/programming/pie-chart-drawing-in-iphone-using-core-plot-library.html</a>

@@ -1,0 +1,76 @@
+---
+title: 让 All in One SEO Pack 插件适用于截取中文描述
+url: /all-in-one-seo-pack-support-chinese/
+date: 2010-11-24T05:47:48-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - WordPress
+tags: 
+  - wordpress
+  - SEO
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2847 
+wpStatus: publish
+views: 747
+lastmod: 2021-09-03T11:58:07-05:00
+---
+
+建议看过这里来 <a title="WordPress 插件 All in One SEO Pack 生成中文描述的解决" href="http://unmi.cc/wordpress-all-in-one-seo-pack-chinese-description-patch/" target="_blank" rel="noopener">WordPress 插件 All in One SEO Pack 生成中文描述的解决</a></p>
+<br/>
+对于 SEO 来说，Title、Description、Keywords 是很重要的，尤其是前两者，它们直接反应在搜索引擎的条目中。对于英文博客来说 All in One SEO Pack 是做得很不错的，自动截取的描述完全能胜任。然而中文字符集的问题，依然按照英文那样来计算长度截取描述的话，你会发现在搜索引擎出来的条目中描述基本过短，因为 UTF8 的字符基本是一个顶 3。<br/><br/>
+所以要用这个插件来支持中文博客，那就得改，改改更健康。很多人说 All in One SEO Pack 影响了 Baidu 的收录，我不觉得，因为我一直用它，挺好的。<br/><br/>
+下面说说怎么来改它使之更好的支持中文，需要改动的文件只有一个，就是 aioseop.class.php。这里所针对的版本是今天的最新版 1.6.13，有三处要改动。<!--more--><br/><br/>
+1. 调整截取字数<br/><br/>
+英文截取默认是 160，中文得加长, 350 到 400 差不多，不过我实践证明 300 是个不错的数字。合不合适，界时看看搜索引擎中你的文章描述就知道了。太长了搜索引擎也是给你点点点点掉。<br/><br/>
+<pre class="brush:php">var $maximum_description_length = 300;//160;<br/><br/>
+/** Minimum number of chars an excerpt should be so that it can be used
+ * as description. Touch only if you know what you're doing
+*/
+var $minimum_description_length = 80;//1;</pre>
+<br/>
+找到 $maximum_description_length 和 $minimum_description_length，分别由原来的 160,1 改为 300,80.<br/><br/>
+2. 防止截取中文产生乱码<br/><br/>
+把函数 trim_excerpt_without_filters($text) 的内容替换如下：<br/><br/>
+<pre class="lang:default decode:true ">function trim_excerpt_without_filters($text) {
+   $text = str_replace(']]&gt;', ']]&amp;gt;', $text);
+   $text = strip_tags($text);
+   $max = $this-&gt;maximum_description_length;
+   if ($max &lt; strlen($text)) {
+     while($text[$max] != ' ' &amp;&amp; $text[$max] != '\n' 
+         &amp;&amp; $max &gt; $this-&gt;minimum_description_length) {
+       $max--;
+     }
+   }
+   if($max == $this-&gt;minimum_description_length) {
+     $max = $this-&gt;maximum_description_length;
+   }
+   if($text[$max - 1] == '\r') {
+     $max--;
+   }
+   if(ord($text[$max]) &gt; 0x7F &amp;&amp; ord($text[$max]) &lt; 0xC0)
+   {
+     while(ord($text[$max]) &lt;= 0xC0)
+       $max--;
+   }
+   $text = substr($text, 0, $max);
+   return trim(stripcslashes($text));
+}</pre>
+<br/>
+3. 一个字符的问题<br/><br/>
+比较时把大于号 &gt; 改成大于等于号 &gt;=，找到<br/><br/>
+<pre class="lang:default decode:true">if (isset($description) &amp;&amp; (strlen($description) &gt;
+    $this-&gt;minimum_description_length) &amp;&amp; !(is_home() &amp;&amp; is_paged())) {</pre>
+<br/>
+改为<br/><br/>
+<pre class="lang:default decode:true ">if (isset($description) &amp;&amp; (strlen($description) &gt;=
+    $this-&gt;minimum_description_length) &amp;&amp; !(is_home() &amp;&amp; is_paged())) {</pre>
+<br/>
+完成了，最后别忘了在它的选项中把几个 noindex 选项去掉，也许就是这几个 noindex 选项惹恼了百毒吧。<br/><br/>
+参考：1. <a href="http://www.cnspeak.com/index.php/2009/05/talk-about-the-all-in-one-seo-pack-from-the-chinese-description-of-the-problem-automatically.html" target="_blank" rel="noopener">解决all in one seo pack自动取中文描述问题 适合最新版 all in one seo pack V1.6.10.3</a><br />
+           2. <a href="http://www.qiankun.org.ru/2010/10/all-in-one-seo-support-chinese-cut-off.html" target="_blank" rel="noopener">修改wordpress插件All in One SEO支持中文截断</a>

@@ -1,0 +1,164 @@
+---
+title: Mockito 如何 mock 返回值为 void 的方法
+url: /mockito-how-to-mock-void-method/
+date: 2017-01-16T00:59:35-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/01/rsz_mockito_logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - mockito
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7748 
+wpStatus: publish
+views: 27613
+lastmod: 2021-09-03T16:54:18-05:00
+---
+
+最初接触 Mockito 还思考并尝试过如何用它来 mock 返回值为 void 的方法，然而 Google 查找到的一般都会说用 <code>doThrow()</code> 的办法</p>
+<br/>
+<blockquote>
+doThrow(new RuntimeException()).when(mockObject).methodWithVoidReturn();
+</blockquote>
+<br/>
+因为无法使用常规的 <code>when(mockObject.foo()).thenReturn(...)</code> 的方法。<br/><br/>
+当时我就纳闷，为何我想 mock 一个返回值为 void 的方法，却是在模拟抛出一个异常，现在想来如果一个返回值为 void 的方法，为何要去 mock 这个方法呢？<br/><br/>
+回想一个我们要 mock 一个方法的意图是什么：<br/><br/>
+<ol>
+    <li>在特定输入参数的情况下期待需要的输出结果(返回值)</li>
+    <li>在方法抛出某种类型异常调用者作出的反应</li>
+</ol>
+<br/>
+对于 void 返回值的方法，如果要验证有没有被调用过几次可以在事后用 <code>verify()</code> 方法去断言。所以基本上对于 void 返回值的方法一般可不用去 mock 它，只需用  verify() 去验证，或者就是像前面一样模拟出现异常时的情况。<br/><br/>
+所以本文并不像是去直接回答标题所示的问题: Mockito 如何 mock  返回值为  void 的方法，而是如何应对 mock  对象的  void 方法<!--more--><br/><br/>
+<h2>一般不用对 void 方法打桩, 事后 verify 就行</h2><br/><br/>
+测试代码针对 mock  对象的 void 方法调用本来就没有什么效果，所以一般也无须用 <code>doNothing()</code>, 况且 void 提供不了返回值作进一步 mock，只需要在事后用 <code>verify()</code> 进行验证一下。<br/><br/>
+例如有下面的代码<br/><br/>
+类 UserDao<br/><br/>
+<pre class="brush:java">public interface UserDao {
+  void save(User user);
+}</pre>
+<br/>
+类 UserService<br/><br/>
+<pre class="brush:java">public class UserService {
+  private UserDao userDao;<br/><br/>
+  public UserService(UserDao userDao) {
+    this.userDao = userDao;
+  }<br/><br/>
+  public void saveUser(User user) {
+    userDao.save(user);
+  }
+}</pre>
+<br/>
+要写一个针对  <code>UserService.saveUser(User user)</code> 的测试方法<br/><br/>
+<pre class="brush:java">@Test
+public void shouldCallUserDaoSaveMethod() {
+  UserDao userDao = Mockito.mock(UserDao.class);
+  UserService userService = new UserService(userDao);
+  
+  User user = new User(1, "Yanbin");
+  userService.saveUser(user);<br/><br/>
+  verify(userDao, times(1)).save(user);
+}</pre>
+<br/>
+<h2>模拟 void 方法抛出异常时调用者的响应</h2><br/><br/>
+这就是为什么 Google 上那么多答案告诉我们要用到 <code>doThrow()</code> 的原因，假如我们的 <code>UserService.saveUser(User user)</code> 方法在 <code>userDao</code> 报出 DataAccessException 时转换为 <code>ApplicationException</code> 异常, 它的代码实现如下：<br/><br/>
+<pre class="brush:java">//UserService 的 saveUser(User user) 方法修改如下<br/><br/>
+public void saveUser(User user) {
+  try (
+    userDao.save(user);
+  catch(DataAccessException dae) {
+    throw new ApplicationException(dae, "can't save user due to issue reported from database");
+  }
+}</pre>
+<br/>
+要测试上面那个异常处理过程，我们可以写下面的测试<br/><br/>
+<pre class="brush:java">@Test(expected = ApplicationException.class)
+public void raiseApplicationExceptionIfDataAccessExceptionOccursFromUserDao() {
+  UserDao userDao = Mockito.mock(UserDao.class);
+  UserService userService = new UserService(userDao);
+  User user = new User(1, "Yanbin");<br/><br/>
+  doThrow(new DataAccessException()).when(userDao).save(user);<br/><br/>
+  userService.saveUser(user);
+}</pre>
+<br/>
+上面的 <code>doThrow()</code> 行写成下面的方式也是一样的<br/><br/>
+<blockquote>
+doNothing().doThrow(new DataAccessException()).when(userDao).save(user);
+</blockquote>
+<br/>
+Mockito 在调用 mock  对象的  void 方法时本来默认就是 <code>doNothing</code>. 那什么时候需要用到 <code>doNothing()</code> 呢？就是下面的情况<br/><br/>
+<h2>部分 mock 时 void 方法可 doNothing</h2><br/><br/>
+除了 <code>@Mock</code> 或 <code>Mockito.mock(Class&lt;T&gt;)</code> 来创建 mock 对象，还可以使用 <code>spy(realObject)</code> 或 <code>spy(Class)</code> 来获得 mock 对象，这两种方式得到的 mock  对象是不同的。前者所有的方法都被 mock, 后者(spy) 未打桩的方法会调用被 spy 对象的实际实现。<br/><br/>
+看下面的例子如何对 spy 对象的方法进行 mock  的<br/><br/>
+<pre class="lang:default decode:true">@Test
+public void partialMockSpiedObject() {
+  List&lt;String&gt; names = new ArrayList&lt;&gt;();
+  List&lt;String&gt; spy = spy(names);<br/><br/>
+  doNothing().when(spy).add(anyInt(), anyString());<br/><br/>
+  spy.add("Yanbin");
+  spy.add(0, "Unmi");<br/><br/>
+  assertEquals(1, spy.size());
+  assertEquals("Yanbin", spy.get(0));
+  assertEquals(0, names.size());
+}</pre>
+<br/>
+上面的测试可成功通过，我们用 <code>doNothing().when(spy).add(anyInt(), anyString())</code> 让带下标的方式添加元素什么也不做，而未被打桩的方法会调用 <code>names</code> 的实际实现。因此我们可以看到上面的断言结果。<br/><br/>
+<code>doNothing()</code> 还真不是 <code>doNothing()</code>, 在搭配 spy 作部分 mock 时还是很有用的，如下面的测试<br/><br/>
+<pre class="brush:java">public class Handler {
+    private UserDao userDao;
+    
+    void initialize() {
+        userDao = new UserDao();
+    }
+  
+    public void handle(Event event) {
+        if(event != null) {
+           initialize();
+        }
+        ......
+    }
+}<br/><br/>
+//test code
+@Test
+public void testHandleEvent() {
+    Handler handler = spy(new Handler()); //spy 会是部分 mock, 只有 stub 了方法才会被 mock, 其余调用实际方法
+    
+    //放心的用反射去修改 userDao 的值，因为不会被 initialize() 方法覆盖
+    UserDao mockedUserDao = Mockito.mock(UserDao);
+    setFieldValueOfUserDaoInReflection(handler, mockedUserDao);<br/><br/>
+    doNothing().when(handler).initialize(); //因为它 doNothing, 保证了 handler 仍然持有 mockedUserDao<br/><br/>
+    when(mockedUserDao.findUsers()).thenReturn(users);
+  
+    ......
+}</pre>
+<br/>
+另外如果还有其他情况可考虑 doCallRealMethod() 或  doAnser()<br/><br/>
+<blockquote>
+doCallRealMethod().when(mockObject).voidMethod();<br />
+doAnswer(answer).when(mockObject).voidMethod();
+</blockquote>
+<br/>
+相关链接：<br/><br/>
+<ol>
+    <li><a href="https://examples.javacodegeeks.com/core-java/mockito/mockito-mock-void-method-call/">Mockito: How to mock a void method call</a></li>
+    <li><a href="http://stackoverflow.com/questions/2276271/how-to-make-mock-to-void-methods-with-mockito">How to make mock to void methods with mockito</a></li>
+</ol>
+<br/>
+&nbsp;<br/><br/>
+<hr /><br/><br/>
+注(2017-09-19)：如果用 <code>spy</code> 进行部分 mock 的时候，和常规方法 mock 略有不同，比如要先声明 <code>doReturn(...)</code><br/><br/>
+<pre class="lang:default mark:4 decode:true ">UserService service = new UserService();
+UserService spyService = spy(service);<br/><br/>
+doReturn("Yanbin").when(spyService).findNameById(123);<br/><br/>
+// spy 部分 mock 不能下面那样
+// when(spyService.findNameById(123)).thenReturn("Yanbin");
+// 否则 when(..) 打桩的时候就会执行实际的方法 service.findNameById(123)，这是我们不希望的</pre>
+<br/>
+再次说明，spy 打桩的方法被 Mock, 未打桩的会调用实际方法。

@@ -1,0 +1,245 @@
+---
+title: 重定向System.out和System.err到JTextPane,分别用黑色红色显示
+url: /system-out-system-err-jtextpane/
+date: 2007-11-10T07:52:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - debug
+  - System.out
+  - System.err
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 475 
+wpStatus: publish
+views: 1415
+lastmod: 2021-09-03T10:04:18-05:00
+---
+
+把 System.out 和 System.err 重定向到 JTextArea 的做法在网上能找到不少，由于 JTextArea 不能用不同的字体分别显示内容。但我还是希望能象 Eclipse 控制台那样，标准输出为黑色，错误信息为红色，于是选择了 JTextPane 作为输出目的地。线程之间通信息用到了 PipedInputStream 、PipedOutputStream 和　SwingUtilities.invokeLater(new Runnable()。  </p>
+<br/>
+自定义了一个 JScrollPane，类名为 ConsolePane，写成的单例类；使用时只需要在你的面板上加上 ConsolePane组件，例如：<span style="color: #ff3366;"><strong>getContentPane().add(ConsolePane.getInstance(), BorderLayout.CENTER);</strong><br />
+</span><br />
+界面截图(黑色和红色分别显示 System.out 和 System.err 定向的输出内容)：<!--more-->  <br/><br/>
+<div><img class=" aligncenter" src="/wp-content/uploads/2007/11/RedirectSystemOut.JPG" alt="RedirectSystemOut.JPG" width="640" height="240" border="0" /></div>
+<br/>
+像控制台那样也设置了最大输出缓冲行数，当超过一定行数后会自动把前面的若干行删除，防止内存占用过大。  <br/><br/>
+<strong><em>Log4J 与 ConsolePane<br />
+</em></strong><br/><br/>
+<hr /><br/><br/>
+作为自己应用程序的输出控制台还是不错的。有个问题，如果要捕获 Log4J 的输出必须选择 1.2.13 或以上的版本的 Log4J，并在 <strong>log4j.properties</strong> 设置  <br/><br/>
+<span style="color: #0000ff;"> <strong>log4j.appender.console.follow = true</strong></span>      #沿用 System.setOut() 或 System.setErr() 设置，默认为 false  <br/><br/>
+在 1.2.13 以前的 Log4J 的 ConsoleAppender 中没有 follow 属性，Lo4J 不支持 System.out 和 System.err 的分别输出，你可以在 <strong>log4j.peroperties</strong> 中设置  <br/><br/>
+<strong><span style="color: #0000ff;">lo4j.appender.console.target = System.out</span></strong>   #或 System.err，默认为 System.out  <br/><br/>
+Log4J 输出信息到控制台要么全到 System.out，要么全到 System.err，也就是在 ConsolePane 中没法分不同颜色显示 log.error() 和 log.debug() 信息。  <br/><br/>
+这个问题，可以改善的，比如 Eclipse 中就不依赖于 log4j.properties 中怎么设置的。同样在 Eclipse 中也没法让 error 和 debug 信息分不同颜色信息，除非改写 Log4J 的 ConsoleAppender 才能分颜色显示。<br/><br/>
+<hr /><br/><br/>
+下面分别列出 ConsolePane 的实现代码和一个测试代码 TestConsolePane  <br/><br/>
+1. ConsolePane 代码 <br/><br/>
+<pre class="lang:default decode:true">package com.unmi;  <br/><br/>
+import java.awt.Color;  
+import java.awt.Dimension;  
+import java.io.IOException;  
+import java.io.PipedInputStream;  
+import java.io.PipedOutputStream;  
+import java.io.PrintStream;  <br/><br/>
+import javax.swing.JScrollPane;  
+import javax.swing.JTextPane;  
+import javax.swing.SwingUtilities;  
+import javax.swing.text.AbstractDocument;  
+import javax.swing.text.BadLocationException;  
+import javax.swing.text.Document;  
+import javax.swing.text.Element;  
+import javax.swing.text.Style;  
+import javax.swing.text.StyleConstants;  
+import javax.swing.text.StyledDocument;  <br/><br/>
+/**  
+ * @author Unmi 
+ */ 
+public class ConsolePane extends JScrollPane {  
+    private PipedInputStream piOut;  
+    private PipedInputStream piErr;  
+    private PipedOutputStream poOut;  
+    private PipedOutputStream poErr;  <br/><br/>
+    private JTextPane textPane = new JTextPane();  <br/><br/>
+    private static ConsolePane console = null;  <br/><br/>
+    public static synchronized ConsolePane getInstance() {  
+        if (console == null) {  
+            console = new ConsolePane();  
+        }  
+        return console;  
+    }  <br/><br/>
+    private ConsolePane() {  <br/><br/>
+        setViewportView(textPane);  <br/><br/>
+        piOut = new PipedInputStream();  
+        piErr = new PipedInputStream();  
+        try {  
+            poOut = new PipedOutputStream(piOut);  
+            poErr = new PipedOutputStream(piErr);  
+        } catch (IOException e) {  
+        }  <br/><br/>
+        // Set up System.out  
+        System.setOut(new PrintStream(poOut, true));  <br/><br/>
+        // Set up System.err  
+        System.setErr(new PrintStream(poErr, true));  <br/><br/>
+        textPane.setEditable(true);  
+        setPreferredSize(new Dimension(640, 120));  <br/><br/>
+        // Create reader threads  
+        new ReaderThread(piOut).start();  
+        new ReaderThread(piErr).start();  
+    }  <br/><br/>
+    /**  
+     * Returns the number of lines in the document. 
+     */ 
+    private final int getLineCount() {  
+        return textPane.getDocument().getDefaultRootElement().getElementCount();  
+    }  <br/><br/>
+    /**  
+     * Returns the start offset of the specified line. 
+     *  
+     * @param line   The line 
+     * @return The start offset of the specified line, or -1 if the line is 
+     *         invalid 
+     */ 
+    private int getLineStartOffset(int line) {  
+        Element lineElement = textPane.getDocument().getDefaultRootElement()  
+                .getElement(line);  
+        if (lineElement == null)  
+            return -1;  
+        else 
+            return lineElement.getStartOffset();  
+    }  <br/><br/>
+    private void replaceRange(String str, int start, int end) {  
+        if (end &lt; start) {  
+            throw new IllegalArgumentException("end before start");  
+        }  
+        Document doc = textPane.getDocument();  
+        if (doc != null) {  
+            try {  
+                if (doc instanceof AbstractDocument) {  
+                    ((AbstractDocument) doc).replace(start, end - start, str,  
+                            null);  
+                } else {  
+                    doc.remove(start, end - start);  
+                    doc.insertString(start, str, null);  
+                }  
+            } catch (BadLocationException e) {  
+                throw new IllegalArgumentException(e.getMessage());  
+            }  
+        }  
+    }  <br/><br/>
+    class ReaderThread extends Thread {  
+        private PipedInputStream pi;  <br/><br/>
+        ReaderThread(PipedInputStream pi) {  
+            this.pi = pi;  
+        }  <br/><br/>
+        public void run() {  
+            final byte[] buf = new byte[1024];  <br/><br/>
+            while (true) {  
+                try {  
+                    final int len = pi.read(buf);  
+                    if (len == -1) {  
+                        break;  
+                    }  
+                    SwingUtilities.invokeLater(new Runnable() {  
+                        public void run() {  
+                            try {  <br/><br/>
+                                StyledDocument doc = (StyledDocument) textPane  
+                                        .getDocument();  <br/><br/>
+                                // Create a style object and then set the style  
+                                // attributes  
+                                Style style = doc.addStyle("StyleName", null);  <br/><br/>
+                                Color foreground = pi == piOut ? Color.BLACK  
+                                        : Color.RED;  
+                                // Foreground color  
+                                StyleConstants.setForeground(style, foreground);  <br/><br/>
+                                // Append to document  
+                                String outstr = new String(buf, 0, len);  
+                                doc.insertString(doc.getLength(), outstr, style);  <br/><br/>
+                            } catch (BadLocationException e) {  
+                                // e.printStackTrace();  
+                            }  <br/><br/>
+                            // Make sure the last line is always visible  
+                            textPane.setCaretPosition(textPane.getDocument()  
+                                    .getLength());  <br/><br/>
+                            // Keep the text area down to a certain line count  
+                            int idealLine = 150;  
+                            int maxExcess = 50;  <br/><br/>
+                            int excess = getLineCount() - idealLine;  
+                            if (excess &gt;= maxExcess) {  
+                                replaceRange("", 0, getLineStartOffset(excess));  
+                            }  
+                        }  
+                    });  
+                } catch (IOException e) {  
+                    // e.printStackTrace();  
+                }  
+            }  
+        }  
+    }  
+}  </pre>
+<br/>
+当前还有一些 Bug 未解决：<br />
+1. final int len = pi.read(buf); 开始时会产生 java.io.IOException: Write end dead 异常，好像这还是 JDK 本身的 Bug，但不影响使用<br />
+2. 输出时有时会缺几个字母，或产生空行<br />
+3. 因为实际工作线程来输出，所以输出顺序有时不能保证  <br/><br/>
+谁有兴趣的话，可以进一步研究一番；可对这个类再做润色，如增加右键菜单，可拷贝、很剪切、清除所有输出、不自动滚动。就像 Eclipse 的控制台那样。  <br/><br/>
+TestConsolePane 代码 <br/><br/>
+<pre class="lang:default decode:true ">package com.unmi;   
+  
+ import java.awt.BorderLayout;   
+ import java.awt.event.ActionEvent;   
+ import java.awt.event.ActionListener;   
+ import java.util.Date;   
+ import java.util.Random;   
+  
+ import javax.swing.JButton;   
+ import javax.swing.JFrame;   
+  
+ /**  
+ * @author Unmi  
+ */  
+ public class TestConsolePane extends JFrame {   
+    public TestConsolePane() {   
+  
+        setTitle("Redirect System.out and System.error Test Application");   
+        setSize(640, 240);   
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);   
+  
+        getContentPane().add(ConsolePane.getInstance(), BorderLayout.CENTER);   
+        JButton button = new JButton("Click Me to Output Message");   
+        getContentPane().add(button, BorderLayout.SOUTH);   
+  
+        button.addActionListener(new ActionListener() {   
+            public void actionPerformed(ActionEvent e) {   
+                Random random = new Random();   
+                int num = random.nextInt(10);   
+                String msg = ":  Hello Unmi, Redirect "  
+                        + ((num % 2 == 1) ? "\"System.out\"" : "\"System.err\"")   
+                        + " to ConsolePane, Today: ";   
+                if (num % 2 == 1)   
+                    System.out.println(num + msg + new Date());   
+                else  
+                    System.err.println(num + msg + new Date());   
+            }   
+        });   
+  
+        setVisible(true);   
+    }   
+  
+    public static void main(String[] args) {   
+        new TestConsolePane();   
+    }   
+} </pre>
+<br/>
+参考：1. <a href="http://www.exampledepot.com/egs/javax.swing.text/ta_Console.html">e988. Implementing a Console Window with a JTextArea Component<br />
+</a>        2. <a href="http://www.exampledepot.com/egs/javax.swing.text/tp_StyledText.html">e989. Inserting Styled Text in a JTextPane Component</a><br />
+        3. <a href="http://www.exampledepot.com/egs/javax.swing.text/style_HiliteWords2.html">e1007. Setting the Font and Color of Text in a JTextPane Using Styles</a><br />
+        4. JEdit syntax 中类 JEditTextArea 的实现

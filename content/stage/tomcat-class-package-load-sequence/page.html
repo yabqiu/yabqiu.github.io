@@ -1,0 +1,157 @@
+---
+title: Tomcat 的类/包加载顺序[转]
+url: /tomcat-class-package-load-sequence/
+date: 2007-02-25T18:59:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Mid-Ware
+tags: 
+  - ClassLoader
+  - JVM
+  - Tomcat
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 532 
+wpStatus: publish
+views: 485
+lastmod: 2010-08-21T15:54:47-05:00
+---
+
+1.最先是$JAVA_HOME/jre/lib/ext/下的jar文件。<br/>
+<br/>
+2.环境变量CLASSPATH中的jar和class文件。<br/>
+<br/>
+3.$CATALINA_HOME/common/classes下的class文件。<br/>
+<br/>
+4.$CATALINA_HOME/commons/endorsed下的jar文件。<br/>
+<br/>
+5.$CATALINA_HOME/commons/i18n下的jar文件。<!--more--><br/>
+<br/>
+6.$CATALINA_HOME/common/lib 下的jar文件。<br/>
+（JDBC驱动之类的jar文件可以放在这里，这样就可以避免在server.xml配置好数据源却出现找不到JDBC Driver的情况。）<br/>
+7.$CATALINA_HOME/server/classes下的class文件。<br/>
+<br/>
+8.$CATALINA_HOME/server/lib/下的jar文件。<br/>
+<br/>
+9.$CATALINA_BASE/shared/classes 下的class文件。<br/>
+<br/>
+10.$CATALINA_BASE/shared/lib下的jar文件。<br/>
+<br/>
+11.各自具体的webapp /WEB-INF/classes下的class文件。<br/>
+<br/>
+12.各自具体的webapp /WEB-INF/lib下的jar文件。<br/>
+<br/>
+class的搜寻顺序如下：<br/>
+-------------<br/>
+Bootstrap classes of your JVM<br/>
+System class loader classses (described above)<br/>
+/WEB-INF/classes of your web application<br/>
+/WEB-INF/lib/*.jar of your web application<br/>
+$CATALINA_HOME/common/classes<br/>
+$CATALINA_HOME/common/endorsed/*.jar<br/>
+$CATALINA_HOME/common/i18n/*.jar<br/>
+$CATALINA_HOME/common/lib/*.jar<br/>
+$CATALINA_BASE/shared/classes<br/>
+$CATALINA_BASE/shared/lib/*.jar<br/>
+--------------<br/>
+因此放在不同webapp里的class文件，会被classloader加载成不同的实例。<br/>
+例如假设下面两个不同内容的class。分别放在不同的webapp的class目录下。<br/>
+<br/>
+<a name="l1"><br/>
+<span class="s0"><br/>
+<strong><br/>
+<span style="color: #000080;">package </span><br/>
+</strong><br/>
+</span><br/>
+<span class="s1">com.lizongbo;<br/>
+</span><br/>
+<span class="s0"><br/>
+<strong><br/>
+<span style="color: #000080;">public class </span><br/>
+</strong><br/>
+</span><br/>
+<span class="s1">TestClass {<br/>
+<a name="l3">  </a></span><br/>
+<span class="s0"><br/>
+<strong><br/>
+<span style="color: #000080;">private </span><br/>
+</strong><br/>
+</span><br/>
+<span class="s1">String NAME=</span><br/>
+<span class="s2"><br/>
+<strong><br/>
+<span style="color: #008000;">"lizongbo"</span><br/>
+</strong><br/>
+</span><br/>
+<span class="s1">;<br/>
+<a name="l4">}<br/>
+</a><a name="l5"><br/>
+</a><a name="l6"></a></span><br/>
+<span class="s0"><br/>
+<strong><br/>
+<span style="color: #000080;">package </span><br/>
+</strong><br/>
+</span><br/>
+<span class="s1">com.lizongbo;<br/>
+<a name="l7"></a></span><br/>
+<span class="s0"><br/>
+<strong><br/>
+<span style="color: #000080;">public class </span><br/>
+</strong><br/>
+</span><br/>
+<span class="s1">TestClass {<br/>
+<a name="l8">  </a></span><br/>
+<span class="s0"><br/>
+<strong><br/>
+<span style="color: #000080;">private </span><br/>
+</strong><br/>
+</span><br/>
+<span class="s1">String NAME=</span><br/>
+<span class="s2"><br/>
+<strong><br/>
+<span style="color: #008000;">"li_zongbo"</span><br/>
+</strong><br/>
+</span><br/>
+<span class="s1">;<br/>
+<a name="l9">}</a></span><br/>
+</a><a name="l2"></a><br/>
+<br/>
+在不同的webapp得到的com.lizongbo.NAME结果是不同的，且互不影响。<br/>
+<br/>
+但是注意，以下包名开头的class例外：<br/>
+<a name="l1"><span class="s0">javax.* <br/>
+</span></a><a name="l2">org.xml.sax.* <br/>
+</a><a name="l3">org.w3c.dom.* <br/>
+</a><a name="l4">org.apache.xerces.* <br/>
+</a><a name="l5">org.apache.xalan.* </a><br/>
+<br/>
+ps,注意.在各个jar中的\META-INF\MAINFEST.MF文件里Class-Path键值对，也会提供jar的加载优先顺序。<br/>
+例如某jar的MAINFEST.MF内容如下：<br/>
+Manifest-Version: 1.0<br/>
+Created-By: lizongbo<br/>
+Class-Path: commons-beanutils.jar<br/>
+Class-Path: commons-collections.jar<br/>
+Class-Path: commons-dbcp.jar<br/>
+Class-Path: commons-digester.jar<br/>
+Class-Path: commons-logging.jar<br/>
+Class-Path: commons-pool.jar<br/>
+Class-Path: commons-services.jar<br/>
+Class-Path: commons-validator.jar<br/>
+Class-Path: jakarta-oro.jar<br/>
+Main-Class: com.lizongbo.MyTestClass<br/>
+那�丛诩釉卣飧鰆ar的时候，会先在此jar所在目录下依次先加载commons-beanutils.jar，commons-collections.jar。。。等jar文件。<br/>
+<br/>
+在不同的地方放置jar和class可能会产生意想不到的后果,，尤其是不同版本的jar文件，因此在实际应用部署web应用时候要特别留心.<br/>
+例如 使用javamail常见的一个出错信息:<br/>
+javax.mail.NoSuchProviderException: No provider for smtp<br/>
+其真实原因就很可能如下:<br/>
+在不同的加载jar的目录下放置了不同版本的mail.jar,比如一个是javamail1.3.1的mail.jar<br/>
+在D:\jakarta-tomcat-5.5.8\common\lib下,而另外一个是javamail1.3.2的mail.jar在<br/>
+D:\jakarta-tomcat-5.5.8\webapps\lizongbo\WEB-INF/lib下,<br/>
+那么lizongbo这个webapp中使用到javamail进行邮件发送的时候，便会出现No provider for smtp的错误。<br/>
+本文引用地址：<a href="http://www.cnpoint.com/framwwork/2006/0901/content_73.htm">http://www.cnpoint.com/framwwork/2006/0901/content_73.htm</a>

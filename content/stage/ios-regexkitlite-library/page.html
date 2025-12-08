@@ -1,0 +1,179 @@
+---
+title: iOS 开发中使用正则表达式－暨 RegexKitLite 库的用法
+url: /ios-regexkitlite-library/
+date: 2012-02-25T06:17:53-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - 正则表达式
+  - RegexKitLite
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4259 
+wpStatus: publish
+views: 3983
+lastmod: 2021-06-17T18:21:17-05:00
+---
+
+在 iOS 开发中要用正则表达式的话，至少有三种选择：</p>
+<br/>
+1. 系统自带的  NSString 和 NSMutableString 相关的方法<br />
+2. RegexKit Framework -<a href="http://regexkit.sourceforge.net" target="_blank" rel="noopener"> http://regexkit.sourceforge.net</a><br />
+3. RegexKitLite - <a href="http://regexkit.sourceforge.net/RegexKitLite/" target="_blank" rel="noopener">http://regexkit.sourceforge.net/RegexKitLite/</a><br/><br/>
+NSString 和 NSMutableString 里像<br/><br/>
+<pre class="lang:default decode:true">- (NSRange)rangeOfString:(NSString *)aString options:(NSStringCompareOptions)mask;
+- (NSUInteger)replaceOccurrencesOfString:(NSString *)target withString:(NSString *)replacement
+                                 options:(NSStringCompareOptions)options range:(NSRange)searchRange;</pre>
+<br/>
+带有 NSStringCompareOptions 参数的方法就可以支持正则表达式，只要对于 NSStringCompareOptions 参数取值中含有 NSRegularExpressionSearch 这个 Mask 值即可。<br/><br/>
+RegexKit Framework 用的是 PCRE(<a href="http://www.pcre.org" target="_blank" rel="noopener">Perl Compatible Regular Expressions</a>) 库，可能是我们熟悉正则表达式语法，但需要引入 PCRE 静态库。<br/><br/>
+RegexKitLite，看链接它与 RegexKit Framework 出自一家，但它用的是 Mac 自带的 ICU(<a href="http://site.icu-project.org" target="_blank" rel="noopener">International Components for Unicode</a>) 库，所以语法上与 RegexKit Framework 是不一样的，且引入它也较简单。<!--more--><br/><br/>
+只要下载到文件 <a href="http://downloads.sourceforge.net/regexkit/RegexKitLite-4.0.tar.bz2" target="_blank" rel="noopener">RegexKitLite-4.0.tar.bz2</a>，解压出其中的 RegexKitLite.h 和 RegexKitLite.m 两文件加到项目中来，再就记得加上系统自带的 libicucore.dylib 库就行。RegexKitLite 所有的方法也是对 NSString 和 NSMutableString 两个类的扩展方法，典型的方法：<br/><br/>
+<pre class="brush:objc"> - (BOOL)RKL_METHOD_PREPEND(isMatchedByRegex):(NSString *)regex;
+ - (NSRange)RKL_METHOD_PREPEND(rangeOfRegex):(NSString *)regex inRange:(NSRange)range;
+ - (NSInteger)RKL_METHOD_PREPEND(replaceOccurrencesOfRegex):(NSString *)regex withString:(NSString *)
+ - (NSArray *)RKL_METHOD_PREPEND(captureComponentsMatchedByRegex):(NSString *)regex;
+ ............................................</pre>
+<br/>
+真要说 RegexKitLite 的用法，也就又回到了正则表达式的写法，没什么可说的，只要参考：<a href="http://regexkit.sourceforge.net/RegexKitLite/" target="_blank" rel="noopener">http://regexkit.sourceforge.net/RegexKitLite/</a>，里面也有所有的扩展方法列表。<br/><br/>
+因此，这里只说一个如何进行不区分大小写的匹配，沿袭以往的经验，要么向 JS 那样 /abc/i，要么就是加上不区分大小写的标识参数，如：<br/><br/>
+<pre class="lang:default decode:true">- (BOOL)RKL_METHOD_PREPEND(isMatchedByRegex):(NSString *)regex options:(RKLRegexOptions)options
+                                     inRange:(NSRange)range error:(NSError **)error;</pre>
+<br/>
+中的 (RKLRegexOptions)options 参数，可以支持：<br/><br/>
+RKLNoOptions, RKLCaseless, RKLComments, RKLDotAll, RKLMultiline, RKLUnicodeWordBoundarie<br/><br/>
+这个组合，只要标识上 RKLCaseless。然而你也许发现了如果不区分大小写的匹配，调用方法只是：<br/><br/>
+<pre class="brush:objc">- (BOOL)RKL_METHOD_PREPEND(isMatchedByRegex):(NSString *)regex;</pre>
+<br/>
+就因为要支持大小写不敏感而必须用另一个参数多几个的重载方法，要是想要应用 replaceOccurrencesOfRegex 方法，大小写不敏感比不敏感的方法版本参数多的更多，实际并不用关心那些多余的参数，甚是不便。<br/><br/>
+那么能不能像 JS 的正则表达式那样把约束标识写在正则表达式里呢，可以的，请试一下：<br/><br/>
+<pre class="lang:default decode:true">if([@"Unmi" isMatchedByRegex:@"(?i)uNmI"]){
+    NSLog(@"Matched");
+}<br/><br/>
+//下面的代码一样的效果
+if([@"Unmi" isMatchedByRegex:@"(?i:uNmI)"]){
+    NSLog(@"Matched");
+}</pre>
+<br/>
+会输出 <span style="color: #800000;">Matched</span>，匹配成功，关键就是表达式中的 (?i)Xxx 或者 (?i:Xxx) 表明这个表达式不区分大小写，可以查看下这个帮助原文：<br/><br/>
+<hr /><br/><br/>
+Options for controlling the behavior of a regular expression pattern can be controlled in two ways. When the method supports it, options may specified by combining <a href="http://regexkit.sourceforge.net/RegexKitLite/#RKLRegexOptions">RKLRegexOptions</a> flags with the C bitwise OR operator. For example:<br/><br/>
+<div><span style="color: #800000;">matchedRange = [aString rangeOfRegex:@"^(blue|red)$" options:(RKLCaseless | RKLMultiline) inRange:range error:NULL];</span></div>
+<br/>
+The other way is to specify the options within the regular expression itself, of which there are two ways. The first specifies the options for everything following it, and the other sets the options on a per capture group basis. Options are either <em>enabled</em>, or following a -, <em>disabled</em>. The syntax for both is nearly identical:<br/><br/>
+<table summary="Option Specification in Regular Expression Patterns">
+<tbody>
+<tr>
+<th>Option</th>
+<th>Example</th>
+<th>Description</th>
+</tr>
+<tr>
+<td>(?ixsmw-ixsmw)…</td>
+<td>(?i)…</td>
+<td>Enables the <a href="http://regexkit.sourceforge.net/RegexKitLite/#RKLRegexOptions_RKLCaseless">RKLCaseless</a> option for everything that follows it. Useful at the beginning of a regular expression to set the desired options.</td>
+</tr>
+<tr>
+<td>(?ixsmw-ixsmw:…)</td>
+<td>(?iw-m:…)</td>
+<td>Enables the <a href="http://regexkit.sourceforge.net/RegexKitLite/#RKLRegexOptions_RKLCaseless">RKLCaseless</a> and <a href="http://regexkit.sourceforge.net/RegexKitLite/#RKLRegexOptions_RKLUnicodeWordBoundaries">RKLUnicodeWordBoundaries</a> options and disables <a href="http://regexkit.sourceforge.net/RegexKitLite/#RKLRegexOptions_RKLMultiline">RKLMultiline</a> for the capture group enclosed by the parenthesis.</td>
+</tr>
+</tbody>
+</table>
+<br/>
+The following table lists the regular expression pattern option character and its corresponding <a href="http://regexkit.sourceforge.net/RegexKitLite/#RKLRegexOptions">RKLRegexOptions</a> flag:<br/><br/>
+<table summary="Regular Expression Pattern Option Flags">
+<tbody>
+<tr>
+<th>Character</th>
+<th>Option</th>
+</tr>
+<tr>
+<td>i</td>
+<td><a href="http://regexkit.sourceforge.net/RegexKitLite/#RKLRegexOptions_RKLCaseless">RKLCaseless</a></td>
+</tr>
+<tr>
+<td>x</td>
+<td><a href="http://regexkit.sourceforge.net/RegexKitLite/#RKLRegexOptions_RKLComments">RKLComments</a></td>
+</tr>
+<tr>
+<td>s</td>
+<td><a href="http://regexkit.sourceforge.net/RegexKitLite/#RKLRegexOptions_RKLDotAll">RKLDotAll</a></td>
+</tr>
+<tr>
+<td>m</td>
+<td><a href="http://regexkit.sourceforge.net/RegexKitLite/#RKLRegexOptions_RKLMultiline">RKLMultiline</a></td>
+</tr>
+<tr>
+<td>w</td>
+<td><a href="http://regexkit.sourceforge.net/RegexKitLite/#RKLRegexOptions_RKLUnicodeWordBoundaries">RKLUnicodeWordBoundaries</a></td>
+</tr>
+</tbody>
+</table>
+<br/>
+<hr /><br/><br/>
+上面就是说对正则表达式的控件可以有两种选择，用 RKLRegexOptions 标识，或在表达式中用 (?..) 的写法。第二种选择又有两种写法，一种是 (?i)...  和 (?i:...)。问号后支持 i、x、s、m 和 w 五个标识，各自的意义看上面的表格，在标识前加个减号 - 表示去除该特性。<br/><br/>
+附上一些常用的 ICU 格式正则表达式：<br/><br/>
+<h4 id="RegexKitLiteCookbook_PatternMatchingRecipes_NetworkandURL">Network and URL</h4><br/><br/>
+<table>
+<tbody>
+<tr>
+<th>Description</th>
+<th>Regex</th>
+</tr>
+<tr>
+<td>HTTP</td>
+<td>\bhttps?://[a-zA-Z0-9\-.]+(?:(?:/[a-zA-Z0-9\-._?,'+\&amp;%$=~*!():@\\]*)+)?</td>
+</tr>
+<tr>
+<td>HTTP</td>
+<td>\b(https?)://([a-zA-Z0-9\-.]+)((?:/[a-zA-Z0-9\-._?,'+\&amp;%$=~*!():@\\]*)+)?</td>
+</tr>
+<tr>
+<td>HTTP</td>
+<td>\b(https?)://(?:(\S+?)(?::(\S+?))?@)?([a-zA-Z0-9\-.]+)(?::(\d+))?((?:/[a-zA-Z0-9\-._?,'+\&amp;%$=~*!():@\\]*)+)?</td>
+</tr>
+<tr>
+<td>E-Mail</td>
+<td>\b([a-zA-Z0-9%_.+\-]+)@([a-zA-Z0-9.\-]+?\.[a-zA-Z]{2,6})\b</td>
+</tr>
+<tr>
+<td>Hostname</td>
+<td>\b(?:[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}?[a-zA-Z0-9]\.)+[a-zA-Z]{2,6}\b</td>
+</tr>
+<tr>
+<td>IP</td>
+<td>\b(?:\d{1,3}\.){3}\d{1,3}\b</td>
+</tr>
+<tr>
+<td>IP with Optional Netmask</td>
+<td>\b((?:\d{1,3}\.){3}\d{1,3})(?:/(\d{1,2}))?\b</td>
+</tr>
+<tr>
+<td>IP or Hostname</td>
+<td>\b(?:(?:\d{1,3}\.){3}\d{1,3}|(?:[a-zA-Z0-9][a-zA-Z0-9\-]{0,61}?[a-zA-Z0-9]\.)+[a-zA-Z]{2,6})\b</td>
+</tr>
+</tbody>
+</table>
+<br/>
+上面的正则表达式实际书写时需把一个反斜杠替换成两个反斜杠，如匹配 E-Mail 时要写成<br/><br/>
+<pre class="lang:default decode:true ">NSString *regex = @"\\b([a-zA-Z0-9%_.+\\-]+)@([a-zA-Z0-9.\\-]+?\\.[a-zA-Z]{2,6})\\b";
+NSLog(@"Regex: %@", regex);
+if([@"unmi@scalau.com" isMatchedByRegex:regex]){
+    NSLog(@"Valid email address");
+}</pre>
+<br/>
+上面的代码输出：<br/><br/>
+<span style="color: #800000;">Regex: \b([a-zA-Z0-9%_.+\-]+)@([a-zA-Z0-9.\-]+?\.[a-zA-Z]{2,6})\b</span><br />
+<span style="color: #800000;">Valid email address</span><br/><br/>
+这和 Java 的正则表达式一样，<strong><span style="color: #800000;">也就是要写成 NSLog 输出的样子</span></strong>，也就是转义的转义，如果是 \- 或 \. 编译时会提示：<br/><br/>
+<span style="color: #800000;">Lexical or Preprocessor Issue Unknown escape sequence "\."</span><br />
+<span style="color: #800000;">Lexical or Preprocessor Issue Unknown escape sequence "\-"</span><br/><br/>
+但执行时不会报错，只是匹配不成功.<br/><br/>
+记住，RegexKitLite 的完全帮助手册尽在：<a href="http://regexkit.sourceforge.net/RegexKitLite/" target="_blank" rel="noopener">http://regexkit.sourceforge.net/RegexKitLite/</a>

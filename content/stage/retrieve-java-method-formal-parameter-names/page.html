@@ -1,0 +1,131 @@
+---
+title: 代码中如何获得 Java 方法的形式参数名
+url: /retrieve-java-method-formal-parameter-names/
+date: 2014-08-24T14:07:48-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - jdk8
+  - java8
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6553 
+wpStatus: publish
+views: 980
+lastmod: 2021-09-03T18:02:19-05:00
+---
+
+对于一个 Java 方法 foo(int id, String name); 我们如何能在代码中获得形式参数名 id 和 name 呢？</p>
+<br/>
+我们知道通过反射 API <code>Method.getGenericParameterTypes()</code> 可以获得方法的参数类型，但是对于参数名一般就是 arg0, arg1, arg2 ..., 因为 Java 编译时把形式参数名擦除了。所以对完全擦除了形式参数名的字节码应该是没办法了，但我们自己写的类还是有能力去管控的。<br/><br/>
+对于自己写的类，有两种办法获得形式参数名，分别是<br/><br/>
+1) Java8 的 -parameters 编译参数，然后用 Java8 新引入的反射 API <a href="http://docs.oracle.com/javase/8/docs/api/java/lang/reflect/Parameter.html" target="_blank" rel="noopener">Parameter</a><br/><br/>
+我们先在 Java8 下运行下面的代码<!--more--><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;<br/><br/>
+public class MethodParameterNames {<br/><br/>
+  public static void main(String[] args) throws Exception{
+    Method method = MethodParameterNames.class.getDeclaredMethod("foo", Integer.TYPE, String.class);
+    Parameter[] parameters = method.getParameters();
+    for(Parameter parameter: parameters) {
+      System.out.println(parameter.isNamePresent());
+      System.out.println(parameter.getType().getSimpleName() +": " + parameter.getName());
+    }
+  }<br/><br/>
+  public void foo(int id, String name) {<br/><br/>
+  }
+}</pre>
+<br/>
+得到结果是<br/><br/>
+<span style="color: #800000;">false</span><br />
+<span style="color: #800000;"> int: arg0</span><br />
+<span style="color: #800000;"> false</span><br />
+<span style="color: #800000;"> String: arg1</span><br/><br/>
+默认是也是得不到参数名的，isNamePresent() 是 false<br/><br/>
+如果编译的时候带上 -parameters 参数，再执行上面的代码结果就是<br/><br/>
+<span style="color: #800000;">true</span><br />
+<span style="color: #800000;"> int: id</span><br />
+<span style="color: #800000;"> true</span><br />
+<span style="color: #800000;"> String: name</span><br/><br/>
+注：加不加编译参数 -parameters 产生的字节码用 javap -c 去反编译是看不出分别的，但是二进制码确实不一样的。看这里 <a href="http://docs.oracle.com/javase/tutorial/reflect/member/methodparameterreflection.html" target="_blank" rel="noopener">Obtaining Names of Method Parameters</a>. 现面一个对比，分别是没有加和加了 -parameters 编译出来的结果，直接用 vi 就能看出不同<br/><br/>
+<img class="aligncenter size-large wp-image-6557" src="/wp-content/uploads/2014/08/java8-parameters-800x194.png" alt="java8-parameters" width="800" height="194" /><br/><br/>
+上半部分是没有加 -parameters 编译参数产生的字节码，下半部是加了 -parameters 编译参数产生的字节码，注意看 foo() 方法部分，有 -parameters 则保留了形式参数名称在字节码中。<br/><br/>
+<span style="text-decoration: underline; color: #0000ff;">上面的对比结果同时也告诉了我 javap -c 并不是字节码的全部，javap -c 看到的相同也不意味着执行行为是一致的。</span><br/><br/>
+2) Play1 中的 play.utils.Java 的方法 public static String[] parameterNames(Method method)<br/><br/>
+这种方式值得参数一下，它用到了 javaassist  和 bytecodeparser 两个工具包，并依赖于 Play1 的编译方式，Play2 中已不适用。这里只列出它的源代码实现，已注释部分也在<br/><br/>
+摘自：play.utils.Java<br/><br/>
+<pre class="lang:default decode:true"> /**
+  * Retrieve parameter names of a method
+  */
+public static String[] parameterNames(Method method) throws Exception {
+    try {
+        /*System.out.println("searching for " + "$" + method.getName() + LVEnhancer.computeMethodHash(method.getParameterTypes()));
+        for(Field f : method.getDeclaringClass().getDeclaredFields()) {
+            System.out.println(f.getName() + " : " + Modifier.toString(f.getModifiers()));
+        }
+        for(Field f : method.getDeclaringClass().getFields()) {
+            System.out.println(f.getName() + " : " + Modifier.toString(f.getModifiers()));
+        }*/
+        return (String[]) method.getDeclaringClass().getDeclaredField("$" + method.getName() + LVEnhancer.computeMethodHash(method.getParameterTypes())).get(null);
+    } catch (Exception e) {
+        throw new UnexpectedException("Cannot read parameter names for " + method, e);
+    }
+}</pre>
+<br/>
+上面有个 play.classloading.enhancers.LVEnhancer, 大致看下用到的两个方法<br/><br/>
+摘自：play.classloading.enhancers.LVEnhancer<br/><br/>
+<pre class="lang:default decode:true ">public static Integer computeMethodHash(Class&lt;?&gt;[] parameters) {
+    String[] names = new String[parameters.length];
+    for (int i = 0; i &lt; parameters.length; i++) {
+        Class&lt;?&gt; param = parameters[i];
+        names[i] = "";
+        if (param.isArray()) {
+            int level = 1;
+            param = param.getComponentType();
+            // Array of array
+            while (param.isArray()) {
+                level++;
+                param = param.getComponentType();
+            }
+            names[i] = param.getName();
+            for (int j = 0; j &lt; level; j++) {
+                names[i] += "[]";
+            }
+        } else {
+            names[i] = param.getName();
+        }
+    }
+    return computeMethodHash(names);
+}<br/><br/>
+public static Integer computeMethodHash(String[] parameters) {
+    StringBuffer buffer = new StringBuffer();
+    for (String param : parameters) {
+        buffer.append(param);
+    }
+    Integer hash = buffer.toString().hashCode();
+    if (hash &lt; 0) {
+        return -hash;
+    }
+    return hash;
+}</pre>
+<br/>
+其他：在 Play1 的世界里因为接管了编译器的某些活，所以它似乎还有办法获得实际传入方法的变量名，如在调用方法 foo() 时使用<br/><br/>
+int someId = 123;<br />
+String someName = "http://unmi.cc";<br />
+foo(someId, someName)<br/><br/>
+在代码中可以把 someId 和  someName 这两个名字得到<br/><br/>
+因为依据 Play1 对模板的调用<br/><br/>
+Detail orderDetail = ....<br />
+renderTemplate("details.html", orderDetail);<br/><br/>
+到模板文件 details.html 里就能用 ${orderDetail.id} 那样来访问 orderDetail 了，Java 代码中的变量名 orderDetail 和模板中的 orderDetail 必须对应的。<br/><br/>
+<hr /><br/><br/>
+在 Play2 中开始使用 ParaNamer 来得到方法参数名称，见 <a href="https://github.com/paul-hammant/paranamer" target="_blank" rel="noopener">https://github.com/paul-hammant/paranamer</a><br/><br/>
+更有趣的是编译时用 <code>javac -g:vars TestLocalVarNames.java</code>，然后用  <code>javap -l</code> 可以查看到变量名列表 <code>LocalVariableTable</code>。

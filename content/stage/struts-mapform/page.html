@@ -1,0 +1,105 @@
+---
+title: Struts下的MapForm [转]
+url: /struts-mapform/
+date: 2007-02-28T22:45:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Struts
+tags: 
+  - Struts
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 531 
+wpStatus: publish
+views: 249
+lastmod: 2021-09-04T10:42:41-05:00
+---
+
+我们知道Struts的ActionForm一直被大家视为缺陷，觉得多余，但我个人认为ActionForm还是有它存在的理由。我们建立ActionForm通常和Web页面的Form元素绑定，用于数据的收集和校验等。ActionForm的属性必须声明，然后才能用于和Web页面中，我们经常遇到一些属性不需要全部声明，如查询条件等，而且ActionForm的属性太多时管理也是个问题，再另一些情况下，如采购单，使用master/detail方式，ActionForm的创建变的困难，好多属性均不确定，如采购明细为对条记录，这样处理比较麻烦，在这篇文章中，我们将向你讲述如何使用Struts的MapForm机制实现这样的功能。<!--more--></p>
+<br/>
+我们希望ActionForm能够接收Map数据，这样我们的管理就变的容易多啦，在Struts 1.1以后版本这样的处理变得非常简单，我们在ActionForm中声明一个Map变量。<br/><br/>
+<pre class="brush:java">public class MapForm extends ActionForm
+{
+    private Map map = null;
+    public void setMap(Map map) {
+    this.map = map;
+}
+public Map getMap() {
+    return this.map;
+}</pre>
+<br/>
+同时增加一个属性方法去设置和获取Map中的数据。<br/><br/>
+<pre class="brush:java ">public void setAttribute(String attributeKey, Object attributeValue)
+{
+    getMap().put(attributeKey, attributeValue);
+}
+public Object getAttribute(String attributeKey)
+{
+    Object keyValue = getMap().get(attributeKey);
+    return keyValue;
+}</pre>
+<br/>
+这样我们在jsp页面中，我们就可以使用Struts的标签接触这些Map数据。<br/><br/>
+<pre class="lang:default decode:true">&lt;html:text property="attribute(key)"/&gt;</pre>
+<br/>
+这样这些数据就可维护啦，这对查询条件较多的情况非常适用，你无需在维护这些查询信息在各个页面的过渡，Struts帮您完成了一切。<br/><br/>
+下面我们就看一下如何用MapForm组织master/detail方式的数据，我们将以一个订单做为样例。<br/><br/>
+1 首先建立一个Form对象，继承MapForm，同时声明主要的属性，如订单编码、定购人等。<br/><br/>
+<pre class="brush:java">public class OrderForm extends MapForm
+{
+    private Integer id;
+    private String orderMan;
+}</pre>
+<br/>
+2 我们拟定以Map方式保存采购项信息，同一采购项采用统一前缀，可选择行编码，如row123_ productCode,row123_ productId,row123_ amount等，这样某一采购项信息将被输入到Map中，不同的采购项的前缀不一样，前缀由row+行编码组成，同时编写可获取行编码的函数，这样可取得某一采购项的所有信息，参数rowPrefix为某一字符串，如"row", "ⅰtem"等，不包含数字编码信息，同时你可以编写Comparator，进行排序。<br/><br/>
+<pre class="brush:java">public Collection getRowIdList(String rowPrefix)
+{
+    if (map.isEmpty()) return new ArrayList();
+    Collection allRowId = new TreeSet(new RowIdComparator(rowPrefix));
+    Iterator allKey = map.keySet().iterator();
+    while (allKey.hasNext())
+    {
+        String key = (String) allKey.next();
+        if (key.indexOf(rowPrefix) != -1)
+        {
+            key = key.substring(0, key.indexOf('_'));
+            allRowId.add(key);
+        }
+    }
+    return allRowId;
+}</pre>
+<br/>
+3 在jsp页面中你可以通过jstl，就可以完成采购明细的显示。<br/><br/>
+<pre class="lang:default decode:true ">&lt;c:forEach var="rowId" items="${OrderForm.getRowIdList('row')}"&gt;
+    &lt;tr align="center" id="${rowId}" onclick="clickRow()"&gt;
+        &lt;td&gt;
+            &lt;html:text property="attribute(${rowId}_productCode)" size="8"
+                onkeydown="fillProductInfoWithKeyDown('${rowId}',this)" /&gt;
+            &lt;html:hidden property="attribute(${rowId}_productId)"/&gt;
+            &lt;a href="javascript:selectproduct('${rowId}')"&gt;选择&lt;/a&gt;
+        &lt;/td&gt;
+        &lt;td&gt;&lt;html:text property="attribute(${rowId}_productQty)" size="8"/&gt; &lt;/td&gt;
+        &lt;td&gt;&lt;html:text property="attribute(${rowId}_productPrice)" size="8"/&gt;&lt;/td&gt;
+        &lt;td&gt;&lt;html:text property="attribute(${rowId}_productName)" readonly="true" size="16"/&gt;&lt;/td&gt;
+        &lt;td&gt;&lt;html:text property="attribute(${rowId}_productPackaging)" readonly="true" size="12"/&gt;&lt;/td&gt;
+        &lt;td&gt;&lt;html:text property="attribute(${rowId}_productUnit)" size="6" readonly="true"/&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+&lt;/c:forEach&gt;</pre>
+<br/>
+4 这样Struts帮你完成了所有的信息处理，你需要完成你的保存就可以啦。<br/><br/>
+提示：Map中的数据值默认都是String类型的，如果你想转换成你想要的类型，可以在你的Form编写一个工具方法，完成类型的转换。<br/><br/>
+<pre class="brush:java">public Map getTypedMap() {
+    Map map = this.getMap();
+    String keyString = (String) map.get("key");
+    Integer keyInteger = new Integer(keyString);
+    map.put("key",keyInteger);
+    return map;
+}</pre>
+<br/>
+总结：MapForm各个功能很少被开发人员使用，如果使用得当，功能非常强大。ActionForm个人认为并非是个设计缺陷，结合BeanUtils等工具包，转换和信息处理非常方便。<br/><br/>
+转自：<a href="http://www.moon-soft.com/doc/30962.htm">http://www.moon-soft.com/doc/30962.htm</a>

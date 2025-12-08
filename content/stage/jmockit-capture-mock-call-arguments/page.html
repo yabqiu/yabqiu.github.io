@@ -1,0 +1,171 @@
+---
+title: JMockit 中捕获 mock 对象方法的调用参数
+url: /jmockit-capture-mock-call-arguments/
+date: 2017-04-21T01:02:16-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2017/11/jmockit-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Unit Test
+  - jMockit
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8013 
+wpStatus: publish
+views: 3336
+lastmod: 2021-09-10T13:00:44-05:00
+---
+
+三个月前写过一篇 <a href="/mockito-capture-method-paramters/">Mockito 中捕获 mock 对象方法的调用参数</a>，一般项目中 Mockito 不决求助于 JMockit, 同样的在 JMockit 也需对捕获被 Mock 的方法调用参数。当我们用 <code>new Expectations(){{}}</code> 打桩并在后面断言了返回值，那就无需捕获参数来断言，匹配到了方法调用即证明传入的参数也是对的，如下面的代码所示</p>
+<br/>
+<blockquote>
+public class UserServiceTest {<br />
+<br />
+    @Mocked<br />
+    private UserDao userDao;<br />
+<br />
+    @Test<br />
+    public void couldCallUserDaoToAddUser() {<br />
+        new Expectations(){{<br />
+           userDao.findById(123);<br />
+           result = "Yanbin";<br />
+        }};<br />
+<br />
+        UserService userService = new UserService(userDao);<br />
+        String user = userService.findBy(123);<br />
+<br />
+        assertThat(user).isEqualTo("Yanbin");  //这里断言成功也就证明了 userDao.findById(123) 方法被调用，参数必须是 123<br />
+    }<br />
+}
+</blockquote>
+<br/>
+但如果是未打桩的方法，或打桩是用的模糊参数(withInstanceOf(String.class)), 或是无返回值的方法就要事后对是否调用了某个方法以及传入什么参数的情况进行断言。<!--more--><br/><br/>
+<pre class="lang:default decode:true">public class UserServiceTest {<br/><br/>
+    @Mocked
+    private UserDao userDao;<br/><br/>
+    @Test
+    public void couldCallUserDaoToAddUser() {
+        UserService userService = new UserService(userDao);
+        userService.findBy(123);<br/><br/>
+        new Verifications(){{
+           userDao.findById(123); times = 1;
+        }};
+    }
+}</pre>
+<br/>
+再或者是中间调用曲折，调用参数无法直接提供的话，这时候就需要对调用参数进行捕获再断言。下面是一个完整的例子，立即来检验一下 JMockit 是如何操作的<br/><br/>
+首先是待测试的 UserService 类<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+public class UserService {<br/><br/>
+    private final UserDao userDao;<br/><br/>
+    public UserService(UserDao userDao) {
+        this.userDao = userDao;
+    }<br/><br/>
+    public void add(int id, String name) {
+        int calculatedId = id * 333 - 222;  //这里只用来说明调用外部接口时的参数 calculatedId 不总是很明了
+        userDao.add(calculatedId, name);
+    }
+}</pre>
+<br/>
+和我们要 Mock 的 UserDao  接口，Mock 的优越性这里表现在我们根本没有接口实现，但并不妨碍我们写出完整的 UserService 的单元测试<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+interface UserDao {
+    void add(int id, String name);
+}</pre>
+<br/>
+接着就是我们捕获参数的测试代码<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import mockit.Mocked;
+import mockit.Verifications;
+import org.junit.Test;<br/><br/>
+import static org.fest.assertions.Assertions.assertThat;<br/><br/>
+public class UserServiceTest {<br/><br/>
+    @Mocked
+    private UserDao userDao;<br/><br/>
+    @Test
+    public void couldCallUserDaoToAddUser() {
+        UserService userService = new UserService(userDao);
+        userService.add(123, "Yanbin");<br/><br/>
+        new Verifications() {{
+            int userId;
+            String username;
+            userDao.add(userId = withCapture(), username = withCapture());<br/><br/>
+            assertThat(userId).isEqualTo(40737);
+            assertThat(username).isEqualTo("Yanbin");
+        }};
+    }
+}</pre>
+<br/>
+关键就是在上面的<br/><br/>
+<blockquote>
+userDao.add(userId = withCapture(), username = withCapture());
+</blockquote>
+<br/>
+JMockit 恰到好处的用到 Java 的赋值语句返回等号右边的结果，相较而言 Mockito 捕获参数的方式就稍显笨拙，以下是 Mockito 的方式<br/><br/>
+<blockquote>
+ArgumentCaptor&lt;User&gt; argumentCaptor = ArgumentCaptor.forClass(User.class);<br />
+verify(userDao, times(1)).save(argumentCaptor.capture());
+</blockquote>
+<br/>
+具体可参考前一篇文章 <a href="/mockito-capture-method-paramters/">Mockito 中捕获 mock 对象方法的调用参数</a>, 尤其是对于带泛型的参数的捕获 Mockito 一定要在声明带 <code>@Captor</code> 注解实例级的变量。而 JMockit 不管多复杂类型参数的捕获都毫无区别。<br/><br/>
+注意到 JMockit 在捕获参数是用的 <code>withCapture(...)</code> 方法，它有三个变体<br/><br/>
+<img class="aligncenter size-full wp-image-8014" src="/wp-content/uploads/2017/04/jmockit-capture-arguments.png" alt="" width="590" height="95" /><br/><br/>
+上面刚刚用过的 <code>withCapture()</code> 简单了，就是直接把实际方法接受的值赋给一个变量。<br/><br/>
+withCapture(List&lt;T&gt; valueHolderForMultipleInvocations) 是在被 Mock 方法多次调用时，它会捕获每次调用的参数放到一个 List 中去。譬如在 UserService 中有一个方法用于批量删除多个用户<br/><br/>
+<pre class="brush:java">//在 UserService 中
+public void delete(Integer... ids) {
+    for(int id: ids) {
+        userDao.delete(id);
+    }
+}</pre>
+<br/>
+现在要捕获多次调用的参数就得<br/><br/>
+<pre class="lang:default decode:true ">@Test
+public void couldDeleteUsersInBatch() {
+    new UserService(userDao).delete(1, 2, 3);<br/><br/>
+    new Verifications() {{
+        List&lt;Integer&gt; userIds = new ArrayList&lt;&gt;();
+        userDao.delete(withCapture(userIds)); times = 2;<br/><br/>
+        assertThat(userIds).hasSize(3);  //继续断言具体的元素值
+    }};
+}</pre>
+<br/>
+和 Mockito 的捕获后调用 <code>argumentCaptor.getValues()</code> 来取得多次调用的参数类似。<br/><br/>
+最后一个方法 withCapture(T constructorVerification) 是 Mockito 所不能的，因为 Mockito 是不能 Mock 构造函数的，而 JMockit 是无所不能的。官方文档对此的解释是<br/><br/>
+捕获在单元测试执行中新创建的实例，这些实例必须是由对构造函数调用时参数匹配时创建的。<br/><br/>
+还是有点矇，主要还是没怎么感觉到这个方法有什么实际意义，还未到某时非用不可以状况，作以直接贴一下官方的示例代码<br/><br/>
+<pre class="lang:default decode:true ">@Test
+public void capturingNewInstances(@Mocked Person mockedPerson) {//Person 的所有实例都将被 Mock, Maven 的测试方法似乎不允许带参数
+   // From the code under test:
+   dao.create(new Person("Paul", 10));
+   dao.create(new Person("Mary", 15));
+   dao.create(new Person("Joe", 20));<br/><br/>
+   new Verifications() {{
+      // Captures the new instances created with a specific constructor.
+      List&lt;Person&gt; personsInstantiated = withCapture(new Person(anyString, anyInt));<br/><br/>
+      // Now captures the instances of the same type passed to a method.
+      List&lt;Person&gt; personsCreated = new ArrayList&lt;&gt;();
+      dao.create(withCapture(personsCreated));<br/><br/>
+      // Finally, verifies both lists are the same.
+      assertEquals(personsInstantiated, personsCreated);
+   }};
+}</pre>
+<br/>
+主要还是掌握下前面两个捕获参数的方法<br/><br/>
+<ol>
+    <li>&lt;T&gt; T withCapture()   捕获单调用的参数值，以返回值的形式给下捕获到的值，所以可用 userDao.add(userId = withCapture(), ...) 的形式<br />
+  如果参数本身是列表也是用这种形式：<br/><br/>
+<blockquote>List&lt;Person&gt; people;<br />
+dao.save(people = withCapture());<br />
+assertEquals(2, people.size()); </blockquote>
+</li>
+    <li>&lt;T&gt; T withCapture(List&lt;T&gt; valueHolderForMultipleInvocations)  捕获多次调用的参数放到一个列表中，它的返回值只会保留最后一次的调用参数，需要获得全部捕获的值必须传递一个 List&lt;T&gt; 给 withCapture 方法。这类似于 Mockito 在捕获多次调用参数后，captor.getValues() 获得所有，而 captor.getValue() 只是最后一次的调用参数值。</li>
+</ol>
+<br/>
+参考：<a href="http://jmockit.org/tutorial/Mocking.html#withCapture">Capturing invocation arguments for verification</a>

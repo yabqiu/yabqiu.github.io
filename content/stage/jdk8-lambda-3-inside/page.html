@@ -1,0 +1,146 @@
+---
+title: JDK8 的 Lambda 表达式  -- 实现原理初探
+url: /jdk8-lambda-3-inside/
+date: 2013-10-13T08:28:11-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - jdk8
+  - lambda
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5742 
+wpStatus: publish
+views: 1381
+lastmod: 2021-09-03T14:51:37-05:00
+---
+
+JDK8 使用一行 Lambda 表达式可以代替先前用匿名类五六行代码所做的事情，那么它是怎么实现的呢？从所周知，匿名类会在编译的时候生成与宿主类带上 $1, $2 的类文件，如写在 TestLambda 中的匿名类产生成类文件是 TestLambda$1.class, TestLambda$2.class 等。</p>
+<br/>
+我试验了一下，如果使用的是 Lambda 表达式并不会生成额外的类文件，那么字节码里是什么样子的？来看下用  javap -c 反编译出下面文件产生的 TestLambda.class，两个方法，一个是  byAnonymousClass() 使用匿名类，另一个是 byLambda 使用 Lambda 的方式：<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.testjdk8;<br/><br/>
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;<br/><br/>
+import javax.swing.JButton;<br/><br/>
+public class TestLambda{
+    private JButton button = new JButton();
+    
+    public void byLambda() {
+        button.addActionListener((ActionEvent e) -&gt; System.out.println("Lambda"));
+    }
+    
+    public void byAnonymousClass(){
+        
+        button.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                System.out.println("Anonymous class");
+            }
+        });
+    }
+}</pre>
+<br/>
+<!--more-->相应的字节码如下：<br/><br/>
+<pre class="lang:default decode:true">public class cc.unmi.testjdk8.TestLambda {
+  public cc.unmi.testjdk8.TestLambda();
+    Code:
+       0: aload_0       
+       1: invokespecial #10                 // Method java/lang/Object."&lt;init&gt;":()V
+       4: aload_0       
+       5: new           #12                 // class javax/swing/JButton
+       8: dup           
+       9: invokespecial #14                 // Method javax/swing/JButton."&lt;init&gt;":()V
+      12: putfield      #15                 // Field button:Ljavax/swing/JButton;
+      15: return        <br/><br/>
+  public void byLambda();
+    Code:
+       0: aload_0      
+       1: getfield      #15                 // Field button:Ljavax/swing/JButton;
+       4: invokedynamic #25,  0             // InvokeDynamic #0:actionPerformed:()Ljava/awt/event/ActionListener;
+       9: invokevirtual #26                 // Method javax/swing/JButton.addActionListener:(Ljava/awt/event/ActionListener;)V
+      12: return        <br/><br/>
+  public void byAnonymousClass();
+    Code:
+       0: aload_0       
+       1: getfield      #15                 // Field button:Ljavax/swing/JButton;
+       4: new           #31                 // class cc/unmi/testjdk8/TestLambda$1
+       7: dup           
+       8: aload_0       
+       9: invokespecial #33                 // Method cc/unmi/testjdk8/TestLambda$1."&lt;init&gt;":(Lcc/unmi/testjdk8/TestLambda;)V
+      12: invokevirtual #26                 // Method javax/swing/JButton.addActionListener:(Ljava/awt/event/ActionListener;)V
+      15: return        
+}</pre>
+<br/>
+对比后我们发现，匿名类的方式会创建一个匿名类(这是废话)，如编译出的的 TestLambda$1.class 文件，在磁盘上能看到 TestLambda$1.class 文件<br/><br/>
+而 Lambda 的方式则不会产生额外的类文件，我们可以让 TestLambda 只保留 byLambda() 方法，就会发现编译后只会有 TestLambda.class 文件。<br/><br/>
+对比方法调用指令，byLambda 中使用了一个 JDK7 新加的 <code>invokedynamic</code> 虚拟机指令。invokedynamic 就是个关键，这里不去深挖，只简单说明，总之它对于 Java 进行函数式编程，增强了语言的动态性意义匪浅，它重新引入了像 C 里函数指针类似的方法句柄的概念。JDK7 之前的方法调用指令有 invokestatic, invokespecial, invokevirtual 和 invokeinterface 四个，它们都是在编译时就确定了实际调用哪个方法。而 invokedynamic 能让虚拟机在执行到该指令时才去动态的链接，调用实际的方法，所以每个 invokedynamic 就是一个动态调用点。<br/><br/>
+具体到我们的例子，也就是说对于这个例子虚拟机会在执行 byLambda 的 invokedynamic #25,  0  指令时动态的在内存中创建一个类似与 TestLambda$1 的类，名字可能是 TestLambda$1$$Lambda$1。<br/><br/>
+为此，我专门做了个实验，下面的代码编译会生成两个类文件，TestLambda.class，TestLambda$1.class, 第二个类文件是由 new ActionListener() 时创建的匿名类。 然后执行下面的代码：<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.testjdk8;<br/><br/>
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;<br/><br/>
+import javax.swing.JButton;
+import javax.swing.JFrame;<br/><br/>
+public class TestLambda{
+    private static final JButton button = new JButton("Click");
+    
+    public static void main(String[] args) {
+        JFrame frame = new JFrame();
+        frame.setSize(600, 480);
+        frame.add(button);
+        button.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                button.addActionListener((ActionEvent ae) -&gt; {
+                    System.out.println("button clicked.");
+                });                
+            }
+        });
+        
+        frame.setVisible(true);
+    }
+}</pre>
+<br/>
+JDK 给我们提供了不少分析 JVM 的工具，如 jps, jinfo, jstack, jmap, jhat, jconsole, jvisualvm 等。<br/><br/>
+命令：<br/><br/>
+<blockquote>
+jps         #可看到 Java Process ID<br />
+jmap -dump:file=before_click.dump &lt;pid&gt;   #click 前堆转储为文件<br />
+jmap -dump:file=after_click.dump &lt;pid&gt;   #click 后堆转储为文件<br />
+jhat before_click.dump         #默认在  7000 端口打开 Web 服务浏览 open http://localhost:7000<br />
+jhat -port 7001 after_click.dump  #open http://localhost:7001
+</blockquote>
+<br/>
+我们可分别在点击按钮的前后用 jmap 生成快照文件 before_click.dump 和 after_click.dump。在点击按钮之前虚拟机还未真正执行到 Lambda 表达式。<br/><br/>
+用 jhat 浏览 before_click.dump，即点击按钮之前的快照，看到的是：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter wp-image-5749" style="border: 1px solid gray;" src="/wp-content/uploads/2013/10/java_anonymous_class_1.png" alt="java_anonymous_class_1" width="600" /></p>
+<br/>
+只加载了两个类，TestLambda 和匿名类 TestLambda$1。点击 class cc.unmi.testjdk8.TestLambda$1, 看到 TestLambda$1 中是说继承自 Object, 并未告知它与 ActionListner 有何实现上的关系。<br/><br/>
+<p style="text-align: center;"><img class="aligncenter wp-image-5750" style="border: 1px solid gray;" src="/wp-content/uploads/2013/10/java_anonymous_class_2.png" alt="java_anonymous_class_2" width="600" height="306" /></p>
+<br/>
+再用 jhat 打开点击按钮执行了 Lambda 表达式后的快照 after_click.dump，这时候就会发现多一个类 cc.unmi.testjdk8.TestLambda$1$$Lambda$1<br/><br/>
+<p style="text-align: center;"><img class="aligncenter wp-image-5751" style="border: 1px solid gray;" src="/wp-content/uploads/2013/10/java_lambda_1.png" alt="java_lambda_1" width="600" /></p>
+<br/>
+在磁盘上并不存在这个文件，这是在执行 Lambda 表达式时内存中动态生成的，点击它看看它的父类是什么<br/><br/>
+<p style="text-align: center;"><img class="aligncenter wp-image-5752" style="border: 1px solid gray;" src="/wp-content/uploads/2013/10/java_lambda_2.png" alt="java_lambda_2" width="600" /></p>
+<br/>
+在 JDK8 正式版中，它的父类变成了 java.lang.Object。<br/><br/>
+<blockquote>
+<div class="code_border">在早先的 JDK8 Beta 版中，它的父类是 MagicLambdaImpl，确实有点名符其实，Magic，以图为证：<br />
+<a href="/wp-content/uploads/2013/10/jdk8_beta_lambda_class.png"><img class="aligncenter wp-image-6383 size-full" src="https://yanbin.blog/wp-content/uploads/2013/10/jdk8_beta_lambda_class.png" alt="jdk8_beta_lambda_class" width="600" height="238" /></a></div>
+</blockquote>
+<br/>
+上面使用的 JDK 工具是 jmap 和 jhat，也可以用 Java VisualVM -- 即 jvisualvm 指令来查看执行 lambda 前后的内存快照。截了两个图：<br/><br/>
+<p style="text-align: center;"><a href="http://unmi.cc/wp-content/uploads/2013/10/lambda_jvisualvm_1.png"><img class="aligncenter wp-image-5755" style="border: 1px solid gray;" src="/wp-content/uploads/2013/10/lambda_jvisualvm_1.png" alt="lambda_jvisualvm_1" width="750" /></a></p>
+<br/>
+上图为点击按钮前的快照，可以看到只有两个类<br/><br/>
+<p style="text-align: center;"><a href="http://unmi.cc/wp-content/uploads/2013/10/lambda_jvisualvm_2.png"><img class="aligncenter wp-image-5756" style="border: 1px solid gray;" src="/wp-content/uploads/2013/10/lambda_jvisualvm_2.png" alt="lambda_jvisualvm_2" width="750" /></a></p>
+<br/>
+上图是点击按钮后的快照，又多了 cc.unmi.testjdk8.TestLambda$1$$Lambda$1  这个类。<br/><br/>
+小结：JDK8 在实现 Lambda 时使用了 JDK7 虚拟机开始有的 invokedynamic  方法调用指令，该知使得虚拟机执行到 Lambda 表达式时才动态的去创建相应的实现类，并加载执行。

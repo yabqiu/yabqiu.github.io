@@ -1,0 +1,53 @@
+---
+title: 关于 NLB(Network Load Balancing) 会话状态--相似性的选择
+url: /nlbnetwork-load-balancing-session/
+date: 2010-07-07T01:06:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Windows
+tags: 
+  - NLB
+  - session
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 160 
+wpStatus: publish
+views: 913
+lastmod: 2010-08-08T10:12:49-05:00
+---
+
+but,在节点之间切换的话,web承载的论坛需要重新登录,SQL需要重新登录,Exchange需要,SMB会不会呢,全无状态信息,咋办?<br/>
+<br/>
+关于你说的状态信息我不清楚。但从NLB的角度来说的话是需要重新登录的。<br/>
+<br/>
+1. 你说的SMB，是说访问NLB上的共享文件么？这个也是需要重新登录的。<br/>
+<br/>
+2. 关于NLB的工作机制，其实NLB所做的，只是把网络流量平均分担到不同的NLB 节点。NLB的算法能保证来自于同一个IP和端口的流量总是由同一个NLB节点来响应。<!--more--><br/>
+技术上来说，所有的nlb节点都监听NLB的虚拟IP地址收到的流量。最终通过NLB算法，只有一个节点会作出响应。<br/>
+<br/>
+另外关于你说的，当一个nlb node故障后，用户Session的保存问题，这个应该是通过网站程序和IIS控制的。我不是特别清楚。不知道下面的信息是否有用：<br/>
+＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝<br/>
+在ASP.net的站点中，直接配置Session的保存方式为out of processing，这样您可以将所有的Session保存在一台单独的服务器中或是放在SQL数据库中。保存在数据库中的好处就是当服务器遇到问题，重起之后，依旧可以保证Session的值能够继续存在。<br/>
+<br/>
+Enabling Common Storage for ASP.NET Session State (IIS 6.0)<br/>
+<a href="http://www.microsoft.com/technet/prodtechnol/WindowsServer2003/Library/IIS/8f83b8b5-2cfb-4682-ac13-d3856ec361a9.mspx?mfr=true">http://www.microsoft.com/technet/prodtechnol/WindowsServer2003/Library/IIS/8f83b8b5-2cfb-4682-ac13-d3856ec361a9.mspx?mfr=true</a><br/>
+<br/>
+ <br/>
+NLB 支持有限形式的会话粘滞：• <br/>
+单一关联。启用“单一”关联时，不会使用客户端的端口号，映射算法使用客户端的完整 IP 地址来确定负载分布。其结果是，所有来自相同源 IP 地址的请求都会映射到群集中的相同主机。由于不存在超时值（这是基于调度程序的实现的典型特点），这种情况会一直保持下去，直到群集成员关系更改。<br/>
+• <br/>
+C 类关联。在“单一”关联中，没有使用客户端端口号来计算负载分布。启用“C 类”关联时，映射算法是以客户端 IP 地址的“C 端口”（上面的 24 位）作为依据来分配负载的。在“单一”关联中，如果群集成员关系更改的话，会话可能不会保留。<br/>
+• <br/>
+TCP 会话。NLB 在 TCP 连接的有效期内保留 TCP 会话的粘性。但是，来自相同客户端的多个 TCP 连接可能会由相同的群集成员来处理，也可能不由相同成员处理。<br/>
+• <br/>
+IPSec 会话和 VPN 会话。在 Windows Server 2003 上，NLB 具有针对 IPSec 会话和 VPN 会话的专门支持。即使群集成员关系更改，NLB 也会保留这些会话。<br/>
+<br/>
+摘自：<a href="http://social.microsoft.com/Forums/zh-CN/windowsserversystemzhchs/thread/f258b96f-9d17-4f5a-b9a9-64589c1a24fe">http://social.microsoft.com/Forums/zh-CN/windowsserversystemzhchs/thread/f258b96f-9d17-4f5a-b9a9-64589c1a24fe</a><br/>
+<br/>
+相关链接：<a href="http://www.wangchao.net.cn/bbsdetail_59001.html" target="_blank">Win2003 IIS Cluster Configuration</a><br/>
+            <a href="http://tom110.blog.51cto.com/892790/192926/" target="_blank">Windows下NLB（分工作组与域环境）、服务器群集简单搭建</a>

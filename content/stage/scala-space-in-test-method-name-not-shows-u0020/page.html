@@ -1,0 +1,33 @@
+---
+title: 让 Scala 测试方法名中的空格不再显示为 $u0020
+url: /scala-space-in-test-method-name-not-shows-u0020/
+date: 2016-05-07T00:02:37-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - Scala
+  - JUnit
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7253 
+wpStatus: publish
+views: 250
+lastmod: 2016-05-16T21:04:32-05:00
+---
+
+<p>在 Scala 中借助于斜撇号我们可以使用关键字或任何字符为作为变量或方法名，例如下面的方法都是合法的：</p><blockquote><p>scala&gt; def `if`: Unit = {}<br />if: Unit</p><p>scala&gt; def `我是谁?`: Unit = {}<br />我是谁$qmark: Unit</p><p>scala&gt; def `just do it`: Unit = {}<br />just$u0020do$u0020it: Unit</p></blockquote><p>对了，Scala 2.11.6 在显示有些字符时会进行编码，像上面的 ? 和 空格。而用 2.11.7 的 Scala  控制台下居然原样显示，不编码(这是在进一步试难时发现的)。</p><p>我们在用 Scala 写 JUnit 风格的单元测试, 由于 JUnit 不支持像 TestNG 那样在方法名上加描述，所以方法名必须完成自我描述。依照严格的方法命名的话，势必要用驼峰方式或下划线把单词分开，如</p><blockquote><p>def getOneHunderIfSixtyPlusFouty: Unit = { ... }<br />def get_one_hunder_if_sixty_plus_forty: Unit = { ... }</p></blockquote><p>注：如果用 Scala 写 Spec 测试代码另当别论，因为有些情况下必须用 JUnit 风格(就用 JMockit 时)<!--more--></p><p>这种方法名在测试结果中输出来其实阅读来还是不那么流畅。既然 Scala 支持斜撇号中用特殊字符作为方法名，所以想出来的办法就是定义下面的测试法</p><blockquote><p>def `get on hunder if sixty plus forty`: Unit = { ... }</p></blockquote><p>这个想法还是很美妙的，但是输出结果时显示的是这样：</p><blockquote><p>[info] Test run started<br />[info] Test ScalaTest.<span style="color: #800000;">get$u0020one$u0020hundred$u0020if$u0020sixty$u0020plus$u0020forty</span> started<br />[info] Test run finished: 0 failed, 0 ignored, 1 total, 0.006s<br />[info] Passed: Total 1, Failed 0, Errors 0, Passed 1</p></blockquote><p>跟 Scala 控制台一样的，显示出来的是编码后的方法名。</p><p>那么怎么才能在测试结果中显示原代码中所见即所得的样子呢？即不要进行编码。</p><p>因为我们的 sbt 项目要跑 JUnit 的测试代码需要引入 JUnit Interface, 带着这个疑问，我首先锁定的目标就是 <a href="https://github.com/sbt/junit-interface">JUnit Interface</a>。而显示测试结果最关键角色就是 <a href="http://junit.org/junit4/javadoc/latest/org/junit/runner/notification/RunListener.html">RunListener</a>, 二者一卡那就是 JUnit Interface 的 <a href="https://github.com/sbt/junit-interface/blob/master/src/main/java/com/novocode/junit/EventDispatcher.java">com.novocode.junit.EventDispatcher</a>, 它继承了 RunListener 类。摘出显示 <code>started</code> 的一个方法</p><pre class="brush:java"> @Override<br/>
+ public void testStarted(Description description)<br/>
+ {<br/>
+   recordStartTime(description);<br/>
+   logger.pushCurrentTestClassName(description.getClassName());<br/>
+   debugOrInfo("Test " + settings.buildInfoName(description) + " started");<br/>
+   capture();<br/>
+ }</pre><p>我在调试中可以看到 <code>description.getMethod()</code> 已经是一个编码后的字符串，其实在这里如果我们的方法名中的特殊字符只会有空格的话，可以这里简单的把 <code>$0020</code> 替换为空格，但这样改还是不够好，而且需动好几个方法。</p><p>所以再进一步定位到 <code>settings.buildInfoName(description)</code> 的实现处，穷追猛打下去, 找到 <a href="https://github.com/sbt/junit-interface/blob/master/src/main/java/com/novocode/junit/RunSettings.java">com.novocode.junit.RunSettings</a>, 所有的显示类名或方法名之前都调用了 <code>decodeName()</code> 方法</p><pre class="brush:java"> String decodeName(String name) {<br/>
+   return decodeScalaNames ? decodeScalaName(name) : name;<br/>
+ }</pre><p>也就是这里决定了要不要对被 Scala 编码的类或方法或进行解码，再看看这个类名是 <code>RunSettings</code>, 与设置有关的。原本想要来个 Hack 修改下代码来实现解码的想法都要抛弃了，只要找找设置中如何把 <code>decodeScalaNames</code> 设置为 true 就行了。</p><p>再进一步寻觅 <code>decodeScalaNames</code> 的来龙去脉，来到 <a href="https://github.com/scala-js/scala-js/blob/master/junit-runtime/src/main/scala/com/novocode/junit/JUnitFramework.scala#L48">JUnitFramework</a>, </p><blockquote><p>case "-s" =&gt; decodeScalaNames = true</p></blockquote><p>在 sbt 项目中使用 JUnit 时，我们原本就设置过</p><pre class="brush:scala">testOptions += Tests.Argument(TestFrameworks.JUnit, "-q", "-v")</pre><p>只要把 <code>-s</code> 加进去就行，修改之后是这样的</p><pre class="brush:scala">testOptions += Tests.Argument(TestFrameworks.JUnit, "-q", "-v", "-s")</pre><p>如果没有 <code>-s</code>，默认的 <code>decodeScalaNames</code> 是 false, 就是显示方法名的空格为 <code>$0020</code> 的罪魁祸首。现在好了，再次支行 sbt 的 test 结果是这样的</p><blockquote><p>[info] Test run started<br />[info] Test ScalaTest.<span style="color: #800000;">get one hundred if sixty plus forty</span> started<br />[info] Test run finished: 0 failed, 0 ignored, 1 total, 0.005s<br />[info] Passed: Total 1, Failed 0, Errors 0, Passed 1</p></blockquote><p>实际上 JUnit Interface 的首页 <a href="https://github.com/sbt/junit-interface">https://github.com/sbt/junit-interface</a> 就有这个选项的说明，</p><blockquote><p><code>-s</code> Try to decode Scala names in stack traces and test names. Fall back silently to non-decoded names if no matching Scala library is on the class path.</p></blockquote><p>真是绕了一圈又回来。总之感觉还算不错，避免了修改别人代码的可能。sbt 控制台下的原生测试方法名显示是解决了，但在 IntelliJ IDEA 跑测试用例的话还是老样子，因为 IDEA 使用独家的 TestRunner 和 RunListener.</p><p>后注：写这篇之前本来准备好的手头资料是需要修改 JUnit Interface 中的代码来实现，动键盘之后又层层递进才发现一切来的比想像的简单，这就是会了不是真会了，写下来还有惊喜。</p><p>再补充：也是后来发现的在 Scala 2.11.7 的控制台下双撇号(``) 中的变量或方法名居然能原样不加编码的显示，是不是把 Scala 升级到  2.11.7  及以上而不用加  `-s` 就能在测试结果中显示原始方法名呢？答案是不行，`-s` 才是王道。</p>

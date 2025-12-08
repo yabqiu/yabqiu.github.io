@@ -1,0 +1,25 @@
+---
+title: Java 线程同步，对象锁与互斥规则
+url: /java-thread-sync-lock-mutex/
+date: 2010-04-08T20:03:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - multithread
+  - Java
+  - Lock
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 202 
+wpStatus: publish
+views: 2276
+lastmod: 2015-07-01T02:11:03-05:00
+---
+
+<p>在前面一篇 <a id="Editor_Results_rprSelectionList_ctl01_LinkTitle" class="titlelink" href="http://unmi.cc/java-synchronized-method-codes/">是同步方法还是 synchronized 代码？-- 详解多线程同步规则</a> 其实已清楚讲述了这里想要是解的话题，只是之前的长篇大论，没个重点，读来实在会让人受累，故在此单列一专题，假以图示，也为自己加深对同步锁的理解。道中人觉得哪里说得有出入或有更妙的理解方式，尽管拍过来。</p><p>记得我初识多线程时，就是很简单化的去理解了同步：说到要同步，无外乎就是给方法加 synchronized 关键字，或者给代码块加上 synchronized(this) 括起来[注：jdk 1.5 后可用 Lock 来同步代码]，以为这样就万事大吉，就能保证一个线程执行时，另一个线程就进不来。其实不尽然，因为静态同步方法与非静态同步方法是有区别的，而 synchronized(this) 括号中是用 this 还是要用别的对象，也是有讲究的，这些问题可以阅读前一篇：<a id="Editor_Results_rprSelectionList_ctl01_LinkTitle" class="titlelink" href="http://unmi.cc/java-synchronized-method-codes/">是同步方法还是 synchronized 代码？-- 详解多线程同步规则</a>。<!--more--></p><p>而本文的目的就是来让我们加深对同步时对象锁和互斥规则的理解。重提几个概念：</p><p>1. 监视区域(监视器)：加了关键字 synchronized 方法的所有代码行，或 synchronized(xxx) 括起来的代码块，也叫临界区。</p><p>2. 监视区域关联对象：非静态同步方法所代表监视区域的关联对象是 this，静态同步方法所代表监视区域的关联对象是当前类的 Class 实例。synchronized(xxx) 括起来代码组成的监视区域的关联对象就是 xxx 对象。</p><p>3. 对象锁： 对监视区域关联对象所加的锁，俗称为监视区域关联对象上锁。同一线程可给一个对象上锁多次(递归或方法调用方法)，不同线程不能同时为一个对象上锁。</p><p>最后一条很重要：一个监视区域可以关联多个对象，一个对象也可以关联多个监视区域，也就是说监视区域与关联对象是多对多的关系。</p><p>最当然的理解监视区域就像是上了锁的房间，要进入的话必须能打开锁，那就是先要得到钥匙(Key)，但是打开了锁还中足以防止别人进来，还得锁上才行。所以倒不如理解为监视区域是个开放的房间(可以动态的开多个房门)，每个房门只能用某一类型的锁(关联对象)锁上，能获得锁(能成功为关联对象加锁)，才允许进去，出来时要释放锁，在释放锁之前别人是无法获得该门的锁，也是进不来的。不过你仍然可以在其他房门上加锁，再溜进来。当你(一个线程)持有某种类型的锁时候，别人(其他线程)无法获得同一类型的锁。你可以用一种类型同时锁几个房门，或者一个房门上挂几把同类型的锁，别人只能等你一把把拿下来才有机会进去。</p><p>解释下<span style="color: #0000ff;">一个监视区域关联多个对象</span>：非静态同步方法关联的是 this 引用，synchronized(this) 关联的是 this 引用，还有 synchronized(object)，object 指的是实例变量。那么这里的 this 引用和 object 就是动态的，跟调用该方法时的具体实例相关的。如果 object 是方法的局部变量就更糟糕了，那还不如不要同步。监视区域每多一个关联对象相当于为这个房间多开了一个房门和相应的锁。</p><p>再说明下<span style="color: #0000ff;">一个对象也可以关联多个监视区域</span>：比如一个类有三个非静态同步方法，那这几个同步方法都与 this 引用关联，某一线程调用其中一个方法时，等于给其他两个同步方法上了 this 锁。静态同步方法也是类似的，而且用 synchronized(object) 应用到了多个方法代码块中，object 指代同一个对象的话，执行某一代码块时也会同时锁上其他与 object 关联的同步块。</p><p>下面图解来说明：</p><p>对象锁有时就像排序时的回调函数一样不那么好理解，当回调函数返回 -1、0、1 零时分别预示着什么样的行为调整。这时候也许不能采用正常的思维，逆向来考虑，事物(程序) 会以获取到的某一信息(回调函数的返回值)，让集合以一种有序的方式排列。这和热力学第二定律可不一样的。</p><div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

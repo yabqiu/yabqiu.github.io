@@ -1,0 +1,25 @@
+---
+title: 又是 Oracle JDBC 驱动版本太低引发的错误-rs.getByte() 的差异
+url: /oracle-jdbc-low-version-rs-getbyte/
+date: 2008-08-28T06:05:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - JDBC
+  - database
+  - Oracle
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 340 
+wpStatus: publish
+views: 759
+lastmod: 2015-07-01T02:05:02-05:00
+---
+
+<p>前面写过一个因为 Oracle 驱动版太低引起的一在题：<a id="viewpost1_TitleUrl" href="http://unmi.cc/oracle-low-jdbc-version-unknow-chars/">Oracle 驱动版本引起的显示字段奇怪编码问题</a>。今天又遇着一个。</p><p>本地写好的一段连接数据库的程序，一放到正式服务器上又不能正常工作了，原来的代码中没有打印出异常栈，都看不出什么问题来，后来加上异常栈输出，得到如下信息：</p><p><span style="color: #ff1493;">Fail to convert to internal representation<br />  java.sql.SQLException: Fail to convert to internal representation<br />         at oracle.jdbc.dbaccess.DBError.throwSqlException(DBError.java:114)<br />         at oracle.jdbc.dbaccess.DBError.throwSqlException(DBError.java:156)<br />         at oracle.jdbc.dbaccess.DBError.throwSqlException(DBError.java:219)<br />         at oracle.jdbc.driver.OracleStatement.getLongValue(OracleStatement.java:3022)<!--more--><br />  <br />         at oracle.jdbc.dbaccess.DBError.throwSqlException(DBError.java:219)<br />         at oracle.jdbc.driver.OracleStatement.getLongValue(OracleStatement.java:3022)<br />         at oracle.jdbc.driver.OracleStatement.getByteValue(OracleStatement.java:2957)<br />         at oracle.jdbc.driver.OracleResultSetImpl.getByte(OracleResultSetImpl.java:297)<br />         at com.ibm.ws.rsadapter.jdbc.WSJdbcResultSet.getByte(WSJdbcResultSet.java:714)<br />         at com.com.service.budgetTemplate.BudgetQryServiceImpl.qryGeneralBudgetBill(BudgetQryServiceImpl.java:539)</span></p><p>出误信息本地化一下就是：Exception in thread "main" java.sql.SQLException: 无法转换为内部表示</p><p>出错的代码是如下的样子：</p><p><span style="color: #0000ff;">ResultSet rs = stmt.excuteQuery("select '4' from dual");<br /> Byte b = new Byte(rs.getByte(1));                        </span><span style="color: #ff0000;"> //&lt;—————— 错误就出在这一行</span></p><p>在本地测试环境执行是没问题的，本地的数据驱动版本是：8.1.7.0.0<br /> 而正式环境上配置连接池用的驱动版本是 8.1.6.0.0</p><p>解决办法有二：</p><p>1. 取值是换用 Byte b = new Byte(rs.getString(1));<br /> 2. SQL 语句写成 select 4 from dual;</p><p>这里只是把碰到的问题记录下来，我也是维护别人写的这一段代码。实际操作规范一些，应该可以避免出现这种问题，如尽量使测试环境与正式环境保持一致，不然总会有你错愕，寻不着门道的时候。其次以上代码既然是 select '4' 查得一个字符串，理应用 getString() 来取，getByte() 就该对应查询数字(select 4)。</p><div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

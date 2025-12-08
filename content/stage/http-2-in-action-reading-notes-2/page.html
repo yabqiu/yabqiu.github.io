@@ -1,0 +1,88 @@
+---
+title: 《HTTP/2 in Action》阅读笔记(二)
+url: /http-2-in-action-reading-notes-2/
+date: 2022-08-30T23:32:18-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2020/04/http2_logo.png"
+categories:
+  - HTTP
+tags: 
+  - HTTPS
+  - http2
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12534 
+wpStatus: publish
+views: 365
+lastmod: 2022-08-30T23:32:18-05:00
+---
+
+要开始步入 HTTP/2 的，<a href="https://httparchive.org/reports/state-of-the-web#h2">https://httparchive.org/reports/state-of-the-web#h2</a> 显示了使用 HTTP/2 的趋势，和其他数据，如 HTTP/3 的应用趋势。随着互联网的发展，展示一个网页请求的资源越来越多，传输的总字节数在变大，平均近几M - <a href="https://www.speedcurve.com/blog/web-performance-page-bloat/">https://www.speedcurve.com/blog/web-performance-page-bloat/</a>。<br/><br/>
+<a href="https://www.webpagetest.org">https://www.webpagetest.org</a> 可以用测试网页中所有资源加载的瀑布图，包括 DNS 的查询，网络连接，SSL 协商及 CPU, 带宽使用情况。<br/><br/>
+HTTP/1.1 效率较低下，只能同步发送处理请求，即请求，得到响应后才能发下一个请求，一个网会加载许多的资源，如图片, js, css 等。<br/><br/>
+HTTP/1.1 的 Pipeling 像 Redis 那样的 pipeline, 通过一个连接传递多个 HTTP 请求，再依次返回结果，但这种方案并未得到支持与应用。<!--more--><br/><br/>
+针对这个，一个优化方式是同时使用多个连接。多数浏览器对于同一个域名都以使用最多 6 个连接来并发请求资源，例如打开一个网页的 HTML, 其中要从同一个域名下载 4 个 js js, 3 个 css, 和 6 个图片，浏览器就会开启 6 个连接来请求这里的 13 个资源<!--more--><br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/08/http-1.1-to-2.png"><img class="aligncenter wp-image-12552" src="https://yanbin.blog/wp-content/uploads/2022/08/http-1.1-to-2-800x504.png" alt="" width="627" height="395" /></a><br/><br/>
+就是在一条纵向的时间线上，针对同一个个域最多有 6 个连接在同时进行<br/><br/>
+为突破一个域名下同时 6 个连接的限制，许多网站把静态资源放到一个子域名外，如 static.example.com，这样对于新的域名又来开启新的 6 个连接，这叫做 domain sharding。子域名可以指向同一个服务器，但能欺骗浏览器认为是不同的服务器，多连接也是有成本的。<br/><br/>
+这样看到，HTTP/2 应该有能耐用一个连接同时请求多个资源，继续往下看，拭目以待。<br/><br/>
+另一个优化 HTTP/1.1 的办法是减少 HTTP 请求，如使用 HTTP 缓存，合并 css, js, 压缩。再就是用 spriting 技术，用一张图片分别显示它的不同部分。<br/><br/>
+HTTP/1.1 基于文本的协议不那么安全，文本格式大小也比二进制表示要大，例如字符串的 Date 与整数形式的 Date。<br/><br/>
+随着 HTTP 头信息的增长也带来的问题，例如许多资源如图片，CSS, JS 等不需要 cookie 信息，我们需要创建所谓的 cookieless domains 避免 cookie 被回送。<br/><br/>
+要通过 <a href="https://webpagetest.org">https://webpagetest.org</a> 测试 HTTP/1.1 和 HTTP/2 的话，可以在该页中选择 <code>Advanced Configuration</code> -&gt; <code>Chromium</code> -&gt; <code>Command-line</code> 中加上 <code>--disable-http2</code>。相当于启动 Chrome 时加参数的效果  <code>chrome.exe --disable-http2</code>。<br/><br/>
+HTTP/1.1 自 1999 年后未做实质性的改动，需然在 2014 的 RFC 有更新，但主要是文档性的。<br/><br/>
+2009 年，Google 弄了一个 SPDY(speedy) 协议，SPDY 构建在 HTTP 之上的，相当于 HTTPS 与 HTTP 的关系，所以它对用户和开发人员是透明的。HTTP 请求转成 SPDY, 服务端收到 SPDY 后再转换回 HTTP，SPDY 只能与 HTTPS 一同工作<br/><br/>
+从协议分层来看，SPDY 的位置在<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2022/08/spdy-http.png"><img class="aligncenter wp-image-12554 size-full" src="https://yanbin.blog/wp-content/uploads/2022/08/spdy-http.png" alt="" width="267" height="132" /></a><br/><br/>
+SPDY 引入下面几个概念<br/><br/>
+<ol>
+    <li>多路复用(Multiplexed streams): 用单一连接就能同时请求多个资源</li>
+    <li>请求优先级：避免同时发送所有的请求</li>
+    <li>HTTP 头压缩: 原来可以压缩请求体，现在头中的数据也可以压缩了</li>
+    <li>服务端推送(Chrome 106 中将默认禁用 HTTP/2 Server Push 功能)</li>
+</ol>
+<br/>
+不像 HTTP 的文本协议，SPDY 是一个二进制协议。SPDY 工作在 TCP 与 HTTP 协议之前，所以它可以对大的 HTTP 请求拆成多个 TCP 包，也能让 TCP 对多个 HTTP 消息封装到一个 TCP 连接中进行请求，这就让先前 HTTP/1.1 的 Pipeling 失了色。<br/><br/>
+Google 对那时前 25 的网站进行过测试，在页面加载方到达到 64% 的优化效果。<br/><br/>
+SPDY 特性在 2010 年 9 月份随着 Chrome 发布，2011 年 1 月时所有的 Google 服务都支持了 SPDY。接着是其他的浏览器也跟进支持 SPDY，在服务端 Jetty, Apache,  Nginx 都相继加入到支持的行列，网站方面包括 Twitter, Facebook 和 Wordpress。<br/><br/>
+迅速的，SPDY 被约 9.1% 的网站采用，IETF(Internet Engineering Task Force) 也无法忽视 SPDY 的成功，继而以 SPDY 在基础在 2012 年 11 月份发布了 HTTP/2 的第一分草稿，最后在 2015 年 5 月正式被批准为 <a href="https://tools.ietf.org/html/rfc7540">RFC7450</a>。<br/><br/>
+之后，浏览器和网站从 SPDY 转向到 HTTP/2, 在 2015 年底 Firefix, Chrome, Opera, IE 11, Edge 和 Safari 都支持了 HTTP/2, 同时 LiteSpeed, H2O, Apache, IIS 和 Nginx 都上了 HTTP/2。2018 年 9 月，30.1% 的网站支持 HTTP/2。<br/><br/>
+SPDY 只能在 SSL/TLS 上使用，而 HTTP/2 允许在非 SSL/TLS 上用。但有些浏览器只支持 HTTPS 上的 HTTP/2, 如果你的网站没开启 HTTPS，极可能享受不到 HTTP/2 的性能优势。<br/><br/>
+现在发现，居然当前网站 http://yanbin.blog 仍未支持 HTTP/2, 需要配置一下让它也支持 HTTP/2<br/><br/>
+验证网站是否支持 HTTP2 可用命令<br/><br/>
+<blockquote>
+curl -I --http2 -s https://www.google.com | grep HTTP<br />
+HTTP/2 200
+</blockquote>
+<br/>
+HTTP/2 在使用一个连接同时请求多个资源的数量是有限制的，如 Apache 的 HTTP/2 默认为单连接 100 个请求，当达到 100 个请求的限制后，后面的请求等待之前 100 中有请求完成就会开始。这样看来 HTTP/2 与 HTTP/1 的 pipeline 是不一样的，它更像是一个长连接。<br/><br/>
+网站从 HTTP/1 切换到 HTTP/2, 不需要玩弄 HTTP/1 下的多种优化把戏就能获得很多的性能，那些优化方式在 HTTP/2 中是反模式的。有了 HTTP/2，不需要什么网站优化经验就能获得很不错的性能，反而可能使得在 HTTP/2 下表现变差。比如说用 domain sharding 把资源放在多个域名下，就不能只用单一连接加载多个资源了。<br/><br/>
+每一章的总结部分是很有价值的，这里是第二章的 Summary<br/><br/>
+<ol>
+    <li>HTTP/1.1 有一些基本的性能问题，尤其是加载多个资源时</li>
+    <li>变通方法(Workarounds) 用来解决 HTTP/1.1 的一些性能问题，如采用多连接, sharding(资源分布在多个域名中), spriting(图片精灵，把多个图标放在一个图片文件, 等。但那些也有它们各自的局限</li>
+    <li>性能问题很容易通过类似用 WebPagetest 产生的瀑布图来显示</li>
+    <li>SPDY 最初就是设计来解决性能问题的</li>
+    <li>HTTP/2 是一个标准化了的 SPDY</li>
+    <li>不是所有的性能问题都能被 HTTP/2 解决</li>
+</ol>
+<br/>
+补充第一章 Summary 的内容<br/><br/>
+<ol>
+    <li>HTTP 是 Web 应用最核心的技术</li>
+    <li>浏览器加载一个 Web 页面需发起多个 HTTP 请求</li>
+    <li>HTTP 协议起于简单的基于文本的协议</li>
+    <li>HTTP 变得越发复杂，但 20 年以来始终是一个文本协议</li>
+    <li>HTTPS 用以加密标准的 HTTP 消息</li>
+    <li>有各种工具可用来查看和发送 HTTP 消息</li>
+</ol>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://chenhm.com/post/2014-10-12-spdy">SPDY简介</a></li>
+</ol>

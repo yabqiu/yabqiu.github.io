@@ -1,0 +1,46 @@
+---
+title: Tomcat 5.0.28中的dwr出TransformerFactoryImpl not found错的处理办法
+url: /tomcat-5-0-28-dwr-transformerfactoryimpl-not-found/
+date: 2008-01-04T10:10:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Mid-Ware
+tags: 
+  - DWR
+  - Tomcat
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 452 
+wpStatus: publish
+views: 339
+lastmod: 2019-12-11T19:04:02-06:00
+---
+
+<span style="color: #0000ff;">环境：dwr 1.1.4 + Tomcat 5.0.28 + jdk 1.6.0_03<br />
+</span>配置了最基本的 web.xml，加了一个 web.xml 和 RemoteBean，部署后通过网址</p>
+<br/>
+<a href="http://localhost:8080/testdwr/dwr">http://localhost:8080/testdwr/dwr</a> 访问<br/><br/>
+页面出现错误<br/><br/>
+<span style="color: #ff1493;">javax.xml.transform.TransformerFactoryConfigurationError</span>: Provider <span style="color: #ff1493;">org.apache.xalan.processor.TransformerFactoryImpl not found</span><br />
+javax.xml.transform.TransformerFactory.newInstance(Unknown Source)<br />
+uk.ltd.getahead.dwr.convert.DOMConverter.&lt;init&gt;(DOMConverter.java:157)<!--more--><br/><br/>
+这是一个 XML 解析器的问题，我们能直接能理解的就是 TransformerFactoryImpl 找不到，那么这个类在哪个包里呢? xalan，就去 apache 网上<span style="color: #0000ff;">下载到 xalan.jar 包扔到应用的 WEB-INF/lib 目录中，重启 Tomcat 就能OK 了</span>。<br/><br/>
+<span style="color: #ff0000;">上面是第一种解决办法</span>。问题是解决了，但是根由何在？难道就不能用别的 XML 解析器呢，难道 JDK 和 Tomcat 就没有为我们预备好对于 dwr 可用的 XML 解析器吗？先说个背景<br/><br/>
+·JDK1.3 没有 XML 解析器，所有要自己配上 xercesImpl.jar 和 xml-apis.jar<br />
+·JDK 1.4.0 和 JDK 1.4.1 虽然具有了 XML 解析器，但是有些 Bug，所有还是得把 xercesImpl.jar 放到 Tomcat/common/endorsed 目录中覆盖掉默认的解析器<br />
+·JDK 1.4.2 及后来版本的 XML 解析器可以工作的很好<br />
+·最后，那个出现错误本质原因还得由下面慢慢道来……<br/><br/>
+这样就是说 JDK 1.4.2 及更新版本根本用不着 xercesImpl.jar 和 xml-apis.jar 帮忙了。只要我们细心些就能发现在 Tomcat5.0.x/common/endorsed 目录中有两个包 xercesImpl.jar 和 xml-apis.jar。因为 Tomcat 加载 endorsed 中的包是通过参数 -Djava.endorsed.dirs="X:\Tomcat5.0.x\common\endorsed" 加载的，所以放在 endorsed 目录中的包要优于 JDK 的 rt.jar，所以要用 JDK 的 XML 解析器必须<span style="color: #0000ff;">把 xercesImpl.jar 和 xml-apis.jar 从 endorsed 目录中移去</span>，<span style="color: #ff0000;">这是第二种解决办法</span>。<br/><br/>
+再静心想一想，问题在 XML 解析器，为何偏偏是 org.apache.<span style="color: #ff0000;">xalan</span>.processor.<span style="color: #000000;">TransformerFactoryImpl</span> 这样的类名呢？这让我不免思考起 JDK 1.4 及 JDK 1.5 以上版本的差异来，再次回想起为何 Tomcat 5.5.x 版本需要 JDK 1.5 以上的版本来。<br/><br/>
+不妨做个实验，dwr 1.1.4 + JDK 1.4.2 + Tomcat 5.0.x，xercesImpl.jar 和 xml-apis.jar 仍旧让它们在 endorsed 目录中，运行最基本的 dwr 程序没一点问题。那为什么换个JDK就又行了呢？原因就在 xml-apis.jar 中指定了 TransformerFactory 的实现类全名为 org.apache.<span style="color: #ff0000;">xalan</span>.processor.<span style="color: #000000;">TransformerFactoryImpl，它存在于 JDK 1.4.2 的 rt.jar 包中，而在 JDK 1.5 的 rt.jar 包中根本就没有 apache 的包了，所以它不行，再进一步，其实第二种解决办法<span style="color: #ff0000;">如果用的是 JDK 1.5 以上版本仅</span><span style="color: #ff0000;">仅需要把 xml-apis.jar 包从 endorsed 目录挪出就行了</span>。<br />
+</span><br />
+在 Tomcat5.0.x 的 common/endorsed 目录中放上 xercesImpl.jar 和 xml-apis.jar 是为 JDK 1.4.2 之前版本不健康的 XML 解析器而考虑的。再如前面所说，JDK 1.4.2 的 XML 解析器已经很好了，再试验用 <span style="color: #ff0000;">JDK 1.4.2 时，把 xercesImpl.jar 和 xml-api.jar 从 endorsed 目录中移开，效果会如何呢？一切正常</span>。还需注明点就是，如要用的 JDK 1.4.x，只移开 xml-api.jar，还留有 xercesImpl.jar 在 endorsed 目录中仍会报错的。<br/><br/>
+就如勒威耶根据天王星轨道的摄动,运用万有引力定论计算出了海王星的位置并由伽勒观察到了海王星；既然 Tomcat5.5.x 是为 JDK 1.5 以上版本而设计，而在 JDK 1.5 的 rt.jar 中没有 xalan，就不应该在 endorsed 目录中制造些杂音的，果如其然，打开 <span style="color: #0000ff;">Tomcat5.5.x 的 common/endorsed 目录中空空如也</span>。由此可证明 JDK 1.5 和 Tomcat 5.5.x 搭配 dwr 能顺顺当当的。<br/><br/>
+别说这么伟大，回想起曾经有一次碰到这种问题时，什么也没想直接就把 xercelImpl.jar 和 xml-apis.jar 移出 endorsed 目录，居然能这么神奇的瞎猫撞老鼠般的解决一个问题，实属幸运。今天正式去用 DWR 碰到麻烦才来了解个究竟，问题只要你愿深入，就能悟出些门道来。并非高版本的 JDK 就能很好的向后兼容，与应用服务器也要注意正确的搭配，SUN 好像也只是对 Solaris 承诺过二进制 100% 向后兼容而已。<br/><br/>
+参考资料：1. <a href="http://dev.21tx.com/2006/03/22/10407.html">在tomcat5.0.28下配置DWR出错</a><br />
+             2. <a href="http://blog.csdn.net/bryanliu1982/archive/2006/01/04/570392.aspx">TransformerFactoryImpl not found exception</a>

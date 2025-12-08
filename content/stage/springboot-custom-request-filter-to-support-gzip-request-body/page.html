@@ -1,0 +1,334 @@
+---
+title: SpringBoot 中自定义 Filter 支持 gzip 压缩的请求体
+url: /springboot-custom-request-filter-to-support-gzip-request-body/
+date: 2025-07-07T13:35:41-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - web
+  - Spring
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14135 
+wpStatus: publish
+views: 73
+lastmod: 2025-07-07T13:35:41-05:00
+---
+
+SpringBoot Web 项目要支持响应数据的自动压缩只需要在 <code>application.properties</code> 中配置 <code>server.compression.enabled=true</code> 即可，默认为 false. 这样对于默认 <code>server.compression.min-response-size=2KB</code> 达到 2KB 大小的响应，并且请求头中有 <code>Accept-Encoding: gzip</code> 或 <code>deflate</code> 就会压缩响应数据。<br/><br/>
+相关的配置请参考：<a href="https://docs.spring.io/spring-boot/appendix/application-properties/index.html#appendix.application-properties.server">SpringBoot Server Properties</a><br/><br/>
+<ol>
+    <li>server.compression.enabled: 默认为  false</li>
+    <li>server.compression.excluded-user-agents: 针对哪些 user-agents(逗号分隔) 不压缩，默认为空</li>
+    <li>server.compression.mime-types: 会对哪些响应的 content-type 进行压缩，默认为 text/html, text/xml, text/plain, text/css, text/javascript, application/javascript, application/json, application/xml</li>
+    <li>server.compression.min-response-size: 默认为 2KB</li>
+</ol>
+<br/>
+文本数据压缩比可达到百分之七八十，对于节约网络消耗来说是非常可关的，不过要些许 CPU 资源。说完了响应的自动压缩，如果请求数据较大也应考虑对请求进行压缩。比如客户端发送请求时带上 <code>Content-Encoding:gzip</code>, 并且请求内容是 gzip 压缩的。<br/><br/>
+提示：如果 SpringBoot Web 是放在 AWS API Gateway 后端，那么 AWS API Gateway 会在看到请求头 Content-Encoding 的值为 gzip, compress, deflate, 或 br, 会自动解压缩请求数据，然后转发解压缩后的数据到后端，这时候 SpringBoot Web 无需进行请求数据的解压处理。不过对响应数据的压缩是 SpringBoot Web 要做的，AWS API Gateway 并无该功能。<br/><br/>
+SpringBoot 默认不支持自动解压缩请求内容，如果手动在 Controller 方法中，可以接收字节数组，然后自行解压缩。比如定义如下的 Controller 方法<!--more--><br/><br/>
+<pre class="lang:default decode:true">@PostMapping("/test-gzip-request")
+public String testGzipRequest(HttpServletRequest request, @RequestBody byte[] requestBody) throws IOException {
+    System.out.println("server content-encoding: " + request.getHeader("Content-Encoding"));
+    System.out.println("server requestLength: " + request.getContentLength());
+    if (StringUtils.containsIgnoreCase(request.getHeader(CONTENT_ENCODING), "gzip")) {
+        try (GZIPInputStream gzipInputStream = new GZIPInputStream(new ByteArrayInputStream(requestBody))) {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            byte[] buffer = new byte[1024];
+            int len;
+            while ((len = gzipInputStream.read(buffer)) != -1) {
+                baos.write(buffer, 0, len);
+            }
+            return baos.toString();
+        }
+    }
+    return new String(requestBody);
+} </pre>
+<br/>
+收到字节内容后，如果 Content-Encoding 是 gzip, 则解压缩，否则直接转换为字符串。但是希望压缩的内容直接变为一个 JavaBean 的话还需继续人工处理反序列化。例如压缩的 JSON 字符希望能自动转换为 <code>@RequestBody UserDetail userDetail</code> 最好要用一个 RequestFilter。<br/><br/>
+我们现在对这个 /test-gzi-request 进行测试，用 Python 代码<br/><br/>
+<pre class="lang:default decode:true ">import requests
+import gzip<br/><br/>
+request_body = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789" * 10<br/><br/>
+print("client request_body length: ", len(request_body))
+gzip_request_body = gzip.compress(request_body)
+print("client gzip request_body length: ", len(gzip_request_body))<br/><br/>
+res = requests.post("http://localhost:8080/test-gzip-request",
+                    data=gzip_request_body,
+                    headers={"Content-Encoding": "gzip"})<br/><br/>
+print("client response_body length: ", len(res.text))
+print(res.text)</pre>
+<br/>
+执行后客户端输出为(响应内容省略)<br/><br/>
+<blockquote>
+client request_body length: 620<br />
+client gzip request_body length: 89<br />
+client response_body length: 620<br />
+ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ABC...............................................
+</blockquote>
+<br/>
+服务端为<br/><br/>
+<blockquote>
+server content-encoding: gzip<br />
+server requestLength: 89
+</blockquote>
+<br/>
+这里可以看到因为请求内容重复度很高，所以压缩比也很高，从 620 降至 89。如果实际应用中需发送大内容的 JSON  或 XML 文本，应适当考虑要求客户端对请求进行压缩传输。<br/><br/>
+下面用自定义 RequestFilter 的方式来自动化处理 gzip 请求内容的解压操作，如果用 ChatGPT 搜索 SpringBoot 自定义 GzipRequestFilter 的话大概率为找到如下的实现<br/><br/>
+<pre class="lang:default decode:true ">import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletInputStream;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;<br/><br/>
+import java.io.*;
+import java.util.zip.GZIPInputStream;<br/><br/>
+@Component
+public class GzipRequestFilter extends OncePerRequestFilter {<br/><br/>
+    @Override
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain)
+            throws ServletException, IOException {<br/><br/>
+        String contentEncoding = request.getHeader("Content-Encoding");<br/><br/>
+        if ("gzip".equalsIgnoreCase(contentEncoding)) {
+            HttpServletRequest decompressedRequest = new GzipServletRequestWrapper(request);
+            filterChain.doFilter(decompressedRequest, response);
+        } else {
+            filterChain.doFilter(request, response);
+        }
+    }<br/><br/>
+    private static class GzipServletRequestWrapper extends HttpServletRequestWrapper {
+        private final byte[] decompressedBody;<br/><br/>
+        public GzipServletRequestWrapper(HttpServletRequest request) throws IOException {
+            super(request);
+            try (GZIPInputStream gzipInputStream = new GZIPInputStream(request.getInputStream());
+                 ByteArrayOutputStream byteStream = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[1024];
+                int len;
+                while ((len = gzipInputStream.read(buffer)) &gt; 0) {
+                    byteStream.write(buffer, 0, len);
+                }
+                this.decompressedBody = byteStream.toByteArray();
+            }
+        }<br/><br/>
+        @Override
+        public ServletInputStream getInputStream() {
+            ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(decompressedBody);
+            return new ServletInputStream() {
+                @Override
+                public boolean isFinished() {
+                    return byteArrayInputStream.available() == 0;
+                }<br/><br/>
+                @Override
+                public boolean isReady() {
+                    return true;
+                }<br/><br/>
+                @Override
+                public void setReadListener(ReadListener readListener) {
+                    // Not needed
+                }<br/><br/>
+                @Override
+                public int read() {
+                    return byteArrayInputStream.read();
+                }
+            };
+        }<br/><br/>
+        @Override
+        public BufferedReader getReader() {
+            return new BufferedReader(new InputStreamReader(getInputStream()));
+        }
+    }
+}</pre>
+<br/>
+这段代码有三个主要的问题<br/><br/>
+<ol>
+    <li>没有引入 `jakarta.servlet.ReadListener`</li>
+    <li>所有请求最终全放在内存中，用 ByteArrayInputStream，如果能转换成真正的 InputStream 流会好些</li>
+    <li>在 SpringBoot 3.4.3 中根本读取不到完整的请求数据(又是 AI 幻觉)</li>
+</ol>
+<br/>
+为测试上面的 GzipRequestFilter, 我们改造一下前面的 Controller 方法<br/><br/>
+<pre class="lang:default decode:true ">@PostMapping("/test-gzip-request")
+public String testGzipRequest(HttpServletRequest request, @RequestBody String requestBody) {
+    System.out.println("server content-encoding: " + request.getHeader("Content-Encoding"));
+    System.out.println("server requestLength: " + request.getContentLength());
+    return requestBody;
+}</pre>
+<br/>
+再用相同的 Python 代码进行测试<br/><br/>
+客户端输出为(响应为不完整的输出)<br/><br/>
+<blockquote>
+client request_body length: 620<br />
+client gzip request_body length: 89<br />
+client response_body length: 89<br />
+ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZa
+</blockquote>
+<br/>
+内容缺失了<br/><br/>
+服务端输出不变<br/><br/>
+<blockquote>
+server content-encoding: gzip<br />
+server requestLength: 89
+</blockquote>
+<br/>
+原因就是 SpringBoot 根据压缩请求的  Content-Length: 89 从解压内容中只读取了同样 89 个字符，超出部分被忽略掉了。也就是说这里的 new ServletInputStream#read() 方法只被调用了 89 次，尽管有 isFinished() 方法好像可以辅助判断是否读到的末尾，而实际上该方法未被调用。<br/><br/>
+最好的办法仍然是查源代码，找到 SpringBoot 的  <a href="https://github.com/spring-projects/spring-framework/blob/main/spring-web/src/main/java/org/springframework/http/converter/StringHttpMessageConverter.java#L96">StringHttpMessageConverter#readInternal(Class, HttpInputMessage)</a>. 这是 Spring 6.1.x 及之后的代码<br/><br/>
+<pre class="lang:default decode:true">@Override
+protected String readInternal(Class&lt;? extends String&gt; clazz, HttpInputMessage inputMessage) throws IOException {
+    Charset charset = getContentTypeCharset(inputMessage.getHeaders().getContentType());
+    long length = inputMessage.getHeaders().getContentLength();
+    byte[] bytes = (length &gt;= 0 &amp;&amp; length &lt;= Integer.MAX_VALUE ?
+            inputMessage.getBody().readNBytes((int) length) : inputMessage.getBody().readAllBytes());
+    return new String(bytes, charset);
+}</pre>
+<br/>
+inputMessage.getHeaders().getContentLength() 从请求头 Content-Length 来，它决定了只读取多少内容。<br/><br/>
+该方法在 Spring 6.0.x 中的实现没有限定读取长度<br/><br/>
+<pre class="lang:default decode:true">@Override
+protected String readInternal(Class&lt;? extends String&gt; clazz, HttpInputMessage inputMessage) throws IOException {
+    Charset charset = getContentTypeCharset(inputMessage.getHeaders().getContentType());
+    return StreamUtils.copyToString(inputMessage.getBody(), charset);
+}</pre>
+<br/>
+所以在 SpringBoot 3.1.x(Spring 6.0.x) 及之前的版本应该是没问题。<br/><br/>
+那么我们要对使用 SpringBoot 3.1.x 之后的版本对此 GZipRequestFilter 进行修复，目的是还给一个足够大的 <code>length</code> 去读压缩的请求内容，或者直接触发调用 inputMessage.getBody().readAllBytes()。如果是转换成了 ByteArrayInputStream 可以知道确切的请求长度，如果直接给一个当前系统能接受的最大请求体长度。<br/><br/>
+下面是经过多番摸索找到的一个实现<br/><br/>
+<pre class="lang:default decode:true">@Component
+public class GzipRequestFilters extends OncePerRequestFilter {
+    private static final String MAX_PAYLOAD_SIZE = String.valueOf(5 * 1024 * 1024);<br/><br/>
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
+        FilterChain filterChain) throws ServletException, IOException {
+        if (request.getContentLength() &gt; 0 &amp;&amp; 
+            StringUtils.containsIgnoreCase(request.getHeader(CONTENT_ENCODING), "gzip")) {
+            HttpServletRequest decompressedRequest = new GzipServletRequestWrapper(request);
+            filterChain.doFilter(decompressedRequest, response);
+        } else {
+            filterChain.doFilter(request, response);
+        }
+    }<br/><br/>
+    private static class GzipServletRequestWrapper extends HttpServletRequestWrapper {
+        private final GZIPInputStream gzipInputStream;<br/><br/>
+        public GzipServletRequestWrapper(HttpServletRequest request) throws IOException {
+            super(request);
+            this.gzipInputStream = new GZIPInputStream(request.getInputStream());
+        }<br/><br/>
+
+        @Override
+        public Enumeration&lt;String&gt; getHeaders(String name) {
+            if (HttpHeaders.CONTENT_LENGTH.equalsIgnoreCase(name)) {
+                return Collections.enumeration(Collections.singleton(MAX_PAYLOAD_SIZE));
+            }
+            return super.getHeaders(name);
+        }<br/><br/>
+        @Override
+        public ServletInputStream getInputStream() {
+            return new ServletInputStream() {
+                private boolean finished = false;<br/><br/>
+                @Override
+                public int read() throws IOException {
+                    int data = GzipServletRequestWrapper.this.gzipInputStream.read();
+                    if (data == -1) {
+                        this.finished = true;
+                    }<br/><br/>
+                    return data;
+                }<br/><br/>
+                @Override
+                public boolean isFinished() {
+                    return finished;
+                }<br/><br/>
+                @Override
+                public boolean isReady() {
+                    return true;
+                }<br/><br/>
+                @Override
+                public void setReadListener(ReadListener listener) {
+                    throw new UnsupportedOperationException();
+                }
+            };
+        }
+    }
+}</pre>
+<br/>
+import 部分省略了，请自行引入。<br/><br/>
+这里我们设定了一个当前系统支持的最大的解压缩后的 PayLoad 大小为 5M，其实设置一个非常大的值也没关系，1G 都没问题，反正最终在读取完 gzipInputStream 后就会停下来，默认用 16Kb 的缓存读取。<br/><br/>
+不再使用 ByteArrayInputStream 把所有字节内容从 request.getInputStream() 中预先读取出来，而只是对 request.getInputStream()  简单的包装为 GZipInputStream, 待到读取内容时从流中逐步获取。<br/><br/>
+可以覆盖的 HttpServletRequestWrapper 方法其实还可能有<br/><br/>
+<ol>
+    <li>int getContentLength()</li>
+    <li>long getContentLengthLong()</li>
+    <li>String getHeader(String name)</li>
+    <li>int getIntHeader(String name)</li>
+</ol>
+<br/>
+最终经过多次尝试确定只需要覆盖 Enumeration&lt;String&gt; getHeaders(String name) 方法。<br/><br/>
+在 <a href="https://github.com/spring-projects/spring-framework/blob/main/spring-web/src/main/java/org/springframework/http/server/ServletServerHttpRequest.java#L196">org.springframework.http.server.ServletServerHttpRequest</a> 中还有一个逻辑，当 getContentLength() &lt; 0 时会调用 servletRequest.getContentLength()<br/><br/>
+<pre class="lang:default decode:true">if (this.headers.getContentLength() &lt; 0) {
+    int requestContentLength = this.servletRequest.getContentLength();
+    if (requestContentLength != -1) {
+        this.headers.setContentLength(requestContentLength);
+    }
+}</pre>
+<br/>
+因此也可以在 Enumeration&lt;String&gt; getHeaders(String name) 返回 ContentLength -1, 同时覆盖 int getContentLength() 给定一个长度。<br/><br/>
+反正就是不能使用压缩后的 Content-Length 去读取解压后的内容，如果转换 request.getInputStream() 为 ByteArrayInputStream 的话可以用未压缩请求的长度，或给定一个足够大的数值。<br/><br/>
+再执行客户端 Python 代码<br/><br/>
+客户端输出为(响应内容省略)<br/><br/>
+<blockquote>
+client request_body length: 620<br />
+client gzip request_body length: 89<br />
+client response_body length: 620<br />
+ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ABC...............................................
+</blockquote>
+<br/>
+服务端输出始终是一样的。<br/><br/>
+进一步测试<br/><br/>
+<pre class="lang:default decode:true ">@PostMapping("/test-gzip-request")
+public String testGzipRequest(HttpServletRequest request, @RequestBody Map&lt;String, String&gt; requestBody) {
+    System.out.println("server content-encoding: " + request.getHeader("Content-Encoding"));
+    System.out.println("server requestLength: " + request.getContentLength());
+    return requestBody.get("data");
+}</pre>
+<br/>
+客户端的代码变为<br/><br/>
+<pre class="lang:default decode:true ">request_body = '{"data": "%s"}' % ("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789" * 10)<br/><br/>
+print("client request_body length: ", len(request_body))
+gzip_request_body = gzip.compress(request_body.encode())
+print("client gzip request_body length: ", len(gzip_request_body))<br/><br/>
+res = requests.post("http://localhost:8080/test-gzip-request",
+                    data=gzip_request_body,
+                    headers={"Content-Encoding": "gzip", "Content-Type": "application/json"})<br/><br/>
+print("client response_body length: ", len(res.text))
+print(res.text)</pre>
+<br/>
+测试<br/><br/>
+客户端输出(完整输出)<br/><br/>
+<blockquote>
+client request_body length: 632<br />
+client gzip request_body length: 100<br />
+client response_body length: 620<br />
+ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789A......
+</blockquote>
+<br/>
+服务端<br/><br/>
+<blockquote>
+server content-encoding: gzip<br />
+server requestLength: 100
+</blockquote>
+<br/>
+说明 GZipRequestFilter 能正常解压缩请求内容，并映射成  Controller 的 Map&lt;String, String&gt; 对象。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://stackoverflow.com/questions/78184478/spring-boot-put-payload-with-gzip-compressed-is-getting-truncated-after-upgrade">Spring Boot Put payload with gzip compressed is getting truncated after upgrade to 3.2.0 from 3.1.9</a></li>
+    <li><a href="https://github.com/spring-projects/spring-framework/issues/32162">StringHttpMessageConverter truncates output when data is compressed</a></li>
+</ol>

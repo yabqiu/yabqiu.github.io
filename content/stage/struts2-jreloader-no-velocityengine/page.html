@@ -1,0 +1,84 @@
+---
+title: Struts2+jreloader 出现 NoClassDefFoundError: VelocityEngine
+url: /struts2-jreloader-no-velocityengine/
+date: 2011-02-15T02:05:57-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Struts
+tags: 
+  - Struts2
+  - jreloader
+  - jrebel
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3147 
+wpStatus: publish
+views: 1123
+lastmod: 2021-09-03T12:52:08-05:00
+---
+
+用 <a href="http://unmi.cc/jreloader-reload-class" target="_blank" rel="noopener">用 jreloader 动态重新加载改变的类而不用重启 JVM </a>来避免因 classes 目录中的文件改动而不停重启 Tomcat。但是却会出现如下的问题：</p>
+<br/>
+Feb 15, 2011 3:51:06 PM org.apache.catalina.core.StandardContext filterStart<br />
+SEVERE: Exception starting filter struts2<br />
+java.lang.NoClassDefFoundError: Lorg/apache/velocity/app/VelocityEngine;<br />
+ at java.lang.Class.getDeclaredFields0(Native Method)<br />
+ at java.lang.Class.privateGetDeclaredFields(Class.java:2291)<br />
+ at java.lang.Class.getDeclaredFields(Class.java:1743)<br />
+ at com.opensymphony.xwork2.inject.ContainerImpl.addInjectors(ContainerImpl.java:89)<br />
+ at com.opensymphony.xwork2.inject.ContainerImpl$1.create(ContainerImpl.java:71)<br />
+ at com.opensymphony.xwork2.inject.ContainerImpl$1.create(ContainerImpl.java:67)<br />
+ at com.opensymphony.xwork2.inject.util.ReferenceCache$CallableCreate.call(ReferenceCache.java:150)<br />
+ at java.util.concurrent.FutureTask$Sync.innerRun(FutureTask.java:303)<!--more--><br />
+ at java.util.concurrent.FutureTask.run(FutureTask.java:138)<br />
+ at com.opensymphony.xwork2.inject.util.ReferenceCache.internalCreate(ReferenceCache.java:76)<br />
+ at com.opensymphony.xwork2.inject.util.ReferenceCache.get(ReferenceCache.java:116)<br />
+ at com.opensymphony.xwork2.inject.ContainerImpl$ConstructorInjector.&lt;init&gt;(ContainerImpl.java:348)<br />
+ at com.opensymphony.xwork2.inject.ContainerImpl$5.create(ContainerImpl.java:305)<br />
+ at com.opensymphony.xwork2.inject.ContainerImpl$5.create(ContainerImpl.java:301)<br />
+ at com.opensymphony.xwork2.inject.util.ReferenceCache$CallableCreate.call(ReferenceCache.java:150)<br />
+ at java.util.concurrent.FutureTask$Sync.innerRun(FutureTask.java:303)<br />
+ at java.util.concurrent.FutureTask.run(FutureTask.java:138)<br />
+ at com.opensymphony.xwork2.inject.util.ReferenceCache.internalCreate(ReferenceCache.java:76)<br/><br/>
+原因是在虚拟机参数中加了  -noverify，这将促使 Struts2 去加载代码中引用了而不会在运行时使用的 Velocity 相关的类。<br/><br/>
+下面是网上给出的解决办法：<br/><br/>
+It turns out that this is not directly a jrebel issue. This problem appears when -noverify jvm flag is used, the application will fail even without jrebel when this flag is present.<br />
+Struts contains org.apache.struts2.views.velocity.VelocityManager which contains fields that reference velocity classes. In com.opensymphony.xwork2.config.providers.XmlConfigurationProvider#register getDeclaredConstructors() is called on the VelocityManager, without noverify flag this call will fail and this class will be ignored, but with noverify this call will succeed and processing will fail later on when getDeclaredFields() is called on the same class.<br />
+Similar issue has been also reported with jrockit vm, see <a href="https://issues.apache.org/jira/browse/WW-2228">https://issues.apache.org/jira/browse/WW-2228</a>. As weblogic runns with bytecode verifier disabled by default it is likely to be the same problem.<br />
+To resolve it you have at least the following choices:<br />
+1) Add the missing velocity jar to your application (this is probably the easiest solution).<br />
+2) Remove -noverify form jvm arguments<br />
+3) Improve XmlConfigurationProvider#register<br />
+4) Investigate why getDeclaredConstructors fails or succeeds depending on -noverify. If one of these behaviours turns out to be violating jvm spec then file a bug for jvm.<br />
+Currently it doesn't look like we should be attempting to somehow fix it in jrebel, though if we find a good way to fix it then we'll do it.<br/><br/>
+其实我们看到这样的错误，第一个反应是找不到类，缺包，那么是谁在引用该类，要不就直接引入相应的 jar 文件。pom.xml 里加上：<br/><br/>
+<pre class="lang:default decode:true ">&lt;dependency&gt;
+    &lt;groupId&gt;org.apache.velocity&lt;/groupId&gt;
+    &lt;artifactId&gt;velocity&lt;/artifactId&gt;
+    &lt;version&gt;1.7&lt;/version&gt;
+&lt;/dependency&gt;
+&lt;dependency&gt;
+    &lt;groupId&gt;org.apache.velocity&lt;/groupId&gt;
+    &lt;artifactId&gt;velocity-tools&lt;/artifactId&gt;
+    &lt;version&gt;2.0&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+可恶的是 velocity-tools 会加入它所依赖的：<br/><br/>
++- commons-digester:commons-digester:jar:1.8:compile<br />
++- commons-chain:commons-chain:jar:1.1:compile<br />
++- commons-validator:commons-validator:jar:1.3.1:compile<br />
++- oro:oro:jar:2.0.8:compile<br />
++- sslext:sslext:jar:1.2-0:compile<br />
++- org.apache.struts:struts-core:jar:1.3.8:compile<br />
++- org.apache.struts:struts-taglib:jar:1.3.8:compile<br />
+\- org.apache.struts:struts-tiles:jar:1.3.8:compile<br/><br/>
+那就用 &lt;excludes&gt; 排除掉不用的吧。<br/><br/>
+再就是去掉虚拟机参数 -noverify，不用 jreloader 或是 jrebel，或是修正 Struts2 使之迁就于 jreloader 或 jrebel。<br/><br/>
+好像也并不怎么会影响到 jreloader 的使用。<br/><br/>
+参考：1. <a href="http://www.zeroturnaround.com/forum/topic.php?id=882">http://www.zeroturnaround.com/forum/topic.php?id=882</a><br />
+             2. <a href="https://issues.apache.org/jira/browse/WW-2228">https://issues.apache.org/jira/browse/WW-2228</a>

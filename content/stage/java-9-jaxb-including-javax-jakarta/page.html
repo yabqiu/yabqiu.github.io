@@ -1,0 +1,302 @@
+---
+title: Java 9 前/后使用 JAXB (包括支持 javax.* 或 jakarta.*)
+url: /java-9-jaxb-including-javax-jakarta/
+date: 2024-03-22T22:13:28-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Maven
+  - jaxb
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13555 
+wpStatus: publish
+views: 577
+lastmod: 2024-04-04T15:31:33-05:00
+---
+
+使用 Java 处理 Object 与 XML 之间的转换时 JAXB(Java Architecture for XML Binding) 仍然被广泛使用。但随着 Java 9 模块化后把 JAXB 从标准 JDK 中移除后，和 Java EE 8(Jakarta EE 8) 到 Jakarta EE 9 的变迁时命名空间由 <code>javax.*</code> 变成了 <code>jakarta.*</code>，我们在使用 JAXB 时需作出相应的适配。</p>
+<br/>
+本文分别使用 Java 1.8, 17，通过 Maven 插件 jaxb2-maven-plugin 的 xjc (从 xsd 文件生成 Java 类), 和如何切换 <code>jakarta.*</code> 命名空间，由此可给我们对使用了 JAXB 的项目升级 JDK 时指明方向。从而不致于因不了解每部分组件的具体功效而在 pom.xml 中胡乱配置，比如之前对 jaxb2-maven-plugin 插件本身配置了多余的 org.glassfish.jaxb:jaxb-xjc 和 org.glassfish.jaxb:jaxb-runtime 依赖，也未能理解 jaxb2-maven-plugin 与 org.glassfish.jaxb:jaxb-runtime 之间的版本对应关系。<br/><br/>
+ 实验准备，创建简单的 Maven 项目，并在路径 src/main/xsd/ 下新建 Schema 文件 sample.xsd，内容为<!--more--><br/><br/>
+<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="UTF-8" ?&gt;
+&lt;xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"&gt;
+    &lt;xs:element name="item"&gt;
+        &lt;xs:complexType&gt;
+            &lt;xs:sequence&gt;
+                &lt;xs:element name="title" type="xs:string"/&gt;
+                &lt;xs:element name="note" type="xs:string" minOccurs="0"/&gt;
+                &lt;xs:element name="quantity" type="xs:positiveInteger"/&gt;
+                &lt;xs:element name="price" type="xs:decimal"/&gt;
+            &lt;/xs:sequence&gt;
+        &lt;/xs:complexType&gt;
+    &lt;/xs:element&gt;
+&lt;/xs:schema&gt;</pre>
+<br/>
+如果再加上将要的测试代码 Client.java 的话，该 Maven 项目的目录结构就是<br/><br/>
+<pre class="lang:default decode:true ">├── pom.xml
+└── src
+    └── main
+        ├── com
+        │   └── example
+        │       └── Client.java
+        └── xsd
+            └── sample.xsd</pre>
+<br/>
+下面分别用在 Java 9 前后的版本进行测试，Java 9 之前选择最流行的 Java 8, 之后的以 JDK 17 作为代表。 <br/><br/>
+<h3>Java 1.8 中使用 xjc</h3><br/><br/>
+Java 9 之前在 JDK 中内含 JAXB 组件，所以在 Java 8 中应用它很简单。<br/><br/>
+关于 jaxb2-maven-plugin xjc 的用法请参考官方的 <a href="https://www.mojohaus.org/jaxb2-maven-plugin/Documentation/v2.4/example_xjc_basic.html">Basic Examples - Java Generation</a>. 我们多数时候遵循该插件的约定，可使对插件的配置最小化，如把 xsd 文件放在 src/main/xsd 中, 由 xsd 生成的 Java 源文件会在 target/generated-sources/jaxb 中, 该插件会自动把此目录自动作为源文件目录。xjc goal 会关联到 Maven 的 generate-sources Phase，所以 mvn compile 命令也就会自动生成 Java 文件和编译。<br/><br/>
+在 Maven 的 pom.xml 文件，只要在 build/plugins 中加上以下部分<br/><br/>
+<pre class="lang:default decode:true ">&lt;plugin&gt;
+    &lt;groupId&gt;org.codehaus.mojo&lt;/groupId&gt;
+    &lt;artifactId&gt;jaxb2-maven-plugin&lt;/artifactId&gt;
+    &lt;version&gt;2.3.1&lt;/version&gt;
+    &lt;executions&gt;
+        &lt;execution&gt;
+            &lt;id&gt;sample&lt;/id&gt;
+            &lt;goals&gt;
+                &lt;goal&gt;xjc&lt;/goal&gt;
+            &lt;/goals&gt;
+            &lt;configuration&gt;
+                &lt;packageName&gt;com.example.generation&lt;/packageName&gt;
+            &lt;/configuration&gt;
+        &lt;/execution&gt;
+    &lt;/executions&gt;
+&lt;/plugin&gt;
+</pre>
+<br/>
+现在执行 mvn 命令<br/><br/>
+<blockquote>
+mvn clean compile
+</blockquote>
+<br/>
+在 target/generated-sources/jaxb/com/example/generation下生成 Item.java 和 ObjectFactory.java 文件<br/><br/>
+写一段代码进行测试 com/example/Client<br/><br/>
+<pre class="lang:default decode:true ">package com.example;<br/><br/>
+import com.example.generation.Item;<br/><br/>
+import javax.xml.bind.JAXBContext;
+import javax.xml.bind.JAXBException;
+import javax.xml.bind.Marshaller;
+import java.math.BigDecimal;<br/><br/>
+public class Client {<br/><br/>
+    public static void main(String[] args) throws JAXBException {
+        Item item = new Item();
+        item.setPrice(BigDecimal.valueOf(12.0));
+        item.setTitle("Hello");<br/><br/>
+        JAXBContext jaxbContext = JAXBContext.newInstance(Item.class);
+        Marshaller marshaller = jaxbContext.createMarshaller();
+        marshaller.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, true);<br/><br/>
+        marshaller.marshal(item, System.out);
+    }
+}</pre>
+<br/>
+执行该 Java 代码，得到输出<br/><br/>
+<blockquote>
+&lt;?xml version="1.0" encoding="UTF-8" standalone="yes"?&gt;<br />
+&lt;item&gt;<br />
+    &lt;title&gt;Hello&lt;/title&gt;<br />
+    &lt;price&gt;12.0&lt;/price&gt;<br />
+&lt;/item&gt;
+</blockquote>
+<br/>
+如果查看当前目录的结构是<br/><br/>
+<pre class="lang:default decode:true">.
+├── pom.xml
+├── src
+│   └── main
+│       ├── java
+│       │   └── com
+│       │       └── example
+│       │           └── Client.java
+│       └── xsd
+│           └── sample.xsd
+└── target
+    ├── classes
+    │   └── com
+    │       └── example
+    │           ├── Client.class
+    │           └── generation
+    │               ├── Item.class
+    │               └── ObjectFactory.class
+    ├── generated-sources
+    │   ├── annotations
+    │   └── jaxb
+    │       ├── META-INF
+    │       │   └── sun-jaxb.episode
+    │       └── com
+    │           └── example
+    │               └── generation
+    │                   ├── Item.java
+    │                   └── ObjectFactory.java
+    └── jaxb2</pre>
+<br/>
+注意到我们这里所用的 jaxb2-maven-plugin 插件版本是 2.3.1, 在 MVN REPOSITORY <a href="https://mvnrepository.com/artifact/org.codehaus.mojo/jaxb2-maven-plugin">jaxb2-maven-plugin</a> 的最新版本有<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/03/jaxb2-maven-plugin-1.png"><img class="aligncenter wp-image-13556" src="https://yanbin.blog/wp-content/uploads/2024/03/jaxb2-maven-plugin-1-800x271.png" alt="" width="596" height="202" /></a><br/><br/>
+升级 jaxb2-maven-plugin 插件到 2.4 或 2.5.0 也可正常工作. 但只有 2.3.1 可配置 &lt;generateEpisode&gt;false&lt;/generateEpisode&gt; 而不用生成  *.episode 文件.<br/><br/>
+那么升级到 3.1.0 后会怎么样呢？<br/><br/>
+可正常执行 <code>mvn genreate-sources</code>，但生成的 Item.java 和 ObjectFactory.java 导入的包由 <code>javax.*</code> 变成了 <code>jakarta.*</code>, 由此可知 jaxb2-maven-plugin 的 3.1.0 是个分水岭，它是为 Jakarta EE 9 服务的。<br/><br/>
+<h3>Java 17 中使用 xjc</h3><br/><br/>
+现在我们直接从 Java 8 跳到 Java 17, 已经知道这其中起关键性的阻碍是 Java 9 的模块化把 JAXB 从标准 JDK 的拿掉了。<br/><br/>
+如果我们对前面的代码(为避免编译错误先把 Client.java 代码注释掉)，只是切换 Java 到版本 17, 继续用 jaxb2-maven-plugin:2.3.1，直接运行<br/><br/>
+<blockquote>
+mvn clean generate-sources
+</blockquote>
+<br/>
+出现错误<br/><br/>
+<blockquote>
+Execution sample of goal org.codehaus.mojo:jaxb2-maven-plugin:2.3.1:xjc failed: A required class was missing while executing org.codehaus.mojo:jaxb2-maven-plugin:2.3.1:xjc: com/sun/codemodel/CodeWriter
+</blockquote>
+<br/>
+升级插件到 2.4 后再次执行 mvn clean generate-sources, 得到新的错误<br/><br/>
+<blockquote>
+Caused by: java.lang.ClassNotFoundException: javax.activation.MimeTypeParseException
+</blockquote>
+<br/>
+升级插件到 2.5.0 后 mvn clean generate-source 顺利通过, 但无法通过编译(mvn compile), 错误中有许多如下信息<br/><br/>
+<blockquote>
+package javax.xml.bind.annotation does not exist
+</blockquote>
+<br/>
+因为 jaxb2-maven-plugin 生成的源文件 Item.java 中要导入的类如下<br/><br/>
+<pre class="lang:default decode:true">import javax.xml.bind.annotation.XmlAccessType;
+import javax.xml.bind.annotation.XmlAccessorType;
+.......</pre>
+<br/>
+这些原本属性 JAXB 模块的类已由 Java 9 从核模块中移除了，要使用的话还须从外界重新引入, 也就是 JAXB Runtime<br/><br/>
+从 <a href="https://mvnrepository.com/search?q=jaxb-runtime">https://mvnrepository.com/search?q=jaxb-runtime</a> 可找到几个相关的 JAXB Runtime, 如<br/><br/>
+<ol>
+    <li>org.glassfish.jaxb:jaxb-runtime</li>
+    <li>com.sun.xml.bind:jaxb-impl</li>
+    <li>org.mule.glassfish.jaxb:jaxb-runtime</li>
+    <li>javax.xml.bin:jaxb-api</li>
+</ol>
+<br/>
+等等，从多方面来看还是 org.glassfish.jaxb:jaxb-runtime 更流行，所以在 pom.xml 中加上依赖<br/><br/>
+<pre class="lang:default decode:true ">&lt;dependency&gt;
+    &lt;groupId&gt;org.glassfish.jaxb&lt;/groupId&gt;
+    &lt;artifactId&gt;jaxb-runtime&lt;/artifactId&gt;
+    &lt;version&gt;2.3.9&lt;/version&gt;
+&lt;/dependency&gt;
+</pre>
+<br/>
+再次执行<br/><br/>
+<blockquote>
+mvn clean compile
+</blockquote>
+<br/>
+通过<br/><br/>
+在 org.glassfish.jaxb:jaxb-runtime 中实际是引入了 jakarta.xml.bind:jakarta.xml.bind-api 来支援 <code>javax.xml.bind.*</code> 的。当前 org.glassfish.jaxb:jaxb-runtime 比 2.3.9 更高的版本有  3.x 和 4.x，我们需把它的版本压制在 2.x 是因为 3.x 和  4.x 所关联的 jakarta.xml.bind:jakarta.xml.bind-api 的包名 <code>javax.xml.bind.*</code> 变成了 <code>jakarta.xml.bind.*</code> 了。<br/><br/>
+通过一系列的测试，我们可以总结出 jaxb2-maven-plugin 和 org.glassfish.jaxb:jaxb-runtime 的版本应如何搭配，支持项目中的 <code>javax.*</code> 或 <code>jakarta.*</code> 命名空间(如升级了 SpringBoot 到 3.2.x, 使用了 Tomcat 10 等)<br/><br/>
+继续使用 <code>javax.*</code> 命名空间<br/><br/>
+<ol>
+    <li>jaxb2-maven-plugin: 2.x(2.5.0)</li>
+    <li>org.glassfish.jaxb:jaxb-runtime: 2.x(2.3.9)</li>
+</ol>
+<br/>
+要采用新的 <code>jarkata.*</code> 命名空间<br/><br/>
+<ol>
+    <li>jaxb2-maven-plugin: 3.x+(3.1.0)</li>
+    <li>org.glassfish.jaxb:jaxb-runtime:3.x+(4.0.5)</li>
+</ol>
+<br/>
+完整的 pom.xml 的配置如下<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd"&gt;
+    &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+    &lt;groupId&gt;test&lt;/groupId&gt;
+    &lt;artifactId&gt;testxjc-java17&lt;/artifactId&gt;
+    &lt;version&gt;1.0-SNAPSHOT&lt;/version&gt;
+    &lt;name&gt;java17-jaxb&lt;/name&gt;<br/><br/>
+    &lt;properties&gt;
+        &lt;jaxb2-plugin-version&gt;3.1.0&lt;/jaxb2-plugin-version&gt;
+        &lt;jaxb-runtime-version&gt;4.0.5&lt;/jaxb-runtime-version&gt;
+    &lt;/properties&gt;<br/><br/>
+   &lt;dependencies&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.glassfish.jaxb&lt;/groupId&gt;
+            &lt;artifactId&gt;jaxb-runtime&lt;/artifactId&gt;
+            &lt;version&gt;${jaxb-runtime-version}&lt;/version&gt;
+        &lt;/dependency&gt;
+    &lt;/dependencies&gt;<br/><br/>
+    &lt;build&gt;
+        &lt;plugins&gt;
+            &lt;plugin&gt;
+                &lt;groupId&gt;org.codehaus.mojo&lt;/groupId&gt;
+                &lt;artifactId&gt;jaxb2-maven-plugin&lt;/artifactId&gt;
+                &lt;version&gt;${jaxb2-plugin-version}&lt;/version&gt;
+                &lt;executions&gt;
+                    &lt;execution&gt;
+                        &lt;id&gt;sample&lt;/id&gt;
+                        &lt;goals&gt;
+                            &lt;goal&gt;xjc&lt;/goal&gt;
+                        &lt;/goals&gt;
+                        &lt;configuration&gt;
+                            &lt;packageName&gt;com.example.generation&lt;/packageName&gt;
+                        &lt;/configuration&gt;
+                    &lt;/execution&gt;
+                &lt;/executions&gt;
+            &lt;/plugin&gt;
+        &lt;/plugins&gt;
+    &lt;/build&gt;
+&lt;/project&gt;</pre>
+<br/>
+jaxb2-plugin-version 和  jaxb-runtime-version 根据用 <code>javax.*</code> 还是 <code>jakarta.*</code> 包名来选择相应的版本。如果打算各路依赖都尽量往高的版本去升，那就选择用 <code>jakarta.*</code> 的命名空间吧。<br/><br/>
+要是使用了高版本的 Maven 插件, 最后把 Client.java 恢复回来，把其中的 <code>javax.*</code> 替换成 <code>jakarta.*</code> 就能正常工作了。<br/><br/>
+<h3>另外两个问题</h3><br/><br/>
+<h4>JDK 21 与 Lombok 的兼容性</h4><br/><br/>
+在 JDK 21 中在使用 jaxb2-maven-plugin 插件时，如果项目中使用了 Lombok 1.8.30 之前版本的话会出现出错<br/><br/>
+<blockquote>
+Fatal error compiling: java.lang.NoSuchFieldError:<br />
+Class com.sun.tools.javac.tree.JCTree$JCImport does not have member field 'com.sun.tools.javac.tree.JCTree qualid'
+</blockquote>
+<br/>
+把 Lombok 升级到与 JDK 21 兼容的 1.18.30 版本即可。<br/><br/>
+<h4>使用了 jaxb 命名空间的自定义 Schema</h4><br/><br/>
+如果在自定义 xsd 文件中使用了 xmlns:jaxb 的话，执行 <code>mvn generate-sources</code> 也会出问题，例如有一个 user.xsd 文件<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:jaxb="https://java.sun.com/xml/ns/jaxb" jaxb:version="1.0"&gt;
+  &lt;xs:element name="userapi"&gt;
+    &lt;xs:annotation&gt;
+      &lt;xs:appinfo&gt;
+        &lt;jaxb:class name="UserRequest"/&gt;
+      &lt;/xs:appinfo&gt;
+    &lt;/xs:annotation&gt;
+    &lt;xs:complexType&gt;
+      &lt;xs:sequence&gt;
+          &lt;xs:sequence&gt;
+            &lt;xs:element name="name" type="xs:string"/&gt;
+            &lt;xs:element name="address" type="xs:string" minOccurs="0"/&gt;
+          &lt;/xs:sequence&gt;
+        &lt;/xs:choice&gt;
+      &lt;/xs:sequence&gt;
+    &lt;/xs:complexType&gt;
+  &lt;/xs:element&gt;
+&lt;/xs:schema&gt;
+</pre>
+<br/>
+出错信息为<br/><br/>
+<blockquote>
+[WARNING] null [-1,-1] <br />
+org.xml.sax.SAXParseException: No JAXB customization was detected in the schema but the prefix "jaxb" is used for other namespace URIs. If you did intend to use JAXB customization, make sure the namespace URI is "<a class="external-link" href="https://jakarta.ee/xml/ns/jaxb" rel="nofollow">https://jakarta.ee/xml/ns/jaxb</a>"<br />
+    at com.sun.tools.xjc.reader.xmlschema.parser.IncorrectNamespaceURIChecker.endDocument (IncorrectNamespaceURIChecker.java:70)<br />
+    at org.xml.sax.helpers.XMLFilterImpl.endDocument (XMLFilterImpl.java:485)<br />
+    at org.xml.sax.helpers.XMLFilterImpl.endDocument (XMLFilterImpl.java:485)<br />
+    at org.xml.sax.helpers.XMLFilterImpl.endDocument (XMLFilterImpl.java:485)<br />
+    at com.sun.tools.xjc.reader.internalizer.VersionChecker.endDocument (VersionChecker.java:100)
+</blockquote>
+<br/>
+这可不仅仅是一个警告信息，实际上无法生成 UserRequest 类。我们需要按照信息中的提示，把前面 user.xsd 中 xs:schema 声明部分改成<br/><br/>
+<pre class="lang:default decode:true">&lt;xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:jaxb="https://jakarta.ee/xml/ns/jaxb" jaxb:version="3.0"&gt;</pre>
+<br/>
+这样就能正常了。

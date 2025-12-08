@@ -1,0 +1,216 @@
+---
+title: AWS DynamoDB 的常用操作
+url: /aws-dynamodb-common-operations/
+date: 2021-09-19T23:03:05-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - NoSql
+  - DynamoDB
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11714 
+wpStatus: publish
+views: 1357
+lastmod: 2021-12-07T11:51:07-06:00
+---
+
+AWS 提供的 NoSQL 数据库有 DynamoDB, DocumentDB(即 MongoDB), 和 Keyspaces(即 Cassandra)。还有一个神秘的早已消失于 AWS 控制台之外的 SimpleDB，它只能通过 API 才能使用。因为 AWS 有意要把它藏起来，不愿被新用户看到它，希望用 DynamoDB 替代它，关于用 aws cli 如何体验 AWS SimpleDB 可见本文后面部分。<br/><br/>
+DynamoDB 所设计的读写容量参数的概念，AWS 为其标榜是为保证一致性与明确的性能表现，实际上不如说是一个赚钱的计量单位，为了钱反而是把一个简单的事情弄复杂了。当需要全局索引时，必须为全局索引设定读写容量，连索引的钱也不放过。本文只为体验对 DynamoDB 的常用操作，不管吞吐量的问题，所以不用关心读写容量的问题。<br/><br/>
+DynamoDB 后端用 SSD 存储，不像 Elasticache 是把数据放在内存当，对了 Elasticache 也是 AWS 提供了 NoSQL 服务。DynamoDB 每条记录(Item) 的大小限制为 400K.<!--more--><br/><br/>
+我们在使用 DynamoDB 的 Python API 时，get_item, query, scan 等的操作不能像常规数据库那样去思维，get_item, query 等主要操作方法都必须作用在主键上(如果是组合主键，需全列出)，或是额外的索引上。scan 可以用主键或索引外的条件，但它会进行全表扫描，对于大量记录的表慎用。<br/><br/>
+如果去参考官方 boto3  的 DynamoDB API，<a href="https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/dynamodb.html">https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/dynamodb.html</a>，那是非常不具参考性的，也就是无法照着文档来操作，还必须用 Google 找例子。<br/><br/>
+<h2>单主键表(Partition Key Only)</h2><br/><br/>
+创建一个单主键的表(即只有 partition key 无  sort key) <br/><br/>
+<blockquote>
+$ aws dynamodb create-table --table-name test-table \<br />
+--attribute-definitions AttributeName=id,AttributeType=N \<br />
+--key-schema AttributeName=id,KeyType=HASH \<br />
+--billing-mode PROVISIONED \<br />
+--provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5
+</blockquote>
+<br/>
+这样创建的表只有一个 partition key, 没有 sort key, 那么该表的主键就是 partition key，字段 id<br/><br/>
+用 Python 的 boto3 API 操作 DynamoDB 的表时有低阶和高阶的 API<br/><br/>
+<pre class="lang:default decode:true">import boto3
+client = boto3.client('dynamodb')
+table = boto3.client('dynamodb').Table('test-table')</pre>
+<br/>
+用 client 进行表的操作时须指定表名，并且参数中必说明每个字段的类型。<br/><br/>
+<h3>put_item()</h3><br/><br/>
+<pre class="lang:default decode:true">client.put_item(
+    TableName='test-table',
+    Item = {'id': {'N': '1'}, 'name': {'S': 'scott'}, 'city': {'S': 'Chicago'}}
+)<br/><br/>
+table.put_item(
+    Item = {'id': 2, 'name': 'tiger', 'city': 'LA'}
+)</pre>
+<br/>
+因为该表的主键为 id, 再次 put_item 一条 id 为 2 的记录 DynamoDB 并不会报错，操作是成功的，变成了对 id 为 2 记录的更新操作，相当于是 <code>put_item()</code> 有幂等性。如果需要更新所有字段值都不需要用 <code>update_item()</code> 函数，直接用 <code>put_item()</code> 就行。<br/><br/>
+后面直接用高阶的 table 来操作<br/><br/>
+<h3>get_item()</h3><br/><br/>
+<pre class="lang:default decode:true">res = table.get_item(
+    Key = {'id': 1}
+)
+res['Item']  # {'city': 'Chicagi', 'id': Decimal('1'), 'name': 'scott'}</pre>
+<br/>
+用 Key 参数，只能指定主键值进行查询，如果试图在 Key 中指定别的字段值，如<br/><br/>
+<pre class="lang:default decode:true">table.get_item(Key={'name': 'scott'})  # 这是不对的</pre>
+<br/>
+将会看到错误信息<br/><br/>
+<blockquote>
+ClientError: An error occurred (ValidationException) when calling the GetItem operation: The provided key element does not match the schema
+</blockquote>
+<br/>
+<h3>query()</h3><br/><br/>
+<pre class="lang:default decode:true">from boto3.dynamodb.conditions import Key<br/><br/>
+res = table.query(
+    KeyConditionExpression=Key('id').eq(1)
+)
+res['Items'] # [{'city': 'Chicagi', 'id': Decimal('1'), 'name': 'scott'}]</pre>
+<br/>
+既然是叫做 <code>KeyConditionXxx</code>, 也只能用主键。我们后面会看到有索引的情况可用 <code>query()</code> 函数根据索引来查询<br/><br/>
+<h3>scan()</h3><br/><br/>
+<pre class="lang:default decode:true">from boto3.dynamodb.conditions import Attr<br/><br/>
+res = table.scan(
+    FilterExpression=Attr('name').contains('t')
+)
+res['Items']  # [{'city': 'LA', 'id': Decimal('2'), 'name': 'tiger'},
+ {'city': 'Chicagi', 'id': Decimal('1'), 'name': 'scott'}]</pre>
+<br/>
+scan() 就比较随意, 可用任意字段作为查询条件，反正是要全表扫描。scan() 也能根据索引来扫描，可以缩小扫描的范围。<br/><br/>
+<h2>有 Partition Key 和 Sort Key 的表</h2><br/><br/>
+再来创建一个含  Partition Key 和 Sort Key 的表<br/><br/>
+<blockquote>
+aws dynamodb create-table --table-name test-table \<br />
+--attribute-definitions AttributeName=id,AttributeType=N \<br />
+AttributeName=name,AttributeType=S \<br />
+--key-schema AttributeName=id,KeyType=HASH \<br />
+AttributeName=name,KeyType=RANGE \<br />
+--billing-mode PROVISIONED \<br />
+--provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5
+</blockquote>
+<br/>
+这时候该表的主键就是 id(partition key) 和 name(sort key) 的组合，可以有 id 相同但 name 不同的记录，反之亦然。所以在 <code>put_item()</code> 时当 id 与 name 有存在的记录时，变成了更新原记录。<code>scan()</code> 针对这种双 Key 的表也没什么特别的，反正是全扫描，无所谓主键是什么。<br/><br/>
+<h3>get_item()</h3><br/><br/>
+注意 <code>get_item()</code>  和 <code>query()</code> 时必须同时列出 partition key 和 sort key, 否则会报错，比如下面试图只用 partition key 进行 <code>get_item()</code> 时<br/><br/>
+<pre class="lang:default decode:true">res = table.get_item( Key = {'id': 1} )   # 这是不对的</pre>
+<br/>
+错误为<br/><br/>
+<blockquote>
+ClientError: An error occurred (ValidationException) when calling the GetItem operation: The provided key element does not match the schema
+</blockquote>
+<br/>
+所以正确的 <code>get_item()</code> 代码是<br/><br/>
+<pre class="lang:default decode:true ">res = table.get_item( 
+    Key = {'id': 2, 'name': 'tiger'}
+)
+res['Item'] # {'city': 'LA', 'id': Decimal('2'), 'name': 'tiger'}</pre>
+<br/>
+<h3>query()</h3><br/><br/>
+query() 和 get_item() 也是一样的，必须列出两个 key, 否则报一样的错误<br/><br/>
+<pre class="lang:default decode:true ">from boto3.dynamodb.conditions import Key<br/><br/>
+res = table.query(
+    KeyConditionExpression=Key('id').eq(1) &amp; Key('name').begins_with('s')
+)
+res['Items'] # [{'city': 'Chicagi', 'id': Decimal('1'), 'name': 'scott'}]</pre>
+<br/>
+<h3>带全局索引的表</h3><br/><br/>
+<code>query()</code> 操作必须同时列出所有的 Key, 如果在不知道 Key 的值，想用 <code>query()</code> 查询除 Key 之外的字段，却又想避免全表扫描的话，该如何做呢？全局二级索引：为非 Key 字段建立全局二级索引。DynamoDB 每建立一个全局索引时还必须为该索引单独设定读写容量。<br/><br/>
+创建一个表，只有 Partiton Key 为 id, 并创建以 name 它段的全局二级索引 nameIndex<br/><br/>
+<blockquote>
+<pre class="lang:default decode:true">aws dynamodb create-table --table-name test-table \
+--attribute-definitions AttributeName=id,AttributeType=N \
+ AttributeName=name,AttributeType=S \
+--key-schema AttributeName=id,KeyType=HASH \
+--billing-mode PROVISIONED \
+--provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \
+--global-secondary-indexes \
+  '[
+    {
+      "IndexName": "nameIndex",
+      "KeySchema": [
+         {"AttributeName": "name", "KeyType":"HASH"}
+       ],
+       "Projection": {
+         "ProjectionType": "KEYS_ONLY"
+       },
+       "ProvisionedThroughput": {
+         "ReadCapacityUnits": 2,
+         "WriteCapacityUnits": 1
+       }
+    }
+  ]'
+</pre>
+</blockquote>
+<br/>
+创建完后可以看到这么一个索引<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/09/dynamodb-global-index.png"><img class="aligncenter wp-image-11732" src="https://yanbin.blog/wp-content/uploads/2021/09/dynamodb-global-index.png" alt="" width="900" height="197" /></a><br/><br/>
+<h3>根据索引 query</h3><br/><br/>
+有了全局二级索引后，在 <code>query()</code> 时就不用列出所有的 Key, 而只根据索引来查询<br/><br/>
+<pre class="lang:default decode:true">from boto3.dynamodb.conditions import Key<br/><br/>
+res = table.query(IndexName='nameIndex', KeyConditionExpression=Key('name').eq('tiger'))
+res['Items'] # [{'id': Decimal('2'), 'name': 'tiger'}]</pre>
+<br/>
+<h3>小小感受</h3><br/><br/>
+总之呢？相比于关系型数据库，DynamoDB 把各种操作弄得很复杂，而流行已久的 MongoDB 可比 DynamoDB 编程上更友好。体验了上面的一番后，DynamoDB 用 Partition 来提高性能，但用读写容量来卡脖子，就看你敢不敢用; 考虑到多处读写容量的设置，不多给钱，读写容量不足很影响性能，这样还不如使用 ElastiCache 中的 Redis 内存缓存。<br/><br/>
+<h2>本地版 DynamoDB</h2><br/><br/>
+DynamoDB 还有一个为本地开发测试用的版本，见 <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.DownloadingAndRunning.html">Deploy DynamoDB Locally on Your Computer</a>. 其中拣一个地址下载，如 <a href="https://s3.ap-south-1.amazonaws.com/dynamodb-local-mumbai/dynamodb_local_latest.tar.gz">https://s3.ap-south-1.amazonaws.com/dynamodb-local-mumbai/dynamodb_local_latest.tar.gz</a>， 下载后解压缩，运行<br/><br/>
+<blockquote>
+$ java -jar DynamoDBLocal.jar -sharedDb
+</blockquote>
+<br/>
+或用 <code>-inMemory</code> 参数，数据只写在内存当中，<code>-port</code> 可改变端口号，<code>-help</code> 查看更多使用参数。<br/><br/>
+就能通过 http://localhost 访问，像用 <code>aws dynamodb</code> 命令时加上 <code>--endpoint-url http://localhost:8000</code> 就指向了本地版的 DynamoDB, 如用 <code>aws dynamodb</code>  创建一个表<br/><br/>
+<blockquote>
+aws dynamodb create-table --table-name test-table \<br />
+--attribute-definitions AttributeName=id,AttributeType=N \<br />
+--key-schema AttributeName=id,KeyType=HASH \<br />
+--billing-mode PROVISIONED \<br />
+--provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5 \<br />
+--endpoint-url http://localhost:8000
+</blockquote>
+<br/>
+在使用本地的 DynamoDB 创建表时也必须指定读写容量，不过可以放大数字，反正不会有人收你的钱。<br/><br/>
+Python 的操作的话，在创建 DynamoDB  client 或 resource 时需加上 endpoint_url 参数，如下<br/><br/>
+<pre class="lang:default decode:true">client = boto3.client('dynamodb', endpoint_url='http://localhost:8000')
+table = boto3.resource('dynamodb', endpoint_url='http://localhost:8000').Table('test-table') </pre>
+<br/>
+其他的操作就没什么分别了。 <br/><br/>
+<h2>aws cli 体验 SimpleDB</h2><br/><br/>
+这里给 AWS SimpleDB 兜个底，因为看到多方介绍 AWS 有个 SimpleDB, 但总也在 AWS  控制台找不着，所以用 aws cli 来体验一下<br/><br/>
+<blockquote>
+$ aws sdb create-domain --domain-name test-domain<br />
+$ aws sdb list-domains<br />
+{<br />
+    "DomainNames": [<br />
+        "test-domain"<br />
+    ]<br />
+}<br />
+$ aws sdb put-attributes --domain-name test-domain --item-name r1 --<br />
+attributes '{"Name": "yanbin", "Value": 0, "Replace": false}'<br />
+$ aws sdb get-attributes --domain-name test-domain --item-name r1<br />
+{<br />
+    "Attributes": [<br />
+        {<br />
+            "Name": "yanbin",<br />
+            "Value": "0"<br />
+        }<br />
+    ]<br />
+}<br />
+$ aws sdb delete-domain --domain-name test-domain
+</blockquote>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://www.alexdebrie.com/posts/dynamodb-limits/">The Three DynamoDB Limits You Need to Know</a></li>
+    <li><a href="https://www.fernandomc.com/posts/ten-examples-of-getting-data-from-dynamodb-with-python-and-boto3/">Ten Examples of Getting Data from DynamoDB with Python and Boto3</a></li>
+    <li><a href="https://highlandsolutions.com/blog/hands-on-examples-for-working-with-dynamodb-boto3-and-python">Hands-On Examples for Working with DynamoDB, Boto3, and Python</a></li>
+</ol>

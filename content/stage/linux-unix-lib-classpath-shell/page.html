@@ -1,0 +1,65 @@
+---
+title: Linux/Unix下读取lib目录下所有包生成classpath的Shell
+url: /linux-unix-lib-classpath-shell/
+date: 2007-07-25T08:14:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Linux/Unix
+  - Java/JEE
+tags: 
+  - Linux
+  - classpath
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 499 
+wpStatus: publish
+views: 2825
+lastmod: 2010-08-21T01:23:33-05:00
+---
+
+做了一个 Java 程序放在 Solaris 下运行，用到许多的第三方包，有 *.zip 的和 *.ja r的，放在 lib 目录下，然后写了一个 shell 脚本来运行那个 java 程序，那就要在 classpath 中包含所有在 lib 中的第三方包。<br/>
+<br/>
+原来的做法是在 classpath中把lib目录中一个个的包文件名用冒号连缀起来，比如<br/>
+classpath=.:lib/a.jar:lib/b.jar:lib/c.jar:lib/d.zip<br/>
+java -classpath $classpath com.unmi.Main<!--more--><br/>
+<br/>
+碰到程序升级，在lib中增加或减少了包文件，又要再重新修改那个启动 java 程序的 shell 脚本,甚是麻烦。由此想写个 shell，功能是能列举lib目录下所有第三方包，用冒号连缀成一个 classpath 变量，这样的话，无论在 lib 目录中增减包，都不需要再次修改那个启动 java 程序的 shell 脚本，就像 tomcat，无论是 common/lib 还是 app/WEB-INF/lib 中的第三方包，即放即用。<br/>
+<br/>
+记得在以前一个公司，有见过这样的脚本，不过记不清了，大致是用 while 循环来生成那样一个classpath 变量的。<br/>
+<br/>
+还好在网上有高人出手相救，在 CSDN 发了一个贴：<br/>
+<br/>
+<a href="http://community.csdn.net/Expert/topic/5671/5671131.xml?temp=.7013971">http://community.csdn.net/Expert/topic/5671/5671131.xml?temp=.7013971</a><br/>
+<br/>
+过一天就有人回复，完成这一功能的代码是：<br/>
+<br/>
+#!/bin/sh<br/>
+<br/>
+_jar=`ls | grep "..*\.zip$"`<br/>
+_zip=`ls | grep "..*\.jar$"`<br/>
+_classpath="${_jar} ${_zip}"<br/>
+classpath=`echo ${_classpath} | sed -e 's/ /:/g'`<br/>
+echo ${classpath}<br/>
+<br/>
+这里根据我们前面的需求，是要列出 lib 目录下的 *.zip 或 *.jar 包，所以 shell 改写为：<br/>
+<br/>
+#!/bin/sh<br/>
+<br/>
+_jar=`ls lib | grep "..*\.zip$"`  #列举lib目录下的 *.zip 文件<br/>
+_zip=`ls lib | grep "..*\.jar$"`  #列举lib目录下的 *.zip 文件<br/>
+_classpath="${_jar} ${_zip}"<br/>
+classpath=`echo ${_classpath} | sed -e 's/ /:lib\//g'`   #包名前都要带个 lib/<br/>
+echo ${classpath}<br/>
+<br/>
+这样，你就可以使用这个 classpath 变量了<br/>
+<br/>
+java -classpath .:${classpath} com.unmi.Main #把当前目录 . 也加到 classpath 中<br/>
+<br/>
+在此非常感谢 mymtom(mymtom) 的回复。<br/>
+<br/>
+最后回头来想想这也就是在原来的 JRE 版本需要手工处理这些事情，如果能用上新版 6.0 Mustang JRE，就可以用它的新特性之一，classpath 通配符，java -classpath .;lib\*.jar:lib\*.zip 了，可是相信大多数同我一样，还享受不起最新版，只能暂且麻烦一些了。

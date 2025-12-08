@@ -1,0 +1,156 @@
+---
+title: 让 Python 的数据库查询返回字典记录
+url: /python-database-query-return-dictionary-result/
+date: 2018-12-16T12:30:08-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - database
+  - Python
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9179 
+wpStatus: publish
+views: 3454
+lastmod: 2021-09-17T13:40:14-05:00
+---
+
+在使用  Python 进行数据库查询，通常情况下 <code>cursor</code> 的 <code>fetchall</code>, <code>fetchmany</code> 返回的是元组(Tuple) 的列表，所以对查询到的结果只能用索引下标来访问，而无法通过字段名来获取值。对 Java JDBC 的 ResultSet 操作，我们有两种获取值的方式，resultSet.getString(1) 和 resultSet.getString('name')。<br/><br/>
+其实只要能用数字索引访问到字段值也就足够了，查询后字段名可以由 <code>cursor.description</code> 获得。通过字段名来访问值唯一的好处估计是出错的概率小些罢了，比如 result['firstname'], result['lastname'] 总是比 result[1], result[2] 更不容易搞混，错误定位也会更轻松。<br/><br/>
+假如有下面的数据库表与两条记录<!--more--><br/><br/>
+<blockquote>
+create table test(name varchar(10), count integer);<br />
+insert into test(name, count) values ('Bob', 1), ('Joe', 8);
+</blockquote>
+<br/>
+以 SQLite 数据库操作代码为例<br/><br/>
+<pre class="lang:default decode:true">import sqlite3<br/><br/>
+conn = sqlite3.connect("datafile")
+cursor = conn.cursor()
+cursor.execute("select * from test")
+print(cursor.fetchall())</pre>
+<br/>
+打印出来的结果是<br/><br/>
+<blockquote>
+[('Bob', 1), ('Joe', 8)]
+</blockquote>
+<br/>
+对结果进行遍历的方式可以是以下几种方式<br/><br/>
+<pre class="lang:default decode:true">for row in cursor:fetchall():
+    print(row[0], row[1])</pre>
+<br/>
+或<br/><br/>
+<pre class="lang:default decode:true">for row in cursor:
+    print(row[0], row[1])</pre>
+<br/>
+或<br/><br/>
+<pre class="lang:default decode:true ">for name, count in cursor:
+    print(name, count)</pre>
+<br/>
+如果希望查询得到的结果集是一个带有字段名与值的字典的话，也就是说可能像 JDBC resultSet 那样通过字段名来访问值该如何定制呢？对于不同的数据库实现方式略有不同<br/><br/>
+<h3>通用方式(适用于所有数据库)</h3><br/><br/>
+首先，前面提到的，查询后的字段名称可由 <code>cursor.description</code> 获得，下面的代码会打印出每个字段的名称<br/><br/>
+<pre class="lang:default decode:true">for col in cursor.description:
+    print(col[0])</pre>
+<br/>
+如果把字段时的列表与每一行结果的 Tuple 以 zip相结合就能得到一个字典行<br/><br/>
+<pre class="lang:default decode:true ">import sqlite3<br/><br/>
+conn = sqlite3.connect('datafile')
+cursor = conn.cursor()
+cursor.execute('select * from test')<br/><br/>
+columns = [column[0] for column in cursor.description]
+for row in cursor.fetchall():
+    print(dict(zip(columns, row)))</pre>
+<br/>
+上面输出的结果是<br/><br/>
+<blockquote>
+{'name': 'Bob', 'count': 1}<br />
+{'name': 'Joe', 'count': 8}
+</blockquote>
+<br/>
+<h3>SQLite 结果集返回字典</h3><br/><br/>
+SQLite 就是基于这一通用的方式来设定连接的 <code>row_factory</code> 函数属性的，完整代码如下：<br/><br/>
+<pre class="lang:default decode:true">import sqlite3<br/><br/>
+
+def dict_factory(cursor, row):
+    d = {}
+    for idx, col in enumerate(cursor.description):
+        d[col[0]] = row[idx]
+    return d
+    # 以上四行代码可用一行 Comprehension 代码实现
+    # return {col[0]:row[idx] for idx, col in enumerate(cur.description)}<br/><br/>
+
+conn = sqlite3.connect("datafile")
+conn.row_factory = dict_factory
+cursor = conn.cursor()
+cursor.execute("select * from test")<br/><br/>
+print(cursor.fetchall())</pre>
+<br/>
+<code>cursor.fetchall()</code> 获得的结果输出为<br/><br/>
+<blockquote>
+[{'name': 'Bob', 'count': 1}, {'name': 'Joe', 'count': 8}]
+</blockquote>
+<br/>
+它是一个字典列表，访问方式就要用字典的方式，如<br/><br/>
+<pre class="lang:default decode:true">for row in cursor:  #或  for row in cursor.fetchall():
+    print(row['name'], row['count'])</pre>
+<br/>
+<h3>MySQL 返回字典结果集</h3><br/><br/>
+设置 <code>conn.row_factory</code> 的方式对 MySQL 是不奏效了。幸好 MySQLdb 库预备好了不同的打开 cursor 的方式<br/><br/>
+<pre class="lang:default mark:4 decode:true">import MySQLdb<br/><br/>
+conn = MySQLdb.connect(host='localhost', user='test', password='xxx', database='test')
+cursor = conn.cursor(MySQLdb.cursors.DictCursor)
+cursor.execute("select * from test")<br/><br/>
+print(cursor.fetchall())</pre>
+<br/>
+此时 <code>cursor.fetchall()</code> 的结果也是<br/><br/>
+<blockquote>
+({'name': 'Bob', 'count': 1}, {'name': 'Joe', 'count': 8})
+</blockquote>
+<br/>
+如果没有设置 <code>cursor</code>  类型为  <code>MySQLdb.cursors.DictCursor</code>, 得到的结果也是 <code>[('Bob', 1), ('Joe', 8)]</code>。<br/><br/>
+注：关于  <code>MySQLdb</code> 的安装方法，可参考 <a href="https://pypi.org/project/mysqlclient/">https://pypi.org/project/mysqlclient/</a>，在  Ubuntu 平台下是<br/><br/>
+<blockquote>
+$ sudo apt-get install default-libmysqlclient-dev<br />
+$ pip3 install mysqlclient
+</blockquote>
+<br/>
+MySQL 还有一个 Python 驱动，可用  <code>pip3 install mysql-connector</code>  安装，尚不知道如何返回字典结果集<br/><br/>
+<pre class="lang:default decode:true">import mysql.connector<br/><br/>
+conn = mysql.connector.connect(host='localhost', user='test', password='xxx', database='test')</pre>
+<br/>
+另外，PostgreSQL 也能用类似的方式<br/><br/>
+<pre class="lang:default decode:true">import psycopg2.extras<br/><br/>
+cursor = conn.cursor(cursor_factory=psycopg2.extras.DictDursor)</pre>
+<br/>
+<h3>SQL Server 返回字典结果集</h3><br/><br/>
+用 SQL Server 的驱动 <code>pymssql</code> 让结果集返回为字典的方式就更为直截了当，只需要设置 cursor 的 <code>as_dict</code> 属性为 <code>True</code> 就行了。详见下方代码<br/><br/>
+<pre class="lang:default decode:true">import pymssql<br/><br/>
+
+conn = pymssql.connect('localhost', 'sa', 'your-password', 'testdb')
+cursor = conn.cursor(as_dict = True)<br/><br/>
+cursor.execute('select * from test')
+print(cursor.fetchall())</pre>
+<br/>
+打印的结果为<br/><br/>
+<blockquote>
+[{'name': 'Bob', 'count': 1}, {'name': 'Joe', 'count': 8}]
+</blockquote>
+<br/>
+&nbsp;<br/><br/>
+上面基本涵盖了我们常用的数据库类型，MySQL, PostgreSQL 和 SQL Server。Python 默认查询只是返回一个不含有字段名的结果集(List of Tuple)，这个需求基本上就满足了。可能很少情况下真正需要 Python 查询数据库后返回一个字典结果集，如果真有如此需求的话，以上内容可供参考。<br/><br/>
+补充(2021-09-17): PostgreSQL 中的做法<br/><br/>
+<pre class="lang:default decode:true ">import psycopg2.extras<br/><br/>
+cur = conn.cursor(cursor_factory = psycopg2.extras.RealDictCursor)</pre>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="http://pymssql.org/en/stable/pymssql_examples.html">pymssql examples</a></li>
+</ol>

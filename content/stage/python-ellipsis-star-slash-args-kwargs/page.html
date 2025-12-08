@@ -1,0 +1,282 @@
+---
+title: 由 Python 的 Ellipsis 到 *, /, *args, **kwargs 函数参数
+url: /python-ellipsis-star-slash-args-kwargs/
+date: 2021-12-31T21:39:50-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - unpacking
+  - args
+  - kwargs
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12100 
+wpStatus: publish
+views: 509
+lastmod: 2022-01-01T14:42:59-06:00
+---
+
+早先对 Python *args, **kwargs 参数有所了解，也知道参数列表中的 <code>/</code> 表示 Positional Only， <code>*</code> 很少见。然而在使用 FastAPI 时看到路由函数中表示默认值采用了 <code>...</code> 的方式又重新激发起我对 Python 函数参数的 <code>*</code>, <code>/</code>, <code>*args</code>, 和 <code>**kwargs</code> 的兴趣。<br/><br/>
+如 FastAPI 官方文档 <a href="https://fastapi.tiangolo.com/tutorial/request-forms-and-files/">Request Forms and Files</a> 中的<br/><br/>
+<blockquote>
+@app.post("/files/")<br />
+async def create_file(file: bytes = File(...), fileb: UploadFile = File(...), token: str = Form(...)):
+</blockquote>
+<br/>
+默认值的 <code>File(...)</code>, <code>Form(...)</code>， 起初还以为 <code>...</code> 只是真正意义上的省略号，使用时需传入适当的参数，后来发现 <code>...</code> 居然是一个 Python 实实在在的内置对象。<!--more--><br/><br/>
+<blockquote>
+&gt;&gt;&gt; ...<br />
+Ellipsis<br />
+>&gt;&gt; id(...)<br />
+4473082960<br />
+>&gt;&gt; id(...)<br />
+4473082960<br />
+>&gt;&gt; bool(...)<br />
+True<br />
+>&gt;&gt; type(...)<br />
+&lt;class 'ellipsis'&gt;
+&nbsp;
+</blockquote>
+<br/>
+<code>...</code> 是一个单例的 Ellipsis 对象，它的 bool 值为 True。<br/><br/>
+查看 FastAPI 的 Form 类<br/><br/>
+<pre class="lang:default decode:true ">def Form(  # noqa: N802
+    default: Any,
+    *,
+    media_type: str = "application/x-www-form-urlencoded",
+    alias: Optional[str] = None,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    gt: Optional[float] = None,
+    ge: Optional[float] = None,
+    lt: Optional[float] = None,
+    le: Optional[float] = None,
+    min_length: Optional[int] = None,
+    max_length: Optional[int] = None,
+    regex: Optional[str] = None,
+    example: Any = Undefined,
+    examples: Optional[Dict[str, Any]] = None,
+    **extra: Any,
+) -&gt; Any:
+</pre>
+<br/>
+<code>Form(...)</code> 应该是把 <code>...</code> 传给了第一个参数 <code>default: Any</code>. 验证一下<br/><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; def foo(a, *, b=0, c=1):
+...     print(a, b, c)
+...
+...
+>&gt;&gt; foo(...)
+Ellipsis 0 1</pre>
+<br/>
+这样看 <code>...</code> 没什么特别的，纯粹就是一个 Python 常量。<br/><br/>
+<h3><code>...</code> 在 Type Hints 中的使用</h3><br/><br/>
+不定长的 Tuple, 可用 Ellipsis 指定<br/><br/>
+<pre class="lang:default decode:true ">from typing import Tuple<br/><br/>
+def foo() -&gt; Tuple[int, int]:
+    return (1, 2, 3)</pre>
+<br/>
+上面代码用 <code>mypy test.py</code> 校验会出报错<br/><br/>
+<blockquote>
+test.py:4: error: Incompatible return value type (got "Tuple[int, int, int]", expected "Tuple[int, int]")<br />
+Found 1 error in 1 file (checked 1 source file)
+</blockquote>
+<br/>
+但在函数中可因不用条件返回不同长度的 Tuple, 这时就得用 <code>...</code>, 写成<br/><br/>
+<pre class="lang:default decode:true">from typing import Tuple<br/><br/>
+def foo() -&gt; Tuple[int, ...]:   # 表示不定长，但类型全为 int
+    return (1, 2, 3)</pre>
+<br/>
+<code>mypy test.py</code> 检验通过。<br/><br/>
+如果返回的值是 <code>(1, 2, 'str')</code> 也是不行的，错误是<br/><br/>
+<blockquote>
+test.py:4: error: Incompatible return value type (got "Tuple[int, int, str]", expected "Tuple[int, ...]")<br />
+Found 1 error in 1 file (checked 1 source file)
+</blockquote>
+<br/>
+Callable 类型提示时第一个参数必须是 <code>...</code>, 假如写下面的代码<br/><br/>
+<pre class="lang:default decode:true ">from typing import Callable<br/><br/>
+def foo() -&gt; Callable[int, int]:
+    return lambda x: 1
+</pre>
+<br/>
+自己设想 Callable 就一个 int 的参数，不过 <code>mypy test.py</code> 的说法是<br/><br/>
+<blockquote>
+test.py:3: error: The first argument to Callable must be a list of types or "..."<br />
+Found 1 error in 1 file (checked 1 source file)
+</blockquote>
+<br/>
+Callable[..., int] 的第一个位置上还必须为 <code>...</code>, 想明确也不行，所以应该写成<br/><br/>
+<pre class="lang:default decode:true">from typing import Callable<br/><br/>
+def foo() -&gt; Callable[..., int]:
+    return lambda x: 1
+</pre>
+<br/>
+这时候你的回调函数写多少个参数都行，如 <code>return lambda x, y: 1</code> 也能通过 <code>mypy</code> 这一关。<br/><br/>
+<h3>特殊函数参数 <code>/</code> 和 <code>*</code></h3><br/><br/>
+当单独的 <code>/</code> 或 <code>*</code> 出现在函数参数中，它们不是用来接收参数值，而是用以界定哪些参数只能按位置传递，哪些参数只能用关键传递，哪些既能用位置又能用关键字传递。<br/><br/>
+比如对于一个常见的函数声明<br/><br/>
+<blockquote>
+def foo(a, b, c, d=0)
+</blockquote>
+<br/>
+我们的调用方式是随意的<br/><br/>
+<blockquote>
+foo(1, 2, 3, 4)<br />
+foo(1, 2, c=3, 4)       # 这是错误的，一旦开始了以关键字传递参数，则后面的参数都必须指定关键字来传递<br />
+foo(b=2, a=1, c=3)
+</blockquote>
+<br/>
+Python 函数中没有默认值的参数要放前面，它们渴望通过位置对应来传递，如果第一个参数用了关键字，后面的参数都必须以同样的方式，否则顺序就会错乱。报的错误信息是<br/><br/>
+<blockquote>
+SyntaxError: positional argument follows keyword argument
+</blockquote>
+<br/>
+看 Python 官方对 <code>/</code> 和 <code>*</code> 的解释，见 <a href="https://docs.python.org/3/tutorial/controlflow.html#special-parameters">Special parameters</a><br/><br/>
+<pre class="lang:default decode:true ">def f(pos1, pos2, /, pos_or_kwd, *, kwd1, kwd2):
+      -----------    ----------     ----------
+        |             |                  |
+        |        Positional or keyword   |
+        |                                - Keyword only
+         -- Positional only</pre>
+<br/>
+简单的规则就是： <code>/</code> 前只能按位置传递 (Positional-Only), <code>*</code> 后只能按关键字传递 (Keyword-Only)，<code>/</code> 后 和 <code>*</code> 前(中间)的随意。因为 <code>/</code> 管前面，<code>*</code> 管后面，所以一个函数中同时有 <code>/</code> 和 <code>*</code> 时，<code>/</code> 必须写成 <code>*</code> 前面。<br/><br/>
+<span style="color: #800000;">在 FastAPI 框架中声明函数常用 <code>*</code>, 它的一个约定是对于必需的无默认值的参数放在 <code>*</code> 前面，可用位置或关键字来传递，相应的有默认值的参数放在 <code>*</code> 后面作为可选参数，我们也可以借鉴这种用法。</span><br/><br/>
+下面代码逐个验证 <code>/</code>和 <code>*</code> 的功能<br/><br/>
+<pre class="lang:default decode:true ">&gt;&gt;&gt; def standard_arg(arg):
+...     pass
+...
+>&gt;&gt; standard_arg(1)
+>&gt;&gt; standard_arg(arg=1)
+>&gt;&gt;
+>&gt;&gt; def pos_only_arg(arg, /):
+...     pass
+...
+>&gt;&gt; pos_only_arg(1)
+>&gt;&gt; pos_only_arg(arg=1)
+Traceback (most recent call last):
+  File "&lt;input&gt;", line 1, in &lt;module&gt;
+    pos_only_arg(arg=1)
+TypeError: pos_only_arg() got some positional-only arguments passed as keyword arguments: 'arg'
+>&gt;&gt;
+>&gt;&gt; def kwd_only_arg(*, arg):
+...     pass
+...
+>&gt;&gt; kwd_only_arg(arg=1)
+>&gt;&gt; kwd_only_arg(1)
+Traceback (most recent call last):
+  File "&lt;input&gt;", line 1, in &lt;module&gt;
+    kwd_only_arg(1)
+TypeError: kwd_only_arg() takes 0 positional arguments but 1 was given
+>&gt;&gt;
+>&gt;&gt; def combined_example(pos_only, /, standard, *, kwd_only):
+...     print(pos_only, standard, kwd_only)
+...
+...
+>&gt;&gt; combined_example(1, 2, kwd_only=3)
+1 2 3
+>&gt;&gt; combined_example(1, standard=2, kwd_only=3)
+1 2 3
+>&gt;&gt; combined_example(post_only=1, standard=2, kwd_only=3)
+Traceback (most recent call last):
+  File "&lt;input&gt;", line 1, in &lt;module&gt;
+    combined_example(post_only=1, standard=2, kwd_only=3)
+TypeError: combined_example() got an unexpected keyword argument 'post_only'
+>&gt;&gt; combined_example(1, standard=2, 3)
+  File "&lt;bpython-input-141&gt;", line 1
+    combined_example(1, standard=2, 3)
+                                     ^
+SyntaxError: positional argument follows keyword argument</pre>
+<br/>
+<h3>*args, **kwargs 函数参数</h3><br/><br/>
+首先 <code>args</code> 和 <code>kwargs</code> 是两个参数命名的习俗，按自己的喜爱可以用任意的词，如 <code>*aaa</code>, <code>**bbb</code>，不过最好是按照大家的习惯来命名。<br/><br/>
+<code>*</code> 和 <code>**</code> 可用于拆解参数，如<br/><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; def foo(a, b, c):
+...     print(a, b, c)
+...
+...
+>&gt;&gt; foo(*[2, 3, 1])   # 把列表拆了依次按位置对应参数
+2 3 1
+>&gt;&gt; foo(**{"a":2, "b":3, "c": 1}) # 把字典拆了按关键字对应参数
+2 3 1</pre>
+<br/>
+思考并复习上一节的内容：<br/><br/>
+<ol>
+    <li>如果定义 def foo(*, a, b, c) 是否能用 foo(*[2,3,1]) 来调用呢？</li>
+    <li>如果定义 def foo(a, b, c, /) 是否能用 foo(**{"a":2, "b":3, "c":1}) 来调用呢？</li>
+</ol>
+<br/>
+因此，基于 <code>*</code> 和 <code>**</code> 分别拆解对应的列表和字典的行为，当它们被安放在函数参数名前面也是一样的用法。<br/><br/>
+<code>*args</code> 相当于是可变参数, 在函数中对应一个列表，在 Java 中就是 <code>Object... args</code><br/><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; def foo(*args):
+...     print(type(args))
+...     print(args)
+...
+...
+>&gt;&gt; foo(2,3,1)
+&lt;class 'tuple'&gt;
+(2 3 1)</pre>
+<br/>
+args 是一个列表，怎么去理解这一个调用过程呢？传入单个值的，在函数中变成了一个列表，看着想是 <code>*</code> 拆解的逆过程。可以这么理解，把 <code>*args</code> 整体看作一个参数，那么可以想像该参数 <code>*args</code> 是一个已拆解的列表，那么去掉 <code>*</code> 号的 <code>args</code> 就是列表本身。所以传参时是这么对应的<br/><br/>
+<blockquote>
+单个值的 <code>2,3,1</code> =&gt; <code>*args</code>, 而不是 <code>args</code>
+</blockquote>
+<br/>
+类似的 <code>**kwargs</code> 就是不定数量的按关键字传递的参数<br/><br/>
+<pre class="lang:default decode:true ">&gt;&gt;&gt; def foo(**kwargs):
+...     print(type(kwargs))
+...     print(kwargs)
+...
+...
+>&gt;&gt; foo(a=2, c=3, b=1)
+&lt;class 'dict'&gt;
+{'a': 2, 'c': 3, 'b': 1}</pre>
+<br/>
+同样的理解方式，把 <code>**kwargs</code> 整体当作一个参数，传参时对应关系就是<br/><br/>
+<blockquote>
+a=2, c=3, b=1  =&gt; <code>**kwargs</code>, 已拆解的字典
+</blockquote>
+<br/>
+小结一下 <code>*args</code> 和 <code>**kwargs</code>  参数的使用，基于 <code>*</code>, <code>**</code> 分别是列表和字典的拆解，得到下面的理解<br/><br/>
+<ol>
+    <li>看到 <code>*args</code> 参数，我们要传入一个被拆解的列表，如 2,3,1。已有列表需拆解后传入, 如 foo(*[2,3,1])</li>
+    <li>看到 <code>**kwargs</code> 参数，我们要传入一个被拆解的字典，如 a=2,c=3,b=1。已有字典需拆解后传入, 如 foo(**{"a":2, "c":3, "b":1})</li>
+</ol>
+<br/>
+<code>*args</code> 和 <code>**kwargs</code> 任意一种方式都可以帮我创建无限行为的函数, 通中会结合二者来向一个未知函数传递所有的参数<br/><br/>
+<pre class="lang:default decode:true ">&gt;&gt;&gt; def foo(fn, *args, **kwargs):
+...     fn(*args, **kwargs)
+...
+...
+>&gt;&gt; def bar(a, b, *, c):
+...     print(a, b, c)
+...
+...
+>&gt;&gt; foo(bar, 1, 3, c=4)
+1 3 4</pre>
+<br/>
+再一个较典型的例子就是装饰器中，因为装饰器需要由外部的装饰器函数调用另一个被装饰的函数，而被修饰的函数的参数是不定的<br/><br/>
+<pre class="lang:default decode:true ">def my_decorator(func):
+    def wrapper(*args, **kwargs):
+        print(f"before calling {func.__name__}")
+        func(*args, **kwargs)
+        print(f"after calling {func.__name__}")<br/><br/>
+    return wrapper<br/><br/>
+
+@my_decorator
+def say_hello(firstname, lastname, **kwargs):
+    print(f"Hello {firstname} {lastname}!", kwargs)<br/><br/>
+
+say_hello("Steve", "Jobs", company="Apple", country="USA")</pre>
+<br/>
+这是摘自我之前 <a href="https://yanbin.blog/master-python-decorators/">熟悉和应用 Python 的装饰器</a> 一文中的例子<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://farer.org/2017/11/29/python-ellipsis-object/">Python 的 Ellipsis 对象</a></li>
+</ol>

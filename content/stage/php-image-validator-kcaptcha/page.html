@@ -1,0 +1,80 @@
+---
+title: PHP 图版验证码，我选择 kcaptcha
+url: /php-image-validator-kcaptcha/
+date: 2010-06-24T07:44:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PHP
+tags: 
+  - php
+  - kcaptcha
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 165 
+wpStatus: publish
+views: 713
+lastmod: 2021-09-02T10:40:52-05:00
+---
+
+不管是防小人也好，还是防君子手误也罢，很多地方都需要用到图片验证码来加强安全性。在 PHP 站点上我选择了 Captcha，用起来很简单的。</p>
+<br/>
+Captcha 从 <a href="http://www.captcha.ru/en/kcaptcha/">http://www.captcha.ru/en/kcaptcha/</a> 下站，当前版本是 <a href="http://www.captcha.ru/kcaptcha.zip?PHPSESSID=emha4vmsich4lc7l0hmqt1rs76" target="_blank" rel="noopener">KCAPTCHA 1.2.6</a>。<br/><br/>
+<div style="float: right;"><img src="/wp-content/uploads/2010/06/kcaptcha.png" alt="" /></div>
+<br/>
+下载后，解压后，可以看到它自己带了例子，就是 index.php 用来产生图片，form_example.php 中引入了图片, 只是 &lt;img src="./?&lt;?php echo session_name()?&gt;=&lt;?php echo session_id()?&gt;"&gt; 的写法有点不好理解，要是写成 &lt;img src="index.php/?&lt;?php echo session_name()?&gt;=&lt;?php echo session_id()?&gt;"&gt; 就好看多了，至少知道 index.php 的内容是个图片。<!--more--><br/><br/>
+还是来说说它的用法吧，确切说就是解释一下它的示例代码。分两步：<br/><br/>
+一：生成图片，并把图片对应的文字放入 Session 中用以比较，文件名为 captcha_image.php，这个 php 产生的内容是个图片：<br/><br/>
+<pre class="lang:default decode:true">include('kcaptcha.php');<br/><br/>
+&lt;?php
+if(count($_GET)&gt;0){
+    //如果请求中有参数就表明是一个验证图片的请求
+    //后面会看到，&lt;img src= 引用图片时，加了个随机码，也能让图片不缓存
+    session_start();
+}<br/><br/>
+$captcha = new KCAPTCHA();<br/><br/>
+if(count($_GET)&gt;0){
+    //把图片文字放入 Session 中，Key 为 captcha_keystring
+    $_SESSION['captcha_keystring'] = $captcha-&gt;getKeyString();
+}
+?&gt;</pre>
+<br/>
+二：表单中使用图片，也在此文件中完成了验证，文件：validate_form.php<br/><br/>
+<pre class="lang:default decode:true">&lt;?php
+session_start();
+?&gt;
+&lt;form action="" method="post"&gt;
+&lt;p&gt;Enter text shown below:&lt;/p&gt;
+&lt;p&gt;&lt;img src="captcha_image.php?&lt;?php echo md5(uniqid(rand(), TRUE));?&gt;"&gt;&lt;/p&gt;
+&lt;p&gt;&lt;input type="text" name="keystring"&gt;&lt;/p&gt;
+&lt;p&gt;&lt;input type="submit" value="Check"&gt;&lt;/p&gt;
+&lt;/form&gt;<br/><br/>
+&lt;?php
+if(count($_POST)&gt;0){ //点击 Check 按钮时执行验证
+    if(isset($_SESSION['captcha_keystring']) &amp;&amp; $_SESSION['captcha_keystring'] == $_POST['keystring']){
+        echo "Correct";
+    }else{
+        echo "Wrong";
+    }
+}
+unset($_SESSION['captcha_keystring']);
+?&gt;</pre>
+<br/>
+原例中在使用图片时用的是这样的图片引用：&lt;img src="captcha_image.php?&lt;?php echo session_name()?&gt;=&lt;?php echo session_id()?&gt;，其实后面的参数还是固定的，还不如一个随机数据好。<br/><br/>
+其实也不必太担心会使用浏览器缓存中的图片，想想，Captcha 也肯定为我们考虑到了这个基本要求的。在 kcaptcha.php 中可以看到下面那一片代码：<br/><br/>
+<pre class="brush:php ">header('Expires: Mon, 26 Jul 1997 05:00:00 GMT');
+header('Cache-Control: no-store, no-cache, must-revalidate');
+header('Cache-Control: post-check=0, pre-check=0', FALSE);
+header('Pragma: no-cache');</pre>
+<br/>
+作用就是不让浏览器缓存的，总是取服务器上最新生成的图片。<br/><br/>
+其他相关的配置就是 kcaptcha_config.php 了，默认时生成的图片下方会加行 <a href="http://www.captcha.ru">www.captcha.ru</a>，你肯定不想看到这样的东西。<br/><br/>
+你可以选择去掉该行，只要把 $show_credits 设置为 false，然后图片高度去掉该行文字原本占去的高度，把 $height 由原来的 60 改为 12。<br/><br/>
+或者只修改 $credits 改为自己相关的描述，如 $credits = 'unmi.blogjava.net'<br/><br/>
+其他更多的参数配置看看就知道每项的用意。<br/><br/>
+参考：1. <a href="http://my.oschina.net/thinkly/blog/926">Cakephp 中使用Captcha实现更加安全的验证码</a><br />
+        2. 更多 PHP 验证码生成组件请见：<a href="http://opensource.csdn.net/project/lang/22/php?tag=248&amp;os=0&amp;sort=view" target="_blank" rel="noopener">9款PHP 验证码(Captcha)组件</a>

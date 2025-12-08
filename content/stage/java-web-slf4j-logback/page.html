@@ -1,0 +1,123 @@
+---
+title: 在 Java Web 项目中选择使用 Slf4J 通用日志框架
+url: /java-web-slf4j-logback/
+date: 2010-10-16T12:00:13-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - SLF4J
+  - Logback
+  - SSH
+  - ssi
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2755 
+wpStatus: publish
+views: 3084
+lastmod: 2021-09-03T11:52:49-05:00
+---
+
+在前一篇日志：<a href="http://unmi.cc/ssh-ssi-slf4j-logback" target="_blank" rel="noopener">Java 流行框架(Spring/Struts2/Hibernate/iBatis)都在使用什么日志组件</a>，介绍了当前流行框架 Spring、 Struts2、 Hibernate、iBatis(Mybatis) 分别使用的是什么通用日志组件：</p>
+<br/>
+Spring 3.0.4：Commons-Logging<br />
+Struts 2.2.1：间接的优先支持 Commons-Logging<br />
+Hibernate 3.6.0：直接的使用 Slf4J<br />
+iBatis/MyBatis 3.0.2：间接的优先使用 Slf4J<br/><br/>
+再考虑 Slf4J 以及 Logback 的优越性，性能得到的改善，多 JVM 写同一日志文件都无妨，方便运用于 OSGI 环境，自动压缩日志，参数化。所以个人认为在 SSH 或 SSI 项目中推荐用<br/><br/>
+<u>Slf4J + Logback</u> 对于 Hibernate 和 iBatis/MyBatis 直接走这条路<br />
+<u>jcl-over-slf4j + Logback</u> 对于 Spring 和 Struts2，需用用 jcl-over-slf4j 把 Commons-Logging 桥接到 Slf4J，然后 Logback。<!--more--><br/><br/>
+下面介绍在这样的项目中如何使用 Slf4J、继而用 Logback 输出日志。<br/><br/>
+<strong><span style="color: #000080;"><span style="font-size: small;">首先需要引入相关的 jar</span></span></strong>，如果你是用 Maven 来管理你的依赖，那太简单了，只需要在你的 pom.xml 文件中加入:<br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;org.slf4j&lt;/groupId&gt;
+    &lt;artifactId&gt;slf4j-api&lt;/artifactId&gt;
+    &lt;version&gt;1.6.1&lt;/version&gt;
+&lt;/dependency&gt;
+&lt;dependency&gt;
+    &lt;groupId&gt;ch.qos.logback&lt;/groupId&gt;
+    &lt;artifactId&gt;logback-core&lt;/artifactId&gt;
+    &lt;version&gt;0.9.24&lt;/version&gt;
+&lt;/dependency&gt;
+&lt;dependency&gt;
+    &lt;groupId&gt;ch.qos.logback&lt;/groupId&gt;
+    &lt;artifactId&gt;logback-classic&lt;/artifactId&gt;
+    &lt;version&gt;0.9.24&lt;/version&gt;
+&lt;/dependency&gt;
+&lt;dependency&gt;
+    &lt;groupId&gt;org.slf4j&lt;/groupId&gt;
+    &lt;artifactId&gt;jcl-over-slf4j&lt;/artifactId&gt;
+    &lt;version&gt;1.6.1&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+相应的四个 jar 包，slf4j-api-1.6.1、logback-core-0.9.24.jar、logback-classic-0.9.24.jar、jcl-over-slf4j-1.6.1.jar 就会加到你的 classpath 中了。否则必须手工到 <a href="http://www.slf4j.org/">http://www.slf4j.org/</a> 和 <a href="http://logback.qos.ch/">http://logback.qos.ch/</a> 去下载相应的包，是不是觉得 <a href="http://www.slf4j.org/">http://www.slf4j.org/</a> 和 <a href="http://logback.qos.ch/">http://logback.qos.ch/</a> 是那么的像，没错它们其实映射在同一个 IP 上的，可见 <span style="color: #993366;"><strong>slf4j + logback 原生的绝配</strong></span>。<br/><br/>
+jcl-over-slf4j-1.6.1.jar 是 Commons-Logging 到 Slf4J 的桥接器，应用 Commons-Logging 的 SPI 模式，只要把它放到 classpath 中就起作用了。机关就是这个包的 META-INF/service/org.apace.commons.logging.LogFactory 文件，内容是：org.apache.commons.logging.impl.SLF4JLogFactory。<br/><br/>
+<strong><span style="color: #003366;"><span style="font-size: small;"><span style="color: #000080;">接下来配置 logback.xml 文件</span></span></span></strong>，logback 也需要像 log4j.properties 那样的配置文件。把 logback.xml 文件放在 classpath 下，内容可参考：<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;<br/><br/>
+&lt;!-- Reference Manual http://logback.qos.ch/manual/index.html --&gt;<br/><br/>
+&lt;configuration&gt;
+    &lt;appender name="stdout" class="ch.qos.logback.core.ConsoleAppender"&gt;
+   
+        &lt;filter class="ch.qos.logback.core.filter.EvaluatorFilter"&gt;      
+            &lt;evaluator&gt; &lt;!-- defaults to type ch.qos.logback.classic.boolex.JaninoEventEvaluator --&gt;
+                &lt;expression&gt;logger.contains("springframework")&lt;/expression&gt;
+            &lt;/evaluator&gt;
+            &lt;OnMismatch&gt;NEUTRAL&lt;/OnMismatch&gt;
+            &lt;OnMatch&gt;DENY&lt;/OnMatch&gt;
+        &lt;/filter&gt;
+    
+        &lt;encoder charset="UTF-8"&gt;
+            &lt;pattern&gt;%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n&lt;/pattern&gt;
+        &lt;/encoder&gt;
+    &lt;/appender&gt;  <br/><br/>
+    &lt;appender name="RollingFile" class="ch.qos.logback.core.rolling.RollingFileAppender"&gt;
+        &lt;file&gt;unmi_ssh.log&lt;/file&gt;
+    
+        &lt;filter class="ch.qos.logback.classic.filter.ThresholdFilter"&gt;
+            &lt;level&gt;INFO&lt;/level&gt;
+        &lt;/filter&gt;
+    
+        &lt;rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy"&gt;
+            &lt;fileNamePattern&gt;unmi_ssh.%d{yyyy-MM-dd}..log.zip&lt;/fileNamePattern&gt;
+            &lt;minIndex&gt;1&lt;/minIndex&gt;
+            &lt;maxIndex&gt;3&lt;/maxIndex&gt;
+        &lt;/rollingPolicy&gt;<br/><br/>
+        &lt;triggeringPolicy class="ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy"&gt;
+            &lt;maxFileSize&gt;5MB&lt;/maxFileSize&gt;
+        &lt;/triggeringPolicy&gt;
+    
+        &lt;encoder&gt;
+            &lt;pattern&gt;%-4relative [%thread] %-5level %logger{35} - %msg%n&lt;/pattern&gt;
+        &lt;/encoder&gt;
+    &lt;/appender&gt;<br/><br/>
+    &lt;root level="DEBUG"&gt;
+        &lt;appender-ref ref="stdout" /&gt;
+        &lt;appender-ref ref="RollingFile"/&gt;
+    &lt;/root&gt;
+&lt;/configuration&gt;
+</pre>
+<br/>
+熟悉 log4j 的看到上面的配置应该能够很好的理解，奇怪的是目前还没有 logback.xml 文件的 schema 文件出现，不然在 Eclipse 等 xml 编辑器上可提示出一些标签和属性来。详细的配置可参考：<a href="http://logback.qos.ch/manual/index.html">http://logback.qos.ch/manual/index.html</a>。对于输出日志的过滤可以控制的更精细，这点比 log4j 要强，可以用表达式来判断。<br/><br/>
+需要用上面的 ch.qos.logback.core.filter.EvaluatorFilter 来过滤日志输出，要引用 janino-2.5.16.jar。在 pom.xml 中加上 org.codehaus.janino.janino-2.5.16 的依赖。<br/><br/>
+<span style="font-size: small;"><strong><span style="color: #000080;">应用 Slf4J 和 Logback</span></strong> </span>了，来写个测试代码：<br/><br/>
+<pre class="brush:java ">import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;<br/><br/>
+/**
+ * Make use of the slf4j
+ * @author Unmi
+ */
+public class TestLog {<br/><br/>
+    private static final Logger logger = LoggerFactory.getLogger(TestLog.class);<br/><br/>
+    public static void main(String[] args) {
+        logger.info("Hello {}","TestLogback");
+    }
+}</pre>
+<br/>
+输出是：00:48:16.984 [main] INFO TestLog - Hello TestLogback<br/><br/>
+你现在同时可以发现，从 Java 框架输出的日志信息全部按照 logback.xml 中的布局输出，说明它们都经由 Slf4J -&gt; Logback 输出了日志。<br/><br/>
+你可以继续挖掘，要看它能输出到什么地方就看下它提供了多少种 Appdender，并且 Logback 提供了 Log4J 所没有的 Access 的功能，即可以让你的日志历史信息更直观的展示出来，而不是总是在文本编辑器中来查看。

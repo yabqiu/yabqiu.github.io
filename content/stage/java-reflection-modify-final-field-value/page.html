@@ -1,0 +1,87 @@
+---
+title: Java 反射修改 final 属性值
+url: /java-reflection-modify-final-field-value/
+date: 2015-06-25T16:47:24-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6843 
+wpStatus: publish
+views: 3291
+lastmod: 2021-09-03T17:50:38-05:00
+---
+
+使用过 Java 反射的大多都知道, 想要修改某个类或对象的私有变量的值的话, 在调用 set 设置新值之前执行一下 setAccessible(true) 即可。这样利用的 Java 的反射就能绕过 private 的限制 ，不再有 IllegalAccessException 异常了。这是一个 trick, 调用 Java 的私有方法也能这么做，有些人或许或这样来测试 Java 私有方法。</p>
+<br/>
+提前说一句：在修改 final 型值时，要特别留意它的常量值本身是否被编译器优化内联到某处，否则你会看到虽然没什么异常，但取出的还是原来的值。后面会稍为深入的讲到。<br/><br/>
+例如下面是一段完整的代码, 由于调用了 setAccessiable(true), 所以能成功把 OneCity 的私有属性 name 的值改为 "Shenzhen"：<!--more--><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import java.lang.reflect.Field;<br/><br/>
+public class TestReflection {
+  public static void main(String[] args) throws Exception {
+    Field nameField = OneCity.class.getDeclaredField("name");
+    nameField.setAccessible(true);  //这个起决定作用
+    nameField.set(null, "Shenzhen");
+    System.out.println(OneCity.getName());  //输出修改后的 Shenzhen
+  }
+}<br/><br/>
+class OneCity {
+  private static String name = "Beijing";
+  public static String getName() {
+    return name;
+  }
+}</pre>
+<br/>
+那么如果是一个 final 类型的属性呢，像 private static final String name = "Beijing"; 该如何用反射来修改它的值呢。要是仍然用上面的方法即使设置了 setAccessible(true) 也会报 IllegalAccessException。<br/><br/>
+这时候我们要做一个更彻底的反射 -- 对 Java 反射包中的类进行自我反射。Field 对象有个一个属性叫做 modifiers, 它表示的是属性是否是 public, private, static, final 等修饰的组合。这里把这个 modifiers 也反射出来，进而把 nameField 的 final 约束也去掉了，回到了上面的状况了。完整代码是这样的<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;<br/><br/>
+public class TestReflection {
+  
+  public static void main(String[] args) throws Exception {
+    Field nameField = OneCity.class.getDeclaredField("name");
+    
+    Field modifiersField = Field.class.getDeclaredField("modifiers"); //①
+    modifiersField.setAccessible(true);
+    modifiersField.setInt(nameField, nameField.getModifiers() &amp; ~Modifier.FINAL); //②
+    
+    nameField.setAccessible(true); //这个同样不能少，除非上面把 private 也拿掉了，可能还得 public
+    nameField.set(null, "Shenzhen");
+    System.out.println(OneCity.getName()); //输出 Shenzhen
+  }
+}<br/><br/>
+class OneCity {
+  private static final String name = new String("Beijing");
+  public static String getName() {
+    return name;
+  }
+}</pre>
+<br/>
+在 ① 处把  Field 的 modifiers 找到，它也是个私有变量，所以也要 setAccessible(ture)。接着在 ② 处把 nameField 的 modifiers 值改掉，是用的按位取反 ~ 再按位与 ~ 操作把 final 从修饰集中剔除掉，其他特性如 private, static 保持不变。再想一下 modifierField.setInt() 可以把 private 改为 public, 如此则修改 name 时无需 setAccessible(true) 了。<br/><br/>
+通过把把属性的 final 去掉, 就成功把 name  改成了  Shenzhen。<br/><br/>
+注意上面为何把  OneCity 的 name 赋值为 new String("Beijing"), 这是为了不让  Java 编译器内联  name  到 getName() 方法中，而使 getName() 的方法体为  return "Beijing"，造成 getName() 永远输出  ”Beijing" 。<br/><br/>
+提到 Java 编译器对 final 属性的 Inline 优化，还有种情况会造成你能修改 final 型属性，但试图打印出的还是原来的值。如下面的代码片段：<br/><br/>
+<pre class="lang:default decode:true ">//... 与上相同
+nameField.set(null, "Shenzhen");
+System.out.println(nameField.get(null)); //输出 Shenzhen
+System.out.println(OneCity.name);  //仍然打印出 Beijing<br/><br/>
+class OneCity {
+  public static final String name = "Beijing";
+}</pre>
+<br/>
+上面对 OneCity 的属性修改看起来成功了，又好像不成功，其实是修改成功了的。原因是 Java 在对代码行<br/><br/>
+System.out.println(OneCity.name);<br/><br/>
+内联了 OneCity 的 final 属性 name 的常量值，编译为<br/><br/>
+System.out.println("Beijing");<br/><br/>
+所以执行该行总是输出 "Beijing"。让他能输出修改后的值的办法就是阻止 Java 作这个内联优化，让 final 属值的获得需要作个计算才成，如上面的 new String("Beijing") 就是这个目的。<br/><br/>
+反射已是一种 Hacker 行为了，感觉已无所不能，但 CGLIB, JavaAssist 那些东西与之之比起来更是流氓了。

@@ -1,0 +1,103 @@
+---
+title: 试图在不修改Log4J源码情况下,用静态方法打印正确日志信息失败
+url: /log4j-static-method-log/
+date: 2007-05-22T23:16:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2006/03/log4j-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Log4J
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 521 
+wpStatus: publish
+views: 1895
+lastmod: 2019-11-13T16:31:58-06:00
+---
+
+在开源的项目中使用 Log4j一般 都是在类中添加一静态变量,如<br />
+ protected static Log log = LogFactory.getLog(RequestProcessor.class); //通用日志组件<br />
+或<br />
+ protected static Logger log = Logger.getLogger(RequestProcessor.class); //直接申明为Log4j的logger</p>
+<br/>
+原来有一个项目是做了一个自定义了 MyLogger 类, 其中的 debug, info 等到方法直接就是调用 log4j 的 logger 的对应方法. 别的代码中调用 MyLogger 的静态方法打印日志时, 依据log4j.properties的配置显示 %l  定位信息就始终是 MyLogger<br/><br/>
+如： 2007-05-23 12:18:46,828 [DEBUG] com.unmi.MyLogger.debug(MyLogger.java:12) Hello MyLogger<!--more--><br/><br/>
+而不是调用类,<br/><br/>
+如：2007-05-23 12:18:46,828 [DEBUG] com.unmi.MyClass.debug(MyClass.java:7) Hello MyLogger<br/><br/>
+记得当时为了解决这个问题, 是在 MyLogger 的日志打印方法中 new Throw() 实例,然后从异常栈中找到调用类的信息，放在msg中输出，而不用 %l 输出，后来发现Log4j的代码行定位的实现也如出一则。前面那个项目的做法也就造成了两次找寻异常栈信息，势必耗费不少的资源。<br/><br/>
+于是思量着，是否能在 MyLogger 中不 new Throw() 也能让 log4j 有正确的定位信息输出, 考虑直接用 AspectJ 来拦截，同时带着一个疑问：是不是用 Logger.getLogger(Class clz) 构造 Logger 时传入的是什么Class实例，输出时就会定位在这个类上。对此作了下面的试验，共有四个文件，Eclipse 中安装了 AspectJ 的插件 ajdt<br />
+一：MyLogger.java<br/><br/>
+<pre class="brush:java">package com.unmi;
+import org.apache.log4j.Logger;<br/><br/>
+public class MyLogger
+{
+    //留待Aspecj来初始化
+    public static Logger log;<br/><br/>
+    //打印日志的方法
+    public static void debug(String msg)
+    {
+        log.debug(msg);
+    }
+}</pre>
+<br/>
+ 二：MyClass.java<br/><br/>
+<pre class="brush:java">package com.unmi;
+public class MyClass
+{
+    public void foo()
+    {
+        //希望打印日志定位是在这一行
+        MyLogger.debug("Hello MyLogger");
+    }<br/><br/>
+    public static final void main(String args[])
+    {
+        MyClass myObject = new MyClass();
+        myObject.foo();
+    }
+}</pre>
+<br/>
+三：LoggerRecipe.aj<br/><br/>
+<pre class="brush:java">package com.unmi;
+import org.apache.log4j.Logger;<br/><br/>
+public aspect LoggerRecipe
+{
+    //拦截MyLogger中的所有日志打印方法   
+    pointcut logMethod():call(public void com.unmi.MyLogger.*(..));<br/><br/>
+    void around():logMethod()
+    {    
+        //能获取到需打印日志的类实例
+        Class clz = thisJoinPoint.getThis().getClass();
+        System.out.println("Construct Logger by Class: "+clz);<br/><br/>
+        //在执行日志方法前初始化Logger实例
+        MyLogger.log = Logger.getLogger(clz);<br/><br/>
+        //执行实际的日志打印方法
+        proceed();
+    }
+}</pre>
+<br/>
+ 四：log4j.properties<br/><br/>
+<pre class="brush:text">log4j.rootLogger=DEBUG,console
+log4j.appender.console=org.apache.log4j.ConsoleAppender
+log4j.appender.console.layout=org.apache.log4j.PatternLayout
+log4j.appender.console.layout.ConversionPattern=%d{yyyy-MM-dd HH:mm:ss,SSS} [%5p] %l %m%n</pre>
+<br/>
+ 执行 MyClass 后的输出是：<br />
+Construct Logger by Class: class com.unmi.MyClass<br />
+2007-05-23 12:29:29,031 [DEBUG] com.unmi.MyLogger.debug(MyLogger.java:12) Hello MyLogger<br/><br/>
+我们能看到确实在用调用类 MyClass 构造的 Logger 实例，但是输出日志时指示仍然是 MyLogger, 必须修改 Log4j 的源码才能输出日志时定位在 com.unmi.MyClass中<br/><br/>
+关于 Log4j 如何获知调用类的信息请参看以前写的一篇日志：<a href="http://www.blogcn.com/user82/unmi/blog/36392729.html">Log4j是输出日志时是如何获知当前方法、行号的</a><br/><br/>
+其实这样的想法与做法即使达成所愿也不会带多大益处，因为并没有减少代码的侵入性，仍然要引用自定义日志类，写下日志输出方法。 Logger.getLogger(Class clz)传入的 Class 只不过是一个 Logger 实例缓存时的标识。同时关于这个实现的思考也可以停下来了。<br/><br/>
+<hr /><br/><br/>
+Spring似乎也没有完美的解决此种问题，当你把一个 Advice 中的 before 方法写成<br />
+before(Method method, Object[] args, Object target) throws Throwabel<br />
+{<br />
+    Logger log = Logger.getLogger(target.getClass());<br />
+    log.debug(method.getName());<br />
+}<br />
+输出的日志也是定位在你的 Advice 类中，而不是你所拦截的那个类。

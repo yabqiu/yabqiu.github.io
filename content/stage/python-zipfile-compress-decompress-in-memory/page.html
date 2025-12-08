@@ -1,0 +1,102 @@
+---
+title: Python zipfile 只借助内存进行压缩与解压缩
+url: /python-zipfile-compress-decompress-in-memory/
+date: 2021-10-13T22:54:33-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - zipfile
+  - BytesIO
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11828 
+wpStatus: publish
+views: 1610
+lastmod: 2023-04-14T01:49:21-05:00
+---
+
+Python <a href="https://docs.python.org/3/library/zipfile.html">zipfile</a> 模块压缩与解压缩通常是对物理磁盘文件进行操作，比如参照官方的例子，生成压缩文件的代码是<br/><br/>
+<blockquote>
+with zipfile.ZipFile('spam.zip', 'w') as myzip:<br />
+    myzip.write('eggs.txt')<br />
+    myzip.write('beef.txt')
+</blockquote>
+<br/>
+这样就生成了一个包含两个文件的压缩包 spam.zip, 相当于命令 <code>zip spam.zip egges.txt beef.txt</code> 的效果。用  <code>unzip -l spam.zip</code> 命令就能看到其中的两个文件。相应的解压缩的代码如下<br/><br/>
+<blockquote>
+with zipfile.ZipFile('spam.zip', 'r') as myzip:<br />
+    print(myzip.filelist())  # 可获得压缩包中的文件列表信息<br />
+    myzip.extractall()
+</blockquote>
+<br/>
+同样是把压缩包 spam.zip 解压缩文件到当前目录中，相当于命令 <code>unzip spam.zip</code> 的效果。<br/><br/>
+前面顺便也是熟悉一下 zipfile 模块的常见用法，但有时候我们可能从数据库中，从网络上收到的是字节数据，希望直接处理字节的压缩解压缩，而不借助于中间的磁盘文件，因为通过磁盘文件来处理必须进行善后处理以及可能的资源的竞争，在内存宽裕的情况下效率也是个问题。<!--more--><br/><br/>
+在 Java 中处理内存数据经常用到的是 <code>ByteArrayInputStream</code> 和 <code>ByteArrayOutputStream</code>，而在 Python 中承担相同角色的就是 <code>io.BytesIO()</code>。下面来看如何使用它在内存进行双向操作<br/><br/>
+<h3>通过内存生成压缩文件字节内容</h3><br/><br/>
+本例放到压缩包中的内容是字节，生成的压缩包也是字节表现形式<br/><br/>
+<pre class="lang:default decode:true">import zipfile
+import io<br/><br/>
+file = io.BytesIO()
+with zipfile.ZipFile(file, 'w', zipfile.ZIP_DEFLATED) as myzip:
+    myzip.writestr('eggs.txt', 'Here are eggs')
+    myzip.writestr('beef.txt', b'I am beef')
+    myzip.writestr('veggs/pickle.txt', 'pickles')<br/><br/>
+zip_data = file.getvalue()<br/><br/>
+with open('spam.zip', 'wb') as zipfile:
+    zipfile.write(zip_data) </pre>
+<br/>
+只需调用 myzip.writestr(filename, original_content) 方法就行，数据可以是字符串或 bytes，filename 部分还可以有目录结构<br/><br/>
+不指定 zipfile.ZIP_DEFLATED 的话不会对数据进行压缩，只是存储。<br/><br/>
+上面产生的  <code>zip_data</code> 就是压缩包的字节内容，我们把 zip_data 字节数据保存到  <code>spam.zip</code> 压缩文件，然后用 <code>unzip -l spam.zip</code> 命令查看<br/><br/>
+<pre class="lang:default decode:true">$ unzip -l spam.zip
+Archive:  spam.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+       13  10-13-2021 22:17   eggs.txt
+        9  10-13-2021 22:17   beef.txt
+        7  10-13-2021 22:17   veggs/pickle.txt
+---------                     -------
+       29                     3 files</pre>
+<br/>
+如果解压一下，会看到目录结构与我们设想的一致，三个文件 <code>eggs.txt</code>, <code>beef.txt</code> 和 <code>veggs/picle.txt</code> 中的内容分别是字符符 <code>Here are eggs</code>, <code>I am beef</code>, 和 <code>pickles</code>。<br/><br/>
+<h3>解压缩 zip 字节内容为字节数据</h3><br/><br/>
+现在我们直接使用上一步产生的 spam.zip 文件内容，首先假定输入为字节数据，然后窥探其中每一个条目的文件信息与内容<br/><br/>
+<pre class="lang:default decode:true">import zipfile
+import io
+import os<br/><br/>
+
+def read_zipfiles(path, folder=''):
+    for member in path.iterdir():
+        filename = os.path.join(folder, member.name)
+        if member.is_file():
+            print(filename, ':', member.read_text()) # member.read_bytes()
+        else:
+            read_zipfiles(member, filename)<br/><br/>
+
+with open('spam.zip', 'rb') as myzip:
+    zip_data = myzip.read()<br/><br/>
+
+with zipfile.ZipFile(io.BytesIO(zip_data)) as zip_file:
+    read_zipfiles(zipfile.Path(zip_file))</pre>
+<br/>
+这里的代码使用到了递归一直罗列压缩包中的条目，压缩包中文件的内容可用 <code>read_text()</code> 和 <code>read_bytes()</code> 分别读出为文本或字节。这是此代码执行后的输出<br/><br/>
+<blockquote>
+$ python tt.py<br />
+eggs.txt : Here are eggs<br />
+beef.txt : I am beef<br />
+veggs/pickle.txt : pickles
+</blockquote>
+<br/>
+如果我们明确的知道(比如约定了)压缩包中不会有目录层次，则可不用递归来处理。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://stackoverflow.com/questions/54200941/zipfile-module-for-python3-6-write-to-bytes-instead-of-files-for-odoo">Zipfile module for Python3.6: write to Bytes instead of Files for Odoo</a></li>
+    <li><a href="https://zhuanlan.zhihu.com/p/301257655">Python Zipfile</a></li>
+</ol>

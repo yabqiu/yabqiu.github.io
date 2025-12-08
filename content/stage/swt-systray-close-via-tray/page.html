@@ -1,0 +1,151 @@
+---
+title: SWT 中实现最小化到托盘图标，并只能通过托盘的弹出菜单关闭程序
+url: /swt-systray-close-via-tray/
+date: 2008-03-23T03:05:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - SWT
+  - SysTray
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 431 
+wpStatus: publish
+views: 2505
+lastmod: 2021-09-02T20:52:42-05:00
+---
+
+我们有些程序会想要托盘处显示图标，最小化到系统栏；关闭按钮不关闭程序，也是最小化到系统栏；点击托盘图标激活窗口，通过托盘图标的弹出菜单来退出程序。</p>
+<br/>
+本段代码就是要完成这样的功能，是 SWT  来实现的。<br/><br/>
+直接代码给出，代码中有较详细的注释，说明了本程序的功能及实现。文中的任务栏和系统栏应该知道是指哪一段吧，微软就是这么定义的，用 spyxx 的 findwindow 窥探一下就知道了。<!--more--><br/><br/>
+<pre class="lang:default decode:true">package com.unmi;<br/><br/>
+import org.eclipse.swt.*;
+import org.eclipse.swt.events.*;
+import org.eclipse.swt.graphics.*;
+import org.eclipse.swt.widgets.*;<br/><br/>
+/**
+ * SWT 3.0 开始引入了 Tray，可以在系统栏放置你的程序图标了
+ * 本程序实现的功能有四：
+ * 1. 点击窗口的最小化或关闭按钮都是隐藏窗口--任务栏里不显示，不退出程序
+ * 2. 窗口隐藏时，任务栏无图标，系统栏有图标；窗口处于显示状态时则恰好相反
+ * 3. 窗口隐藏时可通过单击系统栏图标或点击系统栏的 "显示窗口" 菜单显示窗口
+ * 4. 程序只能通过点击系统栏的 "退出程序" 菜单项退出，窗口的 X 按钮无效
+ * @author Unmi
+ *
+ */
+public class TrayExample {<br/><br/>
+    public static void main(String[] args) {
+        Display display = new Display();<br/><br/>
+        //禁用掉了最大化按钮
+        final Shell shell = new Shell(display,SWT.SHELL_TRIM ^ SWT.MAX);
+        shell.setText("TrayExample");<br/><br/>
+        //取系统中预置的图标，省得测试运行时还得加个图标文件
+        shell.setImage(display.getSystemImage(SWT.ICON_WORKING));<br/><br/>
+        //构造系统栏控件
+        final Tray tray = display.getSystemTray();
+        final TrayItem trayItem = new TrayItem(tray, SWT.NONE);<br/><br/>
+        //程序启动时，窗口是显示的，所以系统栏图标隐藏
+        trayItem.setVisible(false);
+        trayItem.setToolTipText(shell.getText());<br/><br/>
+        trayItem.addSelectionListener(new SelectionAdapter() {
+            public void widgetSelected(SelectionEvent e) {
+                toggleDisplay(shell, tray);
+            }
+        });<br/><br/>
+        final Menu trayMenu = new Menu(shell, SWT.POP_UP);
+        MenuItem showMenuItem = new MenuItem(trayMenu, SWT.PUSH);
+        showMenuItem.setText("显示窗口(&amp;s)");<br/><br/>
+        //显示窗口，并隐藏系统栏中的图标
+        showMenuItem.addSelectionListener(new SelectionAdapter() {
+            public void widgetSelected(SelectionEvent event) {
+                toggleDisplay(shell, tray);
+            }
+        });<br/><br/>
+        trayMenu.setDefaultItem(showMenuItem);<br/><br/>
+        new MenuItem(trayMenu, SWT.SEPARATOR);<br/><br/>
+        //系统栏中的退出菜单，程序只能通过这个菜单退出
+        MenuItem exitMenuItem = new MenuItem(trayMenu, SWT.PUSH);
+        exitMenuItem.setText("退出程序(&amp;x)");<br/><br/>
+        exitMenuItem.addSelectionListener(new SelectionAdapter() {
+            public void widgetSelected(SelectionEvent event) {
+                shell.dispose();
+            }
+        });<br/><br/>
+        //在系统栏图标点击鼠标右键时的事件，弹出系统栏菜单
+        trayItem.addMenuDetectListener(new MenuDetectListener(){
+            public void menuDetected(MenuDetectEvent e) {
+                trayMenu.setVisible(true);
+            }
+        });<br/><br/>
+        trayItem.setImage(shell.getImage());<br/><br/>
+        //注册窗口事件监听器
+        shell.addShellListener(new ShellAdapter() {<br/><br/>
+            //点击窗口最小化按钮时，窗口隐藏，系统栏显示图标
+            public void shellIconified(ShellEvent e) {
+                toggleDisplay(shell, tray);
+            }<br/><br/>
+            //点击窗口关闭按钮时，并不终止程序，而时隐藏窗口，同时系统栏显示图标
+            public void shellClosed(ShellEvent e) {
+                e.doit = false; //消耗掉原本系统来处理的事件
+                toggleDisplay(shell, tray);
+            }
+        });<br/><br/>
+        shell.setSize(320, 240);
+        center(shell);
+        shell.open();
+        while (!shell.isDisposed()) {
+            if (!display.readAndDispatch())
+                display.sleep();
+        }
+        display.dispose();
+    }<br/><br/>
+    /**
+     * 窗口是可见状态时，则隐藏窗口，同时把系统栏中图标删除
+     * 窗口是隐藏状态时，则显示窗口，并且在系统栏中显示图标
+     * @param shell 窗口
+     * @param tray 系统栏图标控件
+     */
+    private static void toggleDisplay(Shell shell, Tray tray) {
+        try {
+            shell.setVisible(!shell.isVisible());
+            tray.getItem(0).setVisible(!shell.isVisible());
+            if (shell.getVisible()) {
+                shell.setMinimized(false);
+                shell.setActive();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }<br/><br/>
+    /**
+     * 窗口居中显示
+     * @param shell 要显示的窗口
+     */
+    private static void center(Shell shell){
+        Monitor monitor = shell.getMonitor();
+        Rectangle bounds = monitor.getBounds ();
+        Rectangle rect = shell.getBounds ();
+        int x = bounds.x + (bounds.width - rect.width) / 2;
+        int y = bounds.y + (bounds.height - rect.height) / 2;
+        shell.setLocation (x, y);
+    }
+}</pre>
+<br/>
+实现效果如下：<br/><br/>
+<img src="/wp-content/uploads/2008/03/SwtNoTray.jpg" alt="SwtNoTray.jpg" border="0" />                    <img src="/wp-content/uploads/2008/03/SwtHasTray.jpg" alt="SwtHasTray.jpg" width="279" height="88" border="0" /><br/><br/>
+左图是窗口显示时，系统栏中无图标，而任务栏中有图标。右图是窗口隐藏时，只有系统栏有图标。<br/><br/>
+过后，看了翻译软件 LINGOES 灵格斯的表现形式是：<br/><br/>
+1. 任何时候系统栏都有图标<br />
+2. 最小化按钮不会隐藏窗口，只是最小化到任务栏<br />
+3. 关闭按钮也是不会关闭程序，而是最小化到系统栏<br />
+4. 也是只能通过托盘图标的弹出菜单项“退出” 来关闭程序<br/><br/>
+参考：<a href="http://www.eclipseworld.org/bbs/read-cec-tid-15458-fpage-9.html">http://www.eclipseworld.org/bbs/read-cec-tid-15458-fpage-9.html</a><br/><br/>
+但最后还留有一个问题：如何实现窗口可见状态时，任务栏里什么都不显示呢？

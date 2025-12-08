@@ -1,0 +1,777 @@
+---
+title: Java 10 ~ 16 一路向前冲(新特性一箩筐)
+url: /java-10-16-new-features/
+date: 2021-05-08T00:06:57-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - new features
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10809 
+wpStatus: publish
+views: 825
+lastmod: 2025-07-08T17:21:04-05:00
+---
+
+Java 一路突突突， 版本 16 在 2021-03-16 都发布了, 而我们一直碍于 Java 9 的大改还在 Java 8 上原地踏步, 以往每当有新版本 JDK 发布后都是很快就验证，立马升级。<a href="https://www.codejava.net/java-se/java-se-versions-history">Java SE versions history</a>) 列出了所有 Java 的历史版本的发布日期。在今天(2021-05-04) 网站 <a href="https://www.oracle.com/java/technologies/javase-downloads.html">Java SE Downloads</a> 上直接提供下载的 Java SE 版本有以下三<br/><br/>
+<ol>
+    <li>Java SE 16.0.1</li>
+    <li>Java SE 11.0.11(LTS)</li>
+    <li>Java SE 8u291</li>
+</ol>
+<br/>
+两个 LTS(长期支持) 版 8 和  11，外加一个目前最新的非  LTS 版本 16, 其他的版本都被归档到了 <a href="https://www.oracle.com/java/technologies/oracle-java-archive-downloads.html">Java Archive</a>. 查看一下 <a href="https://www.oracle.com/java/technologies/java-se-support-roadmap.html">Java 支持的 roadmap</a>, 几个 LTS 版本的服务支持年限<br/><br/>
+<blockquote>
+版本本      发布日       原定支持至      延期支持至<br />
+Java 8      2014/3       2022/3             <span style="color: #800000;"><strong>2030/12</strong></span><br />
+Java 11     2018/9      2023/9              2026/9<br />
+Java 17     2021/9      2026/9              2029/9
+</blockquote>
+<br/>
+注意到 Java 8 将比 Java 11 和将来的 Java 17 生命力还顽强，一下就觉得这么久坚守在 Java 8 的阵地上不应觉得有什么好害羞的。眼看着下一个 LTS 版本的 Java 17 就要在今年 9 月份发布了，Java 11 看来是要错过了，等准备好和 Java 8 告别时要直接跳到 Java 17 了。<!--more--><br/><br/>
+一码归一码，Java 8 再猪坚强也有成为历史的一天，学习的步伐却不能停止。前面对 Java 9 的特性有所了解，也尝试了 Java 10 的局部变量用 var 来推断类型，再往 Java 11, 12, 13, 14, 15, 16 这一长串的版本新特性却基本一无所知，只听说过有了 Here Doc 的支持。<br/><br/>
+本文主要关注对于开发者有显著影响的新特性，其于如性能，JVM 底层实现的东西蜻蜓点水般带过。为了体验像 Java 9, 10, 12, 13, 14, 15 这样的非  LTS 历史版本还可以到 <a href="https://jdk.java.net/">https://jdk.java.net/</a> 去下载，在 IDE 中或编译时指定 -source 和 -target 版本来用最高版本的 Java 体验各种新特性恐怕会有些出入，因此尽量体验谁就安装相对应的版本。<br/><br/>
+欲大致但全面的了解每一个版本 Java 的新特性最好是读它的每一个 <a href="https://www.oracle.com/java/technologies/javase/jdk-relnotes-index.html">JDK Release notes</a>。我们也可以去瞧瞧 IntelliJ IDEA 在 Project Settings 中选择 Project language level 时对每一个 JDK 的一句话评价<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/05/intellij-idea-java-language-levels.png"><img class="aligncenter wp-image-10811" src="https://yanbin.blog/wp-content/uploads/2021/05/intellij-idea-java-language-levels-800x387.png" alt="" width="568" height="275" /></a>以下是全部内容<br/><br/>
+<ul style="list-style-type: disc;">
+    <li>1.3 - Plain old Java</li>
+    <li>1.4 - 'asset' keyword</li>
+    <li>5 - 'enum' keyword, generics, autoboxing etc.</li>
+    <li>6 - @Override in interfaces</li>
+    <li>7 - Diamonds, ARM, multi-catch etc.</li>
+    <li>8 - Lambdas, type annotations etc.</li>
+    <li>9 - Modules, private methods in interfaces etc.</li>
+    <li>10 - Local variable type inference</li>
+    <li>11 - Local variable syntax for lambda parameters</li>
+    <li>12 - No new language features</li>
+    <li>13 - No new language features</li>
+    <li>14 - Switch expressions</li>
+    <li>15 - Text blocks</li>
+    <li>15 (Preview) - Sealed types, records, patterns, local enums and interfaces</li>
+    <li>16 - Records, patterns, local enums and interfaces</li>
+    <li>16 (Preview) - Sealed types</li>
+    <li>X - Experimental features</li>
+</ul><br/><br/>
+Java 12 和 13  有点尴尬，在这里。<br/><br/>
+<h2>Java 10 新特性</h2><br/><br/>
+首先来来简单回顾一下 Java 10  的局部变量 var 推断, 注意，是指局部变量在后面有直接赋值或方法调用时用 var 来推断类型<br/><br/>
+<h3>局部变量 var  推断</h3><br/><br/>
+<pre class="lang:default decode:true ">public void foo() {
+    var map = new HashMap&lt;String, String&gt;();
+    var len = "hello".length();
+}</pre>
+<br/>
+这时候都不用纠缠于是否该用父类型(如接口)来引用变量的问题，然后在使用泛型时却不能用 new HashMap&lt;&gt;() 来推断了。泛型也没问题，见下<br/><br/>
+<pre class="lang:default decode:true ">static {
+    var xx = bar(1234);  // 这里也能推断出 xx 的类型是 Integer
+}<br/><br/>
+private static &lt;T&gt; T bar(T t) {
+    return t;
+}</pre>
+<br/>
+重复一遍是局部变量的 var 类型推断，局部变量像 <code>var me;</code> 没有立即赋值显能是不能用 var 推断的。那么成员变量声明时立即赋值是不是就能用 var 来声明呢，就因为它不是局部变量，所以不行就是不行<br/><br/>
+<pre class="lang:default decode:true">private var name = "world";  // 这样写是错的, 我都能不加思索的推断出类型来也不行</pre>
+<br/>
+<h3>Optional 新 API</h3><br/><br/>
+Java 10 还有另一个值得一提的新特性还有 Optional.orElseThrow() 返回 Optional 中的值，无值则抛异常，这避免了我们不加断言就 Optional.get() 值时一个 IDE 警告。<br/><br/>
+<h3>其他主要新特性</h3><br/><br/>
+<ol>
+    <li>又增加创建不可变集合的方法</li>
+    <li>G1 垃圾回收设计为尽量避免 full GC, 但无可避免时，原来的 G1 用单线程，现在为 G1 提供了并行的 Full GC</li>
+    <li>生成字节码时优化了循环(知道有这么回事就行)</li>
+    <li>删掉了 javah 命令</li>
+    <li>加入 -XX:-UseContainerSupport, -XX:ActiveProcessorCount=count 告知 JVM 是运行在  Docker 容器中和指定 CPU 数来运行容器，外加三个 JVM 参数 -XX:InitialRAMPercentage, -XX:MaxRAMPercentage, -XX:MinRAMPercentage 来更精细的控制容器的 JVM</li>
+    <li><code>krb5.conf</code> 中用 <code>includdir DIRNAME</code> 时将会包含其目录中的所有 <code>.conf</code> 文件到 <code>krb5.conf</code> 中，Kafka 在使用 krb5 验证时幸许有用。</li>
+</ol>
+<br/>
+自 Oracle 接管了 Java 后按照他们拟定的每当 3，9 月份发布一版本的模式，也就会有 Java 其实没多大变化时也要强行上一个版本，有一种为赋新辞强说愁的感觉。接着再往下看<br/><br/>
+<h2>Java 11 新特性(LTS)</h2><br/><br/>
+<h3> </h3><br/><br/>
+<h3>Unicode 10</h3><br/><br/>
+Java 11 把支持 Unicode 10 的特性放在了第一位，这是一个到处充满了表情符号的世界。后面版本的 Java 不断在升级支持的 Unicode 版本<br/><br/>
+<h3>Http Client API</h3><br/><br/>
+把 JDK 9 尝试性加入的 HTTP Client API 标准化下来了，实现类在 <code>java.net.http</code>, 这要夺了像 Apache Commons HttpClient, OkHttpClient 之类库们的饭碗了。粗略来体验一下它的 HTTP Client。下面直接贴的图片同时展示一下要是没有 IntelliJ IDEA  的类型提示， <code>var</code> 声明的局部变量是很难读的。<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/05/java-11-new-features-1.png"><img class="aligncenter wp-image-10814" src="https://yanbin.blog/wp-content/uploads/2021/05/java-11-new-features-1-800x446.png" alt="" width="876" height="488" /></a><br/><br/>
+曾经对 <code>var</code> 向往过，突然又对它不那么推崇备致了。离开了 IDE 对 var 的类型提示，光写个  var response, var client, 盯着后面的方法，鬼才知道它们实际是什么类型，var 也就是立即变量的赋值友好些。<br/><br/>
+抱怨完了 <code>var</code> 后，回到 HTTP Client API, 还是很流畅的，颇有 OkHttpClient 的风范，可同步又能异步，看下上面代码的输出<br/><br/>
+<blockquote>
+2- send async request<br />
+1 - body first line: &lt;!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN"&gt;<br />
+3- body blank? false
+</blockquote>
+<br/>
+<h3>String 和  Files API</h3><br/><br/>
+前面的 HTTP Client 代码同时用到了几个新的 String 和 Files 的 API, 这里再简单罗列一下<br/><br/>
+String 的  API<br/><br/>
+<ol>
+    <li>isBlank(): 支持全半角</li>
+    <li>lines(): 得到 Stream&lt;String&gt;</li>
+    <li>repeat(n): 重复自己 n 次，Python 里用 "hello" * 3</li>
+    <li>strip(): 去前后空白，比 trim() 而言支持全角等各种空白符</li>
+</ol>
+<br/>
+Files API<br/><br/>
+<ol>
+    <li>Files.writeString(path, "hello"): Path</li>
+    <li>Files.readString(path): String</li>
+</ol>
+<br/>
+<h3>Lambda 表达式参数中可用 var</h3><br/><br/>
+就是说原本的 (x, y) -&gt; x.process(y) 写成 (var x, var y) -&gt; x.process(y) 也行，Lambda 中参数本来就是可被推断的, 加不加 var 又何妨，似乎只是作出了 var 一个可以出现在 Lambda 表达式参数中的姿态。其实还有种用途，就是方便用其他的注解，如<br/><br/>
+(@Nonnull var x, @Nullable var y) -&gt; x.process(y);    // 去掉 var 的写法将通不过，(@Nonnull x, @Nullable y) -&gt; ... 错了<br/><br/>
+Lambda 多个参数中 var 不能混搭，这两种写法不合规 (var x, y) -&gt; ... 和 (var x, String y) -&gt; ...<br/><br/>
+<h3>单命令运行 Java 文件</h3><br/><br/>
+简单的 Java 文件，跳过了 javac 过程，直接 <code>java Test.java</code> 运行，它帮你自动编译了，只是当前目录下也看不到 Test.class 文件。像 Test.java<br/><br/>
+<pre class="lang:default decode:true ">public class Test {
+  public static void main(String[] args) {
+    System.out.println("hello script alike");
+  }
+}
+</pre>
+<br/>
+有了 Test.java, 运行<br/><br/>
+<blockquote>
+$ java Test.java<br />
+hello script alike
+</blockquote>
+<br/>
+起初感觉它向脚本风格迈出了一步，现在想来好像也没多大用处，想要测试下 Java 的某些特性可以用 <code>jshell</code> 然后直接写语句，不用类和方法的声明<br/><br/>
+<blockquote>
+$ jshell<br />
+| Welcome to JShell -- Version 11.0.11<br />
+| For an introduction type: /help intro
+jshell&gt; System.out.println("hello")<br />
+hello
+</blockquote>
+<br/>
+以前我用 scala 的控制台来测试 Java 特性，但是在 Test.java 中又不能去除类和方法声明只写一行 Syste.out.println("hello script alike")，因为它是个类文件，能的话何不用 Groovy。能被 java 直接运行 Java 文件中声明的包会被忽略，不能引入别的 Java 源文件，也就做不了太复杂的事情，目前尚未想到它有什么好的用途。<br/><br/>
+相关 <a href="https://bugs.java.com/bugdatabase/view_bug.do?bug_id=JDK-8192920">JDK-8192920</a>, 它原本就是让 Java 成为一个通用脚本语言, 但又支持 Shebang 的写法, 比如文件名为 <code>hello</code>, 内容在前面的 Test.java 代码前加上一行<br/><br/>
+<blockquote>
+#!/Users/yanbin/jdk-11.0.11.jdk/Contents/Home/bin/java --source 11
+</blockquote>
+<br/>
+#!/path/to/java --source version 的格式，然后 <code>chmod +x hollo</code> 改为可执行，就能直接运行<br/><br/>
+<blockquote>
+./hello<br />
+hello script alike
+</blockquote>
+<br/>
+<h3>其他值得关注的特性</h3><br/><br/>
+<ol>
+    <li>飞行记录器，-XX:StartFlightRecording, Java 应用的黑匣子</li>
+    <li>新方法 Collection.toArray(IntFunction): 可以 List.of(1, 2).toArray(Integer[]::new), 其实 toArray() 要能聪明点支持泛型就好，而不总是返回  object[]</li>
+    <li>加入试验性的 ZGC 垃圾收集器，欲达到更低延时。设计目标有暂停不起过 10 毫秒</li>
+    <li>加入试验性的不作为的 Epsilon GC，就是只管分配内存，不回收，适于性能测试与短时间的 Job,  在关闭 JVM 时回释放进程内存</li>
+    <li>支持 TLS 1.3</li>
+    <li>终于把 JDK 9 标识为 deprecated 的  <code>applietviewer</code> 移除了</li>
+    <li>移除了 <code>jdk.snmp</code>，曾经使用过的</li>
+    <li>JMC(Java Mission Control) 从 JDK 中独立了出来</li>
+    <li>JavaFX 被从 JDK 中移除了，Java 从 AW, Swing 到 JavaFX 的桌面尝试始终不太如愿</li>
+    <li>Java EE 和 CORBA 也没有，要想用 JAXB, JAF, JAX-WS 得自己引入</li>
+    <li>java.home, user.home, user.dir 和 user.name  系统属性在启动时被缓存，运行期用 System::setProperty 修改得留心了</li>
+</ol>
+<br/>
+<h2>Java 12 新特性</h2><br/><br/>
+Java 12 在 IntelliJ IDEA 中被标注为没有新语言特性。继续看 <a href="https://www.oracle.com/java/technologies/javase/12-relnote-issues.html">Java 12 的 Release notes</a>, 列出的第一个仍然是关于 Unicode 的支持，上到了  Unicode 11, 更丰富的表情。<br/><br/>
+实验性的支持 switch 表达式，有返回值的，因为要到  Java 14 才转正，所以此处不讲。<br/><br/>
+<h3>紧凑的数字格式化</h3><br/><br/>
+格式化显示为 <code>1K</code>, <code>1M</code> 这样的，看代码及输出<br/><br/>
+<pre class="lang:default decode:true">NumberFormat fmt = NumberFormat.getCompactNumberInstance();
+System.out.println(fmt.format(1000));                    // 1K
+System.out.println(fmt.format(1500));                    // 2K
+System.out.println(fmt.format(10234500));                // 10M
+System.out.println(fmt.format(523448696234L));           // 523B
+System.out.println(fmt.format(1023450023448696234L));    // 1023450T
+</pre>
+<br/>
+还四舍五入了，最大也就是 T<br/><br/>
+<h3>其他主要新特性</h3><br/><br/>
+<ol>
+    <li>ZGC 使得内存中不用的 class 可被卸载，不知道怎么定位到不用的 class, 是否是没有与此相关的实例了？能卸载 class 的话就能节省 MetaSpace。用 ZGC 的话默认开启，用 -XX:-ClassUnloading 关闭</li>
+    <li>试验性支持 G1 和并发 GC 允许分配 Java 堆的老代区到像 NV-DIMM 内存</li>
+</ol>
+<br/>
+好像真的没有太多的新特性<br/><br/>
+<h2>Java 13 新特性</h2><br/><br/>
+仍然是被  IntelliJ IDEA  标注为没有新特性。它继续把把 Unicode 的支持推进到版本 12.1。switch 表达式还是试验性的，同时加入了试验性的 Test Blocks(多行字符串)。<br/><br/>
+<h3>动态 CDS 归档 (Dynamic CDS Archives)</h3><br/><br/>
+适用于 JVM 间共享类，Java 12 默认开启了对  自带 JAR 包类的存档，这可以加带 JVM 的启动与重启。可以看两步<br/><br/>
+<blockquote>
+$ java -XX:ArchiveClassesAtExit=hello.jsa -cp hello.jar Hello
+$ java -XX:ShareArchiveFile=hello.jsa -cp hello.jar Hello
+</blockquote>
+<br/>
+因为 hello.jsa 保存了常用类的内存布局，所以能加速 JVM 的启动<br/><br/>
+<h3>其他</h3><br/><br/>
+ZGC 能像 G1 和 Shenandoah 一样释放未用的内存给操作系统，而不是长期保持到 Heap 的大小，这在云上或虚拟化环境中有用。<br/><br/>
+Java 13 的 Text Blocks(多行字符串) 还是预览特性，它将会在 Java 15 中正式引入，所以留待 Java 15 中来加以说明。<br/><br/>
+其他和开发者相关的特性真的就没有了。<br/><br/>
+<h2>Java 14 新特性</h2><br/><br/>
+Java 14 把 switch 表达式转正了(Java 13 首次引入为预览特性)，也是该版本重点要学习的。但是在 Java 13 中还是预览版的 switch 表达式在 <a href="https://www.oracle.com/java/technologies/javase/14-relnote-issues.html">Java 14 的 Release Notes</a> 中不提了，还得返回到 <a href="https://www.oracle.com/java/technologies/javase/13-relnote-issues.html">Java 13 的 Release Notes</a> 中去了解 switch 表达式的用法，<a href="https://bugs.java.com/bugdatabase/view_bug.do?bug_id=JDK-8222184">见 JDK-822184</a>。<br/><br/>
+<h3>switch 表达式</h3><br/><br/>
+现在 switch 即可用语句(statement, 像 if 那样), 也能视为表达式(expression, 有返回值的)。可用旧的写法 <code>case ...:</code>(fall thought), 每个 case 只作为整个 switch 的一个入口，没有 break 则会进到下一个 case, 新的写法 <code>case ... -&gt;</code>(no fall through)，每个 case 是一个进出口，相当于每个  case 自动加了个  return 语句，新的 switch 还可用 <code>yield</code> 关键字，<code>yield</code> 在不同语言中的语义值得品味。Review 代码的时一定要眼尖，要注意 case 后是 <code>:</code> 还是 <code>-&gt;</code>, 前者的话一般要求每个 case 后有个  break 或 return, 最好还要有 <code>default</code> 入口。<br/><br/>
+马上来体验新旧 <code>switch...case</code> 的不同<br/><br/>
+<pre class="lang:default decode:true">int condition = 13;
+switch (condition) {
+    case 1:
+        System.out.println("one");
+    case 13:
+        System.out.println("thirteen");
+    case 3:
+        System.out.println("two");
+    case 5:
+        System.out.println("five");
+} </pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+thirteen<br />
+two or three<br />
+five 
+</blockquote>
+<br/>
+改成新的 <code>case ... -&gt;</code> 方式<br/><br/>
+<pre class="lang:default decode:true ">int condition = 13;
+switch (condition) {
+    case 1 -&gt;
+        System.out.println("one");
+    case 13 -&gt;
+        System.out.println("thirteen");
+    case 2 -&gt;
+        System.out.println("two");
+    case 5 -&gt;
+        System.out.println("five");
+}</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+thirteen
+</blockquote>
+<br/>
+<code>case ... :</code> 和 <code>case ... -&gt;</code> 能否混合写呢？<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/05/java14-new-features-1.png"><img class="aligncenter wp-image-10850" src="https://yanbin.blog/wp-content/uploads/2021/05/java14-new-features-1.png" alt="" width="377" height="156" /></a>答案是不行， Different case kins used in the switch。<br/><br/>
+把 <code>case ...:</code> 写在  <code>case ... -&gt;</code> 后更是不行，因为 <code>case ... -&gt;</code> 后多条语句时需用 <code>{}</code> 框起来，所以看到的是这个错<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/05/java14-new-features-2.png"><img class="aligncenter wp-image-10851" src="https://yanbin.blog/wp-content/uploads/2021/05/java14-new-features-2-800x194.png" alt="" width="475" height="115" /></a><br/><br/>
+于是也就好理解了，<code>case ...:</code> 是老的 statement, <code>case ... -&gt;</code> 是新的 switch 表达式，能够不加 yield 就返回值的 switch 就必须写成 <code>case ... -&gt;</code> 的方式了。新旧两款 switch 都可以使用 <code>yield</code> 关键字。有了 <code>yield</code> 还能把旧 <code>case ..:</code> 写法的 switch 变成表达式。<br/><br/>
+接下来看 switch 表达式的返回值, 前提是 case 或 default 中都要用值，如果都是  void，就无法赋值了，比如下面的代码<br/><br/>
+<pre class="lang:default decode:true">int condition = 13;
+var result = switch (condition) {  // 编译不过，提示 cannot infer type for local variable result
+    case 2 -&gt; System.out.println("two");
+    case 3 -&gt; System.out.println("three");
+    default -&gt; System.out.println("unknown");
+};</pre>
+<br/>
+<code>case ... -&gt;</code> 中返回值的情形与 Lambda 表达式的写法是一样的，后面没有 <code>{}</code> 的话，其后表达式的值即为该 <code>case</code> 的值，有 <code>{}</code> 的话，需要 <code>yield</code> 语句, 后面会详细叙述。<br/><br/>
+<pre class="lang:default decode:true">String result = switch (condition) { // 可声明为 var result, 自行推断类型
+    case 2 -&gt; "two";
+    case 3, 4 -&gt; "three or four";  // case 多个条件的写法
+    default -&gt; "unknown";
+};
+</pre>
+<br/>
+假如 switch 表达式的 case 或 default 返回了不同的类型值，它的返回值类型可声明为  <code>Object</code><br/><br/>
+<pre class="lang:default decode:true ">Object result = switch (condition) {
+    case 2 -&gt; "two";
+    case 3 -&gt; "three";
+    default -&gt; -1;
+};</pre>
+<br/>
+此时如果也用 <code>var</code> 来让编译器推断，在 IntelliJ IDEA 中的类型提示你大概不想看<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/05/java14-new-features-3.png"><img class="aligncenter wp-image-10853" src="https://yanbin.blog/wp-content/uploads/2021/05/java14-new-features-3-800x99.png" alt="" width="850" height="105" /></a><br/><br/>
+当然打印出来的 result.getClass() 是对的 class java.lang.Integer。switch 表达式的值类型推断相当是为每个分支类型找到一个最小公倍数，这样的话，其后对 result 重新赋值时可以赋以先前 swtich 表达式中每一个 case 的类型。所以用 var 来推断 switch 表达式的值类型时不是简单的标识为 <code>Object</code>，要是有更多的 case 类型的，以上的 <code>var result</code> 类型提示就会长不忍睹。 <br/><br/>
+switch 表达式的 case 中可以抛出异常，抛异常的分支不会影响到对整个 switch 表达式值类型的推断<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/05/java14-new-features-4.png"><img class="aligncenter wp-image-10854" src="https://yanbin.blog/wp-content/uploads/2021/05/java14-new-features-4-800x198.png" alt="" width="432" height="107" /></a>当 switch 碰上  yield<br/><br/>
+当给 <code>switch ... case ... :</code> 旧写法的 switch 语句加上 <code>yield</code> 来返回值的话，该 switch 就是个表达式了<br/><br/>
+<pre class="lang:default decode:true">var result = switch (condition) {
+    case 2: yield "two";
+    case 3: yield "three";
+    default: yield  "unknown";
+};</pre>
+<br/>
+效果等价于<br/><br/>
+<pre class="lang:default decode:true">String result;
+switch (condition) {
+    case 2:
+        result = "two";
+        break;
+    case 3:
+        result = "three";
+        break;
+    default:
+        result = "unknown";
+}
+</pre>
+<br/>
+ <code>case ...:</code> 中有了 yield 后相当于为该分支加了 break 或 return 外加返回值。<br/><br/>
+如果某个 <code>case ...:</code> 分支没有 <code>yield</code> 值的话，也是 fall through，看下面的代码及执行效果<br/><br/>
+<pre class="lang:default decode:true">int condition = 2;
+var result = switch (condition) {
+    case 2:
+        System.out.println(123);
+    case 3: yield "three";
+    default: yield  "unknown";
+};
+System.out.println(result)</pre>
+<br/>
+控制台输出为<br/><br/>
+<blockquote>
+123<br />
+three
+</blockquote>
+<br/>
+<code>case ...-&gt;</code>  中的 yield<br/><br/>
+当 <code>case ...-&gt;</code> 中要执行多行语句时，要用 <code>{}</code> 括起来，那么它最后的返回值就必须用 <code>yield</code>, 而不是用 <code>return</code>，代码<br/><br/>
+<pre class="lang:default decode:true">var result = switch (condition) {
+    case 2-&gt; {
+        System.out.println("do something");
+        yield "two";  // 不能用 return "two"
+    }
+    case 3-&gt; "three";
+    default-&gt; "unknown";
+}; </pre>
+<br/>
+光一个 Java 14 的 switch 表达式就消耗了很大的篇幅。<br/><br/>
+<h3>更详尽的 NullPointerException 信息</h3><br/><br/>
+本人觉得这对 Debug 程序或定位产品环境中的空指针问题很重要，可是在 Java 14 的  Release Notes 中只很简单的描述。看下面的代码<br/><br/>
+<pre class="lang:default decode:true ">public class Test {<br/><br/>
+    public static void main(String[] args) {
+        foo().trim();
+    }<br/><br/>
+    private static String foo() {
+        return null;
+    }
+}</pre>
+<br/>
+运行它会出现 NPE 异常，默认时错误信息为<br/><br/>
+<blockquote>
+Exception in thread "main" java.lang.NullPointerException<br />
+    at com.example.demo.Test.main(Test.java:4)
+</blockquote>
+<br/>
+在 Java 14 中我们可以加上 <code>-XX:+ShowCodeDetailsInExceptionMessages</code>，再看出错信息<br/><br/>
+<blockquote>
+Exception in thread "main" java.lang.NullPointerException: Cannot invoke "String.trim()" because the return value of "Test.foo()" is null<br />
+     at Test.main(Test.java:4)
+</blockquote>
+<br/>
+这对于我们定位问题有相当大的帮助，强烈建议产品环境加上该 JVM 参数。<br/><br/>
+Java 14 中引入预览版的 Records, 它将会在 Java 16 中正式发布，所以等到讲 Java 16 时再提。<br/><br/>
+<h3>其他主要 Java 14 的新特性</h3><br/><br/>
+<ol>
+    <li>ZGC 垃圾回收开始支持 Windows 和 macOS 系统</li>
+    <li>并行 GC 得到了性能提升</li>
+    <li>把 CMS(Concurrent Mark and Sweep) 垃圾收集器给删除掉了</li>
+    <li>自 JDK 5.0 添加的 pack200 和  unpack200 命令删了，曾经研究过，实际一直没用它这两</li>
+    <li>Thread 和  ThreadGroup 的 suspend(), resume(), allowThreadSuspension(boolean) 标记为 Deprecated, 反正一直就不建议调用它们</li>
+</ol>
+<br/>
+<h2>Java  15 的新特性</h2><br/><br/>
+终于来到  Java 15 了，离刚出品的  Java 16 还有一小步，主要动作是 Text Blocks，终于是期待已久的多行字符串到来了。早先由于多行的大字符串(如 SQL 语句, JSON，XML 等) 怕让 Java 代码凌乱不堪才写到配置文件，现在可以用 Text Blocks 大大方方的挪回到 Java 文件中，只要定义一些常量来放多行的大字符串，省去了读文件甚至解析的过程了。<br/><br/>
+<h3><a id="text-block"></a>Text Blocks(文本块，又名多行字符串，或 Here Doc)</h3><br/><br/>
+Text Blocks 的 JEP <a href="https://bugs.java.com/bugdatabase/view_bug.do?bug_id=JDK-8236934">JDK-8236834</a><br/><br/>
+Java 15 的 Text Blocks, 它给我们非常大的便利，但使用方法不复杂，它借鉴了像 Scala, Groovy, 和 Python 的语法风格，即用三个双引号的语法。具体的语法是 <code>""" + 字符串从新行开始 + """</code>。下面开始尝试<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-1.png"><img class="aligncenter wp-image-10862" src="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-1.png" alt="" width="381" height="207" /></a><br/><br/>
+上面以图片形式展式代码，代码格式为 4 个空格缩进，这样看输出就能知道每行的前导空格怎么保留。输出为<br/><br/>
+<pre class="lang:default decode:true ">  &lt;div&gt;
+    &lt;p&gt;Hello, world&lt;/p&gt;
+  &lt;/div&gt;</pre>
+<br/>
+<code>&lt;div&gt;</code> 前有两个空格，而不是从每行的最左端算起，这与其他语言不同，多数语言一旦开始 Here Doc, 等号下的其余都会从最左端算空白。在调试中看下 html 字符串的内容<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-2.png"><img class="aligncenter wp-image-10863" src="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-2-800x207.png" alt="" width="692" height="179" /></a><br/><br/>
+如果细心的同学从截图中能看到一条绿色的竖线，这就是 Text Blocks 每一行的起始界线。那么这条绿线是谁定下的呢？看以下几种情形，留心结束端的 """ 和绿色分界线，及调试中显示出的值<br/><br/>
+<p style="text-align: center;"><a href="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-3.png"><img class="aligncenter wp-image-10864" src="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-3-800x173.png" alt="" width="839" height="181" /></a><strong>""" 往前顶</strong></p>
+<br/>
+&nbsp;<br/><br/>
+<p style="text-align: center;"><a href="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-4.png"><img class="aligncenter wp-image-10865" src="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-4-800x199.png" alt="" width="715" height="178" /></a><strong>""" 稍稍后撤</strong></p>
+<br/>
+&nbsp;<br/><br/>
+<p style="text-align: center;"><a href="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-5.png"><img class="aligncenter wp-image-10866" src="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-5-800x215.png" alt="" width="662" height="178" /></a>""" 再往后靠</p>
+<br/>
+&nbsp;<br/><br/>
+<p style="text-align: center;"><a href="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-6.png"><img class="aligncenter wp-image-10867" src="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-6-800x221.png" alt="" width="636" height="176" /></a><strong>""" 再退缩</strong></p>
+<br/>
+&nbsp;<br/><br/>
+<p style="text-align: center;"><a href="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-7.png"><img class="aligncenter wp-image-10868" src="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-7-800x196.png" alt="" width="720" height="177" /></a><strong>""" 与最后字符同行</strong></p>
+<br/>
+&nbsp;<br/><br/>
+<p style="text-align: center;"><a href="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-9.png"><img class="aligncenter size-large wp-image-10870" src="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-9-800x225.png" alt="" width="800" height="225" /></a><strong>左端 """ 后必须有空行</strong></p>
+<br/>
+参考右端的 """ 与绿色分界线的关系，外加一个非法的代码，于是 Text Block 的使用规则出来了：<br/><br/>
+<ol>
+    <li>Text Block 的左端 <code>"""</code> 后必须有空行</li>
+    <li>Text Blocks 整体左边界的确定规则：Java 编译器会把每一行左端共同的空白都去掉，像 String::stripIndent() 的行为。右端 <code>"""</code> 的移动影响了最后一行的起始空白，所以看起来像是它在改变左边界位置。实质上 Text Block 默认就被使用了 striptIndent() 方法来处理左边空白，换句话说 Text Block 每行左边界是由 stripIndent() 的实现决定的。</li>
+    <li>在 IntelliJ IDEA 中当输入 <code>var html = """"""</code>, 再从第三个双引号后一换行，右 <code>"""</code> 的左边界就会与变量名 <code>html</code> 左对齐，这或许是一个可参考的代码格式</li>
+</ol>
+<br/>
+说到新加的 String::stripIndent() 方法，马上来看下它的效果<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-11.png"><img class="aligncenter wp-image-10879" src="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-11-800x60.png" alt="" width="616" height="46" /></a><br/><br/>
+<code>"""</code> 包起来的字符串自动被应用了 stripIndent() 方法，所以只能对单行字符串看到效果。<br/><br/>
+Java 15 的 Text Blocks 的左边界规则对于代码的格式化与 Review 代码是个不小的挑战。对于 Text Blocks 确定左边界的规则还是其他语言更简单些，总是以从每行的第一列算起，虽然有时候代码缩进会影响，像 Python<br/><br/>
+<pre class="lang:default decode:true">$ cat test.py
+if True:
+    if True:
+        if True:
+            html ="""start
+&lt;div&gt;
+    &lt;p&gt;Hello, world&lt;/p&gt;
+&lt;/div&gt;
+"""<br/><br/>
+print(html)
+$
+$ python test.py
+start
+&lt;div&gt;
+    &lt;p&gt;Hello, world&lt;/p&gt;
+&lt;/div&gt;</pre>
+<br/>
+不管编码中退格到了多少层次， Text Blocks 要出现的时候，每行的起始位置都要回归到最左端算起，这才叫做不忘初心。<br/><br/>
+在 Scala 中对于左边界有一种主动的作法，用竖线划下每一行的左边界，最后 .stripMargin<br/><br/>
+<pre class="lang:default decode:true ">$ cat test.scala
+val html =
+  """
+    |&lt;div&gt;
+    |    &lt;p&gt;Hello, world&lt;/p&gt;
+    |&lt;/div&gt;
+    |""".stripMargin<br/><br/>
+println(html)
+$
+$ scala test.scala<br/><br/>
+&lt;div&gt;
+    &lt;p&gt;Hello, world&lt;/p&gt;
+&lt;/div&gt;</pre>
+<br/>
+IntelliJ IDEA 能支持 Scala 的这种 <code>|</code> 加 <code>.stripMargin</code> 的用法，回车在每一新行左边自动加上 <code>|</code>, 拷贝多行字符串时也不会把每一行前的 <code>|</code> 放到剪贴板<br/><br/>
+Java 15 的 Text Blocks 好像也有借鉴这一做法。关于此先暂停一阶段，另一个 Text Blocks 问题，关于字符串的转义<br/><br/>
+Text Blocks 是以 <code>"""</code> 开始，同样以 <code>"""</code> 结尾，所以在多行字符串中出现一个或连续两个的单引号或双引号都没关系，对于这样的单引号或双引号，你爱用 <code></code> 转义也行，不过转了也是多余<br/><br/>
+<pre class="lang:default decode:true">var html = """
+    &lt;div&gt;
+        &lt;p style="color:red"&gt;Hello, world&lt;/p&gt;
+    &lt;/div&gt;
+    """;</pre>
+<br/>
+<code>"</code> 处会提示 '"' is unnecessarily escaped, 对单引号的 <code>'</code> 转义也是类似的提示。因此 <code>"""</code> 中的转义行为与 <code>"</code> 括起来的单行字符中的转义是一样的，<code>n</code> 也是会进行换行，但是既然用了 Text Blocks 就没必要用 <code>n</code>, 何不主动加个空行。如果想要在 <code>"""</code> 中输出字面文本，就要对 <code></code> 本身进行转义了，写成<br/><br/>
+<pre class="lang:default decode:true ">var html = """
+    &lt;div&gt;
+        &lt;p&gt;Hello, \'world&lt;/p&gt;\n
+     &lt;/div&gt;
+    """;</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+&lt;div&gt;<br />
+    &lt;p&gt;Hello, 'world&lt;/p&gt;n<br />
+&lt;/div&gt;
+</blockquote>
+<br/>
+由此也就能推断出想要在 Text Blocks 中输出字面的三个连续双引号就必须对每一个双引号进行转换，那就是<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-10.png"><img class="aligncenter wp-image-10873" src="https://yanbin.blog/wp-content/uploads/2021/05/java15-new-features-10-800x379.png" alt="" width="416" height="197" /></a><br/><br/>
+输出为<br/><br/>
+<pre class="lang:default decode:true ">&lt;div&gt;
+    &lt;p&gt;Hello, """world&lt;/p&gt;
+&lt;/div&gt;</pre>
+<br/>
+结果正确，不过 IntelliJ IDEA 居然也提示我 <code>"</code> 是多余的，因为只需要在出行三个连续双引号时第一个双引号前 转义一下就行，这样就破坏了它试图终止 Text Block 的企图。所 以正确的写法是<br/><br/>
+<pre class="lang:default decode:true ">var html = """
+    &lt;div&gt;
+        &lt;p&gt;Hello, """world&lt;/p&gt;
+    &lt;/div&gt;
+    """;</pre>
+<br/>
+Text Block 中每行的结束符把 CR(u000D, 或 r) 和 CRLF(u000Du000A, 或 rn) 统一为 LF(u000A, 或, n)，与系统平台无关，也就是统一为类 Unix 系统规则。<br/><br/>
+<a href="https://bugs.java.com/bugdatabase/view_bug.do?bug_id=JDK-8236934">JDK-8236834</a> 中讲的好像可以用附属符号来设定左边界，像 Scala 那样般，期待着能够用<br/><br/>
+<pre class="lang:default decode:true ">String html = """
+........&lt;div&gt;
+............&lt;p&gt;Hello, world&lt;/p&gt;
+........&lt;/div&gt;
+........"""</pre>
+<br/>
+或<br/><br/>
+<pre class="lang:default decode:true ">String html = """
+        |&lt;div&gt;
+        |    &lt;p&gt;Hello, world&lt;/p&gt;
+        |&lt;/div&gt;
+"""</pre>
+<br/>
+输出想要的<br/><br/>
+<pre class="lang:default decode:true ">&lt;div&gt;
+    &lt;p&gt;Hello, world&lt;/p&gt;
+&lt;/div&gt;</pre>
+<br/>
+可是它们实际的输出是包含了所有的点和 <code>|</code>, 即 <code>"""</code> 中所有的内容, 调用 <code>html.stripIndent()</code> 也没有任何的效果。<br/><br/>
+倒是发现 Java 15 给 String 新加的实例方法 formatted 很好用<br/><br/>
+<pre class="lang:default decode:true ">String greeting = "Hello %s".formatted("world");</pre>
+<br/>
+再也不用 String 的静态方法 format() 了，之前必须写成<br/><br/>
+<pre class="lang:default decode:true ">var greeting = String.format("Hello %s", "world");
+</pre>
+<br/>
+隆重的介绍完 Java 15 的 Text Blocks 后，其他的如封闭类型，记录，模式匹配, 局部枚举和接口定义都是预览功能。其中的记录，模式匹配，局部枚举和接口定义已在 Java 16 中正式推出，留到 Java 16 新特性那节目尝试。封闭类型直到今年 9 月将发布的 Java 17 都可能无法转正，最后也将大概看看。<br/><br/>
+<h3>Java 15 其他主要新特性</h3><br/><br/>
+<ol>
+    <li>支持 Unicode 13.0，都不想说了</li>
+    <li>可以定义隐藏类(Hidden Classes) 的，比如像一些内部实现类不想被别人发现(Class:forName 也找不到)和引用，可以做成隐藏类，而不是无奈的声明为 unsafe 或 internal 进行劝戒。实现隐藏类需要用到操作字节码的技术，开发人员基本不用去关注。</li>
+    <li>删掉了 rmic 命令，早就没有人去直接使用 RMI 了，RESTFul, JSON 通信更方便</li>
+    <li>把 Nashorn JavaScript 引擎也拿掉了, Java 8 加进来的东西就被废弃了，连带的 jjs 命令也删掉了</li>
+    <li>ZGC 可在产品环境中使用了，不再是试验特性了，只要用 <code>-XX:+UseZGC</code> 就能启用 ZGC </li>
+</ol>
+<br/>
+<h2>Java 16 新特性</h2><br/><br/>
+Java 16 仍然不是一个 LTS 版本，但它把 Java 15 作为预览的 记录，模式匹配，局部枚举和接口定义转正了。其中恐怕数 Records 最有深意，模式匹配也很有用。<br/><br/>
+<h3>Java 16  记录类</h3><br/><br/>
+在没有 record 之前，要实现一个 model 类需放入很多的私有字段，每个字段都有相应的 getter 和 setter 方法，还要加上 toString(), hashCode(), equals() 方法。虽然这些都能用 IDE 自动生成，但是代码也难看，有意义的基本就是那几个字段的定义，其余的方法都不用去读。为此出现了 Lombok 这一编译预处理器，它需要构建工具的支持。与 record 最类似的就是同为 JVM 族语言 Kotlin 的 data class 和 Scala 的 case class，可参考的还有 Python 的 @dataclass 装饰器，曾经在 PlayFramework 1 中字节码处理也能为 model 类中 public 的字段自动生成 setter/setter 方法。<br/><br/>
+Kotlin 的 data class<br/><br/>
+<pre class="lang:default decode:true ">data class User(val name: String, val age: Int)</pre>
+<br/>
+Scala 的 case class<br/><br/>
+<pre class="lang:default decode:true">case class User(val name: String, val age: Int) // 除 data 换成 case，其余完全一样
+//或
+case class User(name: String, age: Int)   // Scala 定义 case class, val 是默认的，可省略</pre>
+<br/>
+Java 中定义一个 record 语法是<br/><br/>
+<pre class="lang:default decode:true ">record User(String name, int age) {
+}</pre>
+<br/>
+把 class 换成了 record 关键字，仍然可以认为它是一个类的定义，所以后面的大括号 {} 不能少，我们还能在其实加上其他的方法，或覆盖默认的实现。使用当中看下<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/05/java16-new-features-1.png"><img class="aligncenter wp-image-10881" src="https://yanbin.blog/wp-content/uploads/2021/05/java16-new-features-1.png" alt="" width="381" height="231" /></a><br/><br/>
+record 定义时列出的字段为只读的，只能通过构造函数设置值。下面来理解 record 做了什么<br/><br/>
+当我们用能理解 record 语法的反编译器看到的 <code>User.class</code> 是这样的<br/><br/>
+<pre class="lang:default decode:true ">public record User(String name, int age) {
+    public User(String name, int age) {
+        this.name = name;
+        this.age = age;
+    }<br/><br/>
+    public String name() {
+        return this.name;
+    }<br/><br/>
+    public int age() {
+        return this.age;
+    }
+}</pre>
+<br/>
+当用一个不知道 record 为何物的反编译器 JD-GUI 1.6.6 看到的 <code>User.class</code> 是这样的<br/><br/>
+<pre class="lang:default decode:true">public final class User extends Record {
+  private final String name;
+  
+  private final int age;
+  
+  public User(String name, int age) {
+    this.name = name;
+    this.age = age;
+  }
+  
+  public final String toString() {
+    // Byte code:
+    //   0: aload_0
+    //   1: &lt;illegal opcode&gt; toString : (Ldemo/User;)Ljava/lang/String;
+    //   6: areturn
+    // Line number table:
+    //   Java source line number -&gt; byte code offset
+    //   #3 -&gt; 0
+    // Local variable table:
+    //   start  length  slot    name    descriptor
+    //   0  7   0   this    Ldemo/User;
+  }
+  
+  public final int hashCode() {
+    // Byte code:
+    //   0: aload_0
+    //   1: &lt;illegal opcode&gt; hashCode : (Ldemo/User;)I
+    //   6: ireturn
+    // Line number table:
+    //   Java source line number -&gt; byte code offset
+    //   #3 -&gt; 0
+    // Local variable table:
+    //   start  length  slot    name    descriptor
+    //   0  7   0   this    Ldemo/User;
+  }
+  
+  public final boolean equals(Object o) {
+    // Byte code:
+    //   0: aload_0
+    //   1: aload_1
+    //   2: &lt;illegal opcode&gt; equals : (Ldemo/User;Ljava/lang/Object;)Z
+    //   7: ireturn
+    // Line number table:
+    //   Java source line number -&gt; byte code offset
+    //   #3 -&gt; 0
+    // Local variable table:
+    //   start  length  slot    name    descriptor
+    //   0  8   0   this    Ldemo/User;
+    //   0  8   1   o   Ljava/lang/Object;
+  }
+  
+  public String name() {
+    return this.name;
+  }
+  
+  public int age() {
+    return this.age;
+  }
+}
+</pre>
+<br/>
+一个没被世间污染的头脑反而能看到世界原本的面目。也就是 record 的实现类是一个 final 类，并继承自 java.lang.Record 类，其中定义了 private final 的字段，并有与字段同名的 getter 方法。<br/><br/>
+再看 java.lang.Record 类的定义<br/><br/>
+<pre class="lang:default decode:true">public abstract class Record {<br/><br/>
+    protected Record() {}<br/><br/>
+    @Override
+    public abstract boolean equals(Object obj);<br/><br/>
+    @Override
+    public abstract int hashCode();<br/><br/>
+    @Override
+    public abstract String toString();
+}</pre>
+<br/>
+<ol>
+    <li>默认的构造函数是 protected 的，不能直接 new User() 来创建实例，除非把它重新公有化</li>
+    <li>三个方法 equals(), hashCode() 和 toString() 都是抽象的，所以每个  record 类都为它们提供自己的实现</li>
+</ol>
+<br/>
+equals() 和 hashCode() 方法肯定是综合了所有字段来比较或生成 hashCode, 来看下  toString() 方法的输出<br/><br/>
+<pre class="lang:default decode:true ">User user = new User("Baby", 3);
+System.out.println(user);</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+User[name=Baby, age=3]
+</blockquote>
+<br/>
+Java 16 还为 record  专门声明能作用于它的注解的 Target,  @Target(ElementType.RECORD_COMPONENT)<br/><br/>
+在定义 record 时可以覆盖自动生成的所有方法，如 getter 方法，toString(), hashCode() 和 equals() 方法，确切的说应该是编译器看到已提供的实现不再自动生成那些方法<br/><br/>
+<pre class="lang:default decode:true ">public record User(String name, int age) {<br/><br/>
+    public String name() {
+        return this.name + " Girl";
+    }
+}</pre>
+<br/>
+<pre class="lang:default decode:true ">User user = new User("Baby", 3);
+System.out.println(user);
+System.out.println(user.name());</pre>
+<br/>
+输出<br/><br/>
+<blockquote>
+User[name=Baby, age=3]<br />
+Baby Girl
+</blockquote>
+<br/>
+toString() 仍然用的 this.name, 所以光覆盖 name() 方法不会影响 toString() 的输出<br/><br/>
+也可以附加构造函数<br/><br/>
+<pre class="lang:default decode:true ">public record User(String name, int age) {
+    public User(String name) {
+        this(name, 0);
+    }
+}</pre>
+<br/>
+自己声明的构造函数必须调用自动生成的那个，record 的所有属性为 private final 的，即使加一个构造函数为所有属性都赋了值也不行<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/05/java16-new-features-2.png"><img class="aligncenter wp-image-10883" src="https://yanbin.blog/wp-content/uploads/2021/05/java16-new-features-2-800x348.png" alt="" width="618" height="269" /></a><br/><br/>
+有了 "Non-canonical record constructor must delegate to another constructor" 这个约束的话也就基本无法在自己的构造函数中用 <code>this.name = "nobody"</code> 这样的赋值，因为一旦调用别的构造函数，所有的 <code>private final</code> 字段就不能再次赋值了。除非把 record 的自动生成的构造函数也覆盖了<br/><br/>
+<pre class="lang:default decode:true">public record User(String name, int age) {
+    public User(String name, int age) {  // 覆盖的自动生成的构造函数，其中可用 this.name 那样的方式赋值
+        this.name = name;
+        this.age = 18;
+    }<br/><br/>
+    public User(int age) {
+        this("nobody", age);
+    }
+}
+</pre>
+<br/>
+另一种覆盖构造函数的写法<br/><br/>
+<pre class="lang:default decode:true">public record User(String name, int age) {
+    public User {
+        name = "Sir " + name;  // 这里还不能写成 this.name = "Sir " + name, 写 name 是 final
+        age = age + 1;
+    }
+}</pre>
+<br/>
+上面生成的构造函数实现是<br/><br/>
+<pre class="lang:default decode:true">    public User(String name, int age) {
+        name = "Sir " + name;
+        ++age;
+        this.name = name;
+        this.age = age;
+    }</pre>
+<br/>
+<h3>Java 16 模式匹配</h3><br/><br/>
+模式匹配是函数式语言基本的特性，Scala 就有很强大模式匹配功能，可以匹配数据类型的各种多种特征，像类型判断，case class, 集合，正则表达式的匹配尽在 Scala 的 match ... case 中。看一下 Scala 对类型的匹配<br/><br/>
+<pre class="lang:default decode:true ">def typedPatternMatching(any: Any): String = {
+  any match {
+    case strValue: String =&gt; s"I'm a string. ${strValue.substring(2)}"
+    case intValue: Int =&gt; s"I'm an integer. ${intValue.abs}"
+    case _ =&gt; s"I'm from an unknown type. $any"
+  }
+}<br/><br/>
+println(typedPatternMatching("hello"))
+println(typedPatternMatching(-100))
+$ scala test.scala
+I'm a string. llo
+I'm an integer. 100</pre>
+<br/>
+匹配到什么类型，马上就能调用该类型上的方法。<br/><br/>
+传统的 Java 在 instanceof 匹配对了类型后还需要一次强制转型，像<br/><br/>
+<pre class="lang:default decode:true ">if (obj instanceof String) {
+    String s = (String) obj;
+    s.substring(1);
+}</pre>
+<br/>
+Java 16 对此的改进是<br/><br/>
+<pre class="lang:default decode:true ">if (obj instanceof String s) {
+    s.substring(1);
+}</pre>
+<br/>
+匹配对后马上就能使用类型后面已转好型的新变量。<br/><br/>
+if 中的 instanceof 还能加一个或多个条件进一步限制，注意只能用 <code>&amp;&amp;</code> 符，不能用 <code>||</code>, 用 <code>||</code> 的话你想要置前面的 instanceof  什么地位？<br/><br/>
+<pre class="lang:default decode:true ">if (obj instanceof String s &amp;&amp; s.length() &gt; 1 &amp;&amp; s.startsWith("a")) {
+    s.substring(1);
+}</pre>
+<br/>
+<h3>本地(局部)枚举和接口定义</h3><br/><br/>
+看一下语法就行<br/><br/>
+<pre class="lang:default decode:true ">void foo() {
+    // 只想在局部区域使用的枚举和接口，不需要共享就定义在本地<br/><br/>
+    enum Gender {MALE, FEMALE};
+    
+    interface Fun4&lt;A, B, C, R&gt; {
+        R handle(A a, B b, C c);
+    }
+}</pre>
+<br/>
+Java 16 正式的几个新特性就讲完了，剩下一个封闭类型，又一次要想起 Scala 的 sealed class 和 trait。<br/><br/>
+<h3>Java 16 封闭类型</h3><br/><br/>
+这里我们说的类型是指 class, interface，封闭类型想要达到的效果是定义一个接口或类，允许被实现或继承(所以不能为 final), 但是只能让特许的类或接口继承或实现它(基本也就是允许自己去继承或实现封闭类型)，这和 Scala 的封闭类型基本是一致的。<br/><br/>
+封闭类型在 Java 16 还是试验性的，代码就用如下<br/><br/>
+<pre class="lang:default decode:true">sealed interface Animal permits Dog, Cat{}<br/><br/>
+final record Dog(String name) implements Animal {}
+non-sealed class Cat implements Animal {}
+class WhiteCat extends Cat {}</pre>
+<br/>
+Animal 只允许 Dog, Cat 两个类型实现它，封闭的意思就是允许被实现继承，但只限于列表中子类型的。用了 <code>sealed</code> 关键字要指定 <code>permits</code> 列表，封闭类或接口的子类型必须加上 <code>final</code>(不允许继承)，<code>non-sealed</code>(可以有自己的子类), 或 <code>sealed</code> (进一步约束谁能成为它的子类型)。<br/><br/>
+因为封闭类只能列举出已知的 <code>permits</code>, 基本也就限制外部的子类型实现，用 <code>non-sealed</code> 重新开放它也是不可能的，因为上面不允许这么做。<br/><br/>
+<h3>Java 16 其他新特性</h3><br/><br/>
+<ol>
+    <li>孵化中的特性 外部链接(Foreign Linker) API 和 外部内存访问(Foreign-Memory Access) API 提供静态类型的，纯 Java 的方式访问本地代码，并更安全有效的访问 Java 堆外内存</li>
+    <li>添加了 Stream.toList() 方法，这个太常用了，以前的 <code>Stream.of(1, 2).collect(Collectors.toList())</code> 现在只要写成 <code>Stream.of(1, 2).toList()</code></li>
+    <li>弹性的 Metaspace, 可节省 Metaspace 空间，更能避免 <code>OutOfMemoryError: Metaspace</code> 问题</li>
+    <li>jpackage 新的打包自包容 Java 应用程序的工具转正</li>
+    <li>ThreadGroup 中的 stop, destroy, isDestroyed, setDaemon 和 isDaemon 不推荐使用</li>
+    <li>TLS 1.0 和 1.1 默认被禁止，要重新启用的话需修改 java.security 配置文件</li>
+    <li>定义 record 时不支持 C 风格的数组定义，record R(int i[]) {} 要写成 record R(int[] i) {}, 反正我是不会在 Java 中写 int i[] 这种风格</li>
+    <li>本地可以定义 interface, 但不能定义 annotation, void m { @interface A {} } } 是不合法的</li>
+</ol>
+<br/>
+<h2>全文结束语</h2><br/><br/>
+花了几天时间终于把自 Java 10 到 16 这个七个版本中主要新特性过了一遍，为接下来的应用程序 JDK 升级作准备。有些特性是简单罗列的，但针对 Switch 表达式, Text Blocks, Record 类这三个特性作了自认为非常详尽的描述。还有关于 var 类型推断，模式匹配，HTTP Client API 和封闭类笔墨也不少。这几个特性的内容完全可以从本文中抽出单独成篇。还有加入的 ZGC 这一新型垃圾收集器也很值得细评，可与 G1 垃圾收集器进行比较。<br/><br/>
+顺便在此列举一下 Java 各个版本中默认的垃圾收集器，用 java -XX:+PrintCommandLineFlags -version 命令可以列出当前用的 GC, 也就是该版本默认的 GC<br/><br/>
+<ol>
+    <li>Java 6 ~ 8: ParallelGC</li>
+    <li>Java 9 ~ 16: G1GC</li>
+</ol>

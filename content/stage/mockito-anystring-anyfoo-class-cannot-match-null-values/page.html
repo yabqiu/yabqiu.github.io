@@ -1,0 +1,127 @@
+---
+title: Mockito 的 anyString(), any(Foo.class) 等不能匹配 null 值
+url: /mockito-anystring-anyfoo-class-cannot-match-null-values/
+date: 2020-06-24T02:33:59-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/01/rsz_mockito_logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - mockito
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10289 
+wpStatus: publish
+views: 3483
+lastmod: 2020-06-24T02:34:29-05:00
+---
+
+使用 Mockito Mock 方法式，一直以为可以用 <code>anyString()</code>, <code>any(Foo.class)</code> 等匹配 <code>null</code> 值，其实不行，<code>null</code> 值必须显式的用 <code>null</code>, 或 <code>eq(null)</code> 来匹配。<code>anyString()</code>, <code>anyInt()</code> 等只能匹配非 <code>null</code> 值，查看它们的返回值实际是 "" 和 0 等, 而更为特别的是 <code>any(Foo.class)</code> 看到的是 <code>null</code>, 仍然不能匹配 <code>null</code> 值。进一步用 <code>Mockito.mockingDetails(mock).printInvocations()</code> 打印出的内容，<code>anyString()</code>, <code>any(Foo.class)</code> 都会显示为 <code>null</code> 值。</p>
+<br/>
+说的有点罗嗦，看下面的例子, 被测试类 UserDao，sql 和 sqlArguments 由各自的 setter 方法来控制，默认它们都为 <code>null</code><!--more--><br/><br/>
+<pre class="lang:default decode:true">public class UserDao {<br/><br/>
+    private final NamedParameterJdbcTemplate jdbcTemplate;<br/><br/>
+    private String sql;
+    private MapSqlParameterSource sqlArguments;<br/><br/>
+    public void setSql(String sql) {
+        this.sql = sql;
+    }<br/><br/>
+    public void setSqlArguments(MapSqlParameterSource sqlArguments) {
+       this.sqlArguments = sqlArguments;
+    }<br/><br/>
+    public UserDao(NamedParameterJdbcTemplate jdbcTemplate) {
+        this.jdbcTemplate = jdbcTemplate;
+    }<br/><br/>
+    public List&lt;String&gt; fetchUsers() {
+        return jdbcTemplate.query(sql, sqlArguments, (rs, idx) -&gt; rs.getString("name"));
+    }
+}</pre>
+<br/>
+来它的测试类 UserDaoTest<br/><br/>
+<pre class="lang:default decode:true">@RunWith(MockitoJUnitRunner.class)
+public class UserDaoTest {<br/><br/>
+    @Mock
+    private NamedParameterJdbcTemplate namedParameterJdbcTemplate;<br/><br/>
+    @InjectMocks
+    private UserDao userDao;<br/><br/>
+
+    @Test
+    public void testFetchUsers() {
+        when(namedParameterJdbcTemplate.query(anyString(),
+            any(MapSqlParameterSource.class),
+            ArgumentMatchers.&lt;RowMapper&lt;String&gt;&gt;any()))
+            .thenReturn(Arrays.asList("Hello", "Ketty"));<br/><br/>
+        List&lt;String&gt; users = userDao.fetchUsers();
+        assertThat(users).hasSize(2);
+    }
+}</pre>
+<br/>
+测试不成功，输出信息为<br/><br/>
+<blockquote>
+java.lang.AssertionError: <br />
+Expected size:&lt;2&gt; but was:&lt;0&gt; in:<br />
+&lt;[]&gt;
+</blockquote>
+<br/>
+空为 Mock 对象  <code>namedParameterJdbcTemplate.query(...)</code> 方法返回类型的默认值<br/><br/>
+原以为  <code>anyString()</code> 和 <code>any(MapSqlParameterSource.class)</code> 可以匹配到实际中的 <code>sql = null</code> 和  <code>sqlArguments = null</code> 值，都说是 <code>any</code> 却不能对应到 <code>null</code> 值。如果在 <code>assertThat(users).hasSize(2)</code> 之前加上<br/><br/>
+<pre class="lang:default decode:true ">System.out.println(Mockito.mockingDetails(namedParameterJdbcTemplate).getInvocations());</pre>
+<br/>
+再执行看到的输出为<br/><br/>
+<blockquote>
+[namedParameterJdbcTemplate.query(<br />
+    null,<br />
+    null,<br />
+    yanbin.blog.UserDao$$Lambda$1/1192672907@363a52f<br />
+);]
+</blockquote>
+<br/>
+mockingDetails 告诉我们前两个参数的实际值为 null, 不能用 <code>anyString()</code> 和 <code>any(MapSqlParameterSource.class)</code> 来匹配.<br/><br/>
+查看 ArgumentMatchers.anyString() 的值<br/><br/>
+<pre class="lang:default decode:true">public static String anyString() {
+    reportMatcher(new InstanceOf(String.class, "&lt;any string&gt;"));
+    return "";
+}
+</pre>
+<br/>
+似乎 <code>anyString()</code> 的值为 "", "" 不能匹配 <code>null</code> 值。断点调试中查看 <code>anyString()</code>  和 <code>any(MapSqlParameterSourcec.class)</code> 的值<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/06/mockito-any-2.png"><img class="aligncenter wp-image-10291" src="https://yanbin.blog/wp-content/uploads/2020/06/mockito-any-2-800x337.png" alt="" width="510" height="215" /></a><br />
+<a href="https://yanbin.blog/wp-content/uploads/2020/06/mockito-any-1.png"><img class="aligncenter wp-image-10292" src="https://yanbin.blog/wp-content/uploads/2020/06/mockito-any-1-800x293.png" alt="" width="514" height="188" /></a><br/><br/>
+注意，查看它们的值时会有异常，即 reportMatcher 报告出来的。<br/><br/>
+看起来  ArgumentMatchers.any(MapSqlParameterSource.class) 像是个真的 null 值，所以我们下面只把 anyString() 换成 <code>eq(null)</code> 来看下<br/><br/>
+<pre class="lang:default decode:true ">    @Test
+    public void testFetchUsers() {
+        when(namedParameterJdbcTemplate.query(eq(null),
+            any(MapSqlParameterSource.class),
+            ArgumentMatchers.&lt;RowMapper&lt;String&gt;&gt;any()))
+            .thenReturn(Arrays.asList("Hello", "Ketty"));<br/><br/>
+        List&lt;String&gt; users = userDao.fetchUsers();
+        assertThat(users).hasSize(2);
+    }
+</pre>
+<br/>
+还是不成功，同样的出错信息<br/><br/>
+<blockquote>
+java.lang.AssertionError: <br />
+Expected size:&lt;2&gt; but was:&lt;0&gt; in:<br />
+&lt;[]&gt;
+</blockquote>
+<br/>
+实际运行中的两个 null 都必须用 <code>null</code> 值来匹配<br/><br/>
+<pre class="lang:default decode:true ">    @Test
+    public void testFetchUsers() {
+       when(namedParameterJdbcTemplate.query(eq(null),
+           eq((MapSqlParameterSource)null),
+           ArgumentMatchers.&lt;RowMapper&lt;String&gt;&gt;any()))
+           .thenReturn(Arrays.asList("Hello", "Ketty"));<br/><br/>
+        List&lt;String&gt; users = userDao.fetchUsers();
+       assertThat(users).hasSize(2);
+    }</pre>
+<br/>
+测试通过。eq((MapSqlParameterSource)null) 中的转型是为了避免准确调用重载方法。<br/><br/>
+最后就是一句话，Mockito 中的 <code>any</code> 不是真正的 <code>any</code>, <code>any</code> 不代表 <code>null</code>，有点类似 SQLServer 中的某个字段(c1) 的值为 <code>null</code> 时，<code>where c1 is null</code> 可以查出来，但是用 <code>where c1 in (null)</code> 就查不出来了。

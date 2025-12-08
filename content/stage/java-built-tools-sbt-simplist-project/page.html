@@ -1,0 +1,132 @@
+---
+title: Java 构建工具及 sbt 最快速体验
+url: /java-built-tools-sbt-simplist-project/
+date: 2016-03-31T02:51:41-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - Scala
+  - sbt
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7167 
+wpStatus: publish
+views: 828
+lastmod: 2023-12-13T00:05:13-06:00
+---
+
+应对 Java 项目, 我们大概有以下几个自动化构建工具:</p>
+<br/>
+<ol>
+    <li><a href="https://ant.apache.org/">Ant</a> -- XML 化跨平台批处理, 配置文件 build.xml, 执行的是 target</li>
+    <li><a href="https://maven.apache.org/">Maven</a> -- 开始<a href="https://maven.apache.org/guides/introduction/introduction-to-the-standard-directory-layout.html">标准化目录布局</a>, 基于项目对象模型, 配置文件 pom.xml, 执行的是 phase/goal</li>
+    <li><a href="http://gradle.org/">Gradle</a>  -- 使用 Maven 默认布局, Groove 语言铸就, 配置是 groovy 语法的 build.gradle 文件, 执行的是 task</li>
+    <li><a href="http://buildr.apache.org/">Buildr</a>  -- 默认也是 Maven 目录布局, Java 世界被 Ruby 插手, 配置是 ruby 语法的 buildfile 文件, 也是 task</li>
+    <li><a href="http://leiningen.org/">Leiningen</a> -- 也采用 Maven 目录布局, Clojure 写的, 可用于构建 Java 和 Clojure 项目, 配置文件是 Clojure 语法的 prject.clj, 基于 task</li>
+    <li><a href="http://www.scala-sbt.org/">sbt</a>  -- 默认 Maven 目录布局, Scala(Simple) Build Tool, Scala 写的, 构建 Java 和 Scala 项目, 配置是 Scala 语法的 build.sbt, 基于 task. 交互式控制台.</li>
+</ol>
+<br/>
+Ant 让我们摆脱了对系统平台的依赖, 终于不同人构建的工件是一样的了, 曾经它就是昭示着敏捷. 除了 Ant 需要我们定义所有的 target 外, 其他构建都内置了基本足够用的 task, 而且也都采用了业界接受的 Maven 目录布局. 也是从 Maven 开始引入了项目依赖管理, 所以 Maven 才是里程碑式的.<br/><br/>
+在我们搜索 Java 第三方依赖时常常进到类似这样的页面 <a href="http://mvnrepository.com/artifact/com.google.guava/guava/19.0">http://mvnrepository.com/artifact/com.google.guava/guava/19.0</a><br/><br/>
+<img class="wp-image-7169 aligncenter" src="/wp-content/uploads/2016/03/java-dependencies-800x219.png" alt="java-dependencies" width="600" height="164" /><!--more--><br/><br/>
+我也是从这里发现有这么多构建工具可选择, 其中 <a href="http://ant.apache.org/ivy/">Ivy</a> 是基于 Ant 的依赖管理工具, <a href="http://docs.groovy-lang.org/latest/html/documentation/grape.html">Grape</a> 是 Groovy 的依赖管理工具. 要知道 sbt 也是使用 Ivy 来管理依赖的.<br/><br/>
+这里不具体评说以上哪个构建工具的长与短, 估计 Ant 已较少人用了, Maven 还是有众多的 Fans 吧; Android Studio 爱用 Gradle. 因为目前我一直是用 <a href="https://www.playframework.com/">Play Framework</a> 联用 Java 和 Scala, 所以基本沉浸于 sbt 中.<br/><br/>
+那么来看一下 sbt 怎么快速构建一个项目, 前面虽然我们说 sbt 的配置文件是 build.sbt, 其实这个也是可选的, 其他构建工具都必须提供一个配置文件.<br/><br/>
+假定你已安装好了 sbt, 在 *Nix 系统下用一条命令 <code>mkdir -p test/src/{main,test}/{java,scala,resources}; cd test; sbt</code> 创建并进入 sbt 交互控制台<br/><br/>
+<pre class="lang:default decode:true">➜  ~ mkdir -p test/src/{main,test}/{java,scala,resources}; cd test; sbt
+[info] Set current project to test (in build file:/Users/yanbin/test/)
+> tasks<br/><br/>
+This is a list of tasks defined for the current project.
+It does not list the scopes the tasks are defined in; use the 'inspect' command for that.
+Tasks produce values.  Use the 'show' command to run the task and print the resulting value.<br/><br/>
+  clean            Deletes files produced by the build, such as generated sources, compiled classes, and task caches.
+  compile          Compiles sources.
+  console          Starts the Scala interpreter with the project classes on the classpath.
+  consoleProject   Starts the Scala interpreter with the sbt and the build definition on the classpath and useful imports.
+  consoleQuick     Starts the Scala interpreter with the project dependencies on the classpath.
+  copyResources    Copies resources to the output directory.
+  doc              Generates API documentation.
+  package          Produces the main artifact, such as a binary jar.  This is typically an alias for the task that actually does the packaging.
+  packageBin       Produces a main artifact, such as a binary jar.
+  packageDoc       Produces a documentation artifact, such as a jar containing API documentation.
+  packageSrc       Produces a source artifact, such as a jar containing sources and resources.
+  publish          Publishes artifacts to a repository.
+  publishLocal     Publishes artifacts to the local Ivy repository.
+  publishM2        Publishes artifacts to the local Maven repository.
+  run              Runs a main class, passing along arguments provided on the command line.
+  runMain          Runs the main class selected by the first argument, passing the remaining arguments to the main method.
+  test             Executes all tests.
+  testOnly         Executes the tests provided as arguments or all tests if no arguments are provided.
+  testQuick        Executes the tests that either failed before, were not run or whose transitive dependencies changed, among those provided as arguments.
+  update           Resolves and optionally retrieves dependencies, producing a report.<br/><br/>
+More tasks may be viewed by increasing verbosity.  See 'help tasks'.<br/><br/>
+></pre>
+<br/>
+上面创建了项目默认的 Maven 目录布局, 甚至一个配置文件都没有我们就可以使用很多 sbt 为我们预置好的许多任务, <code>tasks -V</code> 显示所有的内置任务.<br/><br/>
+我们查看一下目录布局<br/><br/>
+<pre class="brush:bash">test
+└── src
+    ├── main
+    │   ├── java
+    │   ├── resources
+    │   └── scala
+    └── test
+        ├── java
+        ├── resources
+        └── scala</pre>
+<br/>
+再着创建一个 Java 代码文件 src/main/java/Hello.java<br/><br/>
+<pre class="brush:java">public class Hello {
+  public static void main(String[] args) {
+    System.out.println("Hello World!");
+  }
+}</pre>
+<br/>
+回到前面的 sbt 控制台, 执行任务 run<br/><br/>
+<pre class="lang:default decode:true">&gt; run
+[info] Updating {file:/Users/yanbin/test/}test...
+[info] Resolving org.fusesource.jansi#jansi;1.4 ...
+[info] Done updating.
+[info] Compiling 1 Java source to /Users/yanbin/test/target/scala-2.10/classes...
+[info] Running Hello
+Hello World!
+[success] Total time: 2 s, completed Apr 1, 2016 11:19:02 PM
+></pre>
+<br/>
+编译运行就这么简单, 只编译的话仅执行  compile, 如果有项目中有多个类有 main 入口方法的话就用 runMain 来指定类. 任务前加个 <code>~</code> 符号就兼具 watch 功能, 监测到有相关文件变动后自动重去完行. 在 TDD 项目实践中 ~testOnly 和 ~testQuick 特别有用.<br/><br/>
+本只想在此备忘一下 <code>mkdir -p test/src/{main,test}/{java,scala,resources}; cd test; sbt</code> 这一条命令, 不打算述及 sbt 更多的内容和开头的篇幅. 但还是忍不住附带下依赖管理的内容, 这里演示一下加入 guava 和 junit 这两个依赖, 那么我们就要在项目根目录下创建一个 build.sbt 文件了, 内容如下<br/><br/>
+<pre class="brush:scala">libraryDependencies ++= Seq(
+  "com.google.guava" % "guava" % "19.0",
+  "com.novocode" % "junit-interface" % "0.11" % "test"
+)</pre>
+<br/>
+这个 build.sbt 可设定更多的关于项目的信息, 如 name, version, scalaVersion, 不设置的话则会应用默认值.<br/><br/>
+为产品代码引入 guava, Scala 中支持 junit 测试的话引入 junit-interface, 它自动加入依赖  junit<br/><br/>
+然后创建一个测试文件 src/test/scala/HelloTest.scala, 内容<br/><br/>
+<pre class="brush:scala">import org.junit.Test
+import org.junit.Assert.fail<br/><br/>
+class HelloTest {
+  @Test def testDemo {
+    fail("Not implemented.")
+  }
+}</pre>
+<br/>
+再一次回到前面的 sbt 控制台, 执行 reload 和  test 任务, 将会看到<br/><br/>
+<pre class="lang:default decode:true">&gt; reload
+[info] Set current project to test (in build file:/Users/yanbin/test/)
+> test
+[error] Test HelloTest.testDemo failed: Not implemented., took 0.002 sec
+[error] Failed: Total 1, Failed 1, Errors 0, Passed 0
+[error] Failed tests:
+[error]     HelloTest
+[error] (test:test) sbt.TestsFailedException: Tests unsuccessful
+[error] Total time: 0 s, completed Apr 2, 2016 12:18:07 AM
+></pre>
+<br/>
+另外 <code>~</code> 的功能可自已去体验下, 在 sbt 控制台下输入 ~testQuick, 或  ~test, 或 ~testOnly HelloTest, 然后修改 HelloTest.scala 看看 sbt 控制台下发生了什么事, 让你体验最生动的 TDD -- 测试驱动开发.

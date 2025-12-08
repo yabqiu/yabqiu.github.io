@@ -1,0 +1,145 @@
+---
+title: ORACLE 常用脚本（1） [转]
+url: /oracle-scripts-1/
+date: 2006-09-19T00:01:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Database
+tags: 
+  - Oracle
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 548 
+wpStatus: publish
+views: 268
+lastmod: 2014-01-28T00:52:13-06:00
+---
+
+<strong>1、查看表空间的名称及大小</strong><br/>
+<br/>
+    select t.tablespace_name, round(sum(bytes/(1024*1024)),0) ts_size<br/>
+    from dba_tablespaces t, dba_data_files d<br/>
+    where t.tablespace_name = d.tablespace_name<br/>
+    group by t.tablespace_name;<br/>
+<br/>
+<strong>2、查看表空间物理文件的名称及大小</strong> <!--more--><br/>
+<br/>
+  select tablespace_name, file_id, file_name,<br/>
+  round(bytes/(1024*1024),0) total_space<br/>
+  from dba_data_files<br/>
+  order by tablespace_name;<br/>
+<br/>
+<strong>3、查看回滚段名称及大小</strong><br/>
+<br/>
+  select segment_name, tablespace_name, r.status,<br/>
+  (initial_extent/1024) InitialExtent,(next_extent/1024) NextExtent,<br/>
+  max_extents, v.curext CurExtent<br/>
+  From dba_rollback_segs r, v$rollstat v<br/>
+  Where r.segment_id = v.usn(+)<br/>
+  order by segment_name ;<br/>
+<br/>
+<strong>4、查看控制文件</strong><br/>
+<br/>
+  select name from v$controlfile;<br/>
+<br/>
+<strong>5、查看日志文件</strong><br/>
+<br/>
+  select member from v$logfile;<br/>
+<br/>
+<strong>6、查看表空间的使用情况</strong><br/>
+<br/>
+  select sum(bytes)/(1024*1024) as free_space,tablespace_name<br/>
+  from dba_free_space<br/>
+  group by tablespace_name;<br/>
+<br/>
+  SELECT A.TABLESPACE_NAME,A.BYTES TOTAL,B.BYTES USED, C.BYTES FREE,<br/>
+  (B.BYTES*100)/A.BYTES "% USED",(C.BYTES*100)/A.BYTES "% FREE"<br/>
+  FROM SYS.SM$TS_AVAIL A,SYS.SM$TS_USED B,SYS.SM$TS_FREE C<br/>
+  WHERE A.TABLESPACE_NAME=B.TABLESPACE_NAME AND A.TABLESPACE_NAME=C.TABLESPACE_NAME;<br/>
+<br/>
+<strong>7、查看数据库库对象</strong><br/>
+<br/>
+  select owner, object_type, status, count(*) count# from all_objects group by owner, object_type, status;<br/>
+<br/>
+<strong>8、查看数据库的版本</strong>　<br/>
+<br/>
+  Select version FROM Product_component_version<br/>
+  Where SUBSTR(PRODUCT,1,6)='Oracle';<br/>
+<br/>
+<strong>9、查看数据库的创建日期和归档方式</strong><br/>
+<br/>
+  Select Created, Log_Mode, Log_Mode From V$Database;<br/>
+<br/>
+<strong>10、查看当前所有对象</strong><br/>
+<br/>
+SQL&gt; select * from tab;<br/>
+<br/>
+<strong>11、建一个和a表结构一样的空表</strong><br/>
+<br/>
+SQL&gt; create table b as select * from a where 1=2;<br/>
+<br/>
+SQL&gt; create table b(b1,b2,b3) as select a1,a2,a3 from a where 1=2;<br/>
+<br/>
+<strong>12、察看数据库的大小，和空间使用情况</strong><br/>
+<br/>
+SQL&gt; col tablespace format a20<br/>
+SQL&gt; select b.file_id　　文件ID,<br/>
+　　b.tablespace_name　　表空间,<br/>
+　　b.file_name　　　　　物理文件名,<br/>
+　　b.bytes　　　　　　　总字节数,<br/>
+　　(b.bytes-sum(nvl(a.bytes,0)))　　　已使用,<br/>
+　　sum(nvl(a.bytes,0))　　　　　　　　剩余,<br/>
+　　sum(nvl(a.bytes,0))/(b.bytes)*100　剩余百分比<br/>
+　　from dba_free_space a,dba_data_files b<br/>
+　　where a.file_id=b.file_id<br/>
+　　group by b.tablespace_name,b.file_name,b.file_id,b.bytes<br/>
+　　order by b.tablespace_name<br/>
+　　/<br/>
+　　dba_free_space --表空间剩余空间状况<br/>
+　　dba_data_files --数据文件空间占用情况<br/>
+<br/>
+<strong>13、查看现有回滚段及其状态</strong><br/>
+<br/>
+SQL&gt; col segment format a30<br/>
+SQL&gt; SELECT SEGMENT_NAME,OWNER,TABLESPACE_NAME,SEGMENT_ID,FILE_ID,STATUS FROM DBA_ROLLBACK_SEGS;<br/>
+<br/>
+<strong>14、查看数据文件放置的路径</strong><br/>
+<br/>
+SQL&gt; col file_name format a50<br/>
+SQL&gt; select tablespace_name,file_id,bytes/1024/1024,file_name from dba_data_files order by file_id;<br/>
+<br/>
+<strong>15、显示当前连接用户</strong><br/>
+<br/>
+SQL&gt; show user<br/>
+<br/>
+<strong>16、把SQL*Plus当计算器</strong><br/>
+<br/>
+SQL&gt; select 100*20 from dual;<br/>
+<br/>
+<strong>17、连接字符串</strong><br/>
+<br/>
+SQL&gt; select 列1||列2 from 表1;<br/>
+SQL&gt; select concat(列1,列2) from 表1;<br/>
+<br/>
+<strong>18、查询当前日期</strong><br/>
+<br/>
+SQL&gt; select to_char(sysdate,'yyyy-mm-dd,hh24:mi:ss') from dual;<br/>
+<br/>
+<strong>19、用户间复制数据</strong><br/>
+<br/>
+SQL&gt; copy from user1 to user2 create table2 using select * from table1;<br/>
+<br/>
+<strong>20、视图中不能使用order by，但可用group by代替来达到排序目的</strong><br/>
+<br/>
+SQL&gt; create view a as select b1,b2 from b group by b1,b2;<br/>
+<br/>
+<strong>21、通过授权的方式来创建用户</strong><br/>
+<br/>
+SQL&gt; grant connect,resource to test identified by test;<br/>
+<br/>
+SQL&gt; conn test/test

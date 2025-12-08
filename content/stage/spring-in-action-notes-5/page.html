@@ -1,0 +1,81 @@
+---
+title: Spring 学习点滴，《Spring in Action》笔记（五）
+url: /spring-in-action-notes-5/
+date: 2007-06-16T03:50:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - Spring
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 514 
+wpStatus: publish
+views: 511
+lastmod: 2021-09-03T10:17:14-05:00
+---
+
+<strong>第八章. 建立 Web 层</strong></p>
+<br/>
+<hr /><br/><br/>
+71. Spring 的 MVC 和 Struts 的 MVC 基本一致<br />
+    Spring 的控制流程是：请求-&gt;DispatcherServlet-&gt;从 HandlerMapping 中查询到处理该请求的 Controller-&gt; Controller 的 handleRequest 方法调用业务方法，最后返回 ModelAndView (ModelAndView告诉了 DispatcherServlet 转向到哪个视图)<br />
+    Struts 的控制流程是：请求-&gt;ActionServlet-&gt;从 ActionMapping 中查询到处理该请求的 Controller (Action类)-&gt;Action 的execute 方法调用业务方法，最后返回 ActionForward (ActionForward告诉了 ActionServlet 该转向到哪个视图)(P243)<!--more--><br/><br/>
+72. Spring 的 DispatcherServlet 和 Struts 的 ActionServlet 的配置方式是一样的，都是作为一个自启动的 Servlet 配置到 web.xml 中。Spring 的 url-pattern 的配置惯例是 *.htm，而 Struts 通常是配置成 *.do 或 *.action，它暴露了 web 使用的技术。(P244)<br/><br/>
+73. Spring 中配置了<br/><br/>
+<pre class="lang:default decode:true">&lt;servlet-mapping&gt;
+    &lt;servlet-name&gt;unmi&lt;/servlet-name&gt;
+    &lt;url-pattern&gt;*.html&lt;/url-pattern&gt;
+&lt;/servlet-mapping&gt;</pre>
+<br/>
+后，在初始化相应的 DispatcherServlet 时会自动加载 /WEB-INF/<span style="color: #ff0000;">unmi</span>-servlet.xml 文件，它是一个普通的 Spring Bean 配置文件，也是由 WebApplicationContext 加载。其他的 Bean 配置文件需要像通常的做法由 ContextLoaderListener 或 ContextLoaderServlet 来加载。Spring MVC 内部要使用到的 Bean 就从 unmi-servlet.xml 中获取(P244)<br/><br/>
+ 73. Struts 1.2? 后开始可以在 struts-cnfig.xml 中给 Action 注入简单属性，而 Spring 配置 controller 时可以注入所有类型属性(P247)<br/><br/>
+74. 在 unmi-servlet.xml 中配置的下面这段代码，Spring 将对请求 URL 是 "/home.html" 结尾的分派给 HomeController 处理，DispatcherServlet 使用的默认处理器映射是 BeanNameUrlHandlerMapping(P247)<br/><br/>
+<pre class="lang:default decode:true">&lt;bean name="/home.html" class="com.unmi.HomeController"&gt;
+    &lt;property name="greeting"&gt;&lt;value&gt;Welcome to Spring Training&lt;/value&gt;&lt;/property&gt;
+&lt;/bean&gt;</pre>
+<br/>
+75. Spring 最简单的视图解析器是 InternalResourceViewResoler，如在 unmi-servlet.xml 有下配置<br/><br/>
+<pre class="lang:default decode:true">&lt;bean id="viewResolver" class="org.springframework.web.servlet.view.InternalResourceViewResoler"&gt;
+   &lt;property name="prefix"&gt;&lt;value&gt;/WEB-INF/jsp/&lt;/value&gt;&lt;/proeprty&gt;
+   &lt;property name="surfix"&gt;&lt;value&gt;.jsp/&lt;/value&gt;&lt;/proeprty&gt;
+&lt;/bean&gt;</pre>
+<br/>
+那么，当 HomeController 中 返回 return new ModelAndView("home"); 时将会解析成由视图 /WEB-INF/jsp/home.jsp 来展示(P248)<br/><br/>
+76. 前面只是在 unmi-servlet.xml 配置上 InternalResourceViewResoler，那么 Spring 怎么就知道该用哪个 viewResolver 呢？那要从配置在 web.xml 中的 DispatchServlet 说起。类的层级关系及初始化时方法调用关系如下：<br/><br/>
+    HttpServlet.init(ServletConfig)<br />
+             ∟HttpServletBean.init()<br />
+                              ∟FrameworkServlet.initServletBean()<br />
+                                            ∟DispatcherServlet.initFrameworkServlet()<br/><br/>
+初始化 HandlerMapping、ViewResolver 等的方法就在 DispatcherServlet.initFrameworkServlet() 方法中，依次调用的是：<br/><br/>
+  initMultipartResolver();<br />
+  initLocaleResolver();<br />
+  initThemeResolver();<br />
+  initHandlerMappings();<br />
+  initHandlerAdapters();<br />
+  initHandlerExceptionResolvers();<br />
+  initViewResolvers();<br/><br/>
+我们看 initViewResolvers(); 的实现，如果 detectAllViewResolvers(默认为 true) 为 true 的话就从 Spring 配置(unmi-servlet.xml)中获取所有类型为 ViewResolver 的 Bean，否则就只获取名为 VIEW_RESOLVER_BEAN_NAME(即“viewResolver”) 的 ViewResolver(视图解析器)。初始化 HandlerMapping 的原则也是一样的。(P248)<br/><br/>
+77. 有三种类型的请求映射控制器，实现的是 HandlerMapping 接口<br />
+    BeanNameUrlHandlerMapping -- 根据控制器的名字将控制器映射到 URL<br />
+    SimpleUrlHandlerMapping -- 用上下文配置文件中定义的属性集合将控制器映射到 URL<br />
+    CommonsPathMapHandlerMapping -- 使用控制器代码中的元数据将控制器映射到 URL<br />
+    DispatcherServlet 缺省映射处理器是 BeanNameUrlHandlerMapping，它将表现层 URL 和控制器名字绑定起来了， Spring 不建议使用这个映射处理器，建议用 SimpleUrlHandlerMapping。可是我觉得用 BeanNameUrlHandlerMapping 挺方便的啊(P250)<br/><br/>
+78. 使用 SimpleUrlHandlerMapping 的配置，需要将系统中用到的 URL 一一逻列出来(P251)<br/><br/>
+<pre class="lang:default decode:true">&lt;bean id="simpleUrlMapping" class="org.springframework.web.servlet.handler.SimpleUrlHandlerMapping"&gt;
+    &lt;property name="mappings"&gt;
+        &lt;props&gt;
+            &lt;prop key="/listCourse.html"&gt;listCoursesController&lt;/prop&gt;
+            &lt;prop key="/register.htm"&gt;registerStudentController&lt;/prop&gt;
+        &lt;/props&gt;
+    &lt;/peroperty&gt;
+&lt;/bean&gt;</pre>
+<br/>
+79. 使用 CommonsPathMapHandlerMapping 需要为 Controller 类注解上 PathMap 属性为一个 URL。是否用注解还是用配置文件一直存在争议，而我是不喜欢把配置的东西放到源代码中，这像是在硬编码，所以应该不会考虑用这种方式。(P252)<br/><br/>
+80. 可用同时配置多映射处理器，通过配置它们实现的 Ordered 接口的 order 属性，DispatcherServlet 按顺序采用哪个映射处理器（责任链模式）(P253)

@@ -1,0 +1,71 @@
+---
+title: Play2 中使用自定义的路由器文件 routes
+url: /play2-use-customized-routes-file/
+date: 2014-05-08T01:32:46-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PlayFramework
+tags: 
+  - play
+  - play2
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6467 
+wpStatus: publish
+views: 1142
+lastmod: 2021-09-03T18:10:09-05:00
+---
+
+用过 PlayFramework 的都知道默认的路由器文件是 conf/routes，Play2 可以定义自己的 routes 文件。在默认的 application.conf 中有这么一段注释</p>
+<br/>
+<blockquote>
+# Router<br />
+# ~~~~~<br />
+# Define the Router object to use for this application.<br />
+# This router will be looked up first when the application is starting up,<br />
+# so make sure this is the entry point.<br />
+# Furthermore, it's assumed your route file is named properly.<br />
+# So for an application router like `conf/my.application.Router`,<br />
+# you may need to define a router file `my.application.routes`.<br />
+# Default to Routes in the root package (and `conf/routes`)<br />
+# application.router=my.application.Routes
+</blockquote>
+<br/>
+也就是通过 application.router 可以定义自己的 routes 文件。上面的解释很容易把人搞混，问题在于何处是文件路径，何处是类路径，至少写着的 'conf/my.applicaton.Router 就是在混淆视听。对于上面的解释要明白下面几点<!--more--><br/><br/>
+<span style="text-decoration: underline;">1. application.router 指定的是路由器文件生成的类路径，在 target/scala-2.10/{classes,classes_managed,src_managed} 这三个目录中可以看到</span><br />
+<span style="text-decoration: underline;"> 2. 自定义的路由器文件必须以 .routes 为后缀，Play2 会自动编译 conf/ 下以 .routes 为后缀的或 routes 文件</span><br />
+<span style="text-decoration: underline;"> 3.  基于上面两条，Play2 不是根据 application.router  配置去加载路由配置文件，而是用以加载第二步生成的类</span><br />
+<span style="text-decoration: underline;"> 4. 路由配置文件的点分隔又会映射到 Routes 类的包名上去，因此路由文件名一定程度上又表现出了类路径的意义来，这里有点儿乱</span><br/><br/>
+严谨的说来，Play2 在 application.router=my.application.Routes 这个配置上把类路径和文件路径这两个概念搅和到一块去了，互为渗透。<br/><br/>
+所以即使在 application.conf 中没有配置 application.router，只要在 conf/ 目录中有 routes 或 .routes 文件就会被编译出 Routes 相关的类。因为我们的配置方案是这样的<br/><br/>
+<strong>1. 多包层次时</strong><br/><br/>
+路由文件：my.applicaton.routes              -- 以 .routes 为后缀，这样它就会编译出  my.application.Routes, my.application.Routes$ ... 等类出来<br />
+application.conf 配置: application.router=my.application.Routes   -- 指定生成的主类<br/><br/>
+<strong>2. 单个包层次</strong><br/><br/>
+路由文件：myapplication.routes            -- 自定义的路由器文件总是要以 .routes 为后缀，编译出 myapplication.Routes 等来<br />
+application.conf 配置: application.router=myapplication.Routes    路由文件中有点就会有包<br/><br/>
+下图是把默认的 routes 改名为 my.application.routes(application.conf 中未开启 application.router), 然后执行 <code>play compile</code> 后生成的文件，并显示出 Play 怎么去加载 Routes 类的。<br/><br/>
+<img class="aligncenter size-large wp-image-6468" src="/wp-content/uploads/2014/05/play2_customized_routes-800x339.png" alt="play2_customized_routes" width="800" height="339" /><br/><br/>
+上面的 Application.class 告诉我们 Play 加载 Routes 是根据 application.router 配置的值连接上 $ 来，或直接命中 Routes$ 类。<br/><br/>
+my.application.routes 被编译生成的主类是 my.application.Routes，所以 application.router 中配置这个。<br/><br/>
+即使是可以定制自己的路由文件，但也不能有多个路由文件，因为 controllers/routes.java 只能有一个，在编译非第一个路由文件时会报错<br/><br/>
+<span style="color: #800000;">ReverseApplication is already defined as class ReverseApplication</span><br/><br/>
+如果指定错了路由器类，出错类似<br/><br/>
+<span style="color: #800000;">NoClassDefFoundError: my/application/routes$ (wrong name: my/application/Routes$)</span><br/><br/>
+如果把 routes 改了名，但 application.conf 没有配置 application.router，得到<br/><br/>
+<span style="color: #800000;">Action not found</span><br/><br/>
+奇怪的是，明明不存在 routes，应该是找不到 Router$ 类才对<br/><br/>
+我们还可以在 routes-compiler 下找到 RoutesCompiler.scala，里面有片断<br/><br/>
+<pre class="lang:default decode:true ">def compile(file: File, generatedDir: File, additionalImports: Seq[String],
+  generateReverseRouter: Boolean = true, namespaceReverseRouter: Boolean = false) {<br/><br/>
+  val namespace = Option(Path(file).name).filter(_.endsWith(".routes")).map(_.dropRight(".routes".size))
+  val packageDir = namespace.map(pkg =&gt; new File(generatedDir, pkg.replace('.', '/'))).getOrElse(generatedDir)
+  val generated = GeneratedSource(new File(packageDir, "routes_routing.scala"))
+  ......</pre>
+<br/>
+上面 endsWith(".routes") 判断，参照前部分来生成包结构，但是还没找到 Play 的哪段代码去编译 routes 文件的，这个可不是 .routes 为后缀的。

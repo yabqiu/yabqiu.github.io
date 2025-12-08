@@ -1,0 +1,118 @@
+---
+title: WordPress 应用中如何实现 URL 内部重定向
+url: /wordpress-custom-url-redirection/
+date: 2010-07-31T02:00:59-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - WordPress
+tags: 
+  - wordpress
+  - redirect
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 26 
+wpStatus: publish
+views: 1385
+lastmod: 2021-09-02T10:27:55-05:00
+---
+
+这里要说的 URL 重定向不是指地址栏输入一个 url a，然后地址栏的 url a 被变为 url b 那样的重定向，而是指 url 不变的重定向，也就是重定向过程在服务端默默的帮你完成了。</p>
+<br/>
+这个需求是源于开发 WordPress 插件时，然望在前端仅用 <a href="http://unmi/dosth">http://unmi/dosth</a> 这种形式来访问自己的插件程序，而不是用 http:/unmi/wp-content/my-wordpress-plugin/dosth.php 这么一长串不友好的 URL。<br/><br/>
+有三种办法：<br/><br/>
+1. WordPress 是极力推荐与 Apache 搭配使用，所以可以在 Apache 的配置文件中用 Alias 指令。其实一开始我是想在应用的 .htaccess 文件中加指令，使用 mod_rewrite 模块来实现 URL 内部重定向功能，但碰到一些问题，所以暂时先在 httpd.conf 中加过 Alias 指定别名来实现过：<!--more--><br/><br/>
+Alias "/do-subscribe" "C:\xampp\htdocs\unmi_site\wp-content\plugins\my-wordpress-plugin\do-subscribe.php"<br/><br/>
+这样在地址栏中用 <a href="http://unmi/do-subscribe">http://unmi/do-subscribe</a> 就能访问到原本用 <a href="http://unmi/wp-content/plugins/my-wordpress-plugin/do-subscribe.php">http://unmi/wp-content/plugins/my-wordpress-plugin/do-subscribe.php</a> 来访问的内容，且地址栏中的 URL 是保持不变的。不好的一点是被访问的程序页面要用它在文件系统中的绝对路径。<br/><br/>
+2. 在应用的 .htaccess 文件中加重写指令<br/><br/>
+WordPress 的永久链接功能会帮我们把 URL 处理成友好的形式，实现的办法是在应用的根目录下生成一个 .htaccess 文件，内容如下：<br/><br/>
+# BEGIN WordPress<br />
+&lt;IfModule mod_rewrite.c&gt;<br />
+RewriteEngine On<br />
+RewriteBase /<br />
+RewriteCond %{REQUEST_FILENAME} !-f<br />
+RewriteCond %{REQUEST_FILENAME} !-d<br />
+RewriteRule . /index.php [L]<br />
+&lt;/IfModule&gt;<br/><br/>
+# END WordPress<br/><br/>
+对于一个自己的 Apache 应用，我在 .htaccess 文件中加上<br/><br/>
+RewriteEngine On<br />
+RewriteRule /do-subscribe wp-content/plugins/fn-subscription/do-subscribe.php<br/><br/>
+就能用 <a href="http://unmi/do-subscribe">http://unmi/do-subscribe</a> 访问到 <a href="http://unmi/wp-content/plugins/my-wordpress-plugin/do-subscribe.php">http://unmi/wp-content/plugins/my-wordpress-plugin/do-subscribe.php</a> 的内容，所以我也在 WordPress 应用的 .htaccess 文件中的 &lt;/IfModule&gt; 之前加<br/><br/>
+RewriteRule /do-subscribe wp-content/plugins/fn-subscription/do-subscribe.php<br/><br/>
+可以怎么都不启作用，<a href="http://unmi/do-subscribe">http://unmi/do-subscribe</a> 总是提示 404 错误，所以才有过在 httpd.conf 中用 Alias 指令的做法。后来随着进一步研究 WordPress 的 PermaLinks 的实现才知道，必须把自己的 URL 重写规则写在 RewriteCond 之前才能由 Apache 优先处理，.htaccess 文件的内容写成：<br/><br/>
+# BEGIN WordPress<br />
+&lt;IfModule mod_rewrite.c&gt;<br />
+RewriteEngine On<br />
+RewriteBase /<br />
+<span style="color: #800080;">RewriteRule do-subscribe wp-content/plugins/fn-subscription/do-subscribe.php</span><br />
+RewriteCond %{REQUEST_FILENAME} !-f<br />
+RewriteCond %{REQUEST_FILENAME} !-d<br />
+RewriteRule . /index.php [L]<br />
+&lt;/IfModule&gt;<br/><br/>
+因为有了 RewriteBase /，所以不用写成 RewriteRule /do-subscribe 的，斜杠省去了。用 <a href="http://unmi/do-subscribe">http://unmi/do-subscribe</a> 就能访问到你要的内容了，注意到这里被转向的页面用相对路径就 OK。<br/><br/>
+3. 前面讲的方法都是要改配置文件，可能你没有权限去改 Apache 的 httpd.conf 文件，或许改 .htacess 起来也麻烦，你完全可以在自己的插件中实现 URL 内部重定向的功能。<br/><br/>
+前面提过 WordPress 的 PermaLinks 实现了 URL 友好化重定向的功能，我们可以让自己的 URL 重写规则优先于 PermaLinks 被处理，可以在我们的插件里写上这样的代码：<br/><br/>
+<pre class="lang:default decode:true ">&lt;?php
+/**
+ * Define url rewrite rules class
+ * Save as file include/url_rewrite_rules.php
+ */
+class UrlRewriteRules {<br/><br/>
+    //define url rewrite rules
+    //这里用关联数组来定义自己的一个个 URL 重写规则
+    private static  $redirects = array(
+        '/do-subscribe'=&gt;'wp-content/plugins/my-wordpress-plugin/do-subscribe.php',
+        '/doremi' =&gt; 'wp-content/plugins/my-wordpress-plugin/doremi.php'
+    );<br/><br/>
+    public static function get_redirects(){
+        return UrlRewriteRules::$redirects;
+    }<br/><br/>
+    //处理 URL 重写规则,注意 $dest 中使用全局变量时必须先用 global $g 先引入
+    function redirect(){
+        // this is what the user asked for
+        $userrequest = str_replace(get_option('home'),'',$this-&gt;getAddress());<br/><br/>
+        $userrequest= preg_replace("/\?.+/", '', $userrequest);
+        $userrequest = rtrim($userrequest,'/');<br/><br/>
+        foreach (UrlRewriteRules::$redirects as $url =&gt; $dest) {
+            if($userrequest == rtrim($rule['url'],'/')) {<br/><br/>
+                //note: global variables in these included files must use
+                //global $var to introduct
+                //把目标程序的代码引入到这里来，所以 URL 地址是不会变的
+                //这样的话，$dest 中的代码是在函数 redirect 中执行的
+                //所以在 $dest 中使用全局变量时必须先用 global $g 先引入
+                include_once(ABSPATH.$dest);
+                exit();
+            }
+        }
+    } // end funcion redirect<br/><br/>
+    /*
+     * utility function to get the full address of the current request
+     * credit: http://www.phpro.org/examples/Get-Full-URL.html
+     */
+     function getAddress(){
+         /*** check for https ***/
+         $protocol = $_SERVER['HTTPS'] == 'on' ? 'https' : 'http';
+         /*** return the full address ***/
+          return $protocol.'://'.$_SERVER['HTTP_HOST'].$_SERVER['REQUEST_URI'];
+     }
+} // end  UrlRewriteRules class<br/><br/>
+//--------------------------------------------------------------//<br/><br/>
+//add custom url rewrite rules to the wordpress
+//include file url_rewrite_rules.php first
+require_once('include/url_rewrite_rules.php');
+$url_rewrite_rules = new UrlRewriteRules();<br/><br/>
+if (isset($custom_url_rewriter)) {
+    // add the redirect action, high priority
+    //注册我们自己的 URL 重写规则，优先级设置高一些
+    add_action('init', array($url_rewrite_rules,'redirect'), 1);
+}</pre>
+<br/>
+上面因为 redirect 方法是定义在 UrlRewriteRules 类中，所以必须写成 add_action('init', array($url_rewrite_rules,'redirect'), 1); 来注册初始化插件。如果直接定义成的一个全局函数则只要写成 add_action('init', 'redirect', 1) 就行。<br/><br/>
+好了，不用改动任何的配置文件，完全在自己的插件中定义 URL 内部重定向规则，减少了污染。我们可用简单 <a href="http://unmi/doremi">http://unmi/doremi</a> 来访问了，借助于 option 的操作，可以做一个随意定制 URL 重写规则的插件了。<br/><br/>
+参考：1. <a id="Editor_Results_rprSelectionList_ctl08_Hyperlink1" class="titlelink" href="/Unmi/archive/2010/07/05/325316.html">WordPress Rewrite / Permalink内部过程分析[转]</a><br/><br/>
+又发现一款能满足此地要求的插件，<a href="http://wordpress.org/extend/plugins/gocodes/" target="_blank" rel="noopener">GoCodes</a>，具体介绍看这个：<a href="http://xc84.com/wordpress-plug-gocodes-url-address-realization" target="_blank" rel="noopener">实现网站地址URL重新转向的WordPress插件：GoCodes</a>, 我都觉得十分有必要用这个了。

@@ -1,0 +1,344 @@
+---
+title: 理解 Java 线程池 ThreadPoolExecutor
+url: /understand-java-thread-pool-executor/
+date: 2023-04-19T10:32:10-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - multithread
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13062 
+wpStatus: publish
+views: 358
+lastmod: 2023-04-19T10:32:10-05:00
+---
+
+使用 JDK 5 的线程池实现有近 20 年的时间了，快速创建一个线程池经常是调用 Executors 中的工厂方法。但是涉及过更精细的线程池管理控制时不得不用 ThreadPoolExecutor 的构造方法，这也就是为什么有些公司不建议用 Executors 的工厂方法创建线程池，而应该直接创建 ThreadPoolExecutor 或 ForkJoinPool 实例。 <br/><br/>
+例如代码<br/><br/>
+<blockquote>
+ExecutorService threadPool = Executors.newFixedThreadPool(10);
+</blockquote>
+<br/>
+实际上调用的是<br/><br/>
+<blockquote>
+new ThreadPoolExecutor(nThreads, nThreads,<br />
+                                                0L, TimeUnit.MILLISECONDS,<br />
+                                                new LinkedBlockingQueue&lt;Runnable&gt;());
+</blockquote>
+<br/>
+前两个参数 corePoolSize 和 maximumPoolSize 是一样的; OL, TimeUnit.MILLISECONDS 表示线程创建后只要线程池还在就是永生的; workQueue 是一个大小为 Integer.MAX_VALUE 的队列， 几乎可以无限提交任务，耗尽内存<br/><br/>
+不建议用 Executors 的工厂方法的原因大致有二：<!--more--><br/><br/>
+<ol>
+    <li>创建的 ExecutorService 类型没有提供访问线程池内部状态的方法，不过愿意转型的话<br />
+ThreadPoolExecutor threadPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(10);<br />
+这个不是问题<br />
+<a href="https://yanbin.blog/wp-content/uploads/2023/04/threadPoolExecutor.png"><img class="aligncenter wp-image-13072" src="https://yanbin.blog/wp-content/uploads/2023/04/threadPoolExecutor-800x726.png" alt="" width="694" height="630" /></a></li>
+    <li>ThreadPoolExecutor 有比 Executors 工厂方法更丰富的构造参数，Executors.newFixedThreadPool(10) 满足不了更复杂的情形。巨大的 workQueue(new LinedBlockingQueue&lt;Runnable&gt;()) 在提交大量任务时会撑爆内存; 自定义线程名称，行为; 无法提交任务时的处理方式等</li>
+</ol>
+<br/>
+ThreadPoolExecutor 的完整构建函数是<br/><br/>
+<pre class="lang:default decode:true">public ThreadPoolExecutor(int corePoolSize,
+                          int maximumPoolSize,
+                          long keepAliveTime,
+                          TimeUnit unit,
+                          BlockingQueue&lt;Runnable&gt; workQueue,
+                          ThreadFactory threadFactory,
+                          RejectedExecutionHandler handler)</pre>
+<br/>
+本文通过调试, 感性的方式来理解创建 ThreadPoolExecutor 实例的各个参数的含义，如果想要理性些就应该阅读它的源代码。<br/><br/>
+<h3>新线程池不会预先创建线程 </h3><br/><br/>
+<pre class="lang:default decode:true">public static void main(String[] args) {
+    ThreadPoolExecutor threadPool = new ThreadPoolExecutor(2, 5, 0L, TimeUnit.SECONDS, new LinkedBlockingQueue&lt;&gt;(10));
+    System.out.println(threadPool);
+}</pre>
+<br/>
+默认的 ThreadFactory 是 Executors.defaultThreadFactory(), 默认的 RejectedExecutionHandler 是 new ThreadPoolExecutor.AbortPolicy()<br/><br/>
+输出为<br/><br/>
+<blockquote>
+java.util.concurrent.ThreadPoolExecutor@2cfb4a64[Running, pool size = 0, active threads = 0, queued tasks = 0, completed tasks = 0]
+</blockquote>
+<br/>
+上面代码运行后线程池中无线程，代码能正常退出，无需调用 threadPool.shutdown()<br/><br/>
+<h3>提交第一个任务只创建一个线程</h3><br/><br/>
+往下测试时添加一个辅助任务方法<br/><br/>
+<pre class="lang:default decode:true">private static void runTask(int sleepInSeconds, int taskNum) {
+    try {
+        System.out.printf("[%s] %s start task: %s\n", Thread.currentThread().getName(), LocalTime.now(), taskNum);
+        Thread.sleep(sleepInSeconds * 1000);
+        System.out.printf("[%s] %s end task: %s\n", Thread.currentThread().getName(), LocalTime.now(), taskNum);<br/><br/>
+    } catch (InterruptedException e) {
+        throw new RuntimeException(e);
+    }
+}</pre>
+<br/>
+添加一个任务<br/><br/>
+<pre class="lang:default decode:true">public static void main(String[] args) {
+    ThreadPoolExecutor threadPool = new ThreadPoolExecutor(2, 5, 0L, TimeUnit.SECONDS, new LinkedBlockingQueue&lt;&gt;(10));
+    threadPool.submit(() -&gt; runTask(10, 1));
+    System.out.println(threadPool);
+}</pre>
+<br/>
+提交的一个任务将会在 10 秒后结束，这时候打印输出的是<br/><br/>
+<blockquote>
+[pool-1-thread-1] 00:23:04.344 start task: 1<br />
+java.util.concurrent.ThreadPoolExecutor@57829d67[Running, pool size = 1, active threads = 1, queued tasks = 0, completed tasks = 0]<br />
+[pool-1-thread-1] 00:23:14.359 end task: 1
+</blockquote>
+<br/>
+说明线程池中创建了一个线程，并且程序不会正常退出，原因是线程池中创建了一个 daemon 为 false 的线程，它会阻止当前进程(主线程)的退出，只有在调用 threadPool.shutdown() 或 threadPool.shutdownNow() 等其中的任务完成后才会退出进程。<br/><br/>
+ThreadPoolExecutor 的 shutdown() 和  shutdownNow() 的执行效果不在本文讲述之列。<br/><br/>
+<h3>综合测试观察任务数与线程池, 等待队列的关系</h3><br/><br/>
+接下来是通过输入参数来控制提供的任务数，从而观察线程的内部状态<br/><br/>
+<pre class="lang:default decode:true">public static void main1(String[] args) throws InterruptedException {
+    ThreadPoolExecutor threadPool = new ThreadPoolExecutor(2, 5, 0L, TimeUnit.SECONDS, new LinkedBlockingQueue&lt;&gt;(10));<br/><br/>
+    int numberOfTasks = Integer.parseInt(args[0]);
+    IntStream.rangeClosed(1, numberOfTasks).forEach(i -&gt;
+            threadPool.submit(() -&gt; runTask(10, i))
+    );
+    TimeUnit.SECONDS.sleep(1);<br/><br/>
+    System.out.println(threadPool);
+    threadPool.shutdown();
+    threadPool.awaitTermination(1, TimeUnit.HOURS);
+    System.out.println(threadPool);
+}
+</pre>
+<br/>
+每个任务的执行时长为 10 秒，因此所有任务提交进线程池 2 秒后都没有任务完成<br/><br/>
+如果参数为 2 时输出为<br/><br/>
+<blockquote>
+[pool-1-thread-1] 00:23:37.858 start task: 1<br />
+[pool-1-thread-2] 00:23:37.858 start task: 2<br />
+java.util.concurrent.ThreadPoolExecutor@19dfb72a[Running, pool size = 2, active threads = 2, queued tasks = 0, completed tasks = 0]<br />
+[pool-1-thread-2] 00:23:47.871 end task: 2<br />
+[pool-1-thread-1] 00:23:47.871 end task: 1<br />
+java.util.concurrent.ThreadPoolExecutor@19dfb72a[Terminated, pool size = 0, active threads = 0, queued tasks = 0, completed tasks = 2]
+</blockquote>
+<br/>
+下面是改变 numberOfTasks 时更多的测试结果(第一个 System.out.println(threadPool) 中的 pool size, active threads, 和 queued tasks)<br/><br/>
+<table style="border-collapse: collapse; width: 100%; height: 480px;">
+<tbody>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">numberOfTasks</td>
+<td style="width: 7.05727%; height: 24px;">pool size</td>
+<td style="width: 8.86817%; height: 24px;">
+active threads<br />
+(工作线程数)
+</td>
+<td style="width: 7.90205%; height: 24px;">queued tasks</td>
+<td style="width: 7.3872%; height: 24px;">开始执行<br />
+的任务号</td>
+<td style="width: 121.409%; height: 24px;">说明, 创建线程池的参数为<br />
+(core: 2, max: 5, workQueue size: 10)</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">0</td>
+<td style="width: 7.05727%; height: 24px;">0</td>
+<td style="width: 8.86817%; height: 24px;">0</td>
+<td style="width: 7.90205%; height: 24px;">0</td>
+<td style="width: 7.3872%; height: 24px;">无</td>
+<td style="width: 121.409%; height: 24px;">无任务时不创建线程，不存 daemon 为 false  的线程，所以程序能正常退出</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">1</td>
+<td style="width: 7.05727%; height: 24px;">1</td>
+<td style="width: 8.86817%; height: 24px;">1</td>
+<td style="width: 7.90205%; height: 24px;">0</td>
+<td style="width: 7.3872%; height: 24px;">1</td>
+<td style="width: 121.409%; height: 24px;">任务数为 1 时创建相应的一个线程</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">2</td>
+<td style="width: 7.05727%; height: 24px;">2</td>
+<td style="width: 8.86817%; height: 24px;">2</td>
+<td style="width: 7.90205%; height: 24px;">0</td>
+<td style="width: 7.3872%; height: 24px;">1,2</td>
+<td style="width: 121.409%; height: 24px;">任务数为 2 时创建两个线程，这时线程数到达一个 core 指定的 <span style="color: #ff0000;">临界值</span></td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">3</td>
+<td style="width: 7.05727%; height: 24px;">2</td>
+<td style="width: 8.86817%; height: 24px;">2</td>
+<td style="width: 7.90205%; height: 24px;">1</td>
+<td style="width: 7.3872%; height: 24px;">1,2</td>
+<td style="width: 121.409%; height: 24px;">任务数为 3, 介于 core: 2 和 max: 5 之间，只创建 core 指定的 2 个线程, 额外任务放到 workQueue 队列中</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">4</td>
+<td style="width: 7.05727%; height: 24px;">2</td>
+<td style="width: 8.86817%; height: 24px;">2</td>
+<td style="width: 7.90205%; height: 24px;">2</td>
+<td style="width: 7.3872%; height: 24px;">1,2</td>
+<td style="width: 121.409%; height: 24px;" rowspan="8">与上同，保持 core 数值指定的 2 个线程，额外任务陆续放到 workQueue 队列中</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">5</td>
+<td style="width: 7.05727%; height: 24px;">2</td>
+<td style="width: 8.86817%; height: 24px;">2</td>
+<td style="width: 7.90205%; height: 24px;">3</td>
+<td style="width: 7.3872%; height: 24px;">1,2</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">6</td>
+<td style="width: 7.05727%; height: 24px;">2</td>
+<td style="width: 8.86817%; height: 24px;">2</td>
+<td style="width: 7.90205%; height: 24px;">4</td>
+<td style="width: 7.3872%; height: 24px;">1,2</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">7</td>
+<td style="width: 7.05727%; height: 24px;">2</td>
+<td style="width: 8.86817%; height: 24px;">2</td>
+<td style="width: 7.90205%; height: 24px;">5</td>
+<td style="width: 7.3872%; height: 24px;">1,2</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">8</td>
+<td style="width: 7.05727%; height: 24px;">2</td>
+<td style="width: 8.86817%; height: 24px;">2</td>
+<td style="width: 7.90205%; height: 24px;">6</td>
+<td style="width: 7.3872%; height: 24px;">1,2</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">9</td>
+<td style="width: 7.05727%; height: 24px;">2</td>
+<td style="width: 8.86817%; height: 24px;">2</td>
+<td style="width: 7.90205%; height: 24px;">7</td>
+<td style="width: 7.3872%; height: 24px;">1,2</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">10</td>
+<td style="width: 7.05727%; height: 24px;">2</td>
+<td style="width: 8.86817%; height: 24px;">2</td>
+<td style="width: 7.90205%; height: 24px;">8</td>
+<td style="width: 7.3872%; height: 24px;">1,2</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">11</td>
+<td style="width: 7.05727%; height: 24px;">2</td>
+<td style="width: 8.86817%; height: 24px;">2</td>
+<td style="width: 7.90205%; height: 24px;">9</td>
+<td style="width: 7.3872%; height: 24px;">1,2</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">12</td>
+<td style="width: 7.05727%; height: 24px;">2</td>
+<td style="width: 8.86817%; height: 24px;">2</td>
+<td style="width: 7.90205%; height: 24px;">10</td>
+<td style="width: 7.3872%; height: 24px;">1,2</td>
+<td style="width: 121.409%; height: 24px;">此时达到 workQueue 队列已满的 <span style="color: #ff0000;"><strong>临界值</strong></span></td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">13</td>
+<td style="width: 7.05727%; height: 24px;">3</td>
+<td style="width: 8.86817%; height: 24px;">3</td>
+<td style="width: 7.90205%; height: 24px;">10</td>
+<td style="width: 7.3872%; height: 24px;">1,2,13</td>
+<td style="width: 121.409%; height: 24px;">workQueue 队列已满，增加一个线程直接执行当前新添加的任务</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">14</td>
+<td style="width: 7.05727%; height: 24px;">4</td>
+<td style="width: 8.86817%; height: 24px;">4</td>
+<td style="width: 7.90205%; height: 24px;">10</td>
+<td style="width: 7.3872%; height: 24px;">1,2,13,14</td>
+<td style="width: 121.409%; height: 24px;">workQueue 队列已满，继续增加一个线程直接执行当前新添加的任务</td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">15</td>
+<td style="width: 7.05727%; height: 24px;">5</td>
+<td style="width: 8.86817%; height: 24px;">5</td>
+<td style="width: 7.90205%; height: 24px;">10</td>
+<td style="width: 7.3872%; height: 24px;">1,2,13,14,15</td>
+<td style="width: 121.409%; height: 24px;">workQueue 队列已满，增加增加一个线程直接执行当前新添加的任务,  这时线程数量达到 max 值. workQueue 与线程数都达到 <span style="color: #ff0000;">临界值</span></td>
+</tr>
+<tr style="height: 24px;">
+<td style="width: 7.88354%; height: 24px;">16</td>
+<td style="width: 7.05727%; height: 24px;">5</td>
+<td style="width: 8.86817%; height: 24px;">5</td>
+<td style="width: 7.90205%; height: 24px;">10</td>
+<td style="width: 7.3872%; height: 24px;">1,2,13,14,15</td>
+<td style="width: 121.409%; height: 24px;">
+提交 16 号任务时失败, 但已提交的任务仍能被执行<br />
+Exception in thread "main" java.util.concurrent.RejectedExecutionException: Task java.util.concurrent.FutureTask@2d6e8792 rejected from java.util.concurrent.ThreadPoolExecutor@2812cbfa[Running, pool size = 5, active threads = 5, queued tasks = 10, completed tasks = 0]<br />
+<br /><br/><br/>
+线程数达到 max 值，并且在 workQueue 队列已满时，新提交的任务触发 RejectedExecutionHandler
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+从以上的测试结果，我们不难理解构建 ThreadPoolExecutor 时的 corePoolSize, maximumPoolSize, workQueue 大小和提交任务数时的关系<br/><br/>
+<ol>
+    <li>有新任务提交后才会创建线程</li>
+    <li>提交新任务时，如果空闲线程少于 corePoolSize, 则创建新线程执行任务</li>
+    <li>提交新任务时，如果线程数等于 corePoolSize, 并且 workQueue 未满时，则新任务放到 workQueue 中</li>
+    <li>提交新任务时，如果线程数等于 corePoolSize, 并且 workQueue 已满时，同时 maximumPoolSize 大于 corePoolSize， 则创建新线程，且用新创建的线程执行此时提交的任务</li>
+    <li>提交新任务时，如果线程数达到 maximumPoolSize 大小，并且 workQueue 已满时，无法提交任务，触发 RejectedExecutionHandler</li>
+</ol>
+<br/>
+如果用一张动图来展示提交任务的过程(workers 即当前线程池中的线程数)<br/><br/>
+<p style="text-align: center;"><a href="https://yanbin.blog/wp-content/uploads/2023/04/threadPoolExecutor-1.gif"><img class="size-full wp-image-13079 aligncenter" src="https://yanbin.blog/wp-content/uploads/2023/04/threadPoolExecutor-1.gif" alt="" width="500" height="180" /></a>(假设执行中的任务都很忙)</p>
+<br/>
+注：以上测试没有揭示出某个任务执行完毕后，有新任务提交的情形。有兴趣的话可以对此进行测试，最后会发现 ThreadPoolExecutor 决定是否创建新线程是基于当前空闲线程的数量，有空闲线程则重用而不倾向于创建新的线程。<br/><br/>
+由于只有在 workQueue 爆满后线程池大小才会从 corePoolSize 增长至 maximumPoolSize, 因此我们用一个巨大的 workQueue 时，极有可能在内存耗尽时线程池的大小仍然是 corePoolSize 大小。如下机这样的写法<br/><br/>
+<pre class="lang:default decode:true">new ThreadPoolExecutor(2, 5, 0L, TimeUnit.SECONDS, new LinkedBlockingQueue&lt;&gt;());</pre>
+<br/>
+只有在 LinkedBlockingQueue() 满了之后，线程池大小才会大于 2，往 5 方向生长。<br/><br/>
+<h3>关于构造 ThreadPoolExecutor 时的 keepAliveTime/unit 的用途</h3><br/><br/>
+如是 keepAliveTime 非零时，当线程数大于  corePoolSize, 某个线程在空闲多久时间后结束自己，最后线程数回退到 corePoolSize 大小。以下是测试<br/><br/>
+<pre class="lang:default decode:true">public static void main1(String[] args) throws InterruptedException {
+    ThreadPoolExecutor threadPool = new ThreadPoolExecutor(2, 5, 3L, TimeUnit.SECONDS, new LinkedBlockingQueue&lt;&gt;(10));<br/><br/>
+    IntStream.rangeClosed(1, 14).forEach(i -&gt; threadPool.submit(() -&gt; runTask(6, i)));
+    System.out.println(threadPool);   // 1<br/><br/>
+    while (threadPool.getCompletedTaskCount() != 14){
+    }<br/><br/>
+    System.out.println(threadPool);   // 2<br/><br/>
+    TimeUnit.SECONDS.sleep(10);
+    System.out.println(threadPool);   // 3
+}</pre>
+<br/>
+保证在执行完最后一个任务时有线程空闲已超过 3 秒，所以输出为<br/><br/>
+<blockquote>
+java.util.concurrent.ThreadPoolExecutor@17f6480[Running, pool size = 4, active threads = 4, queued tasks = 10, completed tasks = 0]         // 1<br />
+java.util.concurrent.ThreadPoolExecutor@17f6480[Running, pool size = 2, active threads = 0, queued tasks = 0, completed tasks = 14]         // 2<br />
+java.util.concurrent.ThreadPoolExecutor@17f6480[Running, pool size = 2, active threads = 0, queued tasks = 0, completed tasks = 14]         // 3
+</blockquote>
+<br/>
+corePoolSize 比 maxiumPoolSize 小且 keepAliveTime 不为 0 时，超过 corePoolSize 部分的线程才有机会自我消亡。我们可以考虑不同的 corePoolSize，maximumPool 的设置来处理异常的高并发，并能结束长期不用的线程来释放相应的资源 -- 内存和文件句柄<br/><br/>
+<h3>关于 RejectedExecutionHandler</h3><br/><br/>
+RejectedExecutionHandler 在 workQueue 已满，线程数达到 maximumPoolSize 并且都很忙的时候触发，默认的 RejectedExecutionHandler 是 AbortPolicy(), 即直接丢弃新提交的任务，这可能不是我们想要的，如果 workQueue 足够大不会是个问题。另外 Java 提供了其他几个 RejectedExecutionHandler 实现<br/><br/>
+<ol>
+    <li>DiscardOldestPolicy: 移除一个最旧的未开始处理的任务并重试提交新任务。会造成连续移除旧的任务</li>
+    <li>DiscardPolicy: 安静无异常的丢弃无法提交的新任务。会造成连续的丢弃新任务</li>
+    <li>CallerRunsPolicy: 无法提交任务的话就能提交任务的线程执行，反正闲着也是闲着。在 Caller 执行新任务时也就无法提交后续任务，不会造成连续失败。这是一个配合有限 workQueue 队列的好办法。</li>
+</ol>
+<br/>
+ThreadPoolExecutor 从 workQueue(BlockingQueue) 中获取任务是调用它的 <code>take()</code> 方法，无任务则阻塞, 等待。在需要往 workQueue 中添加任务时是调用 <code>offer(Runnable)</code> 方法，而 <code>offer()</code> 是能往 workQueue 中添加任务则返回 true, 否则返回 false 并触发 RejectedExecutionHandler, 无异常，也不等待。但 BlockingQueue 的 <code>put()</code> 方法会等待啊，所以曾经使用了下面的方式来使用有限的 workQueue<br/><br/>
+<pre class="lang:default decode:true ">BlockingQueue&lt;Runnable&gt; workQueue =  new LinkedBlockingQueue&lt;Runnable&gt;(10) {
+    @Override
+    public boolean offer(Runnable runnable) {
+        try {
+            this.put(runnable);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        return true;
+    }
+};<br/><br/>
+ThreadPoolExecutor threadPool = new ThreadPoolExecutor(2, 5, 0L, TimeUnit.SECONDS, workQueue);
+</pre>
+<br/>
+覆盖 <code>offer()</code> 方法，转换为无限等待的 <code>put()</code> 方法，或者可以是有等待期限的 <code>offer(runnable, timeout, unit)</code> 方法。<br/><br/>
+在 workQueue 已满时再提交任务的话会让提交任务的线程(Caller)一味的阻塞，无所作为，与 CallerRunsPolicy() 相比确实是浪费了 Caller 的资源。不过 CallerRunsPolicy 会有个问题，假如它在执行任务(一个重型任务)过程中，线程池里早先的任务已经执行完毕，释放了线程，但 Caller 被占用着无法及时提交更多的新任务，造成更多的线程浪费。<br/><br/>
+参考：<br/><br/>
+<ol>
+    <li><a href="https://bbs.huaweicloud.com/blogs/386909">JUC线程池: ThreadPoolExecutor详解</a></li>
+</ol>

@@ -1,0 +1,58 @@
+---
+title: Java 8 Lambda 捕获外部变量
+url: /java-8-lambda-capture-outer-variables/
+date: 2015-12-11T23:30:51-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java8
+tags: 
+  - lambda
+  - java8
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7100 
+wpStatus: publish
+views: 2074
+lastmod: 2021-09-03T17:32:25-05:00
+---
+
+可能会把捕获外部变量的 Lambda 表达式称为闭包，那么 Java 8 的 Lambda 可以捕获什么变量呢？</p>
+<br/>
+<ol>
+    <li>捕获实例或静态变量是没有限制的(可认为是通过 final 类型的局部变量 this 来引用前两者)</li>
+    <li>捕获的局部变量必须显式的声明为 <em>final</em> 或实际效果的的 <em>final</em> 类型</li>
+</ol>
+<br/>
+回顾一下我们在 Java 8 之前，匿名类中如果要访问局部变量的话，那个局部变量必须显式的声明为  final，例如下面的代码放在 Java 7 中是编译不过的<br/><br/>
+<img class="aligncenter wp-image-7101" src="/wp-content/uploads/2015/12/java7-annymous-capture-local-variable-800x358.png" alt="java7-annymous-capture-local-variable" width="500" height="224" /><br/><br/>
+Java 7 要求 version 这个局部变量必须是 final  类型的，否则在匿名类中不可引用。<!--more--><br/><br/>
+<em><strong>上面同样的代码放到 Java 8 中可以编译通过</strong></em>，难道 Java 8 不需要 version 是 final 的类型吗？不尽然<br/><br/>
+<pre class="lang:default decode:true">String version = "1.8";
+foo(new Supplier() {
+  @Override
+  public String get() {
+   return version;
+  }
+});
+version = "1.7"; //在 Java 8 下注释这行就能编译通过，否则报出前面同样的错误</pre>
+<br/>
+也就是在 Java 8 下，即使局部变量未声明为 final 类型，一旦在匿名类中访问了一下就被强型加上了 final 属性，所以后面就无法再次给 version 赋值了。<br/><br/>
+前面演示了是匿名类，在 Java 8 中换成 Lambda 表达式也是一回事<br/><br/>
+<pre class="lang:default decode:true">String version = "1.8";
+foo(() -&gt; version); //对局部变量 version 的访问让 version 变成 final 了
+version = "1.7";  //有了这行就编译不过了</pre>
+<br/>
+因此，Java 8 的 Lambda 表达式访问局部变量时虽然没有硬性规定要被声明为 final，但实质上是和 Java 7 一样的。<br/><br/>
+总之一个局部变量如果要在 Java 7/8  的匿名类或是 Java 8 的 Lambda 表达式中访问，那么这个局部变量必须是 final 的，即使没有  final 饰它也是  final 类型。<br/><br/>
+注意，并不是 Lambda 开始访问时那个局部变量才变为 final，这是编译器的需求，例如<br/><br/>
+<pre class="lang:default decode:true ">String version = "1.8";
+version = "1.7";      //注释掉这行或下行中另一行才能编译通过
+foo(() -&gt; version );  //这行让编译器决定给 version 加上 final 属性</pre>
+<br/>
+换句话说，如果在匿名类或 Lambda 表达式中访问的局部变量，如果不是 final 类型的话，编译器自动加上 final 修饰符。<br/><br/>
+<em><strong>为什么 Lambda 表达式(匿名类) 不能访问非 final  的局部变量呢？</strong></em>因为实例变量存在堆中，而局部变量是在栈上分配，Lambda 表达(匿名类) 会在另一个线程中执行。如果在线程中要直接访问一个局部变量，可能线程执行时该局部变量已经被销毁了，而 final 类型的局部变量在 Lambda 表达式(匿名类) 中其实是局部变量的一个拷贝。

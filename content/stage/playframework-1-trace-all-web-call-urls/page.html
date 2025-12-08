@@ -1,0 +1,85 @@
+---
+title: PlayFramework 1 输出所有 WS.url() 访问的 URL
+url: /playframework-1-trace-all-web-call-urls/
+date: 2014-03-29T01:57:30-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PlayFramework
+tags: 
+  - playframewok
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6264 
+wpStatus: publish
+views: 2784
+lastmod: 2021-05-03T00:09:09-05:00
+---
+
+记录下这个其实没有多大的意义，新入手 Play 框架的应该直接就是用版本 2 了，只因我们还要系统工作在 Play1 下，所以记下来，估计在 Play2 中已无借鉴作用了。</p>
+<br/>
+我们在 Play1 中访问外部 WebService 资源都是用 <code>WS.url(url)</code>，然后调用它的 get(), post(), delete() 等相对应的 HTTP 请求方法。我们可以系统中所有通过 WS.url() 访问的 URL, 需找到切面，Play 是在哪里为访问的 URL 创建请求的。<br/><br/>
+看 WS 类的实现，它是一个 PlayPlugin 插件，其中定义了<br/><br/>
+<blockquote>
+private static WSImpl wsImpl = null;
+</blockquote>
+<br/>
+来看 Play 是如何获得 WSImple 实现的，WS 插件的初始化方法中：<!--more--><br/><br/>
+<pre class="lang:default decode:true">    private synchronized static void init() {
+        if (wsImpl != null) return;
+        String implementation = Play.configuration.getProperty("webservice", "async");
+        if (implementation.equals("urlfetch")) {
+            wsImpl = new WSUrlFetch();
+            if (Logger.isTraceEnabled()) {
+                Logger.trace("Using URLFetch for web service");
+            }
+        } else if (implementation.equals("async")) {
+            if (Logger.isTraceEnabled()) {
+                Logger.trace("Using Async for web service");
+            }
+            wsImpl = new WSAsync();
+        } else {
+            try {
+                wsImpl = (WSImpl)Play.classloader.loadClass(implementation).newInstance();
+                if (Logger.isTraceEnabled()) {
+                    Logger.trace("Using the class:" + implementation + " for web service");
+                }
+            } catch (Exception e) {
+                throw new RuntimeException("Unable to load the class: " + implementation + " for web service");
+            }
+        }
+    }
+</pre>
+<br/>
+也就是 WSImpl 实现类优先从配置文件中，以 <code>webservice</code> key 获得，默认为 <code>async</code>, 也可设置为 <code>urlfetch</code>。<br/><br/>
+基于此我们可以在 application.conf 中定义自己的 webservice，如<br/><br/>
+<blockquote>
+webservice=utilities.MyAsync
+</blockquote>
+<br/>
+为了保持与默认行为一致，我们让 MyAsync 继承自 WSAsync，然后重写方法<br/><br/>
+<blockquote>
+public WSRequest newRequest(String url, String encoding)
+</blockquote>
+<br/>
+这里就是每次访问的 URL，最后调用 super.newRequest(url, encoding) 返回即可。<br/><br/>
+完整的 MyWSAsync 代码如下：<br/><br/>
+<pre class="lang:default decode:true ">package utilities;<br/><br/>
+import play.Logger;
+import play.libs.WS.WSRequest;
+import play.libs.ws.WSAsync;<br/><br/>
+public class MyWSAsync extends WSAsync {<br/><br/>
+    public WSRequest newRequest(String url, String encoding) {<br/><br/>
+        Logger.trace("Access URL: %s", url); //这里输出了所有通过 WS.url() 访问的 URL
+      
+        return super.newRequest(url, encoding);
+    }
+}
+</pre>
+<br/>
+这样既保持了系统的默认行为，又输出了每次通过 WS.url() 访问的 URL，以便于观察数据。<br/><br/>
+不总结不知道，一总结吓一跳，在写本文之前我在 MyWSAsync 还使用了返射构造函数来创建要返回的 WSRequest 实例，不知当初怎么想的。

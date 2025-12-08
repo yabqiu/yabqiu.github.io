@@ -1,0 +1,85 @@
+---
+title: XML 的中阶知识巩固之 XML Schema 其一
+url: /xml-schema-lift1/
+date: 2008-08-25T04:20:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - XML/DOM
+tags: 
+  - xml
+  - Schema
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 342 
+wpStatus: publish
+views: 266
+lastmod: 2021-09-02T14:26:44-05:00
+---
+
+用过 XML 的人都知道可用 DTD(Document Type Definition) 来验证语法，不过微软主导了新一代验证语法的 XML Schema，并且风头正劲，大有一统江湖之势。看看我们身边的几个变化就明白了。</p>
+<br/>
+web.xml 从 web-app_2_3.dtd 到 web-app_2_4.xsd<br />
+spring 配置文件从 spring-beans.dtd 到 spring-beans-2.0.dtd 到 spring-beans-2.0.xsd，直至灵活的自定义 Schema<br />
+quartz_jobs.xml 配置文件从 job_scheduling_data_1_5.dtd 到 job_scheduling_data_1_5.xsd<br/><br/>
+<strong>XML Schema 简介</strong><br/><br/>
+XML Schema 是一个比 DTD 具有更细致描述语法功能的验证技术，并且它本身也是一个 XML 文件，不像 DTD 用是是独有的语法。既然 XML Schema 和 DTD 都是用来验证 XML 的，并能大抢风头，固然有它值得称道的地方。所以先说说 DTD 的的不足和 XML Schema 的特点。<!--more--><br/><br/>
+1）DTD 使用自有语法，XML Schema 本身就为 XML 件，避免了学习新的语法。<br/><br/>
+2）DTD 对数据类型支持极有限，也就 #PCDATA，而 XML Schema 可支持字符串、整数、浮点数；布尔值、时间、日期等。<br/><br/>
+3）DTD 所支持的结构定义灵活性过低，可以表示 ?(零个或一个)，*(零个或多个)，+(一个或多个)，但对于像正则表达式的 {m,n} 无能为力；而 XML Schema 有了 minOccur 和 maxOccur 达到控制子元素出现　的次数的目的。<br/><br/>
+4）DTD 属于封闭式架构，也就是所有 XML 文件中所要用的标记与属性都必须先在 DTD 中声明才能被使用。而 XML Schema 采用开放式架构，不要求 XML 中所有的元素与属性必须先声明再使用。<br/><br/>
+5）一个 XML 的 DTD 将会作用于整份 XML 文件，而无法将 XML 文件的某部分指定另外的 DTD。而 XML Schema 可针对个别元素指定不同的 Schema，最小的切割单位可以是一个标记。<br />
+        这就是我们看到应用 DTD 的 web.xml 要在最前面写上 &lt;!DOCTYPE web-app PUBLIC ......web-app_2_3.dtd"&gt;，它作用与整份文档。<br />
+        注意到应用 XML Shema 的 web.xml，Shema 是指定为 web-app 的属性，&lt;web-app xsi:schemaLocation="......web-app_2_4.xsd"&gt;，其他元素可单独指定 XML Schema。<br/><br/>
+6）XML Schema 由于是一个 XML 文件，所以可通过 DOM 动态修改语法规则，而 DTD 做不到。除此之外，XML Schema Extension 还允许新增一些额外的信息以辅助描述数据。<br/><br/>
+7）XML Schema 使用的是命名空间，因此具有可扩展性。这一点在 spring 2.x 的配置文件中身手大显，支持自定的 XML Schema，如引入 spring-aop-2.0.xsd 和 spring-tx-2.0.xsd，分别用 &lt;aop:config&gt; 和 &lt;tx:advice&gt; 等。<br/><br/>
+<strong>XML Schema 的基础</strong><br/><br/>
+XML Schema 虽然是由微软首先提出，也已被 W3C 接受并审查，但仍然衍生出两个标准来，MS 的和 W3C 的。微软的 XML Schema 版本称为 XDR(XML Data Reduced)，Schema 扩展名为 "xml"；而 W3C 的 XML Schema 版本则称为 XSD(XML Schema Definition) 或 XSDL(XML Schema Definition Language)，扩展名为 "xsd"。而本人主要守在 Java 阵营，基本使用的都是 XSD，看我们的新式 web.xml 和 spring 配置文件就用的 xsd 文件，因此以 W3C 标准来介绍 XML Schema 的使用。<br/><br/>
+XML 都可以在内部或外面使用 DTD 或 Schema，但对于外部的 DTD 用的是 &lt;!DOCTYPE&gt; 指定，而外部的 Schema，XML 要借助于命名空间。如<br/><br/>
+&lt;programming_team xmlns="x-schema:schema1.xml"&gt;<br />
+    &lt;programmer&gt;Fred Samson&lt;/programmer&gt;<br />
+&lt;/programming_team&gt;<br/><br/>
+微软件的东西(像 Internet Explorer)看到了以 "x-schema:" 开头的命名空间就知道是指向一个模式(关于如果在 XML 内部声明使用 Schema，可以参考 BlogJava 的数据备份生成的 MyBlogData.xml 文件)。<br/><br/>
+然而一般情况下(W3C)，为文档节点指向一个模式的命名空间，参照 Spring 2.0 的 applicationContext.xml 就能很好的理解：<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:aop="http://www.springframework.org/schema/aop" xmlns:tx="http://www.springframework.org/schema/tx"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-2.0.xsd
+            http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-2.0.xsd
+            http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx-2.0.xsd"&gt;<br/><br/>
+    &lt;aop:config&gt;
+        &lt;aop:advisor id="userManagerTx" advice-ref="userManagerTxAdvice" pointcut="execution(* *..service.IUserManager.*(..))"/&gt;
+    &lt;/aop:config&gt;<br/><br/>
+    &lt;tx:advice id="txAdvice"&gt;
+        &lt;tx:attributes&gt;
+           &lt;tx:method name="save*" propagation="REQUIRED"/&gt;
+           .....................
+        &lt;/tx:attributes&gt;
+    &lt;/tx:advice&gt;<br/><br/>
+    &lt;bean id="userManager" class="com.com.security.service.UserManagerImpl"&gt;
+        &lt;property name="userDao" ref="userDao"/&gt;
+    &lt;/bean&gt;
+.....................
+&lt;/beans&gt;</pre>
+<br/>
+必须为文档中的元素声明一个指向模式的命名空间(如：xmlns="<a href="http://www.springframework.org/schema/beans">http://www.springframework.org/schema/beans</a>")，XML 解析器从描述中寻找模式，在 xsi:schemaLocation 的属性就能看到命名空间与 Schema  xsd 文件 URI(<a href="http://www.springframework.org/schema/beans/spring-beans-2.0.xsd">http://www.springframework.org/schema/beans/spring-beans-2.0.xsd</a>) 的对应，在这个 xsd 文件里有一个目标命名空间(targetNamespace)，解析器验证了这个目标命名空间与文档的相同时，就可以用它来验证文档的有效性了。<br/><br/>
+欲加深印象，还可以看看别的使用了 Schema 的常见 XML 文档，如 2.4 的 web.xml 文件，本篇限于篇幅，暂告一段落，后续将更详细说明 W3C 的 XML Schema 的用法。<br/><br/>
+刚刚看到一个 Tapestry 5 的一个自定义模板写法是(from <a href="http://www.javaeye.com/news/3331">http://www.javaeye.com/news/3331</a>)：<br/><br/>
+<pre class="lang:default decode:true ">&lt;html xmlns:t="http://tapestry.apache.org/schema/tapestry_5_0_0.xsd"&gt;
+&lt;head&gt;
+    &lt;title&gt;Tapestry5 Experiments&lt;/title&gt;
+&lt;/head&gt;
+&lt;body&gt;
+    &lt;div id="wrap"&gt;
+        &lt;t:body/&gt;
+    &lt;/div&gt;
+&lt;/body&gt;
+&lt;/html&gt;</pre>
+<br/>
+这里 xmlns:t 指定的 <a href="http://tapestry.apache.org/schema/tapestry_5_0_0.xsd">http://tapestry.apache.org/schema/tapestry_5_0_0.xsd</a> 除了这是一个 Namespace 的 URI，同时也是一个 Schema 吗？应该不能兼做 Schema 验证的功能。<br/><br/>
+参考：1. 《XML 与 ASP 网站实作大全》中国铁道出版社，第七章，XML Schema<br />
+        2. 《XML 完全探索》中国青年出版社，第五章，创建 XML 模式

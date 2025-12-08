@@ -1,0 +1,82 @@
+---
+title: JMockit 如何 Mock 部分方法/属性
+url: /jmockit-partial-mock/
+date: 2016-05-17T23:32:08-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - test
+  - jMockit
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7272 
+wpStatus: publish
+views: 2910
+lastmod: 2016-05-17T23:43:40-05:00
+---
+
+<p>现在的 JMockit 已经偷偷升级到了 1.23 版了，在 JVM 上的 Mock 工具中就数它最无敌了，因为它抢夺了最佳控制点  --javaagent，可以说它是无所不能的。一般我们使用 JMockit 是通过两种方式，<code>new MockUp</code> 和 <code>new Expectations</code>. JMock 不仅能够 Mock 类的所有方法，还能部分 Mock -- 这个是 <code>new Expectations</code> 的默认行为。所以这里我们来看下在使用 <code>new Expectations</code> 的情况下如何对类的部份静态方法或部分实例方法进行 Mock。</p><p>大致表述一下，共分为三种情况</p><ol><li>针对类进行 Mock, 只有录制的静态方法被 Mock 住，其他的静态方法或实例方法都会调用实际实现</li><li>针对某一实例进行 Mock，只在调用该实例已录制的方法才被 Mock 住，静态方法或新建实例调用任何方法都是实际实现</li><li>针对类进行 Mock，但录制的是一个实例方法，那么该实例或任何新建实例在调用该录制方法时都会被 Mock 住</li></ol><p>不知道上面在说什么，本来就是空洞无凭，所以还是下实例，假定要测试下面这个类，或者说是测试使用到下面类的其他类<!--more--></p><pre class="brush:java">class ClassToBeMocked {<br/>
+  public static String f1(){<br/>
+    return "f1";<br/>
+  }<br/>
+  public static String f2() {<br/>
+    return "f2";<br/>
+  }<br/>
+ <br/>
+  public String f3() {<br/>
+    return "f3";<br/>
+  }<br/>
+ <br/>
+  public String f4() {<br/>
+    return "f4";<br/>
+  }<br/>
+}</pre><p>然后分三个测试用例来各自说明</p><p><strong>一： 针对类，Mock 了一个静态方法</strong></p><pre class="brush:java">@Test<br/>
+public void testPartialMockingStaticMethods() {<br/>
+  new Expectations(ClassToBeMocked.class) {{<br/>
+    ClassToBeMocked.f1();  //只有该静态 f1() 方法受影响<br/>
+    result = "mocked";<br/>
+  }};<br/>
+ <br/>
+  //mocked<br/>
+  assertEquals("mocked", ClassToBeMocked.f1());<br/>
+   <br/>
+  assertEquals("f2", ClassToBeMocked.f2());<br/>
+  assertEquals("f3", new ClassToBeMocked().f3());<br/>
+}</pre><p>Mock  了一个静态方法 f1(), 只有调用该方法时才使用 Mock 的结果，其他的静态或实例方法都不受影响，会调用实际的实现。</p><p><strong>二：针对某一实例，Mock  了一个实例方法</strong></p><pre class="brush:java">@Test<br/>
+public void testPartialMockingInstanceMethods() {<br/>
+  final ClassToBeMocked mockedInstance = new ClassToBeMocked();<br/>
+  new Expectations(mockedInstance) {{<br/>
+    mockedInstance.f3(); //只有该实例的 f3() 方法受影响<br/>
+    result = "mocked";<br/>
+  }};<br/>
+ <br/>
+  //mocked<br/>
+  assertEquals("mocked", mockedInstance.f3());<br/>
+ <br/>
+  assertEquals("f3", new ClassToBeMocked().f3());<br/>
+  assertEquals("f1", ClassToBeMocked.f1());<br/>
+  assertEquals("f4", mockedInstance.f4());<br/>
+}</pre><p>只有调用该实例的 f3() 方法才使用 Mock 的结果，其他不管是调用别的实例的  f3() 还是别的方法，或任何静态方法都不受影响。</p><p><strong>三：针对类，Mock 了一个具体实例的方法</strong></p><pre class="brush:java">@Test<br/>
+public void testPartialMockingInstanceMethodsWithClass() {<br/>
+  ClassToBeMocked anotherInstance = new ClassToBeMocked();<br/>
+<br/>
+  final ClassToBeMocked mockedInstance = new ClassToBeMocked();<br/>
+    new Expectations(ClassToBeMocked.class) {{<br/>
+    mockedInstance.f3();  //任何 ClassToBeMocked 实例都受到影响，也包括上面的 anotherInstance<br/>
+    result = "mocked";<br/>
+  }};<br/>
+ <br/>
+  //mocked<br/>
+  assertEquals("mocked", mockedInstance.f3());<br/>
+  assertEquals("mocked", anotherInstance.f3());<br/>
+  assertEquals("mocked", new ClassToBeMocked().f3());<br/>
+ <br/>
+  assertEquals("f1", ClassToBeMocked.f1());<br/>
+  assertEquals("f4", mockedInstance.f4());<br/>
+}</pre><p>new Expectations(ClassToBeMocked.class) 是一个类，但 Mock 是一个具体实例的 f3() 方法，结果是任何访类的实例(无论何时创建的) 方法 f3() 都被 Mock 住。其他的实例或静态方法不受影响。官方的解释是如果是一个类出现在 Expectations 的参数中，就相当于该类的构造方法被 Mock 住，由此生成的实例的被录制方法都将被波及。</p><p>至于属性的 Mock, 它与方法的 Mock 是一致的，原本在 Scala 中方法和属性就不再分得那么清楚。</p><p>参考： 1. <a href="http://jmockit.org/tutorial/Mocking.html#partial">Partial Mocking</a></p>

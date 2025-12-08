@@ -1,0 +1,152 @@
+---
+title: Java 可变参 Object...objects 方法的陷进
+url: /java-varargs-method-error-prone/
+date: 2017-02-23T00:04:01-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - VarArgs
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7862 
+wpStatus: publish
+views: 622
+lastmod: 2017-02-23T09:37:35-06:00
+---
+
+<p>Java 的可变参数(Varargs) 方法让我们调用起来很方便，不需要总是去构造一个数组来传递不定数量的参数，而且还可以作为方法的一个可选参数，如</p>
+
+<blockquote><br/>
+<p>void foo(int id, String...name) {<br /><br/>
+     String yourName = name.length == 0 ? "Anonymous" : name[0];<br /><br/>
+         ......<br /><br/>
+ }</p>
+
+</blockquote>
+
+<p>想要告诉名字就调用 <code>foo(1, "Yanbin")</code>, 不想的话就用 <code>foo(1)</code>.</p>
+
+<p>但我们在使用 Java Varargs 时，当变参类型定义为 <code>Object...objects</code> 时就要当心了，因为 Object 类型的包容性原因一不小心就可以掉到坑里去了，例如下面的方法</p>
+
+<blockquote><br/>
+<p>void foo(Object...objects) {<br /><br/>
+      Arrays.stream(objects).forEach(System.out::println());<br /><br/>
+ }</p>
+
+</blockquote>
+
+<p>当引用类型是 <code>Object[]</code> 时调用没问题，下面代码调用可以得到预期的结果<!--more--></p>
+
+<blockquote><br/>
+<p>Object[] input = new Object[]{"1", "2"};<br /><br/>
+ foo(input);</p>
+
+</blockquote>
+
+<p>输出为</p>
+
+<blockquote><br/>
+<p>1<br /><br/>
+ 2</p>
+
+</blockquote>
+
+<p>可是把引用类型变成 <code>Object[]</code>  后可能就要引发 Bug 了，看下面代码的输出</p>
+
+<blockquote><br/>
+<p>Object input = new Object[]{"1", "2"};<br /><br/>
+ foo(input);</p>
+
+</blockquote>
+
+<p>输出类似如下</p>
+
+<blockquote><br/>
+<p>[Ljava.lang.Object;@5d099f62</p>
+
+</blockquote>
+
+<p><code>foo(Object...objects)</code> 只识别到了一个参数，它把 input 整体作为可变参 <code>objects</code> 的第一个元素，因为数组 <code>Object[]</code> 也是一个 <code>Object</code> 实例.</p>
+
+<p>这里像是一个多态的情形，行为应该是运行时决定的，与引用类型应无关, 假乎应该类似如下的情型</p>
+
+<blockquote><br/>
+<p>void foo(Animal animal) {...}<br /><br/>
+ <br /><br/>
+ Animal animal = new Dog();<br /><br/>
+ foo(animal);  //1<br /><br/>
+ <br /><br/>
+ Dog dog = new Dog();<br /><br/>
+ foo(dog);  //2</p>
+
+</blockquote>
+
+<p>//1 和 //2 两种调用方式的行为应该是一样的。</p>
+
+<p>但它们又是不一样的，前面代码</p>
+
+<blockquote><br/>
+<p>Object input = new Object[] {"1", "2"};<br /><br/>
+ foo(input);  //3</p>
+
+</blockquote>
+
+<p>更像是在让 <code>foo(input)</code> 调用从两个重载方法</p>
+
+<blockquote><br/>
+<p>foo(Object object);<br /><br/>
+ //和<br /><br/>
+ foo(Object...objects);</p>
+
+</blockquote>
+
+<p>中选择一个更匹配的方法来调用，所以第一个胜出，因为<strong>重载方法的匹配是依据引用类型的</strong>。</p>
+
+<p>//3 所示的情况可能较少出现，可有时候我们依赖于一个方法来获得 <code>Object[]</code> 类型返回值时就得当心啦，例如我们放大一个方法的返回值类型为 Object 来适应可能的多种类型返回值</p>
+
+<blockquote><br/>
+<p>Object bar(int type) {<br /><br/>
+     if(type == 1) {<br /><br/>
+         return new Object[]{"33", "44"};<br /><br/>
+     } else  {<br /><br/>
+         return "Hello";<br /><br/>
+     }</p>
+
+</blockquote>
+
+<p>然后我们心里很清在传入 1 时可以得到一个 <code>Object[]</code>  类型返回值，所以想当然的调用 foo() 方法，像</p>
+
+<blockquote><br/>
+<p>foo(bar(1))</p>
+
+</blockquote>
+
+<p>于是就掉到陷进里了，把 <code>new Object[]{"33", "44"}</code> 以一个整体作为了 <code>Object...objects</code> 的第一个元素了，输出了 <code>[Ljava.lang.Object;@31befd9f</code>  这样的内容，而不是遍历这个数组。</p>
+
+<p>为避免上面的潜在问题，当参数的引用类型是 Object 的对象数组需要显式的转型</p>
+
+<blockquote><br/>
+<p>foo((Object[]) input);<br /><br/>
+ foo((Object[] bar(1));</p>
+
+</blockquote>
+
+<p>就像是我们用整型参数想要匹配长整型重载方法时的做法</p>
+
+<blockquote><br/>
+<p>foo(int number);  //a<br /><br/>
+ foo(long number); //b<br /><br/>
+ <br /><br/>
+ foo((long)100); //这样虽然  100 是一个整型数，显式转型就能调用到 //b 方法。</p>
+
+</blockquote>
+
+<p>本文所述及的陷进也就是在变参类型为 <code>Object...objects</code> 才会出现的，要是别的类型倒不用担心，如 <code>String...strings</code> 是不可能把传入的数组整体作为第一个参数的，因为 String 容不下数组的。</p>
+
+<p>本文的情型有些类似于 Scala 使用变参的方法, 请参考 <a href="http://unmi.cc/java-scala-call-varargs-method/">Java 和 Scala 调用变参的方式</a>，只是 Scala 的要求更为苛刻。</p>

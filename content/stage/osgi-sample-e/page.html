@@ -1,0 +1,328 @@
+---
+title: 亲历基本 OSGI 实例，进入另番思维领域
+url: /osgi-sample-e/
+date: 2010-03-30T05:35:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - OSGI
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 210 
+wpStatus: publish
+views: 2177
+lastmod: 2018-06-29T19:19:51-05:00
+---
+
+<p>软件的模块越来越插件化发展了，连硬件都处处热插拔，软件更当如此。记原来有个 JPF(Java Plugin Framework)，也能实现动态插件化，但要是有个业界标准的东西一般来说会更好的。于是轮到 <a href="http://www.osgi.org" target="_blank" rel="noopener">OSGI</a>(Open Service Gateway Initiative) 登台，OSGI 出来也有好几个年头了，应用也轰轰烈烈的，比如 Eclipse 3 开始不再使用原来的插件体系，完全用 OSGI 搭建。WebSphere 6.1 也全面改用 OSGI；JBoss、WebLogic、Spring DM，甚至是 BMW 车的控制系统中都得到了很好的应用。</p>
+
+<p>前面讲到可以用 OSGI 作为你的微内核，微内核的好处可以打个这样的比方：一台 Linux 服务器出故障了，应用程序坏了、某些服务不能访问等，但只要它还来连入网络，SSH 还是活的，我们就有办法进去修复它，想安装、卸载什么都行。<!--more--></p>
+
+<p>OSGI 也能让你动态的增减服务，或者说动态的加载卸载类等资源。OSGI 中的资源称作 Bundle，所以如果是基于 OSGI 的程序，能够在网上找到许多有用的 Bundle 直接在线插入到你的软件系统中。Bundle 其实就是一个 jar 文件，只是在 MANIFEST.MF 中有些特殊的定义，每个 Bundle 靠实现的 BundleActivator 的去控制 Bundle 的生命周期和发布、监听框架的事件，或者说与框架进行通信。</p>
+
+<p>OSGI 是个规范，它的实现目前有 Equinox、Knopflerfish、Oscar、Felix 等，由于天天与我打交道的是 Eclipse 以及它背后的 Equinox，所以这里的示例程序就使用 Equinox 吧。</p>
+
+<p>本例是基于 《OSGI实战》这一 PDF 文档稍加改造而成，比原例要简单，因为尽量避免了引入其他的 Bundle，不是 Web  应用，而是做成了一个窗口程序。</p>
+
+<p>一样的，也是个用户登陆验证程序，程序运行中可以动态切换验证方式(数据库验证或 Ldap 验证)，也可以插入新的验证方式，如文件验证方式。基于此，我们需要建立四个 Bundle，分别为：</p>
+
+<p>1. UserValidatorBundle -- 定义了 Validator 接口方法，此例中还作为与用户交互的 Bundle<br /><br/>
+2. DbValidatorBundle  -- 实现了 Validator  方法，用数据库进行验证的 Bundle<br /><br/>
+3. LdapValidatorBundle  -- 实现了 Validator  方法，用 Ldap 进行验证的 Bundle<br /><br/>
+4. FileValidatorBundle  -- 实现了 Validator  方法，用文件进行验证的 Bundle</p>
+
+<p>定义接口的 Bundle 需要导出定义接口的 package，而实现接口定义的 Bundle 需要导入前面导出的接口 package。</p>
+
+<p>OSGI 有点像 SPI(Service Provider Interface) 模式，上层有个接口定义，然后有多几可能的实现提供者，运行时可以选择哪种实现，例如 common-logging 与 log4j, jdk log 那样的关系，但是 SPI 不具有 OSGI 的动态性。同样，在 OSGI 的某个 Bundle 中也需要定义一个服务接口，没有接口规约就没法指导方法如何去调用。映射到 SPI 模式就是，UserValidatorBundle 为服务定义者，其他 Bundle 为服务提供者。</p>
+
+<p>在 Eclipse 中直接能开发 OSGI 的 Bundle，并支持可视化操作与调试。因为 Eclipse 本身就是用的 Equinox，所以不需要单独下载 Equinox SDK。只要你电脑上有 Eclipse，马上就可以窥探一下 Equinox 的模样。</p>
+
+<p>Eclipse 中菜单 Run -&gt; Run Configurations 窗口中，左边 OSGi Framework 中，右键 new，然后 Deselect All，只勾选几个 Bundle，点击右下角的 Run  按钮就行啦。</p>
+
+<p>这时候会在 Eclipse 的 Console 窗口中出现一个 osgi&gt; 提示符，在其中可以输入各种命令，如 ss 显示所有的 Bundle，如图：</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-01.jpg" alt="" /></div>
+
+<p>也可以安装卸载 Bundle、启用停止 Bundle 等等。当然实际做出来的 OSGI 程序不会去带那么一个 osgi 控制台的，osgi 控制台下的操作都可以在你的程序中完成，或者作为一个真正的后台管理界面，用户是不会觉察到的。之所以放个 osgi&gt; 出来，是为了开发、测试方便。</p>
+
+<p>我们现在要做的就是像 osgi&gt; 控制台下用 ss 命令显示出来的那种 Bundle。本例中所用的 Eclipse 是 3.5.2 版，其他 3.x 的版本可能会有细微的差异，应该不会有影响的。</p>
+
+<p><strong><span style="font-size: large;"><br /><br/>
+正式开始动手</span><br /><br/>
+</strong><br /><br/>
+<strong><span style="font-size: medium;">一. 建立 Plug-in Project 工程</span></strong> UserValidatorBundle</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-03.jpg" alt="" /></div>
+
+<p>填入工程名称 UserValidatorBundle，This plug-in is targeted to run with: 指定为 an OSGI framework standard，建立一个标准的 OSGI 工程。</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-04.jpg" alt="" /></div>
+
+<p>输入Bundle的相关元数据信息，这面这些信息会反应在 META-INF/MANIFEST.MF 文件中。</p>
+
+<p>Plug-in ID指的是Bundle的唯一标识，在实际的项目中可以采用类似java的包名组织策略来保证标识的唯一性；<br /><br/>
+Plug-in Version指的是Bundle的版本；<br /><br/>
+Plug-in Name指的是Bundle的更具有意义的名称；<br /><br/>
+Plug-in Provider指的是Bundle的提供商；</p>
+
+<p>还要创建一个关键的 Activator 类了，要好好考量一下包名称。图中显示说这个是 Options(可选的)，而其实在我们的例子中，还是是很重的，用来启动界面或注册服务。</p>
+
+<p>不需要 &lt;Next&gt; 选择模板的话，直接点接 &lt;Finish&gt; 按钮就行了。Eclipse 会进入到 Plug-in Development 视图，并用 Plug-in Manifest Editor 打开 MANIFEST.MF 文件。也为你生成了前面指定的 Activator.java 文件。如下图：</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-05.jpg" alt="" /></div>
+
+<p><strong><span style="font-size: medium;">二. 对外提供用户验证接口包</span></strong></p>
+
+<p><strong>1) 建立一个 Validator 接口</strong></p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-06.jpg" alt="" /></div>
+
+<p><strong>2) 设置要导出的对外提供服务的 package<br /><br/>
+</strong><br /><br/>
+在 MANIFEST.MF 编辑器中，选择 Runtime 标签，Exported Packages 中点击 Add 按钮，在弹出的窗口中选择 Validator 接口所在的 package com.unmi.login.activator。</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-07.jpg" alt="" /></div>
+
+<p>这步操作，其实也就是在 MANIFEST.MF 中添加了一行</p>
+
+<p>Export-Package: com.unmi.login.service</p>
+
+<p>好了，创建 UserValidatorBundle 的工作暂时就告一段落了。</p>
+
+<p><strong><span style="font-size: medium;">三. 创建其他几个 Bundle</span></strong></p>
+
+<p>按照创建 UserValidatorBundle 相类似的方法，创建其他几个 Bundle，注意选择好每个 Bundle 的 Activator 实现类的位置。</p>
+
+<p><strong>1) 导入服务接口 package</strong></p>
+
+<p>另外创建好了 DbValidatorBundle、LdapValidatorBundle、FileValidatorBundle 之后，需要为它们导入 UserValidatorBundle 导出的 package，以明示自己是 Validator 接口的提供者。</p>
+
+<p>操作方法是，各自的 MANIFEST.MF 编辑器的 Dependencies 标签页中，Imported Packages 里点 Add 按钮，弹出窗口中选择 com.unmi.login.service 包，其实就是为编程指定了依赖的包。</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-08.jpg" alt="" /></div>
+
+<p>这步会在 MANEFEST.MF 中产生一行：</p>
+
+<p>Import-Package: com.unmi.login.service</p>
+
+<p><strong>2) 编写实现 Validator 接口的实现类<br /><br/>
+</strong><br /><br/>
+因为是演示，所以验证过程硬编码，比如在 LdapValidatorBundle 中的 Validator 接口的实现类 com.unmi.login.service.impl/LdapValidatorImpl.java 代码为</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-09.jpg" alt="" /></div>
+
+<p>其他几个 Bundle 中的 Validator 实现类的代码也是类似。</p>
+
+<p><strong>3) 实现 Bundle 的 BundleActivator 接口</strong></p>
+
+<p>前面讲过，Bundle 的 BundleActivator 实现是用来管理自身的生命周期和与框架交互的，所以虽要在各自的 BundleActivator 实现中，当启动 Bundle 时，注册自己以让框架能查找到该 Bundle, 停止 Bundle 时，把自己从框架中注销掉，以释放相关资源。先来编写那几个服务提供者的 BundleActivator 实现，如 LdapValidatorBundle 的类 com.unmi.login.activator.Activator.java 的代码如下：</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-10.jpg" alt="" /></div>
+
+<p>注意其中的代码是怎么向 BundleContext 中注册自己的实例的，以及如何卸载，了解 BundleContext.registerService() 方法各参数的意义。</p>
+
+<p>其他几个 Bundle，如 FileValidatorBundle 和 DbValidatorBundle 的 BundleActivator 实现代码也是类似，请仿照之。但是 UserValidatorBundle 的 Activator 类的实现就不太一样了，因为 UserValidatorBundle 是个服务定义者，而且这里也拿它来作为打开程序界面的入口，所以它的 Activator 实现的 start() 方法中就会安排安多做些事情的，也就单独拿出来说明。</p>
+
+<p><strong>4) 编写 UserValidatorBundle 的 Activator</strong></p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-11.jpg" alt="" /></div>
+
+<p>在该  Activator 的 start() 方法中会弹出一个登陆窗口，让用户输入用户名和密码，然后登陆。停止该 Bundle 时会把登陆窗口关闭掉。注意，因为其他的 Bundle 不需要在上下文中查找本 Bundle 的实例来调用，所以在 start() 中没有向 BundleContext 注册自身的代码。</p>
+
+<p><strong>5) 调用服务的代码<br /><br/>
+</strong><br /><br/>
+完成在框架中查找可用的服务，如 Validator 实现类的实例，然后调用实现类的验证方法。这些代码实现在 LoginWindow 中，在 LoginWindow.java 中代码较多，完整代码可查阅文后附件，此处只列出关键性代码，即登陆按钮点击后所做的事情</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-12.jpg" alt="" /></div>
+
+<p>到现在为止，所有的代码编写完毕，马上就可以在 Eclipse 中运行了。</p>
+
+<p><strong><span style="font-size: medium;">四. 运行演示</span></strong></p>
+
+<p>演示之前，先对程序的行为进行简要的说明。程序运行后会跳出一个用户登陆窗口，在窗口中输入用户名和密码，点登陆按钮便能调用实际的验证实现类来验证用户，同时在窗口上可以看到登陆是成功，还是失败，以及失败时的原因为何，以登陆按钮旁边用个小字母标明当前是用的什么方式验证的。如图：</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-13.jpg" alt="" /></div>
+
+<p>登陆按钮旁边用个字母标识了当前的验证方式，即框架中哪个 Bundle 在提供验证服务。N 代表未知，L 代表 LdapValidatorBundle，D 代表 DbValidatorBundle，F 代表 FileValidatorBundle。</p>
+
+<p><strong>1) 建立运行配置</strong></p>
+
+<p>Eclipse 的菜单 Run -&gt; Run Configurations，OSGi Framework 上右键，new 一个 UserValidator 运行配置，在右边 Bundles 中选上我们创建的那四个 Bundle，可以分别设置它们的 Start Level 和 Auto-Start，例如这里设置 FileValidatorBundle 的 Auto-Start 为 false。在该页右下角可以直接点击运行。</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-14.jpg" alt="" /></div>
+
+<p>启动后，出现 osgi 控制台，打印出 LdapValidatorBundle 和 DbValidatorBundle 启动的信息，并显示了登陆窗口。</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-16.jpg" alt="" /></div>
+
+<p>现在就可以在 osgi&gt; 控制台执行些操作来观察这个程序的运行状态，比如首先输入 ss 命令，看到加载了我们需要的 Bundle，而 FileValidatorBundle 是 RESOLVED，而不是 ACTIVE，那是因为我们建立运行配置的时候把该  Bundle 的 Auto-Start 设置成了 false。</p>
+
+<p>osgi&gt; 控制台下的基本操作有</p>
+
+<blockquote><br/>
+<p>ss 显示所有已加载的 Bundle，我们可以不时的执行这个指令，看看有哪些 Bundle 在<br /><br/>
+stop &lt;id&gt; 停止指定 id 的 Bundle，会触发该 Bundle 的 Activator 实现的 stop() 方法<br /><br/>
+start &lt;id&gt; 启动指定 id 的 Bundle，会触发该 Bundle 的 Activator 实现的 start() 方法<br /><br/>
+install &lt;url&gt; 安装一下 Bundle，指定 Bundle 的 jar 文件 url<br /><br/>
+uninstall &lt;id&gt; 卸载指定 id 的 Bundle，必须重新 install 后才能使用</p>
+
+</blockquote>
+
+<p>还有很多命令，这里不详述，在 osgi&gt; 提示符下乱输个它不认识的指令(如 dd)，osgi&gt; 便会提示出帮助来。</p>
+
+<p><strong>2) 多方演示</strong></p>
+
+<p>(1) 直接登陆时的情形</p>
+
+<p>osgi&gt; 控制台下先看下有哪些 Bundle 及状态，然后在登陆窗口中输入 Unmi/1234，登陆到：</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-15.jpg" alt="" /></div>
+
+<p>登陆按钮旁边显示 L，控制台中显示 "使用 Ldap 进行登陆验证" 说明是用的 LdapValidatorBundle 验证的。</p>
+
+<p>(2) 停掉 LdapValidatorBundle 看看<br /><br/>
+在 osgi&gt; 控制台下执行 stop 1，再点击登陆窗口的登陆按钮，我们看到：</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-17.jpg" alt="" /></div>
+
+<p>登陆按钮旁边显示 D，控制台中显示 "使用数据进行登陆验证" 说明是用的 DbValidatorBundle 验证的。</p>
+
+<p>(3) 把 DbValidatorBundle 也停了</p>
+
+<p>在 osgi&gt; 控制台下执行 stop 3，再点击登陆窗口的登陆按钮，我们看到：</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-18.jpg" alt="" /></div>
+
+<p>发现，现在没有活动的 Validator 实现 Bundle，所以无法登陆。</p>
+
+<p>(4) 把 FileValidatorBundle 启起来</p>
+
+<p>在 osgi&gt; 控制台下执行 start 4，这时候把密码多加个 5, 再点击登陆窗口的登陆按钮，我们看到：</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-19.jpg" alt="" /></div>
+
+<p>没问题，可以使用刚启用 FileValidatorBundle 来进行登陆验证了。</p>
+
+<p>你还可以再次把沉睡的 LdapValidatorBundle 或 DbValidatorBundle 启动起来，或者干脆把某个 Bundle uninstall 掉，用 ss 都看不到了，要用的话必须 install 回来。</p>
+
+<p><strong><span style="font-size: medium;">五. 发布基于 OSGI 的系统<br /><br/>
+</span></strong><br /><br/>
+前面都是在 Eclipse 环境中运行的基于 OSGI 程序，那我们离开 Eclipse 该怎么运行呢？我们也没有看到所谓 Bundle 即是一个 jar 那样的文件，写好的程序，最后的事情就是发布了。</p>
+
+<p><strong>1) 导出  Bundle 项目为 jar 包<br /><br/>
+</strong><br /><br/>
+Eclipse 菜单 File -&gt; Exports，弹出窗口中选择 Deployable plug-ins and fragments</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-20.jpg" alt="" /></div>
+
+<p>选择那四个 Bundle，设置输出文件的目录为 E:\workspace\OsgiDemo，然后点 Finish 按钮</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-21.jpg" alt="" /></div>
+
+<p>完成后，在 E:\workspace\OsgiDemo 文件夹中，生成了一个 plugins 目录，里面就是刚刚导出的那几个 Bundle。</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-22.jpg" alt="" /></div>
+
+<blockquote><br/>
+<p>DbValidatorBundle_1.0.0.201003301134.jar<br /><br/>
+FileValidatorBundle_1.0.0.201003301134.jar<br /><br/>
+LdapValidatorBundle_1.0.0.201003301134.jar<br /><br/>
+UserValidatorBundle_1.0.0.201003301134.jar</p>
+
+</blockquote>
+
+<p><strong>2) 拷入所需的支持包</strong></p>
+
+<p>从 Eclipse 的 plugins 目录中拷贝 org.eclipse.osgi_3.5.2.R35x_v20100126.jar 到 E:\workspace\OsgiDemo 目录中。</p>
+
+<p><strong>3) 配置 config.ini</strong></p>
+
+<p>先要在 E:\workspace\OsgiDemo 目录中创建子目录 configuration，然后在其中建立文件 config.ini，内容为：</p>
+
+<blockquote><br/>
+<p>osgi.noShutdown=true</p>
+
+<p>#避免Unable to acquire application service. Ensure that the org.eclipse.core.runtime错误<br /><br/>
+eclipse.ignoreApp=true</p>
+
+<p>#因为使用了 swing，无该属性则报 java.lang.NoClassDefFoundError: javax/swing/JFrame<br /><br/>
+org.osgi.framework.bootdelegation=*</p>
+
+<p>#这里有意没有加载 FileValidatorBundle，待以后 install<br /><br/>
+osgi.bundles=plugins/DbValidatorBundle_1.0.0.201003301134.jar@start,\<br /><br/>
+plugins/LdapValidatorBundle_1.0.0.201003301134.jar@start,\<br /><br/>
+plugins/UserValidatorBundle_1.0.0.201003301134.jar@start</p>
+
+<p>osgi.bundles.defaultStartLevel=4</p>
+
+</blockquote>
+
+<p><strong>4) 建立批处理 run.bat<br /><br/>
+</strong><br /><br/>
+在 E:\workspace\OsgiDemo 中创建批处理文件 run.bat，内容为：</p>
+
+<blockquote><br/>
+<p>@echo off<br /><br/>
+java -jar org.eclipse.osgi_3.5.2.R35x_v20100126.jar -console</p>
+
+</blockquote>
+
+<p>E:\workspace\OsgiDemo 中的文件目录结构如下：</p>
+
+<blockquote><br/>
+<p>E:\WORKSPACE\OSGIDEMO<br /><br/>
+│  org.eclipse.osgi_3.5.2.R35x_v20100126.jar<br /><br/>
+│  run.bat<br /><br/>
+│<br /><br/>
+├─configuration<br /><br/>
+│         config.ini<br /><br/>
+│<br /><br/>
+└─plugins<br /><br/>
+DbValidatorBundle_1.0.0.201003301134.jar<br /><br/>
+FileValidatorBundle_1.0.0.201003301134.jar<br /><br/>
+LdapValidatorBundle_1.0.0.201003301134.jar<br /><br/>
+UserValidatorBundle_1.0.0.201003301134.jar</p>
+
+</blockquote>
+
+<p><strong>5) 运行 run.bat<br /><br/>
+</strong><br /><br/>
+双击 run.bat 即可，这时候也出现 osgi&gt; 控制台和一个登陆窗口，不过这时候是在 dos 窗口中的。你可以不让程序出现 dos 窗口，org.eclipse.osgi_3.5.2.R35x_v20100126.jar 是个可执行的 jar，又击它正常情况下就只会显示一个登陆窗口。你也可以去下载个 Equinox 程序的  Launcher 来启动 OSGI 程序。不过我们这里需 osgi&gt; 控制台，所以要保留那个 dos 窗口，如下图：</p>
+
+<div><img src="/wp-content/uploads/2010/03/equinox-23.jpg" alt="" /></div>
+
+<p>刚启动时我们没有加载 FileValidatorBundle，我们执行下列命令</p>
+
+<blockquote><br/>
+<p>osgi&gt;install reference:file:plugins/FileValidatorBundle_1.0.0.201003301134   #加载 FileValidatorBundle<br /><br/>
+osgi&gt;stop 1 2  #停掉 DbValidatorBundle 和 LdapValidatorBundle<br /><br/>
+osgi&gt;start 4     #启动 FileValidatorBundle</p>
+
+</blockquote>
+
+<p>然后输入用户名和密码试下，从控制台输出和登陆按钮旁边的 F 标志，确实是使用了新安装的 FileValidatorBundle。</p>
+
+<p>用 install &lt;url&gt; 你可以随时安装任何地方的 Bundle jar 包。</p>
+
+<p>执行 stop 1 2  只是停掉 DbValidatorBundle 和 LdapValidatorBundle，并没有从 JVM 中卸载掉，用 ss 命令可以看到它们处于 RESOLVED 状态。这时候你也可以试着去 E:\workspace\OsgiDemo\plugins 中删除那两个文件 DbValidatorBundle_1.0.0.201003301134.jar 和 LdapValidatorBundle_1.0.0.201003301134.jar，系统会提示正在使用无法删除。这时候再执行下卸载命令</p>
+
+<blockquote><br/>
+<p>osgi&gt;uninstall 1 2</p>
+
+</blockquote>
+
+<p>再去删除那两个文是可以成功的，说明 JVM 真的卸载掉了这两个包。可以看出，OSGI 在通过 install 和 uninstall 动态的安装和卸载 Bundle 是多么的方便。</p>
+
+<p>比如说原有系统中要添加一个功能模块，只要动态安装到框架中就能即使用了。原有系统中有个模块有 Bug，修改好，卸载再重装一下就 OK 啦，基本上系统类似于这种变动都不需要停掉服务，重启应用。</p>
+
+<p>还是前面那句话，实际应用中是一般不会有这种 osgi&gt; 控制台的，你想要在 osgi&gt; 控制台下来做那些动人的操作也行。因为 Equinox 是纯 java 实现的，所以能在 osgi&gt; 控制台下执行的命令，一定可以在你的程序里进行控制，或者以一种对于后台人员更友好的管理方式。</p>
+
+<p>上面的例子只是引领你对 OSGI 有个基本的印象，进而真正领悟到 OSGI 的先进思想，这样才能在你的实际工作运用自如。当然我们在项目中不能因为技术而技术，如果是小项目我想大可不必把 OSGI 揉进来。具有一定规模的项目可考虑用 OSGI 框架去站在很高的层次去做个微内核，并且要合理的进行组件规划，才能灵活应动组件的动态插拔。</p>
+
+<p>附件：源代码和发布的应用 <a href="/wp-content/uploads/2010/03/osgi-first.zip">下载</a></p>

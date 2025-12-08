@@ -1,0 +1,75 @@
+---
+title: VS2008 发布网站时如何产生固定命名的 Dll 文件
+url: /vs2008-fixed-dll-name/
+date: 2010-05-13T12:11:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - .Net
+tags: 
+  - Asp.Net
+  - dll
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 182 
+wpStatus: publish
+views: 559
+lastmod: 2010-08-08T10:56:47-05:00
+---
+
+VS2008 在发布网站时，bin 目录里为所有 cs 生成的 dll 文件每次都是随机命名的，像这样子的 App_Web_g2dnx-qj.dll, App_Web_s9nor8mv.dll，这样对更新 Live 站点很不方便，因为动态库名变了，涉及到每一个 aspx 文件每次都重新更改了对库的引用声明：<br/>
+<br/>
+&lt;%@ page language="C#" autoeventwireup="true" inherits="_Default, App_Web_s9nor8mv" %&gt;<br/>
+<br/>
+即使有一个 cs 的小改动，由于生成的动态库名称不一样，造成所有的 aspx 文件都得重传一遍。如果能固定动态库的文件名，更新网站时就省事多了，只改了 cs 的话，重新生成 dll 文件，只需要替换这一个 dll 文件就 OK 啦。我们可以找到几种做法：<!--more--><br/>
+<br/>
+1. 在“发布网站”的选项中，勾选“使用固定命名和单页程序集”，每个页面对应的一个 dll，并且这个 dll 文件名是固定的(名字虽然看起来很随便)，只要 aspx 文件名没变。这会生成大量的 dll 文件，实际应用中还没看到可取之处。<br/>
+<br/>
+2. 把所有的 cs 文件放到 App_Code 目录中，这样所有的 cs 每次都生成到 App_Code.dll 动态库中。这时候的 aspx 文件第一行指令在新建后要更改为:<br/>
+<br/>
+&lt;%@ Page Language="C#" AutoEventWireup="true"  Inherits="_Default" %&gt;<br/>
+<br/>
+或者：<br/>
+<br/>
+&lt;%@ Page Language="C#" AutoEventWireup="true"  Inherits="_Default, App_Code" %&gt;<br/>
+<br/>
+这样发布的时候，对 cs 的小改动只需替换一个 App_Code.dll 文件即可。在不使用 CodeFile 属性时，VS 没理由要修改你的 aspx 文件头。<br/>
+<br/>
+3. 第三种办法，其实与前一种十分类似，如果觉得把 aspx 对应的 cs  文件放到 App_Code 目录中有点唐突，那么为当前解决方案新加一个 Class Library 项目，例如 ClassLibrary1，把 aspx 的 cs 文件都放到这个工程中吧，相应的 aspx 文件指令就是：<br/>
+<br/>
+&lt;%@ Page Language="C#" AutoEventWireup="true"  Inherits="_Default" %&gt;<br/>
+<br/>
+或者：<br/>
+<br/>
+&lt;%@ Page Language="C#" AutoEventWireup="true"  Inherits="_Default, ClassLibrary1" %&gt;<br/>
+<br/>
+小改动替换 ClassLibrary1.dll 即可，同理在不使用 CodeFile 属性时，VS 没理由要修改你的 aspx 文件头。只有 cs 文件也要放服务器上，由 Asp.Net 来编译程序时，CodeFile 指令才是有其作为的。<br/>
+<br/>
+4. Web Deployment Projects with Visual Studio 2008下载地址:<br/>
+<a href="http://download.microsoft.com/download/0/5/b/05b4424b-5b9b-4961-8ec6-91e9f1741b2d/WebDeploymentSetup.msi">http://download.microsoft.com/download/0/5/b/05b4424b-5b9b-4961-8ec6-91e9f1741b2d/WebDeploymentSetup.msi</a>，安装文件十分小, 686K。<br/>
+<br/>
+简单操作如下:<br/>
+<br/>
+1) 下载后直接安装,安装完后打开VS2008;<br/>
+<br/>
+2) 在[生成]-&gt;[发布网站]下面会多出一项[Add Web Deployment Project], 也可在要发布的网站项目上点右键.直接选取[Add Web Deployment Project],弹出属性对话框后. 设置好指定名称(如 WebSite1_deploy)和存放目录(c:\target), 添加后,<br/>
+以看到当前解决方案中多了一项( WebSite1_deploy), WebSite1_deploy 有很多其它属性可以设置，其中有一重要的默认选项：<br/>
+<br/>
+Merge all outputs to a single assembly<br/>
+<br/>
+Assembly name: 是 WebSite1_deploy.<br/>
+<br/>
+3) 在刚添加的方案中点右键-&gt;[生成], 或者是对 WebSite1_deploy 进行 Build 都会在前面指定的目录(c:\target) 中生成可发布的文件的目录了。进到 c:\target 目录中，翻一下你就会发现你的 Web 项目中所有的 cs 文件，包括 aspx 关联的和 App_Code 中的 css 文件都编译到 WebSite1_deploy.dll 文件中去了。aspx 文件的头部是：<br/>
+<br/>
+&lt;%@ page language="C#" autoeventwireup="true" inherits="Default, WebSite1_deploy" %&gt;<br/>
+<br/>
+只要 WebSite1_deploy.dll 文件名是固定的，aspx 的声明部分也总是不变的，所以每次只是对 cs 文件的修改补，只需换个 WebSite1_deploy.dll 文件就行啦。<br/>
+<br/>
+相比于第二、三种方法，只需一次设置，用不着每建一个 aspx 文件对代码文件进行搬动，还得改改 aspx 文件的声明部分，而且对于 Web Site 也能构建出 DEBUG 的版本出来，所以这应该是终极的。<br/>
+<br/>
+参考：1. <a href="http://www.cnblogs.com/scgw/archive/2009/01/17/1377493.html" target="_blank">VS2008发布、生成网站时如何设置固定的dll文件名？</a><br/>
+        2. <a href="http://stu.fjtjw.com/show.asp?/4790.html" target="_blank">巧用VS2005解决VS2005网站发布不便问题</a>

@@ -1,0 +1,127 @@
+---
+title: WordPress 升级到了 3.9，语法高亮按钮插件更新
+url: /upgrade-wordpress-3-9-with-syntax-button/
+date: 2014-04-17T02:41:50-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2014/04/wordpress_logo.jpg"
+categories:
+  - WordPress
+tags: 
+  - wordpress
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6309 
+wpStatus: publish
+views: 374
+lastmod: 2021-09-03T18:21:55-05:00
+---
+
+WordPress 终于又迎来一次次版本号的升级，带来几个便捷之处，如直接拖拽图片进编辑器中，随意缩放旋转。同时把 TinyMCE 从 4.0.21.1 版，这直接造成了我之前的那个添加代码的自定义工具按钮歇菜了，弹不出选项来。见 <a title="语法加亮插件 SyntaxHighlighter 的好伴侣，轻便的 TinyMCE 工具按钮" href="http://unmi.cc/unmi-syntax-button/" target="_blank" rel="noopener">语法加亮插件 SyntaxHighlighter 的好伴侣，轻便的 TinyMCE 工具按钮</a> 中描述的那个自定义插件。所以要把该插件升级下，使之兼容 TinyMCE 4，TinyMCE 从 3 到 4 的改变还真不小，界面上看到多了行菜单条，它的 API 变得大了去。</p>
+<br/>
+本文参考了：<br/><br/>
+1. <a href="http://www.tinymce.com/wiki.php/API3:method.tinymce.Plugin.createControl" target="_blank" rel="noopener">http://www.tinymce.com/wiki.php/API3:method.tinymce.Plugin.createControl</a><br />
+2. <a href="http://www.tinymce.com/wiki.php/api4:class.tinymce.Plugin" target="_blank" rel="noopener">http://www.tinymce.com/wiki.php/api4:class.tinymce.Plugin</a><br />
+3. <a href="http://www.tinymce.com/tryit/menubutton.php" target="_blank" rel="noopener">http://www.tinymce.com/tryit/menubutton.php</a><br/><br/>
+现在改成了一个带三角的 MenuButton，如图：<!--more--><br/><br/>
+<a href="/wp-content/uploads/2014/04/new_syntax_button.png"><img class="wp-image-6312 aligncenter" src="/wp-content/uploads/2014/04/new_syntax_button-1024x776.png" alt="new_syntax_button" width="783" height="593" /></a><br/><br/>
+关键性的代码修改如下：<br/><br/>
+<span style="color: #0000ff;"><strong>老版本的 editor_plugin.js 中，支持 TinyMCE 3</strong></span><br/><br/>
+<pre class="lang:default decode:true">tinymce.create('tinymce.plugins.shtb', {<br/><br/>
+    init : function(ed, url) {
+        // Register the command so that it can be invoked by using tinyMCE.activeEditor.execCommand('mceExample');<br/><br/>
+        // Register Syntax Highlighter Button
+        ed.addButton('shtb', {
+            title : 'Syntax Highlighter',
+            cmd : 'shtb',
+            image : url + '/shtb_img.png'
+        });<br/><br/>
+        // Add a node change handler, selects the button in the UI when a image is selected
+        ed.onNodeChange.add(function(ed, cm, n) {
+            cm.setActive('shtb', n.nodeName == 'IMG');
+        });
+    },<br/><br/>
+    createControl: function(n, cm) {
+        switch (n) {
+            case 'shtb':
+                var c = cm.createMenuButton('unmienubutton', {
+                    title : 'Syntax Highlighter',
+                    image : g_url + '/shtb_img.png',
+                    icons : false
+                });<br/><br/>
+                c.onRenderMenu.add(function(c, m) {
+                    var sub;<br/><br/>
+                    sub = m.addMenu({title : 'Others'});
+    
+                    for(var i=0;i&lt;other_brushes.length;i++){
+                        sub.add({title : other_brushes[i], onclick : function() {
+                            insertShTag(this.title);
+                        }});
+                    }<br/><br/>
+                    for(var i=0;i&lt;common_brushes.length;i++){
+                        m.add({title : common_brushes[i], onclick : function() {
+                            insertShTag(this.title);
+                        }});
+                    }<br/><br/>
+                });<br/><br/>
+                // Return the new menu button instance
+                return c;
+        }<br/><br/>
+        return null;
+    },
+});</pre>
+<br/>
+<span style="color: #0000ff;"><strong>新版本的 editor_plugin.js 中，支持 TinyMCE 4</strong></span><br/><br/>
+<pre class="lang:default decode:true">tinymce.create('tinymce.plugins.shtb', {<br/><br/>
+    //or init: function...., constructor
+    shtb : function(editor, url) {<br/><br/>
+        // Register Syntax Highlighter Button
+        var mainMenu = [];
+        var otherSubMenu = [];
+        
+        for(var i=0;i&lt;other_brushes.length;i++){
+            otherSubMenu.push({text : other_brushes[i], onclick : function(e) {
+                insertShTag(e.target);
+            }});
+        }<br/><br/>
+        mainMenu.push({text: 'Others', menu: otherSubMenu});<br/><br/>
+        for(var i=0;i&lt;common_brushes.length;i++){
+            mainMenu.push({text : common_brushes[i], onclick : function(e) {
+                insertShTag(e.target);
+            }});
+        }<br/><br/>
+        editor.addButton('shtb', {
+            type: 'menubutton',
+            cmd:'shtb',
+            icon: 'btn_icon',
+            // text: 'C',
+            // image : url + '/shtb_img.png',
+            menu: mainMenu
+        });
+    },
+});</pre>
+<br/>
+d现在突然发现 WordPress 3.9 的编辑器中的字体好小啊，要改一改, WordPress 文件中准备了两种 skins 供选择，lightgray 和 wordpress，但是未看到哪里能选择 TinyMCE 的 skin. 默认是 lightgray 的，它所定义的字体大小是 11px, wordpress skin 的是 13px，应该要这个大小看得才舒服。<br/><br/>
+为 TinyMCE 编辑器加载样式文件的代码得改，不然的话，虽然样式是加载生效了，但是直接影响 WordPress3.9 中图片编辑功能，造成图片左上方的铅笔和删除按钮不会显示，并且图片在编辑器中总是左方显示。<br/><br/>
+WordPress3.9 之前加载样式文件的代码是：<br/><br/>
+<pre class="lang:default decode:true">function append_editor_css($css) { 
+    return plugins_url('syntax-button/editor_style.css');
+}
+ 
+add_filter("mce_css", "append_editor_css”);</pre>
+<br/>
+在 WordPress3.9 中要改为<br/><br/>
+<pre class="lang:default decode:true ">function append_editor_css($mce_css) { 
+    if ( !empty( $mce_css ) )
+        $mce_css .= ',';
+    $mce_css .= plugins_url( 'editor_style.css', __FILE__ );
+    return $mce_css;
+}
+ 
+add_filter("mce_css", "append_editor_css”);</pre>
+<br/>
+至此大功告成。

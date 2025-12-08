@@ -1,0 +1,157 @@
+---
+title: 使用 Cucumber Java 进行 BDD 测试循序渐进
+url: /cucumber-java-bdd-steps-in/
+date: 2025-03-27T14:32:14-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2025/03/cucumber-logo.webp"
+categories:
+  - Java/JEE
+tags: 
+  - bdd
+  - Cucumber
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14105 
+wpStatus: publish
+views: 133
+lastmod: 2025-03-28T10:38:08-05:00
+---
+
+不得不承认因为 ChatGPT 为代表的 AI 的出现，让许多技术博客的写作者积极性大大降低。但本着以学习掌握知识为目的，实战，写下来对加强学习仍然是非常有意义的。如果一直使用 AI 来解决技术问题，知识永远是 AI 的，至于说有了 AI 本应没有主动学习必要的性的话，永远保持像一张白纸，A4 大小，那真就无话可说了。</p>
+<br/>
+开发过程驱动有分 TDD(Test-Driven Development) 和 BDD(Behavior-Driven Development)，大致的理解是 TDD 更关注实现细节，BDD 更接近于 QA 的测试，对领域的测试。BDD 从抽象中来讲更适于做面向用户的集成测试。当然在 AI 生成代码的年代可能单玩测试反而不那么重要，因为更多是一次性代码。<br/><br/>
+BDD 给人最典型的印象是 Scenario/Given/When/Then, BDD 最流行的测试框架当属 <a href="https://cucumber.io">Cucumber</a>, 它以插件的方式支持众多编程语方，如官方支持的用 JavaScript, Java, Kotlin, Ruby, Lua, Scala, C++, Go, OCaml, 还有其他半官支持的 Python, Swift/ObjC, Perl, .NET(C#, F#, VB), 以及非官方支持的 Rust, D, Groovy 等。<br/><br/>
+另外还有一个专供 Java 的轻量级 <a href="https://jbehave.org/">JBehave</a>, 不过个人更推荐用 Cucumber, 因为 Cucumber 得到更多 IDE 如 IntelliJ, Eclipse, VS Code 等的支持，并能与 JUnit 4, JUnit 5, TestNG, 以及  Spring Boot 项目集成，内置的测试报告插件，多语言当然是个亮点。<br/><br/>
+本文主要关注 Maven 项目中如何使用 Cucumber, 循序渐进的从简单的测试开始，然后跃进到与 JUnit 5/ JUnit 4 的结合，以及普通 Unit Test 和 BDD 测试如何并存且可区分的执行，或者在 Maven 中创建独立的  src/bdd 目录单独存放 BDD 测试用例。<!--more--><br/><br/>
+<h2>从最简单的 Cucumber 开始</h2><br/><br/>
+Cucumber 官方有一个 <a href="https://github.com/cucumber/cucumber-java-skeleton">cucumber-java-skeleton</a> 示例，如果使用的是 IntelliJ IDEA, 那么下面是一个最简单的可运行例子了。<br/><br/>
+首先从一张图开始, 在 IntelliJ IDEA 中安装了 <code>Cucumber for Java</code> 和 <code>Gherkin</code> 插件件，下面最简单的方式就能让 <code>Cucumber</code> 在 IntelliJ IDEA 中运行起来。<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/03/cucumber-java-1.png"><img class="aligncenter wp-image-14108" src="https://yanbin.blog/wp-content/uploads/2025/03/cucumber-java-1-800x507.png" alt="" width="1000" height="634" /></a><br/><br/>
+注意到上图上 login.feature 文件是可运行的，必要条件只需 <code>LoginSteps.java</code>, <code>login.feature</code>, 并且 Maven 依赖只有 <code>cucumber-java</code>. 这里就没必要一一把那些文件内容以文本方式列出来，要是要尝试而不想按键的话，用 AI 自动文字识别就是。<br/><br/>
+如果展开看它的执行命令，主要就是<br/><br/>
+<blockquote>
+java --classpath &lt;包含一些 cucumber 相关的 jar 包&gt; io.cucumber.core.cli.Main --plugin org.jetbrains.plugins.cucumber.java.run.CucumberJvm5SMFormatter --name ^Successful login$ /&lt;path-to&gt;/tests/test-cucumber-java/src/test/resources/login.feature
+</blockquote>
+<br/>
+<h2>用 Maven 命令执行 Cucumber 测试</h2><br/><br/>
+前面的例子用 <code>mvn test</code> 跑的话发现不了任何的测试用例，所以还需要稍加改造才能用 <code>mvn test</code> 运行 Cucumber 测试用例。<br/><br/>
+<h3>Cucumber 与 JUnit 5 集成</h3><br/><br/>
+现在往 pom.xml 中添加两个依赖<br/><br/>
+<pre class="lang:default decode:true "> &lt;dependency&gt;
+     &lt;groupId&gt;io.cucumber&lt;/groupId&gt;
+     &lt;artifactId&gt;cucumber-junit-platform-engine&lt;/artifactId&gt;
+     &lt;version&gt;7.21.1&lt;/version&gt;
+     &lt;scope&gt;test&lt;/scope&gt;
+ &lt;/dependency&gt;
+ &lt;dependency&gt;
+     &lt;groupId&gt;org.junit.platform&lt;/groupId&gt;
+     &lt;artifactId&gt;junit-platform-suite&lt;/artifactId&gt;
+     &lt;version&gt;1.11.2&lt;/version&gt;
+     &lt;scope&gt;test&lt;/scope&gt;
+ &lt;/dependency&gt;
+</pre>
+<br/>
+还无需用到 Cucumber 的 Runner,  我们可以直接用 mvn 命令来执行 src/test/resources 中的 feature 定义了，命令如下<br/><br/>
+<blockquote>
+mvn test -Dsurefire.includeJUnit5Engines=cucumber -Dcucumber.plugin=pretty -Dcucumber.features=src/test/resources
+</blockquote>
+<br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/03/cucumber-java-2.png"><img class="aligncenter wp-image-14114" src="https://yanbin.blog/wp-content/uploads/2025/03/cucumber-java-2-800x394.png" alt="" width="1000" height="493" /></a><br/><br/>
+同时注意控制台输出中的 <code>Discovering tests...</code> 信息应该对我们十分有用的, 可让我们进一步探索 Cucumber 有哪些方式发现 features。同时无需自定义 Cucumber Runner 的方式也让我们有一种单独的方式去执行 BDD 测试用例，这里可以试着添加一个普通的 JUnit 测试用例看该 mvn 命令是否会同时执行 JUnit 测试用例。<br/><br/>
+Cucumber 对使用 -Dcucumber.features 发出了警告，相应的代码在 <a href="https://github.com/cucumber/cucumber-jvm/blob/main/cucumber-junit-platform-engine/src/main/java/io/cucumber/junit/platform/engine/DiscoverySelectorResolver.java">DiscoverySelectorResolver</a><br/><br/>
+<pre class="lang:default mark:3 decode:true">        List&lt;FeatureWithLines&gt; featureWithLines = options.featuresWithLines();
+        if (!featureWithLines.isEmpty()) {
+            warnWhenCucumberFeaturesPropertyIsUsed();
+            featureWithLines.forEach(featureResolver::resolveFeatureWithLines);
+            return;
+        }<br/><br/>
+        request.getSelectorsByType(ClasspathRootSelector.class).forEach(featureResolver::resolveClasspathRoot);
+        request.getSelectorsByType(ClasspathResourceSelector.class).forEach(featureResolver::resolveClasspathResource);
+        request.getSelectorsByType(ClassSelector.class).forEach(featureResolver::resolveClass);
+        request.getSelectorsByType(PackageSelector.class).forEach(featureResolver::resolvePackageResource);
+        request.getSelectorsByType(FileSelector.class).forEach(featureResolver::resolveFile);
+        request.getSelectorsByType(DirectorySelector.class).forEach(featureResolver::resolveDirectory);
+        request.getSelectorsByType(UniqueIdSelector.class).forEach(featureResolver::resolveUniqueId);
+        request.getSelectorsByType(UriSelector.class).forEach(featureResolver::resolveUri);</pre>
+<br/>
+第三行代码输出了前面控制台的警告信息，可采用的其他发现 Cucumber 测试用例的方式有 ClasspathRootSelector, ClasspathResourceSelector 等方式，但尚未找到办法如何通过 mvn 命令行参数来选择不同的 Selector，需要通过一个 @Suite 注解的类作为入口<br/><br/>
+创建一个 RunCucumberTest 类，后缀为 Test 是为了让 <code>mvn test</code> 能发现它<br/><br/>
+<pre class="lang:default decode:true">import org.junit.platform.suite.api.ConfigurationParameter;
+import org.junit.platform.suite.api.SelectPackages;
+import org.junit.platform.suite.api.Suite;<br/><br/>
+import static io.cucumber.core.options.Constants.PLUGIN_PROPERTY_NAME;<br/><br/>
+@Suite
+@SelectPackages("")
+@ConfigurationParameter(key = PLUGIN_PROPERTY_NAME, value = "pretty,html:target/cucumber.html")
+public class RunCucumberTest {
+}
+</pre>
+<br/>
+使用 @SelectPackages("") 是将要使用 PackageSelector， 由于 "login.feature" 在默认包下，所以用空字符串。<br/><br/>
+查看与注解类 SelectPackages 所在的包可发现其他与不同 Selector 对应的注解，如 SelectClasspath, SelectFile, SelectMethod 等<br/><br/>
+@ConfigurationParameter 进行额外的配置，其他可配置项参考 <a href="https://github.com/cucumber/cucumber-jvm/blob/main/cucumber-core/src/main/java/io/cucumber/core/options/Constants.java">io.cucumber.core.options.Constants</a> 中的常量定义<br/><br/>
+现在只需简单的执行 <code>mvn test</code> 命令<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/03/cucumber-java-3.png"><img class="aligncenter wp-image-14118" src="https://yanbin.blog/wp-content/uploads/2025/03/cucumber-java-3-800x445.png" alt="" width="739" height="411" /></a><br/><br/>
+项目中同时添加了一个普通的 JUnit 5 的测试类 SampleTest, 为了说明 <code>mvn test</code> 同时会执行普通 JUnit 测试和 @Suite 标注的 Cucumber 测试。同时因为配置了 "html:target/cucumber.html", 所以生成了漂亮的网页形式的 Cucumber 测试报告 target/cucumber.html。<br/><br/>
+被 @Suite 注解的 RunCucumberTest 在 IntelliJ IDEA 中也是可执行的<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/03/cucumber-java-4.png"><img class="aligncenter wp-image-14120" src="https://yanbin.blog/wp-content/uploads/2025/03/cucumber-java-4.png" alt="" width="344" height="110" /></a><br/><br/>
+因为 @Suite 是被 @Testable 注解了的<br/><br/>
+<code>mvn test</code> 会执行项目中的所有 @Suite(@Testable) 或 JUnit 测试，如果有多个 *.feature 文件，想要指定某个或某些 *.feature 文件该如何呢？在 IntelliJ IDEA 可选择某个 *.feature 文件来执行。如果用 @Suite 的办法，可创建不同的 CucumberTest 文件，用 @SelectXxx 注解各自包含想要执行的 *.feature 文件即可。比如<br/><br/>
+<pre class="lang:default decode:true">@Suite
+@SelectClasspathResource("order.feature")
+public class OrderCucumberTest {
+}</pre>
+<br/>
+在 IntelliJ IDEA 单独执行它，或用 Maven 命令<br/><br/>
+<blockquote>
+mvn test -Dtest=OrderCucumberTest
+</blockquote>
+<br/>
+或用更高级的在 pom.xml 中配置 Surefire 或 Failsafe 插件。<br/><br/>
+到目前讲到的 <code>mvn test</code> 是关于 JUnit 5 与 Cucumber 的集成，用到的是 <a href="https://github.com/cucumber/cucumber-jvm/tree/main/cucumber-junit-platform-engine" target="_blank" rel="noopener noreferrer">cucumber-junit-platform-engine</a>，实现 JUnit5 与 Cucumber 测试能被 <code>mvn test</code>  命令发现。Cucumber 官方有一个参考 <a href="https://github.com/cucumber/cucumber-java-skeleton/tree/main">cucumber-java-skeleton</a>。<br/><br/>
+<h3>Cucumber 与 JUnit 4 的集成</h3><br/><br/>
+JUnit 5 要说出来也快六年了(稳定版 2017 年发布), 但仍有相当数量的项目使用的还是 JUnit 4。<br/><br/>
+若要 Cucumber 与 JUnit 4 一起工作的话，要用到 <a href="https://cucumber.io/docs/cucumber/api/#junit">cucumber-junit</a>. 在 pom.xml 中只需要用到的依赖是<br/><br/>
+<pre class="lang:default decode:true ">&lt;dependency&gt;
+     &lt;groupId&gt;io.cucumber&lt;/groupId&gt;
+     &lt;artifactId&gt;cucumber-java&lt;/artifactId&gt;
+     &lt;version&gt;7.21.1&lt;/version&gt;
+     &lt;scope&gt;test&lt;/scope&gt;
+ &lt;/dependency&gt;
+ &lt;dependency&gt;
+     &lt;groupId&gt;io.cucumber&lt;/groupId&gt;
+     &lt;artifactId&gt;cucumber-junit&lt;/artifactId&gt;
+     &lt;version&gt;7.21.1&lt;/version&gt;
+ &lt;/dependency&gt;</pre>
+<br/>
+login.feature 文件和 LoginSteps 的写法不变，就是 RunCucumberTest 的代码有所不同<br/><br/>
+<pre class="lang:default decode:true">import io.cucumber.junit.Cucumber;
+import io.cucumber.junit.CucumberOptions;
+import org.junit.runner.RunWith;<br/><br/>
+@RunWith(Cucumber.class)
+@CucumberOptions(
+    features = "src/test/resources",
+    plugin = {"pretty", "html:target/cucumber.html"}
+)
+public class RunCucumberTest {
+}</pre>
+<br/>
+改成用 @RunWith(Cucumber.class) 替代 @Suite, 用 @CucumberOptions 配置 Cucumber. <br/><br/>
+执行<br/><br/>
+<blockquote>
+mvn test
+</blockquote>
+<br/>
+看到的是<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/03/cucumber-java-5.png"><img class="aligncenter wp-image-14123" src="https://yanbin.blog/wp-content/uploads/2025/03/cucumber-java-5-800x410.png" alt="" width="734" height="376" /></a><br/><br/>
+同样混有普通的 JUnit 4 的测试用例 SampleTest。<br/><br/>
+用类似的方式组织不同的 *.feature 文件。<br/><br/>
+<h2>其他相关知识</h2><br/><br/>
+与 JUnit 的 @Before, @After 一样，Cucumber 也有自己的 @After, @AfterAll, @AfterStep, @Before, @BeforeAll, @BeforeStep 等注解，用于事前准备与事后料理等事。比如在进行所有的 Order 步骤前用 @BeforeAll 进行登陆获得 token, token 可存放在某个类或实例变量中，只要能被 Step 访问到即可。<br/><br/>
+在 *.feature 文件中还能用 <code>Backgroud</code> 定义类似于 @BeforeAll 的前提条件。除了 <code>Given</code>, <code>When</code>, <code>Then</code> 之外，还有 <code>And</code>, <code>But</code> 连接词，组合起来可表达更丰富的语义。<br/><br/>
+常用的 Assert 库除了 JUnit 4 和 JUnit 5 自带的 assertXxx 方法外，还有 <a href="https://joel-costigliola.github.io/assertj/">AssertJ</a>, <a href="https://rest-assured.io/">REST-assured</a>, <a href="https://hamcrest.org/JavaHamcrest/tutorial">Hamcrest</a>, <a href="https://truth.dev/">Google Truth</a>, 本人最常用的是 AssertJ。

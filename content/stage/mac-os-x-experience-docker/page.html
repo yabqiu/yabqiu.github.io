@@ -1,0 +1,122 @@
+---
+title: Mac OS X 下安装使用 Docker
+url: /mac-os-x-experience-docker/
+date: 2014-05-16T03:30:04-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2014/05/homepage-docker-logo.png"
+categories:
+  - Linux/Unix
+tags: 
+  - mac
+  - Docker
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6473 
+wpStatus: publish
+views: 22334
+lastmod: 2023-12-13T00:08:30-06:00
+---
+
+<span style="color: #ff0000; font-size: 12pt;">前注: 欢迎进到本页, 本篇写时较早, 而 Mac OS X 下 Docker 早不建议用 boot2docker 了, 取而代之的是 docker-machine. 请点击链接 <a style="color: #ff0000;" href="http://unmi.cc/mac-os-x-experience-docker-new-2/">Mac OS X 下安装使用 Docker (新) </a>查看最新安装过程与体验</span></p>
+<br/>
+云主机可以选择操作系统镜像快速创建主机，这比虚拟机更便捷了，我们本地也可以这么做了，因为有了 <a href="https://www.docker.io/" target="_blank" rel="noopener">Docker</a> 这个东西。它依赖于 LXC(Linux Container)，能从网络上获得配置好的 Linux 镜像，非常容易在隔离的系统中运行自己的应用。也因为它的底层核心是个 LXC，所以在 Mac OS X 下需要在 VirtualBox 中跑一个精小的 LXC(这里是一个 <a href="http://tinycorelinux.net">Tiny Core Linux</a>，完全在内存中运行，个头只约 24MB，启动时间小于 5 秒的 <a href="https://github.com/boot2docker/boot2docker" target="_blank" rel="noopener">boot2docker</a>) 虚拟机，构建在 VirtualBox 中。以后的通信过程就是 docker --&gt; boot2docker --&gt; container，端口或磁盘映射也是遵照这一关系。<br/><br/>
+理解了上面的关系，开始说说 Docker 安装过程<br/><br/>
+<strong>1. 安装 <a href="https://www.virtualbox.org/" target="_blank" rel="noopener">VirtualBox</a></strong>, 不多讲, 因要在它当中创建一个 boot2docker-vm 虚拟机<br/><br/>
+<strong>2. 安装 boot2docker</strong><br/><br/>
+<blockquote>brew install boot2docker</blockquote>
+<br/>
+<span style="color: #c0c0c0;">你也可以手工安装<!--more--></span><br/><br/>
+<blockquote><span style="color: #c0c0c0;"><span style="font: 13px Arial;">curl </span><span style="font: 13px Arial;"><span style="text-decoration: underline;">https://raw.github.com/steeve/boot2docker/master/boot2docker</span></span><span style="font: 13px Arial;"> &gt; boot2docker; chmod +x boot2docker; sudo mv boot2docker /usr/local/bin</span></span></blockquote>
+<br/>
+<strong>3. 安装 Docker</strong><br/><br/>
+<blockquote>brew install docker</blockquote>
+<br/>
+<span style="color: #c0c0c0;">也可手工安装</span><br/><br/>
+<blockquote><span style="color: #c0c0c0;"><span style="font: 13px Arial;">curl -o docker </span><span style="font: 13px Arial;"><span style="text-decoration: underline;">http://get.docker.io/builds/Darwin/x86_64/docker-latest</span></span><span style="font: 13px Arial;">; chmod +x docker; sudo cp docker /usr/local/bin</span></span></blockquote>
+<br/>
+<strong>4. 配置 Docker 客户端</strong><br/><br/>
+<blockquote><span style="font: 13.0px Arial;">export DOCKER_HOST=tcp://127.0.0.1:4243</span></blockquote>
+<br/>
+把它写到 ~/.bash_profile 中，如果你是用的 bash 的话。我工作在 fish 下，所以在 ~/.config/fish/config.fish 中加了 set -x DOCKER_HOST tcp://127.0.0.1:4243<br/><br/>
+<strong>5. boot2docker 初始化与启动</strong><br/><br/>
+<blockquote>boot2docker init</blockquote>
+<br/>
+完成后就能在 VirtualBox 中看到一个叫做 <code>boot2docker-vm</code> 的虚拟机，以后只需用 boot2docker 命令来控制这个虚拟机的行为，启动，停止等。<br/><br/>
+<blockquote>boot2docker up</blockquote>
+<br/>
+启动，<code>boot2docker-vm</code> 虚拟机，我们能在 VirtualBox 中看到该虚拟机变成 Running 状态<br/><br/>
+直接执行 boot2docker 可以看到可用的参数<br/><br/>
+<span style="font: 13.0px Arial;"><code>Usage /usr/local/bin/boot2docker {init|start|up|save|pause|stop|restart|status|info|delete|ssh|download}</code></span><br/><br/>
+<strong>6. 启动 Docker 守护进程</strong><br/><br/>
+<blockquote>sudo docker -d</blockquote>
+<br/>
+这时可执行 <code>boot2docker ssh</code>，输入密码  tcuser 进到该虚拟机的控制台下，如果要用户名的话请输入 <code>docker</code><br/><br/>
+<blockquote><img class="aligncenter wp-image-6475" src="/wp-content/uploads/2014/05/boot2docker_vm1-800x539.png" alt="boot2docker_vm" width="600" height="405" /></blockquote>
+<br/>
+上面看到 Mac 启动了 4243 端口，在 boot2docker 虚拟机中也有 4243 端口，并在 /var/run/docker.sock 上监听。借此回顾下 docker 的通信过程，dock 命令是与 Docker daemon 在  Mac 上开启的  4243 端口通信，该端口映射到 boot2docker 的  4243 端口上，进而通过 /var/run/docker.sock 与其中的容器进行通信。<br/><br/>
+所以在执行  docker version 时如果没有启动 Docker daemon 会提示<br/><br/>
+2014/05/16 06:52:48 Cannot connect to the Docker daemon. Is 'docker -d' running on this host?<br/><br/>
+如果没有启动 boot2docker 会得到提示<br/><br/>
+Get http:///var/run/docker.sock/v1.11/version: dial unix /var/run/docker.sock: no such file or directory<br/><br/>
+Mac OS X -- boot2docker -- container 三者之间的关系，这张图很好的说明了<br/><br/>
+<p style="text-align: center;"><img class="aligncenter wp-image-6486" src="/wp-content/uploads/2014/05/docker-install-800x417.png" alt="docker-install" width="600" height="313" />图片来自：<a href="http://tech.uc.cn/?p=2726" target="_blank" rel="noopener">http://tech.uc.cn/?p=2726</a></p>
+<br/>
+<hr /><br/><br/>
+上面  boot2docker, docker 都准备就绪了, 现在开始进入 dock  的操作了，有关于 docker 的命令可以参看这里 <a href="http://blog.tankywoo.com/docker/2014/05/08/docker-4-summary.html" target="_blank" rel="noopener">http://blog.tankywoo.com/docker/2014/05/08/docker-4-summary.html</a>。<br/><br/>
+<strong>1. 下载镜像，并加载启动容器</strong><br/><br/>
+<blockquote>docker images    #现在没有一个镜像 docker pull learn/tutorial     #我们把这个拉下来试验，可用 docker search ubuntu 找到所有与 ubuntu 有关的镜像 docker run -i -t  learn/tutorial  sh #加载镜像 learn/tutorial 并进到 shell 下，这样就直接连接到该容器中，退出后容器也退了 docker ps     #在另一个终端中用这个命令，可以看到运行实例，即容器</blockquote>
+<br/>
+现在我们在容器的控制台上 oot@95903c1a2bf7:/#，可以安装一个 apche2, curl 并启动 apache2，来测试下<br/><br/>
+<blockquote>root@95903c1a2bf7:/# apt-get update <br />
+root@95903c1a2bf7:/# apt-get install apache2 curl <br />
+root@95903c1a2bf7:/# apachectl start <br />
+root@95903c1a2bf7:/# curl http://localhost <br />
+&lt;html&gt;&lt;body&gt;&lt;h1&gt;It works!&lt;/h1&gt; <br />
+&lt;p&gt;This is the default web page for this server.&lt;/p&gt; <br />
+&lt;p&gt;The web server software is running but no content has been added, yet.&lt;/p&gt; &lt;/body&gt;&lt;/html&gt;</blockquote>
+<br/>
+Apache2 正常启动了，在容器内可访问。但现在还无法从 Mac OS X 上对该 apache 服务进行访问，这需要端口映射，有两种方式。不过在端口映射之前还需保存下镜像的修改。<br/><br/>
+<strong>2. 保存镜像</strong><br/><br/>
+如果前面用 docker run -i -t learn/tutorial sh 运行的镜像<br/><br/>
+在运行该镜像的容器中安装了软件，需要把新的内容保存到该镜像中去，否则下次启动该镜像又恢复成原样<br/><br/>
+<blockquote>yanbin@localhost ~&gt; docker ps -l <br />
+CONTAINER ID        IMAGE                   COMMAND             CREATED             STATUS              PORTS               NAMES <br />
+95903c1a2bf7        learn/tutorial:latest   /bin/bash           6 minutes ago       Up 5 minutes        80/tcp              thirsty_colden</blockquote>
+<br/>
+看到容器的 ID，然后执行<br/><br/>
+<blockquote>docker commit 95903c1a2bf7 learn/tutorial:latest  #把当前容器的修改提交到镜像 learn/tutorial  中去</blockquote>
+<br/>
+以后再次运行该镜像就有了最新安装的内容了。<br/><br/>
+<strong>2. 端口映射</strong><br/><br/>
+比如我们现在要做的映射关系是 Mac OS X(50080) --&gt; boot2docker(40080) --&gt; container(80)，如下图： <img class="aligncenter wp-image-6487" src="/wp-content/uploads/2014/05/docker-port-map-800x423.png" alt="docker-port-map" width="600" height="317" /><br/><br/>
+<p style="text-align: center;">图片修改自：<a href="http://tech.uc.cn/?p=2726" target="_blank" rel="noopener">http://tech.uc.cn/?p=2726</a></p>
+<br/>
+可以有两种办法 1)<br/><br/>
+<blockquote>boot2docker ssh -L 50080:localhost:40080  #这条命令可以在  boot2docker-vm  运行时执行，建立多个不同的映射就是执行多次 <br />
+docker run -i -t -p 40080:80 learn/tutorial sh <br />
+root@c79b5070a972:/# apachectl start <br />
+<span style="color: #3366ff;">如果要映射多个端口需重复指定，命令如下：</span> <span style="color: #3366ff;">boot2docker ssh -L 50080:localhost:40080 -L50443:localhost:40443</span> <span style="color: #3366ff;">docker run -i -t -p 40080:80 -p 40443:443 learn/tutorial sh</span></blockquote>
+<br/>
+然后在 Mac 的浏览器中打开 http://localhost:50080<br/><br/>
+<img class="aligncenter wp-image-6478" src="/wp-content/uploads/2014/05/port-mapping-docker_1-800x275.png" alt="port-mapping-docker_1" width="500" height="172" /> 2)<br/><br/>
+<blockquote><span style="font: 13.0px Courier;">VBoxManage modifyvm "boot2docker-vm" --natpf1 "tcp-port_50080:80,tcp,,50080,,40080"</span> <br />
+docker run -i -t -p 40080:80 learn/tutorial <br />
+root@c79b5070a972:/# apachectl start</blockquote>
+<br/>
+这是直接修改了  boot2docker-vm 的配置，可以在 VirtualBox 中看到这条配置，配置 nat 命令见 <a href="http://www.virtualbox.org/manual/ch06.html#natforward" target="_blank" rel="noopener">http://www.virtualbox.org/manual/ch06.html#natforward</a>. 也能建立许多的端口映射 <img class="aligncenter size-large wp-image-6479" src="/wp-content/uploads/2014/05/boot2docker-vm-port-800x215.png" alt="boot2docker-vm-port" width="800" height="215" /> 还能直接在这里编辑端口映射关系<br/><br/>
+<hr /><br/><br/>
+Docker  的世界很精彩，其他内容基本就是怎么用好 Docker 命令，如管理镜像，容器，创建自己的镜像; Docker 有三种运行命令的方式，短暂方式，交互方式，daemon方式; 使用 ssh 来管理容器等等。<br/><br/>
+在 Mac 下使用 Docker 除了可用 boot2docker 作为 LXC，还有个替代品 <span style="font: 13.0px Arial; color: #042eee;"><span style="text-decoration: underline;">VAGRANT</span></span> 。<br/><br/>
+注(2015-01-27)：<br/><br/>
+写此文时 docker 版本是 0.9.1。目前版本是 1.3.1.<br/><br/>
+参考： <br />
+1. <a href="http://tech.uc.cn/?p=2726" target="_blank" rel="noopener">利用Docker构建开发环境</a> <br />
+2. <a href="http://www.blogjava.net/yongboy/archive/2013/12/12/407498.html" target="_blank" rel="noopener">Docker学习笔记之一，搭建一个JAVA Tomcat运行环境</a> <br />
+3. <a href="http://docs.docker.io/installation/mac/" target="_blank" rel="noopener">Installing Docker on Mac OS X</a> <br />
+4. <a href="https://github.com/boot2docker/boot2docker" target="_blank" rel="noopener">https://github.com/boot2docker/boot2docker</a> <br />
+5. <a href="http://cn.soulmachine.me/blog/20131026/" target="_blank" rel="noopener">Docker 快速入门</a>

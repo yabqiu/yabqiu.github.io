@@ -1,0 +1,131 @@
+---
+title: Windows下安装使用openldap
+url: /windows-install-openldap/
+date: 2007-07-26T13:49:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Mid-Ware
+tags: 
+  - OpenLdap
+  - Windows
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 497 
+wpStatus: publish
+views: 3269
+lastmod: 2021-09-10T13:05:48-05:00
+---
+
+openldap 比起其他商业目录服务器(比如 IBM Directory Server)，特别的轻巧，十分适合于本地开发测试用，在产品环境中的表现也很优秀。</p>
+<br/>
+openldap 软件在它的官方网站 <a href="http://www.openldap.org">http://www.openldap.org</a>, 不过下载过来是源代码，并没有包含 win32 下的 Makefile 文件，只提供了在 Unix/Linux 下编译用的 Makefile。所以相应的在网上介绍在 windows 下安装使用 openldap 的资料比较少，而在 Unix/Linux 下应用文档却很丰富。<br/><br/>
+本文实践了在 Windows 下安装配 openldap，并添加一个条目，LdapBrowser 浏览，及 Java 程序连接 openldap 的全过程。<!--more--><br/><br/>
+<strong>1. 下载安装 openldap for windows</strong>，当前版本2.2.29<br />
+下载地址：<a href="http://download.bergmans.us/openldap/openldap-2.2.29/openldap-2.2.29-db-4.3.29-openssl-0.9.8a-win32_Setup.exe">http://download.bergmans.us/openldap/openldap-2.2.29/openldap-2.2.29-db-4.3.29-openssl-0.9.8a-win32_Setup.exe</a><br />
+相关链接：<a href="http://lucas.bergmans.us/hacks/openldap/">http://lucas.bergmans.us/hacks/openldap/</a><br />
+安装很简单，一路 next 即可，假设我们安装在 c:\openldap<br/><br/>
+<strong>2. 配置 openldap</strong>，编辑 slapd.conf 文件<br />
+1) 打开 c:\openldap\slapd.conf，找到<br />
+include  ./schema/core.schema，在它后面添加<br />
+include  ./schema/cosine.schema<br />
+include  ./schema/inetorgperson.schema<br/><br/>
+接下来的例子只需要用到以上三个 schema，当然，如果你觉得需要的话，你可以把其他的 schema 全部添加进来<br />
+include  ./schema/corba.schema<br />
+include  ./schema/dyngroup.schema<br />
+include  ./schema/java.schema<br />
+include  ./schema/misc.schema<br />
+include  ./schema/nis.schema<br />
+include  ./schema/openldap.schema<br/><br/>
+2) 还是在 slapd.conf 文件中，找到<br />
+suffix  "dc=my-domain,dc=com"<br />
+rootdn  "cn=Manager,dc=my-domain,dc=com"<br />
+把这两行改为<br />
+suffix "o=tcl,c=cn"<br />
+rootdn "cn=Manager,o=tcl,c=cn"<br/><br/>
+suffix 就是看自己如何定义了，后面步骤的 ldif 文件就必须与它定义了。还要注意到这个配置文件中有一个 rootpw  secret，这个 secret 是 cn=Manager 的密码，以后会用到，不过这里是明文密码，你可以用命令： slappasswd -h {MD5} -s secret 算出加密的密码 {MD5}Xr4ilOzQ4PCOq3aQ0qbuaQ== 取代配置中的 secret。<br/><br/>
+<strong>3. 启动 openldap<br />
+</strong>CMD 进入到 c:\openldap 下，运行命令 slapd -d 1<br />
+用可以看到控制台下打印一片信息，openldap 默认是用的 Berkeley DB 数据库存储目录数据的。<br />
+如果你安装时选择了安装 install OpenLDAP-slapd as NT service 服务，你可以在系统服务中启动 OpenLDAP Directory Service。<br/><br/>
+<strong>4. 建立条目</strong>,编辑导入 ldif 文件<br />
+1) 新建一个 ldif(LDAP Data Interchanged Format) 文件(纯文本格式)，例如 test.ldif，文件内容如下：<br/><br/>
+dn: o=tcl,c=cn<br />
+objectClass: dcObject<br />
+objectClass: organization<br />
+o: tcl<br />
+dc: com<br/><br/>
+dn: uid=Unmi, o=tcl,c=cn<br />
+uid: Unmi<br />
+objectClass: inetOrgPerson<br />
+mail: <a href="mailto:fantasia@sina.com">fantasia@sina.com</a><br />
+userPassword:: MTIzNDU2<br />
+labeledURI: <a href="http://unmi.blogcn.com">http://unmi.blogcn.com</a><br />
+sn: Qiu<br />
+cn:: 6ZqU5Y+26buE6I66<br/><br/>
+2) 执行命令：ldapadd -x -D "cn=manager,o=tcl,c=cn" -w secret -f test.ldif<br />
+导入组织信息和一个用户 uid=Unmi<br />
+你可以用 LdapBrower 来导入这个 ldif 文件。<br/><br/>
+<strong>5. LdapBrowser 浏览</strong><br />
+可点击链接 <a href="/wp-content/uploads/2007/07/LdapBrowser282.zip">LdapBrowser282.zip</a> 下载，其中已配置好了 OpenLdap_Localhost<br/><br/>
+<p style="text-align: center;">1) 设置如下图所示：<br />
+<img class="aligncenter" style="border: 0px;" src="/wp-content/uploads/2010/09/unmi20070727022653358.jpg" alt="LdapBrowserSettings" width="464" height="290" border="0" /></p>
+<br/>
+指定了 Host 为 localhost 之后，可以点击 Fetch DNs 按钮显示出 o=tcl,c=cn 来，如果要能在 LdapBrowser 中对数据能修改就不能用 Anonymous bind, 必须填上 User DN: cn=manager，Passwer: secret。<br/><br/>
+<p style="text-align: center;">2) 看到的效果是：<br />
+<img class="aligncenter" style="border: 0px;" src="/wp-content/uploads/2010/09/unmi20070727023002205.jpg" alt="LdapBrowser" border="0" /></p>
+<br/>
+<strong>6. Java 连接 openldap<br />
+</strong><br/><br/>
+<pre class="lang:default decode:true   ">import  java.util.Hashtable;   
+import  javax.naming.Context;   
+import  javax.naming.NamingException;   
+import  javax.naming.directory.DirContext;   
+import  javax.naming.directory.InitialDirContext;   <br/><br/>
+public   class  LDAPTest {   
+    public static void  main(String[] args) {   
+    LDAPTest LDAPTest1 =  new  LDAPTest();   
+    String root =  "o=tcl,c=cn" ;  //root   
+    Hashtable env =  new  Hashtable();   
+    env.put(Context.INITIAL_CONTEXT_FACTORY,  "com.sun.jndi.ldap.LdapCtxFactory" );   
+    env.put(Context.PROVIDER_URL,  "ldap://localhost/"  + root);       
+    env.put(Context.SECURITY_AUTHENTICATION,  "simple" );   
+    env.put(Context.SECURITY_PRINCIPAL,  "cn=Manager,o=tcl,c=cn" );   
+    env.put(Context.SECURITY_CREDENTIALS,  "secret" );   
+    DirContext ctx =  null ;   
+     try  {   
+      ctx =  new  InitialDirContext(env);   
+      System.out.println( "认证成功" );   
+    }   
+     catch  (javax.naming.AuthenticationException e) {   
+      e.printStackTrace();   
+      System.out.println( "认证失败" );   
+    }   
+     catch  (Exception e) {   
+      System.out.println( "认证出错：" );   
+      e.printStackTrace();   
+    }   <br/><br/>
+     if  (ctx !=  null ) {   
+       try  {   
+        ctx.close();   
+      }   
+       catch  (NamingException e) {   
+         //ignore   
+      }   
+    }   
+  }   
+} </pre>
+<br/>
+代码中还没有实现用户的查找，读取、修改条目属性的操作<br/><br/>
+<strong>参考资料：</strong>1. <a href="http://fanqiang.chinaunix.net/app/other/2001-09-04/2832.shtml">如何设置一个基本的OpenLDAP Server</a><br />
+2. <a href="http://blog.donews.com/lizongbo/archive/2005/05/26/398427.aspx">windows下openldap的安装与java操作测试</a><br />
+3. <a href="http://blog.chinaunix.net/u1/42825/showart_335695.html">LDAP 入门知识</a><br />
+4. <a href="http://www.ringkee.com/note/opensource/openldap.htm">OpenLDAP学习笔记</a><br/><br/>
+<strong>下一步计划是：</strong><br />
+1. 完成 Apache 与 openldap 的集成<br />
+2. 完成 Tomcat 与 openldap 的集成<br />
+3. 使用 spring-ldap 的 LdapTemplate 操作 openldap

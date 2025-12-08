@@ -1,0 +1,116 @@
+---
+title: Swift 语言 Server 端开发资料收集
+url: /swift-server-side-development/
+date: 2015-11-18T23:01:23-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - http
+  - Swift
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7037 
+wpStatus: publish
+views: 427
+lastmod: 2021-09-03T17:41:54-05:00
+---
+
+苹果的 Swift 语言第二版预计在今年底开源，届时还可在 Linux 下使用 Swift 语言。试想一下此语言用在服务端 Web 开发也该是个很好的方向，需要实现对  HTTP 协议的支持。</p>
+<br/>
+Swift 本身就可以做 Shell 脚本用，所以以 CGI 的方式运行是没问题的，没有第三方相关的框架，可以自己完全输出响应头和体。<br/><br/>
+我们可以把 Swift 集成到像 Apache 或 Nginx 的 Web 服务器中，要做的工作可能多些，应该要用到 C/C++ 来写 Swift 支持模块。想下我们用这种 URL http://localhost/service/customer.swift 来访问 swift 实现的后台页面。<br/><br/>
+或者也可以让 Swift 代码像 NodeJs 一样运行，自己启动 HTTP Server。幸运的是我们已经有了 <a href="https://github.com/glock45/swifter" target="_blank" rel="noopener">Swifter</a> 和 <a href="https://github.com/izqui/Taylor" target="_blank" rel="noopener">Taylor</a>，再配之以纯 Swift 的模板实现 GRMustache, 简单开发不在话下。<br/><br/>
+一旦该语言流行开了，特别是能用在 Linux 平台下，总会有人去实现出对 HTTP 协议的支持，再配之以模板，让 Swift 像 PHP 一样在 Apache 中运行就不难了。<!--more--><br/><br/>
+下面是收集的几个简单应用例子：<br/><br/>
+<strong>CGI 方式</strong>: 可存成 TestCGI, 属性改为可执行，放在 Web 下的 /cgi-bin，让 HTTP Server 允许对该目录下的文件的执行权限，http://localhost/cgi-bin/TestCGI 就能看到页面了。<br/><br/>
+<pre class="lang:default decode:true">#!/usr/bin/env xcrun swift<br/><br/>
+import Foundation<br/><br/>
+println("Content-Type: text/html")
+println("Content:")
+println("")
+println("1. Process.argument(s):&lt;br /&gt;")
+for s in Process.arguments {
+    println(s + "&lt;br /&gt;")
+}
+println("&lt;br /&gt;")<br/><br/>
+let env: Dictionary = NSProcessInfo().environment<br/><br/>
+if let requestMethod: Optional = env["REQUEST_METHOD"] {
+    println("2. Request method is: \(requestMethod!)&lt;br /&gt;&lt;br /&gt;")
+}<br/><br/>
+println("3. Number of environment variables: \(env.count)&lt;br /&gt;&lt;br /&gt;")<br/><br/>
+println("4. List environment:&lt;br /&gt;")
+for key in env.keys {
+    println("\(key) == \(env[key]!)&lt;br /&gt;")
+}</pre>
+<br/>
+<strong>Swifter 实现</strong>: 是不是像 NodeJs 的意味，也定义的路由<br/><br/>
+<pre class="lang:default decode:true">import Swifter<br/><br/>
+let server = HttpServer()
+server["/"] = { request in 
+    return .OK(.HTML("Hello World!"))
+}<br/><br/>
+var e: NSError?
+if !server.start(3002, error: &amp;e) {
+    print("Server start error: \(e)")
+} else {
+    NSRunLoop.mainRunLoop().run
+}</pre>
+<br/>
+<strong>Taylor 实现</strong>: 也像 NodeJs 一样, 有了 req 和 res 显得更正式了<br/><br/>
+<pre class="lang:default decode:true ">import Taylor<br/><br/>
+let server = Taylor.Server()
+server.get("/") {
+    req, res, cb in
+        res.bodyString = "Hello World!"
+        cb(.Send(req, res))
+}<br/><br/>
+do {
+    try server.serveHTTP(port: 3001, forever: true)
+} catch let e {
+    print("Server start failed \(e)")
+}</pre>
+<br/>
+<strong>GRMustache 模板应用</strong><br/><br/>
+document.mustache 模板文件:<br/><br/>
+<pre class="brush:text">Hello {{name}}
+Your beard trimmer will arrive on {{format(date)}}.
+{{#late}}
+Well, on {{format(realDate)}} because of a Martian attack.
+{{/late}}</pre>
+<br/>
+把变量合并到模板中去的实现代码：<br/><br/>
+<pre class="brush:swift">import Mustache<br/><br/>
+// Load the `document.mustache` resource of the main bundle
+let template = try Template(named: "document")<br/><br/>
+// Let template format dates with `{{format(...)}}`
+let dateFormatter = NSDateFormatter()
+dateFormatter.dateStyle = .MediumStyle
+template.registerInBaseContext("format", Box(dateFormatter))<br/><br/>
+// The rendered data
+let data = [
+    "name": "Arthur",
+    "date": NSDate(),
+    "realDate": NSDate().dateByAddingTimeInterval(60*60*24*3),
+    "late": true
+]<br/><br/>
+// The rendering: "Hello Arthur..."
+let rendering = try template.render(Box(data))</pre>
+<br/>
+参考：<br/><br/>
+<ol>
+    <li><a href="https://speakerdeck.com/_shingt/server-side-swift-question" target="_blank" rel="noopener">Server Side Swift question by Shinichi Goto</a></li>
+    <li><a href="http://stackoverflow.com/questions/24235974/can-you-use-swift-as-a-web-programming-language" target="_blank" rel="noopener">Can you use Swift as a web programming language?</a></li>
+    <li><a href="http://practicalswift.com/2014/06/07/swift-scripts-how-to-write-small-command-line-scripts-in-swift/" target="_blank" rel="noopener">Swift scripts: How to write small command line scripts in Swift</a></li>
+    <li><a href="http://krakendev.io/blog/scripting-in-swift" target="_blank" rel="noopener">Scripting in Swift is Pretty Awesome</a></li>
+</ol>
+<br/>
+Google 关键字:  swift scripting, swift http server<br/><br/>
+<hr /><br/><br/>
+snell <a href="https://github.com/jonklein/snell" target="_blank" rel="nofollow noopener">https://github.com/jonklein/snell</a> 这个比较接近了, 可以 CGI 或单独运行，swtl 模板和 JSP 一样的用法来嵌入代码<br />
+<a href="http://perfect.org/" rel="nofollow">http://perfect.org/</a> 这个说的漂亮，但没有一个最简单的 Hello World.

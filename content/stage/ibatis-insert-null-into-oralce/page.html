@@ -1,0 +1,88 @@
+---
+title: 如何在 iBatis 应用程序向 Oralce 数据表字段插入 NULL 值
+url: /ibatis-insert-null-into-oralce/
+date: 2007-04-29T10:21:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/04/mybatis-logo.jpeg"
+categories:
+  - iBatis
+tags: 
+  - database
+  - iBatis
+  - Oracle
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 525 
+wpStatus: publish
+views: 1739
+lastmod: 2021-09-03T10:20:31-05:00
+---
+
+用 iBatis 应用程序连接的数据库是 Oracle, 映射文件中的插入语句写成如下形式 </p>
+<br/>
+<pre class="lang:default decode:true">&lt;!-- 插入一条Person对应的记录到数据库中 --&gt;
+&lt;insert id="insertPerson"  parameterClass="com.unmi.Person"&gt;
+    INSERT INTO PERSON(ID,NAME,PASSWD) VALUES(#id#,#name#,#passwd#)
+&lt;/insert&gt;</pre>
+<br/>
+<!--more-->Person表的三个字段都允许NULL值，当在用如下程序 <br/><br/>
+<pre class="brush:java">SqlMapClient sqlMap = SqlMapConfig.getSqlMapInstance();  // as coded above
+Person person = new Person(1);
+person.setName("Unmi");
+// person.setPasswd("123456"); // 注意该行被注释，让passwd属性为NULL
+sqlMap.insert("insertPerson", person);</pre>
+<br/>
+执行后程序报错<br />
+<span style="color: #ff0000;">Exception in thread "main" </span><span style="color: #0000ff;">com.ibatis.common.jdbc.exception.NestedSQLException</span><span style="color: #ff0000;">:</span><br />
+<span style="color: #ff0000;">--- The error occurred in com/unmi/Person.xml.<br />
+--- The error occurred while applying a parameter map.<br />
+--- Check the insertPerson-InlineParameterMap.<br />
+--- Check the parameter mapping for the 'passwd' property.<br />
+--- Cause: </span><span style="color: #0000ff;">java.sql.SQLException</span><span style="color: #ff0000;">: 无效的列类型</span><br />
+<span style="color: #ff0000;">Caused by:</span><span style="color: #0000ff;">java.sql.SQLException</span><span style="color: #ff0000;">: 无效的列类型<br />
+</span>     <span style="color: #ff0000;">at com.ibatis.sqlmap.engine.mapping.statement.GeneralStatement.executeUpdate(</span><span style="color: #0000ff;">GeneralStatement.java:91</span><span style="color: #ff0000;">)</span><br />
+     <span style="color: #ff0000;">at com.ibatis.sqlmap.engine.impl.SqlMapExecutorDelegate.insert(</span><span style="color: #0000ff;">SqlMapExecutorDelegate.java:442</span><span style="color: #ff0000;">)</span><br />
+     <span style="color: #ff0000;">at com.ibatis.sqlmap.engine.impl.SqlMapSessionImpl.insert(</span><span style="color: #0000ff;">SqlMapSessionImpl.java:81</span><span style="color: #ff0000;">)<br />
+</span>     <span style="color: #ff0000;">at com.ibatis.sqlmap.engine.impl.SqlMapClientImpl.insert(</span><span style="color: #0000ff;">SqlMapClientImpl.java:58</span><span style="color: #ff0000;">)<br />
+</span>     <span style="color: #ff0000;">at com.unmi.Client.main(</span><span style="color: #0000ff;">Client.java:33</span><span style="color: #ff0000;">)<br />
+</span><span style="color: #ff0000;">Caused by:</span><span style="color: #0000ff;">java.sql.SQLException</span><span style="color: #ff0000;">: 无效的列类型<br />
+</span>    <span style="color: #ff0000;">at oracle.jdbc.dbaccess.DBError.throwSqlException(</span><span style="color: #0000ff;">DBError.java:168</span><span style="color: #ff0000;">)<br />
+</span>    <span style="color: #ff0000;">at oracle.jdbc.dbaccess.DBError.throwSqlException(</span><span style="color: #0000ff;">DBError.java:210</span><span style="color: #ff0000;">)</span><br />
+    <span style="color: #ff0000;">at oracle.jdbc.dbaccess.DBError.throwSqlException(</span><span style="color: #0000ff;">DBError.java:273</span><span style="color: #ff0000;">)<br />
+</span>    <span style="color: #ff0000;">at oracle.jdbc.driver.OracleStatement.get_internal_type(</span><span style="color: #0000ff;">OracleStatement.java:4560</span><span style="color: #ff0000;">)</span><br />
+    <span style="color: #ff0000;">at oracle.jdbc.driver.OraclePreparedStatement.setNull(</span><span style="color: #0000ff;">OraclePreparedStatement.java:869</span><span style="color: #ff0000;">)<br />
+    at com.ibatis.sqlmap.engine.mapping.parameter.BasicParameterMap.setParameter(<span style="color: #0000ff;">BasicParameterMap.java:171</span>)<br />
+</span><br />
+只要去掉 person.setPasswd("123456"); 前的注释，让Person的三个字段都不为NULL，才能成功向数据库中插入记录。其实Person表并没有任何约束，却是iBatis在此拦截下来，实是多此一举。那如果我确实让某个字段是NULL值，该怎么做呢？您只要修改一下映射文件中预置的SQL语句就行了，告诉iBatis当该字段出现NULL值该用什么值来替代，连接Oracle即使是要求某字段传入NULL值时就是插入NULL值也必须要你累述一遍，好讨厌的事情。<br/><br/>
+<pre class="lang:default decode:true">&lt;!-- 插入一条Person对应的记录到数据库中 --&gt;
+&lt;insert id="insertPerson" parameterClass="com.unmi.Person"&gt;
+   INSERT INTO PERSON(ID,NAME,PASSWD) VALUES(#id#,#name#,#passwd:VARCHAR:NULL#)
+&lt;/insert&gt;</pre>
+<br/>
+支持的类型在 java.sql.Types 中列示出来了，我一开始还把上面的 VARCHAR 错写成了 VARCHAR2。再比如果你想传入的 id 为NULL时替换为 0, 你就可以写成 #id:INTEGER:0#。<br />
+<span style="color: #ff0000;">原因是 iBatis 是根据参数的当前值的类型(而不是类属性) 来决定对于这个 PrepairedStatement 设置参数是应该调用哪一个版本的 setXxx() 方法(是 String 就调用，setString() ，是 int 就调用 setInt() 等)。而如果参数值为 null，iBatis 便不知道调用哪个 setXxx() 方法，于是在 Oracle 的驱动下就笼统的调用 setNull() 方法，然而 Oracle 在对字符串类型字段使用 setNull() 却是有问题的。因为在配置中就必须指明当前字段的类型，如 #passwd:VARCHAR:NULL#，当 iBatis 在碰到参数为 null 难以决断时，但见到这里的 VARCHAR 选项，它也知道应该用 setString() 方法来给 PrepairedStatement 赋值。至于其中的 NULL，不过是指定参数为 null 时的默认值，显然，写成 #passwd:VARCHAR# 就行了，后面的 NULL 是多余的。<br />
+</span><br/><br/>
+不知你注意到没有，我们上面的insert标记配置了属性是 parameterClass, 那如果配置的是 parameterMap 该如何解决因字段为NULL值的问题呢？这就要求我们在配置 parameterMap标记中可能出现NULL值的参数一定要指定相应的 jdbcType属性就行。只要不指定nullValue属性就表示在该表这段中直接记下NULL值。<br/><br/>
+<pre class="lang:default decode:true ">&lt;parameterMap  id="insert-person-paraMap" class="com.unmi.Person"&gt;
+&lt;parameter property="id"/&gt;
+&lt;parameter property="name"/&gt;
+&lt;parameter property="passwd"  jdbcType="VARCHAR"/&gt;
+&lt;/parameterMap&gt;
+&lt;!-- 插入一条Person对应的记录到数据库中 --&gt;
+&lt;insert id ="insertPerson"  parameterMap="insert-person-paraMap"&gt;
+    INSERT INTO PERSON(ID,NAME,PASSWD) VALUES(?,?,?)
+&lt;/insert&gt;</pre>
+<br/>
+最后我连接MySql数据库，根本不需要为插入NULL值而考虑设置JDBC类型，平常对待，看来这是iBatis处理Oracle数据库的一个Bug.<br/><br/>
+参考链接：<br />
+    1. <a href="http://forum.springframework.org/archive/index.php/t-11438.html">ibatis problem inserting null value for Date type</a><br />
+    2. <a href="http://www.cjsdn.net/post/print?bid=10&amp;id=104479">iBatis框架插入一条数据有些字段是空值没法插入</a><br />
+    3. <a href="/fanjun/archive/2005/10/19/16064.html">iBatis学习心得</a><br/><br/>
+<hr /><br/><br/>
+补充：<br />
+2008-05-25，连接 Oracle 8.0.5 时写成 INSERT INTO PERSON(ID,NAME,PASSWD) VALUES(#id#,#name#,#passwd:DATE:NULL#) 时，插入的日期字段值为 NULL 还是会报出无法转换类型的错误，解决办法是把后面那个 NULL 去掉：INSERT INTO PERSON(ID,NAME,PASSWD) VALUES(#id#,#name#,#passwd:DATE#)

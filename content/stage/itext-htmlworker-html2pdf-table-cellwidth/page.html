@@ -1,0 +1,101 @@
+---
+title: iText 用 HTMLWorker 转换 HTML 为 PDF 时可设置表格列宽度
+url: /itext-htmlworker-html2pdf-table-cellwidth/
+date: 2010-12-05T06:58:57-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - pdf
+  - html
+  - iText
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2900 
+wpStatus: publish
+views: 5201
+lastmod: 2021-09-03T12:01:26-05:00
+---
+
+生成 pdf 的方式有多种，直接用 iText 编码控制产生，fop 转换，不过我觉得很方便的一种方法就是用 iText 的 HTMLWorker 类直接把 HTML 转换成相应的 PDF 文档，HTMLWorker 可支持图片和表格，一定数量的样式控制。这样可以让我们关注到 HTML 页面设计上，至于转换出来的效果就要看母版 HTML 的设计功底了。要知道这个 HTML 中的样式要让 HTMLWorker 可理解的，并非说能支持 CSS2 还是 CSS3。HTMLWorker 能支持的样式还是非常有限，并且还未文档化的，有些多试试，能看看源代码是自然可以让胸中更有数了。</p>
+<br/>
+项目中有一个比较迫切的问题是把 HTML 中的表格转换成 PDF 的 PdfPTable 时，无论是在 &lt;td&gt; 上用 width="xxx" 或是 style="width:xxx" 时都看不到宽度的设置效果，iText 总是让生成的 PdfPTable 平均分配单元格宽度的。这对于单元格宽度有过于悬殊的需求是无法妥协的，所以要一种办法来支持自定义单元格宽度，让 width="xxx"  或是 style="width:xxx" 有一种控制能力就行。又得改源代码了，网上找到了是支持 iText 2.1.7 的改法，本篇是针对 iText 5.0.4 的做法，使支持 width="10%" 百分比来控制单元格宽度。<!--more--><br/><br/>
+需要改动的文件有三个，全是在包 com.itextpdf.text.html.simpleparser 中的，HTMLWorker.java、IncTable.java 和  IncCell.java。我把改动的地方用 diff 生成的 patch 文件列出来吧，可以照着改，或是直接 patch。后面修改后的代码还提供下载，把类放在自己项目中的 src 目录中即可，想拉进原来的 iText.jar 包亦可。<br/><br/>
+HTMLWorker.java.patch：<br/><br/>
+<pre class="lang:default decode:true">50d49
+&lt; import java.util.Collections;
+586d584
+&lt;     ArrayList&lt;Integer&gt; cellWidths = new ArrayList&lt;Integer&gt;();
+591,598c589
+&lt;       //cells.add(((IncCell) obj).getCell());
+&lt;       IncCell cell = (IncCell)obj;
+&lt;       if(cell.getWidth() != null){
+&lt;        cellWidths.add(cell.getWidth());
+&lt;       }
+&lt;       
+&lt;       cells.add(cell.getCell()); 
+&lt;       
+---
+>       cells.add(((IncCell) obj).getCell());
+606,613d596
+&lt;     if(cellWidths.size()&gt;0){
+&lt;      Collections.reverse(cellWidths);
+&lt;      int[] widths = new int[cellWidths.size()];
+&lt;      for(int i=0;i&lt;widths.length;i++){
+&lt;       widths[i] = cellWidths.get(i).intValue();
+&lt;       table.setColWidths(widths);
+&lt;      }
+&lt;     }</pre>
+<br/>
+IncTable.java.patch<br/><br/>
+<pre class="lang:default decode:true">49d48
+&lt; import java.util.List;
+51d49
+&lt; import com.itextpdf.text.DocumentException;
+66,67d63
+&lt;     private int[] colWidths;
+&lt;    
+98,105d93
+&lt;     public int[] getColWidths(){
+&lt;      return colWidths;
+&lt;     }
+&lt;    
+&lt;     public void setColWidths(int[] colWidths){
+&lt;      this.colWidths = colWidths;
+&lt;     }
+&lt;    
+130,136d117
+&lt;         try{
+&lt;          if(colWidths != null){
+&lt;           table.setWidths(colWidths);
+&lt;          }
+&lt;         }catch(DocumentException e){
+&lt;       e.printStackTrace();
+&lt;      }</pre>
+<br/>
+IncCell.java.patch<br/><br/>
+<pre class="lang:default decode:true ">63d62
+&lt;     private Integer width;
+106,109d104
+&lt;         value = props.getProperty("width");
+&lt;         if(value != null &amp;&amp; value.endsWith("%")){
+&lt;          width = new Integer(value.replace("%",""));
+&lt;         }
+148,155d142
+&lt;  
+&lt;  public Integer getWidth(){
+&lt;   return width;
+&lt;  }
+&lt;  
+&lt;  public void setWidth(Integer width){
+&lt;   this.width = width;
+&lt;  }</pre>
+<br/>
+注意下，这是针对 iText 5.0.4 的版本，其他的版本可能有差异，打完补丁后给 &lt;td width="10%"&gt; 设置这样的百分比宽度就可以在 PDF 中看到效果的。注意，你可以只给第一个 &lt;tr&gt; 下的每一个 &lt;td&gt; 设置宽度，用百分比的。而且必须是第一行中每个 &lt;td&gt; 都要 width 属性。如果在 &lt;tr&gt; 中某个 &lt;td&gt; 设置了 width 属性，其他的 &lt;td&gt; 也必须要，不然会出现空指针错误。<br/><br/>
+这里是修改后的上面三个完整源程序的下载：<a href="http://unmi.cc/wp-content/uploads/2010/12/HTMLWorkerTablePatch.zip" target="_blank" rel="noopener">HTMLWorkerTablePatch.zip</a>。<br/><br/>
+参考：1. <a href="http://itext-general.2136553.n4.nabble.com/Re-HTMLWorker-table-cell-width-td2169832.html" target="_blank" rel="noopener">Re: HTMLWorker - table cell width</a>

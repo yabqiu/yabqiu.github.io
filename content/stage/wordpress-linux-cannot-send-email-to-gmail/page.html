@@ -1,0 +1,90 @@
+---
+title: WordPress 在 Linux 下不能向 Gmail 邮箱发邮件的问题
+url: /wordpress-linux-cannot-send-email-to-gmail/
+date: 2018-06-14T00:24:22-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/wordpress_logo.png"
+categories:
+  - Linux/Unix
+tags: 
+  - wordpress
+  - gmail
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8862 
+wpStatus: publish
+views: 608
+lastmod: 2019-11-05T09:59:43-06:00
+---
+
+一年前解决了 <a href="https://yanbin.blog/wordpress-linux-cannot-send-out-email/">WordPress 在 Linux 下不能发送邮件的问题</a>，后来有段时间很正常，我的网站接收邮件的邮箱是 Gmail 的。但是近来，网站上有留言时极少收到通知邮件，怀疑是 Debian 下的  <code>exim4</code> 又不能正常工作了。但是试了如下的 PHP 脚本</p>
+<br/>
+<blockquote>
+$ php -a<br />
+Interactive mode enabled<br />
+php&gt; mail('&lt;my_gmail_account&gt;@gmail.com', 'test subject', 'test content');<br />
+php &gt; exit
+</blockquote>
+<br/>
+从命令行上并没有提示任何的错误，但是检查我的 Gmail 信箱，死活就是收不到邮件。即使直接用  <code>mail</code> 命令<br/><br/>
+<blockquote>
+echo Hello World | mail -v -s Test &lt;my_gmail_account&gt;@gmail.com
+</blockquote>
+<br/>
+也是不行的。<br/><br/>
+查看日志文件 <code>/var/log/exim4/mainlog</code>, 发现有下面的错误信息<!--more--><br/><br/>
+<blockquote>
+2018-06-14 00:06:23 1fShAb-0005VQ-Fd Message is frozen<br />
+2018-06-14 00:06:23 1fSyHQ-0003fc-Pp Message is frozen<br />
+2018-06-14 00:06:23 1fT7OP-0000AZ-Rz Message is frozen<br />
+2018-06-14 00:06:23 1fT2i5-0006kw-IJ Message is frozen<br />
+2018-06-14 00:06:23 1fSiZh-0005tJ-9d Message is frozen<br />
+2018-06-14 00:06:23 End queue run: pid=21357<br />
+2018-06-14 00:09:01 1fTKVJ-0005cd-Tc &lt;= root@yanbin.blog U=root P=local S=651<br />
+2018-06-14 00:09:01 1fTKVJ-0005cd-Tc ** conoha@yanbin.blog &lt;root@yanbin.blog&gt;: Unrouteable address<br />
+2018-06-14 00:09:01 1fTKVJ-0005ch-Uy &lt;= &lt;&gt; R=1fTKVJ-0005cd-Tc U=Debian-exim P=local S=1460<br />
+2018-06-14 00:09:01 1fTKVJ-0005cd-Tc Completed<br />
+2018-06-14 00:09:01 1fTKVJ-0005ch-Uy ** conoha@yanbin.blog &lt;root@yanbin.blog&gt;: Unrouteable address<br />
+2018-06-14 00:09:01 1fTKVJ-0005ch-Uy Frozen (delivery error message)
+</blockquote>
+<br/>
+就是有大量的 "Message is frozen" 和  "Unrouteable address" 信息。(与  GMail 邮箱有交互，只是被不断的退回信件)<br/><br/>
+开始以为是 <code>/etc/exim4/update-exim4.conf.conf</code> 配置文件的问题，试了几番别的配置也无济于事。也怀疑过是否是域名的 MX 记录未设置的问题，加上了 MX 记录也不能解决，再想 Linux 上的  <code>exim4</code> 服务单单是用来往外发送邮件，无须 <code>MX</code> 记录。再试着往别处发邮件看看，发现新浪的邮箱也是收不到，但是自己的公司邮箱却是可以收到前面用 PHP 脚本或  <code>mail</code> 命令发出来的邮件。<br/><br/>
+外事不决靠 Google, 最后找到了原因，见 StackOverflow 中的  <a href="https://stackoverflow.com/questions/20346274/wordpress-is-not-sending-emails-to-gmail">Wordpress is not sending emails to Gamil</a> 中的描述:<br/><br/>
+<blockquote>
+<code>exim4</code> 不像 <code>postfix</code>, 不会自动设置  <code>Sender</code> 头<br />
+Gmail 最近为是杜绝垃圾邮件，对于未设置 <code>Sender</code> 头的邮件直接悄无声息的丢进了 Spam 信箱里去了(我也回头查看了下  Spam 信箱，果然前面用  PHP 脚本和 <code>mail</code> 命令发出的邮件也静静的躺在里头)<br />
+WordPress 也没有设置 <code>Send</code> 头信息
+</blockquote>
+<br/>
+就是因为 <code>Sender</code> 信息的缺失造成了 Gmail 把 WordPress 发出的邮件当成了垃圾。<br/><br/>
+其中也介绍了一种办法，修改 <code>wp-includes/pluggable.php</code> 代码在发送邮件前自己加上 <code>Sender</code> 头<br/><br/>
+<pre class="lang:default decode:true">//$phpmailer-&gt;From = apply_filters('wp_mail_from', $from_email);
+//找到大概像上面那样的代码，在它后面加上
+$phpmailer-&gt;Sender = $phpmailer-&gt;From;</pre>
+<br/>
+我没有去试这种办法，而是安装了下面将会介绍的一个插件使用 Gmail 作为邮件发送服务器来解决的。或许将来的  WordPress 版本会去解决这个问题，至少发送邮件里设置一下 <code>Sender</code> 头。<br/><br/>
+那篇 StackOverflow 的帖子还提到<br/><br/>
+<blockquote>
+Gmail (and likely Hotmail and Yahoo eventually) is <a href="http://googleonlinesecurity.blogspot.ca/2014/04/new-security-measures-will-affect-older.html" rel="nofollow">starting to disable traditional SMTP authentication mechanisms</a> (PLAIN, LOGIN and CRAMMD5) in favour of OAUTH2.
+</blockquote>
+<br/>
+在  WordPress 网站上搜索 <code>SMTP</code> 相关的插件，可以找到许多，而我现已安装能正常使用的是 <code><a href="https://wordpress.org/plugins/gmail-smtp/">Gmail SMTP</a></code> 插件。它的详细配置方法请参考 <a href="https://wphowto.net/gmail-smtp-plugin-for-wordpress-1341">Gmail SMTP Plugin for WordPress</a>，在这儿就不翻译不重复了。<br/><br/>
+简单说，该 Gmail SMTP 插件就是需要使用到 Gmail 的  OAuth 2.0 验证，在 Google API 管理中创建 Gmail API 项目，最终获得  Client ID 和 Client Secret，最络授权该插件访问你的  Gmail，完后还能在该插件设置界面直接发送邮件进行测试。<br/><br/>
+现上我的网站有了  Gamil SMTP 插件后，发送任何邮件都没问题了，有了它也就告别了 Linux 服务器上的 <code>exim4</code> 服务。没怎么测试往国内邮箱发送邮件的情况，除非国内邮件提供商明目张胆的禁止接收一切从 Gamil SMTP 服务器发送出来的邮件，那我就没辙了。<br/><br/>
+附录：下面是在解决这个问题过程中学到的几个检查域名 MX 记录的命令，gmail.com 为例<br/><br/>
+<blockquote>
+dig gmail.com MX<br />
+dig A mail.gmail.com<br />
+nslookup -qt=mx gmail.com   //Windows 下<br />
+nslookup -query=mx gmail.com
+</blockquote>
+<br/>
+这儿有很多 <code>nslookup</code> 相关的命令 <a href="https://www.thegeekstuff.com/2012/07/nslookup-examples/?utm_source=tuicool">10 Linux nslookup Command Examples for DNS Lookup</a>。<br/><br/>
+<hr /><br/><br/>
+2018-01-07: 为了规避强制的 OAuth2 的验证，也可以到 <a href="https://myaccount.google.com">https://myaccount.google.com</a> Google 帐号的 Security 设置中，把 <code>Less secure app access</code> 打开，但这样做肯定是不安全的，需谨慎。

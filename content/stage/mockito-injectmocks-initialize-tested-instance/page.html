@@ -1,0 +1,353 @@
+---
+title: 使用 Mockito 的 @InjectMocks 创建被测试类实例
+url: /mockito-injectmocks-initialize-tested-instance/
+date: 2018-02-01T23:26:28-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/01/rsz_mockito_logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - mockito
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8473 
+wpStatus: publish
+views: 6827
+lastmod: 2018-07-25T22:09:40-05:00
+---
+
+<p>初识 Mockito 这个测试框架后，我们要使用 Mock 的属性创建一个被测试类实例时，大概会下面这么纯手工来打造。</p>
+
+<p>假定类 <code>UserService</code> 有一个属性 <code>UserDao userDao</code>, 需要构造 <code>UserService</code> 实例时 Mock 内部状态</p>
+
+<blockquote><br/>
+<p>UserDao userDao = Mockito.mock(UserDao.class);<br /><br/>
+UserService testMe = new UserService(userDao);</p>
+
+</blockquote>
+
+<p>如此，userDao 的行为就可以自由模拟了，这种纯手工方式都不需要给测试类添加</p>
+
+<blockquote><br/>
+<p>@RunWith(MockitoJunitRuner.class)<br /><br/>
+//或<br /><br/>
+MockitoAnnotations.initMocks(this);</p>
+
+</blockquote>
+
+<p>因为上面两句是给 Mockito 的注解使用的。</p>
+
+<p>如果所有的 Mock 对象全部通过手工来创建，那就不容易体现出 Mockito 的优越性出来。因此对于被测试对象的创建，Mock 属性的注入应该让 <code>@Mock</code> 和 <code>@InjectMocks</code> 这两个注解大显身手了。</p>
+
+<p>标注在实例变量上的 <code>@Mock</code> 相当于是 <code>Mockito.mock(Class)</code> 创建了一个 Mock 对象，而 <code>@InjectMock</code> 标的实例会寻找到相应 Mock 属性想法构造出被测试类的实例。看下面的例子：<!--more--></p>
+
+<p>UserService 类</p>
+
+<pre class="lang:default decode:true" title="UserService">public class UserService {<br/>
+<br/>
+    private UserDao userDao;<br/>
+<br/>
+    public UserService(UserDao userDao) {<br/>
+        System.out.println("Constructor called");<br/>
+        this.userDao = userDao;<br/>
+    }<br/>
+<br/>
+    public UserDao getUserDao() {<br/>
+        return userDao;<br/>
+    }<br/>
+}</pre>
+
+<p>UserServiceTest 类</p>
+
+<pre class="lang:default decode:true ">@RunWith(MockitoJUnitRunner.class)<br/>
+public class UserServiceTest {<br/>
+<br/>
+    @Mock<br/>
+    private UserDao userDao;<br/>
+<br/>
+    @InjectMocks<br/>
+    private UserService testMe;<br/>
+<br/>
+    @Test<br/>
+    public void testInjectMocks() {<br/>
+        System.out.println(testMe.getUserDao().getClass());<br/>
+    }<br/>
+}</pre>
+
+<p>上面测试用例的输出为</p>
+
+<blockquote><br/>
+<p>Constructor called<br /><br/>
+class cc.unmi.UserDao$MockitoMock$878185941</p>
+
+</blockquote>
+
+<p>证明了 Mock 对象 <code>userDao</code> 成功的通过构造函数注入了 <code>testMe</code> 实例。</p>
+
+<p>除了通过构造函数注入 Mock 的属性外， <code>@InjectMocks</code>  还能通过 <code>setter</code> 方法，<code>属性注入</code>。私有的构造函数，setter 方法，属性都无法阻止 <code>@InjectMocks</code> 注入 Mock 对象。</p>
+
+<p>下面是理解自 Mockito 官方对 <code>@InjectMocks</code> 的 JavaDoc 说明，链接：<a href="https://static.javadoc.io/org.mockito/mockito-core/2.13.0/org/mockito/InjectMocks.html">https://static.javadoc.io/org.mockito/mockito-core/2.13.0/org/mockito/InjectMocks.html</a></p>
+
+<ol>
+
+	<li>Mockito 尝试按 <code>非默认构造函数</code>, <code>setter 方法</code>, <code>属性</code> 的顺序来注入 Mock 对象。如果存在一个有参数的构造函数，那么 <code>setter 方法</code> 和 <code>属性</code>  注入都不会发生。也就是说 <code>非默认构造函数</code> 不会与后两种方式同时发生，但找不到 <code>setter</code> 注入的 Mock 对象还会尝试用 <code>属性</code> 来直接注入。</li>
+
+	<li>如果 <code>@InjectMocks</code> 对象只有默认构造数，那么会调用该默认构造函数，并且依次采用下面两种方式注入属性。</li>
+
+	<li><code>非默认构造函数注入</code>: Mockito 会选择参数个数最多的构造函数(称之为最大构造函数) -- 这样可以尽可能注入多的属性。但是有多个最大构造函数，Mockito 究竟选择哪一个就混乱，测试时应该避免这种情况的发生。</li>
+
+	<li>如果构造函数中含有不可 Mock 的参数(基本类型), 则该构造函数将被 @InjectMocks 忽略掉。</li>
+
+	<li><code>setter 方法注入</code>: 和 Spring 类似，Mockito 首先根据属性类型(或擦除类型)找到 Mock 对象。存在多个相同类型 Mock 对象则按名称(<code>@Mock(name="userDao1")</code>)进行匹配，默认名称为空。不能按名称匹配到的话，可能会选择最后声明的那个，不确定性。</li>
+
+	<li><code>属性 注入</code>: 按 Mock 对象的类型或是名称的匹配规则与 <code>setter 方法注入</code> 是一样的。</li>
+
+</ol>
+
+<p>现在来开始有事实验证上面理解的 <code>@InjectMocks</code> 理论：</p>
+
+<h3>调用最大构造函数，调用了非默认构造函数将不会采用 <code>setter 方法</code> 和 <code>属性</code> 注入</h3><br/>
+<pre class="lang:default decode:true">public class UserService {<br/>
+    public UserDao userDao;<br/>
+<br/>
+    private UserService(String s1) {<br/>
+        System.out.println("Constructor 1 called");<br/>
+    }<br/>
+<br/>
+    private UserService(String s1, String s2) {<br/>
+        System.out.println("Constructor 2 called");<br/>
+    }<br/>
+<br/>
+    public void setUserDao(UserDao userDao) {<br/>
+        System.out.println("call setter");<br/>
+        this.userDao = userDao;<br/>
+    }<br/>
+}<br/>
+<br/>
+@RunWith(MockitoJUnitRunner.class)<br/>
+public class UserServiceTest {<br/>
+    <br/>
+    @Mock<br/>
+    private UserDao userDao;<br/>
+<br/>
+    @InjectMocks<br/>
+    private UserService testMe;<br/>
+<br/>
+    @Test<br/>
+    public void testInjectMocks() {<br/>
+        System.out.println(testMe.userDao);<br/>
+    }<br/>
+}</pre>
+
+<p>上面测试执行输出为：</p>
+
+<blockquote><br/>
+<p>Constructor 2 called<br /><br/>
+null</p>
+
+</blockquote>
+
+<p>同时证明了私有的构造函数一样被调用。</p>
+
+<h3>@InjectMocks 调用了默认构造函数后还能同时应用 <code>setter 方法</code> 和 <code>属性</code> 注入两种式</h3><br/>
+<pre class="lang:default decode:true">public class UserService {<br/>
+<br/>
+    public UserDao userDao;<br/>
+    private BookDao bookDao;<br/>
+<br/>
+    public UserService() {<br/>
+        System.out.println("Constructor 0 called");<br/>
+    }<br/>
+<br/>
+    private void setUserDao(UserDao userDao) {<br/>
+        System.out.println("call setter");<br/>
+        this.userDao = userDao;<br/>
+    }<br/>
+<br/>
+    public BookDao getBookDao() {<br/>
+        return this.bookDao;<br/>
+    }<br/>
+}<br/>
+<br/>
+@RunWith(MockitoJUnitRunner.class)<br/>
+public class UserServiceTest {<br/>
+<br/>
+    @Mock<br/>
+    private UserDao userDao;<br/>
+<br/>
+    @Mock<br/>
+    private BookDao bookDao;<br/>
+<br/>
+    @InjectMocks<br/>
+    private UserService testMe;<br/>
+<br/>
+    @Test<br/>
+    public void testInjectMocks() {<br/>
+        System.out.println(testMe.userDao.getClass());<br/>
+        System.out.println(testMe.getBookDao().getClass());<br/>
+    }<br/>
+}</pre>
+
+<p>测试代码输出如下：</p>
+
+<blockquote><br/>
+<p>Constructor 0 called<br /><br/>
+class cc.unmi.UserDao$MockitoMock$1978393893<br /><br/>
+class cc.unmi.BookDao$MockitoMock$910006861</p>
+
+</blockquote>
+
+<p>默认构造函数调用了，userDao 通过  setter 方法注入的，bookDao 通过属性直接注入的。把 setUserDao(..) 方法和 bookDao  设置为私有也是为了证明可见性不是障碍，当然 public 的更不是事。</p>
+
+<h3>含有基本类型参数的构造函数将被 @InjectMocks 忽略掉</h3><br/>
+<pre class="lang:default decode:true">public class UserService {<br/>
+<br/>
+    public UserDao userDao;<br/>
+<br/>
+    public UserService() {<br/>
+        System.out.println("Constructor 0 called");<br/>
+    }<br/>
+<br/>
+    private UserService(UserDao userDao, boolean flag) {<br/>
+        System.out.println("Constructor 2 called");<br/>
+    }<br/>
+}<br/>
+<br/>
+@RunWith(MockitoJUnitRunner.class)<br/>
+public class UserServiceTest {<br/>
+<br/>
+    @Mock<br/>
+    private UserDao userDao;<br/>
+<br/>
+    @InjectMocks<br/>
+    private UserService testMe;<br/>
+<br/>
+    @Test<br/>
+    public void testInjectMocks() {<br/>
+        System.out.println(testMe.userDao.getClass());<br/>
+    }<br/>
+}</pre>
+
+<p>执行测试用例的输出为：</p>
+
+<blockquote><br/>
+<p>Constructor 0 called<br /><br/>
+class cc.unmi.UserDao$MockitoMock$286493746</p>
+
+</blockquote>
+
+<p>由于无法构造出 Mock 的 boolean 类型，所以 UserService(UserDao userDao, boolean flag) 被忽略，调用了默认构造函数，并且 userDao 通过属性进行了注入。</p>
+
+<h3>多个相同类型的 Mock 对象通过名称进行匹配</h3><br/>
+<pre class="lang:default decode:true">public class UserService {<br/>
+<br/>
+    public UserDao userDao2;<br/>
+<br/>
+    private UserService(UserDao userDao1, String abc) {<br/>
+        System.out.println("Constructor 2 called");<br/>
+        this.userDao2 = userDao1;<br/>
+    }<br/>
+}<br/>
+<br/>
+@RunWith(MockitoJUnitRunner.class)<br/>
+public class UserServiceTest {<br/>
+<br/>
+    @Mock(name = "userDao1")<br/>
+    private UserDao userDao1;<br/>
+<br/>
+    @Mock(name = "userDao2")<br/>
+    private UserDao userDao2;<br/>
+<br/>
+    @InjectMocks<br/>
+    private UserService testMe;<br/>
+<br/>
+    @Test<br/>
+    public void testInjectMocks() {<br/>
+        Assert.assertEquals(userDao1, testMe.userDao2);<br/>
+    }<br/>
+}</pre>
+
+<p>输出为：</p>
+
+<blockquote><br/>
+<p>Constructor 2 called</p>
+
+</blockquote>
+
+<p>UserService 类中对 userDao2 和 userDao1 名称进行错位安排是为了证明名称匹配是根据注入点处的名称对比的。例如</p>
+
+<ol>
+
+	<li>构造函数注入，根据参数名进行匹配</li>
+
+	<li>setter 方法注入，根据 setter 方法名, 如 setUserDao1(..), 或 setUserDao2(..) 匹配的，与方法参数无关</li>
+
+	<li>属性注入自然是以属性名本身为准</li>
+
+</ol>
+
+<p>同时该例也证明了构造函数 UserService(UserDao userDao1, String abc) 对 @InjectMocks 是可见的，因为 String 是非基本类型，也是可以 Mock String 类型的。</p>
+
+<p>因此，需要我们留意的是，产品代码构造函数的变动可能会改变测试代码的行为，或是导致测试的失败。</p>
+
+<h3>@InjectMocks 只能注入 Mock 对象，例如以下均是 Mock 对象</h3><br/>
+<ol>
+
+	<li>UserDao userDao = Mockito.mock(UserDao.class);</li>
+
+	<li>@Mock private UserDao userDao;</li>
+
+	<li>@Mock private UserDao userDao = new UserDao();    //Mockito 将会对 userDao 重新赋值为一个  Mock 对象</li>
+
+	<li>UserDao userDao = spy(new UserDao());</li>
+
+</ol>
+
+<p>如果是一个普通对象，例如下面的声明</p>
+
+<pre class="lang:default decode:true">private UserDao userDao = new UserDao();<br/>
+<br/>
+@InjectMocks<br/>
+private UserService testMe;</pre>
+
+<p>@InjectMocks 如何费尽心思都无法把这个  userDao  注入到 testMe  测试对象中去的。对它 spy 一下就可以被注入了。</p>
+
+<h3>@Mock 和 @InjectMocks 会把自己赋的值丢弃</h3><br/>
+<p>前面提到 @Mock private UserDao userDao = new UserDao(); 最终的 userDao 是一个 Mock  对象，@InjectMocks  也一样</p>
+
+<pre class="lang:default decode:true ">@InjectMocks<br/>
+private UserService testMe = new UserService(); </pre>
+
+<p>虽然会调用一下 <code>new UserService()</code> 创建一个对象，但最终的值是由 @InjectMocks 产生的。</p>
+
+<p>&nbsp;</p>
+
+<hr /><br/>
+<p>备注一个使用 @Mock 对象创建被测试实例的错误</p>
+
+<pre class="lang:default decode:true ">@RunWith(MockitoJUnitRunner.class)<br/>
+public class UserServiceTest {<br/>
+<br/>
+    @Mock<br/>
+    private UserDao userDao;<br/>
+<br/>
+    private UserService testMe = new UserService(userDao); //此时 userDao 还是 null<br/>
+<br/>
+    @Before<br/>
+    public void setup() {<br/>
+        testMe = new UserService(userDao); //这里的 userDao 才是一个 Mock 对象<br/>
+    }<br/>
+}</pre>
+
+<p>链接：</p>
+
+<ol>
+
+	<li><a href="https://static.javadoc.io/org.mockito/mockito-core/2.13.0/org/mockito/InjectMocks.html">Mockito JavaDoc -- Annotation Type InjectMocks</a></li>
+
+</ol>

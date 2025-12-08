@@ -1,0 +1,71 @@
+---
+title: xampp 错误：Deprecated: Assigning the return value of new by reference is deprecated
+url: /xampp-php5-3-deprecated/
+date: 2010-11-11T03:03:40-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - WordPress
+  - PHP
+tags: 
+  - wordpress
+  - deprecated
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2839 
+wpStatus: publish
+views: 3142
+lastmod: 2010-11-11T03:24:13-06:00
+---
+
+Wordpress 3.0.1 之前是在 xampp 1.7.1 中运行的，没什么问题，php 版本为 5.2.9。后来升级 xampp 到 1.7.3 版，打开网站最上方出现提示：<br/>
+<br/>
+Deprecated: Assigning the return value of new by reference is deprecated in C:\xampp\htdocs\footnoted\wp-content\plugins\simple-tags\inc\client.php on line 1700<br/>
+<br/>
+这是插件 simple-tags 里的代码，定位到该行是：<br/>
+<br/>
+$error = &amp; new WP_Error('invalid_taxonomy', __('Invalid Taxonomy'));<br/>
+<br/>
+而 WP_Error 是用 function 进行定义的：<br/>
+<br/>
+function WP_Error($code = '', $message = '', $data = '') <!--more--><br/>
+<br/>
+应该是说对于函数已不推荐使用 new 的方式了，不该再向 js 学习的。php 中就该用 class 来定义类的，检查到 xampp 中 php 版本是 5.3.1。<br/>
+<br/>
+解决办法呢，你当然可以把其中的 php 换成 5.2 的版本的，那能不能改 php.ini 配置来屏蔽那个提示呢？Of course, 在 php 5.3 中除了原来的 E_NOTICE、E_ERROR 等，还引入了 E_DEPRECATED 和 E_USER_DEPRECATED 两种错误报告类型。<br/>
+<br/>
+其实 php.ini 本身的内容是最好的资料，对所有的错误报告类型都有说明的。一种极端的做法是把原来的<br/>
+<br/>
+display_errors = On   改为<br/>
+<br/>
+display_errors = Off<br/>
+<br/>
+然后 Apache 重启一下，这样，所以的错误都不显示了，自然前面的那个 deprecated 提示也没有了。<br/>
+<br/>
+那就是只要在 php.ini 中修改<br/>
+<br/>
+error_reporting = E_ALL &amp; ~E_NOTICE 为<br/>
+<br/>
+error_reporting = E_ALL &amp; ~E_NOTICE &amp; ~E_DEPRECATED<br/>
+<br/>
+在 php.ini 里注释是建议生产环境中设置 error_reporting 为<br/>
+<br/>
+error_reporting = E_ALL &amp; ~E_DEPRECATED<br/>
+<br/>
+最后，如果你仍然收到 Deprecated 的警示，那一定是你的程序中用 error_reporting() 函数覆盖了 php.ini 中的设置，比如代码中用了<br/>
+<br/>
+error_reporting(E_ALL &amp; ~E_NOTICE &amp; ~E_WARNING);<br/>
+<br/>
+那就得把该函数参数里加上 ~E_DEPRECATED，即要写成<br/>
+<br/>
+error_reporting(E_ALL &amp; ~E_NOTICE &amp; ~E_WARNING &amp; ~E_DEPRECATED);<br/>
+<br/>
+用了 error_reporting() 函数进行了全局设置的话，可以不依赖于 php.ini 中的配置。<br/>
+<br/>
+<br/>
+参考：1. <a href="http://php.net/manual/en/errorfunc.configuration.php" target="_blank">Runtime Configuration</a><br/>
+2. <a href="http://php.net/manual/en/function.error-reporting.php" target="_blank">error_reporting</a>

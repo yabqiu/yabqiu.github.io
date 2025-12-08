@@ -1,0 +1,191 @@
+---
+title: Java 下高效的反射工具包 ReflectASM 使用例解
+url: /java-reflectasm-bytecode-usage/
+date: 2012-08-16T13:57:51-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - Reflect
+  - reflectasm
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4685 
+wpStatus: publish
+views: 12360
+lastmod: 2021-06-03T15:19:37-05:00
+---
+
+<a title="ReflectASM" href="http://code.google.com/p/reflectasm/" target="_blank" rel="noopener">ReflectASM</a> 使用字节码生成的方式实现了更为高效的反射机制。执行时会生成一个存取类来 set/get 字段，访问方法或创建实例。一看到 ASM 就能领悟到 ReflectASM 会用字节码生成的方式，而不是依赖于 Java 本身的反射机制来实现的，所以它更快，并且避免了访问原始类型因自动装箱而产生的问题。</p>
+<br/>
+下面三个图是 ReflectASM 与 Java 自身反射机制的性能对比，表现很不错的。<br/><br/>
+<p style="text-align: center;"><img class="aligncenter" src="http://chart.apis.google.com/chart?chma=100&amp;chtt=Field%20Set/Get&amp;chs=700x62&amp;chd=t:1402081,11339107&amp;chds=0,11339107&amp;chxl=0:%7CJava%20Reflection%7CFieldAccess&amp;cht=bhg&amp;chbh=10&amp;chxt=y&amp;chco=6600FF&amp;.png" alt="" width="700" height="62" /></p>
+<br/>
+<p style="text-align: center;"><img class="aligncenter" src="http://chart.apis.google.com/chart?chma=100&amp;chtt=Method%20Call&amp;chs=700x62&amp;chd=t:97390,208750&amp;chds=0,208750&amp;chxl=0:%7CJava%20Reflection%7CMethodAccess&amp;cht=bhg&amp;chbh=10&amp;chxt=y&amp;chco=6600AA&amp;.png" alt="" width="700" height="62" /></p>
+<br/>
+<p style="text-align: center;"><img class="aligncenter" src="http://chart.apis.google.com/chart?chma=100&amp;chtt=Constructor&amp;chs=700x62&amp;chd=t:2853063,5828993&amp;chds=0,5828993&amp;chxl=0:%7CJava%20Reflection%7CConstructorAccess&amp;cht=bhg&amp;chbh=10&amp;chxt=y&amp;chco=660066&amp;.png" alt="" width="700" height="62" /></p>
+<br/>
+测试代码包含在项目文件中. 上面图形是在  Oracle 的 Java 7u3, server VM 下测试出的结果。<br/><br/>
+下面我们自己来做个测试，测试环境是 Mac OS X 10.8, 2.4G Core 2 Duo, 4G RAM, 64 位 JDK 1.6.<!--more--><br/><br/>
+待反射的类 SomeClass.java<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.testreflect;<br/><br/>
+public class SomeClass {
+    private String name;<br/><br/>
+    public void foo(String name) {
+        this.name = name;
+    }
+}</pre>
+<br/>
+测试类 ReflectasmClient.java<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.testreflect;<br/><br/>
+import java.lang.reflect.Method;
+import com.esotericsoftware.reflectasm.MethodAccess;<br/><br/>
+/**
+ * @author Unmi
+ */
+public class ReflectasmClient {<br/><br/>
+    public static void main(String[] args) throws Exception {
+        testJdkReflect();
+//        testReflectAsm();
+    }
+    
+    public static void testJdkReflect() throws Exception {
+        SomeClass someObject = new SomeClass();        
+        for (int i = 0; i &lt; 5; i++) {
+            long begin = System.currentTimeMillis();
+            for (int j = 0; j &lt; 100000000; j++) {
+                Method method = SomeClass.class.getMethod("foo", String.class);
+                method.invoke(someObject, "Unmi");
+            }
+            System.out.print(System.currentTimeMillis() - begin +" ");
+        }
+    }<br/><br/>
+    public static void testReflectAsm() {
+        SomeClass someObject = new SomeClass();
+        for (int i = 0; i &lt; 5; i++) {
+            long begin = System.currentTimeMillis();
+            for (int j = 0; j &lt; 100000000; j++) {
+                MethodAccess access = MethodAccess.get(SomeClass.class);
+                access.invoke(someObject, "foo", "Unmi");
+            }
+            System.out.print(System.currentTimeMillis() - begin + " ");
+        }
+    }
+}</pre>
+<br/>
+分别运行 testJdkReflect() 和 testReflectAsm 得出各自的运行时间数据，如下：<br/><br/>
+运行 testJdkReflect():  31473 31663 31578 31658 31552<br/><br/>
+运行 testReflectAsm(): 312814 310666 312867 311234 311792<br/><br/>
+这个数据是非常恐怖的，似乎在带领我们往相反的方向上走，用 ReflectASM 怎么反而耗时多的多，高一个数量级，为什么呢？原因是大部分的时间都耗费在了<br/><br/>
+MethodAccess access = MethodAccess.get(SomeClass.class);<br/><br/>
+上，正是生成字节码的环节上，也让你体验到 MethodAccess 是个无比耗时的操作，如果把这行放到循环之外会是什么样的结果呢，同时也把方法 testJdkReflect() 中的<br/><br/>
+Method method = SomeClass.class.getMethod("foo", String.class);<br/><br/>
+也提出去，改变后的 testJdkReflect() 和 testReflectAsm() 分别如下：<br/><br/>
+<pre class="lang:default decode:true">public static void testJdkReflect() throws Exception {
+    SomeClass someObject = new SomeClass();        
+    Method method = SomeClass.class.getMethod("foo", String.class);
+    for (int i = 0; i &lt; 5; i++) {
+        long begin = System.currentTimeMillis();
+        for (int j = 0; j &lt; 100000000; j++) {
+            method.invoke(someObject, "Unmi");
+        }
+        System.out.print(System.currentTimeMillis() - begin +" ");
+    }
+}<br/><br/>
+public static void testReflectAsm() {
+    SomeClass someObject = new SomeClass();
+    MethodAccess access = MethodAccess.get(SomeClass.class);
+    for (int i = 0; i &lt; 5; i++) {
+        long begin = System.currentTimeMillis();
+        for (int j = 0; j &lt; 100000000; j++) {        
+            access.invoke(someObject, "foo", "Unmi");
+        }
+        System.out.print(System.currentTimeMillis() - begin + " ");
+    }
+}</pre>
+<br/>
+再次分别跑下 testJdkReflect() 和  testReflectAsm()，新的结果如下：<br/><br/>
+运行 testJdkReflect():  1682 1696 1858 1774 1780       ------ 平均  1758<br/><br/>
+运行 testReflectAsm(): 327 549 520 509 514                ------ 平均 483.8<br/><br/>
+胜负十分明显，上面的实验两相一比较，用 ReflectAsm 进行方法调用节省时间是 72.48％<br/><br/>
+也因此可以得到使用 ReflectASM 时需特别注意的是，获得类似 MethodAccess 实例只做一次，或它的实例应缓存起来，才是真正用好 ReflectASM。<br/><br/>
+进一步深入的话，不妨看看分别从 testJdkReflect()/testReflectAsm() 到 SomeClass.foo() 过程中到底发生了什么，断点看调用栈。<br/><br/>
+testJdkReflect() 到 SomeClass.foo() 的调用栈：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter wp-image-4688" title="testJdkReflect_debug" src="http://unmi.cc/wp-content/uploads/2012/08/testJdkReflect_debug.png" alt="" /></p>
+<br/>
+借助了 JDK 的 DelegatingMethodAccessorImpl 和  NativeMethodAccessorImpl。<br/><br/>
+再看 testReflectAsm() 到 SomeClass.foo(）的调用栈：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter wp-image-4689" title="testReflectAsm_debug" src="http://unmi.cc/wp-content/uploads/2012/08/testReflectAsm_debug.png" alt="" /></p>
+<br/>
+可以看到，ReflectAsm 在执行 MethodAccess access = MethodAccess.get(SomeClass.class); 为你生成了类 SomeClassMethodAccess，经由它来进行后续的方法调用，使得性能上有很可观的改善。<br/><br/>
+上面只是讲述了，调用方法时如何使用 ReflectAsm，以及怎么确保高效性。下面补上 ReflectAsm 更多的用法，翻译自 ReflectAsm 官方。<br/><br/>
+<hr /><br/><br/>
+ReflectASM 反射调用方法:<br/><br/>
+<pre class="brush:java">SomeClass someObject = ...
+MethodAccess access = MethodAccess.get(SomeClass.class);
+access.invoke(someObject, "setName", "Awesome McLovin");
+String name = (String)access.invoke(someObject, "getName");</pre>
+<br/>
+用 ReflectASM 反射来 set/get 字段值:<br/><br/>
+<pre class="brush:java">SomeClass someObject = ...
+FieldAccess access = FieldAccess.get(SomeClass.class);
+access.set(someObject, "name", "Awesome McLovin");
+String name = (String)access.get(someObject, "name");</pre>
+<br/>
+用 ReflectASM 反射来调用构造方法:<br/><br/>
+<pre class="lang:default decode:true">ConstructorAccess&lt;SomeClass&gt; access = ConstructorAccess.get(SomeClass.class);
+SomeClass someObject = access.newInstance();</pre>
+<br/>
+<strong>避免用方法名来查找</strong><br/><br/>
+为了在重复性的反射来访问方法或字段时最大化性能，应该用方法和字段的索引来定位而不是名称：<br/><br/>
+<pre class="lang:default decode:true">SomeClass someObject = ...
+MethodAccess access = MethodAccess.get(SomeClass.class);
+int addNameIndex = access.getIndex("addName");
+for (String name : names)
+    access.invoke(someObject, addNameIndex, "Awesome McLovin");</pre>
+<br/>
+说到这，不妨再次来验证一下，把 testReflectAsm() 方法改为如下：<br/><br/>
+<pre class="lang:default decode:true">public static void testReflectAsm() {
+    SomeClass someObject = new SomeClass();
+    MethodAccess access = MethodAccess.get(SomeClass.class);
+    int fooIndex = access.getIndex("foo", String.class);
+    for (int i = 0; i &lt; 5; i++) {
+        long begin = System.currentTimeMillis();
+        for (int j = 0; j &lt; 100000000; j++) {        
+            access.invoke(someObject, fooIndex, "Unmi");
+        }
+        System.out.print(System.currentTimeMillis() - begin + " ");
+    }
+}</pre>
+<br/>
+运行的输出结果是，你可能想像不到的：<br/><br/>
+206 182 171 175 171<br/><br/>
+而用名称查找方法时的测试数据为：327 549 520 509 514<br/><br/>
+当然你调用的重复性应该带有一点夸张性质的。性能更优化的原因是用名称来查找最科要被转换成索引来查找。<br/><br/>
+<strong>可见性</strong><br/><br/>
+ReflectASM 总是能访问公有成员的. 它会尝试在同一个 package 中去定义访问类的，并且同一个类加载器去加载。所以，如果安全管理器允许 setAccessible 调用成功的话，protected 或包私有(package private) 的成员也可被访问到. 假如 setAccessible 失败，仅当当有公有成员可被访问时，不会有异常抛出. 私有成员总是无法访问到。<br/><br/>
+<strong>有关异常</strong><br/><br/>
+当使用 ReflectASM 有异常时，栈跟踪更清淅了。这是 Java 在反射调用方法时抛出了一个 RuntimeException 异常：<br/><br/>
+<pre class="lang:default decode:true">Exception in thread "main" java.lang.reflect.InvocationTargetException
+        at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+        at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:39)
+        at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:25)
+        at java.lang.reflect.Method.invoke(Method.java:597)
+        at com.example.SomeCallingCode.doit(SomeCallingCode.java:22)
+Caused by: java.lang.RuntimeException
+        at com.example.SomeClass.someMethod(SomeClass.java:48)
+        ... 5 more</pre>
+<br/>
+再看用 ReflectASM 时抛出的同样的异常:<br/><br/>
+<pre class="lang:default decode:true ">Exception in thread "main" java.lang.RuntimeException
+        at com.example.SomeClass.someMethod(SomeClass.java:48)
+        at com.example.SomeClassMethodAccess.invoke(Unknown Source)
+        at com.example.SomeCallingCode.doit(SomeCallingCode.java:22)</pre>
+<br/>
+如果被 ReflectASM 调用的代码抛出了需检测的异常，也需要抛出需检测异常. 因为如果你在用 try/catch 捕获块中未声明抛出的具体类型的异常时会报编译错误。（Unmi 注：这句话的意思是说，比如方法 foo() 未声明抛出 IOException，而你 try 它时却 catch(IOException) 就会出现编译错误）所以当你在用 ReflectASM 反射调用，并需要关心其中抛出的异常时，你必须捕获的异常类型是 Exception。

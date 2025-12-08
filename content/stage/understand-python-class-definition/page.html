@@ -1,0 +1,283 @@
+---
+title: 理解 Python 类的变量,方法与属性
+url: /understand-python-class-definition/
+date: 2020-04-20T23:43:20-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - Class
+  - Python
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9154 
+wpStatus: publish
+views: 664
+lastmod: 2020-04-25T21:58:37-05:00
+---
+
+熟悉了传统的 C++/Java 类定义的风格，来感受一下 Python 是如何定义类的。本篇是阅读 《The Quick Python Book》第二版关于类定义的笔记，由原书内容进一步引申，不过是依照本人的思考顺序来组织的。在理解 Python 类定义的同时头脑中应该闪现出 JavaScript/Java 如何定义类的情景。</p>
+<br/>
+<h3>最简单的类定义</h3><br/><br/>
+<blockquote>
+class MyClass:<br />
+    pass
+</blockquote>
+<br/>
+由于 <code>class MyClass</code> 后面要有个冒号，而冒号后总得有点东西才能表示该类定义结束了，于是放个 <code>pass</code> 当占位符。Python 也像 Java 一样，有一个根类，叫做 object，例如上面的定义<br/><br/>
+<pre class="lang:python decode:true">&gt;&gt;&gt; MyClass.__bases__
+(&lt;class 'object'&gt;,)
+>&gt;&gt; import inspect
+>&gt;&gt; inspect.getmro(MyClass)
+(&lt;class '__main__.MyClass'&gt;, &lt;class 'object'&gt;)</pre>
+<br/>
+我们能看到它隐式的基类是 <code>object</code>, 而不用显式的声明为 <code>class MyClass(object)</code>。看到 <code>__bases__</code> 属性是一个 Tuple, 意识到  Python 是支持多重继承的。<!--more--><br/><br/>
+<h3>实例的属性</h3><br/><br/>
+Python 实例的属性不需要像 Java 那样放在类中方法外来定义，我们可以随时随地它实例新增属性，或在类定义外删除某个属性，俗话是 on the fly。这个特性有点像 JavaScript 的类。<br/><br/>
+用下面的代码来解释说明<br/><br/>
+<pre class="lang:default decode:true">class Circle:
+    pass<br/><br/>
+my_circle = Circle()      #1
+my_circle.radius = 5      #2
+print(my_circle.radius)   #3
+my_circle.hello = lambda name: print(name)
+my_circle.hello('World')  #4  输出 'World'
+del my_circle.radius      #5 hello 也是个属性，所以也能 del my_circle.hello
+print(my_circle.radius)   #6</pre>
+<br/>
+我们首先创建一个最粗糙的类 Circle<br/><br/>
+<ol>
+    <li>#1, 创建 Circle 实例的方式是类名后加上括号当方法用，没有 new 关键字，有点类似 Scala 的 case class 的实例创建。后面我们会知道 Circle() 会映射到对 <code>__init__</code> 方法的调用</li>
+    <li>#2，新创建的 my_circle 没有任何自定的属性，想要加新属性直接用点号添加就行，该属性不存在就会创建</li>
+    <li>#3, 输出新加的属性，输出 5</li>
+    <li>用 Lambda 随时增加一个方法也不是事，但是这个 Lambda 却不知如何访问当前实例 my_circle 中的成员了</li>
+    <li>#4，<code>del</code> 关键字还能删除实例的属性</li>
+    <li>#5，属性已删除，因此会报出 <span style="color: #800000;">AttributeError: 'Circle' object has no attribute 'radius'</span> 的错误</li>
+</ol>
+<br/>
+看看下面的实例方法也可以操作实例的属性<br/><br/>
+<pre class="lang:default decode:true">class Circle:
+    def __init__(self):
+        self.radius = 1<br/><br/>
+    def foo(self):  #实践中不建议下面的操作，实例属性应该在构建函数 __init__ 中声明
+        del self.radius
+        self.color = 'red'<br/><br/>
+
+my_circle = Circle()
+print(my_circle.radius) # 1
+# print(my_circle.color) # AttributeError: 'Circle' object has no attribute 'color'
+my_circle.foo()         # 调用该方法才创建 my_circle 的 color 属性
+print(my_circle.color)  # 'red'
+print(my_circle.radius) # AttributeError: 'Circle' object has no attribute 'radius'</pre>
+<br/>
+简单的来讲，Python 的实例属性就是绑定在  <code>self</code> 上的属性。<br/><br/>
+上方代码只是演示了 Python 提供了那些特性，实际编码中应该在 <code>__init__</code> 中引入属性，而不应该恶意使用 Python 的这一便利，上帝打开一扇窗不一定允许你翻窗进来。<br/><br/>
+<h3>关于实例方法</h3><br/><br/>
+在其他面向对象语言中，一提到实例方法我们都会说，调用时会传递一个隐式参数表示调用者实例本身，一般用 <code>this</code> 表示，如 Java/C++/C#  等，JavaScript 就把 <code>this</code> 搞得更复杂无比。比如我们在 Java 中用反射来调用一个方法时 <code>method.invoke(object, parms...)</code> 不得不显式的传入当前实例。<br/><br/>
+而 Python 中的实例方法就不再对调用者参数遮遮掩掩，明确的声明为第一个参数，通常命名为 <code>self</code>, 你想改成别的名称也无妨，比如 <code>me</code>，当然最好不要给别人造成太大的冲击。实例方法的第一个参数写在那里，但调用的时候却不用显式传入，而是实参与方法的形参依序后推。<br/><br/>
+<pre class="lang:default decode:true">class MyClass:
+    def foo(self, a, b, c):
+        self.a = a
+        print(b, c)</pre>
+<br/>
+调用实例方法<br/><br/>
+<pre class="lang:default decode:true">mc = MyClass()
+mc.foo(5, 6, 7)  #5, 6, 7 分别对应到上面的  a, b, c</pre>
+<br/>
+定义 <code>foo</code> 方法式，把  <code>self</code> 放在第一个参数方便我们访问当前实例的成员。Python 的实例方法用了 <code>self</code> 之后在访问成员变量与局部变量不在模棱两可。例如在 Java 中<br/><br/>
+<pre class="lang:default decode:true ">public void foo() {
+    //String name = "World";
+    System.out.println(name);
+    this.name = name;
+}</pre>
+<br/>
+方法中的 <code>name</code> 可能是在引用一个局部变量(如果 name 在方法内部声明)，也可能是引用一个实例变量(方法内未声明)，只有明确用 <code>this.name</code> 才是对实例变量 <code>name</code> 的引用。然而在 Python 中没有这种情况，使用实例变量必须是 <code>self.name</code>, 不带 <code>self</code> 的话，直接 <code>name</code> 也一定是在使用局部变量。即使方法中要使用类变量也必须明确前缀：<br/><br/>
+<pre class="lang:default decode:true">class MyClass:
+    name = 'Hola'<br/><br/>
+    def foo(self, a):
+        print(self.name, MyClass.name, self.__class__.name)
+        print(name) #1</pre>
+<br/>
+以上 #1 处会得到错误：<span style="color: #800000;">NameError: name 'name' is not defined</span><br/><br/>
+<h3>私有属性与方法</h3><br/><br/>
+Python 没有像 private  那样的关键字来表明私有属性或方法，同样是用命名约定来说告诉编译器是否是私有的。Python 约定双下划线 <code>__</code> 开头，但不以 <code>__</code> 结尾命名的就是私有的<br/><br/>
+<pre class="lang:default decode:true">class MyClass:<br/><br/>
+    def __init__(self):
+        self.__x = 12    # __x private<br/><br/>
+    def __bar(self):     # __bar private
+        pass
+    
+    def __baz__(self):  # __baz__ public
+        pass<br/><br/>
+
+mc = MyClass()
+mc.__baz__()       # ✔︎
+print(mc.__x)      # ✘
+mc.__bar()         # ✘
+</pre>
+<br/>
+&nbsp;<br/><br/>
+<h3>构造方法 <code>__init__</code></h3><br/><br/>
+Python 的构造方法可以当作是特殊名称的实例方法来看待，额外的两个特性：1）它在用类名当成方法名使用时被调用，2）隐式返回该类的一个实例，即 <code>self</code>。它的第一个参数也是 <code>self</code>, 其他参数顺推，我们认为一旦进入 <code>__init__</code> 方法后，<code>self</code> 便创建就绪。然后可以基于 <code>self</code> 初始化实例成员。除此之外构造方法没有什么特别的，和其他实例方法完全一样，支持默认参数，变参等，甚至 <code>__init__</code> 也能作为普通方法来调用。<br/><br/>
+<pre class="lang:default decode:true ">class MyClass:
+    def __init__(self, name):
+        self.name = name
+        print(name)<br/><br/>
+mc = MyClass('Hola')  #1
+x = mc.__init__('X')  #2
+print(x)              # 输出 None</pre>
+<br/>
+<ol>
+    <li>#1, 类名当方法名来用 MyClass(..), 会调用相应的 <code>__init__</code> 方法，返回 MyClass 的实例</li>
+    <li>#2, 把 <code>__init__</code> 当成普通方法来调用，所以它返回的是 <code>None</code></li>
+</ol>
+<br/>
+和普通实例方法一样，构造方法也不支持重载，后声明的同名方法会把前面的方法定义覆盖掉。但 Python 可以借助于方法的默认参数来达到与 Java 等其他语言方法重载相当的效果。<br/><br/>
+<h3>类变量</h3><br/><br/>
+既然有实例变量，Python 也有类变量，类比于其他面向对象语言，类变量就是不依赖于实例而存在的变量，并且为所有实例共享。Python 在访问类变量也是既能通过类名，也能通过实例来引用，推荐用类来引用类变量，这一点 C# 比较好，语法上杜绝用实例来引用类变量。<br/><br/>
+什么是类变量，写在类当中但游离于方法之外的变量就是类变量。例如：<br/><br/>
+<pre class="lang:default decode:true">class MyClass:
+    pi = 3.14159<br/><br/>
+    def foo(self):
+        print(self.pi, MyClass.pi, self.__class__.pi)  #1
+        self.pi = 3.14
+        print(self.pi, MyClass.pi, self.__class__.pi)
+        # print(pi)  # NameError: name 'pi' is not defined<br/><br/>
+
+mc = MyClass()
+mc.foo()</pre>
+<br/>
+以上代码输出<br/><br/>
+<blockquote>
+<span style="color: #ff00ff;">3.14159</span> 3.14159 3.14159<br />
+<span style="color: #ff00ff;">3.14</span> 3.14159 3.14159
+</blockquote>
+<br/>
+这里演示了类变量可以通过实例或类来访问，上面 #1 表示的三种形式。不建议通过实例来访问类变量，因为通过实例不能明确是在访问实例变量还是类变量。由上可知 <code>self.pi</code> 优先访问实例变量 <code>pi</code>, 找不到实例变量 <code>pi</code> 才试图访问类变量 <code>pi</code>，再涉及到类的继承关系就更复杂些。因此最好是使用哪个类的类变量就明确的写出特定的类名，像这里的 <code>MyClass.pi</code>。<br/><br/>
+对于不同引用类变量的方式，再来看几个例子：<br/><br/>
+<pre class="lang:default decode:true ">class Parent:
+    pi = 3.14159<br/><br/>
+    def foo(self):
+        return self.pi  #下面的 c.foo() 调用返回的是 3.14
+        # 这里写成  self.__class__.pi 也是返回 3.14, 根据需求也许总是要 Parent.pi<br/><br/>
+
+class Child(Parent):
+    pi = 3.14<br/><br/>
+
+c = Child()
+print(c.pi)         #3.14
+print(c.foo())      #3.14
+print(Parent.pi, Child.pi)  # 3.14159 3.14</pre>
+<br/>
+所以安全稳妥的方式还是 <code>ClassName.variableName</code>。<br/><br/>
+另外，类变量也可以动态增加或删除<br/><br/>
+<h3>类方法和静态方法</h3><br/><br/>
+什么？Python 的类方法与静态方法还不一回事，在 Java 里只要有 <code>static</code> 修饰的方法即是类方法也是静态方法。相比于实例方法，Python 的类方法的第一个参数表示当前类<br/><br/>
+<h4>类方法</h4><br/><br/>
+如果以下方式来定义一个类方法 <code>hello</code><br/><br/>
+<pre class="lang:default decode:true">class MyClass:
+    def hello(cls, name):     # 其实就是 def hello(self, name)
+        print(cls, name)
+</pre>
+<br/>
+由于函数中的参数只是个名称，即使第一个参数名写成了 <code>cls</code>, 它于 <code>def hello(self, name)</code> 定义是没有区别的，所以它实际上是一个实例方法。还必须加个装饰告诉它是一个类方法而非实例方法，<code>cls</code> 是当前类，而非当前实例。<br/><br/>
+<pre class="lang:default decode:true">class MyClass:<br/><br/>
+    @classmethod               # 标识这是一个类方法，并且方法第一个参数为类本身，约定用 cls  表示 class
+    def hello(cls, name):
+        print(cls, name)<br/><br/>
+MyClass.hello('hello')        # 类方法的调用，MyClass 作为隐式参数对应于 cls</pre>
+<br/>
+<h4>静态方法</h4><br/><br/>
+如果只简单的定义一个无参数的方法<br/><br/>
+<pre class="lang:default decode:true">class MyClass:<br/><br/>
+    def hello():          # 这里会提示错误：Method must have a first parameter, usually called 'self' 
+        print('hello')
+</pre>
+<br/>
+无参数的方法或都方法的第一个参数既不想是 <code>cls</code> 也不想是 <code>self</code>, 那么就要用  @staticmethod 把它标识为一个静态方法<br/><br/>
+<pre class="lang:default decode:true">class MyClass:<br/><br/>
+    @staticmethod
+    def hello():
+        print('hello')<br/><br/>
+    @staticmethod
+    def greeting(name):
+        print(name)<br/><br/>
+MyClass.hello()
+MyClass.greeting('world')</pre>
+<br/>
+<h3>方法的调用方式</h3><br/><br/>
+Python 定义方法时没有学其他面向对象语言那样把 this(self) 指向实际自身的参数隐去，而是声明时写在第一个位置上，但调用时可跳过。其实 Python 调用方法时也能显式的通过第一个参数传入 self 或 cls, 这时候调用的主体就是类名。<br/><br/>
+<pre class="lang:default decode:true ">class MyClass:<br/><br/>
+    def instance_method(self, name):
+        print('foo', name)<br/><br/>
+    @classmethod
+    def class_method(cls, name):
+        print('bar', name)<br/><br/>
+    @staticmethod
+    def static_method(name):
+        print('baz', name)<br/><br/>
+
+mc = MyClass()<br/><br/>
+mc.instance_method('instance method 1')
+MyClass.instance_method(mc, 'instance method 2')<br/><br/>
+mc.class_method('class method 1')
+MyClass.class_method('class method 2')<br/><br/>
+mc.static_method('static method 1')
+MyClass.static_method('static method 2')</pre>
+<br/>
+上面例子列出了三种类型方法的不同调用方式。<br/><br/>
+<h3>Python 属性 @Property</h3><br/><br/>
+最后提一下 Python 真正叫做属性的东西，@Property，执行以下的代码<br/><br/>
+<pre class="lang:default decode:true">class Temperature:
+    def __init__(self):
+        self._temp_fahr = 0<br/><br/>
+    @property
+    def temp(self):
+        print("@property")
+        return (self._temp_fahr - 32) * 5 / 9<br/><br/>
+    @temp.setter
+    def temp(self, new_temp):
+        print("@temp.setter")
+        self._temp_fahr = new_temp * 9/5 + 32<br/><br/>
+    @temp.getter
+    def temp(self):
+        print("@temp.getter")
+        return (self._temp_fahr - 32) * 5 / 9<br/><br/>
+
+t = Temperature()
+print(t.temp)
+t.temp = 23</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+@temp.getter<br />
+-17.77777777777778<br />
+@temp.setter
+</blockquote>
+<br/>
+t.temp  调用了 @temp.getter 对应的取值方法，t.temp = 23 调用了 @temp.setter 对应的设值方法。你会发现这个类有两个 <code>def temp(self)</code> 方法定义，只是有不同的装饰， @property 对应的方法在这里没起到作用，相当于是<br/><br/>
+<pre class="lang:default decode:true">@property
+def temp(self):
+    pass</pre>
+<br/>
+其实 <code>temp.getter</code> 才显得多余，所以通常让 @Property 注解的方法承担 getter 的责任<br/><br/>
+<pre class="lang:default decode:true  ">class Temperature:
+    def __init__(self):
+        self._temp_fahr = 0<br/><br/>
+    @property
+    def temp(self):
+        print("@property")
+        return (self._temp_fahr - 32) * 5 / 9<br/><br/>
+    @temp.setter
+    def temp(self, new_temp):
+        print("@temp.setter")
+        self._temp_fahr = new_temp * 9/5 + 32
+</pre>
+<br/>
+@temp.getter 一般没什么用处

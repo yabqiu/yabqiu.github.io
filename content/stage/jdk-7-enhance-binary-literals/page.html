@@ -1,0 +1,106 @@
+---
+title: JDK 7 中的语法增强 -- (1) 二进制字面常量
+url: /jdk-7-enhance-binary-literals/
+date: 2011-03-07T09:47:43-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - jdk7
+  - jdk1.7
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3269 
+wpStatus: publish
+views: 397
+lastmod: 2021-09-03T13:12:42-05:00
+---
+
+JDK 7 预览版已出，当然到实际的使用还有段时间，包括 IDE 的和各大主要的应用服务器的升级，及 JDK 7 本身的稳定尚须时日，但我们还是有必须瞧瞧新版 JDK 带来了哪些语法增加。</p>
+<br/>
+我们没有盼到闭包，相对于 JDK 5 的语法增强，JDK 7 的动作还较小，大约 8 个，这里介绍第一个 二进制字面常量。<br/><br/>
+1）二进制字面常量 -- 任何整数类型(byte, short, int 和 long) 声明时可用二进制的形式，即 01 串，只要数字前加上 0b 或 0B 即行。<!--more--><br/><br/>
+<pre class="brush:java ">// 8 位字节 'byte' 的最形象展示.
+byte aByte = (byte)0b00100001;<br/><br/>
+// 16 位短整形 'short' 的逐位亮相.
+short aShort = (short)0b1010000101000101;<br/><br/>
+// 32 位整形 'int' 的原始野性.
+int anInt1 = 0b10100001010001011010000101000101;
+int anInt2 = 0b101;
+int anInt3 = 0B101; // 可以是大 B 也可以是小 b.<br/><br/>
+// 直观的见证 64 位长整型 'long' 的无所不能了. 注意最好那个 "L" 后缀，那是必须的.
+long aLong = 0b1010000101000101101000010100010110100001010001011010000101000101L;</pre>
+<br/>
+二进制字面常量的好处，我能深刻体会到的就是在处理网络协议时，再也不需要声明一个 int i = 24, 然后发送出去，而是在发送前看到源代码 int i = 0b11000 就能知道接受时每一位是 1 还是 0，可以对照协议规范一位一位的填。再有一点就是正负数得看首位是 1 还是 0 了，1 为负，注意，即使用加了 0b，默认也是整形，所以需要显式 (byte) 等来转型。<br/><br/>
+相比其他进制而言，二进制的字面常量让数据之间的关系更清晰. 像下面，排的整整齐，哪个位置上相同或有差异一目了然。其实这也是方便了下文要讲到的按位运算:<br/><br/>
+<pre class="brush:java">public static final int[] phases = {
+  0b00110001,
+  0b01100010,
+  0b11000100,
+  0b10001001,
+  0b00010011,
+  0b00100110,
+  0b01001100,
+  0b10011000
+}</pre>
+<br/>
+下面那样 16 进制表示法，要进行按位运算可就得用科学型计算器了，基于 16 进制的简短，一抵四，还是常用它来表示二进制数值的:<br/><br/>
+<pre class="brush:java">public static final int[] phases = {
+    0x31, 0x62, 0xC4, 0x89, 0x13, 0x26, 0x4C, 0x98
+}</pre>
+<br/>
+二进制常量让你参照规范文档来做实现更容易，前面提到的网络协议了, 机器指令什么的, 像下面模拟了一个 8 位微处理器:<br/><br/>
+<pre class="lang:default decode:true">public State decodeInstruction(int instruction, State state) {
+  if ((instruction &amp; 0b11100000) == 0b00000000) {
+    final int register = instruction &amp; 0b00001111;
+    switch (instruction &amp; 0b11110000) {
+      case 0b00000000: return state.nop();
+      case 0b00010000: return state.copyAccumTo(register);
+      case 0b00100000: return state.addToAccum(register);
+      case 0b00110000: return state.subFromAccum(register);
+      case 0b01000000: return state.multiplyAccumBy(register);
+      case 0b01010000: return state.divideAccumBy(register);
+      case 0b01100000: return state.setAccumFrom(register);
+      case 0b01110000: return state.returnFromCall();
+      default: throw new IllegalArgumentException();
+    }
+  } else {
+    final int address = instruction &amp; 0b00011111;
+    switch (instruction &amp; 0b11100000) {
+      case 0b00100000: return state.jumpTo(address);
+      case 0b01000000: return state.jumpIfAccumZeroTo(address);
+      case 0b01000000: return state.jumpIfAccumNonzeroTo(address);
+      case 0b01100000: return state.setAccumFromMemory(address);
+      case 0b10100000: return state.writeAccumToMemory(address);
+      case 0b11000000: return state.callTo(address);
+      default: throw new IllegalArgumentException();
+    }
+  }
+}</pre>
+<br/>
+你可以用二进制常量来增强关系运算的可读性，列模式:<br/><br/>
+<pre class="brush:java">public static final short[] HAPPY_FACE = {
+   (short)0b0000011111100000;
+   (short)0b0000100000010000;
+   (short)0b0001000000001000;
+   (short)0b0010000000000100;
+   (short)0b0100000000000010;
+   (short)0b1000011001100001;
+   (short)0b1000011001100001;
+   (short)0b1000000000000001;
+   (short)0b1000000000000001;
+   (short)0b1001000000001001;
+   (short)0b1000100000010001;
+   (short)0b0100011111100010;
+   (short)0b0010000000000100;
+   (short)0b0001000000001000;
+   (short)0b0000100000010000;
+   (short)0b0000011111100000;
+}</pre>
+<br/>
+详情可见原文：<a href="http://download.java.net/jdk7/docs/technotes/guides/language/enhancements.html">http://download.java.net/jdk7/docs/technotes/guides/language/enhancements.html</a>

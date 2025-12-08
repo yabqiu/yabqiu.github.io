@@ -1,0 +1,73 @@
+---
+title: Java Web应用因tld文件损坏出现的错误
+url: /java-webapp-tld-damage/
+date: 2006-11-14T03:40:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - web
+  - Java
+  - tld
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 539 
+wpStatus: publish
+views: 474
+lastmod: 2019-11-10T15:53:55-06:00
+---
+
+部署一个 Web 应用到 WebSphere Application Server　中，浏览 index.jsp 页面时而正常，时而出现500错误，查看服务器输出日志可以看到以下错误，</p>
+<br/>
+<span style="color: #ff0033;">E SRVE0026E: [Servlet Error]-[This absolute uri &amp;#40;http://jakarta.apache.org/struts/tags-logic&amp;#41; cannot be resolved in either web.xml or the jar files deployed with this application]: org.apache.jasper.JasperException: This absolute uri (http://jakarta.apache.org/struts/tags-logic) cannot be resolved in either web.xml or the jar files deployed with this application<!--more--><br />
+at org.apache.jasper.compiler.TagLibraryInfoImpl.&lt;init&gt;(TagLibraryInfoImpl.java:224)<br />
+at org.apache.jasper.compiler.TagLibraryInfoImpl.&lt;init&gt;(TagLibraryInfoImpl.java:189)<br />
+</span>..........<br/><br/>
+很明显示是因为标签库的问题，index.jsp 中使用了 logic 标签，引入标签是这样写的：<br/><br/>
+<pre class="lang:default decode:true">&lt;%@taglib uri="http://jakarta.apache.org/struts/tags-logic" prefix="logic" %&gt;</pre>
+<br/>
+对于这个问题，我这边是因为 logic.tld 损坏，偶然用 Eclipse3.2+MyEclipse5.0 打开这个文件，发现不能正常显示要，关闭再次打开，又没问题了，保存它，替换掉服务器上的这个文件，运行正常。难道我在访问 index.jsp 时也是有时候能正常解析 logic.tld 文件，有时候又不行，读入 logic.tld 配置也应该是一次性完成啊。<br/><br/>
+下面叙述我对这个问题寻求解决的过程。<br/><br/>
+怎么会找不到标签呢，在 web.xml 中没有关于 taglib 的配置，这也是可行的，在 WEB-INF 下有相应的 struts-logic.tld 文件啊，只要该标签说明文件中的 <strong>uri</strong> 属性说明是 http://jakarta.apache.org/struts/tags-logic 就行。<br/><br/>
+为什么有时是好的，有时又有问题呢？要是总是出错还说得过去。<br/><br/>
+于是在网上大搜了一把，有许多解释使用 jstl 标签库时会出现类似的错误。<br/><br/>
+有说要放在支持 Servlet 2.4 规范的容器中运行，那不可能，原来我这个 web 应用在 WAS 5.1 下跑得好好的啊，WAS5.1 也只支持 Servlet 2.3 规范。<br/><br/>
+有说必须在 web.xml 文件中配置标签库说明，比如：<br/><br/>
+<div class="dp-highlighter">
+<pre class="lang:default decode:true">&lt;taglib&gt;
+  &lt;taglib-uri&gt;/WEB-INF/struts-logic.tld&lt;/taglib-uri&gt;
+  &lt;taglib-location&gt;/WEB-INF/struts-logic.tld&lt;/taglib-location&gt;
+&lt;/taglib&gt;
+  </pre>
+</div>
+<br/>
+那也是用不着的，因为我在 Eclipse3.2+MyEclipse5.0 下建一个 web 应用，都不需要这样配置都可以正常使用 logic 标签。<br/><br/>
+还有说应把 struts-logic.tld 拷贝到 WEB-INF 目录中，也不一定，这样做只是基于上面那种 web.xml 配置方式才需要的，我自己实验的 web 应用，只需要引入 struts.jar 就行，在 WEB-INF 都不要放置 struts 的 tld 文件。<br/><br/>
+因为 WEB-INF 下可以不要 tld 文件，web.xml 中也可以不用 taglib 的配置，只要在 jsp 文件中用代码<br/><br/>
+<div class="dp-highlighter">
+<pre class="lang:default decode:true">&lt;%@taglib uri="http://jakarta.apache.org/struts/tags-logic" prefix="logic"%&gt;</pre>
+</div>
+<br/>
+ 引入 logic 标签就能使用它了，为此还琢磨了一下，应用是如何加载标签描述的。打开 struts.jar 包发现在 META-INF.tlds 中有 strtus-logic.tld 文件，并且属性 <strong>uri</strong> 为 <strong>http://jakarta.apache.org/struts/tags-logic</strong>，可见 jsp文件就是通过这个 <strong>uri</strong> 在struts.jar的适当地方定位哪个标签库实现的。只要 jsp 中和 tld 中的 <strong>uri</strong> 属性一致即可。<br/><br/>
+而在 web.xml 配置<br/><br/>
+<div class="dp-highlighter">
+<pre class="lang:default decode:true">&lt;taglib&gt;
+  &lt;taglib-uri&gt;/WEB-INF/struts-logic.tld&lt;/taglib-uri&gt;
+  &lt;taglib-location&gt;/WEB-INF/struts-logic.tld&lt;/taglib-location&gt;
+&lt;/taglib&gt;  </pre>
+</div>
+<br/>
+却给自己添更多麻烦了，首先需要从 struts.jar 解出 tld 文件放到 WEB-INF 下，在 jsp 文件中引入 taglib 要写成与在 web.xml 中配置的 <strong>uri</strong> 一致了，如：<br/><br/>
+<div class="dp-highlighter">
+<pre class="lang:default decode:true  ">&lt;%@taglib uri="/WEB-INF/struts-logic.tld" prefix="logic" %&gt;</pre>
+</div>
+<br/>
+通过这一问题的解决过程，也加深了jsp自定义标签库的两种配置方法：<br/><br/>
+1. 把 tld 文件放在 jar 包的 META-INF.tlds (WEB－INF/classes/目录的 META-INF.tlds 目录中应该也行)，jsp 文件引入标签库时用与 tld 文件中一样的 <strong>uri</strong>。<br/><br/>
+2. 把 tld 文件放在某个地方，一般是 /WEB-INF/ 目录下，然后在 web.xml 中自定义出一个 <strong>taglib-uri</strong> 属性，jsp 文件引入标签库时就用这个配置的 <strong>uri</strong> 属性。

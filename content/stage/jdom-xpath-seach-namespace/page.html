@@ -1,0 +1,107 @@
+---
+title: JDOM 使用 XPath 查找带 NameSpace 的节点
+url: /jdom-xpath-seach-namespace/
+date: 2008-08-22T01:14:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - XML/DOM
+tags: 
+  - xml
+  - JDom
+  - XPath
+  - NameSpace
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 344 
+wpStatus: publish
+views: 1945
+lastmod: 2021-09-02T14:27:56-05:00
+---
+
+对于 XML 文件中不带命名空间(NameSpace) 的节点，如</p>
+<br/>
+<span style="color: #800080;">&lt;blog_Content&gt;<br />
+</span><br />
+用 JDOM 的 XPath 来搜索这个节点时可用下面之中任一代码：<br/><br/>
+①   <span style="color: #800080;">List&lt;Element&gt; elements = XPath.selectNodes(document,"//blog_Content");<br />
+</span><br />
+②   <span style="color: #800080;">XPath xpath = XPath.newInstance("//blog_Content");<br />
+       List&lt;Element&gt; elements = xpath.selectNodes(document);<br />
+</span><br />
+但是如果是查找带命名空间的节点，如<!--more--><br/><br/>
+<span style="color: #800080;">&lt;blogns:blog_Content xmlns:blogns="x-schema:#Schema2"&gt;<br />
+    &lt;blogns:Title&gt;Quartz Job Scheduling Framework［翻译］第一章. 企业应用中的作业调度&lt;/blogns:Title&gt;<br />
+..............................................<br />
+</span><br />
+还是用前面那两种方法可就查不到 blog_Content 节点了，即使是写成<br/><br/>
+   <span style="color: #800080;">List&lt;Element&gt; elements = XPath.selectNodes(document,"//blogns:blog_Content");</span><br/><br/>
+或者对于 &lt;blogns:Title&gt; 写成<br/><br/>
+  <span style="color: #800080;">List&lt;Element&gt; elements = XPath.selectNodes(document,"//blogns:Title");</span><br/><br/>
+都是检索不到元素的，elements.size() 为 0。<br/><br/>
+这时候，我们需要明确的指定你的 XPath 实例所要用的 NameSpace，用 XPath 的 addNamespace() 方法，操作代码如下：<br/><br/>
+     <span style="color: #800080;"> XPath xpath = XPath.newInstance("//blogns:blog_Content");<br />
+      xpath.addNamespace("blogns","x-schema:#Schema2");<br />
+      List&lt;Element&gt; elements = xpath.selectNodes(document);</span><br/><br/>
+这样就能检索到 &lt;blogns:blog_Content&gt; 节点了，对于 &lt;blogns:Title&gt; 也是一样的做法。<br/><br/>
+可是对于使用默认命名空间(Default Namespace) 的节点又该如何检索呢？例如检索下面 XML 的 &lt;blog_Content&gt; 节点<br/><br/>
+<span style="color: #800080;">&lt;blog_Content&gt;<br />
+    &lt;Title&gt;Quartz Job Scheduling Framework［翻译］第一章. 企业应用中的作业调度&lt;/Title&gt;<br />
+.................................<br />
+</span><br />
+以一个较为常规的思维方式吧，Default Namespace 大概就是 "" 空字符串吧，那么是不是写成<br/><br/>
+<span style="color: #800080;">      XPath xpath = XPath.newInstance("//blog_Content");<br />
+      xpath.addNamespace("","x-schema:#Schema2");<br />
+      List&lt;Element&gt; elements = xpath.selectNodes(document);<br />
+</span><br />
+就能找到节点了呢？很遗憾，这里的 elements.size() 等于 0，检索失败。<br/><br/>
+JDOM 要求，不知是否是所有 XML 解析 API 都有这样的规范，即使使用的是默认命名空间，在用 XPath 检索时也必须给这个默认命名空间指定一个名字，我们这里就选 "default" 吧，你可以任意指定一个不冲突的名字，不要被这里的 "default" 误导了只能用它。所以检索 &lt;blog_Content&gt; 的代码就是：<br/><br/>
+<span style="color: #800080;">      XPath xpath = XPath.newInstance("//default:blog_Content");<br />
+      xpath.addNamespace("default","x-schema:#Schema2");<br />
+      List&lt;Element&gt; elements = xpath.selectNodes(document);<br />
+</span><br />
+这样你就能检索到你要的节点了。<br/><br/>
+以上的 XML 是节选自 BlogJava 博客的日志备份数据文件（BlogJava 管理后台，点 "备份数据" 保存下来的 MyBlogData.xml）。<br/><br/>
+先告诉大家一个消息，我已经把 《Quartz Job Scheduling Framework  中文教程.chm》制作完成，很快就会拿出来与大家分享。制作这个 CHM 的方法就是从我的日志备份文件 MyBlogData.xml 中用 JDOM XPath 读出所有的 Quartz Job Scheduling Framework 翻译日志，排序，然后用模板生成一个个 HTML 文件，再用 Visual CHM 里的工程，一编译就行，只要博客上的日志内容有变，马上能生成新版的 CHM 文件。<br/><br/>
+<strong>下面附上一个列举出日志备份文件 MyBlogData.xml 中所有本站发布日志的标题的程序：</strong><br/><br/>
+<pre class="lang:default decode:true ">package com.unmi;<br/><br/>
+import java.util.List;<br/><br/>
+import org.jdom.Document;
+import org.jdom.Element;
+import org.jdom.input.SAXBuilder;
+import org.jdom.xpath.XPath;<br/><br/>
+/**
+ * JDOM 使用 XPath 查找带 NameSpace 的节点
+ * @author Unmi
+ */
+public class XPathWithNS {<br/><br/>
+    /**
+     * @param args
+     * @throws Exception
+     * @throws  Exception
+     */
+    public static void main(String[] args) throws Exception {
+        SAXBuilder builder = new SAXBuilder(false);
+        Document document = builder.build("D:/Unmi/MyBlogData.xml");<br/><br/>
+        //找出在本站原创的日志，PostType='1' 应该就这意义
+        XPath xpath = XPath.newInstance("//default:blog_Content[default:PostType='1']");<br/><br/>
+        //列出所有Quartz Job Scheduling Framework 翻译文档的 XPath
+        //XPath xpath = XPath.newInstance("//default:blog_Content[contains(default:Title,'Quartz Job Scheduling Framework') and PostType='1']);<br/><br/>
+        xpath.addNamespace("default","x-schema:#Schema2");
+        List&lt;Element&gt; elements = xpath.selectNodes(document);<br/><br/>
+        for (int i=0;i&lt;elements.size();i++) {
+            Element element = (Element)elements.get(i);
+            XPath xpathTitle = XPath.newInstance("default:Title");
+            xpathTitle.addNamespace("default","x-schema:#Schema2");
+            String title = ((Element)xpathTitle.selectSingleNode(element)).getTextTrim();
+            System.out.println((i+1)+". "+title);
+        }
+    }
+}</pre>
+<br/>
+程序中用到了 XPath 实现类其实是 org.jdom.xpath.JaxenXPath，所以项目中要引用的包有：jdom.jar、saxpath.jar、jaxen-core.jar、jaxen-jdom.jar。也可以使用 XPath 的另一实现类 org.jaxen.jdom.JDOMXPath。<br/><br/>
+参考：1. <a href="http://www.edankert.com/defaultnamespaces.html" target="_blank" rel="noopener">XPath and Default Namespace handling</a>(其中详细讲解了分别用 Jaxen and Dom4J,Jaxen and XOM,Jaxen and JDOM,JAXP XPathFactory,XSLT 如何处理有默认命名空间的 XML 节点)

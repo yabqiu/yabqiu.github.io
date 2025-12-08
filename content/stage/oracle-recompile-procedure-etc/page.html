@@ -1,0 +1,86 @@
+---
+title: Oracle 中重新编译无效的存储过程, 或函数、触发器等对象
+url: /oracle-recompile-procedure-etc/
+date: 2009-01-06T23:34:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Database
+tags: 
+  - database
+  - Oracle
+  - Procedure
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 301 
+wpStatus: publish
+views: 1032
+lastmod: 2010-08-10T10:40:14-05:00
+---
+
+Oracle 中的存储过程在有些情况下会变成失效状态，在 PL/SQL Developer 中该存储过程的图标左上角显示一把小红叉叉。比如储过程所引用的对象失效，dblink 出问题啦都可能引起用到它的存储过程失效。再就我的存储过程经常会变成无效，至今原因都未查明。<br/>
+<br/>
+查询 dba_dependencies 视图可以看到存储过程所引用的对象，再就在 dba_objects 视图中可以看到对象的 created 和 last_ddl_time 时间。<br/>
+<br/>
+上面的那种无效的存储程，只要不是语法上有问题，重新编译一下又是可用的了。总不能每次发现时人工去编译的，所以要实现自动化，有以下两种方法(网上找到的所有的 <a href="http://www.xland.com.cn/article/74/77/0803/28375.htm" target="_blank">在Oracle中重新编译所有无效的存储过程</a> 代码排版都很混乱，所以主要是重新整理了)：<!--more--><br/>
+<br/>
+1. Oracle SQL *Plus 中 -- 用 spool 生成脚本文件，然后 @ 调入执行，代码如下：<br/>
+<pre class="brush:sql">spool ExecCompProc.sql<br/>
+<br/>
+select 'alter procedure '||object_name||' compile;' from all_objects<br/>
+where status = 'INVALID' and object_type = 'PROCEDURE' AND owner='UNMI'; <br/>
+<br/>
+spool off<br/>
+<br/>
+@ExecCompProc.sql;</pre>
+
+2. 写成一个存储过程 -- 让这个存储过程在某个时机执行，比如  Job 中，代码如下：<br/>
+<pre class="brush:sql">create or replace procedure compile_invalid_procedures(<br/>
+    p_owner varchar2 -- 所有者名称，即 SCHEMA<br/>
+) as<br/>
+<br/>
+--编译某个用户下的无效存储过程<br/>
+<br/>
+    str_sql varchar2(200);<br/>
+<br/>
+begin<br/>
+    for invalid_procedures in (select object_name from all_objects<br/>
+       where status = 'INVALID' and object_type = 'PROCEDURE' and owner=upper(p_owner))<br/>
+    loop<br/>
+        str_sql := 'alter procedure ' ||invalid_procedures.object_name || ' compile';<br/>
+        begin<br/>
+            execute immediate str_sql;<br/>
+        exception<br/>
+          --When Others Then Null;<br/>
+            when OTHERS Then<br/>
+                dbms_output.put_line(sqlerrm);<br/>
+        end;<br/>
+    end loop;<br/>
+end;</pre>
+
+在 SQL *Plus 中执行该存储过程时，如果要看到 dbms_output.put_line(sqlerrm); 的输出，需要执行 set serverout on 打开输出。<br/>
+<br/>
+这里述及的是如何重新编译存储过程，依次推及到，重新编译 FUNCTION、PACKAGE、TYPE、TRIGGER 等，和重建 INDEX 等。所不同的就是查询 all_objects 时的  object_type 不一样，还有要执行的 alter 语句不一样。<br/>
+<br/>
+object_type 有哪些可用 select distinct object_type from all_objects 获取到；alter 的语句写法参考下面：<br/>
+<pre class="brush:sql">alter function function_name compile;<br/>
+alter package package)name compile;<br/>
+alter type type_name compile;<br/>
+alter index index_name rebuild;<br/>
+--等等............</pre>
+
+参考：1. <a href="http://www.lslnet.com/linux/dosc1/10/linux-156591.htm" target="_blank">为什么我的存储过程总要重新编译?</a> <br/>
+        2. <a href="http://www.xland.com.cn/article/74/77/0803/28375.htm" target="_blank">在Oracle中重新编译所有无效的存储过程</a><br/>
+<br/>
+<hr />补充，请看这里：<br/>
+<br/>
+1. 其实存储过程、函数等是 INVALID，只要内容无错误就不要紧，因为执行的时候会自动重新编译<br/>
+2. 在 SQL *Plus 或者 PL/SQL Developer 的 Command Windows 中用 show  errors  procedure  procedure_name 或 show errors function function_name 可以查看到存储过程具体错误<br/>
+3. 可以用 Oracle 提供的工具：dbms_utility.compile_schema(schema varchar2, compile_all boolean default TRUE); 来编译某个 Schema 下的所有 PROCEDURE、FUNCTION、PACKAGE 和 TRIGGER。比如执行 dbms_utility.compile_schema('Unmi')。<br/>
+<br/>
+参考：1. <a href=" http://topic.csdn.net/t/20020821/11/957708.html" target="_blank">为什么我创建的存储过程,存储函数都是无效的?</a><br/>
+        2. <a href="http://stanford.edu/dept/itss/docs/oracle/10g/appdev.101/b10802/d_util.htm#1002333" target="_blank">DBMS_UTILITY</a>

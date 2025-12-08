@@ -1,0 +1,89 @@
+---
+title: 用 jreloader 动态重新加载改变的类而不用重启 JVM
+url: /jreloader-reload-class/
+date: 2011-01-28T06:02:27-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - JVM
+tags: 
+  - JVM
+  - Tomcat
+  - Spring
+  - jreloader
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3111 
+wpStatus: publish
+views: 3836
+lastmod: 2011-01-28T06:08:21-06:00
+---
+
+在 Tomcat 中可以配置 reloadable="true" 做到类改变后，Tomcat 重新加载。其实这个过程大约也是当 Tomcat 发现有改变的类会重新启动一个新的应用程序重新加载所有的类来服务于新的请求，只是不需要你手动的去执行 shutdown.sh(.bat)，再 startup.sh(.bat)。这种方式对于古老的 jsp 程序完全能从容以对，因为 web.xml 里几乎没什么随应用一起启动且耗时长代码；但当下是框架横行，web.xml 中随应用一起启动的程度可谓是争先恐后的，所以仅仅依赖 reloadable="true" 是满足不了需求的。每改一个类(无论是改动了方法体中的代码还是变动了类的结构，准确的说是动了 WEB-INF/classes 目录中的任何文件) 你都可能就会在<br/>
+<br/>
+<span style="color: #800000;">Jan 28, 2011 7:19:42 PM org.apache.catalina.core.ApplicationContext log<br/>
+INFO: Initializing Spring root WebApplicationContext<!--more--></span><br/>
+<br/>
+这一步上等上半天，况且对于 reloadable="true" 对于类结构的改动是无动为力的，像实现了不同的接口，继承了不同的类，或者增删了方法或属性的时候，Tomcat 必须是 shutdown，然而再 startup 的。<br/>
+<br/>
+这样的频繁重启对于调试是一种煎熬，所以希望能找到一个工具，能在类改动的时候不需要重新启动当前应用，当然不希望重启 Tomcat 了。能实现此功能的工具有 <a href="http://www.zeroturnaround.com/jrebel/" target="_blank">JavaRebel </a>和 <a href="http://code.google.com/p/jreloader/" target="_blank">jreloader</a>，其中前者是收费的，后者是开源的，不过后者实际上也不错。<br/>
+<br/>
+这里介绍下后者在 Eclipse WTP  Tomcat 环境中怎么配置使用。<br/>
+<br/>
+当前版本是 <a href="http://code.google.com/p/jreloader/downloads/detail?name=jreloader-0.4.zip" target="_blank">jreloader-0.4.zip</a>，其中有 jreloader.jar 和 jreloader-src.zip，再就是非常简单且足够的 INSTALL.txt 文件：<br/>
+<pre class="brush:text">You need only to add a couple of vm arguments, as in the example below:<br/>
+<br/>
+java -noverify -javaagent:c:\tools\jreloader.jar -Djreloader.dirs=c:\project\target\classes com.foo.Main<br/>
+<br/>
+or<br/>
+<br/>
+java -noverify -javaagent:c:\tools\jreloader.jar -Djreloader.dirs=c:\project\target\classes -jar foo.jar<br/>
+<br/>
+If you have multiple modules, you can add more than one class dir:<br/>
+<br/>
+ -Djreloader.dirs=c:\project\target\classes,c:\project2\target\classes,c:\project2\target\classes</pre>
+
+ 和 JavaRebel 一样通过 javaagent 来控制的，用 -Djreloader.dirs 来监测可能用变化的 classpath，可以逗号分隔的多个。对于 WEB 程序我们只需监测 /WEB-INF/classes 目录的。其实不管任何程序，我们只要想办法把 -javaagent 这个参数设置进去，你自己改 catalina.bat(.sh) 也行。<br/>
+<br/>
+现在说 Eclipse WTP 中如何给创建的 Tomcat 服务器设置上面的 JVM 参数，Eclipse 中进到 Tomcat 配置的 Overview 页，点击 Open launch configuration, 弹出 Edit Configuration 窗口，再到 Arguments 标签页中，VM arguments: 输入框中加上：<br/>
+<br/>
+-noverify -javaagent:D:\jreloader-0.4\jreloader.jar -Djreloader.dirs=D:\workspaces\j2ee\.metadata\.plugins\org.eclipse.wst.server.core\tmp0\wtpwebapps\TestJavaWeb\WEB-INF\classes<br/>
+<br/>
+说明：我把 jreloader.jar 放在 d:\jreloader-0.4 目录中的，WTP 插件通常把应用发布在 D:\workspaces\j2ee\.metadata\.plugins\org.eclipse.wst.server.core\tmp0\wtpwebapps\TestJavaWeb 像这样的位置中，只要 Djreloader.dirs 指向到该应用发布后的目录中 WEB-INF/classes 子目录。每改动一个类，WTP 都会发布到这个 classes 目录中去，所以你要关心的是这个实际运行时加载类的地方。<br/>
+<br/>
+除了上面的 VM arguments 之外，还必须把 Tomcat 里该应用的 reloadable 设为 false，阻止 Tomcat 去管理，而完全由 jreloader 去承担类的热加载。<br/>
+<br/>
+Eclispe WTP 对 Tomcat 的配置会反应到 D:\workspaces\j2ee\.metadata\.plugins\org.eclipse.wst.server.core\tmp0\conf\server.xml 中，所以直接改这里面的 server.xml，把 reloadable 改为 false 后仍然会被覆盖为 true。<br/>
+<br/>
+不过，我们还有个办法，就是在项目的 META-INF 目录中创建 context.xml 文件，在其中写上：<br/>
+<br/>
+&lt;Context antiResourceLocking="false" privileged="true" reloadable="false"/&gt;<br/>
+<br/>
+这里面的配置届时会被 WTP 合并到 D:\workspaces\j2ee\.metadata\.plugins\org.eclipse.wst.server.core\tmp0\conf\server.xml 文件中的。<br/>
+<br/>
+现在可以尝试一下了，启动 Tomcat，首先看到：<br/>
+<br/>
++---------------------------------------------------+<br/>
+| JReloader Agent 0.4                               |<br/>
+| Copyright 2008,2009 Antonio S. R. Gomes           |<br/>
+| See LICENSE-2.0.txt details                       |<br/>
++---------------------------------------------------+<br/>
+<br/>
+如果有一个类改动后，控制台下会看到：<br/>
+<br/>
+D:\workspaces\j2ee\.metadata\.plugins\org.eclipse.wst.server.core\tmp0\wtpwebapps\FootnotedPro\WEB-INF\classes\cc\unmi\struts\model\ElementItem.class<br/>
+[JReloader:INFO ] Reloading class cc.unmi.strtus.model.ElementItem<br/>
+<br/>
+马上就可以在浏览器中看到效果了，再也不用一遍遍的看 Tomcat 或其他框架(想想亚运会上其他国家被拉着一遍遍忍受中国国情形) 的脸色了：<br/>
+<br/>
+Jan 28, 2011 7:19:42 PM org.apache.catalina.core.ApplicationContext log<br/>
+INFO: Initializing Spring root WebApplicationContext<br/>
+<br/>
+对于启动的独立应用程序，应该没什么好多说的，加启动参数：-noverify -javaagent:c:\tools\jreloader.jar -Djreloader.dirs=c:\project\target\classes，就行，这对于长时间的服务程序，或守护程序也是有用的。<br/>
+<br/>
+相比于 JavaRebel 来说，从调试窗口中看到 jreloader 并没有去在字节码上作很多文章，看到的类名仍然是原来的类名，并且可一样方便的断点调试。

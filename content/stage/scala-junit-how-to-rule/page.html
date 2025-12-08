@@ -1,0 +1,101 @@
+---
+title: Scala + JUnit 怎么使用 @Rule
+url: /scala-junit-how-to-rule/
+date: 2014-09-06T20:42:14-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - Scala
+  - JUnit
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6579 
+wpStatus: publish
+views: 1820
+lastmod: 2014-09-06T20:59:06-05:00
+---
+
+JUnit 是个很著名的飞行模式测试框架，即使到了 Scala 中还是免不了要用 JUnit Style 的测试方式，基于 Spec 的方式并不处处行得通，比如想要在 Scala 中使用 JMockit 框架时。<br/>
+<br/>
+JUnit 提供给我们有两个扩展点，<a href="http://junit.org/javadoc/4.11/org/junit/runner/Runner.html" target="_blank">Runner</a> 和 <a href="http://junit.org/javadoc/4.11/org/junit/Rule.html" target="_blank">Rule</a>, Runner 扩展点一般被各种框架劫持了，自己搞个 <code>@RunWith(SomeRunner.class)</code> 可能让你无法在测试中应用框架。于是剩下了 Rule 是个更自由的扩展点，这里不讲述怎么定制自己的 Rule，而是怎么用它，怎么在 Scala 中用它。之前的一篇 <a href="http://unmi.cc/junit-4-how-to-test-exceptions/" target="_blank">JUnit 4 如何正确测试异常</a> 中使用了 <code>ExpectedException</code> 这个 Rule。<br/>
+<br/>
+Rule 的要求是: Annotates fields that reference rules or methods that return a rule. A field must be public, not static, and a subtype of <a title="interface in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/TestRule.html"><code>TestRule</code></a> (preferred) or <a title="interface in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/MethodRule.html"><code>MethodRule</code></a>. A method must be public, not static, and must return a subtype of <a title="interface in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/TestRule.html"><code>TestRule</code></a> (preferred) or <a title="interface in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/MethodRule.html"><code>MethodRule</code></a>. 属性或方法必须是 public 非静态的，它们的类型或返回类型必须分别是 <a href="http://junit.org/javadoc/4.11/org/junit/rules/TestRule.html" target="_blank">TestRule</a> 和 <a href="http://junit.org/javadoc/4.11/org/junit/rules/MethodRule.html" target="_blank">MethedRule</a>。<br/>
+<br/>
+这里尝试以 Java 的方式使用另一个 Rule，<a href="http://junit.org/javadoc/4.11/org/junit/rules/TestName.html" target="_blank">TestName</a>, 可以得到当前测试方法的名称<!--more--><br/>
+<pre class="brush:scala">import org.junit.{Assert, Test, Rule}<br/>
+import org.junit.rules.TestName<br/>
+<br/>
+class RuleTest {<br/>
+<br/>
+    @Rule<br/>
+    val name = new TestName<br/>
+<br/>
+    @Test<br/>
+    def testTestName {<br/>
+        Assert.assertEquals("testTestName", name.getMethodName());<br/>
+    }<br/>
+}</pre>
+
+运行上面的测试，得到错误<br/>
+<br/>
+<span style="color: #800000;">[error] Test RuleTest.initializationError failed: java.lang.Exception: The @Rule 'name' must be public.</span><br/>
+<span style="color: #800000;">[error]     at com.novocode.junit.JUnitRunner.run(JUnitRunner.java:87)</span><br/>
+<span style="color: #800000;">[error]     at sbt.RunnerWrapper$1.runRunner2(FrameworkWrapper.java:220)</span><br/>
+<span style="color: #800000;">[error]     at sbt.RunnerWrapper$1.execute(FrameworkWrapper.java:233)</span><br/>
+<span style="color: #800000;">[error]     at sbt.ForkMain$Run.runTest(ForkMain.java:239)</span><br/>
+<span style="color: #800000;">[error]     at sbt.ForkMain$Run.runTestSafe(ForkMain.java:211)</span><br/>
+<span style="color: #800000;">[error]     at sbt.ForkMain$Run.runTests(ForkMain.java:187)</span><br/>
+<span style="color: #800000;">[error]     at sbt.ForkMain$Run.run(ForkMain.java:251)</span><br/>
+<span style="color: #800000;">[error]     at sbt.ForkMain.main(ForkMain.java:97)</span><br/>
+<span style="color: #800000;">[info] RuleTest</span><br/>
+<span style="color: #800000;">[info] x initializationError</span><br/>
+<br/>
+'name’ 必须是 public 的，但是 Scala 的属性可以为 private/protected, 就是不能为 public 的，而是根据 val/var 生成 setter/getter 方法，默认时<br/>
+<br/>
+Scala 为 <code>val name</code>  生成 <code>public TestName name()</code> 方法，为 <code>var name</code> 生成 <code>public TestName name()</code> 和 <code>public void name_$eq(TestName arg)</code> 方法。<br/>
+<br/>
+而 JUnit 需要一个 public 的 name 属性该怎么办呢，得曲线救援。Scala 的方法是 public 的，而且 Scala 是符合 <a href="http://unmi.cc/scala-parameterless-uniform-acces-principle/" target="_blank">统一访问原则</a> 的，所以可以让 @Rule 标在方法上，写成<br/>
+<pre class="brush:scala">    val name = new TestName<br/>
+    @Rule<br/>
+    def nameRef = new name;<br/>
+<br/>
+    @Test<br/>
+    def testTestName {<br/>
+        Assert.assertEquals("testTestName", name.getMethodName());<br/>
+        Assert.assertEquals("testTestName", nameRef.getMethodName());<br/>
+    }</pre>
+
+这时候 name 和 nameRef 都能得到当前测试方法名。上面必须要两行，一行定义 name，另一行 @Rule 指向前面声明的 name，我们却不能把这两行写成<br/>
+<pre class="brush:scala">@Rule<br/>
+def name = new TestName</pre>
+
+这样的话断言会失败<br/>
+<br/>
+<span style="color: #800000;">[error] Test RuleTest.testTestName failed: expected:&lt;testTestName&gt; but was:&lt;null&gt;</span><br/>
+<br/>
+由 name.getMethodName() 的是 null<br/>
+<br/>
+补充一下：JUnit 有两种类型的 Rule, 分别是 分别是 <a href="http://junit.org/javadoc/4.11/org/junit/rules/TestRule.html" target="_blank">TestRule</a> 和 <a href="http://junit.org/javadoc/4.11/org/junit/rules/MethodRule.html" target="_blank">MethedRule</a>, 分别应用属性和方法中，在 JUnit 4.11 中带了一些实现：<br/>
+<br/>
+TestRule: <a title="class in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/ErrorCollector.html">ErrorCollector</a>, <a title="class in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/ExpectedException.html">ExpectedException</a>, <a title="class in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/ExternalResource.html">ExternalResource</a>, <a title="class in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/RuleChain.html">RuleChain</a>, <a title="class in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/TemporaryFolder.html">TemporaryFolder</a>, <a title="class in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/TestName.html">TestName</a>, <a title="class in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/TestWatcher.html">TestWatcher</a>, <a title="class in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/Timeout.html">Timeout</a>, <a title="class in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/Verifier.html">Verifier</a><br/>
+<br/>
+MethodRule: <a title="class in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/TestWatchman.html">TestWatchman</a><br/>
+<br/>
+在使用 MethodRule 上，Java  与 Scala 应该没用区别，Scala 像是在使用 MethodRule 一样使用 TestRule, 因为 @Rule 标注到方法上去了。<br/>
+<br/>
+参考：<br/>
+<ol>
+
+	<li><a href="http://www.scottlogic.com/blog/2013/07/18/betamax-in-scala.html" target="_blank">http://www.scottlogic.com/blog/2013/07/18/betamax-in-scala.html</a></li>
+
+	<li><a href="http://randomallsorts.blogspot.com/2012/11/junit-411-whats-new-rules.html" target="_blank">http://randomallsorts.blogspot.com/2012/11/junit-411-whats-new-rules.html</a></li>
+
+	<li><a href="http://blog.jiffle.net/post/41125006846/extending-junit-functionality-with-additional" target="_blank">http://blog.jiffle.net/post/41125006846/extending-junit-functionality-with-additional</a></li>
+
+</ol>

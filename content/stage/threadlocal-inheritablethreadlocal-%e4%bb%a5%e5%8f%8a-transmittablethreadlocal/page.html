@@ -1,0 +1,362 @@
+---
+title: ThreadLocal, InheritableThreadLocal 以及 TransmittableThreadLocal
+url: /threadlocal-inheritablethreadlocal-%e4%bb%a5%e5%8f%8a-transmittablethreadlocal/
+date: 2024-08-23T21:53:54-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Spring
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13743 
+wpStatus: publish
+views: 104
+lastmod: 2024-08-24T00:11:31-05:00
+---
+
+ThreadLocal 是 Java 编程人员要掌握的一个基本类，似乎没什么太多要说。但因为本文要牵出 TransmittableThreadlLocal, 再顺带说下几乎隐形的 InheritableThreadLocal。</p>
+<br/>
+ThreadLocal 用于保存与线程绑定的数据，它在框架内部使用的很频繁，但凡见到 XxxContextHolder.currentContext() 之类的十之八九用到了 ThreadLocal, 如 Spring 框架中的<br/><br/>
+RequestContextHolder<br/><br/>
+<pre class="wrap:true lang:default decode:true">public abstract class RequestContextHolder {
+    private static final ThreadLocal&lt;RequestAttributes&gt; requestAttributesHolder = new NamedThreadLocal("Request attributes");
+    private static final ThreadLocal&lt;RequestAttributes&gt; inheritableRequestAttributesHolder = new NamedInheritableThreadLocal("Request context");
+</pre>
+<br/>
+<!--more-->在 Spring Web 项目任何代码中，只要是由 http 线程执行都可以用 RequestContextHolder.currentRequestAttributes() 得到请求中的属性值，由此能追溯到 Session, Application 等对象<br/><br/>
+SecurityContextHolder 中的 SecurityContextHolderStrategy 实现方式有 ThreadLocalSecurityContextHolderStrategy 和 InheritableThreadLocalSecurityContextHolderStrategy 等<br/><br/>
+<pre class="lang:default decode:true">final class ThreadLocalSecurityContextHolderStrategy implements SecurityContextHolderStrategy {
+    private static final ThreadLocal&lt;Supplier&lt;SecurityContext&gt;&gt; contextHolder = new ThreadLocal();</pre>
+<br/>
+<pre class="lang:default decode:true">final class InheritableThreadLocalSecurityContextHolderStrategy implements SecurityContextHolderStrategy {
+    private static final ThreadLocal&lt;Supplier&lt;SecurityContext&gt;&gt; contextHolder = new InheritableThreadLocal();</pre>
+<br/>
+在 SpringSecurity 的 Filter 中调用静态方法可得到 Context 并设置 Authentication, SecurityContextHolder.getContext().setAuthentication(), 在后续的调用链上就能通过静态方法获得它<br/><br/>
+<pre class="wrap:true lang:default decode:true ">public abstract class TransactionSynchronizationManager {
+    private static final ThreadLocal&lt;Map&lt;Object, Object&gt;&gt; resources = new NamedThreadLocal&lt;&gt;("Transactional resources");
+    private static final ThreadLocal&lt;Set&lt;TransactionSynchronization&gt;&gt; synchronizations = new NamedThreadLocal&lt;&gt;("Transaction synchronizations");
+    private static final ThreadLocal&lt;String&gt; currentTransactionName = new NamedThreadLocal&lt;&gt;("Current transaction name");
+    private static final ThreadLocal&lt;Boolean&gt; currentTransactionReadOnly = new NamedThreadLocal&lt;&gt;("Current transaction read-only status");
+    private static final ThreadLocal&lt;Integer&gt; currentTransactionIsolationLevel = new NamedThreadLocal&lt;&gt;("Current transaction isolation level");
+    private static final ThreadLocal&lt;Boolean&gt; actualTransactionActive = new NamedThreadLocal&lt;&gt;("Actual transaction active");
+</pre>
+<br/>
+这也是为什么在 Spring 中可以用 @Transactional 声明实现事物关键，在任何代码能取到当前线程所用的数据库连接，从而把需要的数据库操作放在同一个事物<br/><br/>
+还有日志的 MDC 也是用的 ThreadLocal, 对了上面还有 ThreadLocal 的直接子类 NamedThreadLocal, 它的功能上没多少特别的。如果在一个 Spring 项目中查看 ThreadLocal 的类层次将能列出更多的  ThreadLocal 实现类。<br/><br/>
+觉察到 TheadLocal 在框架内部如此广泛的被使用，我们来大略回顾一下 ThreadLocal 的基本用法<br/><br/>
+ThreadLocal 唯的作用就是保存在其中的值是与当前线程相绑定的，与 ThreadLocal 变量本生声明在何处无关。看下面的代码<br/><br/>
+<pre class="lang:default decode:true">public class TestThreadLocal {<br/><br/>
+    public static void main(String[] args) throws InterruptedException {
+        ThreadLocal&lt;Integer&gt; value = new ThreadLocal&lt;&gt;();
+        value.set(1);<br/><br/>
+        Thread thread = new Thread(() -&gt; print(value));  // Thread-0=null
+        thread.start();
+        thread.join();<br/><br/>
+        print(value);  // main=1
+    }<br/><br/>
+    private static void print(ThreadLocal&lt;Integer&gt; value) {
+        System.out.println(Thread.currentThread().getName() + "=" + value.get());
+    }
+}</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+Thread-0=null<br />
+main=1
+</blockquote>
+<br/>
+即在主 main 线程中写入到 ThreadLocal 中的值只对当前 main 线程可见，对其他线程不可见，虽然它们都能访问 ThreadLocal value 变量，但存储与 value 关联的值是在线程上。<br/><br/>
+换句话说就是 ThreadLocal 中的值能随着当前线程流动。<br/><br/>
+如果当前线程 ThreadLocal 想要它其中的值传播到子线程是否可行呢？答案是 InheritableThreadLocal，它满足了我们部分需求<br/><br/>
+只需要把上面的 new ThreadLocal&lt;&gt;() 改成 new InheritableThreadLocal&lt;&gt;() 就能产生不一样的效果，列出完整代码<br/><br/>
+<pre class="lang:default decode:true">    public static void main(String[] args) throws InterruptedException {
+        ThreadLocal&lt;Integer&gt; value = new InheritableThreadLocal&lt;&gt;();   // 其实只有这一行不同
+        value.set(1);<br/><br/>
+        Thread thread = new Thread(() -&gt; print(value));  // Thread-o=1
+        thread.start();
+        thread.join();<br/><br/>
+        print(value);   // main=1
+    }</pre>
+<br/>
+现在的输出变为<br/><br/>
+<blockquote>
+Thread-0=1<br />
+main=1
+</blockquote>
+<br/>
+这符合我们的预期，使用了 InheritableThreadLocal，在 main 线程中用 new Thread() 创建子线程时会把 main 线程(父线程)中绑定的值传递给子线程，因为如果是 InheritableThreadLocal 的话在 Thread 的构造函数中会从父线程拷贝线程局部变量到子线程中，相关代码如下<br/><br/>
+<pre class="lang:default decode:true ">        if (!attached) {
+            if ((characteristics &amp; NO_INHERIT_THREAD_LOCALS) == 0) {
+                ThreadLocal.ThreadLocalMap parentMap = parent.inheritableThreadLocals;
+                if (parentMap != null &amp;&amp; parentMap.size() &gt; 0) {
+                    this.inheritableThreadLocals = ThreadLocal.createInheritedMap(parentMap);
+                }</pre>
+<br/>
+JDK 中添加 InheritableThreadLocal 这个子类的使用前提应该是新线程只使用用一次，不被重用，也就是说 new Thread().start() 完成任务后线程的状态即变为 Terminated, 不能被复用。<br/><br/>
+那如何能复用这个线程呢？线程执行完任务后要转为 wait 状态，然后等着新任务到来后唤醒它，下面是一个简陋的实现<br/><br/>
+<pre class="lang:default decode:true ">class TaskRunner implements Runnable {
+    private boolean shutdown = false;
+    private Runnable task;<br/><br/>
+    public synchronized void submitTask(Runnable runnable) {
+        this.task = runnable;
+        notify();
+    }<br/><br/>
+    @Override
+    public void run() {
+        while (true) {
+            if(shutdown) {
+                Thread.currentThread().interrupt();
+            }
+            synchronized (this) {
+                while (task == null) {
+                    try {
+                        wait();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                }<br/><br/>
+                task.run();
+                task = null;
+            }
+        }
+    }<br/><br/>
+    public void shutdown() {
+        this.shutdown = true;
+    }
+}
+</pre>
+<br/>
+TaskRunner 更像是一个单线程的线程池，实质也确实是。以上代码可以采用更高效的锁 java.util.concurrent.locks.ReetrantLock 和 java.util.concurrent.locks.Condition 来进行代码同步，或进一步演化成借助于 BlockingQueue 的 offer, take 天然的锁，等待方式实现，这恰好是朝着线程池进化的方向走。<br/><br/>
+应用该 TaskRunner<br/><br/>
+<pre class="lang:default decode:true">    public static void main(String[] args) throws InterruptedException {
+        ThreadLocal&lt;Integer&gt; value = new InheritableThreadLocal&lt;&gt;();
+        value.set(1);<br/><br/>
+        TaskRunner runner = new TaskRunner();
+        Thread worker = new Thread(runner);
+        worker.start();<br/><br/>
+        print(value);   // main=1<br/><br/>
+        runner.submitTask(() -&gt; print(value));  // Thread-0=1<br/><br/>
+        Thread.sleep(500);
+        value.set(2);
+        runner.submitTask(() -&gt; print(value));  // Thread-0=1<br/><br/>
+        runner.shutdown();
+    }</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+main=1<br />
+Thread-0=1<br />
+Thread-0=1
+</blockquote>
+<br/>
+在 value.set(2) 修改为 2 后，子线程 Thread-0 中的 value 仍然是 1，因为线程被复用了，前面说过只有第一次 new Thread(...) 的时候才从父线程拷贝线程局部变量到子线程，而后父线程中的线程局部变量 value 修改之后并不会同步到子线程的的线程局部变量去。<br/><br/>
+所以说 InheritableThreadLocal 碰上了可复用的线程或者说线程池就失去功效了，然而如今又正是各种线程池大行其道的时候，感觉 InheritableThreadLocal 还没真正上路就要退出历史的舞台。而且你在线程池中一不留心还会带来困惑，比如下面用 InheritableThreadLocal 与线程池的代码<br/><br/>
+<pre class="lang:default decode:true">    public static void main(String[] args) throws Exception {
+        ThreadLocal&lt;Integer&gt; value = new InheritableThreadLocal&lt;&gt;();
+        ExecutorService executor = Executors.newFixedThreadPool(5);<br/><br/>
+        for (int i = 0; i &lt; 5; i++) {
+            value.set(i+1);
+            print(value);
+            executor.submit(() -&gt; print(value)).get();
+        }<br/><br/>
+        executor.shutdown();
+    }</pre>
+<br/>
+输出<br/><br/>
+<blockquote>
+main=1<br />
+pool-1-thread-1=1<br />
+main=2<br />
+pool-1-thread-2=2<br />
+main=3<br />
+pool-1-thread-3=3<br />
+main=4<br />
+pool-1-thread-4=4<br />
+main=5<br />
+pool-1-thread-5=5
+</blockquote>
+<br/>
+乍一看，似乎 InheritableThreadLocal 满足了我们的需求，外面设置的 value 立即能反应到子线程中<br/><br/>
+如果再来一趟呢<br/><br/>
+<pre class="lang:default decode:true ">    public static void main(String[] args) throws Exception {
+        ThreadLocal&lt;Integer&gt; value = new InheritableThreadLocal&lt;&gt;();
+        ExecutorService executor = Executors.newFixedThreadPool(5);<br/><br/>
+        for (int i = 0; i &lt; 5; i++) {
+            value.set(i+1);
+            print(value);
+            executor.submit(() -&gt; print(value)).get();
+        }<br/><br/>
+        System.out.println("------------");
+        for (int i = 5; i &lt; 10; i++) {
+            value.set(i+1);
+            print(value);
+            executor.submit(() -&gt; print(value)).get();
+        }<br/><br/>
+        executor.shutdown();
+    }</pre>
+<br/>
+输出<br/><br/>
+<blockquote>
+main=1<br />
+pool-1-thread-1=1<br />
+main=2<br />
+pool-1-thread-2=2<br />
+main=3<br />
+pool-1-thread-3=3<br />
+main=4<br />
+pool-1-thread-4=4<br />
+main=5<br />
+pool-1-thread-5=5<br />
+------------<br />
+main=6<br />
+pool-1-thread-1=1<br />
+main=7<br />
+pool-1-thread-2=2<br />
+main=8<br />
+pool-1-thread-3=3<br />
+main=9<br />
+pool-1-thread-4=4<br />
+main=10<br />
+pool-1-thread-5=5
+</blockquote>
+<br/>
+第二遍的时候不管外面线程对 value 设置任何值，子线程依然保持最初始的值，原因是一样，线程只有在 new Thread(...) 时才会从父线程上拷贝 InheritableThreadLocal 上的值，线程池中的线程是在等到要跑任务时才创建，所以正好第一轮每次外面改变 InheritableThreadLocal 上的值就为线程池创建一个新线程来执行当前任务，所以 InheritableThreadLocal 产生了效果，第二轮一概复用线程，无需 new Thread(...) 的过程，所以子线程中的线程局部对外部 InheritableThreadLocal 的变化就无动于衷了。<br/><br/>
+那结论是什么呢？就是不要 InheritableThreadLocal 和线程池搭配使用。<br/><br/>
+<h3>TransmittableThreadLocal 解决线程池与 TheadLocal 的问题</h3><br/><br/>
+又是 Alibaba 出了一款 ThreadLocal 子类实现 <a href="https://github.com/alibaba/transmittable-thread-local">ThansmittableThreadLocal</a>, 意图是为了解决 InheritableThreadLocal 与线程池一同工作的的问题，大概看了一下，也没什么特别的。起初还以为是直接把上面的<br/><br/>
+new InheritableThreadLocal() 替换成 new TransmittableThreadLocal() 就万事大吉了，到底还没透明到这一程度，这种简单换没有任何帮助。<br/><br/>
+ThransmittableThreadLocal 同样的是走的主流路线，三种方案<br/><br/>
+<ol>
+    <li>修饰 Task</li>
+    <li>修饰线程池</li>
+    <li>以 -javaagent:path/to/transmittable-thread-local-2.x.y.jar 的方式动态修改字节码</li>
+</ol>
+<br/>
+需要在项目中引入依赖<br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;com.alibaba&lt;/groupId&gt;
+    &lt;artifactId&gt;transmittable-thread-local&lt;/artifactId&gt;
+    &lt;version&gt;2.14.5&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+第一种方式与 Spring 的 ThreadPoolTaskExecutor 的 setTaskDecorator(taskDecorator) 是类似的实现(目前项目中采取的就是 TaskDecorator，比如要传递 MDC 的 TaskDecorator)<br/><br/>
+<pre class="lang:default decode:true ">    public static TaskDecorator taskDecorator() {
+        return runnable -&gt; {
+            Map&lt;String, String&gt; mdcContextMap = MDC.getCopyOfContextMap();
+            if (mdcContextMap == null) {
+                return runnable;
+            }
+            return () -&gt; {
+                try {
+                    MDC.setContextMap(mdcContextMap);
+                    runnable.run();
+                } finally {
+                    MDC.clear();
+                }
+            };
+        };
+    }</pre>
+<br/>
+它实现了对多种函数接口的封装，如 TtlRunable, TtlCallable, TtlFunction, TtlConsumer 等，注意 Ttl 不是 Time To Live 的意思，而是 <strong>T</strong>ransmittable<strong>T</strong>hread<strong>L</strong>ocal 的缩写，实现方类与 TaskDecorator 类同<br/><br/>
+<h4>装饰任务</h4><br/><br/>
+以 TtlRunable 为例<br/><br/>
+<pre class="lang:default decode:true">    public static void main(String[] args) throws Exception {
+        ThreadLocal&lt;Integer&gt; value = new TransmittableThreadLocal&lt;&gt;();  // 必须用 ThansmittableThreadLocal
+        ExecutorService executor = Executors.newFixedThreadPool(2);<br/><br/>
+        for (int i = 0; i &lt; 5; i++) {
+            value.set(i+1);
+            print(value);
+            TtlRunnable task = TtlRunnable.get(() -&gt; print(value));
+            executor.submit(task).get();
+        }<br/><br/>
+        executor.shutdown();
+    }</pre>
+<br/>
+输出<br/><br/>
+<blockquote>
+main=1<br />
+pool-1-thread-1=1<br />
+main=2<br />
+pool-1-thread-2=2<br />
+main=3<br />
+pool-1-thread-1=3<br />
+main=4<br />
+pool-1-thread-2=4<br />
+main=5<br />
+pool-1-thread-1=5
+</blockquote>
+<br/>
+外面作什么改变，线程池中的线程也立即作出反应。<br/><br/>
+<h4>装饰 ThreadPool</h4><br/><br/>
+TtlExecutors 有 getTtlExecutor(), getTtlExecutorService(), getTtlScheduledExecutorService() 等线程池的装饰器，上面代码改造成用 TtlExecutors.getTtlExecutor()<br/><br/>
+<pre class="lang:default decode:true ">    public static void main(String[] args) throws Exception {
+        ThreadLocal&lt;Integer&gt; value = new TransmittableThreadLocal&lt;&gt;();
+        ExecutorService executor = TtlExecutors.getTtlExecutorService(Executors.newFixedThreadPool(2));<br/><br/>
+        for (int i = 0; i &lt; 5; i++) {
+            value.set(i+1);
+            print(value);
+            Runnable task = () -&gt; print(value);
+            executor.submit(task).get();
+        }<br/><br/>
+        executor.shutdown();
+    }</pre>
+<br/>
+也是输出<br/><br/>
+<blockquote>
+main=1<br />
+pool-1-thread-1=1<br />
+main=2<br />
+pool-1-thread-2=2<br />
+main=3<br />
+pool-1-thread-1=3<br />
+main=4<br />
+pool-1-thread-2=4<br />
+main=5<br />
+pool-1-thread-1=5
+</blockquote>
+<br/>
+<h4>-javaagent:path/to/transmittable-thread-local-2.x.y.jar 方式</h4><br/><br/>
+代码中仍然要用 TransmittableThreadLocal 替代 InheritableThreadLocal, 所以项目还是要 transmittable-thread-local 的依赖，算不上彻底的无侵入性<br/><br/>
+<pre class="lang:default decode:true ">    public static void main(String[] args) throws Exception {
+        ThreadLocal&lt;Integer&gt; value = new TransmittableThreadLocal&lt;&gt;();
+        ExecutorService executor = Executors.newFixedThreadPool(2);<br/><br/>
+        for (int i = 0; i &lt; 5; i++) {
+            value.set(i+1);
+            print(value);
+            Runnable task = () -&gt; print(value);
+            executor.submit(task).get();
+        }<br/><br/>
+        executor.shutdown();
+    }</pre>
+<br/>
+只是不用装饰 task 或者线程池，运行时指定 -javaagent<br/><br/>
+<blockquote>
+java -javaagent:/Users/yanbin/.m2/repository/com/alibaba/transmittable-thread-local/2.14.5/transmittable-thread-local-2.14.5.jar blog.yanbin.TestThread<br />
+main=1<br />
+pool-1-thread-1=1<br />
+main=2<br />
+pool-1-thread-2=2<br />
+main=3<br />
+pool-1-thread-1=3<br />
+main=4<br />
+pool-1-thread-2=4<br />
+main=5<br />
+pool-1-thread-1=5
+</blockquote>
+<br/>
+由于在 -javaagent 中包含了 transmittable-thread-local-2.14.5.jar, 所以用不着再把它加到 classpath 中去。<br/><br/>
+<h3>在线程池中传递 ThreadLocal 可能的问题</h3><br/><br/>
+在阅读 Transmittable ThreadLocal 的 <a href="https://github.com/alibaba/transmittable-thread-local?tab=readme-ov-file#-%E4%BD%BF%E7%94%A8ttl%E7%9A%84%E5%A5%BD%E5%A4%84%E4%B8%8E%E5%BF%85%E8%A6%81%E6%80%A7">使用 TTL 的好处与必要性</a> 一节要留意上下文丢失的两种情况<br/><br/>
+<ul dir="auto">
+    <li>当线程池满了且线程池的<code>RejectedExecutionHandler</code>使用的是<code>CallerRunsPolicy</code>时，提交到线程池的任务会在提交线程中直接执行，<code>ThreadLocal.remove</code>操作<strong>清理</strong>提交线程的上下文导致上下文<strong>丢失</strong>。</li>
+    <li>类似的，使用<code>ForkJoinPool</code>（包含并行执行<code>Stream</code>与<code>CompletableFuture</code>，底层使用<code>ForkJoinPool</code>）的场景，展开的<code>ForkJoinTask</code>会在任务提交线程中直接执行。同样导致上下文<strong>丢失</strong>。</li>
+</ul><br/><br/>
+解决办法可以在完成任务后不清理上下文，而在下次得胜该线程时再进行覆盖。

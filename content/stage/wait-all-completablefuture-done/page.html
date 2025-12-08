@@ -1,0 +1,171 @@
+---
+title: 等待所有的  CompletableFuture 完成
+url: /wait-all-completablefuture-done/
+date: 2019-09-23T23:03:37-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/12/Java8-Logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - CompletableFuture
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9606 
+wpStatus: publish
+views: 5089
+lastmod: 2019-09-23T23:03:37-05:00
+---
+
+<p>现实中有这样的用法，创建一批在线程池中运行的  CompletableFuture 实例，然后等待它们全部执行完再继续后面的操作。比如说 AWS 的 Lambda, 单单提交任务到线程池，不等待所有任务全部完成便退出主线程的话，AWS 便认为 Lambda 执行完毕，无视线程池中正在执行的任务而强行结束该 Lambda 实例。</p>
+
+<p>以往我们通常的作法如下</p>
+
+<pre class="lang:default decode:true">ExecutorService threadPool = Executors.newFixedThreadPool(10);<br/>
+List&lt;CompletableFuture&lt;Void&gt;&gt; futures = IntStream.rangeClosed(1, 10000)<br/>
+    .mapToObj(n -&gt;<br/>
+    CompletableFuture.runAsync(() -&gt; {<br/>
+        System.out.println("done " + n);<br/>
+    }, threadPool)).collect(toList());<br/>
+<br/>
+futures.forEach(CompletableFuture::join);<br/>
+<br/>
+System.out.println("all done");<br/>
+</pre>
+
+<p>如果所有的任务均无异常，上面的代码能得到预想的结果，只要上面打印出 <code>all done</code> 的话真的就是表明所有的任务都完成了。但是在循环 join <code>futures</code> 中的每一个 CompletableFuture 时，只要碰到任意一个任务有异常时，便立即抛出给外部线程，不在乎是否还有其他任务正在执行。此时，如果外部未予捕获，当然<!--more--></p>
+
+<blockquote><br/>
+<p>System.out.println("all done");</p>
+
+</blockquote>
+
+<p>这行代码也不会得到执行。这时候假如线程池未关闭的话(比如前面代码中的线程池中是非 Daemon 线程)，那么其他的任务仍然会默默的执行，从此难以获知何时任务全部完成。</p>
+
+<p>为易于理解，再作一下个 CompletableFuture::join 的测试</p>
+
+<pre class="lang:default decode:true">AtomicInteger count = new AtomicInteger();<br/>
+ExecutorService threadPool = Executors.newFixedThreadPool(10);<br/>
+List&lt;CompletableFuture&lt;Void&gt;&gt; futures = IntStream.rangeClosed(1, 10000)<br/>
+    .mapToObj(n -&gt;<br/>
+        CompletableFuture.runAsync(() -&gt; {<br/>
+            count.incrementAndGet();<br/>
+            throw new RuntimeException("ex: " + n);  //每个任务都抛出异常<br/>
+        }, threadPool)).collect(toList());<br/>
+<br/>
+try {<br/>
+    futures.forEach(CompletableFuture::join);   // 发生任何异常便立即抛出<br/>
+} catch (Exception ex) {<br/>
+    System.out.println("done count: " + count.get());<br/>
+}<br/>
+<br/>
+// 回到主线程立即检查完成多少任务<br/>
+System.out.println("all done? " + count.get());<br/>
+System.out.println(count.get());<br/>
+<br/>
+//其余任务仍在执行，等待所有任务真正执行完成检查完成多少任务<br/>
+threadPool.shutdown();<br/>
+threadPool.awaitTermination(1, TimeUnit.HOURS);<br/>
+System.out.println("all done. " + count.get());<br/>
+</pre>
+
+<p>执行后的输出基本类似(捕获到异常时多是还有任务正在执行，线程池还在的话别的任务还是不受影响的)</p>
+
+<blockquote><br/>
+<p>done count: 1706<br /><br/>
+all done? 1729<br /><br/>
+1734<br /><br/>
+all done. 10000</p>
+
+</blockquote>
+
+<p>那么有没有更好的办法去检查提交的所有任务是否全部完成了(含抛出异常的任务)？</p>
+
+<ol>
+
+	<li>每次关掉线程池肯定不可取了，要线程池又有何用</li>
+
+	<li>检查线程池中完成的任务数？这是一个累加数</li>
+
+	<li>检查线程池中的任务队是否为空，普通线程池或许管用，对于 ForkJoinPool 又不同了，再则可能还在添加其他的任务</li>
+
+</ol>
+
+<p>解铃还是系铃人，CompletableFuture 惹下的事情还得 CompletableFuture 的方法来解决，那就是可由</p>
+
+<blockquote><br/>
+<p>CompletableFuture&lt;Void&gt; allof = CompletableFuture.allof(CompletableFuture&lt;?&gt;... cfs);</p>
+
+</blockquote>
+
+<p>得到的大总管来处理，headerFuture 也是一个 CompletableFuture, 仍然是调用它的 <code>join()</code> 方法，不再逐个调用了。对比以下两段代码，分别标以代码 1 与代码 2</p>
+
+<p>代码 1</p>
+
+<pre class="lang:default decode:true">List&lt;CompletableFuture&lt;Void&gt;&gt; futures = ...;<br/>
+CompletableFuture.allof(futures.toArray(new CompletableFuture[]{}).join();</pre>
+
+<p>代码 2</p>
+
+<pre class="lang:default decode:true">List&lt;CompletableFuture&lt;Void&gt;&gt; futures = ...;<br/>
+futures.forEach(CompletableFuture::join);</pre>
+
+<p>代码 1 中的任务在执行当中如果有异常的话会 Hold 住，然而总是会在所有任务完成后才抛出执行当中的异常，而代码 2 在 forEach 循环时，碰到任意一个任务有异常便立即抛出。</p>
+
+<p>因此我们就可以用下面的方式来等待所有提交的任务真正完成</p>
+
+<pre class="lang:default decode:true">AtomicInteger count = new AtomicInteger();<br/>
+ExecutorService threadPool = Executors.newFixedThreadPool(10);<br/>
+List&lt;CompletableFuture&lt;Void&gt;&gt; futures = IntStream.rangeClosed(1, 10000)<br/>
+    .mapToObj(n -&gt;<br/>
+        CompletableFuture.runAsync(() -&gt; {<br/>
+            count.incrementAndGet();<br/>
+            throw new RuntimeException("ex: " + n);<br/>
+        }, threadPool)).collect(toList());<br/>
+<br/>
+CompletableFuture&lt;Void&gt; headerFuture = CompletableFuture.allOf(futures.toArray(new CompletableFuture[]{}));<br/>
+try {<br/>
+    headerFuture.join();<br/>
+} catch (Exception ex) {<br/>
+    System.out.println("done count: " + count.get());<br/>
+}<br/>
+<br/>
+System.out.println("all done. " + count.get());<br/>
+</pre>
+
+<p>执行后的输出必定如下</p>
+
+<blockquote><br/>
+<p>done count: 10000<br /><br/>
+all done. 10000</p>
+
+</blockquote>
+
+<p>捕获到异常时，必定是所有的任务都已完成。除此之外调用</p>
+
+<blockquote><br/>
+<p>headerFuture.get();</p>
+
+</blockquote>
+
+<p>也能得到类似效果，唯一不同的时，headerFuture.get() 方法还会抛出 InterruptedException 和 ExecutionException。</p>
+
+<p>如果不关心异常的话，也能用 headerFuture.isDone() 来检查所有任务是否完成</p>
+
+<pre class="lang:default decode:true">while(! headerFuture.isDone()){<br/>
+}<br/>
+System.out.println("all done. " + count.get());</pre>
+
+<p>isDone()  只检查状态，它与 get()  和 join() 还有的不同是，调用 isDone()  时任务有异常不会传播到外部线程，而 get() 和 join() 是能捕获到任务中执行的异常的(异常由任务线程传播到外部线程)。如果在检查到 isDone() 后，想查明是否发生过异常，还能进一步用下面的方法</p>
+
+<pre class="lang:default decode:true ">while (!headerFuture.isDone()) {<br/>
+<br/>
+}<br/>
+<br/>
+// 任何任务发生异常则为 true, 否则 false<br/>
+System.out.println("exception found: " + headerFuture.isCompletedExceptionally());<br/>
+</pre>

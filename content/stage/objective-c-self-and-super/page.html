@@ -1,0 +1,120 @@
+---
+title: Objective-C 的 self 和 super 详解
+url: /objective-c-self-and-super/
+date: 2011-06-20T12:01:26-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - ios
+  - objective-c
+  - apple
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3678 
+wpStatus: publish
+views: 747
+lastmod: 2011-06-25T10:56:52-05:00
+---
+
+在 Objective-C 中的类实现中经常看到这两个关键字 ”self” 和 ”super”，以以前 oop 语言的经验，拿 c++ 为例，self 相当于 this，super 相当于调用父类的方法，这么看起来是很容易理解的。以下面的代码为例：<br/>
+<br/>
+@interface Person:NSObject {<br/>
+&nbsp; &nbsp; &nbsp; NSString*&nbsp; name;<br/>
+}<br/>
+- (void) setName:(NSString*) yourName;<br/>
+@end<br/>
+<br/>
+@interface PersonMe:Person {<br/>
+&nbsp; &nbsp; &nbsp; NSUInteger age;<br/>
+}<br/>
+- (void) setAge:(NSUInteger) age;<br/>
+- (void) setName:(NSString*) yourName andAge:(NSUInteger) age;<br/>
+@end<!--more--><br/>
+<br/>
+@implementation PersonMe<br/>
+- (void) setName:(NSString*) yourName andAge:(NSUInteger) age {<br/>
+&nbsp; &nbsp; &nbsp; [self setAge:age];<br/>
+&nbsp; &nbsp; &nbsp; [super setName:yourName];<br/>
+}<br/>
+@end<br/>
+<br/>
+int main(int argc, char* argv[]) {<br/>
+&nbsp; &nbsp; &nbsp; NSAutoreleasePool* pool = [[NSAutoreleasePool alloc] init]<br/>
+&nbsp; &nbsp; &nbsp; PersonMe* me = [[PersonMe alloc] init];<br/>
+&nbsp; &nbsp; &nbsp; [me setName:@"asdf" andAge:18];<br/>
+&nbsp; &nbsp; &nbsp; [me release];<br/>
+&nbsp; &nbsp; &nbsp; [pool drain];<br/>
+&nbsp; &nbsp; &nbsp; return 0;<br/>
+}<br/>
+<br/>
+上面有简单的两个类，在子类PersonMe中调用了自己类中的setAge和父类中的setName，这些代码看起来很好理解，没什么问题。<br/>
+然后我在setName:andAge的方法中加入两行：<br/>
+<br/>
+NSLog(@"self ' class is %@", [self class]);<br/>
+NSLog(@"super' class is %@", [super class]);<br/>
+<br/>
+这样在调用时，会打出来这两个的class，先猜下吧，会打印出什么？按照以前oop语言的经验，这里应该会输出：<br/>
+<br/>
+self ' s class is PersonMe<br/>
+super ' s class is Person<br/>
+<br/>
+但是编译运行后，可以发现结果是：<br/>
+<br/>
+self 's class is PersonMe<br/>
+super ' s class is PersonMe<br/>
+<br/>
+self 的 class 和预想的一样，怎么 super 的 class 也是 PersonMe？<br/>
+<br/>
+真相<br/>
+<br/>
+self 是类的隐藏的参数，指向当前当前调用方法的类，另一个隐藏参数是 _cmd，代表当前类方法的 selector。这里只关注这个 self。super 是个啥？super 并不是隐藏的参数，它只是一个“编译器指示符”，它和 self 指向的是相同的消息接收者，拿上面的代码为例，不论是用 [self setName] 还是 [super setName]，接收“setName”这个消息的接收者都是 PersonMe* me 这个对象。不同的是，super 告诉编译器，当调用 setName 的方法时，要去调用父类的方法，而不是本类里的。<br/>
+<br/>
+当使用 self 调用方法时，会从当前类的方法列表中开始找，如果没有，就从父类中再找；而当使用 super 时，则从父类的方法列表中开始找。然后调用父类的这个方法<br/>
+<br/>
+One more step<br/>
+<br/>
+这种机制到底底层是如何实现的？其实当调用类方法的时候，编译器会将方法调用转成一个 C 函数方法调用，Apple 的 objcRuntimeRef 上说：<br/>
+<br/>
+Sending Messages<br/>
+<br/>
+When it encounters a method invocation, the compiler might generate a call to any of several functions to perform the actual message dispatch, depending on the receiver, the return value, and the arguments. You can use these functions to dynamically invoke methods from your own plain C code, or to use argument forms not permitted by NSObject’s perform… methods. These functions are declared in /usr/include/objc/objc-runtime.h.<br/>
+■ objc_msgSend sends a message with a simple return value to an instance of a class.<br/>
+■ objc_msgSend_stret sends a message with a data-structure return value to an instance of<br/>
+a class.<br/>
+■ objc_msgSendSuper sends a message with a simple return value to the superclass of an instance of a class.<br/>
+■ objc_msgSendSuper_stret sends a message with a data-structure return value to the superclass of an instance of a class.<br/>
+<br/>
+可以看到会转成调用上面 4 个方法中的一个，由于 _stret 系列的和没有 _stret 的那两个类似，先只关注 objc_msgSend 和 objc_msgSendSuper 两个方法。当使用 [self setName] 调用时，会使用 objc_msgSend 的函数，先看下 objc_msgSend 的函数定义：<br/>
+<br/>
+id objc_msgSend(id theReceiver, SEL theSelector, ...)<br/>
+<br/>
+第一个参数是消息接收者，第二个参数是调用的具体类方法的 selector，后面是 selector 方法的可变参数。我们先不管这个可变参数，以 [self setName:] 为例，编译器会替换成调用 objc_msgSend 的函数调用，其中 theReceiver 是 self，theSelector 是 @selector(setName:)，这个 selector 是从当前 self 的 class 的方法列表开始找的 setName，当找到后把对应的 selector 传递过去。<br/>
+<br/>
+而当使用 [super setName] 调用时，会使用 objc_msgSendSuper 函数，看下 objc_msgSendSuper 的函数定义：<br/>
+<br/>
+id objc_msgSendSuper(struct objc_super *super, SEL op, ...)<br/>
+<br/>
+第一个参数是个objc_super的结构体，第二个参数还是类似上面的类方法的selector，先看下objc_super这个结构体是什么东西：<br/>
+<br/>
+struct objc_super {<br/>
+&nbsp; &nbsp; &nbsp; id receiver;<br/>
+&nbsp; &nbsp; &nbsp; Class superClass;<br/>
+};<br/>
+<br/>
+可以看到这个结构体包含了两个成员，一个是 receiver，这个类似上面 objc_msgSend 的第一个参数 receiver，第二个成员是记录写 super 这个类的父类是什么，拿上面的代码为例，当编译器遇到 PersonMe 里 setName:andAge 方法里的 [super setName:] 时，开始做这几个事：<br/>
+<br/>
+构建 objc_super 的结构体，此时这个结构体的第一个成员变量 receiver 就是 PersonMe* me，和 self 相同。而第二个成员变量 superClass 就是指类 Person，因为 PersonMe 的超类就是这个 Person。<br/>
+调用 objc_msgSendSuper 的方法，将这个结构体和 setName 的 sel 传递过去。函数里面在做的事情类似这样：从 objc_super 结构体指向的 superClass 的方法列表开始找 setName 的 selector，找到后再以 objc_super-&gt;receiver 去调用这个 selector，可能也会使用 objc_msgSend 这个函数，不过此时的第一个参数 theReceiver 就是 objc_super-&gt;receiver，第二个参数是从 objc_super-&gt;superClass 中找到的 selector<br/>
+里面的调用机制大体就是这样了，以上面的分析，回过头来看开始的代码，当输出 [self class] 和 [super class] 时，是个怎样的过程。<br/>
+<br/>
+当使用 [self class] 时，这时的 self 是 PersonMe，在使用 objc_msgSend 时，第一个参数是 receiver 也就是 self，也是 PersonMe* me 这个实例。第二个参数，要先找到 class 这个方法的 selector，先从 PersonMe 这个类开始找，没有，然后到 PersonMe 的父类 Person 中去找，也没有，再去 Person 的父类 NSObject 去找，一层一层向上找之后，在 NSObject 的类中发现这个 class 方法，而 NSObject 的这个 class 方法，就是返回 receiver 的类别，所以这里输出 PersonMe。<br/>
+<br/>
+当使用 [super class] 时，这时要转换成 objc_msgSendSuper 的方法。先构造 objc_super 的结构体吧，第一个成员变量就是 self，第二个成员变量是 Person，然后要找 class 这个 selector，先去 superClass 也就是 Person 中去找，没有，然后去 Person 的父类中去找，结果还是在 NSObject 中找到了。然后内部使用函数 objc_msgSend(objc_super-&gt;receiver, @selector(class))&nbsp; 去调用，此时已经和我们用 [self class] 调用时相同了，此时的 receiver 还是 PersonMe* me，所以这里返回的也是 PersonMe。<br/>
+<br/>
+转自：http://www.cocoachina.com/macdev/objc/2011/0124/2602.html

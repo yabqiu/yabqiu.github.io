@@ -1,0 +1,120 @@
+---
+title: Python 的 __str__ 和 __repr__ 方法比较
+url: /python-__str__vs__repr__methods/
+date: 2018-11-12T01:47:41-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - Python
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9105 
+wpStatus: publish
+views: 734
+lastmod: 2018-11-12T02:35:56-06:00
+---
+
+<p>阅读到 Strings 中关于转换对象为字符串的内容，介绍了 <code>repr</code> 函数，趁着还没有真正了解 Python 面向对象的生疏与热度，感性上理解一下 <code>repr</code> 与 <code>str</code> 这两个函数的区别。</p>
+
+<p>Python 的全局方法 <code>repr</code> 和 <code>str</code> 会映射到对象的 <code>__repr__</code> 和 <code>__str__</code> 的方法调用，还有 <code>str(obj)</code> 时会调用哪个方法，以及 <code>print(obj)</code> 和调试 Python 代码时的对象显示会调用哪个方法呢？这就是本文想要印证的内容。</p>
+
+<p>恰如 Java 的 <code>System.out.println(obj)</code> 或 <code>"hello" + obj</code> 都会调用 Java 对象的 <code>toString()</code> 方法，那么 Python 中是怎么一回事呢？</p>
+
+<p>来自某本 Python 入门书的解释 <code>repr</code> 和 <code>str</code>:</p>
+
+<ol>
+
+	<li><code>repr</code>: <strong>formal</strong> string representation of a Python object</li>
+
+	<li><code>str</code>: <strong>informal</strong> string representation of a Python object，或者说 <strong>printable</strong> string representation</li>
+
+</ol>
+
+<p>首先 <code>repr</code> 是 representation 的意思，一个是正式，另一个是非正式，看起来 <code>repr</code> 比 <code>str</code> 显得重要些。<!--more--></p>
+
+<p>对于内置的 Python 对象我们可以用 <code>repr</code>, <code>print</code>, 和 <code>str</code> 函数，如针对 <code>list</code> 类型</p>
+
+<pre class="lang:default decode:true ">&gt;&gt;&gt; repr([1,2])<br/>
+'[1, 2]'<br/>
+&gt;&gt;&gt; print([1,2])<br/>
+[1, 2]<br/>
+&gt;&gt;&gt; str([1,2])<br/>
+'[1, 2]'</pre>
+
+<p>但是具体上面三个函数中分别调用了 list 的什么方法就不可而知了，这时候定义一个自己的类最能说明问题。测试环境为 IntelliJ, 以调试截图来说明分别为 <code>__str__</code> 和 <code>__repr__</code> 几种组合情况</p>
+
+<h3>只定义了 <code>__str__</code> 方法</h3><br/>
+<p><a href="https://yanbin.blog/wp-content/uploads/2018/11/python__str__repr__1.png"><img class="aligncenter wp-image-9112" src="https://yanbin.blog/wp-content/uploads/2018/11/python__str__repr__1-800x424.png" alt="" width="660" height="350" /></a></p>
+
+<p>说明：在只定义了 <code>__str__</code> 方法的情况下</p>
+
+<ol>
+
+	<li>调试时 IntelliJ 在行内显示对象为 <code>__str__</code> 的输出，但变量窗口中显示的是默认的 <code>__repr__</code> 的输出</li>
+
+	<li><code>repr</code> 始终坚持调用默认的 <code>__repr__</code> 方法</li>
+
+	<li><code>str</code> 转型函数调用了 <code>__str__</code> 方法</li>
+
+	<li><code>print</code> 调用了 <code>__str__</code> 方法</li>
+
+</ol>
+
+<h3>只定义了 <code>__repr__</code> 方法</h3><br/>
+<p><a href="https://yanbin.blog/wp-content/uploads/2018/11/python__str__repr__2.png"><img class="aligncenter wp-image-9113" src="https://yanbin.blog/wp-content/uploads/2018/11/python__str__repr__2-800x424.png" alt="" width="660" height="350" /></a></p>
+
+<p>说明：在只定义了 <code>__repr__</code> 方法的情况下，可以看出 <code>__repr__</code> 方法极其强势，它垄断了一切的调用，<code>repr</code>, <code>str</code>, 和 <code>print</code> 函数，甚至是 IntelliJ 的调试显示都必须以 <code>__repr__</code> 方法为核心。</p>
+
+<ol>
+
+	<li>以上所有的情况都是调用 <code>__repr__</code> 方法，没得选择</li>
+
+</ol>
+
+<h3>同时定义了 <code>__repr__</code> 和 <code>__str__</code> 方法</h3><br/>
+<p><a href="https://yanbin.blog/wp-content/uploads/2018/11/python__str__repr__3.png"><img class="aligncenter wp-image-9114" src="https://yanbin.blog/wp-content/uploads/2018/11/python__str__repr__3-800x473.png" alt="" width="660" height="390" /></a></p>
+
+<p>说明：在同时定义了 <code>__repr__</code> 和 <code>__str__</code> 方法的情况下，<code>__str__</code> 方法反而能扳回来。除了明确的 <code>repr</code>  会调用 <code>__repr__</code> 方法，和调试时变量窗口中显示对象会调用 <code>__repr__</code> 方法外，其他时候都是 <code>__str__</code> 占优。具体为</p>
+
+<ol>
+
+	<li><code>repr</code> 和 IntelliJ 调试时变量窗口显示变量调用 <code>__repr__</code> 方法</li>
+
+	<li>IntelliJ 调试时行内显示变量调用了 <code>__str__</code> 方法</li>
+
+	<li><code>str</code> 转型操作调用了对象的 <code>__str__</code> 方法，这不能解释为 <code>informal</code> 非正式的</li>
+
+	<li><code>print</code> 调用了 <code>__str__</code> 来获得对象输出字符串</li>
+
+</ol>
+
+<p>另外，格式化字符串时的调用的对象方法与 <code>print</code> 时是一样的，例如下面的格式化代码</p>
+
+<pre class="lang:default decode:true">f1 = "%s" % t<br/>
+f2 = "{}".format(t)</pre>
+
+<p>Python 不知道像 Java 那样由字符串加上一个对象</p>
+
+<pre class="lang:default decode:true">"this is " + t  #Java 中会展开为 "this is " + t.toString()</pre>
+
+<p>Python 会报以下错误</p>
+
+<blockquote><br/>
+<p>TypeError: can only concatenate str (not "Test") to str</p>
+
+</blockquote>
+
+<p>说这里的 <code>+</code> 号只能连接两个字符串，除非定义了 <code>__add__</code> 和 <code>__radd__</code> 方法，对应关系分别为</p>
+
+<pre class="lang:default decode:true ">t = Test()<br/>
+z1 = 'hello' + t  #相当于 t.__radd__('hello')<br/>
+z2 = t + 'hello'  #相当于 t.__add__('hello')</pre>
+
+<p>Python 的 <code>__xyz__</code> 也挺魔幻的。</p>

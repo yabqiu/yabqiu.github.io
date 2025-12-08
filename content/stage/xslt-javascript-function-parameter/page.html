@@ -1,0 +1,104 @@
+---
+title: XSLT 中用 JavaScript 自定义函数处理参数
+url: /xslt-javascript-function-parameter/
+date: 2010-09-08T07:23:59-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - XML/DOM
+tags: 
+  - xslt
+  - javascript
+  - xml
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2448 
+wpStatus: publish
+views: 1955
+lastmod: 2021-09-03T11:44:43-05:00
+---
+
+曾经写过一篇 <a href="http://unmi.cc/xslt-csharp-jscript-vb-function" target="_blank" rel="noopener">XSLT 文件中使用C#/JScript/VB 自定义函数</a> 怎么用 C#/JScript/VB 在 XSL/XSLT 中自定义函数。那时候原本想直接用 JavaScript 来自定义函数，因为 JavaScript 哪台机器上都能跑，但出了些问题，所以实际中是用的 C# 自定义的 XSLT 函数。</p>
+<br/>
+这样的问题无论从哪方面讲都一直回避不了，情况是如果在 JavaScript 定义函数中直接把传入的参数返回是没问题的，但要作任何的处理，或者调用 JS 函数都会失败。XSLT 中的自定义函数，不对参数进行加工处理是没有意义的。比如在 XSLT 中写如下函数：<!--more--><br/><br/>
+<pre class="lang:default decode:true">&lt;msxsl:script implements-prefix="myfn" language="JavaScript"&gt;
+    function show(blogUrl){
+        return "".blogUrl;<br/><br/>
+        //return blogUrl.split(":")[1]; //如果是对它调用一个方法
+    }
+&lt;/msxsl&gt;<br/><br/>
+&lt;!-- 在模板中这么调用 --&gt;
+&lt;xsl:value-of select="myfn:show(blogUrl)"/&gt;</pre>
+<br/>
+其实上面那个 show 也是什么事都没做，除非是 return blogUrl; 否则就会报错：<br/><br/>
+Function 'show' did not return a value, or it returned a value that cannot be converted to an XSL data type.<br/><br/>
+如果执行的是第二行代码提示的错误将会是：<br/><br/>
+Microsoft JScript runtime error Object doesn't support this property or method line = 18, col = 3 (line is offset from the s...<br/><br/>
+出错那时我也没太明白过来是什么原因出错的，因为我也是想当然的认为传入的参数是个字符串，其实不然，若用 typeof(blogUrl) 看下就知道它总是个 object。因为不光是文本节点会作为参数，其他的节点也可能放进来，又因为 C# 是强类型的，因而在用 C# 自定义 XSLT 函数时幸免了。<br/><br/>
+解决办法是，必须指明类型，即调时的代码的 myfn:show(blogUrl) 必须写成 myfn:show(string(blogUrl))。如果是数字类型就用 number(level)。严格说来 string() 和 number() 并不是在做类型转换，它们都是<a href="http://www.w3school.com.cn/xpath/xpath_functions.asp" target="_blank" rel="noopener">XPATH 中的函数</a>，即默认为 fn 命名空间下的函数。你也可以试下别的，不过一般我们在自定义函数中处理那些文本或数字的就足矣，笼统来说用 string() 先全部得到对应的字符串就行，只要其中的数据不丢失即可。<br/><br/>
+最后也完整的补个例子吧，在 xml 中指定一个 xstl 文件，这样就可以直接在 IE 中浏览到转换后的效果，而且也只能在微软的 IE 出成果，大约是用了 xmlns:msxsl="urn:schemas-microsoft-com:xslt" 这样非规范的东西。<br/><br/>
+text.xml<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="utf-8"?&gt;
+&lt;?xml-stylesheet type="text/xsl" href="test.xsl"?&gt;<br/><br/>
+&lt;persons&gt;
+ &lt;person&gt;
+  &lt;name&gt;Unmi&lt;/name&gt;
+  &lt;level&gt;9&lt;/level&gt;
+  &lt;registerTime&gt;8/3/2010 11:17:34&lt;/registerTime&gt;
+  &lt;blogUrl&gt;http://unmi.cc&lt;/blogUrl&gt;
+ &lt;/person&gt;
+ &lt;person&gt;
+  &lt;name&gt;Fantasia&lt;/name&gt;
+  &lt;level&gt;5&lt;/level&gt;
+  &lt;blogUrl&gt;http://scalaworks.com&lt;/blogUrl&gt;
+  &lt;registerTime&gt;9/3/2009 14:17:34&lt;/registerTime&gt;
+ &lt;/person&gt;
+&lt;/persons&gt;</pre>
+<br/>
+test.xsl<br/><br/>
+<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="utf-8"?&gt;
+&lt;xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+    xmlns:myfn="http://unmi.cc/fn"
+    xmlns:msxsl="urn:schemas-microsoft-com:xslt" exclude-result-prefixes="msxsl myfn"&gt;<br/><br/>
+   &lt;msxsl:script implements-prefix="myfn" language="JavaScript"&gt;
+    &lt;![CDATA[
+        function handleTitle(name,level){
+   //即使是简单的链接，传入前也必须用 string() 指明参数类型;
+   //就是像 return ''.name; 都要指明类型;
+   return name+" : "+level;
+        }<br/><br/>
+     function transDate(registerTime){
+     //return typeof(registerTimte);//如果未指定，则为 object
+           var dateArr = registerTime.split(' ');
+           var darr = dateArr[0].split('/');
+           return darr[2]+'-'+darr[0]+'-'+darr[1]+" "+dateArr[1];
+     }<br/><br/>
+  function show(blogUrl){
+      //只有直接返回参数时才无需指定参数类型
+      return blogUrl;
+  }
+    ]]&gt;
+    &lt;/msxsl:script&gt;<br/><br/>
+    &lt;xsl:output method="html" indent="yes"/&gt;<br/><br/>
+    &lt;xsl:template match="/persons"&gt;
+        &lt;table border="1"&gt;
+   &lt;thead&gt;&lt;th&gt;Name&lt;/th&gt;&lt;th&gt;Register Time&lt;/th&gt;&lt;th&gt;Blog URL&lt;/th&gt;&lt;/thead&gt;
+         &lt;xsl:apply-templates select="person"/&gt;
+     &lt;/table&gt;
+    &lt;/xsl:template&gt;
+    &lt;xsl:template match="person"&gt;
+     &lt;tr&gt;
+         &lt;td&gt;&lt;xsl:value-of select="myfn:handleTitle(string(name),number(level))"/&gt;&lt;/td&gt;
+      &lt;td&gt;&lt;xsl:value-of select="myfn:transDate(string(registerTime))"/&gt;&lt;/td&gt;
+      &lt;td&gt;&lt;xsl:value-of select="myfn:show(blogUrl)"/&gt;&lt;/td&gt;
+     &lt;/tr&gt;
+ &lt;/xsl:template&gt;
+&lt;/xsl:stylesheet&gt;</pre>
+<br/>
+参考: 1. <a href="http://www.w3school.com.cn/xpath/xpath_functions.asp" target="_blank" rel="noopener">XPath、XQuery 以及 XSLT 函数</a><br />
+        2. <a href="http://www.experts-exchange.com/Web_Development/Web_Languages-Standards/XML/Q_21782737.html" target="_blank" rel="noopener">XML XSLT parameters Javascript - how to make it work in Mozilla...</a><br />
+        3. <a href="http://w3schools.invisionzone.com/index.php?showtopic=19984" target="_blank" rel="noopener">W3Schools Forum &gt; XML Forums &gt; XSLT</a>

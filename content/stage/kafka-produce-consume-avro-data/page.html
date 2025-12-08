@@ -1,0 +1,261 @@
+---
+title: Kafka 生产消费 Avro 序列化数据
+url: /kafka-produce-consume-avro-data/
+date: 2016-10-16T15:53:15-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/kafka-logo.png"
+categories:
+  - Java/JEE
+  - Mid-Ware
+tags: 
+  - Kafka
+  - Avro
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7496 
+wpStatus: publish
+views: 7282
+lastmod: 2021-09-03T17:05:09-05:00
+---
+
+本文实践了如何连接 Kafka 生产和消费 Avro 序列化格式的数据, 不能像 NgAgo-gDNA 那样, 为保证实验内容及结果的可重复性, 文中所用的各中间件和组件版本如下:<br/><br/>
+<ol>
+    <li>Apache Kafka: <a href="https://www.apache.org/dyn/closer.cgi?path=/kafka/0.10.0.1/kafka_2.11-0.10.0.1.tgz">kafka_2.11-0.10.0.1</a>, 这个版本在初始始化生产者消费者的属性与之前版本有所不同.</li>
+    <li>kafka-clients: Java API 客户端, 版本为  0.10.0.1</li>
+    <li>Apache Avro: 1.8.1. 关于 Avro 序列化的内容可参见 <a href="http://unmi.cc/apache-avro-serializing-deserializing/">Apache Avro 序列化与反序列化 (Java 实现)</a></li>
+    <li>Java 8</li>
+</ol>
+<br/>
+Apache Kafka 消息系统设计为可以传输字符串, 二进制等数据, 但直接用于传输生产消费两端都能理解的对象数据会更友好.  所以我们这里用 Avro 的 Schema  来定义要传输的数据格式, 通信时采用自定义的序列化和反序列化类进行对象与字节数组间的转换.<br/><br/>
+以下是整个实验过程<br/><br/>
+<h3>本地启动 Apache Kafka 服务</h3><br/><br/>
+请参考 <a href="http://unmi.cc/initial-apache-kafka-environment/">简单搭建 Apache Kafka 分布式消息系统</a> 启动 ZooKeeper 和 Kafka 即可. 程序运行会自动创建相应的主题. 启动后 Kafka 开启了本地的 9092 端口, 程序中只需要连接这个端口, 不用管 ZooKeeper 的  2181 端口.<!--more--><br/><br/>
+<h3>交换的数据格式定义 user.avsc</h3><br/><br/>
+<pre class="lang:default decode:true">{
+  "namespace": "cc.unmi.data",
+  "type": "record",
+  "name": "User",
+  "fields": [
+    {"name": "name", "type": "string"},
+    {"name": "address", "type": ["string", "null"]}
+  ]
+}</pre>
+<br/>
+需要用到 avro-tools 或 avro-maven-plugin 把上面的 Schema 编译成 `cc.unmi.data.User.java` 类文件. 该文件留有整个 Schema 的定义, 所以运行时无须 `user.avsc` 文件. 关于 Avro Schema 生成 Java 也可参见 <a href="http://unmi.cc/apache-avro-serializing-deserializing/">Apache Avro 序列化与反序列化 (Java 实现)</a><br/><br/>
+<h3>创建生产者 Producer</h3><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import cc.unmi.serialization.AvroSerializer;
+import org.apache.avro.specific.SpecificRecordBase;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.common.serialization.StringSerializer;<br/><br/>
+import java.util.Properties;<br/><br/>
+public class Producer&lt;T extends SpecificRecordBase&gt; {<br/><br/>
+    private KafkaProducer&lt;String, T&gt; producer = new KafkaProducer&lt;&gt;(getProperties());<br/><br/>
+    public void sendData(Topic topic, T data) {
+        producer.send(new ProducerRecord&lt;&gt;(topic.topicName, data),
+                (metadata, exception) -&gt; {
+                    if (exception == null) {
+                        System.out.printf("Sent user: %s \n", data);
+                    } else {
+                        System.out.println("data sent failed: " + exception.getMessage());
+                    }
+                });
+    }<br/><br/>
+    private Properties getProperties() {
+        Properties props = new Properties();
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+        props.put(ProducerConfig.CLIENT_ID_CONFIG, "DemoProducer");
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
+                StringSerializer.class.getName());
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG,
+                AvroSerializer.class.getName());
+        return props;
+    }
+}</pre>
+<br/>
+由于 Avro Schema 编译出的类都继承自 <code>SpecificRecordBase</code>, 因此泛型类型是 <code>&lt;T extends SpecificRecordBase&gt;</code>. 在本实验中发送消息时未设置 Key, 所以 <code>KEY_SERIALIZER_CLASS_CONFIG</code> 可不用, 这里用到了自定义的 <code>AvroSerializer</code> 序列化类, 所以<br/><br/>
+<h3>Avro 对象的序列化类 AvroSerializer</h3><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.serialization;<br/><br/>
+import org.apache.avro.io.BinaryEncoder;
+import org.apache.avro.io.DatumWriter;
+import org.apache.avro.io.EncoderFactory;
+import org.apache.avro.specific.SpecificDatumWriter;
+import org.apache.avro.specific.SpecificRecordBase;
+import org.apache.kafka.common.errors.SerializationException;
+import org.apache.kafka.common.serialization.Serializer;<br/><br/>
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.Map;<br/><br/>
+public class AvroSerializer&lt;T extends SpecificRecordBase&gt; implements Serializer&lt;T&gt;{<br/><br/>
+    @Override
+    public void configure(Map&lt;String, ?&gt; configs, boolean isKey) {<br/><br/>
+    }<br/><br/>
+    @Override
+    public byte[] serialize(String topic, T data) {
+        DatumWriter&lt;T&gt; userDatumWriter = new SpecificDatumWriter&lt;&gt;(data.getSchema());
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        BinaryEncoder binaryEncoder = EncoderFactory.get().directBinaryEncoder(outputStream, null);
+        try {
+            userDatumWriter.write(data, binaryEncoder);
+        } catch (IOException e) {
+            throw new SerializationException(e.getMessage());
+        }
+        return outputStream.toByteArray();
+    }<br/><br/>
+    @Override
+    public void close() {<br/><br/>
+    }
+}</pre>
+<br/>
+这个只是负责把 Java 对象转换成字节数组便于网络传输. 因为 <code>serilaize</code> 方法处理的数据类型是 <code>&lt;T extends SpecificRecordBase&gt;</code>, 所以构造 <code>SpecificDatumWriter</code> 可直接传入 <code>data.getSchema()</code>. 等会反序列化时可没这么轻松了.<br/><br/>
+<h3>创建消费者 Consumer</h3><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import cc.unmi.serialization.AvroDeserializer;
+import org.apache.avro.specific.SpecificRecordBase;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.serialization.StringDeserializer;<br/><br/>
+import java.util.Collections;
+import java.util.List;
+import java.util.Properties;
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;<br/><br/>
+public class Consumer&lt;T extends SpecificRecordBase&gt; {<br/><br/>
+    private KafkaConsumer&lt;String, T&gt; consumer = new KafkaConsumer&lt;&gt;(getProperties());<br/><br/>
+    public List&lt;T&gt; receive(Topic topic) {
+//        TopicPartition partition = new TopicPartition(topic.topicName, 0);
+        consumer.subscribe(Collections.singletonList(topic.topicName));
+//        consumer.assign(Collections.singletonList(partition));
+        ConsumerRecords&lt;String, T&gt; records = consumer.poll(10);<br/><br/>
+        return StreamSupport.stream(records.spliterator(), false)
+                .map(ConsumerRecord::value).collect(Collectors.toList());
+    }<br/><br/>
+    private Properties getProperties() {
+        Properties props = new Properties();
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, "localhost:9092");
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, "DemoConsumer");
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG,
+                StringDeserializer.class.getName());
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG,
+                AvroDeserializer.class.getName());
+        return props;
+    }
+}</pre>
+<br/>
+同理, 本实验中 <code>KEY_DESERIALIZER_CLASS_CONFIG</code> 也可不用. <code>GROUP_ID_CONFIG</code> 的设定是 Kafka 的一条消息, 多个消费者的情况, 如果它们的 group id 不同, 都能获得这条消息, 如果一样的 group id, 都只有组中的一个消费都能获得这条消息. 这里也用到了自定义的反序列化类 <code>AvroDeserializer</code>.<br/><br/>
+<h3>Avro 对象的反序列化类 AvroDeserializer</h3><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.serialization;<br/><br/>
+import cc.unmi.Topic;
+import com.sun.xml.internal.ws.encoding.soap.DeserializationException;
+import org.apache.avro.io.BinaryDecoder;
+import org.apache.avro.io.DatumReader;
+import org.apache.avro.io.DecoderFactory;
+import org.apache.avro.specific.SpecificDatumReader;
+import org.apache.avro.specific.SpecificRecordBase;
+import org.apache.kafka.common.serialization.Deserializer;<br/><br/>
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.util.Map;<br/><br/>
+public class AvroDeserializer&lt;T extends SpecificRecordBase&gt; implements Deserializer&lt;T&gt; {<br/><br/>
+    @Override
+    public void configure(Map&lt;String, ?&gt; configs, boolean isKey) {
+    }<br/><br/>
+    @Override
+    public T deserialize(String topic, byte[] data) {<br/><br/>
+        DatumReader&lt;T&gt; userDatumReader = new SpecificDatumReader&lt;&gt;(Topic.matchFor(topic).topicType.getSchema());
+        BinaryDecoder binaryEncoder = DecoderFactory.get().directBinaryDecoder(new ByteArrayInputStream(data), null);
+        try {
+            return userDatumReader.read(null, binaryEncoder);
+        } catch (IOException e) {
+            throw new DeserializationException(e.getMessage());
+        }
+    }<br/><br/>
+    @Override
+    public void close() {<br/><br/>
+    }
+}</pre>
+<br/>
+把字节数组转换为一个 Avro 的对象, 虽然这里的泛型是 <code>&lt;T extends SpecificRecordBase&gt;</code>, 但是代码中是无法从 <code>T</code> 得到 <code>T.class</code> 的. 见 <a href="http://www.blogjava.net/calvin/archive/2006/04/28/43830.html">http://www.blogjava.net/calvin/archive/2006/04/28/43830.html</a>. 所以我们专门定义了一个 <code>Topic</code> 枚举, 把每一个 Topic 与具体要传输的数据类型关联起来了, 像上面是通过 <code>Topic.matchFor(topic).topicType.getSchema()</code> 来获得 Schema 的. 这时也必须保证一个主题只为特定类型服务.<br/><br/>
+看看这个 <code>Topic</code> 枚举类型定义<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import cc.unmi.data.User;
+import org.apache.avro.specific.SpecificRecordBase;<br/><br/>
+import java.util.EnumSet;<br/><br/>
+public enum Topic {
+    USER("user-info-topic", new User());<br/><br/>
+    public final String topicName;
+    public final SpecificRecordBase topicType;<br/><br/>
+    Topic(String topicName, SpecificRecordBase topicType) {
+        this.topicName = topicName;
+        this.topicType = topicType;
+    }<br/><br/>
+    public static Topic matchFor(String topicName) {
+        return EnumSet.allOf(Topic.class).stream()
+                .filter(topic -&gt; topic.topicName.equals(topicName))
+                .findFirst()
+                .orElse(null);
+    }
+}</pre>
+<br/>
+<h3>运行实例 KafkaDemo</h3><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import cc.unmi.data.User;<br/><br/>
+import java.util.List;
+import java.util.Random;
+import java.util.Scanner;<br/><br/>
+public class KafkaDemo {<br/><br/>
+    public static void main(String[] args) {<br/><br/>
+        Producer&lt;User&gt; producer = new Producer&lt;&gt;();
+        Consumer&lt;User&gt; consumer = new Consumer&lt;&gt;();<br/><br/>
+        System.out.println("Please input 'send', 'receive', or 'exit'");
+        Scanner scanner = new Scanner(System.in);
+        while (scanner.hasNext()) {
+            String input = scanner.next();<br/><br/>
+            switch (input) {
+                case "send":
+                    producer.sendData(Topic.USER, new User("Yanbin", "Address: " + new Random().nextInt()));
+                    break;
+                case "receive":
+                    List&lt;User&gt; users = consumer.receive(Topic.USER);
+                    if(users.isEmpty()) {
+                        System.out.println("Received nothing");
+                    } else {
+                        users.forEach(user -&gt; System.out.println("Received user: " + user));
+                    }
+                    break;
+                case "exit":
+                    System.exit(0);
+                    break;
+                default:
+                    System.out.println("Please input 'send', 'receive', or 'exit'");
+            }
+        }
+    }
+}</pre>
+<br/>
+现在才是激动人心的时刻, 输入 <code>send</code> 发送消息, <code>receive</code> 接收消息. 实际中消费都应实现为自动监听器模式, 有消息到来时自动提醒, 不过底层还是一个轮询的过程, 和这里一样.<br/><br/>
+完整项目已上传到了 GitHub 上, 见 <a href="https://github.com/yabqiu/kafka-avro-demo">https://github.com/yabqiu/kafka-avro-demo</a>. 这是一个 Maven 项目, 所以可以通过 Maven 来运行<br/><br/>
+<blockquote>
+mvn exec:java -Dexec.mainClass=cc.unmi.KafkaDemo
+</blockquote>
+<br/>
+效果如下:<br/><br/>
+<img class="aligncenter size-full wp-image-7498" src="/wp-content/uploads/2016/10/Kafka-Avro-Demo.png" alt="kafka-avro-demo" width="601" height="341" /><br/><br/>
+<code>Address: -2066758714</code> 这条消息是启动程序之前就已存在于 Kafka 中的消息. 其他是 <code>send</code> 就能接收到, 有时稍有延迟.<br/><br/>
+参考链接:<br/><br/>
+<ol>
+    <li><a href="https://kafka.apache.org/090/javadoc/index.html?org/apache/kafka/clients/producer/KafkaProducer.html">KafkaProducer API</a></li>
+    <li><a href="https://kafka.apache.org/090/javadoc/index.html?org/apache/kafka/clients/consumer/KafkaConsumer.html">KafkaConsumer API</a></li>
+    <li><a href="http://www.confluent.io/blog/tutorial-getting-started-with-the-new-apache-kafka-0-9-consumer-client/">Introducing the Kafka Consumer: Getting Started with the New Apache Kafka 0.9 Consumer Client</a></li>
+    <li><a href="http://xuwenqiang.org/archives/406.html">Kafka的Java实例</a></li>
+    <li><a href="http://blog.kazaff.me/2015/04/27/Kafka+Avro的demo/">Kafka+Avro的demo</a></li>
+</ol>

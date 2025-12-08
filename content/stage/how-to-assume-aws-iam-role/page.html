@@ -1,0 +1,168 @@
+---
+title: AWS Assume IAM role 的使用
+url: /how-to-assume-aws-iam-role/
+date: 2021-11-09T21:03:45-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - boto3
+  - awscli
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11911 
+wpStatus: publish
+views: 2997
+lastmod: 2024-01-02T12:09:38-06:00
+---
+
+AWS 要授权给他人访问指定资源有哪几种方式呢？<br/><br/>
+<ol>
+    <li>创建一个 AWS 帐号让别人用，那是 AWS 干的事</li>
+    <li>在自己帐号下创建一个用户，把 Access Key ID 和 Secret Access Key 告诉别人。可为该用户限定权限，但任何获得那两个 Key 的人都能使用该用户。</li>
+    <li>创建一个 IAM Role, 并指定谁(帐号或 Role) 能以该 Role 的身份来访问。被 Assume 的 Role 可限定权限和会话有效期。</li>
+</ol>
+<br/>
+用 Assume Role 的方式具有更高的安全可控性，还不用维护 Access Key ID 和 Secret Access Key。比如在构建和部署时通常是有一个特定的 Account, 然后 Assume 到别的 IAM Role 去操作资源。<br/><br/>
+本文将详细介绍在帐号 A 创建一个 IAM Role(标注为 R) 并分配一些权限，然后允许另一个帐号 B 以 IAM Role - R 的身份来访问帐号 A 下的资源。IAM Role 将用 awscli 来创建，Assume Role 的过程用 awscli 和 boto3 Python 代码两种方式来演示。<!--more--><br/><br/>
+<h3>帐号 A 下创建 IAM Role</h3><br/><br/>
+首选要以帐号 A 登陆 AWS，不管哪种方式只要让 <code>aws s3 cli</code> 能正常工作就行。AWS 获得访问资格(Credentials) 的顺序可参照 Boto3 的文档 <a href="https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html#configuring-credentials">Configuring Credentials</a>。<br/><br/>
+比如说在 <code>~/.aws/credentials</code> 中配置了 profile A 和 B，分别对应帐号 A 和 B 的 profile 名称，在帐号 A 下创建 IAM Role 前用 <code>export AWS_DEFAULT_PROFILE=A</code> 指明当前为帐号 A<br/><br/>
+准备 role-trust-policy.json<br/><br/>
+<pre class="lang:default decode:true">{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789022:root"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {}
+    }
+  ]
+}</pre>
+<br/>
+这里的 <code>123456789022</code> 是帐号 B 的 Account ID, 如果允许更多的帐号可以往上面的 <code>Principal</code> 中添加。创建 test-assumed-role<br/><br/>
+<blockquote>
+$ aws iam create-role --role-name test-assumed-role --assume-role-policy-document file://role-trust-policy.json
+</blockquote>
+<br/>
+再给新建的 test-assumed-role 加上 S3 的只读权限<br/><br/>
+<blockquote>
+$ aws iam attach-role-policy --role-name test-assumed-role --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+</blockquote>
+<br/>
+<h3>帐号 B Assume 帐号 A 的 role(awscli)</h3><br/><br/>
+在帐号 A 下创建好 test-assumed-role 后，现在为 awscli 切换到帐号 B 下，比如 <code>export AWS_DEFAULT_PROFILE=B</code>。接着要用 <code>aws sts assume-role</code> 命令<br/><br/>
+<blockquote>
+$ aws sts assume-role --role-arn arn:aws:iam::123456789011:role/test-assumed-role --role-session-name awscli-session
+</blockquote>
+<br/>
+其中的 <code>123456789011</code> 是，<code>sts</code>  是指 Security Token Service，执行后输出如下<br/><br/>
+<pre class="lang:default decode:true">{
+    "Credentials": {
+        "AccessKeyId": "PNKDIESJGWAURFEWDLLT",
+        "SecretAccessKey": "YcYdWHbtFZEDj/GetAyqRWdgvExxVpDJgC",
+        "SessionToken": "IQoJb3JpZ2luX2VjEDoaCXVzLWVhc3QdDD1......QyAd6mnRruoJfLo1DUA==",
+        "Expiration": "2021-11-10T02:36:46+00:00"
+    },
+    "AssumedRoleUser": {
+        "AssumedRoleId": "EXYARBWXQYCCAUONCJHG:awscli-session",
+        "Arn": "arn:aws:sts::123456789011:assumed-role/test-assumed-role/awscli-session"
+    }
+}</pre>
+<br/>
+这时候得到一组新的 AccessKeyId, SecretAccessKey 和 SessionToken，可以在 <code>~/.aws/credentials</code> 中配置一个新的 profile C, 然后 <code>export AWS_DEFAULT_PROFILE=C</code> 来使用。或都用 <code>export</code> 分别导出三个环境变量 <code>AWS_ACCESS_KEY_ID</code>, <code>AWS_SECRET_ACCESS_KEY</code>, 和 <code>AWS_SESSION_TOKEN</code>, 分别对应前面的三个值。<br/><br/>
+<blockquote>
+$ export AWS_ACCESS_KEY_ID=&lt;Credentials.AccessKeyId&gt;<br />
+$ export AWS_SECRET_ACCESS_KEY=&lt;Credentials.SecretAccessKey&gt;<br />
+$ export AWS_SESSION_TOKEN=&lt;Credentials.SessionToken&gt;
+</blockquote>
+<br/>
+替换上面的 &lt;Credentials.*&gt; 为 <code>aws sts assume-role ...</code> 返回的实际的相应字符串<br/><br/>
+2024-02-01<br/><br/>
+<hr /><br/><br/>
+一种更便捷一步到位的切换 role 的方式<br/><br/>
+<pre class="lang:default decode:true ">export $(printf "AWS_ACCESS_KEY_ID=%s AWS_SECRET_ACCESS_KEY=%s AWS_SESSION_TOKEN=%s" \
+            $(aws sts assume-role \
+            --role-arn arn:aws:iam::123456789011:role/test-assumed-role \
+            --role-session-name awscli-session \
+            --query "Credentials.[AccessKeyId,SecretAccessKey,SessionToken]" \
+            --output text))</pre>
+<br/>
+<hr /><br/><br/>
+这时候执行 <code>aws s3 ls</code> 获得的就是帐号 A 中的 S3 Bucket 列表<br/><br/>
+<blockquote>
+$ aws s3 ls<br />
+2021-09-10 12:09:35 bucket1-of-A<br />
+2019-12-03 15:55:35 bucket2-of-A
+</blockquote>
+<br/>
+想访问超出 <code>test-assumed-role</code> 之外的权限将被提示 Access Denied<br/><br/>
+<blockquote>
+$ aws s3 cp Jenkinsfile s3://wfe-files<br />
+upload failed: ./test.txt to s3://bucket-of-A/test.txte An error occurred (AccessDenied) when calling the PutObject operation: Access Denied
+</blockquote>
+<br/>
+任何时候都通过 <code>aws sts get-caller-identity</code> 来查看当前所使用的角色<br/><br/>
+<blockquote>
+aws sts get-caller-identity<br />
+{<br />
+    "UserId": "EXYARBWXQYCCAUONCJHG:awscli-session",<br />
+    "Account": "123456789011",<br />
+    "Arn": "arn:aws:sts::123456789011:assumed-role/test-assumed-role/awscli-session"<br />
+}
+</blockquote>
+<br/>
+<h3>帐号 B Assume 帐号 A 的 role(boto3)</h3><br/><br/>
+awscli Assume 一个 IAM Role 的方式是重新获得一组 AccessKeyId, SecretAccessKey 和 SessionToken, 然后切换到被 Assumed 的 Role。用 Python 的 boto3 包实现是完全一样的。<br/><br/>
+<pre class="lang:default decode:true">import boto3<br/><br/>
+aws_credentials_b = {
+    'region_name': 'us-east-1',
+    'aws_access_key_id':'PNKDIESJGWAURFEWDLLT',
+    'aws_secret_access_key':'TdTMlDUSKecRadKeMlNIBEmIkRjmZOSvtnhgQDZc',
+    'aws_session_token':'IQoJb3JpZ2luX2VjEDYabEbMG5J2lzlv......IEQisSAwzmnkv7LNf+'
+}<br/><br/>
+
+sts=boto3.client('sts', **aws_credentials_b)<br/><br/>
+stsresponse = sts.assume_role(
+    RoleArn="arn:aws:iam::123456789011:role/test-assumed-role", # under account A
+    RoleSessionName='assumed'
+)<br/><br/>
+aws_credentials_assumed_role = {
+    'region_name':'us-east-1',
+    'aws_access_key_id':stsresponse["Credentials"]["AccessKeyId"],
+    'aws_secret_access_key':stsresponse["Credentials"]["SecretAccessKey"],
+    'aws_session_token':stsresponse["Credentials"]["SessionToken"]
+}<br/><br/>
+
+boto3.setup_default_session(**aws_credentials_assumed_role)<br/><br/>
+s3 = boto3.client('s3')
+buckets_of_a = [bucket['Name'] for bucket in s3.list_buckets()['Buckets']]</pre>
+<br/>
+帐号 B 登陆，调用 boto3 的 sts.assume_role() 函数切换到帐号 A 下的 IAM Role test-assumed-role，之后的操作就限定到 test-assumed-role 的约束中了。<br/><br/>
+当然，使用 Python 的话可以进一步封装，比如默认以帐号 B 登陆，然后执行一个函数 <code>switch_role(role_arn)</code> 后，后续的 boto3 client 就全部变成了 assumed role 的角色了<br/><br/>
+<pre class="lang:default decode:true ">import boto3<br/><br/>
+def switch_role(assume_role_arn):
+    sts=boto3.client('sts')
+    sts_res = sts.assume_role(RoleArn=assume_role_arn, RoleSessionName='new_session')<br/><br/>
+    new_credentials = {'aws' + re.sub('([A-Z]+)', r'_\1', key).lower(): value
+                       for (key, value) in sts_res["Credentials"].items() if key != 'Expiration'}<br/><br/>
+    boto3.setup_default_session(**new_credentials)
+    
+switch_role('arn:aws:iam::123456789011:role/test-assumed-role')<br/><br/>
+s3 = boto3.client('s3')
+buckets_of_a = [bucket['Name'] for bucket in s3.list_buckets()['Buckets']]</pre>
+<br/>
+把 <code>sts_res['Credentials']</code> 转换为 session 要求的格式是简化，但是要注意以后 assume_role() 响应格式的变化有可能影响到程序的正常执行。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://aws.amazon.com/premiumsupport/knowledge-center/iam-assume-role-cli/">How do I assume an IAM role using the AWS CLI?</a></li>
+</ol>

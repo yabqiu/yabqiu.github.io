@@ -1,0 +1,102 @@
+---
+title: Windows 安装使用 GCC(mingw-w64)
+url: /windows-install-use-gcc/
+date: 2024-03-11T23:44:02-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2024/03/gccegg-65.png"
+categories:
+  - Windows
+  - C++/VB
+tags: 
+  - gcc
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13537 
+wpStatus: publish
+views: 1947
+lastmod: 2024-03-12T23:49:38-05:00
+---
+
+本人近十来年来本地用 Mac OS 开发, 服务器为 Linux, 为什么又要涉及到 Windows 的 GCC 呢？因为有个跨平台的东西用的是 C++, 需要分别编译出目标平台为 Linux 和 Windows 的二进制文件. 然而 C++ 并没有像 Rust 那样一出生就含着 Cargo 那样的工具链，完美的支持跨平台开发，构建。对于 C++ 代码不得不在 Linux 下用 GCC 编译器(Makefile), 而 Windows 下使用的 Visual Studio 的 MSBuild, 为了能统一用 Makefile 文件 + GCC 的方式编译 C++ 项目, 可选择 Windows 平台下也安装 GCC。<br/><br/>
+<a href="https://gcc.gnu.org/">GCC</a> 又是什么呢？它是 GNU 的编译工具集，包括对 C, C++, Objective-C, Foratran, Ada, Go 和 D 等一众语言的支持， 和它类似的工具集有 <a href="https://llvm.org/">LLVM</a>。GCC 支持多操作系统平台，怎么找到它的各种二进制安装包呢？我们循着官网去找, 打开 GCC 首页 <a href="https://gcc.gnu.org/">https://gcc.gnu.org/</a>，从页面的右边栏可找到<!--more--><br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/03/gcc-downloads.png"><img class="wp-image-13539 alignleft" src="https://yanbin.blog/wp-content/uploads/2024/03/gcc-downloads.png" alt="" width="92" height="131" /></a>我们想要下载二进制包，点击 Download 下的 <a href="https://gcc.gnu.org/install/binaries.html">Binaries</a> 链接，进而来到页面<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/03/gcc-binaries.png"><img class="wp-image-13540 alignleft" src="https://yanbin.blog/wp-content/uploads/2024/03/gcc-binaries-800x461.png" alt="" width="400" height="231" /></a>有常用平台的二进制包，Windows 下有 Cygwin(原 Cygnus 出品, 已被 RedHat 收购) 和 MinGW(Minimalist GNU for Windows)/mingw-w64(64 位) 两种应用方案，Cygwin 几乎提供了一个在 Windows 平台完整的 Linux 模拟环境，X Windows 都可以有, 大过庞大, 对于只用到 GCC 的我们完全没有必要, mingw-w64 自然地就成为了较合适的选择. 所以进一步来到 mingw-w64 的下载页面 <a href="https://www.mingw-w64.org/downloads/">https://www.mingw-w64.org/downloads/</a>, 关于 Windows 的又有以下几种方案<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/03/gcc-mingw-w64.png"><img class="wp-image-13541 alignleft" src="https://yanbin.blog/wp-content/uploads/2024/03/gcc-mingw-w64-800x489.png" alt="" width="400" height="244" /></a>它们大致可分为两类<br/><br/>
+一：含有 GCC 及许多  GNU 命令的压缩包，下载解压后，需配置 PATH 环境变量指向到相应的 bin 目录，然后使用。此类点多数, 如 LLVM-MinGW, w64devkit, MingW-W64-builds, 和 WinLibs.com<br/><br/>
+二：安装后启动后就是一个终端窗口，所以无需手动配置 PATH 环境变量即可使用。这类有 MYSS2 和 Cygwin, 对于本地操作较为友好, 但安装过程可能会有些麻烦, 如远程安装。<br/><br/>
+不管是哪里种式，它们都提供了 GCC 及许多的 GNU 命令，它们只是在 Windows 上的模拟，本质上还是 Win32 程序，所以它们都以 *.exe 文件存在，与 WSL Linux 子系统(虚拟机) 不同。<br/><br/>
+接下来我们拣最具代表性的 w64devkit 和 MSYS2 两种方式来体验一下，为写成这篇日志，还特地在家中的 Windows 11 Pro 上测试了一番, 并且也在 Windows 输入了大部分的文字, 十分的不习惯。<br/><br/>
+<h3>Windows 下安装使用 <a href="https://github.com/skeeto/w64devkit">w64devkit</a></h3><br/><br/>
+点击前面表格中的链接 <a href="https://www.mingw-w64.org/downloads/#w64devkit">w64devkit</a>，可见它的安装指南 Installation: <a href="https://github.com/skeeto/w64devkit/releases">GitHub</a>。然后在该 GitHub 链接的 Assets 部分找到 <a href="https://github.com/skeeto/w64devkit/releases/download/v1.21.0/w64devkit-1.21.0.zip">w64devkit-1.21.0.zip</a>(当前最新版本), 下载后解压到如 C:\w64devkit, 其中 bin 目录包含了许多的 gnu 命令, 例如 ls, rm 等, 还有 sed, awk, grep 等, 连 vi/vim, gvim 都有, 当然少了不 gcc, make.<br/><br/>
+在开始使用它带的 GCC 之前需把它的 bin 目录配置到 PATH 环境变量中, 可通过电脑属性永久性设置，或在 CMD 命令窗口中临时设置，用<br/><br/>
+<blockquote>
+set PATH=%PATH%;c:\w64devkit\bin
+</blockquote>
+<br/>
+至此我们就可以开始尝试用 GCC 来编译一段 C++ 的 Hello World, 正好可以直接用 vi 来书写代码，启动<br/><br/>
+<blockquote>
+vi test.cpp
+</blockquote>
+<br/>
+并键入代码<br/><br/>
+<pre class="lang:default decode:true ">#include &lt;stdio.h&gt;<br/><br/>
+int main() {
+    printf("Hello World!\n");
+    return 0;
+}</pre>
+<br/>
+这个 vim 还支持语法高度显示<br/><br/>
+保存后, 使用如下命令<br/><br/>
+<blockquote>
+gcc -o test test.cpp
+</blockquote>
+<br/>
+编译后生成  test.exe 文件, 大小为 70531 字节, 执行正常, 输出 Hello World!<br/><br/>
+注意, 如果没有把 w64devkit\bin 加上 PATH 环境变量中，而是直接用全路径来使用 gcc 命令会出错<br/><br/>
+<blockquote>
+C:\w64devkit\bin\gcc -o test test.cpp<br />
+gcc.exe: fatal error: cannot execute 'as': CreateProcess: No such file or directory<br />
+compilation terminated.
+</blockquote>
+<br/>
+因为除了用到 gcc 命令本身外还调用该 bin 目录中的其他命令.<br/><br/>
+gcc 会自动根据源文件的类型选择合适的编译器，如 cpp 文件会选择 g++ 进行编译. 查看 gcc 的版本为<br/><br/>
+<blockquote>
+gcc --version<br />
+gcc (GCC) 13.2.0
+</blockquote>
+<br/>
+它支持当前正在使用中的 c++ 标准有 c++03, c++11, c++14, c++17, c++20, c++23, c++2a, c++2b, c++98, gnu++03, gnu++11, gnu++14, gnu++17, gnu++20, gnu++23, gnu++2a, gnu++2b, gnu++98 等. 所以在用 gcc 编译时可指定参数 <code>-std=c++11</code><br/><br/>
+LLVM-MinGW, MinW-W64-builds, 以及 WinLibs.com 都和 w64devkit 的安装使用方式一样, 下载的也是压缩包, 解压后其中的 bin 目录加到 PATH 环境变量中, 再使用其中的命令.<br/><br/>
+当然在 PowerShell 命令窗口中配置了 PATH 环境变量的话也是同样的使用方法<br/><br/>
+<h3>Windows 下安装使用 <a href="https://www.msys2.org/">MSYS2</a></h3><br/><br/>
+选择使用 MSYS2 的话, 安的安装链接会导向到 <a href="https://www.msys2.org/">msys2.org</a>, 当前的安装文件是 <a href="https://github.com/msys2/msys2-installer/releases/download/2024-01-13/msys2-x86_64-20240113.exe">msys2-x86_64-20240113.exe</a>. 安装完后, 启动 <code>MSYS2 USRT64</code> 程序后它就是一个终端窗口，所以 PATH 环境变量配置也就免了. 不过 GCC 却不是现成的, 需要在该终端中用如下命令单独安装<br/><br/>
+<blockquote>
+pacman -S mingw-w64-ucrt-x86_64-gcc
+</blockquote>
+<br/>
+想要 vim 也得用 pacman -S vim 命令安装, 其他 Linux 类似的命令也用同样的方式安装<br/><br/>
+MSYS2 看起来像个 Linux 终端, 它也有自己的根文件系统, 以及类似于 Linux 的目录结构. 例如我们在安装 MSYS2 的过程中选择了安装目录为 c:\msys64, 这就是 MSYS2 的根文件系统. <code>ls /</code> 将能看到有 <code>/var</code>, <code>/tmp</code>, <code>/proc</code>, <code>/dev</code>, <code>/etc</code> 等目录结构。<br/><br/>
+MSYS2 所带的命令在在 c:\msys64\usr\bin, 在它终端端口中就是 <code>/usr/bin</code><br/><br/>
+要访问 Windows 的 C, D 盘的话用 <code>cd /c</code>, <code>cd /d/</code> 切换<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/03/gcc-msys2-1.png"><img class="aligncenter wp-image-13546" src="https://yanbin.blog/wp-content/uploads/2024/03/gcc-msys2-1-800x479.png" alt="" width="642" height="384" /></a><br/><br/>
+在 MSYS2 终端窗口中可用下面两个命令列出未 Deprecated 的 C++, C 的标准<br/><br/>
+<blockquote>
+＃ 当前未 Deprecated 的 C++ 标准<br />
+gcc -v --help 2&gt; /dev/null | grep -iv deprecated | grep "C++" | sed -n '/^ *-std=\([^&lt;][^ ]\+\).*/ {s//\1/p}'
+＃ 当前未 Deprecated 的 C 标准<br />
+gcc -v --help 2&gt; /dev/null | grep -iv deprecated | grep "C " | sed -n '/^ *-std=\([^&lt;][^ ]\+\).*/ {s//\1/p}'
+</blockquote>
+<br/>
+得到的就是前面列出的像 c++17, c++20, c++23, c++98, gnu++03, gnu++11 那样的结果.<br/><br/>
+至于 GCC 编译 C++ 代码就无需再演示了, 同样是生成 exe 文件, 因为是给 Windows 执行吗.<br/><br/>
+MSYS2 相对于 Cygwin 非常的小巧<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://blog.csdn.net/ayang1986/article/details/79377827">Cygwin、Msys、MinGW、Msys2的区别与联系</a></li>
+</ol>

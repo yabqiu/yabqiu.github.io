@@ -1,0 +1,320 @@
+---
+title: Docker Swarm In Action
+url: /english-docker-swarm-in-action/
+date: 2021-06-24T13:11:51-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2020/03/docker_swarm.png"
+categories:
+  - Docker
+tags: 
+  - Docker
+  - Swarm
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11043 
+wpStatus: publish
+views: 879
+lastmod: 2021-06-24T13:50:22-05:00
+---
+
+Before officially entering into Kubernetes, I hope to know something about the earlier Docker Swarm, although it is basically no long used currently. Swarm provides a cluster of Docker hosts. There is at least one Manager (or more) in the cluster, plus 0 or more Workers. The main idea is that a Docker service (container) is executed by the Swarm cluster manager, and it will find the corresponding host in the cluster to execute the container. Both Manager and Worker can to run Docker containers, but only Manager can execute management commands.</p>
+<br/>
+The following two pictures shows the difference between running Docker containers on a host and a Swarm cluster host.<br/><br/>
+<table>
+<tbody>
+<tr>
+<td><a href="https://yanbin.blog/wp-content/uploads/2020/03/docker-2.png" data-slb-active="1" data-slb-asset="839155654" data-slb-internal="0" data-slb-group="9955"><img class="aligncenter size-full wp-image-9957" src="https://yanbin.blog/wp-content/uploads/2020/03/docker-2.png" sizes="(max-width: 256px) 100vw, 256px" srcset="https://yanbin.blog/wp-content/uploads/2020/03/docker-2.png 256w, https://yanbin.blog/wp-content/uploads/2020/03/docker-2-150x150.png 150w" alt="" width="256" height="256" data-attachment-id="9957" data-permalink="https://yanbin.blog/docker-swarm-cluster-in-action/docker-2/" data-orig-file="https://yanbin.blog/wp-content/uploads/2020/03/docker-2.png" data-orig-size="256,256" data-comments-opened="1" data-image-meta="{&quot;aperture&quot;:&quot;0&quot;,&quot;credit&quot;:&quot;&quot;,&quot;camera&quot;:&quot;&quot;,&quot;caption&quot;:&quot;&quot;,&quot;created_timestamp&quot;:&quot;0&quot;,&quot;copyright&quot;:&quot;&quot;,&quot;focal_length&quot;:&quot;0&quot;,&quot;iso&quot;:&quot;0&quot;,&quot;shutter_speed&quot;:&quot;0&quot;,&quot;title&quot;:&quot;&quot;,&quot;orientation&quot;:&quot;0&quot;}" data-image-title="docker-2" data-image-description="" data-medium-file="https://yanbin.blog/wp-content/uploads/2020/03/docker-2.png" data-large-file="https://yanbin.blog/wp-content/uploads/2020/03/docker-2.png" /></a>Run all containers in one host</td>
+<td>  =&gt;</td>
+<td><a href="https://yanbin.blog/wp-content/uploads/2020/03/docker_swarm.png" data-slb-active="1" data-slb-asset="1479130860" data-slb-internal="0" data-slb-group="9955"><img class="aligncenter size-full wp-image-9956" src="https://yanbin.blog/wp-content/uploads/2020/03/docker_swarm.png" sizes="(max-width: 256px) 100vw, 256px" srcset="https://yanbin.blog/wp-content/uploads/2020/03/docker_swarm.png 256w, https://yanbin.blog/wp-content/uploads/2020/03/docker_swarm-150x150.png 150w" alt="" width="256" height="256" data-attachment-id="9956" data-permalink="https://yanbin.blog/docker-swarm-cluster-in-action/docker_swarm/" data-orig-file="https://yanbin.blog/wp-content/uploads/2020/03/docker_swarm.png" data-orig-size="256,256" data-comments-opened="1" data-image-meta="{&quot;aperture&quot;:&quot;0&quot;,&quot;credit&quot;:&quot;&quot;,&quot;camera&quot;:&quot;&quot;,&quot;caption&quot;:&quot;&quot;,&quot;created_timestamp&quot;:&quot;0&quot;,&quot;copyright&quot;:&quot;&quot;,&quot;focal_length&quot;:&quot;0&quot;,&quot;iso&quot;:&quot;0&quot;,&quot;shutter_speed&quot;:&quot;0&quot;,&quot;title&quot;:&quot;&quot;,&quot;orientation&quot;:&quot;0&quot;}" data-image-title="docker_swarm" data-image-description="" data-medium-file="https://yanbin.blog/wp-content/uploads/2020/03/docker_swarm.png" data-large-file="https://yanbin.blog/wp-content/uploads/2020/03/docker_swarm.png" /></a>Run container together</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<p data-wp-editing="1"><!--more-->Docker comes with Swarm mode after 1.12. This article essentially inspired by <a href="https://www.jianshu.com/p/df744c4e375e">use Docker Swarm Swarm mode to build a cluster</a>. We just use three Vagrant virtual machines for this experiment, one of which is a Swarm Manager node and two worker nodes.<span id="more-9955"></span></p>
+<br/>
+<ol>
+    <li data-wp-editing="1">ubuntu-master: 172.28.128.6</li>
+    <li data-wp-editing="1">ubuntu-worker1: 172.28.128.7</li>
+    <li data-wp-editing="1">ubuntu-worker2: 172.28.128.7</li>
+</ol>
+<br/>
+The Vagrantfile used is<br/><br/>
+<pre class="lang:default decode:true">Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/disco64"
+  config.vm.hostname = "ubuntu-master"    # workers:ubuntu-worker1, ubuntu-worker2
+  config.vm.network "private_network", type: "dhcp"
+end</pre>
+<br/>
+Or we can configure all three virtual machines in one single Vagrant file, please look at my previous blog <a href="https://yanbin.blog/english-vagrant-intro-config-commands/">Introduce Vagrant and common usages</a>.<br/><br/>
+After vagrant up, vagrant ssh enter the machine, sudo su-switch to the root user, use <code>snap install docker</code> or <code>apt install docker.io</code> to install docker, and then you can use the docker swarm command.<br/><br/>
+<h3>Create Swarm cluster</h3><br/><br/>
+There must be at least one Manager node in a Swarm cluster<br/><br/>
+<h4>Create Manager node</h4><br/><br/>
+Execute on the ubuntu-master machine<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker swarm init --advertise-addr 172.28.128.6
+Swarm initialized: current node (sjfg7nljuyt54yapffvosrzmh) is now a manager.<br/><br/>
+
+To add a worker to this swarm, run the following command:<br/><br/>
+
+    docker swarm join --token SWMTKN-1-3wnd3z2xp49j6vyf6nt8kiuz38bjgjbbs90kz8x48z6dhyr7rc-c2cwfzg2jzhi3qz12wicn89a0 172.28.128.6:2377<br/><br/>
+
+To add a manager to this swarm, run 'docker swarm join-token manager' and follow the instructions.</pre>
+<br/>
+<code>--addvertise-addr</code> indicates how Swarm nodes communicate with each other. So the port 2377 of the master must be opened. The above also shows the commands for adding workers to the Swarm cluster. Use the following two commands on the master to view the complete commands of adding workers or new managers at any time<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master: ~# docker swarm join-token worker
+......
+root@ubuntu-master: ~# docker swarm join-token manager
+....</pre>
+<br/>
+We can execute <code>docker info</code> and  <code>docker node ls</code> view information of Swarm cluster<br/><br/>
+<pre class="lang:default decode:true ">root@ubuntu-master:~# docker info
+......
+Swarm: active
+NodeID: sjfg7nljuyt54yapffvosrzmh
+Is Manager: true
+ClusterID: r2cr7km655esw58olbc6gyncn
+Managers: 1
+Nodes: 1
+Default Address Pool: 10.0.0.0/8
+SubnetSize: 24
+Orchestration:
+  Task History Retention Limit: 5
+......<br/><br/>
+
+root@ubuntu-master:~# docker node ls
+ID                            HOSTNAME            STATUS              AVAILABILITY        MANAGER STATUS      ENGINE VERSION
+sjfg7nljuyt54yapffvosrzmh *   ubuntu-master       Ready               Active              Leader              18.09.9</pre>
+<br/>
+<h4>Join Worker node to Swarm cluster</h4><br/><br/>
+Execute the same command on both ubuntu-worker1 and ubuntu-worker2 nodes<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-worker1:~# docker swarm join --token SWMTKN-1-3wnd3z2xp49j6vyf6nt8kiuz38bjgjbbs90kz8x48z6dhyr7rc-c2cwfzg2jzhi3qz12wicn89a0 172.28.128.6:2377
+This node joined a swarm as a worker.</pre>
+<br/>
+After that, go back to the manager node and run commands  <code>docker info</code> and <code>docker node ls</code> to check<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker info
+......
+Swarm: active
+NodeID: sjfg7nljuyt54yapffvosrzmh
+Is Manager: true
+ClusterID: r2cr7km655esw58olbc6gyncn
+Managers: 1
+Nodes: 3
+Default Address Pool: 10.0.0.0/8
+SubnetSize: 24
+Orchestration:
+  Task History Retention Limit: 5
+......
+root@ubuntu-master:~# docker node ls
+ID                            HOSTNAME            STATUS              AVAILABILITY        MANAGER STATUS      ENGINE VERSION
+sjfg7nljuyt54yapffvosrzmh *   ubuntu-master       Ready               Active              Leader              18.09.9
+q82ndq11h1mie6lwmog5pfymu     ubuntu-worker1      Ready               Active                                  18.09.7
+xuzc43qrrdirkmabivdzg8ruc     ubuntu-worker2      Ready               Active                                  18.09.9</pre>
+<br/>
+On the worker node, run  <code>docker info</code>, we'll see slightly different information, and the <code>docker node</code> command is not allowed to execute on worker nodes.<br/><br/>
+<h3>Deploy the service in the Swarm cluster</h3><br/><br/>
+Now that we have a Swarm cluster consisting of a manager and two workers, we can start to run our docker container(service) in this cluster.<br/><br/>
+Different from the way we start docker container with <code>docker run</code>, to deploy services to Swarm cluster nodes, we must run <code>docker service</code> command on manager node(s).<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker service create --replicas 2 --name helloworld alpine ping docker.com
+15aptyokhcp42qa47rfmhgx82
+overall progress: 2 out of 2 tasks
+1/2: running   [==================================================&gt;]
+2/2: running   [==================================================&gt;]
+verify: Service converged</pre>
+<br/>
+<ol>
+    <li><code>--replicas</code> Specifies that the startup service consists of several instances</li>
+    <li><code>--name</code> Same as --name in docker run, specify the service name</li>
+    <li><code>alpine</code> Is the docker image name</li>
+    <li><code>ping docker.com</code> The command executed by the service, because the ping command under Linux will not stop, so you can observe the running status later</li>
+</ol>
+<br/>
+<h4>View service information in Swarm</h4><br/><br/>
+<code>docker service ls</code> View service list<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker service ls
+ID                  NAME                MODE                REPLICAS            IMAGE               PORTS
+15aptyokhcp4        helloworld          replicated          2/2                 alpine:latest</pre>
+<br/>
+Run <code>docker service inspect</code> to view the service information, and <code>docker inspect</code> to view information about a similar container<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker service inspect --pretty helloworld<br/><br/>
+
+ID:     15aptyokhcp42qa47rfmhgx82
+Name:       helloworld
+Service Mode:   Replicated
+Replicas:  2
+Placement:
+UpdateConfig:
+Parallelism:   1
+......
+ContainerSpec:
+Image:     alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
+Args:      ping docker.com
+Init:      false</pre>
+<br/>
+Similar to <code>docker ps</code>, the <code>docker service ps &lt;SERVICE-ID&gt;</code> command lists service information including where the container located on which nodes<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker service ps 15
+ID                  NAME                IMAGE               NODE                DESIRED STATE       CURRENT STATE           ERROR               PORTS
+ay8qybtmtpqo        helloworld.1        alpine:latest       ubuntu-worker1      Running             Running 6 minutes ago
+ou1gltvexpkc        helloworld.2        alpine:latest       ubuntu-master       Running             Running 6 minutes ago</pre>
+<br/>
+Noticed that we specified the <code>--replicas=2</code> to start two copies of service, so we can see one container is running on <code>ubuntu-worker1</code>, and another container is running on <code>ubuntu-master</code>. Also, we can verify this from all nodes by using command <code>docker ps</code><br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker ps
+CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES
+16eb4dbfc88b        alpine:latest       "ping docker.com"   7 minutes ago       Up 7 minutes                            helloworld.2.ou1gltvexpkcbna6rttbjbosl</pre>
+<br/>
+<pre class="lang:default decode:true ">root@ubuntu-worker1:~# docker ps
+CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES
+5b4367423853        alpine:latest       "ping docker.com"   7 minutes ago       Up 7 minutes                            helloworld.1.ay8qybtmtpqotpokauyde7ob0</pre>
+<br/>
+<pre class="lang:default decode:true">root@ubuntu-worker2:~# docker ps
+CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES</pre>
+<br/>
+Docker Swarm help us to distribute containers to each individual node by deploying service. So, we don't need to find out specific node and run demand like this <code>docker run --name helloworld.x alpine ping docker.com</code><br/><br/>
+<h4>Dynamic scaling of services in the Swarm cluster</h4><br/><br/>
+The advantage of having a cluster is that we can dynamically scale the services in the cluster. It is not a problem if the scale exceeds the number of cluster nodes. It is nothing more than running multiple services on one node.<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker service scale helloworld=5
+helloworld scaled to 5
+overall progress: 5 out of 5 tasks
+1/5: running   [==================================================&gt;]
+2/5: running   [==================================================&gt;]
+3/5: running   [==================================================&gt;]
+4/5: running   [==================================================&gt;]
+5/5: running   [==================================================&gt;]
+verify: Service converged</pre>
+<br/>
+<code>helloworld=5</code> specified when creating a service equivalent to <code>--replicas=5</code> the same<br/><br/>
+Again, look at the list of service node assignments<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker service ps helloworld
+ID                  NAME                IMAGE               NODE                DESIRED STATE       CURRENT STATE            ERROR               PORTS
+ay8qybtmtpqo        helloworld.1        alpine:latest       ubuntu-worker1      Running             Running 14 minutes ago
+ou1gltvexpkc        helloworld.2        alpine:latest       ubuntu-master       Running             Running 14 minutes ago
+8xhmp5ehboo6        helloworld.3        alpine:latest       ubuntu-worker2      Running             Running 47 seconds ago
+kagiwq7sh105        helloworld.4        alpine:latest       ubuntu-worker2      Running             Running 47 seconds ago
+ijmgo4udbe1d        helloworld.5        alpine:latest       ubuntu-worker1      Running             Running 47 seconds ago</pre>
+<br/>
+Two of the nodes are running two services. Let's try to decrease the number<br/><br/>
+<div id="urvanov-syntax-highlighter-60d4beaa3eb9f237674758" class="urvanov-syntax-highlighter-syntax crayon-theme-classic urvanov-syntax-highlighter-font-monaco urvanov-syntax-highlighter-os-mac print-yes notranslate" data-settings=" minimize scroll-mouseover">
+<div class="urvanov-syntax-highlighter-plain-wrap">
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker service scale helloworld=1
+helloworld scaled to 1
+overall progress: 1 out of 1 tasks
+1/1: running   [==================================================&gt;]
+verify: Service converged</pre>
+</div>
+</div>
+<br/>
+Look at the list of services again<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker service ps helloworld
+ID                  NAME                IMAGE               NODE                DESIRED STATE       CURRENT STATE            ERROR               PORTS
+ay8qybtmtpqo        helloworld.1        alpine:latest       ubuntu-worker1      Running             Running 17 minutes ago</pre>
+<br/>
+Everytime we make change with <code>docker service scale helloworld=&lt;NUM&gt;</code>, we can go a particular node to run <code>docker ps</code> to check containers running on that node.<br/><br/>
+By this time we have truly experienced some of the benefits of Swarm clusters, but the actual application scenarios do not seem to be the same. In practice, the nodes are dynamically added or removed, a manager node must start first, then the newly started node is automatically added as a worker, and removed from Swarm cluster automatically exited after the node dies.<br/><br/>
+Notes: A Swarm cluster can have more then one manager nodes.<br/><br/>
+The following is the management of services in the Swarm cluster<br/><br/>
+<h4>Delete services in the Swarm cluster</h4><br/><br/>
+Run <code>docker service rmi helloworld</code> deleting service commands.<br/><br/>
+<h4>Update the services in the Swarm cluster</h4><br/><br/>
+For example, to update the mirror version in the service, the basic command is <code>docker service update --image alpine:3.10 helloworld</code>, the following is a complete demonstration to update the mirror from alpine:latest to alpine:3.10<br/><br/>
+<pre class="lang:default decode:true ">root@ubuntu-master:~# docker service create --replicas 3 --name helloworld alpine ping docker.com
+pz8ifs41o90fren4hc6dgc1gz
+overall progress: 3 out of 3 tasks
+1/3: running   [==================================================&gt;]
+2/3: running   [==================================================&gt;]
+3/3: running   [==================================================&gt;]
+verify: Service converged
+root@ubuntu-master:~# docker service ps helloworld
+ID                  NAME                IMAGE               NODE                DESIRED STATE       CURRENT STATE                ERROR               PORTS
+qhmkkife291l        helloworld.1        alpine:latest       ubuntu-worker1      Running             Running about a minute ago
+ia6bpvky5fdd        helloworld.2        alpine:latest       ubuntu-worker2      Running             Running about a minute ago
+i6ux7j6jpwqi        helloworld.3        alpine:latest       ubuntu-master       Running             Running about a minute ago
+root@ubuntu-master:~# docker service update --image alpine:3.10 helloworld
+helloworld
+overall progress: 3 out of 3 tasks                                     //这里可以看到怎么动态的更新过程
+1/3: running   [==================================================&gt;]
+2/3: running   [==================================================&gt;]
+3/3: running   [==================================================&gt;]
+verify: Service converged
+root@ubuntu-master:~# docker service ps helloworld                     //显示了由  latest 更新到了 3.10
+ID                  NAME                IMAGE               NODE                DESIRED STATE       CURRENT STATE             ERROR               PORTS
+lgqlxpkdjyl8        helloworld.1        alpine:3.10         ubuntu-worker1      Running             Running 14 seconds ago
+qhmkkife291l         \_ helloworld.1    alpine:latest       ubuntu-worker1      Shutdown            Shutdown 15 seconds ago
+5qj7hf6dm75x        helloworld.2        alpine:3.10         ubuntu-worker2      Running             Running 26 seconds ago
+ia6bpvky5fdd         \_ helloworld.2    alpine:latest       ubuntu-worker2      Shutdown            Shutdown 27 seconds ago
+p1aibrthhs4k        helloworld.3        alpine:3.10         ubuntu-master       Running             Running 38 seconds ago
+i6ux7j6jpwqi         \_ helloworld.3    alpine:latest       ubuntu-master       Shutdown            Shutdown 39 seconds ago</pre>
+<br/>
+In order not to interrupt the service as much as possible during the update, Swarm will stop, update, and restart the services one by one.<br/><br/>
+This is the Docker Swarm service deployment strategy.<br/><br/>
+<h3>Offline and online nodes in Swarm</h3><br/><br/>
+For a Swarm cluster running a service, we can take a node offline, and then the service on it will be transferred to another available node. Offline nodes can go online again, but the previous services above will not be re-transferred, and will be allocated to newly online nodes only when the service is scaled or new services are created. See a full demo below<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker service create --replicas 3 --name helloworld alpine ping docker.com
+zn19c80zdpehq40dwz25lgton
+overall progress: 3 out of 3 tasks
+1/3: running   [==================================================&gt;]
+2/3: running   [==================================================&gt;]
+3/3: running   [==================================================&gt;]
+verify: Service converged
+root@ubuntu-master:~# docker service ps helloworld          // each node runs a container
+ID                  NAME                IMAGE               NODE                DESIRED STATE       CURRENT STATE            ERROR               PORTS
+r36yh4yfyrjj        helloworld.1        alpine:latest       ubuntu-worker1      Running             Running 13 seconds ago
+2fyzydfs2n8w        helloworld.2        alpine:latest       ubuntu-worker2      Running             Running 13 seconds ago
+smqv1mfh1lba        helloworld.3        alpine:latest       ubuntu-master       Running             Running 13 seconds ago
+root@ubuntu-master:~# docker node update --availability drain ubuntu-worker1
+ubuntu-worker1
+root@ubuntu-master:~# docker service ps helloworld          // ubuntu-worker1 offline, containers on this node moved to ubuntu-master node
+ID                  NAME                IMAGE               NODE                DESIRED STATE       CURRENT STATE            ERROR               PORTS
+5z10pj4z9ldq        helloworld.1        alpine:latest       ubuntu-master       Running             Running 1 second ago
+r36yh4yfyrjj         \_ helloworld.1    alpine:latest       ubuntu-worker1      Shutdown            Shutdown 2 seconds ago
+2fyzydfs2n8w        helloworld.2        alpine:latest       ubuntu-worker2      Running             Running 50 seconds ago
+smqv1mfh1lba        helloworld.3        alpine:latest       ubuntu-master       Running             Running 50 seconds ago
+root@ubuntu-master:~# docker node update --availability active ubuntu-worker1
+ubuntu-worker1
+root@ubuntu-master:~# docker service ps helloworld         // ubuntu-worker1 online again, container assignment not changed
+ID                  NAME                IMAGE               NODE                DESIRED STATE       CURRENT STATE                ERROR               PORTS
+5z10pj4z9ldq        helloworld.1        alpine:latest       ubuntu-master       Running             Running 56 seconds ago
+r36yh4yfyrjj         \_ helloworld.1    alpine:latest       ubuntu-worker1      Shutdown            Shutdown 56 seconds ago
+2fyzydfs2n8w        helloworld.2        alpine:latest       ubuntu-worker2      Running             Running about a minute ago
+smqv1mfh1lba        helloworld.3        alpine:latest       ubuntu-master       Running             Running about a minute ago</pre>
+<br/>
+<h3>Manage Swarm cluster</h3><br/><br/>
+Finally, there are several commands for managing the Swarm cluster<br/><br/>
+Worker leaves the Swarm cluster<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-worker1:~# docker swarm leave
+Node left the swarm.</pre>
+<br/>
+After leaving, run <code>docker node ls</code> to check node status is the down<br/><br/>
+<pre class="lang:default decode:true ">root@ubuntu-master:~# docker node ls
+ID                            HOSTNAME            STATUS              AVAILABILITY        MANAGER STATUS      ENGINE VERSION
+sjfg7nljuyt54yapffvosrzmh *   ubuntu-master       Ready               Active              Leader              18.09.9
+q82ndq11h1mie6lwmog5pfymu     ubuntu-worker1      Down                Active                                  18.09.7
+xuzc43qrrdirkmabivdzg8ruc     ubuntu-worker2      Down                Active                                  18.09.9</pre>
+<br/>
+<div id="urvanov-syntax-highlighter-60d4beaa3ebb2026252212" class="urvanov-syntax-highlighter-syntax crayon-theme-classic urvanov-syntax-highlighter-font-monaco urvanov-syntax-highlighter-os-mac print-yes notranslate" data-settings=" minimize scroll-mouseover">
+<div class="urvanov-syntax-highlighter-main">Notice that after worker left Swarm cluster, Swarm will do container re-assignment according to <code>--replicas=&lt;NUM&gt;</code>re-assignment(rebalance). If all workers are deleted, all services will be deployed on the Manager node. If need to remove node from the list of <code>docker node ls</code>, we should do</div>
+</div>
+<br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker node rm ubuntu-worker1
+ubuntu-worker1
+root@ubuntu-master:~# docker node rm --force ubuntu-worker2
+ubuntu-worker2</pre>
+<br/>
+Add <code>--force</code> parameters if you can't delete <br/><br/>
+Finally, if all manager nodes left, the whole Swarm cluster is end.<br/><br/>
+<pre class="lang:default decode:true ">root@ubuntu-master:~# docker swarm leave --force
+Node left the swarm.
+oot@ubuntu-master:~# docker node ls
+Error response from daemon: This node is not a swarm manager. Use "docker swarm init" or "docker swarm join" to connect this node to swarm and try again.</pre>
+<br/>
+The Swarm cluster network has also been deleted.<br/><br/>
+That's the basic knowledge of Docker Swarm. If there is a problem with the creation of the Swarm cluster, please check that the following two port numbers are not blocked by firewall<br/><br/>
+<ol>
+    <li>Port 7946, used for communication between cluster nodes</li>
+    <li>Port 4789, used for overlay network traffic</li>
+</ol>
+<br/>
+Next, I will move on to Docker compose, and even compose can be deployed to a Swarm cluster. The ultimate goal is to understand Kubernetes. 

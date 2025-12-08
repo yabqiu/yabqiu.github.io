@@ -1,0 +1,275 @@
+---
+title: Java 使用堆外内存(off-heap memory) 作为缓存
+url: /java-off-heap-memory-cache/
+date: 2024-08-19T16:58:50-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Cache
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13697 
+wpStatus: publish
+views: 276
+lastmod: 2024-08-19T16:58:50-05:00
+---
+
+我们通常用的 Java 缓存基本可认为是扩展了 HashMap 或 ConcurrentHashMap 的实现，它们各自实现自己的缓存策略，如时间与空间的控制，生命周期管理，是否支持分布式，溢出时能否转储到磁盘。关于 Java 本地缓存的存储分为内存与磁盘，内存多数情况下指的是堆内内存(on-heap), 而介于堆内内存与文件存储之间的就是堆外内存(off-heap)<br/><br/>
+<ol>
+    <li>堆内存储(on-heap): 操作最快，无需序列化，但大量数据时会影响到 GC 的效率</li>
+    <li>堆外存储(off-heap): 存储在 Java 进程内存但非 JVM 堆内(不在 -Xmx 指定的内存范围内)，使用或保存时需进行序列化/反序列化过程(在堆内与堆外转换)，但不受 GC 影响，有助于提它来 GC 的效率</li>
+    <li>文件存储：不仅存在序列化与反序列化过程，还带 IO 操作，所以最慢，唯一优点就是大</li>
+</ol>
+<br/>
+我们查看一下当前 Spring 支持的缓存实现, <a href="https://docs.spring.io/spring-boot/docs/2.0.x/reference/html/boot-features-caching.html#boot-features-caching-provider">Supported Cache Providers</a>, 列有 Generic, JCache(JSR-107), EhCache 2.x, Hazelcast, Infinispan, Couchbase, Redis, Caffeine, Simple， 这其中无一支持堆外缓存，其中的 EhCache 要付费使用 EhCache 3(Big Memory) 才能支持 off-heap。<!--more--><br/><br/>
+不过我们可以直接借助于 Java 内置的 ByteBuffer或存或选用第三方的缓存库来使用堆外缓存，主流的有<br/><br/>
+<ol>
+    <li>OHCache</li>
+    <li>MapDB</li>
+    <li>ChronicleMap</li>
+    <li>Ehcache3: BigMemory 收费(估计在选型时得跳过)</li>
+</ol>
+<br/>
+下面将介绍前两个库的使用<br/><br/>
+<h3>OHCache 使用</h3><br/><br/>
+OHC(off-heap-cache), 它是从 Cassandra 中独立出的项目, 项目地址为 https://github.com/snazy/ohc，似乎有好多年没维护了，距离当前(2024-08-19), 实际的代码变更还在四年前。<br/><br/>
+Maven 项目中引用依赖<br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;org.caffinitas.ohc&lt;/groupId&gt;
+    &lt;artifactId&gt;ohc-core&lt;/artifactId&gt;
+    &lt;version&gt;0.7.4&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+它会依赖 JNA, Guava 等项目，因为它要由 JNA 去堆外分配内存的<br/><br/>
+OHC 在对象于堆内外间转储时需要序列/反序化，所以键和值都要实现 org.caffinitas.ohc.CacheSerializer 类，下面的例子键和值都为字符串<br/><br/>
+<pre class="lang:default decode:true ">package blog.yanbin;<br/><br/>
+import com.google.common.base.Charsets;
+import org.caffinitas.ohc.CacheSerializer;<br/><br/>
+import java.nio.ByteBuffer;<br/><br/>
+public class StringSerializer implements CacheSerializer&lt;String&gt; {<br/><br/>
+    @Override
+    public int serializedSize(String value) {
+        byte[] bytes = value.getBytes(Charsets.UTF_8);
+        return bytes.length + 4; // 4 bytes to record length
+    }<br/><br/>
+    @Override
+    public void serialize(String value, ByteBuffer buf) {
+        byte[] bytes = value.getBytes(Charsets.UTF_8);
+        // get length
+        buf.putInt(bytes.length);
+        buf.put(bytes);
+    }<br/><br/>
+    @Override
+    public String deserialize(ByteBuffer buf) {
+        int length = buf.getInt();
+        byte[] bytes = new byte[length];
+        buf.get(bytes);
+        return new String(bytes, Charsets.UTF_8);
+    }
+}</pre>
+<br/>
+实际中键和值的序列化类可分开，例如可限定键的最大长度为 32767，可用两个字节存储一个 short 类型的字节表示。 <br/><br/>
+使用堆外内存的代码<br/><br/>
+<pre class="lang:default decode:true ">package blog.yanbin;<br/><br/>
+import org.caffinitas.ohc.Eviction;
+import org.caffinitas.ohc.OHCache;
+import org.caffinitas.ohc.OHCacheBuilder;<br/><br/>
+public class Main {<br/><br/>
+    public static void main(String[] args) {
+        OHCache&lt;String, String&gt; ohCache = OHCacheBuilder.&lt;String, String&gt;newBuilder()
+            .keySerializer(new StringSerializer())
+            .valueSerializer(new StringSerializer())
+            .eviction(Eviction.LRU)
+            .build();<br/><br/>
+        ohCache.put("hello", "world");
+        System.out.println(ohCache.get("hello")); // world
+    }
+}</pre>
+<br/>
+执行后可看到输出为<br/><br/>
+<blockquote>
+14:14:25.507 [main] INFO org.caffinitas.ohc.linked.Uns - OHC using JNA OS native malloc/free<br />
+14:14:25.905 [main] DEBUG org.caffinitas.ohc.linked.OHCacheLinkedImpl - OHC linked instance with 32 segments and capacity of 67108864 created.<br />
+world
+</blockquote>
+<br/>
+前两行的日志看到 OHC 用了 JNA 来分配释放内存。<br/><br/>
+通过 <a href="https://javadoc.io/doc/org.caffinitas.ohc/ohc-core/0.7.0/org/caffinitas/ohc/OHCacheBuilder.html">OHCacheBuilder</a> 可以设置缓存的策略，如键的失效时间<br/><br/>
+<pre class="lang:default decode:true">.eviction(Eviction.LRU)
+.timeouts(true)
+.defaultTTLmillis(60*60*1000L)</pre>
+<br/>
+键在 60 分钟之后就会失效。<br/><br/>
+使用 OHCache 时所有的键与值都必须定义后相应的 CacheSerializer, 值的序列化实现有可能会影响到缓存的性能，键的话简单，都用字符串。值的话可用 JDK 或 JSON 的序列化。<br/><br/>
+更详细的内容请参考 <a href="https://blog.csdn.net/w727655308/article/details/124142930">堆外缓存OHCache使用总结</a><br/><br/>
+<h3>MapDB 的使用</h3><br/><br/>
+<a href="https://mapdb.org/">Map&lt;D,B&gt; - MapDB</a>, 官网的介绍是<br/><br/>
+<blockquote>
+MapDB provides Java Maps, Sets, Lists, Queues and other collections backed by off-heap or on-disk storage. It is a hybrid between java collection framework and embedded database engine(MapDB 基于堆外和磁盘存储提供了 Java 的 Map, Set, List, Queue 等集合，它混合了 Java 集合框架与内嵌式数据库引擎)
+</blockquote>
+<br/>
+现在来体验它的堆外存储作缓存的功能(这似乎只是一个较小的功能)，在 Maven 项目中引入依赖<br/><br/>
+<pre class="lang:default decode:true ">&lt;dependency&gt;
+    &lt;groupId&gt;org.mapdb&lt;/groupId&gt;
+    &lt;artifactId&gt;mapdb&lt;/artifactId&gt;
+    &lt;version&gt;3.1.0&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+同时还要在 pom.xml 中指定 kotlin-stdlib 的版本，配置 kotlin.version 属性值为 1.9.25, 否则可能会采用更早的 kotlin-stdlib 库而造成运行时出错<br/><br/>
+<pre class="lang:default decode:true ">&lt;kotlin.version&gt;1.9.25&lt;/kotlin.version&gt;</pre>
+<br/>
+<blockquote>
+java.lang.NoClassDefFoundError: kotlin/enums/EnumEntriesKt<br />
+    at org.mapdb.DBMaker$StoreType.&lt;clinit&gt;(DBMaker.kt:35)<br />
+    at org.mapdb.DBMaker.memoryDB(DBMaker.kt:71)
+</blockquote>
+<br/>
+先创建一个 User 类<br/><br/>
+<pre class="lang:default decode:true">package blog.yanbin;<br/><br/>
+import java.io.Serializable;<br/><br/>
+public class User implements Serializable {
+    public String name;
+    public User(String name) {
+        this.name = name;
+    }
+}
+</pre>
+<br/>
+测试代码<br/><br/>
+<pre class="lang:default decode:true ">import org.mapdb.DB;
+import org.mapdb.DBMaker;
+import org.mapdb.HTreeMap;<br/><br/>
+public class Main {<br/><br/>
+    public static void main(String[] args) {
+        DB db = DBMaker.memoryDB().make();
+        DB.HashMapMaker&lt;?, ?&gt; mapMaker = db.hashMap("map");
+        HTreeMap&lt;String, User&gt; map = (HTreeMap&lt;String, User&gt;) mapMaker.createOrOpen();<br/><br/>
+        map.put("u", new User("Scott"));<br/><br/>
+        System.out.println(map.get("u").name);
+    }
+}</pre>
+<br/>
+执行输出为<br/><br/>
+<blockquote>
+Scott
+</blockquote>
+<br/>
+何以见得数据是存到了堆外的呢？我们可以用 JVisualVM 来查看，或是不让  <code>User</code> 实现 <code>Serializable</code> 接口，那么上面的代码就会报错<br/><br/>
+<blockquote>
+java.io.NotSerializableException: blog.yanbin.User
+</blockquote>
+<br/>
+间接的说明 User 需要经过序列化，而在堆内存储序列化是不必要的。<br/><br/>
+如果替换上面的<br/><br/>
+<blockquote>
+DB db = DBMaker.memoryDB().make();
+</blockquote>
+<br/>
+为<br/><br/>
+<blockquote>
+DB db = DBMaker.heapDB().make();
+</blockquote>
+<br/>
+那么 User 就无需实现 <code>Serializable</code> 接口了，因为 heapDB() 表示用堆内存储，除这两个以后，MapDB 还能更多的存储选择，DBMaker 有以下方法实现<br/><br/>
+<pre class="lang:default decode:true">fileDB(file: java.io.File);
+fileDB(file: kotlin.String);
+heapDB();
+heapShardedHashMap(concurrency: kotlin.Int);
+heapShardedHashSet(concurrency: kotlin.Int);
+memoryDB();
+memoryDirectDB();
+memoryShardedHashMap(concurrency: kotlin.Int);
+memoryShardedHashSet(concurrency: kotlin.Int);
+tempFileDB();
+volumeDB(volume: org.mapdb.volume.Volume, volumeExists: kotlin.Boolean); </pre>
+<br/>
+而通过调用 DB.HashMapMaker 的方法可以定制失效策略，缓存对象的数目及存储容量的控制，还有键和值的序列化实现，MapDB 内置了很多的序列化实现，默认为使用 JDK 的 Serializable(SerializerJava), 不像 OHC 要完全自己实现所有的序列化。<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/08/mapdb-mapmaker.png"><img class="aligncenter wp-image-13700" src="https://yanbin.blog/wp-content/uploads/2024/08/mapdb-mapmaker-800x652.png" alt="" width="827" height="674" /></a> <br/><br/>
+<h3>附使用 ByteBuffer 的例子</h3><br/><br/>
+User 类<br/><br/>
+<pre class="lang:default decode:true">package blog.yanbin;<br/><br/>
+import java.io.Serializable;<br/><br/>
+public class User implements Serializable {
+    public String name;
+    public User(String name) {
+        this.name = name;
+    }
+}
+</pre>
+<br/>
+Main<br/><br/>
+<pre class="lang:default decode:true ">package blog.yanbin;<br/><br/>
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;<br/><br/>
+public class Main {
+    public static void main(String[] args) throws Exception {
+        ByteBuffer byteBuffer = ByteBuffer.allocateDirect(1024*1024).order(ByteOrder.nativeOrder());
+        saveCache(byteBuffer);<br/><br/>
+        System.gc();
+        System.out.println("out saveCache");
+        System.in.read();<br/><br/>
+        readCache(byteBuffer);
+    }<br/><br/>
+    static void saveCache(ByteBuffer buffer) throws IOException {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        ObjectOutputStream oos = new ObjectOutputStream(baos);
+        oos.writeObject(new User("Scott"));<br/><br/>
+        System.out.println("in saveCache");
+        System.in.read();<br/><br/>
+        buffer.position(0);
+        buffer.putInt(123);
+        buffer.put(baos.toByteArray());
+    }<br/><br/>
+    static void readCache(ByteBuffer buffer) throws Exception {
+        buffer.position(0);
+        int i = buffer.getInt();
+        System.out.println("integer: " + i);
+        byte[] bytes = new byte[buffer.remaining()];
+        buffer.get(bytes);
+        ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
+        ObjectInputStream ois = new ObjectInputStream(bais);
+        User user = (User)ois.readObject();
+        System.out.println("user name: " + user.name);
+    }
+}</pre>
+<br/>
+v如果停留在 <code>in saveCache</code>，用 JVisualVM 可以看到内存中的 blog.yanbin.User 实例，而执行到了 <code>out saveCache</code> 后在 JVM 中的 blog.yanbin.User 实例不见了，最后输出是<br/><br/>
+<blockquote>
+integer: 123<br />
+user name: Scott
+</blockquote>
+<br/>
+如果 blog.yanbin.User 类没有实现 Serializable 接口就会出错<br/><br/>
+<blockquote>
+java.io.NotSerializableException: blog.yanbin.User
+</blockquote>
+<br/>
+如果是换成往一个 Map 中存入一个 User 对象，只要 Map 的实例还在，其中的 user 对象也就在堆内存中。<br/><br/>
+<h3>总结</h3><br/><br/>
+<ol>
+    <li>当在缓存对象多，占用空间大的情况(如 GB 级)，GC 会影响性能时，可考虑用堆外缓存。毕竟堆内外间需频繁的进行序列化与反序列化，但堆外缓存比进程外缓存如(Redis) 效率又要高一些。</li>
+    <li>像 ByteBuffer 在堆外分配内存时需预先设定内存大小，使用 OHC 和 MapDB 要简单些</li>
+    <li>当堆外内存(进程内存)越过系统能分配的空间，进程崩溃，但 JVM 将一无所知</li>
+    <li>使用 OHC 需自己实现所有的键值的序列化/反序列化，而 MapDB 内置了许多的相应实现</li>
+    <li>几个层次的缓存：堆内(on-heap), 堆外(off-heap), 本地磁盘，进程外。进程外可能是本地的进程或远端的进程，本地磁盘与远端缓存性能差异因磁盘介质，网络介质而不同，不能一概认为本地磁盘就比存取远端数据要快。</li>
+</ol>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://blog.csdn.net/w727655308/article/details/124142930">堆外缓存OHCache使用总结</a></li>
+    <li><a href="https://www.cnblogs.com/thisiswhy/p/17095006.html">https://www.cnblogs.com/thisiswhy/p/17095006.html</a></li>
+    <li><a href="https://blog.csdn.net/2401_83384536/article/details/136564877">高性能Java架构之堆外缓存与磁盘缓存解决方案：MapDB</a></li>
+    <li><a href="https://www.cnblogs.com/shuimutong/p/11438216.html">MapDB使用入门</a></li>
+</ol>

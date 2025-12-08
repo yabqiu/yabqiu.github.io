@@ -1,0 +1,57 @@
+---
+title: JUnit 4 如何正确测试异常
+url: /junit-4-how-to-test-exceptions/
+date: 2012-06-07T13:07:04-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - JUnit
+  - test
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4619 
+wpStatus: publish
+views: 24348
+lastmod: 2015-08-20T18:13:11-05:00
+---
+
+<p>本篇讲述如何在 JUnit 4 下正确测试异常，我会从 try..catch 的方式谈起，然后说到 @Test(expected=Exception.class), 最后论及 @Rules public ExpectedException 的实现方式，最终基本可确定用 @Rules 是最方便的。</p><p>我们在用 JUnit 测试方法异常的时候，最容易想到的办法就是用 try...catch 去捕获异常，需要断言以下几个条件：</p><p>1. 确实抛出的异常 <br />2. 抛出异常的 Class 类型 <br />3. 抛出异常的具体类型，一般检查异常的 message 属性中包含的字符串的断定</p><p>所以常用的代码你可能会这么写：</p><pre class="brush:java">@Test<br/>
+public void passwordLengthLessThan6LettersThrowsException(){<br/>
+    try{<br/>
+        Password.validate("123");<br/>
+        fail("No exception thrown.");<br/>
+    }catch(Exception ex){<br/>
+        assertTrue(ex instanceof InvalidPasswordException);<br/>
+        assertTrue(ex.getMessage().contains("contains at least 6"));<br/>
+    }<br/>
+}</pre><p>这里被测试的方法是 Password.validate() 方法是否抛出了相应的异常，注意这里别漏 try 中的</p><p><span style="color: #800000;">fail("No Exception thrown.")</span><!--more--> 代码行，不然如果被测试的方法如果没有抛出异常的话，这个用例是通过的，而你预期的是要抛出异常的。</p><p>上面的土办法对于哪个 JUnit 版本是是适合，可是我们早已步入了 JUnit 4 的时候，大可不必如此这般的去测试方法异常。虽然这样也能测定出是否执行出预期的异常来，但它仍有弊端，接下来会一对比就知道了，try...catch 的方法，JUnit 无法为你提示出详细的断言失败原因。</p><p>那么来看看自从 JUnit 4 后可以怎么去测试异常呢？用 @Test(execpted=Exception.class) 注解就行，参考如下代码：</p><pre class="brush:java">@Test(expected = NullPointerException.class)<br/>
+public void passwordIsNullThrowsException() throws InvalidPasswordException {<br/>
+    Password.validate(null);<br/>
+}</pre><p>如果被测试的方法有抛出 NullPointerException 类型便是断言成功，对了 @Test(expected = NullPointerException.class) 只能判断出异常的类型，并无相应的注解能断言出异常的更具体的信息，即无法判定抛出异常的  message 属性。</p><p>那么，有时候我们会在一个方法中多次抛出一种类型的异常，但原因不同，即异常的 message 信息不同，比如出现 InvalidPasswordException 时会有以下两种异常：</p><p><span style="color: #800000;">new InvalidPasswordException("Password must contains at least 6 letters.")</span> <span style="color: #800000;"> <br />new InvalidPasswordException("Password length less than 15 letters")</span></p><p>这就要有办法去断言异常的 message 了，针对于此，自 JUnit 4.7 之后又给了我们更完美的选择，就是下面的代码：</p><pre class="brush:java">@Rule<br/>
+public ExpectedException expectedEx = ExpectedException.none();<br/>
+<br/>
+@Test<br/>
+public void passwordIsEmptyThrowsException() throws InvalidPasswordException {<br/>
+    expectedEx.expect(InvalidPasswordException.class);<br/>
+    expectedEx.expectMessage("required");<br/>
+    Password.validate("");<br/>
+}</pre><p>上面代码需重点关注几个：</p><p>1. @Rule 注解的  ExpectedException 变量声明，它必须为  public <br />2. @Test 处，不能写成 @Test(expected=InvalidPasswordException.class)，否则不能正确测试，也就是             <br />          @Test(expected=InvalidPasswordException.class) 和测试方法中的 expectedEx.expectXxx() 方法是不能同时并存的 <br />3. expectedEx.expectMessage() 中的参数是 Matcher 或  subString，就是说可用正则表达式判定，或判断是否包含某个子字符串 <br />4. 再就是有一点很重，把被测试方法写在 expectedEx.expectXxx() 方法后面，不然也不能正确测试的异常 <br />5. 最后一个是，只要测试方法直接抛出被测试方法的异常即可，并不影响你所关心的异常</p><p>前面说到用 try...catch 的办法也能正确测试到异常，@Test(expected=...) 或 @Rule 与 try...catch 的方法对比有什么好处呢，显然用 JUnit 4 推荐的方法简洁明了。再来看测试失败时 JUnit 会为你提示什么呢？</p><p>try...catch 测试异常失败时，得到的提示: 无异常时：</p><p><span style="color: #800000;">java.lang.AssertionError: No exception thrown.<br /></span> <span style="color: #800000;">    at org.junit.Assert.fail(Assert.java:91)</span> <br /><span style="color: #800000;">    at cc.unmi.PasswordTest.passwordLengthLessThan6LettersThrowsException(PasswordTest.java:20)</span></p><p>异常类型不对或异常的 message 不对时：</p><p><span style="color: #800000;">java.lang.AssertionError:<br /> </span> <span style="color: #800000;">    at org.junit.Assert.fail(Assert.java:91)<br /></span> <span style="color: #800000;">    at org.junit.Assert.assertTrue(Assert.java:43)<br /></span> <span style="color: #800000;">    at org.junit.Assert.assertTrue(Assert.java:54)<br /></span> <span style="color: #800000;">    at cc.unmi.PasswordTest.passwordLengthLessThan6LettersThrowsException(PasswordTest.java:22)</span></p><p>上面能提供给我们的定位错误的帮助不是特别大</p><p>再看 @Test(expected=InvalidPasswordException.class) 时测试失败时的提示：</p><p><span style="color: #800000;">java.lang.AssertionError: Expected exception: cc.unmi.InvalidPasswordException<br />    at org.junit.internal.runners.statements.ExpectException.evaluate(ExpectException.java:32)<br /></span> <span style="color: #800000;">    at org.junit.rules.ExpectedException$ExpectedExceptionStatement.evaluate(ExpectedException.java:110)</span></p><p>用 @Rules ExpectedException方式来测试异常，失败时的提示：</p><p><span style="color: #800000;">java.lang.AssertionError: </span> <span style="color: #800000;">Expected: (exception with message a string containing "YES. required" and an instance of java.lang.NullPointerException)</span> <span style="color: #800000;">     got: &lt;cc.unmi.InvalidPasswordException: Password is required.&gt;<br /></span> <span style="color: #800000;">    at org.junit.Assert.assertThat(Assert.java:778)<br /></span> <span style="color: #800000;">    at org.junit.Assert.assertThat(Assert.java:736)<br /></span> <span style="color: #800000;">    at org.junit.rules.ExpectedException$ExpectedExceptionStatement.evaluate(ExpectedException.java:114)</span></p><p>特别是 @Rules  ExpectedException 方法时为何测试失败提示的清清楚楚。期望什么异常，异常 message 中含何字符串，实际上确得到什么类型的异常，异常中 message 是什么。有了这，你一看到就知道怎么去修补你的程序。</p><p>所以到了这里，我们真的没理由不用 @Test(expected=...) 或  @Rule ExpectedException 的写法了。</p><p>末了，还是补上一段代码，开篇的 try...catch 测试异常的代码是说明别忽略了 catch 块中的 fail() 代码行, 如果没有 fail() 那么就可以写成下面那样子的：</p><pre class="brush:java">@Test<br/>
+public void passwordLengthMoreThan15LettersThrowsException(){<br/>
+<br/>
+    Throwable t = null;<br/>
+    try{<br/>
+        Password.validate("1234567890123456");<br/>
+    }catch(Exception ex){<br/>
+        t = ex;<br/>
+    }<br/>
+        <br/>
+    assertNotNull(t);<br/>
+    assertTrue(t instanceof InvalidPasswordException);<br/>
+    assertTrue(t.getMessage().contains("less than 15"));<br/>
+}</pre><p>不过，总之呢，有了 JUnit 4 呢，不提 try...catch 的实现方式也罢。</p><p>最后附上两个我为这篇博文写的测试代码 <a title="Password.java" href="http://unmi.cc/wp-content/downloads/Password.java">Password.java</a> 和 <a title="PasswordTest.java" href="http://unmi.cc/wp-content/downloads/PasswordTest.java">PasswordTest.java</a>，点击这两文件名即可下载。这里面有种写法的测试用例，文中的代码也这里面也有，可供参考。</p><p>参考：1. <a title="JUnit 4.7 rules" href="http://www.infoq.com/cn/news/2009/07/junit-4.7-rules" target="_blank">JUnit 4.7的新特性：Rule</a>  <br />            2. <a title="JUnit ExpectedException" href="http://kentbeck.github.com/junit/javadoc/latest/org/junit/rules/ExpectedException.html" target="_blank">ExpectedException (JUnit API)</a> <br />            3. <a title="JUnit 4" href="http://www.ibm.com/developerworks/cn/java/j-junit4.html" target="_blank">JUnit 4 抢先看<br /></a>             4. <a title="Custom ExpectedException Rules" href="http://alexruiz.developerblogs.com/?p=1530" target="_blank">JUnit: Custom ExpectedException rules…rule!<br /></a>             5. <a href="http://www.agilefinance.co.uk/2010/10/07/expected-exception-testing-junit/" target="_blank">Expected Exception Testing With JUnit</a></p>

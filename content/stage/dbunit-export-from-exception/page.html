@@ -1,0 +1,62 @@
+---
+title: 用 DbUnit 执行 export 导出数据时报 MySQLSyntaxErrorException
+url: /dbunit-export-from-exception/
+date: 2010-10-25T11:21:46-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Maven
+  - dbunit
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2818 
+wpStatus: publish
+views: 884
+lastmod: 2010-10-25T11:28:16-05:00
+---
+
+我是借助于 dbunit-maven-plugin 来使用 DbUnit 的，数据库是 MySql，在使用 <span style="color: #800000;">mvn dbunit:export</span> 指令时，总报错：<br/>
+<br/>
+<span style="color: #ff0000;">Embedded error: com.mysql.jdbc.exceptions.jdbc4.MySQLSyntaxErrorException: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'desc from unmi_test_table order by Id' at line 1</span><br/>
+<br/>
+若是加上 -e 或 -X 参数，如 <span style="color: #800000;">mvn dbunit:export -e</span> 时可以看到更详细的异常信息：<br/>
+<br/>
+<span style="color: #ff0000;">Caused by: org.apache.maven.plugin.MojoExecutionException: Error executing export<!--more--><br/>
+at org.codehaus.mojo.dbunit.ExportMojo.execute(ExportMojo.java:136)<br/>
+at org.apache.maven.plugin.DefaultPluginManager.executeMojo(DefaultPluginManager.java:490)<br/>
+at org.apache.maven.lifecycle.DefaultLifecycleExecutor.executeGoals(DefaultLifecycleExecutor.java:694)<br/>
+... 17 more<br/>
+Caused by: org.dbunit.dataset.DataSetException: com.mysql.jdbc.exceptions.jdbc4.MySQLSyntaxErrorException: You have an e<br/>
+tax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'desc from unmi_tes<br/>
+at line 1<br/>
+at org.dbunit.database.DatabaseDataSet.getTable(DatabaseDataSet.java:316)</span><br/>
+<br/>
+为了这个问题，见到这样的错误提示，第一反应就是怎么会生成 <span style="color: #ff0000;">desc from unmi_test_table</span> 这样的语句，按理它在取字段时应该就是用的 desc unmi_test_table 才对，为何中间插个 from 进来，几乎要去 step into 看在何处生成的这个 SQL，而且还以 order by Id 结尾，更是不可思议。<br/>
+<br/>
+曾经反复的组合 dbunit-maven-plugin、DbUnit 和 MySql 驱动的版本，都故障依然。可是回到家里试了下 DbUnit 来 export 却是很顺利的，到公司同样的 pom.xml 确通不过。反复的思考，意识到该表中有个段名为 desc，那可是个 sql 指令，且在用 MySql Wordbench 建表时也有警告，但我还是不顾一切的赶鸭子上了轿。<br/>
+<br/>
+于是把 desc 字段改成 description 后，<span style="color: #800000;">mvn dbunit:export</span> 成功。<br/>
+<br/>
+同样的，MySql 的其他关键字也让它们强作字段名，在 export 也会报错，像 'key from unmi_test_table order by Id' 这样的错了。return 等其他关键字也不行，其实这点 Oracle 可没有这么温和，它就是禁止使用 desc 作为字段名。<br/>
+<br/>
+另对于关键字，如 desc、key、return 等作了关键字时，查询语句要写成：<br/>
+<br/>
+<span style="color: #800000;">select `desc` from .............. /* 用斜撇号引起来 */</span><br/>
+<br/>
+还有种情况，今天晚上意外而有幸的遇到，即使在表 unmi_test_table 中使用了 desc 作为字段名，如果你在 pom.xml 的 dbunit-maven-plugin 插件配置中指定了表明的话，像：<br/>
+<br/>
+<span style="color: #800000;">&lt;tables&gt;<br/>
+&nbsp;&nbsp;&nbsp;&nbsp;&lt;table&gt;<br/>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&lt;name&gt;unmi_test_table&lt;/name&gt;<br/>
+&nbsp;&nbsp;&nbsp;&nbsp;&lt;/table&gt;<br/>
+&lt;/tables&gt;</span><br/>
+<br/>
+那么执行 <span style="color: #800000;">mvn dbunit:export</span> 时也能平平安安。<br/>
+<br/>
+关于 dbunit-maven-plugin 详细的用法，请参考我前一篇日志：<a href="http://unmi.cc/dbunit-maven-test-data" target="_blank">用 dbunit-maven-plugin 来管理你的测试数据</a>

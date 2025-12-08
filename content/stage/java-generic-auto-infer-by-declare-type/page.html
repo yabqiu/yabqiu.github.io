@@ -1,0 +1,67 @@
+---
+title: Java 泛型 -- 依据声明的变量类型自动推断
+url: /java-generic-auto-infer-by-declare-type/
+date: 2015-01-05T18:25:30-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - 泛型
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6721 
+wpStatus: publish
+views: 622
+lastmod: 2021-09-03T17:58:30-05:00
+---
+
+Java 泛型在调用方法操作时应用具体参数还是很好理解的，比如</p>
+<br/>
+<span style="color: #800000;">Map&lt;String, Integer&gt; map = new HashMap&lt;&gt;(); </span> //钻石操作符是 JDK 1.7 引入的<br/><br/>
+后续的 put 操作调用的具体方法就是<br/><br/>
+<span style="color: #800000;">Integer put(String key, Integer value)</span><br/><br/>
+因为  put 方法的原型是<br/><br/>
+<span style="color: #800000;">V put(K key, V value)</span><br/><br/>
+上面的代码我们是看到了 &lt;&gt;，所以知道是泛型调用。有时候并不需要 &lt;&gt;，但实际上也是进行的泛型调用，那就是 Java  可以依据变量声明类型来作特化调用 -- 应用具体参数类型。<br/><br/>
+例如：<br/><br/>
+<span style="color: #800000;">List&lt;String&gt; list = Collections.emptyList();  //虽不见 &lt;&gt;, 但同样是泛型调用，类型为 String</span><!--more--><br/><br/>
+它调用的方法的实现代码是<br/><br/>
+<span style="color: #800000;">public static final &lt;T&gt; List&lt;T&gt; emptyList() {</span><br />
+<span style="color: #800000;">        return (List&lt;T&gt;) EMPTY_LIST;</span><br />
+<span style="color: #800000;">}</span><br/><br/>
+Collections.emptyList() 调用时根据声明的 List&lt;String&gt; 自动具体化类型为 String 来调用。<br/><br/>
+下面以一张图来呈现不用调用方式时推断出的类型<br/><br/>
+<img class="aligncenter size-full wp-image-6723" src="/wp-content/uploads/2015/01/java_generic_auto_infer.png" alt="java_generic_auto_infer" width="600" height="460" /><br/><br/>
+依各行代码行简要说明<br/><br/>
+行 5:    泛型方法中，什么也不知道，只是 T<br />
+行 9:    因为方法  foo() 声明的类型是 String, 所以 return abc() 时应用的具体类型就是 String<br />
+行 13:  声明的类型  ss 是 Integer, 因而应用 Integer  具体类型<br />
+行 16:  没有类型信息所以当作 Object 来处理<br />
+行 19:  String 类型是为 abc() 结果值的方法调用的返回值定义的，所以只认为 abc() 得到的是一个 Object<br/><br/>
+<hr /><br/><br/>
+如果不能用声明的类型来指示，还可以通过方法参数来传达类型信息，如<br/><br/>
+<pre class="lang:default decode:true ">public class Test {<br/><br/>
+  static &lt;T&gt; T abc(Class&lt;T&gt; type) {
+    return (T) "abc";
+  }
+  
+  static &lt;T&gt; T abc(T t) {
+    return (T) "abc";
+  }<br/><br/>
+  public static void main(String[] args) {
+    abc(String.class).toCharArray();
+    abc("123").toLowerCase();
+  }
+}</pre>
+<br/>
+abc(...) 返回值就直接知道是相应的具体类型了。<br/><br/>
+小结：<br/><br/>
+<strong>三种方式告诉泛型方法具体化的类型</strong><br/><br/>
+1. 显式的写在 &lt;&gt; 号，如 new ArrayList&lt;String&gt; 或 Test.&lt;String&gt;foo()<br />
+2. 声明类型，如 String s = Test.foo()<br />
+3. 方法参数, 如 Test.foo(String.class) 或 Test.foo("abc")

@@ -1,0 +1,145 @@
+---
+title: Hibernate从2升级到3不支持Oracle8外连接(+)的解决办法
+url: /hibernate-2-to-3-support-plus/
+date: 2007-04-07T17:47:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/12/hibernate_log.png"
+categories:
+  - Database
+  - Hibernate
+tags: 
+  - Oracle
+  - Hibernate
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 529 
+wpStatus: publish
+views: 310
+lastmod: 2021-09-03T10:23:51-05:00
+---
+
+最近接手了一个要维护的项目，是用Hibernate2+Oralce8写成的，因为看到Hibernate3页出来这么久了，而且也感觉Hibernate3有它的许多新的特性，如批量删除和更新，新的HQL语法解析器AST。</p>
+<br/>
+升级过程大致按照孙卫琴的那篇文章 如何把Hibernate2.1升级到Hibernate3.0？来做，该替换的替换完，该设置的设置完，程序一跑，当程序执行到向下面这种查询的时候(Oracle所特有的外连接查询)，报错。<br/><br/>
+语句为：（描述为类似语句，把项目中的实际表名隐去了）<!--more--><br/><br/>
+session.createQuery(<span class="s3"><strong><span style="color: #008000;">"select t1.c1,t2.c1 from Table1 t1,Table2 t2 where t1.c1=t2.c1(+)"</span></strong></span><span class="s1">).list(); </span><br/><br/>
+出错信息为：<br />
+<span style="color: #ff0000;">org.hibernate.hql.ast.QuerySyntaxException: unexpected token: ) near line 1, column 106 [select t1.c1,t2.c1 from Table1 t1,Table2 t2 where t1.c1=t2.c1(+)]<br />
+ at org.hibernate.hql.ast.QuerySyntaxException.convert(QuerySyntaxException.java:31)<br />
+ at org.hibernate.hql.ast.QuerySyntaxException.convert(QuerySyntaxException.java:24)<br />
+ at org.hibernate.hql.ast.ErrorCounter.throwQueryException(ErrorCounter.java:59)<br />
+ at org.hibernate.hql.ast.QueryTranslatorImpl.parse(QueryTranslatorImpl.java:258)<br />
+ at org.hibernate.hql.ast.QueryTranslatorImpl.doCompile(QueryTranslatorImpl.java:157)<br />
+ at org.hibernate.hql.ast.QueryTranslatorImpl.compile(QueryTranslatorImpl.java:111)<br />
+ at org.hibernate.engine.query.HQLQueryPlan.&lt;init&gt;(HQLQueryPlan.java:77)<br />
+ at org.hibernate.engine.query.HQLQueryPlan.&lt;init&gt;(HQLQueryPlan.java:56)<br />
+ at org.hibernate.engine.query.QueryPlanCache.getHQLQueryPlan(QueryPlanCache.java:72)<br />
+ at org.hibernate.impl.AbstractSessionImpl.getHQLQueryPlan(AbstractSessionImpl.java:133)<br />
+ at org.hibernate.impl.AbstractSessionImpl.createQuery(AbstractSessionImpl.java:112)<br />
+ at org.hibernate.impl.SessionImpl.createQuery(SessionImpl.java:1623)</span><br/><br/>
+再回头看看孙卫琴的那篇升级注意事项中 1.3 查询语句的变化 提到Hibernate3.0 采用新的基于ANTLR的HQL/SQL查询翻译器ASTQueryTranslator，它已经不支持像Oracle8i和Sybase11那样的 THETA-STYLE 连接查询方言。<br/><br/>
+解决这一问题的办法有两种：<br />
+（1）改为使用支持ANSI-STYLE连接查询的方言，像 LEFT OUTER JOIN .. ON ..的写法<br />
+（2）也可改用 Hibernate2的查询翻译器，可在 hibernate.cfg.xml 中进行配置。<br/><br/>
+因第一种方法，需要在映射文件中配置PO 间的X 对X的关联关系才能用，如过哪位朋友在不配置 PO 间关联关系时也能用LEFT OUTER JOIN .. ON ..的写法连接查询，能告诉我怎么做的号吗？让咱也学一招，先谢了！<br/><br/>
+所以想想还是在 hibernate.cfg.xml 中配置<br/><br/>
+<pre class="lang:default decode:true">&lt;property name= "query.factory_class"&gt;
+   org.hibernate.hql.classic.ClassicQueryTranslatorFactory
+&lt;/property&gt;</pre>
+<br/>
+注：hibernate3默认的HQL语法翻译器的配置为：<br/><br/>
+<pre class="lang:default decode:true">&lt;property name= "query.factory_class"&gt;
+   org.hibernate.hql.classic.ASTQueryTranslatorFactory
+&lt;/property&gt;</pre>
+<br/>
+使用传统的hibernat2所用的HQL语法翻译器。然后程序再跑一跑，刚刚那个（+）的地方是没有错了，可是新麻烦有冒起来了，程序执行到<br/><br/>
+  session.createQuery(<span class="s3"><strong><span style="color: #008000;">"delete User u where u.name='Unmi'"</span></strong></span><span class="s1">).executeUpdate();</span><br/><br/>
+有报错了：<br />
+<span style="color: #ff0000;">org.hibernate.QueryException: query must begin with SELECT or FROM: delete [delete com.unmi.User where u.name='Unmi']</span><br/><br/>
+原来旧的HQL语法解析器不支持 delete User 的写法，hibernate2在删除持久化对象时必须写成<br/><br/>
+session.delete(<span class="s3"><strong><span style="color: #008000;">"delete User u where u.name='Unmi'"</span></strong></span><span class="s1">);</span><br/><br/>
+然而新的 org.hibernate.Session 的接口方法已去除了 Session.delete(String hql)方法，看来这条路也是受阻了。正是两头受难，无奈之时暂时放弃了升级的念头，把该还原的地方都恢复旧模样了。<br/><br/>
+过了好一段时间，也就是个把月吧……<br/><br/>
+心里总也觉不甘心，觉得事情总有解决的办法，于是采用了终极办法：从原代码下手，进行单步的跟踪，看看hibernate3何时进行HQL到SQL的转换，何时取用配置的语法翻译器。<br/><br/>
+下面要解决的一个课题就是：<br/><br/>
+如何让Hibernate3既能使用新的Delete和Update语法，又能使用 Oracle Theta-Style 的 t1.c1=t2.c1(+)外连接写法<br/><br/>
+其中的语法翻译器如何把传入的一条HQL语句拆解进行分析这里就不详叙，不过最好还是要明白一点：<br />
+Classic语法翻译器会把传入的t1.c1=t2.c1(+)中的(+)作为一个整体，不拆开来，而AST语法分析器却会把其中的（+）依括号拆成 ”(” , ”+” , ”)”三部分。<br/><br/>
+我们首先来看看HQL语法翻译工厂接口 QueryTranslatorFatory 有两个接口方法：<br/><br/>
+<pre class="brush:java">public QueryTranslator createQueryTranslator(String queryIdentifier, String queryString,
+        Map filters, SessionFactoryImplementor factory);<br/><br/>
+public QueryTranslator createFilterTranslator(String queryIdentifier, String queryString,
+        Map filters, SessionFactoryImplementor factory);</pre>
+<br/>
+调用以上两个方法只在类 HQLQueryPlan的构造函数中（五个参数的那个）<br/><br/>
+<pre class="brush:java">protected HQLQueryPlan(String hql, String collectionRole, boolean shallow,
+        Map enabledFilters, SessionFactoryImplementor factory)
+{
+ ......
+}</pre>
+<br/>
+<a name="l21"></a><br/><br/>
+这个构造函数接收你写的HQL语句还有一个 SessionFactoryImplementor (extends SessionFactory),这个SessionFactory持有hibernate.cfg.xml的配置项HQL语法翻译器。<br />
+读这个构造函数的代码，我们发现有两段代码<br/><br/>
+<pre class="brush:java">translators[i] = factory.getSettings().getQueryTranslatorFactory()
+                .createQueryTranslator(hql,concreteQueryStrings[i],enabledFilters, factory );<br/><br/>
+translators[i] = factory.getSettings().getQueryTranslatorFactory()
+                .createFilterTranslator(hql, concreteQueryStrings[i], enabledFilters, factory );</pre>
+<br/>
+它们的职能是获取SessionFactory (hibernate.cfg.xml)所配置的HQL语法分析器,这也就是我们的切入点,我们所希望的事情是:<br />
+当构造HQLQueryPlan时,发现传给的hql是一个Oracle 那样的THETA-STYLE 连接查询语句（即像有(+)那样的语句）,我们就绕开在 hibernate.cfg.xml 所配置的AST HQL语法翻译器，而是采用能够理解这种语法的传统的语法翻译器。<br />
+因此我们只要把 HQLQueryPlan类的这个构造函数中的<br/><br/>
+<span class="s2">if (collectionRole == null) {...................................}<strong><br />
+</strong></span><br/><br/>
+改为如下：<br/><br/>
+<pre class="brush:java">if (collectionRole == null) {
+    // 如果hql语句中使用Oralce式的外连接方式就用传统的语法翻译器
+    if (hql.replaceAll(" \\ s*", "").indexOf("(+)") != -1) {
+        translators[i] = new ClassicQueryTranslatorFactory().createQueryTranslator(hql,
+                concreteQueryStrings[i], enabledFilters, factory);
+    } else {
+        translators[i] = factory.getSettings().getQueryTranslatorFactory()
+                .createQueryTranslator(hql, concreteQueryStrings[i], enabledFilters,
+                        factory);
+    }<br/><br/>
+    translators[i].compile(factory.getSettings().getQuerySubstitutions(), shallow);
+} else {
+    // 如果hql语句中使用Oralce式的外连接方式就用传统的语法翻译器
+    if (hql.replaceAll(" \\ s*", "").indexOf("(+)") != -1) {
+        translators[i] = new ClassicQueryTranslatorFactory().createFilterTranslator(hql,
+                concreteQueryStrings[i], enabledFilters, factory);
+    } else {
+        translators[i] = factory.getSettings().getQueryTranslatorFactory()
+                .createFilterTranslator(hql, concreteQueryStrings[i], enabledFilters,
+                        factory);
+    }<br/><br/>
+    ((FilterTranslator) translators[i]).compile(collectionRole, factory.getSettings()
+            .getQuerySubstitutions(), shallow);
+}</pre>
+<br/>
+改完之后，把编译后的HQLQueryPlan.class覆盖到hibernate3.jar包中相应的目录中即可，或者把这个类放在classes下相应的目录中，在WEB应用程序中 WEB-INF/classes中的类是优先于jar包中的类先加载。<br />
+以上做法两种有些矛盾的问题也就得到解决了，org.hibernate.Session既可以执行Hibernate3 引入的 delete/update语句，还能够在 Oracle/Sybase中用(+)外连接方式而不需要配置X对X的连接关系。<br/><br/>
+下面再介绍一种折中的解决办法，不知大家注意到没有，在Hibernate3中的<br/><br/>
+org.hibernate.SessionFactory的openSession方法返回的是一个<br />
+org.hibernate.classic.Session对象，而org.hibernate.classic.Session是继承自org.hibernate.Session的。<br/><br/>
+<a name="l3"></a>    <span class="s0"><strong><span style="color: #000080;">public </span></strong></span><span class="s1">org.hibernate.classic.Session openSession(Connection connection);<br />
+</span><br />
+<a name="l4"></a>    <span class="s0"><strong><span style="color: #000080;">public interface </span></strong></span><span class="s1">Session </span><span class="s0"><strong><span style="color: #000080;">extends </span></strong></span><span class="s1">org.hibernate.Session </span><br/><br/>
+而通常我们顺应新潮流，是用org.hibernate.Session去引用SessionFactory的方法openSession()的返回值的，于是我们想用 session.delete(sql) 方法时，就把返回的Session实例转型为 org.hibernate.classic.Session即可。<br/><br/>
+((org.hibernate.classic.Session)session).delete(<span class="s2"><strong><span style="color: #008000;">"from User u where u.name='Unmi'"</span></strong></span><span class="s1">);<br />
+</span><br/><br/>
+如果你也想用原始Session的其他已被摈弃的方法，亦可如此这般做。<br/><br/>
+当然了，在另一方面要让Hibernate 能支持 Oracle/Sybase中用(+)外连接方式, 您还是要使<br/><br/>
+用传统的语法分析器，他将不能理解新的delete/update语句，很遗憾。<br />
+所以为了顺应新的潮流的发展，应使用第一种方法。要知道hibernate3中的delete/update语句可比2中的session.delete(hql)方法效率高，hibernate3中直接向数据库发一个delete语句，而在hibernate2中的delete(hql)方法是需要首先加载对象在删除，确有些多次一举，不过又是也有它的道理，update也类此。<br/><br/>
+在补充一个：hibernate会对 hql 对应的 HQLQueryPlan 进行缓冲的，在类 QueryPlanCache 中处理<br/><br/>
+<pre class="brush:java ">HQLQueryPlanKey key = new HQLQueryPlanKey( queryString, shallow, enabledFilters );
+HQLQueryPlan plan = ( HQLQueryPlan ) planCache.get ( key ); <br/><br/>
+if ( plan == null ){ ..................}</pre>
+<br/>
+依据queryString（hql）生成key值.

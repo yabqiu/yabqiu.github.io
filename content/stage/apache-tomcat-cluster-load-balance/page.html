@@ -1,0 +1,197 @@
+---
+title: 结合Apache和Tomcat实现集群和负载均衡
+url: /apache-tomcat-cluster-load-balance/
+date: 2007-09-18T10:33:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/09/tomcat-logo.png"
+categories:
+  - Mid-Ware
+tags: 
+  - Apache
+  - Tomcat
+  - Cluster
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 488 
+wpStatus: publish
+views: 240
+lastmod: 2021-05-02T22:36:58-05:00
+---
+
+<div><span id="diary_group_textDIV" style="line-height: 150%;"><br />
+<span id="diary_group_textDIV" style="line-height: 150%;">本文基本参考自 <a href="http://hi.baidu.com/luodaijun/blog/item/5bbe4cfb5ffef864034f56a1.html">轻松实现Apache,Tomcat集群和负载均衡</a>,经由实操经历记录而成，碰到些出入，以及个别地方依据个人的习惯，所以在一定程度上未能保持原文的完整性，还望原著者海涵。 </span></span></div>
+<br/>
+<span id="diary_group_textDIV" style="line-height: 150%;"><span id="diary_group_textDIV" style="line-height: 150%;">因原文中有较多的贴图，如若各位读者一时不想亲自动手而直想看到配置效果，可查看原文。</span></span></p>
+<br/>
+&nbsp;<br/><br/>
+<strong><span style="color: #ff0000;">一：软件环境<br />
+</span></strong>   1. Apache: apache 2.0.55 (由<a href="http://httpd.apache.org/">http://httpd.apache.org/</a>进入下载)(<a href="http://archive.apache.org/dist/httpd/binaries/win32/apache_2.0.55-win32-x86-no_ssl.msi">点击下载apache 2.0.55</a>)<br />
+   2. Tomcat: Tomcat 5.5.25 (由<a href="http://tomcat.apache.org/">http://tomcat.apache.org/</a>进入下载)(<a href="http://apache.mirror.phpchina.com/tomcat/tomcat-5/v5.5.25/bin/apache-tomcat-5.5.25.zip">点击下载Tomcat 5.5.25 zip版</a>)<br />
+   3. mod_jk: 在页面 <a href="http://tomcat.apache.org/">http://tomcat.apache.org/</a>   Download 标题下找到 Tomcat Connectors 链接进入( <a href="http://archive.apache.org/dist/tomcat/tomcat-connectors/jk/binaries/win32/jk-1.2.15/mod_jk-apache-2.0.55.so">点击下载mod_jk-apache-2.0.55.so</a>)，看起来像是个Unix/Linux下的动态库，实际应是个Win32 的 DLL 动态库，大概是为保持不同平台配置的一致性，才用了这个扩展名。<!--more--><br/><br/>
+<strong><span style="color: #ff0000;">二：负载均衡</span></strong><br />
+　用Apache进行分流，把请求按照权重以及当时负荷分tomcat1,tomcat2...去处理<br/><br/>
+<span style="color: #0000ff;">1. 安装apache,tomcat<br />
+</span>   我把Apache安装在D:\Apache Group\Apache2<br />
+　 解压两分Tomcat, 分别在 D:\Apache Group\Tomcat5_1，D:\Apache Group\Tomcat5_2<br />
+   如果把不同版本的Tomcat进行集群，目录就可用Tomcat4_3(版本为4.x的第三个tomcat服务器)，Tomcat6_4(版本为6.x的第三个tomcat服务器),这是Unmi本人的习惯。<br/><br/>
+<span style="color: #0000ff;">2.修改Apache配置文件http.conf<br />
+</span><br />
+   在apache安装目录下conf目录中找到http.conf，在文件最后加上下面一句话就可以了<br/><br/>
+   <span style="color: #ff0000;">include conf\mod_jk.conf</span><br/><br/>
+<span style="color: #0000ff;">3. http.conf 同目录下新建mod_jk.conf文件</span>，内容如下<br/><br/>
+<pre class="brush:perl">#加载mod_jk Module
+LoadModule jk_module modules/mod_jk-apache-2.0.55.so   <br/><br/>
+#指定 workers.properties文件路径
+JkWorkersFile conf/workers.properties   <br/><br/>
+#指定那些请求交给tomcat处理,"controller"为在workers.propertise里指定的负载分配控制器
+JkMount /*.jsp controller</pre>
+<br/>
+如果还要指定*.do也进行分流就再加一行<br />
+JkMount /*.do controller<br/><br/>
+如果你想对所有的请求进行分流只需要写成<br />
+JkMount /* controller<br/><br/>
+<span style="color: #0000ff;">4. 在http.conf同目录下新建 workers.properties文件</span>，内容如下(可能要去除 # 不在行首的注释)<br/><br/>
+<pre class="brush:perl">worker.list = controller,tomcat1,tomcat2  #server 列表
+#========tomcat1========
+worker.tomcat1.port=8009       #ajp13 端口号，在tomcat下server.xml配置,默认8009
+worker.tomcat1.host=localhost  #tomcat的主机地址，如不为本机，请填写ip地址
+worker.tomcat1.type=ajp13
+worker.tomcat1.lbfactor = 1    #server的加权比重，值越高，分得的请求越多    <br/><br/>
+#========tomcat2========
+worker.tomcat2.port=8109       #ajp13 端口号，在tomcat下server.xml配置,默认8009
+worker.tomcat2.host=localhost  #tomcat的主机地址，如不为本机，请填写ip地址
+worker.tomcat2.type=ajp13
+worker.tomcat2.lbfactor = 2    #server的加权比重，值越高，分得的请求越多    <br/><br/>
+#========controller,负载均衡控制器========
+worker.controller.type=lb
+worker.controller.balanced_workers=tomcat1,tomcat2   #指定分担请求的tomcat
+worker.controller.sticky_session=1</pre>
+<br/>
+<span style="color: #000000;"><span style="color: #0000ff;">5. 修改tomcat配置文件server.xml</span><br />
+</span><span style="color: #ff0000;">如果你是水平集群，即在不同电脑上安装tomcat,tomcat的安装数量为一个，可以不必修改tomcat配置文件</span>.我这里是在同一台电脑上安装两个tomcat,实现的是垂直集群方式，所以必须修改其中一个的设置，以避免端口冲突，按照参考文章是把原来以9开头的端口号改为以9开头端口号，但是在我机器上如果以9开头的端口号，例如9080、9082会与我的WebSphere Application Server配置冲突，所以我这里采取的策略是把原来端口号的第三位改为1，如8080改为8180。<br/><br/>
+打开tomcat2/conf/server.xml文件<br/><br/>
+1) 将关闭Tomcat的监听端口改成由8005改为8105<br />
+即把<br />
+<span style="color: #3333ff;"> &lt;Server port="<span style="color: #ff0000;">8005</span>" shutdown="SHUTDOWN"&gt;</span><br />
+改为<br />
+<span style="color: #3333ff;"> &lt;Server port="<span style="color: #ff0000;">8105</span>" shutdown="SHUTDOWN"&gt;</span><br/><br/>
+2) 把http服务端口号由8080改为8180<br />
+找到<br />
+<span style="color: #3333ff;"> &lt;!-- Define a non-SSL HTTP/1.1 Connector on port 8080 --&gt;<br />
+    &lt;CONNECTOR port="<span style="color: #ff0000;">8080</span>" </span><br />
+把这里的8080改为<span style="color: #ff0000;">8180</span><br/><br/>
+3) 把AJP端口号由8009改为8109<br />
+找到<br />
+<span style="color: #3333ff;"> &lt;!-- Define an AJP 1.3 Connector on port 8009 --&gt;<br />
+    &lt;CONNECTOR port="<span style="color: #ff0000;">8009</span>"</span><br />
+把这里的8009改为<span style="color: #ff0000;">8109<br />
+</span><br />
+4) 把 HTTP 代理端口从8082改为8182(<span style="color: #ff0000;">这个配置默认是被注释掉的，可跳过这一步</span>)<br />
+找到<br />
+<span style="color: #3333ff;">&lt;CONNECTOR port="<span style="color: #ff0000;">8082</span>"</span><br />
+把这里的8082改为<span style="color: #ff0000;">8182<br />
+</span><br />
+5) 编写一个测试 jsp<br />
+建立一个目录TestCluster，里面新建一个test.jsp,内容为<br/><br/>
+<pre class="lang:default decode:true">&lt;%
+    System.out.println("===========================");
+%&gt;</pre>
+<br/>
+把TestCluster放到tomcat1,tomcat2的webapps下<br/><br/>
+6) 启动apache,tomcat1,tomcat2,进行测试<br />
+通过 <a href="http://localhost/TestCluster/test.jsp">http://localhost/TestCluster/test.jsp</a> 访问，多刷新几次页面，查看Tomcat1和Tomcat2的窗口，你将可以看到打印了一行行"==========================="，并且从统计上来说，大约在tomcat2打印的数量是在Tomcat1中的两倍，可以看到请求会被tomcat1,tomcat2按照不同的权重分流处理,实现了负载均衡。<br/><br/>
+作下面的集群配置，请在workers.properties把tomcat1和tomcat2的权重改为一样的，使请求较平均分配，将有便于看到实验的效果。<br/><br/>
+<span style="color: #ff0000;"><strong>三：配置集群<br />
+</strong></span>  只配置负载均衡还不行，还要session复制，也就是说其中任何一个tomcat的添加的session，是要同步复制到其它tomcat， 集群内的tomcat都有相同的session<br/><br/>
+<span style="color: #0000ff;">1. 修改tomcat1, tomcat2的server.xml,将集群部分配置</span>，即对&lt;Cluster&gt;节点的在注释符删掉,并将tomcat2的4001端口改为4002，以避免与tomcat冲突，当然，如果是两台电脑，是不用改端口的，去掉注释符即可<br />
+即取消对如下处<br/><br/>
+<pre class="lang:default decode:true">&lt;Cluster className="org.apache.catalina.cluster.tcp.SimpleTcpCluster"
+         managerClassName="org.apache.catalina.cluster.session.DeltaManager"
+         expireSessionsOnShutdown="false"
+   ............
+   &lt;ClusterListener className="org.apache.catalina.cluster.session.ClusterSessionListener"/&gt;
+&lt;/Cluster&gt;</pre>
+<br/>
+前后的注释标记&lt;!--  --&gt;，启用该项配置，实现服务器间的Session复制。<br/><br/>
+<span style="color: #0000ff;">2. 为 Tomcat1和 Tomcat2 增加 jvmRoute</span>(<span style="color: #ff0000;">先跳过这一步，有精力可以试验一下</span>)<br />
+在 Tomcat1 和 Tomcat2 的 server.xml 文件，找到<br />
+<span style="color: #3333ff;"> &lt;ENGINE name="Catalina" defaultHost="localhost"&gt;</span><br />
+分别改为<br />
+<span style="color: #3333ff;"> &lt;ENGINE name="Catalina" defaultHost="localhost" <span style="color: #ff0000;">jvmRoute="tomcat1"</span>&gt;<br />
+</span>和<br />
+<span style="color: #3333ff;"> &lt;ENGINE name="Catalina" defaultHost="localhost" <span style="color: #ff0000;">jvmRoute="tomcat2"</span>&gt;<br />
+</span><br />
+然而实际我配置的时候还不能加jvmRoute属性，配置了反而有问题。<br />
+刷新浏览器窗口总是在某一个tomcat控制台输出形如<br/><br/>
+<span style="color: #3333ff;"> SessionID:154678FA6D4D0ABD57658B750E7A3532.tomcat1</span>  (在tomcat1窗口)<br />
+或者<br />
+<span style="color: #3333ff;"> SessionID:3800571A532AECEA7280F45361861AD4.tomcat2</span>  (在tomcat2窗口)<br/><br/>
+由控制台打印的结果可以看出，SessionID在哪个tomcat上产生，那么后续该会话的请求将总是会这个tomcat来处理。<br/><br/>
+并且注意到SessionID的形式比通常情况多了一个后缀.tomcat1或.tomcat2，还搞不清楚是为什么。<br/><br/>
+配置时请视实际情况而取舍。<br/><br/>
+<span style="color: #0000ff;">3. 修改测试项目 TestCluster</span><br />
+修改test.jsp,内容如下<br/><br/>
+<pre class="lang:default decode:true">&lt;%@ page contentType="text/html; charset=GBK" %&gt;
+&lt;%@ page import="java.util.*" %&gt;
+&lt;html&gt;&lt;head&gt;&lt;title&gt;Cluster App Test&lt;/title&gt;&lt;/head&gt;
+&lt;body&gt;
+&lt;%
+   System.out.println("SessionID:"  + session.getId());
+%&gt;
+Server Info:
+&lt;%
+out.println(request.getServerName() + " : " + request.getServerPort()+"&lt;br&gt;");%&gt;
+&lt;%
+  out.println("&lt;br&gt; ID " + session.getId()+"&lt;br&gt;");  // 如果有新的 Session 属性设置
+  String dataName = request.getParameter("dataName");
+  if (dataName != null &amp;&amp; dataName.length() &gt; 0) {
+     String dataValue = request.getParameter("dataValue");
+     session.setAttribute(dataName, dataValue);
+  }
+  out.print("&lt;b&gt;Session 列表&lt;/b&gt;&lt;br&gt;");
+  Enumeration e = session.getAttributeNames();
+  while (e.hasMoreElements()) {
+     String name = (String)e.nextElement();
+     String value = session.getAttribute(name).toString();
+     out.println( name + " = " + value+"&lt;br&gt;");
+         System.out.println( name + " = " + value);
+   }
+%&gt;
+  &lt;form action="test.jsp" method="POST"&gt;
+    名称:&lt;input type=text size=20 name="dataName"&gt;
+     &lt;br&gt;
+    数值:&lt;input type=text size=20 name="dataValue"&gt;
+     &lt;br&gt;
+    &lt;input type=submit&gt;
+   &lt;/form&gt;
+&lt;/body&gt;
+&lt;/html&gt;</pre>
+<br/>
+<span style="color: #0000ff;">4. 配置Session复制</span><br />
+在TestCluster目录下新建WEB-INF目录，WEB-INF下新建web.xml,内容如下<br/><br/>
+<pre class="lang:default decode:true">&lt;web-app xmlns="http://java.sun.com/xml/ns/j2ee" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee http://java.sun.com/xml/ns/j2ee/web-app_2_4.xsd" version="2.4"&gt;
+       &lt;display-name&gt;TomcatClusterDemo&lt;/display-name&gt;
+       &lt;distributable/&gt;
+&lt;web-app&gt;</pre>
+<br/>
+也就是在需要集群的应用的web.xml中加上属性，表明该应用可多应用分流处理，能进行Session的复制<br/><br/>
+把TestCluster复制到Tomcat1、Tomcat2的webapps目录下，重启apache,tomcat1,tomcat2<br/><br/>
+<span style="color: #0000ff;">5. 测试Session的复制</span><br />
+通过 <a href="http://localhost/TestCluster/test.jsp">http://localhost/TestCluster/test.jsp</a> 访问，输入名称为 name, 值为 Unmi，提交查询，多刷新几次浏览器窗口，你将会看到在两个Tomcat窗口都打印出相同的SessionID及其中的值，并且每次刷新后打印的结果都一样的。<br/><br/>
+如果不为应用的web.xml加上 ，同样测试上面那个test.jsp页面，每次刷新分流到不同的tomcat上都会产生不一样的SessionID,在同一个tomcat上也是间隔出现不同的sessionID。<br/><br/>
+更切身的体验是一定要自己动手配置一遍，并仔细观察两个tomcat的控制上的输出。因本文是参考 <a href="http://hi.baidu.com/luodaijun/blog/item/5bbe4cfb5ffef864034f56a1.html">轻松实现Apache,Tomcat集群和负载均衡</a> 的实践经历，该本中有较多的贴图。<br/><br/>
+后记：<br />
+用 WebSphere Application Server ND 版配置过垂直和水平集群，但是自己试验集群环境下的应用却不想搬弄这个庞然大物。眼下急于想体验的就是 Quartz 如何适应集群环境，问题的焦点就是：Quartz 定时任务随 Web 应用启动，而 Web 应用部署在集群环境中，如何保证同一时刻只有一个同名的任务实例在跑。<br/><br/>
+所以会考虑用Apache+Tomcat配置一个轻量级的WEB应用集群，一般进行HTTP分流都是使用Apache,包括WAS集群也是，很少用IIS的。虽然单纯的用Tomcat的balancer应用也能配置进行负载分流，但那个性能应该好不到哪儿去。<br/><br/>
+用Apache+Tomcat配置的Web应用集群就是部署起来麻烦些，总是要保持双份的应用拷贝，WAS集群则不需要，不知道Jboss做WEB应用集群是怎么样一种情况。<br/><br/>
+好了，下面要进行该做的事情了,最后也希望能写个工具能完成从下载到安装配置，启动，停止，重启的全自动化，以及界面的人性化。<br/><br/>
+参考资料：1. <a href="http://hi.baidu.com/luodaijun/blog/item/5bbe4cfb5ffef864034f56a1.html">轻松实现Apache,Tomcat集群和负载均衡</a><br />
+             2. <a href="http://www.chinascripts.com/tech/java/webserver/2007-08-28/614dc2b436b046f6.html">apache+tomcat集群实践</a>(与上面方法有些异样的配置方式)<br />
+             3. <a href="http://www.cn-java.com/target/news.php?news_id=3613">Tomcat集群与负载均衡</a>(关于集群与负载均衡的解释)<br />
+             4. <a href="http://tomcat.jaxmao.org/cluster-howto.html">怎样配制集群/Session复制</a>(Tomcat5自带文档的中文翻译)<br />
+             5. <a href="http://tomcat.jaxmao.org/balancer-howto.html">怎样配置负载均衡</a>(Tomcat5自带文档的中文翻译)

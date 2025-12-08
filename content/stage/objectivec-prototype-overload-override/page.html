@@ -1,0 +1,145 @@
+---
+title: Objective-C 的方法原型及重载和覆盖
+url: /objectivec-prototype-overload-override/
+date: 2011-08-22T22:05:29-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - Overload
+  - ios
+  - objective-c
+  - override
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3764 
+wpStatus: publish
+views: 3286
+lastmod: 2021-09-03T14:23:39-05:00
+---
+
+前一篇是：<a title="Objective-C 的方法原型及重载" href="http://unmi.cc/objectivec-method-prototype-overload" target="_blank" rel="noopener">Objective-C 的方法原型及重载</a>，本篇呢在上面的话题稍进一步延伸，方法原型中方法的覆盖关系就较为密切的，所以再说下方法覆盖的话题。</p>
+<br/>
+由前面，我们知道，在 Objective-C 中方法原型的得来是这样的，假如方法声明是：<br/><br/>
+<span style="color: #800000;">-/+ (返回类型) 方法名: (参数1类型) 形参1  参数2描述: (参数2类型) 形参2 参数3描述: (参数3类型) 形参3 .......</span><br/><br/>
+那么它的方法原型则是：<br/><br/>
+<span style="color: #800000;">方法名: 参数2描述:参数3描述: .......</span><br/><br/>
+关键的是它与参数类型无关。<br/><br/>
+重载的时候我们应避免方法原型相同，而子父类间进行方法覆盖的时候我们又应该要保持一样的方法原型。<br/><br/>
+我们可以再一次感性认识一下 Objective-C 的方法原型，从 Xcode 中，当 Command + 鼠标悬停 在调用方法上时：<!--more--><br/><br/>
+<table border="0" align="center">
+<tbody>
+<tr>
+<td><img class="alignnone" style="border: 1px solid gray;" src="/wp-content/uploads/2011/09/objc-protype_1.png" alt="" width="249" height="47" /></td>
+<td><img class="alignnone" style="border: 1px solid gray;" title="Objective-C prototype" src="/wp-content/uploads/2011/08/objc-prototype.png" alt="" width="548" height="110" /></td>
+</tr>
+</tbody>
+</table>
+<br/>
+在 Xcode 中把方法原型给标识了出来，把上蓝色部分连缀起来就是方法的原型，即签名，如上面两方法的签名分别是：<br/><br/>
+<span style="color: #800000;">initWithFrame:</span><br />
+<span style="color: #800000;">presentPopoverFromRect:inView:permittedArrowDirections:animated:</span><br/><br/>
+好了，该说今天的主要话题了，体现在多态中，要达到方法的动态绑定，必须使得父子类的两个方法具体一样的原型。因为传统的语方，如 Java/C++/C# 的方法原型与类型是悉悉相关的，对于相互覆盖的两个方法必须接受一样的类型; 而这对于 Objective-C 就宽松了许多。<br/><br/>
+比如在 Objective-C 中有这样的应用场景，当父类有个方法是， handleData: (Data1 *) data，子类有个方法是，handleData: (Data2 *) data; 虽然它们处理的数据类型不同，Data2 和 Data1 间也没有继承关系，但是它们的方法原型相同，所以可以形成覆盖，这时候当用父类型去引用子实例时，调用 handleData 时可以动态绑定到子类实现上去。<br/><br/>
+上面的说法会让人感觉太模糊，下面例子看下：<br/><br/>
+<pre class="lang:default decode:true">#import &lt;Foundation/Foundation.h&gt; <br/><br/>
+@interface Data1 : NSObject
+-(void) foo;
+@end
+@implementation Data1
+-(void) foo {
+    NSLog(@"I'm Data1 type");
+}
+@end<br/><br/>
+@interface Data2 : NSObject
+-(void) foo;
+@end
+@implementation Data2
+-(void) foo {
+    NSLog(@"I'm Data2 type");
+}
+@end<br/><br/>
+@interface Parent : NSObject
+-(void) handleData: (Data1 *) data;
+@end
+@implementation Parent
+-(void) handleData:(Data1 *)data {
+    [data foo];
+}
+@end<br/><br/>
+@interface Child : Parent
+-(void) handleData: (Data2 *) data;
+@end
+@implementation Child
+-(void) handleData:(Data2 *)data {
+    [data foo];
+}
+@end<br/><br/>
+int main (int argc, const char * argv[])
+{
+    
+    NSAutoreleasePool * pool = [[NSAutoreleasePool alloc] init];
+    
+    Parent *pp = [[Child alloc] init];
+    
+    Data2 *data2 = [[Data2 alloc] init];
+    [pp handleData:data2]; //这行输出  I'm Data2 type
+    
+    Data1 *data1 = [[Data1 alloc] init];
+    [pp handleData:data1]; //这行输出  I'm Data1 type
+    
+    [pool drain];
+    return 0;
+}</pre>
+<br/>
+Data1 和 Data2 之间没有父子关系，也就是传入不同的参数类型时可以动态绑定到相不同的方法上去。更要命的是，当类型为 Data1 时执行的是 Parent 的 handleData: 方法，子类和父类的两个 handleData: 形成了互为重载的关系。<br/><br/>
+上面的代码会出现警告： warning: Semantic Issue: Incompatible pointer types sending 'Data2 *' to parameter of type 'Data1 *'，所以一般来说我们会让 Data2 作为 Data1 的子类的。<br/><br/>
+Objective-C 的这种特性我们可以用在 IBAction 方法中，例如在 C# 的 WinForm 处理事件时是：<br/><br/>
+<pre class="lang:default decode:true">private void button_Click(object sender, EventArgs e)
+{
+  Button button = (Button) sender;
+  button.someAttribute = ......     
+}</pre>
+<br/>
+对于 sender 要转型为 Button，其实 IBAction 的默认形式大至如此：<br/><br/>
+<pre class="lang:default decode:true">- (IBAction) buttonClicked: (id) sender ｛
+  UIButton *button = (UIButton *) sender;    
+  //do something with the button
+｝</pre>
+<br/>
+但我们直接改变参数的类型，则为：<br/><br/>
+<pre class="lang:default decode:true">- (IBAction) buttonClicked: (UIButton *) button ｛  
+  //do something with the button
+｝</pre>
+<br/>
+这样可以省去了强制转型，方法的表意也更直接。<br/><br/>
+到了这里，如果您还有点耐心的话，可以看看 Java 在碰到这种情况时的表现，运行如下代码：<br/><br/>
+<pre class="lang:default decode:true ">package cc.unmi;<br/><br/>
+public class TestOverride {
+    public static void main(String[] args) {
+        Parent p = new Child();
+        p.foo("String"); //输出 Parent:foo，虽然 String 是 Object 的子类
+        p.foo(new Object()); //自然输出的是 Parent:foo
+        
+        new Child().foo("String"); //只有这样才输出 Child:foo
+    }
+}<br/><br/>
+class Parent {
+    public void foo(Object obj){
+        System.out.println("Parent:foo");
+    }
+}<br/><br/>
+class Child extends Parent {
+    public void foo(String s){
+        System.out.println("Child:foo");
+    }
+}</pre>
+<br/>
+对于 new Child() 其实是有两个 foo 方法的选择，可以调用 foo(Object)，也可以调用 foo(String)。<br/><br/>
+&lt;<br/><br/>
+p style="text-align: center;"><img class="aligncenter" style="border: 1px solid gray;" title="Objective-C Java Method" src="/wp-content/uploads/2011/08/objc-java-method.png" alt="" width="511" height="87" />

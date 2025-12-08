@@ -1,0 +1,60 @@
+---
+title: asp:Menu 在 IE8/FireFox 下不正常显示子菜单的解决办法
+url: /aspmenu-ie8firefox-abnormal/
+date: 2010-06-20T13:30:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - .Net
+tags: 
+  - Menu
+  - Asp.Net
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 167 
+wpStatus: publish
+views: 2778
+lastmod: 2021-09-02T10:42:04-05:00
+---
+
+在 Asp.Net 里用 Menu 控件，如果页面背景白色的，用 IE8 浏览感觉是无法展开子菜单。其实还是有展开的，只是一个白框，把页面背景设置了其他颜色就能看到。Menu 控件在 IE7 下没问题，FireFox 下也不行，反而 Opera 能正常显示。IE8 在趋于标准化的时候，显然是 Menu 控件不符合标准。</p>
+<br/>
+有三个解决办法，请参考：<a href="http://blogs.msdn.com/b/giorgio/archive/2009/02/01/asp-net-menu-and-ie8-rendering-white-issue.aspx" target="_blank" rel="noopener">ASP.NET Menu and IE8 rendering white issue</a><br/><br/>
+1. 重写 z-index 属性：标准模式下 z-index 默认为 auto。<!--more--><br/><br/>
+<pre class="lang:default decode:true ">&lt;style type="text/css"&gt;
+    .IE8Fix
+    {
+        z-index: 100;
+    }
+&lt;/style&gt;
+&lt;asp:Menu ID="Menu1" runat="server"&gt;
+    &lt;DynamicMenuStyle CssClass="IE8Fix" /&gt;
+    &lt;Items&gt;
+        &lt;asp:MenuItem Text="File"&gt;
+            &lt;asp:MenuItem Text="Open"/&gt;
+            &lt;asp:MenuItem Text="Exit"/&gt;
+        &lt;/asp:MenuItem&gt;
+        &lt;asp:MenuItem Text="Edit"/&gt;
+    &lt;/Items&gt;
+&lt;/asp:Menu&gt;</pre>
+<br/>
+为&lt;asp:Menu&gt; 指定 &lt;DynamicMenuStyle CssClass="IE8Fix" /&gt; 节点，设置它的样式的 z-index 为一个较大的值。<br/><br/>
+这样在 IE8 下是解决了，但是 FireFox 下仍然不行。像其他的 Safari、Chrome 等浏览器也无效果。<br/><br/>
+2. 在 IE8 下强制以 IE7 兼容模式解析<br/><br/>
+在 &lt;head&gt; 中加入一行：<br/><br/>
+<span style="color: #0000ff;">&lt;</span><span style="color: #800000;">meta </span><span style="color: #ff0000;">http-equiv</span><span style="color: #0000ff;">="X-UA-Compatible"</span><span style="color: #ff0000;">content</span><span style="color: #0000ff;">="IE=EmulateIE7"</span><span style="color: #0000ff;">/&gt;</span><br/><br/>
+这是一个针对 IE8 的较消极的解决办法，对其他浏览器根本就是回避。<br/><br/>
+3. 让 Menu 控件生成的 HTML/CSS/JS 标准化<br/><br/>
+这要用到  <a href="http://www.codeplex.com/cssfriendly" target="_blank" rel="noopener">CSS Friendly adapter</a> 来渲染你的 Menu 控件，具体步骤如下：<br/><br/>
+1. 从 <a href="http://www.codeplex.com/cssfriendly">http://www.codeplex.com/cssfriendly</a> 下载 CSSFriendly.dll 和 CSSFriendlyAdapters.browser 文件.<br />
+2. 项目中添加对 CSSFriendly.dll 的引用，比如把 CSSFriendly.dll 直接拷到 WebSite 项目的 bin 目录中就行.<br />
+3. 在 Web 项目中加上一个特殊目录 App_Browsers，然后把 CSSFriendlyAdapters.browser 文件拷入其中.<br/><br/>
+项目上右键里选 Add ASP.NET Folder 里选择 App_Browsers 就能创建 App_Browsers 目录。<br/><br/>
+其他的事情就不用你操心了，而且这个 CSSFrendly 还能帮你渲染其他的 List 控件，如 TreeView、DetailsView 等。<br/><br/>
+我原本对第三种方法寄予了厚望，可是试了下，在默认样式下，子菜单在各种浏览器是能显示出来，但十分难看。垂直菜单的子菜单与上级菜单重叠了，水平菜单也是第一级菜单粘在一起。看了 CSSFriendly 的例子是再用样式去手动控制菜单，实际用起来也有点麻烦。<br/><br/>
+这个 CSSFriendly 的最新版还是 Mar 5 2007 的，没人维护了，当时解决的是在 ASP.NET 2.0 下的问题，也许对于现在 ASP.NET 3.5 不那么奏效了。<br/><br/>
+不过看 CSSFrendly 的实现，倒是跟上了潮流，用 &lt;div&gt;&lt;li&gt; 代替了默认的用 &lt;table&gt; 来生成菜单。我想实际项目中，我们用这种富控件的机会还是比较少，毕竟有许多像 JQuery 那样丰富且高效率的控件。

@@ -1,0 +1,161 @@
+---
+title: Play 2.0 中文资料 - 模板引擎(用例)
+url: /play2-0-tutorials-cn-template-engine-common-use-cases/
+date: 2012-10-25T11:49:40-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PlayFramework
+tags: 
+  - 翻译
+  - Scala
+  - PlayFramework
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4897 
+wpStatus: publish
+views: 972
+lastmod: 2021-05-21T11:13:44-05:00
+---
+
+<ul style="float: right; border-left: solid 1px green; border-bottom: solid 1px green;">
+    <li><strong>模板引擎</strong>
+<ul>
+    <li><a title="Play 2.0 中文资料 - 模板引擎(语法)" href="http://unmi.cc/play2-0-tutorials-cn-template-engine-syntax" target="_blank" rel="noopener">Scala 模板语法 </a></li>
+    <li><a title="Play 2.0 中文资料 - 模板引擎(用例)" href="http://unmi.cc/play2-0-tutorials-cn-template-engine-common-use-cases" target="_blank" rel="noopener">通用案例 </a></li>
+</ul>
+</li>
+</ul><br/><br/>
+模板, 实际作为简单函数存在的, 它可以任何你希望的方式被组合应用. 下面是一些通用场景的使用案例.<br/><br/>
+<strong><span style="font-size: medium;">布局</span></strong><br/><br/>
+我们来声明一个 <code>views/main.scala.html</code> 模板来用作主布局模板:<br/><br/>
+<pre class="lang:default decode:true">@(title: String)(content: Html)
+&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+  &lt;head&gt;
+    &lt;title&gt;@title&lt;/title&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;section class="content"&gt;@content&lt;/section&gt;
+  &lt;/body&gt;
+&lt;/html&gt;</pre>
+<br/>
+正如你所看到的, 这个模板有两个参数: 一个标题和一个 HTML 内容块. 现在我们可在另一个模板 <code>views/Application/index.scala.html</code> 中用它:<!--more--><br/><br/>
+<pre class="lang:default decode:true">@main(title = "Home") {<br/><br/>
+  &lt;h1&gt;Home page&lt;/h1&gt;<br/><br/>
+}</pre>
+<br/>
+<blockquote>
+<strong>注:</strong> 我们有时候使用命名参数(像 <code>@main(title = "Home")</code>, 而不是像 <code>@main("Home") 那样来使用</code>. 这由你而定, 只要选择在特定上下文中你认为表达清晰的即可.
+</blockquote>
+<br/>
+有时你需要第二个页面特定的内容块作为侧边栏(sidebar) 或面包屑导航(breadcrumb trail). 你可以附加一个参数来做到:<br/><br/>
+<pre class="lang:default decode:true">@(title: String)(sidebar: Html)(content: Html)
+&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+  &lt;head&gt;
+    &lt;title&gt;@title&lt;/title&gt;
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;section class="sidebar"&gt;@sidebar&lt;/section&gt;
+    &lt;section class="content"&gt;@content&lt;/section&gt;
+  &lt;/body&gt;
+&lt;/html&gt;</pre>
+<br/>
+在我们的 ‘index’ 模板中应用它, 是这样:<br/><br/>
+<pre class="lang:default decode:true">@main("Home") {
+  &lt;h1&gt;Sidebar&lt;/h1&gt;<br/><br/>
+} {
+  &lt;h1&gt;Home page&lt;/h1&gt;<br/><br/>
+}</pre>
+<br/>
+另一种做法是, 我们能单独声明 sidebar 块:<br/><br/>
+<pre class="lang:default decode:true">@sidebar = {
+  &lt;h1&gt;Sidebar&lt;/h1&gt;
+}<br/><br/>
+@main("Home")(sidebar) {
+  &lt;h1&gt;Home page&lt;/h1&gt;<br/><br/>
+}</pre>
+<br/>
+<strong><span style="font-size: medium;">标签 (它们就是函数, 对吗?)</span></strong><br/><br/>
+我们来写一个用来显示 HTML 通知的简单的标签 <code>views/tags/notice.scala.html</code>:<br/><br/>
+<pre class="lang:default decode:true">@(level: String = "error")(body: (String) =&gt; Html)<br/><br/>
+@level match {<br/><br/>
+  case "success" =&gt; {
+    &lt;p class="success"&gt;
+      @body("green")
+    &lt;/p&gt;
+  }<br/><br/>
+  case "warning" =&gt; {
+    &lt;p class="warning"&gt;
+      @body("orange")
+    &lt;/p&gt;
+  }<br/><br/>
+  case "error" =&gt; {
+    &lt;p class="error"&gt;
+      @body("red")
+    &lt;/p&gt;
+  }<br/><br/>
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: body 是一个 （String)=&gt; Html 类型的函数参数, Level 的默认值为  "error"</span><br/><br/>
+然后现在从另一个模板中使用它:<br/><br/>
+<pre class="lang:default decode:true">@import tags._<br/><br/>
+@notice("error") { color =&gt;
+  Oops, something is &lt;span style="color:@color"&gt;wrong&lt;/span&gt;
+}</pre>
+<br/>
+<strong><span style="font-size: medium;">包含</span></strong><br/><br/>
+再一次(<span style="color: #0000ff;">Unmi 注: 像标签那样就是个函数</span>), 这儿也没什么特殊的. 你可以调用其他任何你喜欢的模板 (实际上任何的函数是有其来源的):<br/><br/>
+<pre class="lang:default decode:true">&lt;h1&gt;Home&lt;/h1&gt;<br/><br/>
+&lt;div id="side"&gt;
+  @common.sideBar()
+&lt;/div&gt;</pre>
+<br/>
+<span style="font-size: medium;">moreScripts 和 moreStyles 等价物</span><br/><br/>
+欲在 Scala 模板中定义一个等价于老式的 moreScripts 或 moreStyles 变量 (像在 Play! 1.x 中的那样), 你可像下面那样在主模板中定义一个变量 :<br/><br/>
+<pre class="lang:default decode:true">@(title: String, scripts: Html = Html(""))(content: Html)<br/><br/>
+&lt;!DOCTYPE html&gt;<br/><br/>
+&lt;html&gt;
+    &lt;head&gt;
+        &lt;title&gt;@title&lt;/title&gt;
+        &lt;link rel="stylesheet" media="screen" href="@routes.Assets.at("stylesheets/main.css")"&gt;
+        &lt;link rel="shortcut icon" type="image/png" href="@routes.Assets.at("images/favicon.png")"&gt;
+        &lt;script src="@routes.Assets.at("javascripts/jquery-1.7.1.min.js")" type="text/javascript"&gt;&lt;/script&gt;
+        @scripts
+    &lt;/head&gt;
+    &lt;body&gt;
+        &lt;div class="navbar navbar-fixed-top"&gt;
+            &lt;div class="navbar-inner"&gt;
+                &lt;div class="container"&gt;
+                    &lt;a class="brand" href="#"&gt;Movies&lt;/a&gt;
+                &lt;/div&gt;
+            &lt;/div&gt;
+        &lt;/div&gt;
+        &lt;div class="container"&gt;
+            @content
+        &lt;/div&gt;
+    &lt;/body&gt;
+&lt;/html&gt;</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 在 Play！ 1.x 中像下面那样写就能引入相应目录下的 js 或  css 文件：</span><br/><br/>
+<pre class="lang:default decode:true">#{script 'jquery.js'/}
+#{stylesheet 'main.css'/}</pre>
+<br/>
+<span style="color: #0000ff;">上面标签会各自用 &lt;script&gt; 和 &lt;link&gt; 去引入 /public/javascrips/jquery.js 和  /public/stylesheets/main.css 文件。</span><br/><br/>
+然后在继承模板中就需要一个额外的脚本参数 :<br/><br/>
+<pre class="lang:default decode:true">@scripts = {
+    &lt;script type="text/javascript"&gt;alert("hello !");&lt;/script&gt;
+}<br/><br/>
+@main("Title",scripts){<br/><br/>
+   Html content here ...<br/><br/>
+}</pre>
+<br/>
+如果是在继承模板中不需要额外的脚本参数(<span style="color: #0000ff;">Unmi 注: 因为声明 main 时，scripts 参数是带默认值的 Html("")</span>), 就这样 :<br/><br/>
+<pre class="lang:default decode:true ">@main("Title"){<br/><br/>
+   Html content here ...<br/><br/>
+}</pre>

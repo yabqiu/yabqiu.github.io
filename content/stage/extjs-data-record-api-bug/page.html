@@ -1,0 +1,107 @@
+---
+title: Ext.data.Record 的基本法及其 API 帮助的一个 Bug
+url: /extjs-data-record-api-bug/
+date: 2009-07-23T03:02:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Web/JS
+tags: 
+  - javascript
+  - ExtJs
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 240 
+wpStatus: publish
+views: 4673
+lastmod: 2013-12-31T23:45:17-06:00
+---
+
+<strong>基本用法(不涉及其他相关类)：</strong><br/>
+<br/>
+Ext.data.Record 实例就是对应一条记录，记录通常会放在数据集 Store 中，其中包含了数据的定义信息(字段名等) 和数据的值信息。这里不涉及与它相关的 Proxy、DataReader 和 Store，只单纯的用 Record 的方法。通常是两步，先调用 Record 的 create() 方法，返回一个类，然而 new 前面方法返回的类，代码过程如下：<br/>
+<pre class="brush:js">//第一步，create() 返回一个 Record 的子类(定义了数据表现，有点像泛型)<br/>
+var Person = Ext.data.Record.create([ //用对象数组指定每个字段名<br/>
+	{name:'name'},{name:'email'} //name 属性指定每个字段名<br/>
+]); <br/>
+<br/>
+//通过前面 create() 返回的 Person 类创建 record 实例<br/>
+var record = new Person({//传入一个对象作为第一个参数，注意属性名对应<br/>
+	name:'Unmi',<br/>
+	email:'fantasia@sina.com'<br/>
+},2009); //第二个参数指定记录的标识 ID，未指定 ID 则为你用整数进行编号<br/>
+<br/>
+//验证效果，只取 id 和其中的 email 属性，可试下前面无 {id:'name'}的情况<br/>
+alert('id:' + record.id +", email:" + record.get('email'));</pre>
+
+代码说明：<!--more--><br/>
+Ext.data.Record  的 API 说明是：<a href="http://extjs.com/deploy/dev/docs/output/Ext.data.Record.html">http://extjs.com/deploy/dev/docs/output/Ext.data.Record.html</a><br/>
+Ext.data.Record 的源代码查看：<a href="http://extjs.com/deploy/dev/docs/source/Record.html#cls-Ext.data.Record">http://extjs.com/deploy/dev/docs/source/Record.html#cls-Ext.data.Record</a><br/>
+<br/>
+第一步 create() 方法返回的是一个 Function，从源代码中可以发现返回的是布司好了字段的 var f = Ext.extend(Ext.data.Record, {}); 实际为一个 Ext.data.Record 的子类，所以可用于后面的 new 操作。这一步相当于 C++ 的模板和 Java 的泛型，或者说预编译/创建出一个特定于数据表现的特化的类。create([Array o]) 中的 o 除了 name 外还可以包括几个重要属性，mapping 属性在用 JsonReader/XmlReader 获取数据里有用，type 属性用来指定当前字段的数据类型，使泛型更精致化。<br/>
+<br/>
+第二步使用前一步返回的模板(Ext.data.Record 子类) new 一条具体的记录(Record 实例)。你在看 Record 的 API 帮助时看到它的构造函数一般不直接使用，而是丢给 create() 方法的返回类去调用。<br/>
+<br/>
+其实在有些时候，也可以省去第一步的 create()，直接使用 Ext.data.Record 的构造函数，如：<br/>
+<pre class="brush:js">var record = new Ext.data.Record({//传入一个对象作为第一个参数<br/>
+	name:'Unmi',<br/>
+	email:'fantasia@sina.com'<br/>
+}); <br/>
+<br/>
+//验证效果，只取 id 和其中的 email 属性<br/>
+alert('id:' + record.id +", email:" + record.get('email'));</pre>
+
+执行后的效果与前面的一样。<br/>
+<br/>
+<strong>令人费解的构造函数 API 帮助 Bug<br/>
+</strong><br/>
+直接看 ExtJs 2.0、ExtJs 2.2、ExtJs 3.0 中关于 Ext.data.Record() 构造函数的原型和参数说明：<br/>
+<br/>
+1. ExtJs 2.0 的：Record( Array data, [Object id] )，data An associative Array of data values keyed by the field name.<br/>
+2. ExtJs 2.2 的：Record( Array data, [Object id] )，data : Array An object, the properties of which provide values for the new Record's fields.<br/>
+3. ExtJs 3.0 的：Record( [Object data], [Object id] ) data : Object (Optional) An object, the properties of which provide values for the new Record's fields. If not specified the defaultValue for each field will be assigned.<br/>
+<br/>
+恰恰手中抱住是一本关于 ExtJs 2.0 的书，看的是 2.0 的 API，对于那个 Array data 参数实在是令人费解，一眼看去还以为一个 Record 实例可以表示多条记录呢。网上查查找到一篇介绍 Record  的 <a href="http://blog.csdn.net/alex197963/archive/2009/01/13/3766388.aspx">http://blog.csdn.net/alex197963/archive/2009/01/13/3766388.aspx</a>，里面说以下两段代码是等价的。<br/>
+<table border="0" width="750" align="center">
+
+<tbody>
+
+<tr>
+
+<td width="50%">
+
+<pre class="brush:js">var a = new Ext.data.Record([<br/>
+		{name:'Name'},<br/>
+		{name:'Address'}<br/>
+	],{id:'Name'}) ;</pre>
+
+</td>
+
+<td>
+
+<pre class="brush:js">var a = Ext.data.Record.create([<br/>
+		{name:'Name'},<br/>
+		{name:'Address'}<br/>
+	],{id:'Name'}) ;</pre>
+
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+说它们得到的 a 都可用于 var record = new a({Name:'test',Address:'where'}); 　其实这是有问题的，坏就坏在参数名 Array 混淆了视听，参数说明也是误人子弟。<br/>
+<br/>
+对于开源的有疑问最好的办法还是去看源代码，看那个 Record 构造函数中的代码，对于传入的 data，用 this.data = data 存储下来。如果它真是一个数组，那调用 get : function(name){  return this.data[name];  }   来获取属性值是就会出错的。所以它是一个对象，且那个 API 说明的进化过程：<br/>
+<br/>
+ExtJs 2.0 中的 Record 构造说明，参数名为 Array，且说明中也信誓旦旦的说那是一个数组<br/>
+ExtJs 2.2 中的 Record 构造说明，参数名仍为 Array，但说明中松了口吻说是一个对象<br/>
+ExtJs 3.0 中的 Record 构造说明，参数名和说明中终于是醒悟过来了，彻底承认了那是一个对象。<br/>
+<br/>
+所以，不管你使用的是哪个版本的 ExtJs，一定要记得 Ext.data.Record() 构造函数的第一个参数是一个对象，而不是数组，它就是记录的数值，而不是用描述记录的。

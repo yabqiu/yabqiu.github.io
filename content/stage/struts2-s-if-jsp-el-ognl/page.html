@@ -1,0 +1,106 @@
+---
+title: 运行《Struts2 权威指南》 s-if.jsp 的异常引出对 EL 和 OGNL 的思考
+url: /struts2-s-if-jsp-el-ognl/
+date: 2008-04-13T01:06:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/05/struts-logo.jpeg"
+categories:
+  - Struts
+tags: 
+  - Struts2
+  - Struts
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 416 
+wpStatus: publish
+views: 305
+lastmod: 2021-09-02T20:48:05-05:00
+---
+
+我用 MyEclipse 建了一个 Web 项目，配置了能支持 Struts2。在验证标签应用时，把 《Struts2权威指南--基于WebWork核心的MVC开发》一书的例子 10.3 controlTag 中的 s-if.jsp 拷入当前应用。该 jsp 文件的内容是：想像一下我访问它时得到了什么样的结果？<br/><br/>
+<pre class="lang:default decode:true">&lt;%@ page contentType="text/html; charset=GBK" language="java"%&gt;
+&lt;%@taglib prefix="s" uri="/struts-tags"%&gt;
+&lt;html&gt;
+    &lt;head&gt;
+        &lt;title&gt;s:if标签测试&lt;/title&gt;
+    &lt;/head&gt;
+    &lt;body&gt;
+        &lt;s:set name="age" value="29"/&gt;
+        &lt;s:if test="${age &gt; 60}"&gt;
+            老年人
+        &lt;/s:if&gt;
+    &lt;s:elseif test="${age &gt; 35}"&gt;
+            中年人
+        &lt;/s:elseif&gt;
+        &lt;s:elseif test="${age &gt; 15}" id="wawa"&gt;
+            青年人
+        &lt;/s:elseif&gt;
+        &lt;s:else&gt;
+            少年
+        &lt;/s:else&gt;
+    &lt;/body&gt;
+&lt;/html&gt;</pre>
+<br/>
+然后把该应用 TestStruts2 部署到 Tomcat 5.0.28 下，启动 Tomcat，地址栏输入 <a href="http://localhost:8080/TestStruts2/s-if.jsp">http://localhost:8080/TestStruts2/s-if.jsp</a>，确定，执行结果让我傻眼了，任凭我百般刷新，也都是赫然显示着：<br/><br/>
+<!--more--><br/><br/>
+少年<br/><br/>
+按理应显示 "青年人" 才对啊，代码上看不出什么问题啊！难道是原本的 controlTag 就有问题？于是把 controlTag 复制到 Tomcat 的 webapps 目录，再访问 <a href="http://localhost:8080/controlTag/s-if.jsp">http://localhost:8080/controlTag/s-if.jsp</a> 时，页面显示为：<br/><br/>
+青年人<br/><br/>
+这更让我迷惑。这两个应用到底有何差异？先是采用一种十分愚笨的方法，先把 controlTag 精简出一个最小可用的目录，然后看 TestStruts2 中那块有疑问的地方就改成与 controlTag 一样的配置，strtus.xml 改一样了，lib 下的 jar 也替换掉了，web.xml 中的 &lt;filter.../&gt; 和 &lt;filter-mapping.../&gt; 配置也改一样了，结果发现仍旧为 "少年"。但要是把 controlTag 的整个 WEB-INF 覆盖过去，又是可以的，继而又做了不少尝试，Tomcat 不停的重启，还是未找到问题所在。看来真的似乎是没辙了。<br/><br/>
+好吧，什么叫做君子性非异也，善假于物也！不得已安装上 BeyondCompare，两个应用一对比就发现原来还是 web.xml 内容不同。 有人要问了，前面不是说已经把 web.xml 的内容改成一样的吗？是的，但单就犯了一个错误，web.xml 文件的声明处没注意：<br/><br/>
+controlTag 的 web.xml 的声明处是：<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="GBK"?&gt;
+&lt;web-app version="2.4" xmlns="http://java.sun.com/xml/ns/j2ee"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://java.sun.com/xml/ns/j2ee http://java.sun.com/xml/ns/j2ee/web-app_2_4.xsd"&gt;</pre>
+<br/>
+TestStruts2 的 web.xml 的声明处是：<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!DOCTYPE web-app PUBLIC "-//Sun Microsystems, Inc.//DTD Web Application 2.3//EN"
+    "http://java.sun.com/dtd/web-app_2_3.dtd"&gt;</pre>
+<br/>
+看到这一差别才轰然醒悟过来，原来是在 Servlet 2.4 与 Servlet 2.3 的差别。Tomcat 5.0.28 是能支持 Servlet2.4/JSP 2.0 的，JSP 2.0 是可以用 EL 表达式，而之前版本是不行的，正式这一声明指示着容器应如何解析和编译 JSP 的，而产生未曾意料到的结果。<br/><br/>
+原本用 MyEclipse 新建的 Web 应用是采用的 Servlet 2.4 的声明，只是我有一次测试 Struts2 在 Servlet 2.3 下的表现时忘了改回来。喜或悲，着实浪费了不少时间，却也让我真实见证到了一个问题，也为在 Servlet2.3/JSP 1.2 下使用 Struts2 的企图撤了一道卡。见我的另一篇日志，一直在追寻着这个问题的答案：<a href="http://unmi.cc/servlet23-jsp12-jdk14-struts2/" target="_blank" rel="noopener noreferrer">在仅实现到 Servlet 2.3/JSP 1.2 规范、JDK为1.4 的容器中用 Struts 2 会有什么问题？</a><br/><br/>
+如果硬是要在 Servlet 2.3 下使用 Struts2 运行这个 JSP 页面，那么就要把 EL 改成 OGNL 表达式，把原来 s-if.jsp 中的三个测试表达式行分别改为：<br/><br/>
+&lt;s:if test="${age &gt; 60}"&gt;                             改成  &lt;s:if test="#age &gt; 60"&gt;<br />
+&lt;s:elseif test="${age &gt; 35}"&gt;                       改成  &lt;s:elseif test="#age &gt; 35"&gt;<br />
+&lt;s:elseif test="${age &gt; 15}" id="wawa"&gt;      改成 &lt;s:elseif test="#age &gt; 15" id="wawa"&gt;<br/><br/>
+再次浏览 <a href="http://localhost:8080/TestStruts2/s-if.jsp">http://localhost:8080/TestStruts2/s-if.jsp</a> 就保证你看到的是 "青年人" 了，因为 OGNL 是不依赖于 Servlet 容器的，就像 Struts 1.x 的 struts-el 和 JSTL 的 EL。<br/><br/>
+既然误入了藕花深处，何不来惊起一滩鸥鹭呢？我们深入对比一下，web.xml 中不同的 Servlet 版本声明时编译出的 jsp 源文件的差异。<br/><br/>
+1. 在 <span style="color: #0000ff;">Servlet 2.3/JSP 1.2</span> (web.xml 声明使用 <span style="color: #0000ff;">web-app_2_3.dtd</span>) 下编译出的 JSP 对应源代码<br />
+    1)  EL 表达式 <span style="color: #800080;">${age &gt; 60}</span> 对应代码为：执行页面显示 少年 ×<br />
+          <span style="color: #800080;">_jspx_th_s_if_0.setTest("${age &gt; 60}");<br />
+</span>    2) OGN 表达式 <span style="color: #800080;">#age &gt; 60</span> 对应代码为：执行页面显示 青年人 √<br />
+          <span style="color: #800080;">_jspx_th_s_if_0.setTest("#age &gt; 60");</span><br/><br/>
+2. 在 <span style="color: #0000ff;">Servlet 2.4/JSP 2.0</span> (web.xml 声明使用 <span style="color: #0000ff;">web-app_2_4.xsd</span>) 下编译出的 JSP 对应源代码<br />
+    1) EL 表达式 <span style="color: #800080;">${age &gt; 60}</span> 对应代码为：执行页面显示 青年人 √<br />
+          <span style="color: #800080;">_jspx_th_s_elseif_0.setTest((java.lang.String) org.apache.jasper.runtime.PageContextImpl.proprietaryEvaluate("${age &gt; 35}", java.lang.String.class, (PageContext)_jspx_page_context, null, false));</span><br />
+    2) OGN 表达式 <span style="color: #800080;">#age &gt; 60</span> 对应代码为：执行页面显示 青年人 √<br />
+          <span style="color: #800080;">_jspx_th_s_if_0.setTest("#age &gt; 60");</span><br/><br/>
+由此对比，我们可以发现，使用 OGNL 表达式，在两种版本 web.xml 声明中编译出的 JSP 对应源代码都是一样的，其中的 OGNL 表达式后续由 ognl-2.x.x.jar 来处理。在 Servlet 2.3/JSP 1.2 下因为不支持 EL，所以这个 EL 表达式被忽略，只当是个普通字符串了，而在 Servlet 2.4/JSP 2.0 下的 EL 表达式会交给 PageContextImpl.proprietaryEvaluate 去处理。<br/><br/>
+在 JSP2.0 中有一个页面指令 &lt;%@ page isELIgnored="true"%&gt; ，如果加上这一指令，即使在 Servlet 2.4/JSP 2.0 中 EL 也被忽略，编译出的 JSP 对应源代码同 Servlet 2.3/JSP 1.2 也一样了。<br/><br/>
+所以要在仅支持 Servlet 2.3/JSP 1.2、JDK为1.4 的容器中应用 Struts2 的第二条准则是：<span style="color: #ff0000;">EL 换成 OGNL 表达式</span>。前面有遇到过第一条准则是解决在用 1.4 没有泛型的情况下 Action 中集合元素的类型识别问题 <a href="http://unmi.cc/unmi-study-struts2-7/" target="_blank" rel="noopener noreferrer">Unmi 的 Struts2 学习笔记(七)</a>，是要在 ActionName-conversion.properties 中用 Element_xxx 和 Key_xxx 来说明。<br/><br/>
+对于取pageContext、parameters、request、session、application 等处的属性值(假如有 name 属性)时我们用的 EL 表达式分别是：<br/><br/>
+${pageScope.name}、${param.name}、{$requestScope.name}、{$sessionScope.name}、{$applicationScope.name}<br/><br/>
+那么对应的 OGNL 的解决方案分别是：<br/><br/>
+&lt;s:peroperty value="#attr.name"/&gt; <br />
+&lt;s:property value="#parameters.name"/&gt;<br />
+&lt;s:property value="#request.name"/&gt;<br />
+&lt;s:property value="#session.name"/&gt;<br />
+&lt;s:property value="#application.name"/&gt;<br />
+&lt;s:textfield name="name"  value="%{#parameters.name}"/&gt;<br/><br/>
+说明，attr 如果可以访问到，则访问 pageContext，否则将 依次搜索 pageContext、request、session、application 相应值，所以可用来访问 pageContext 中的值，可替代 EL 的 ${pageScope.name}。<br/><br/>
+在前面提到过，Servlet 2.3/JSP 1.2 的容器中可以借助于 struts-el (针对 struts 1.x) 和 JSTL 来支持 EL 表达式，那么对于 Struts 2 是否能有所借鉴呢？其实不太可行。<br/><br/>
+struts-el 是对 struts 1.x 的全套标签重新实现，并有少部分 EL 不支持，Struts2 能这么做吗？当然是可以做到，但 Struts2 本身因为引入了 OGNL 可替代方案，所以它觉得没这个必要性，如果你愿意的话可以仿照 struts-el 自己来实现，不过会不伦不类的，大于号 "&gt;" 要写成 "gt" 种种。<br/><br/>
+JSTL 确提供了对 EL 很好的支持，但你必须用 JSTL 的标签 &lt;c:out value="${requestScope.name}"/&gt;，没办法应用到 Struts2 的标签当中，所以也是徒劳无益。所以还是直接用 OGNL 表达式吧。<br/><br/>
+参考：1. <a href="http://unmi.cc/servlet23-jsp12-jdk14-struts2/" target="_blank" rel="noopener noreferrer">在仅实现到 Servlet 2.3/JSP 1.2 规范、JDK为1.4 的容器中用 Struts 2 会有什么问题？</a><br />
+        2. <a href="http://unmi.cc/unmi-study-struts2-7/" target="_blank" rel="noopener noreferrer">Unmi 的 Struts2 学习笔记(七)</a><br />
+        3. <a href="http://liuwei1981.javaeye.com/blog/180683" target="_blank" rel="noopener noreferrer">《struts2权威指南》的一个例子的问题</a><br/><br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>
+<br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

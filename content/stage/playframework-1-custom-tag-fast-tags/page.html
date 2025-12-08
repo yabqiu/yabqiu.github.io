@@ -1,0 +1,90 @@
+---
+title: PlayFramework 1 自定义标签 -- FastTags
+url: /playframework-1-custom-tag-fast-tags/
+date: 2014-04-14T22:10:41-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PlayFramework
+tags: 
+  - playframewok
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6294 
+wpStatus: publish
+views: 1310
+lastmod: 2021-05-03T00:11:56-05:00
+---
+
+最早是用 HTML 来自定义标签，现在觉得 HTML 写有关逻辑的代码就有点不伦不类了，HTML 里着重是显示代码。前有一篇 <a title="PlayFramework 1 自定义标签 -- Java 对象扩展" href="http://unmi.cc/playframework-1-custom-tag-java-object-extensions/" target="_blank" rel="noopener">PlayFramework 1 模板应用 -- Java 对象扩展</a> 学习了对 Java 对象扩展的方式，如果不是基于已有对象类型进行方法扩展来进行调用，就可以自定义 FastTags 的方式。</p>
+<br/>
+Java 对象扩展的使用是 ${obj.abc()}, FastTags 标签是 #{abc}...${/abc}。<br/><br/>
+FastTags 标签类继承自 <code>play.templates.FastTags</code>，标签对应方法的原型是<br/><br/>
+<blockquote>
+public static void _tagName(Map&lt;?, ?&gt; args, Closure body, PrintWriter out,     ExecutableTemplate template, int fromLine)
+</blockquote>
+<br/>
+这些都是得益约定优于配置，下面来几个例子，分别说明默认参数，命名参数，及多参数，标签体的处理。<!--more--><br/><br/>
+<pre class="lang:default decode:true">package utilities;<br/><br/>
+import groovy.lang.Closure;<br/><br/>
+import java.io.PrintWriter;
+import java.util.Map;<br/><br/>
+import play.templates.FastTags;
+import play.templates.GroovyTemplate.ExecutableTemplate;
+import play.templates.JavaExtensions;<br/><br/>
+public class PlayTags extends FastTags {
+  
+    public static void _hello(Map&lt;?, ?&gt; args, Closure body, PrintWriter out,
+        ExecutableTemplate template, int fromLine) { 
+        out.println("Hello " + args.get("arg") + " " + JavaExtensions.toString(body));
+    }
+}
+</pre>
+<br/>
+上面定义了一个 hello 标签，标签参数从 args 中获取，默认参数名是 arg，标签体用 body 获得。在 HTML 页面中应用<br/><br/>
+<blockquote>
+#{hello 'Yanbin'}Good Morning#{/hello}<br />
+#{hello arg:'Yanbin'}Good Morning#{/hello}
+</blockquote>
+<br/>
+多个参数时<br/><br/>
+<pre class="lang:default decode:true">    public static void _hello(Map&lt;?, ?&gt; args, Closure body, PrintWriter out,
+        ExecutableTemplate template, int fromLine) { 
+        out.println("Hello " + args.get("name") + " " + args.get("greeting"));
+    }
+</pre>
+<br/>
+页面中写成，用逗号分隔<br/><br/>
+<blockquote>
+#{hello name:'Yanbin', greeting:'Good Morning'/}
+</blockquote>
+<br/>
+默认参数名和命名参数同时使用<br/><br/>
+<pre class="lang:default decode:true">    public static void _hello(Map&lt;?, ?&gt; args, Closure body, PrintWriter out,
+        ExecutableTemplate template, int fromLine) { 
+        out.println("Hello " + args.get("arg") + " " + args.get("greeting"));
+    }
+</pre>
+<br/>
+<blockquote>
+#{hello 'Yanbin', greeting:'Good Morning'/}
+</blockquote>
+<br/>
+没指定名字的参数名是 arg。<br/><br/>
+最后，无论是在自定义标签还是在扩展的 Java 对象方法中都可以直接使用 request, params, flash, session, play, messages, errors, lang, out 对象，见 <a href="http://www.playframework.com/documentation/1.2.7/templates#implicits" target="_blank" rel="noopener">Implicit objects available in a template</a>。<br/><br/>
+FastTags 标签可以有自己的命名空间，如为了避免与默认命名空间里的 play.templates.FastTags 中定义的标签冲突，可以为自己的标签类 <code>@FastTags.Namespace("my.tags") </code> 加标注，如<br/><br/>
+<pre class="brush:java ">@FastTags.Namespace("my.tags")
+public class PlayTags extends FastTags {
+    public static void _hello(........) { ........}
+}</pre>
+<br/>
+这样，使用该标签就用<br/><br/>
+<blockquote>
+#{my.tags.hello 'Yanbin'/}
+</blockquote>
+<br/>
+@FastTags.Namespace  就像是命名包一样，随便你指定什么样的层次。

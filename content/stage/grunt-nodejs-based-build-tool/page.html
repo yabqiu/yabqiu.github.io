@@ -1,0 +1,141 @@
+---
+title: Grunt - 基于 node.js 构建工具之初体验
+url: /grunt-nodejs-based-build-tool/
+date: 2014-03-31T03:04:17-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2014/04/grunt-logo.png"
+categories:
+  - NodeJS
+tags: 
+  - build
+  - javascript
+  - Grunt
+  - NodeJS
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6267 
+wpStatus: publish
+views: 1483
+lastmod: 2015-01-15T13:43:02-06:00
+---
+
+自动化构建工具真是缭乱纷呈，最早的 make, nmake, 到 Ant, NAnt, 进化到面向对象的 Maven, Gradle，由 Scala 而起的 SBT, SBuild，再就是今天要说的由 node.js 建立起的生态 <a href="http://gruntjs.com" target="_blank">Grunt</a>。Grunt 可以做什么呢，理论上只要有相应的<a href="http://gruntjs.com/plugins" target="_blank">插件</a>支持，它可以应对任何构建任务，但它更为有力的表现是在前端方面。<br/>
+<br/>
+Grunt 是运行在 node.js 环境，由 npm 来安装，所以首先要安装 node.js, npm, 它们俩的安装不多说，我这里的版本分别是：<br/>
+<blockquote>unmi@localhost ~&gt; node --version<br/>
+v0.10.24<br/>
+unmi@localhost ~&gt; npm --version<br/>
+1.3.21</blockquote>
+
+运行 Grunt 还要安装 grunt-cli, 使用命令 npm install -g grunt-cli，安装后我机器上 Grunt 的版本是<!--more--><br/>
+<blockquote>unmi@localhost ~&gt; grunt --version<br/>
+grunt-cli v0.1.13<br/>
+grunt v0.4.4</blockquote>
+
+在这里就算安装成功了。<br/>
+<br/>
+作为一个 Grunt 项目至少要两个文件<br/>
+<br/>
+package.json -- 配置项目信息，及 Grunt 插件依赖<br/>
+Gruntfile.js  -- 任务配置文件<br/>
+<br/>
+再加实际的项目文件，我们这里来演示 Grunt 怎么把 test.less 格式的样式文件编译成 test.css 标准格式，并压缩成 test-min.css 文件的。<br/>
+<br/>
+所以现在要演示的最最简单的几乎无功能的工程的目录结构为:<br/>
+<blockquote>unmi@localhost ~&gt; tree testgrunt<br/>
+testgrunt<br/>
+├── Gruntfile.js<br/>
+├── css<br/>
+│   └── test.less<br/>
+└── package.json</blockquote>
+
+package.json 内容如下：<br/>
+<pre class="brush:js">{<br/>
+  "name": "TestGrunt",<br/>
+  "version": "0.1.0",<br/>
+  "devDependencies": {<br/>
+    "grunt": "~0.4.2",<br/>
+    "grunt-contrib-less": "*",<br/>
+    "grunt-contrib-watch": "~0.5.3"<br/>
+  }<br/>
+}</pre>
+
+Gruntfile.js 内容如下：<br/>
+<pre class="brush:js">module.exports = function (grunt) {<br/>
+<br/>
+    grunt.initConfig({<br/>
+        less: {<br/>
+            compile: {<br/>
+                files: {<br/>
+                    'css/test.css': 'css/test.less'<br/>
+                }<br/>
+            },<br/>
+            compress: {<br/>
+                files: {<br/>
+                    'css/test-min.css': 'css/test.css'<br/>
+                },<br/>
+                options: {<br/>
+                    compress: true<br/>
+                }<br/>
+            }<br/>
+        },<br/>
+        watch: {<br/>
+            scripts: {<br/>
+                files: ['css/*.less'],<br/>
+                tasks: ['less']<br/>
+            }<br/>
+        }<br/>
+    });<br/>
+<br/>
+    grunt.loadNpmTasks('grunt-contrib-less');<br/>
+    grunt.loadNpmTasks('grunt-contrib-watch');<br/>
+<br/>
+    grunt.registerTask('default', ['less', 'watch']);<br/>
+};</pre>
+
+test.less 文件内容如下：<br/>
+<pre class="brush:css">@base: #f938ab;<br/>
+<br/>
+.box-shadow(@style, @c) when (iscolor(@c)) {<br/>
+  -webkit-box-shadow: @style @c;<br/>
+  box-shadow:         @style @c;<br/>
+}<br/>
+.box-shadow(@style, @alpha: 50%) when (isnumber(@alpha)) {<br/>
+  .box-shadow(@style, rgba(0, 0, 0, @alpha));<br/>
+}<br/>
+.box {<br/>
+  color: saturate(@base, 5%);<br/>
+  border-color: lighten(@base, 30%);<br/>
+  div { .box-shadow(0 0 5px, 30%) }<br/>
+}</pre>
+
+至此，文件都已准备妥当，开始运行命令了，先确保当前目录是在工程的根目录<br/>
+<blockquote>npm install</blockquote>
+
+会把 package.json 中配置的依赖从网络上下载到 node_modules 目录中去。再运行 <code>grunt less</code> 就能生成 test.css 和 test-min.css 文件，看命令：<br/>
+<p style="text-align: center;"><a href="http://unmi.cc/wp-content/uploads/2014/03/grunt-less.png"><img class="aligncenter  wp-image-6275" src="http://unmi.cc/wp-content/uploads/2014/03/grunt-less-1024x404.png" alt="grunt-less" width="800" /></a></p>
+
+如果直接运行 grunt, 则是跑的 default 任务，它会启动 watch, 一直观察 css/ 目录下文件的任何的每一次改动, 进而运行 less 任务。<br/>
+<br/>
+我们体验了一个完整的 Grunt 之旅，其余就要步步为营的挺进，点点滴滴的累积了。上面我们用的 JavaScript 写的 Gruntfile.js, 也可以换成  Gruntfile.coffee 文件，即 <a href="http://coffeescript.org/" target="_blank">CoffeeScript</a> 脚本文件。<br/>
+<br/>
+上面 <code>grunt less</code> 是运行了其中一个任务，可用 <code>grunt --help</code> 查看所有任务，直接 <code>grunt</code> 是运行默认的任务，这与 ant 基本一样的。<br/>
+<br/>
+基本上你需要什么样的功能就到 <a href="http://gruntjs.com/plugins" target="_blank">http://gruntjs.com/plugins</a> 这里来找插件，有了需要插件可以运行 <code>npm install &lt;module&gt; --save-dev </code>命令把依赖写到 package.json 文件中去，这和 PlayFramework 安装模块类似的。可用命令 <code>npm init</code> 来创建默认的 <code>package.json</code> 文件，命令 <code>npm install</code> 是用来下载安装在 <code>package.json</code> 中指定的依赖。<br/>
+<br/>
+安装了模块(这里模块和插件好像就一个概念)后，需要在 Gruntfile.js 中用 <code>grunt.loadNpmTasks()</code> 方法加载进来，并可参照插件的帮助页面来配置使用它。<br/>
+<br/>
+再懒点 Gruntfile.js 也可以用 grunt-init 来创建，先要几步：<br/>
+<blockquote>npm install -g grunt-init<br/>
+git clone https://github.com/gruntjs/grunt-init-gruntfile.git ~/.grunt-init/gruntfile</blockquote>
+
+以后就可以 <code>grunt-init gruntfile</code> 向导式创建 <code>Gruntfile.js</code> 文件，它也可以创建 package.json 文件。不过可能这样产生的 Gruntfile.js 文件真心不是你想要的，还不如纯手工打照，或者 Copy 以前的。<br/>
+<br/>
+有了对 Grunt 基本的了解后，比如当我们拿到别人的一个 Grunt 项目，首先就要运行 <code>npm install</code> 下载安装 <code>package.json</code> 中涉及的依赖，然后 <code>grunt --help</code> 看看有什么任务可执行，再执行相应的任务。<br/>
+<br/>
+参考：1. <a href="http://gruntjs.com/getting-started" target="_blank">Getting started</a>

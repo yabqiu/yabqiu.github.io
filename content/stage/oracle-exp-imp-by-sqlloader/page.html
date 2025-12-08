@@ -1,0 +1,159 @@
+---
+title: 关于 Oracle 的数据导入导出及 Sql Loader (sqlldr) 的用法
+url: /oracle-exp-imp-by-sqlloader/
+date: 2009-01-05T21:15:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Database
+tags: 
+  - Oracle
+  - sqlldr
+  - sql loader
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 302 
+wpStatus: publish
+views: 696
+lastmod: 2021-09-02T11:48:34-05:00
+---
+
+在 Oracle 数据库中，我们通常在不同数据库的表间记录进行复制或迁移时会用以下几种方法：</p>
+<br/>
+1. A 表的记录导出为一条条分号隔开的 insert 语句，然后执行插入到 B 表中<br />
+2. 建立数据库间的 dblink，然后用 create table B as select * from <a href="mailto:A@dblink">A@dblink</a> where ...，或 insert into B select * from <a href="mailto:A@dblink">A@dblink</a> where ...<br />
+3. exp A 表，再 imp 到 B 表，exp 时可加查询条件<br />
+4. 程序实现 select from A ..，然后 insert into B ...，也要分批提交<br />
+5. 再就是本篇要说到的 Sql Loader(sqlldr) 来导入数据，效果比起逐条 insert 来很明显<br/><br/>
+第 1 种方法在记录多时是个噩梦，需三五百条的分批提交，否则客户端会死掉，而且导入过程很慢。如果要不产生 REDO 来提高 insert into 的性能，就要下面那样做：<!--more--><br/><br/>
+<pre class="brush:sql">alter table B nologging;
+insert /* +APPEND */ into B(c1,c2) values(x,xx);
+insert /* +APPEND */ into B select * from A@dblink where .....;</pre>
+<br/>
+好啦，前面简述了 Oracle 中数据导入导出的各种方法，我想一定还有更高明的。下面重点讲讲 Oracle  的 Sql Loader (sqlldr) 的用法。<br/><br/>
+在命令行下执行 Oracle  的 sqlldr 命令，可以看到它的详细参数说明，要着重关注以下几个参数：<br/><br/>
+<span style="color: #ff0000;">userid</span> -- Oracle 的 username/password[@servicename]<br />
+<span style="color: #ff0000;">control</span> -- 控制文件，可能包含表的数据<br />
+-------------------------------------------------------------------------------------------------------<br />
+log -- 记录导入时的日志文件，默认为 控制文件(去除扩展名).log<br />
+bad -- 坏数据文件，默认为 控制文件(去除扩展名).bad<br />
+data -- 数据文件，一般在控制文件中指定。用参数控制文件中不指定数据文件更适于自动操作<br />
+errors -- 允许的错误记录数，可以用他来控制一条记录都不能错<br />
+rows -- 多少条记录提交一次，默认为 64<br />
+skip -- 跳过的行数，比如导出的数据文件前面几行是表头或其他描述<br/><br/>
+还有更多的 sqlldr 的参数说明请参考：<a href="http://www.myfaq.com.cn/2005September/2005-09-13/206612.html" target="_blank" rel="noopener">sql loader的用法</a>。<br/><br/>
+用例子来演示 sqlldr 的使用，有两种使用方法：<br/><br/>
+1. 只使用一个控制文件，在这个控制文件中包含数据<br />
+2. 使用一个控制文件(作为模板) 和一个数据文件<br/><br/>
+一般为了利于模板和数据的分离，以及程序的不同分工会使用第二种方式，所以先来看这种用法。数据文件可以是 CSV 文件或者以其他分割符分隔的，数据文件可以用 PL/SQL Developer 或者 Toad 导出，也可以<a title="这个连接里有介绍 SQL *Plus 和 UTL_FILE 生成数据文件" href="http://soft.ccw.com.cn/programing/database/htm2008/20080925_509432_2.shtml" target="_blank" rel="noopener">用 SQL *Plus 的  spool 格式化产出，或是 UTL_FILE 包生成</a>。另外，用 Toad 还能直接生成包含数据的控制文件。<br/><br/>
+首先，假定有这么一个表 users，并插入五条记录：<br/><br/>
+<pre class="brush:sql">create table users(
+    user_id number,           --用户 ID
+    user_name varchar2(50),   --用户名
+    login_times number,       --登陆次数
+    last_login date           --最后登录日期
+)</pre>
+<br/>
+<pre class="brush:sql">insert into users values(1,'Unmi',3,sysdate);
+insert into users values(2,NULL,5,to_date('2008-10-15','YYYY-MM-DD'));
+insert into users values(3,'隔叶黄莺',8,to_date('2009-01-02','YYYY-MM-DD'));
+insert into users values(4,'Kypfos',NULL,NULL);
+insert into users values(5,'不知秋',1,to_date('2008-12-23','YYYY-MM-DD'));</pre>
+<br/>
+第二种方式： 使用一个控制文件(作为模板) 和一个数据文件<br/><br/>
+1) 建立数据文件，我们这里用 PL/SQL Developer 导出表 users 的记录为 users_data.csv 文件，内容如下：<br/><br/>
+<pre class="brush:sql">"   ","USER_ID","USER_NAME","LOGIN_TIMES","LAST_LOGIN"
+"1","1","Unmi","3","2009-1-5 20:34:44"
+"2","2","","5","2008-10-15"
+"3","3","隔叶黄莺","8","2009-1-2"
+"4","4","Kypfos","",""
+"5","5","不知秋","1","2008-12-23"</pre>
+<br/>
+2) 建立一个控制文件 users.ctl，内容如下：<br/><br/>
+<pre class="brush:sql">OPTIONS (skip=1,rows=128) -- sqlldr 命令显示的选项可以写到这里边来,skip=1 用来跳过数据中的第一行
+LOAD DATA
+INFILE "users_data.csv" --指定外部数据文件，可以写多个 INFILE "another_data_file.csv" 指定多个数据文件
+--这里还可以使用 BADFILE、DISCARDFILE 来指定坏数据和丢弃数据的文件，
+truncate --操作类型，用 truncate table 来清除表中原有记录
+INTO TABLE users -- 要插入记录的表
+Fields terminated by "," -- 数据中每行记录用 "," 分隔
+Optionally enclosed by '"' -- 数据中每个字段用 '"' 框起，比如字段中有 "," 分隔符时
+trailing nullcols --表的字段没有对应的值时允许为空
+(
+  virtual_column FILLER, --这是一个虚拟字段，用来跳过由 PL/SQL Developer 生成的第一列序号
+  user_id number, --字段可以指定类型，否则认为是 CHARACTER 类型, log 文件中有显示
+  user_name,
+  login_times,
+  last_login DATE "YYYY-MM-DD HH24:MI:SS" -- 指定接受日期的格式，相当用 to_date() 函数转换
+)</pre>
+<br/>
+说明：在操作类型 truncate 位置可用以下中的一值：<br/><br/>
+1) insert     --为缺省方式，在数据装载开始时要求表为空<br />
+2) append  --在表中追加新记录<br />
+3) replace  --删除旧记录(用 delete from table 语句)，替换成新装载的记录<br />
+4) truncate --删除旧记录(用 truncate table 语句)，替换成新装载的记录<br/><br/>
+3) 执行命令：<br/><br/>
+sqlldr <a href="mailto:dbuser/dbpass@dbservice">dbuser/dbpass@dbservice</a> control=users.ctl<br/><br/>
+在 dbservice 指示的数据库的表 users 中记录就和数据文件中的一样了。<br/><br/>
+执行完 sqlldr 后希望能留意一下生成的几个文件，如 users.log 日志文件、users.bad 坏数据文件等。特别是要看看日志文件，从中可让你更好的理解 Sql Loader，里面有对控制文件的解析、列出每个字段的类型、加载记录的统计、出错原因等信息。<br/><br/>
+第一种方式，只使用一个控制文件在这个控制文件中包含数据<br/><br/>
+1) 把 users_data.cvs 中的内容补到 users.ctl 中，并以 BEGINDATA 连接，还要把 INFILE "users_data.csv" 改为 INFILE *。同时为了更大化的说明问题，把数据处理了一下。此时，完整的 users.ctl 文件内容是：<br/><br/>
+<pre class="lang:default decode:true ">OPTIONS (skip=1,rows=128) -- sqlldr 命令显示的选项可以写到这里边来,skip=1 用来跳过数据中的第一行
+LOAD DATA
+INFILE *  -- 因为数据同控制文件在一起，所以用 * 表示
+append    -- 这里用了 append 来操作，在表 users 中附加记录
+INTO TABLE users
+when LOGIN_TIMES&lt;&gt;'8'  -- 还可以用 when 子句选择导入符合条件的记录
+Fields terminated by ","
+trailing nullcols
+(
+  virtual_column FILLER, --跳过由 PL/SQL Developer 生成的第一列序号
+  user_id "user_seq.nextval", --这一列直接取序列的下一值，而不用数据中提供的值
+  user_name "'Hi '||upper(:user_name)",--,还能用SQL函数或运算对数据进行加工处理
+  login_times terminated by ",", NULLIF(login_times='NULL') --可为列单独指定分隔符
+  last_login DATE "YYYY-MM-DD HH24:MI:SS" NULLIF (last_login="NULL") -- 当字段为"NULL"时就是 NULL
+)
+BEGINDATA --数据从这里开始
+   ,USER_ID,USER_NAME,LOGIN_TIMES,LAST_LOGIN
+1,1,Unmi,3,2009-1-5 20:34
+2,2,Fantasia,5,2008-10-15
+3,3,隔叶黄莺,8,2009-1-2
+4,4,Kypfos,NULL,NULL
+5,5,不知秋,1,2008-12-23</pre>
+<br/>
+2) 执行一样的命令：<br/><br/>
+sqlldr <a href="mailto:dbuser/dbpass@dbservice">dbuser/dbpass@dbservice</a> control=users.ctl<br/><br/>
+比如，在控制台会显示这样的信息：<br/><br/>
+<span style="background-color: #000000; color: #ffffff;">C:\&gt;sqlldr </span><a href="mailto:dbuser/dbpass@dbservice"><span style="background-color: #000000; color: #ffffff;">dbuser/dbpass@dbservice</span></a><span style="background-color: #000000; color: #ffffff;"> control=users.ctl</span><br/><br/>
+<span style="background-color: #000000; color: #ffffff;">SQL*Loader: Release 9.2.0.1.0 - Production on 星期三 1月 7 22:26:25 2009</span><br/><br/>
+<span style="background-color: #000000; color: #ffffff;">Copyright (c) 1982, 2002, Oracle Corporation.  All rights reserved.</span><br/><br/>
+<span style="background-color: #000000; color: #ffffff;">达到提交点，逻辑记录计数4<br />
+达到提交点，逻辑记录计数5<br />
+</span><br/><br/>
+上面的控制文件包含的内容比较复杂(演示目的)，请根据注释理解每个参数的意义。还能由此发掘更多用法。<br/><br/>
+最后说下有关 SQL *Loader 的性能与并发操作<br/><br/>
+1) ROWS 的默认值为 64，你可以根据实际指定更合适的 ROWS 参数来指定每次提交记录数。(体验过在 PL/SQL Developer 中一次执行几条条以上的 insert 语句的情形吗？)<br/><br/>
+2）常规导入可以通过使用 INSERT语句来导入数据。Direct导入可以跳过数据库的相关逻辑(DIRECT=TRUE)，而直接将数据导入到数据文件中，可以提高导入数据的性能。当然，在很多情况下，不能使用此参数(如果主键重复的话会使索引的状态变成UNUSABLE!)。<br/><br/>
+3) 通过指定 UNRECOVERABLE选项，可以关闭数据库的日志(是否要 alter table table1 nologging 呢?)。这个选项只能和 direct 一起使用。<br/><br/>
+4) 对于超大数据文件的导入就要用并发操作了，即同时运行多个导入任务.<br/><br/>
+  sqlldr   userid=/   control=result1.ctl   direct=true   parallel=true<br />
+  sqlldr   userid=/   control=result2.ctl   direct=true   parallel=true<br />
+  sqlldr   userid=/   control=result2.ctl   direct=true   parallel=true  <br/><br/>
+  当加载大量数据时（大约超过10GB），最好抑制日志的产生：  <br/><br/>
+  SQL&gt;ALTER   TABLE   RESULTXT   nologging;<br/><br/>
+  这样不产生REDO LOG，可以提高效率。然后在 CONTROL 文件中 load data 上面加一行：unrecoverable，  此选项必须要与DIRECT共同应用。  <br/><br/>
+  在并发操作时，ORACLE声称可以达到每小时处理100GB数据的能力！其实，估计能到 1－10G 就算不错了，开始可用结构 相同的文件，但只有少量数据，成功后开始加载大量数据，这样可以避免时间的浪费。<br/><br/>
+参考：1. <a href="http://www.psoug.org/reference/sqlloader.html" target="_blank" rel="noopener">Oracle SQL<em>Loader</a>  -- 英文，Sql Loader 的官方使用说明，包含多种类型的  Demo<br />
+        2. <a href="http://www.myfaq.com.cn/2005September/2005-09-13/206612.html" target="_blank" rel="noopener">sql loader的用法</a>  -- 列出了 sql loader 的选择参数的中文说明<br />
+        3. <a href="http://www.cnblogs.com/chinaray/archive/2008/04/18/1160466.html" target="_blank" rel="noopener">使用SQL Loader导入大量数据，避免使用SQL频繁写库</a> -- 一个简单的例子，快带了解 Sql Loader 的用法<br />
+        4. <a href="http://www.yuanma.org/data/2006/0922/article_1573.htm" target="_blank" rel="noopener">Oracle SQL Loader的详细语法</a><br />
+        5. <a href="http://soft.ccw.com.cn/programing/database/htm2008/20080925_509432.shtml" target="_blank" rel="noopener">oracle sql loader全攻略</a> -- 还算名符其实。并讲了如何用 SQL *Plus 的  spool 或 UTL_FILE 包生成数据文件<br />
+        6. <a href="http://download.oracle.com/docs/cd/B10501_01/server.920/a96652/ch05.htm" target="_blank" rel="noopener">SQL</em>Loader Control File Reference</a>   -- 英文，控制文件使用参考<br />
+        7. <a href="http://blog.csdn.net/s98/archive/2005/11/08/525387.aspx" target="_blank" rel="noopener">学习oracle sql loader 的使用</a><br />
+        8. <a href="http://www.knowsky.com/388788.html" target="_blank" rel="noopener">用sqlloader(sqlldr)装载LOB数据</a>  -- LOB 的内类是一个外部文件，用 sql loader 导入到数据库<br />
+        9. <a href="http://jolly10.itpub.net/post/7268/466996" target="_blank" rel="noopener">SQLLDR直接加载几个参数的测试</a><br />
+        10.<a href="http://www.remote-dba.net/teas_rem_util18.htm" target="_blank" rel="noopener">Maximizing SQL*Loader Performance</a>

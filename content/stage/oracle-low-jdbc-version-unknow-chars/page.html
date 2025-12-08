@@ -1,0 +1,92 @@
+---
+title: Oracle 驱动版本引起的显示字段奇怪编码问题
+url: /oracle-low-jdbc-version-unknow-chars/
+date: 2008-07-17T07:03:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2006/01/oracle-logo.png"
+categories:
+  - Java/JEE
+  - Database
+tags: 
+  - JDBC
+  - database
+  - Oracle
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 369 
+wpStatus: publish
+views: 696
+lastmod: 2020-03-22T12:15:29-05:00
+---
+
+开门见山把产生问题的原因的解决办法列出来。</p>
+<br/>
+我们一般获取 Statement 都是通过 conn.createStatement() 方法，很少传递参数给它的，所以其内置属性都取默认值的，取记录只用 while(rs.next()) 逐个取即可。然而有一个需求(Oracle 8i 之前的版本不支持子查询排序，所以无法用 rownum 取分页记录) 是通过如下代码来得到 Statement：<br/><br/>
+Statement stmt = conn.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE,ResultSet.CONCUR_READ_ONLY);<br/><br/>
+由它获得的结果集可以 rs.absolute(n) 直接跳到第 n 行记录来获得值，但就这个用法出问题了，取出来的中文出现乱码了，如 "无效"，变成了 "0xE697A0E69588"<!--more--><br/><br/>
+原因是我用的 Oracle 驱动版本太低了，是 8.1.6 的驱动版本，只要换成 8.1.7 或更高的驱动版本就可以正常取得中文字段值了。<br/><br/>
+问题及解决就上面那几行描述，当问题解决后再回望一下，确是如此之简单。OK，你可以跳到其他你喜爱的页面了。倘若有兴趣的话，下话是我记述的这一问题产生及解决的整个历程。在如此简单的解决办法面前似乎不值的长提，但毕竟颇费了一番周折，仅此。<br/><br/>
+公司有一个 Web 项目是用的 Oracle 驱动 classes12.zip 自带的连接池实现 oracle.jdbc.pool.OracleConnectionCacheImpl，因为数据库是 Oracle 8.0.5，还不是 8i，所以不支持子查询排序，当有 order by 时便不能用 rownum 来分页查询。<br/><br/>
+原来在处理有排序的记录集的分页显示是把所有记录全部 next 成一个一个对象放在 List 中，然后根据页面要求显示的记录段从 list 中取子集。这无疑效率是非常的低下，每一次翻页都是很考验人耐心的，河量的数据也将是不可思义的。用代码演示就是：<br/><br/>
+//查出所有记录<br />
+Statement stmt = conn.createStatement();<br />
+ResultSet rs = stmt.executeQuery("SELECT indication_status FROM transfer_head order by id desc");<br />
+while(rs.next()){<br />
+    list.add(rs.getString(1));<br />
+}<br/><br/>
+//取出某页要显示的记录，如每页10条记录，第3页的记录就是<br />
+List pageList = Utils.subset(list,3*10,10);  //Utils.subset() 为一个自定义的取集合子集的方法<br/><br/>
+现在要对其进行优化，不希望每次都把表中所有的记录捋出来，要像用 rownum 那样加子查询的方式只取出需要显示的那部分记录。这就要用到动态游标了，在得到的记录集上，直接跳到所要记录的起始处取相应数量的记录。代码演示如下：<br/><br/>
+Statement stmt = conn.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE,ResultSet.CONCUR_READ_ONLY);<br />
+ResultSet rs = stmt.executeQuery("SELECT indication_status FROM transfer_head order by id desc");<br />
+rs.absolute(3*10);  //注意不能 rs.absolute(0);<br />
+for(int i = 0;rs.next() &amp;&amp; i &lt;10; i++){<br />
+    list.add(rs.getString(1));<br />
+}<br/><br/>
+这样写可大大节约网络 IO 和服务器内存。好了，在本地 Tomcat 下测试，效果很显著。可是一放到正式环境(Solaris 5.8 + Was 5.1 + Oralce 8.0.5) 上去，出问题了，原来的 indication_status 能正常显示中文，如 "无效"，现在显示成 "0xE697A0E69588"。这下糟了，这种乱码怎么来的，不像传统上的字符集问题。于是脑海中搜寻是否有似曾相识的等价物：<br/><br/>
+Base64？不像；<br />
+'native2ascii 无效' 看看，也不是；<br/><br/>
+难道会是 URLEncode，逐个<br />
+java.net.URLEncoder.encode("无效")、<br />
+java.net.URLEncoder.encode("无效","GBK")、<br />
+java.net.URLEncoder.encode("无效","UTF-8")，<br/><br/>
+对了就这个 UTF-8 的，输出为：'%E6%97%A0%E6%95%88'，它和 '0xE697A0E69588' 完全能对上号了，只是排版上不一致而已。就想针对性的对这种输出 URLDecode，不过，看来也不简单，需要去 '0x'，然后在偶数位上插入 '%' 号后再转。好在状态不多，姑且 switch...case/if...else 对应转换了事先。<br/><br/>
+到这里为止仍然不知道为何本地好好的程序放到正式环境就出事故，也不明白为什么原来用不带参数创建的 Statement(conn.createStatement()) 查询显示中文没问题，给它指定 ResultSet.TYPE_SCROLL_INSENSITIVE,ResultSet.CONCUR_READ_ONLY 就会出问题。<br/><br/>
+对于问题的解决，需要不断的提出质疑，然后逐个击破。<br/><br/>
+1. WAS 的差异<br />
+   在另一台机器上是 Redhat AS4 update 2 + WAS 5.1，做一个在正式环境能显现问题的测试应用部署到这上面去，访问，中文能正常显示。<br/><br/>
+2. JVM 参数的差异<br />
+   正式应用服务器的一般 JVM 参数为：-Dfile.encoding=GBK -Dclient.encoding.override=GBK -Ddefault.client.encoding=GBK<br />
+   把 Redhat AS4 上的 WAS5.1　也设置成一样的 JVM 参数，中文在这台机器上的表现仍然良好<br/><br/>
+3. 不同平台 JDK 的差异<br />
+   做成单独的应用程序，在 Solaris 的控制台下用 WAS 5.1 所带的 java 命令运行，中文显示仍然没有问题。<br/><br/>
+最后注意力落到在 Oracle 驱动版本的问题上了，同时隐然间回忆起曾经试图部署一个使用了 Oracle 9i 数据库的应用到正式环境的经历：<br/><br/>
+重新指定 9i 的驱动，为这个应用建新的数据源，和在应用中自己用 Spring 配置来初始化连接池均告失败，原因为在 WAS 集群的单元范围上已用一个旧版本的 Oracle 驱动创建了数据源，因此任凭你如何用 Oracle 的连接，你始终加载的都是那个旧的驱动。<br/><br/>
+似乎毫无疑问，这一切就出在那个旧的 Oracle 驱动上。这个应用在我本地的 Tomcat 中为什么能正确显示中文，是因为在此应用的 WEB-INF/lib 中有一个 classes12.zip 包，本地运行就是加载的这个包，而一旦放到正式环境上去就用不上应用下 WEB-INF/lib 中的 classes12.zip 了，而是加载的连接池所指定的 Oracle 驱动。<br/><br/>
+进一步验证：<br/><br/>
+把正式环境上连接池指定的 Oracle 驱动 classes12.zip 拷到我的机器上，让问题程序用这个驱动，果然问题重现出来了，中文 "无效" 现在终于显现成 "0xE697A0E69588" 了。问题总算是非常明确了，给正式环境的连接池换个更新一点的 Oracle 驱动就行啦，甚至可以用 Oracle 9i 的驱动包，不过还得观察一阵是否会影响到其他的应用。<br/><br/>
+后记，了解你的数据库和驱动的版本，要是早先用下面的代码到容器中观察输出就更省些事了：<br/><br/>
+在取得 Connection 后，用如下代码显示数据库和驱动的信息<br/><br/>
+System.out.println("DriverVersion: "+ conn.getMetaData().getDatabaseProductVersion());<br />
+System.out.println("DriverVersion: "+ conn.getMetaData().getDriverVersion());<br />
+System.out.println("DriverClass: "+ DriverManager.getDriver(url).getClass());<br/><br/>
+问题驱动，即正式环境连接池所用的 classese12.zip 通过上面代码显示的信息是：<br/><br/>
+DriverVersion: Oracle8 Enterprise Edition Release 8.0.5.1.0 - Production<br />
+With the Partitioning and Objects options<br />
+PL/SQL Release 8.0.5.1.0 - Production<br />
+DriverVersion: 8.1.6.0.0<br />
+DriverClass: class oracle.jdbc.driver.OracleDriver<br/><br/>
+在本地能正常显示中文的驱动通过上面代码显示的信息是：<br/><br/>
+DriverVersion: Oracle8 Enterprise Edition Release 8.0.5.1.0 - Production<br />
+With the Partitioning and Objects options<br />
+PL/SQL Release 8.0.5.1.0 - Production<br />
+DriverVersion: 8.1.7.0.0<br />
+DriverClass: class oracle.jdbc.driver.OracleDriver<br/><br/>
+也就是 8.1.7 和 8.1.6 的差别，分别打开这两个版本的 classes12.zip 包。<br/><br/>
+在 8.1.7 的 classes12.zip 中有 oracle.jdbc.OracleDriver 和 oracle.jdbc.driver.OracleDriver 两个驱动类，无论使用哪一个都行。<br/><br/>
+而 8.1.6 的 classes12.zip 中只有 oracle.jdbc.driver.OracleDriver 一个驱动类。而应用这两个包的 oracle.jdbc.pool.OracleConnectionCacheImpl 实现连接池，都是用的 oracle.jdbc.driver.OracleDriver 驱动类。

@@ -1,0 +1,157 @@
+---
+title: Python datetime 处理时区信息
+url: /python-datetime-timezone/
+date: 2020-07-07T16:47:51-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - timezone
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10353 
+wpStatus: publish
+views: 2244
+lastmod: 2021-09-02T20:42:29-05:00
+---
+
+在 <a href="https://yanbin.blog/python-date-libraries-usages/">Python 常用日期处理 -- 内置模块 datetime</a> 探讨了 Python  如何使用 datetime, 如果是一个跨时区的应用(Web 应用都是)，就不能只存储一个时间而不带时区，如此，全球用户将会看到一个相同的时间字符串，白天黑夜就错乱了。比说用户信息的更新时间存储为 2020-07-07 13:46:08, 上海的用户和芝加哥的用户看到的是同一个时间字符串，实质上却相差好多个小时。</p>
+<br/>
+我们可以这么做，在服务端只存储一个 Timestamp 长整型值或 UTC 时间，Timestamp 是无关乎时区的，它总是相对于一个 UTC 时间的偏移值; 然后由客户端根据本地时区来显示当地时间。不过在服务端存储为 Timestamp 或 UTC 可读性就不强了，打开文件看到 Timestamp 整形值，大脑是无法直接转换为日期，UTC 时间略好一些。<br/><br/>
+另一种做法可在服务端存储为开发者便于理解的带时区的时间，如 2020-07-07T13:46:08.342+08:00, 客户获得该时间，因为带有时区信息也就能转换为客户端本地时间。<br/><br/>
+客户端请求时还可以把本地的时区信息传送给服务端，由服务端转换为相应的本地时间发送给客户端，但 HTTP 头信息默认不带时区信息，客户端必须主动发送它。<!--more--><br/><br/>
+本人倾向于在服务端存为带时区的时间，2020-07-07T13:46:08.342+08:00 是一个标准的存储格式(ISO_OFFSET_DATE_TIME)，客户端收到它再转换本地时间，JavaScript 一个很好的组件 <a href="https://momentjs.com/">moment</a> 处理时间。<br/><br/>
+<h3>探索 Python 对时区的处理</h3><br/><br/>
+Python 内置组件不能像 Java 的 <code>ZoneId.of("Asia/Shanghai")</code> 直接以时区名获得 Zone，而需要知道与标准时区的偏移，如上海是东八区，在 Python 中要用 <code>timezone(timedelta(hours=+8))</code>. <br/><br/>
+那么来看 Python 中输出带时区信息，以下是一些应用 Pytho 时区 timezone 的例子<br/><br/>
+<pre class="lang:default decode:true">from datetime import datetime, timezone, timedelta<br/><br/>
+tz = timezone(timedelta(hours=+8))<br/><br/>
+fmt = '%Y-%m-%dT%H:%M:%S.%f%z'
+zoned_time1 = datetime.today().astimezone(tz)
+print(1, zoned_time1.strftime(fmt))    # 2020-07-08T04:30:26.221450+0800<br/><br/>
+zoned_time2 = datetime.now(tz)
+print(2, zoned_time2.strftime(fmt))    # 2020-07-08T04:30:26.221543+0800<br/><br/>
+zoned_time3 = datetime.utcnow()
+print(3, zoned_time3.isoformat())     # 2020-07-07T20:30:26.221848<br/><br/>
+print(4, zoned_time2.strftime('%Y-%m-%dT%H:%M:%S.%f%Z')) # 2020-07-08T04:30:26.221543UTC+08:00<br/><br/>
+timestamp = datetime.today().timestamp()
+print(5, timestamp)                  # 1594153826.221895
+print(6, datetime.fromtimestamp(timestamp, tz=tz)) # 2020-07-08 04:30:26.221895+08:00<br/><br/>
+zoned_time4 = datetime(2020, 7, 8, 4, 23, 53, 112, tzinfo=tz)
+print(7, zoned_time4.isoformat())   # 2020-07-08T04:23:53.000112+08:00<br/><br/>
+print(8, zoned_time2.isoformat())   # 2020-07-08T04:30:26.221543+08:00</pre>
+<br/>
+输出为, 已加到上面源代码中<br/><br/>
+<blockquote>
+1 2020-07-08T04:30:26.221450+0800<br />
+2 2020-07-08T04:30:26.221543+0800<br />
+3 2020-07-07T20:30:26.221848<br />
+4 2020-07-08T04:30:26.221543UTC+08:00<br />
+5 1594153826.221895<br />
+6 2020-07-08 04:30:26.221895+08:00<br />
+7 2020-07-08T04:23:53.000112+08:00<br />
+8 2020-07-08T04:30:26.221543+08:00
+</blockquote>
+<br/>
+时间字符串中要带有时区信息，首先时间要转换为带时区的，如用<br/><br/>
+<pre class="lang:default decode:true">datetime.astimezone(tz)                   # 已有时间转换为带时区的
+datetime.fromtimestamp(timestamp, tz=tz)  # 从 timestamp 构建 datetime 时加上时区</pre>
+<br/>
+<h3>找到 Python 输出标准格式的方法</h3><br/><br/>
+从上面的输出结果看第 8 行 2020-07-08T04:30:26.221543+08:00 接近于 Java 的 ISO_OFFSET_DATE_TIME 格式，只是毫秒段 Python 用了 6 位数字，参考 <a href="https://docs.python.org/3/library/datetime.html#strftime-strptime-behavior">strftime-strptime-behavior</a> 的 Python datetime 格式字符串定义找不到如何把毫秒段收缩为 3 位。<br/><br/>
+不过注意到 datetime.isoformat() 方法还有一个 timespec 可用，执行下面的代码<br/><br/>
+<pre class="lang:default decode:true">from datetime import datetime, timezone, timedelta<br/><br/>
+tz = timezone(timedelta(hours=+8))
+now = datetime.now(tz)
+print(now.isoformat(timespec='milliseconds'))</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+2020-07-08T04:41:10.793+08:00
+</blockquote>
+<br/>
+这正式我们想要的。还不仅仅是，继续往下读，我们还需要让 Python 支持夏令时，否则对于芝加哥时间夏天和冬天看到的都是 <code>-5</code>, 那是不对的。<br/><br/>
+<h3>pytz 组件构建时区</h3><br/><br/>
+Python 也有一个通过时区名称获得 timezone 的组件，那就是 pytz - Python TimeZone<br/><br/>
+<blockquote>
+$ pip install pytz
+</blockquote>
+<br/>
+测试 pytz<br/><br/>
+<pre class="lang:default decode:true">from datetime import datetime
+from pytz import timezone<br/><br/>
+tz_shanghai = timezone('Asia/Shanghai')
+tz_chicago = timezone('America/Chicago')<br/><br/>
+print(datetime.now(tz=tz_shanghai).isoformat(timespec='milliseconds'))
+print(datetime.now(tz=tz_chicago).isoformat(timespec='milliseconds'))</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+2020-07-08T04:55:29.699+08:00<br />
+2020-07-07T15:55:29.699-05:00
+</blockquote>
+<br/>
+或者把已有 datetime 转换为带时区的<br/><br/>
+<pre class="lang:default decode:true  crayon-selected">atime.astimezone(tz_chicago)
+datetime.fromtimestamp(1602777199, tz=tz_chicago)</pre>
+<br/>
+<h3>关于夏令时与冬令时</h3><br/><br/>
+国内实行夏令时制还是很多年前的事了，80 后初期生人或许还有些印象，就是下午放了学走到街上就能看到《新闻联播》。为了达成一切形式的统一，我们不再实行夏令时制了，避免了造成可能的分裂。但其他国家仍然有下令时，这会造成同一个地方在一年中产生两个时区。<br/><br/>
+例如芝加哥，在夏季时 timezone 是 -05:00, 冬季时是  -06:00.<br/><br/>
+现在就来看一下 Python 是否能正确的处理夏令时(Date Saving Time)与冬令时(Night Saving Time)。回看上面代码是在 7 月份执行的结果，此时如果把本地时间改为 12 月份，再看输出<br/><br/>
+<blockquote>
+2020-12-08T06:10:27.862+08:00<br />
+2020-12-07T16:10:27.862-06:00
+</blockquote>
+<br/>
+上海的时区仍然为  +08:00, 而芝加哥的时区变成了 -06:00<br/><br/>
+Python 本身不支持对时令的支持，Python 只知道与 UTC 标准时区的偏移，timezone(timedelta(hours=-5)，夏天冬天它的偏移都是 -5，实现夏令冬令时是由 pytz 达成的，同样的 tz = timezone('America/Chiago')<br/><br/>
+<blockquote>
+夏天的结果是 Python 的 timezone(timedelta(hours=-5))<br />
+冬天的结果是 Python 的 timezone(timedelta(hours=-6))
+</blockquote>
+<br/>
+<h3>对比 Java 对时区的处理</h3><br/><br/>
+不妨看下隔壁 Java 是如何对时区处理的，分别测试了新旧时间 API<br/><br/>
+<pre class="lang:default decode:true ">Date today = new Date();
+System.out.println(new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX").format(today));<br/><br/>
+ZonedDateTime now = ZonedDateTime.now(ZoneId.of("Asia/Shanghai"));
+System.out.println(now.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+</pre>
+<br/>
+<blockquote>
+2020-07-07T14:53:55.017-05:00<br />
+2020-07-08T03:53:55.031+08:00
+</blockquote>
+<br/>
+<h3>小结一下</h3><br/><br/>
+<ol>
+    <li>时间用 Timestamp(长整形值) 或统一的 UTC 时间存储和传输，在显示时转换为本地时间，但存储介质上可读性差</li>
+    <li>用 timezone(timedelta(hours=-5)) 应用时区来存储，可读性增强，但会有夏/冬令时间误差问题</li>
+    <li>用 pytz 的 timezone('America/Chicago') 由时区名来构造 timezone 很好的解决了时区和夏/冬令时的问题</li>
+</ol>
+<br/>
+<hr /><br/><br/>
+更新(2021-09-02), Python 3.9 加入了新模块 <a href="https://docs.python.org/3/whatsnew/3.9.html#zoneinfo">zoneinfo</a>, 可处理时区的信息，看下面例子，可以不依赖于 pytz 模块了。<br/><br/>
+<pre class="lang:default decode:true ">&gt;&gt;&gt; from zoneinfo import ZoneInfo
+>&gt;&gt; from datetime import datetime, timedelta<br/><br/>
+>&gt;&gt; # Daylight saving time
+>&gt;&gt; dt = datetime(2020, 10, 31, 12, tzinfo=ZoneInfo("America/Los_Angeles"))
+>&gt;&gt; print(dt)
+2020-10-31 12:00:00-07:00
+>&gt;&gt; dt.tzname()
+'PDT'<br/><br/>
+>&gt;&gt; # Standard time
+>&gt;&gt; dt += timedelta(days=7)
+>&gt;&gt; print(dt)
+2020-11-07 12:00:00-08:00
+>&gt;&gt; print(dt.tzname())
+PST</pre>
+<br/>
+&nbsp;

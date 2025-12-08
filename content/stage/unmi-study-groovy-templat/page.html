@@ -1,0 +1,92 @@
+---
+title: Unmi 学习 Groovy 之模板
+url: /unmi-study-groovy-templat/
+date: 2008-10-05T09:25:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Groovy
+tags: 
+  - Groovy
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 321 
+wpStatus: publish
+views: 447
+lastmod: 2021-09-02T14:10:24-05:00
+---
+
+提起模板，在 Java 领域中无疑会让人想起 Velocity 和 FreeMarker，可也不要忽略了，和我们最早打交道的 JSP 其实也是一种模板。模板一般都用来作为数据显示分离的显示部分，即 MV 的 V。比如说我目前在 Web 展示和发送邮件时较多的用到模板。通常模板用占位符创建的一个文本，或者串文本、输入流等。这些占位符可以用自己的流程控制代码，所以相应的就有的各种模板语言，例如 VTL(Velocity Template Language)、FTL(FreeMarker Template Language)、自然 JSP 也有算上。<br/><br/>
+有了模板，再把模型数据和模板进行归并就能得到我们真正想要的数据展现了，这当中的工作就是叫做模板引擎的干的。Groovy 中包含了抽象的 groovy.text.TemplateEngine 类和 groovy.text.Template 接口。可见 Groovy 表现的很开放，它们使得将任何模板引擎插入到 Groovy 中成为可能，比如 Velocity 或者 FreeMarker 引擎，可惜现在还没有。<!--more--><br/><br/>
+查看 groovy.text 包 <a href="http://groovy.codehaus.org/api/groovy/text/package-frame.html">http://groovy.codehaus.org/api/groovy/text/package-frame.html</a>，我们可以看到 Groovy(当前版本 1.6-beta-1) 自己提供了GStringTemplateEngine、SimpleTemplateEngine、XmlTemplateEngine 三个模板引擎实现。我们在本篇介绍的是 SimplateTemplateEngine 的实现，其他两个引擎实现的应用留给读者自己研究。<br/><br/>
+groovy.text.SimpleTemplateEngine 这个引擎提供了类似于 JSP 2.0 的语法，并支持嵌入到模板中的下列表达式：<br/><br/>
+·&lt;% statements %&gt; -- 执行任何有效的 Groovy 语句<br />
+·&lt;%=expression%&gt; -- 将一个 Groovy 表达式的值嵌入到模板中<br />
+·${expression}        -- 将一个 Groovy 表达式的值嵌入到模板中的另一种写法<br/><br/>
+下面我们用个完整的例子来说明 SimpleTemplateEngine 的用法，熟悉 Velocity 的朋友可以进行对比来理解。笔者之前写过一篇 Velocity 的入门的文章：<a href="http://unmi.cc/master-java-template-velocity/" target="_blank" rel="noopener">掌握一种Java模板技术 -- Velocity</a>，可请参考。<br/><br/>
+<strong>首先创建模板文件 userinfo.template</strong><br/><br/>
+<pre class="lang:default decode:true ">&lt;html&gt;
+&lt;head&gt;&lt;title&gt;&lt;%=title%&gt;&lt;/title&gt;&lt;/head&gt;
+    &lt;body&gt;
+        &lt;table border="1"&gt;
+            &lt;tr&gt;&lt;td&gt;姓名&lt;/td&gt;&lt;td&gt;性别&lt;/td&gt;&lt;/tr&gt;
+            &lt;%
+                users.each{user-&gt;
+                    out. println "&lt;tr&gt;&lt;td&gt;${user.name}&lt;/td&gt;&lt;td&gt;${user.gender}&lt;/td&gt;&lt;/tr&gt;"
+                }
+            %&gt;
+        &lt;/table&gt;
+    ${footer}
+    &lt;/body&gt;
+&lt;/html&gt;</pre>
+<br/>
+在这个模板文件中，我们用到了前面提到的三种语法。因为下面的代码是通过 File 形式从当前目录被 TemplateEngine 加载的，所以这个模板文件应该放到 System.getProperty("user.dir") 所在的目录。其他时候要根据 TemplateEngine.createTemplate() 的参数来决定模板文件安放的位置。<br/><br/>
+<strong>然而是使用模板的 Groovy 代码<br />
+</strong><br/><br/>
+<pre class="lang:default decode:true">import groovy.text.Template
+import groovy.text.SimpleTemplateEngine
+import groovy.text.TemplateEngine<br/><br/>
+TemplateEngine engine = new SimpleTemplateEngine()
+Template template = engine.createTemplate(new File("userinfo.template"))<br/><br/>
+//声明要绑定(或者叫合并)到模板的一个 Map 对象
+users = [[name:"Unmi",gender:"male"],[name:"hy",gender:"female"]]<br/><br/>
+//把模型数据归并到模板中，通过 Map 来传递参数
+Writable result = template.make(title:"显示用户信息",users:users,footer:"&amp;copy;Made by Unmi")<br/><br/>
+//把归并后的结果输出来控制台
+result.writeTo(new PrintWriter(System.out))<br/><br/>
+//如果是作为一个 Groovylet writeTo() 语句就可以写成
+result.writeTo(out)    //out 是 Groovlet 的内置变量<br/><br/>
+//或者不用上面的 writeTo() 方法，直接 toString() 能得到一样的结果
+//print result.toString()     //再干练点就是 print result</pre>
+<br/>
+对上面的代码要加以说明一下了：<br/><br/>
+TemplateEngineEngine 抽象类的 createTemplate() 可接受 File、URL、String 或 Reader 参数，这就意味着我们的模板可以表现为多种形式，而不仅仅是一个文件模板。<br/><br/>
+要绑定(或者叫归并) 到模板的数据是在 Template.make(Map map) 中通过 Map 参数传递过去的。<br/><br/>
+这里的 TemplateEngine.createTemplate() 就相当于 Velocity 的 VelocityEngine.getTemplate() 或 Velocity.getTemplate() 方法，Velocity 的这两个方法也是可以接受多种类型参数的。<br/><br/>
+Template.make(Map map) 和紧接着的 Writable.writeTo(Writer writer) 方法这两加起来就相当于 Velocity 的 Template.merge(VelocityContext context, Writer writer) 方法。<br/><br/>
+<strong>最后，看看上面程序执行的结果</strong><br/><br/>
+执行后在控制台输出如下信息：<br/><br/>
+<blockquote>
+<span style="color: #000080;">&lt;html&gt;<br />
+&lt;head&gt;&lt;title&gt;显示用户信息&lt;/title&gt;&lt;/head&gt;<br />
+ &lt;body&gt;<br />
+  &lt;table&gt;<br />
+   &lt;tr&gt;&lt;td&gt;姓名&lt;/td&gt;&lt;td&gt;性别&lt;/td&gt;&lt;/tr&gt;<br />
+   &lt;tr&gt;&lt;td&gt;Unmi&lt;/td&gt;&lt;td&gt;male&lt;/td&gt;&lt;/tr&gt;<br />
+&lt;tr&gt;&lt;td&gt;hy&lt;/td&gt;&lt;td&gt;female&lt;/td&gt;&lt;/tr&gt;</span>
+<span style="color: #000080;">  &lt;/table&gt;<br />
+ &amp;copy;Made by Unmi<br />
+ &lt;/body&gt;<br />
+&lt;/html&gt;<br />
+</span>
+</blockquote>
+<br/>
+对了，我这里有意在模板中用的是 HTML 格式，也就很明显，我们能很好的把 Groovy 模板技术运用到 Groovlet 中，如此可以大大简化 Groovlet 的开发。参看 <a href="http://unmi.cc/unmi-study-groovy-groovlet/" target="_blank" rel="noopener">Unmi 学习 Groovy 之 Groovlet</a>。真要说呢，用 Groovy 模板来简化 Groovlet 开发还不够，后面还有 GroovyMarkup-MarkupBuilder 可以用。真正的终极目标应该在 Grails 的应用，本人对 Grails 基本还没什么了解。<br/><br/>
+参考：1. 《Scripting in Java Language, Frameworks, and Patterns》 Chaper 5<br/><br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>
+<br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

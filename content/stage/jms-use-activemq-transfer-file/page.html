@@ -1,0 +1,169 @@
+---
+title: JMS 使用 ActiveMQ  传送文件
+url: /jms-use-activemq-transfer-file/
+date: 2010-04-11T10:27:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - Mid-Ware
+tags: 
+  - ActiveMQ
+  - MQ
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 200 
+wpStatus: publish
+views: 3584
+lastmod: 2021-09-02T11:01:13-05:00
+---
+
+这里使用的 MQ 中间件是开源的 ActiveMQ，我们没有采用 BytesMessage 来按字节传送文件，而是 ActiveMQ 为我们提供了 <a href="http://activemq.apache.org/maven/5.3.1/activemq-core/apidocs/org/apache/activemq/BlobMessage.html" target="_blank" rel="noopener">org.apache.activemq.BlobMessage</a>，可以用它来传送大对象。<a href="http://activemq.apache.org/maven/5.3.1/activemq-core/apidocs/org/apache/activemq/ActiveMQSession.html" target="_blank" rel="noopener">org.apache.activemq.ActiveMQSession</a> 中有以下几个创建 BlobMessage 对象的方法：</p>
+<br/>
+createBlobMessage(URL url)<br/><br/>
+createBlobMessage(URL url, boolean deletedByBroker)<br/><br/>
+createBlobMessage(File file)<br/><br/>
+createBlobMessage(InputStream in)<br/><br/>
+接收到 BlobMessage 消息后，可以调用其 getInputStream() 方法获得数据，然后写成磁盘文件，文件名、文件大小等可通过 Message 的 getXxxProperty("Property.Name") 取的。<!--more--><br/><br/>
+注意，传输入文件的时候，发送方创建 ConnectionFactory 时的 brokerURL 需要指定 jms.blobTransferPolicy.uploadUrl 或者jms.blobTransferPolicy.defaultUploadUrl 属性为 ActiveMQ 中 fileserver 应用的 URI，即指定传输 BlogMessage 的 <a href="http://activemq.apache.org/maven/activemq-core/apidocs/org/apache/activemq/blob/BlobTransferPolicy.html" target="_blank" rel="noopener">BlobTransferPolicy</a> 策略，参看 <a href="http://activemq.apache.org/blob-messages.html" target="_blank" rel="noopener">Configuring the BLOB Transfer Policy</a>。<br/><br/>
+先上图看真相，包括执行 FileSender 时选择文件，FileReciever 在收到文件时会弹出保存文件的对话框，还有控制台的打印信息。<br/><br/>
+<div><img src="/wp-content/uploads/2010/04/activemq_jms_file.jpg" alt="" /></div>
+<br/>
+具体来看例子，使用 P2P 队列的方式，你也可以用发布/订阅的方式，只是代码中创建的 Destination 类型不同。<br/><br/>
+<strong>1. 启动 ActiveMQ</strong><br/><br/>
+&nbsp;<br/><br/>
+在 <a href="http://activemq.apache.org/activemq-531-release.html">http://activemq.apache.org/activemq-531-release.html</a> 下载  ActiveMQ，然后解压，执行其中的 bin/activemq.bat，控制台可以看到：<br/><br/>
+ INFO | ActiveMQ Console at http://0.0.0.0:8161/admin<br/><br/>
+ INFO | Initializing Spring root WebApplicationContext<br/><br/>
+ INFO | Successfully connected to tcp://localhost:61616<br/><br/>
+ INFO | Camel Console at http://0.0.0.0:8161/camel<br/><br/>
+ INFO | ActiveMQ Web Demos at http://0.0.0.0:8161/demo<br/><br/>
+ INFO | RESTful file access application at http://0.0.0.0:8161/fileserver<br/><br/>
+ INFO | Started SelectChannelConnector@0.0.0.0:8161<br/><br/>
+表示启动成功了，假设运行 ActiveMQ 机器的 IP 地址是 10.80.38.10。<br/><br/>
+<strong>2. 编写发送文件的程序 FileSender.java</strong><br/><br/>
+<pre class="brush:java">package com.unmi.jms;<br/><br/>
+import java.io.File;
+import javax.jms.*;
+import javax.swing.JFileChooser;
+import org.apache.activemq.*;<br/><br/>
+/**
+ * 通过 ActiveMQ 发送文件的程序
+ * @author Unmi
+ */
+public class FileSender {<br/><br/>
+    /**
+     * @param args
+     * @throws JMSException
+     */
+    public static void main(String[] args) throws JMSException {<br/><br/>
+        // 选择文件
+        JFileChooser fileChooser = new JFileChooser();
+        fileChooser.setDialogTitle("请选择要传送的文件");
+        if (fileChooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION) {
+            return;
+        }<br/><br/>
+        File file = fileChooser.getSelectedFile();<br/><br/>
+        // 获取 ConnectionFactory
+        ConnectionFactory connectionFactory = new ActiveMQConnectionFactory(
+                "tcp://10.80.38.10:61616?jms.blobTransferPolicy.defaultUploadUrl=http://10.80.38.10:8161/fileserver/");<br/><br/>
+        // 创建 Connection
+        Connection connection = connectionFactory.createConnection();
+        connection.start();<br/><br/>
+        // 创建 Session
+        ActiveMQSession session = (ActiveMQSession) connection.createSession(
+                false, Session.AUTO_ACKNOWLEDGE);<br/><br/>
+        // 创建 Destination
+        Destination destination = session.createQueue("File.Transport");<br/><br/>
+        // 创建 Producer
+        MessageProducer producer = session.createProducer(destination);
+        producer.setDeliveryMode(DeliveryMode.NON_PERSISTENT);// 设置为非持久性<br/><br/>
+        // 设置持久性的话，文件也可以先缓存下来，接收端离线再连接也可以收到文件
+        // 构造 BlobMessage，用来传输文件
+        BlobMessage blobMessage = session.createBlobMessage(file);
+        blobMessage.setStringProperty("FILE.NAME", file.getName());
+        blobMessage.setLongProperty("FILE.SIZE", file.length());<br/><br/>
+        System.out.println("开始发送文件：" + file.getName() + "，文件大小："
+                + file.length() + " 字节");<br/><br/>
+        // 7. 发送文件
+        producer.send(blobMessage);
+        System.out.println("完成文件发送：" + file.getName());<br/><br/>
+        producer.close();
+        session.close();
+        connection.close(); // 不关闭 Connection, 程序则不退出
+    }
+}</pre>
+<br/>
+<strong>3. 编写接收文件的程序 FileReceiver.java</strong><br/><br/>
+<pre class="lang:default decode:true ">package com.unmi.jms;<br/><br/>
+import java.io.*;
+import javax.jms.*;
+import javax.jms.Message;
+import javax.swing.*;
+import org.apache.activemq.*;<br/><br/>
+public class FileReciever {<br/><br/>
+    /**
+     * @param args
+     * @throws JMSException
+     */
+    public static void main(String[] args) throws JMSException {<br/><br/>
+        // 获取 ConnectionFactory
+        ConnectionFactory connectionFactory = new ActiveMQConnectionFactory(
+                "tcp://10.80.38.10:61616");<br/><br/>
+        // 创建 Connection
+        Connection connection = connectionFactory.createConnection();
+        connection.start();<br/><br/>
+        //  创建 Session
+        Session session = connection.createSession(false,Session.AUTO_ACKNOWLEDGE);<br/><br/>
+        // 创建 Destinatione
+        Destination destination = session.createQueue("File.Transport");<br/><br/>
+        // 创建 Consumer
+        MessageConsumer consumer = session.createConsumer(destination);<br/><br/>
+        // 注册消息监听器，当消息到达时被触发并处理消息
+        consumer.setMessageListener(new MessageListener() {<br/><br/>
+            // 监听器中处理消息
+            public void onMessage(Message message) {
+                if (message instanceof BlobMessage) {
+                    BlobMessage blobMessage = (BlobMessage) message;
+                    try {
+                        String fileName = blobMessage.getStringProperty("FILE.NAME");
+                        System.out.println("文件接收请求处理：" + fileName + "，文件大小："
+                                + blobMessage.getLongProperty("FILE.SIZE")+ " 字节");<br/><br/>
+                        JFileChooser fileChooser = new JFileChooser();
+                        fileChooser.setDialogTitle("请指定文件保存位置");
+                        fileChooser.setSelectedFile(new File(fileName));
+                        if (fileChooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
+                            File file = fileChooser.getSelectedFile();
+                            OutputStream os = new FileOutputStream(file);<br/><br/>
+                            System.out.println("开始接收文件：" + fileName);
+                            InputStream inputStream = blobMessage.getInputStream();<br/><br/>
+                            //写文件，你也可以使用其他方式
+                            byte[] buff = new byte[256];
+                            int len = 0;
+                            while ((len = inputStream.read(buff)) &gt; 0) {
+                                os.write(buff, 0, len);
+                            }<br/><br/>
+                            os.close();
+                            System.out.println("完成文件接收：" + fileName);
+                        }<br/><br/>
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        });
+    }
+}</pre>
+<br/>
+<strong>4. 运行程序</strong><br/><br/>
+先执行 FileReceiver 程序来监听消息<br/><br/>
+再执行发送程序 FileSender，将会提示你选择一个要传送的文件(上图左边)，确定后就会把文件发送到 ActiveMQ 服务器上<br/><br/>
+接收端 FileReceiver 监听到有文件传过来的消息后，会自动弹出保存文件的对话框，要你选择保存位置(上图右边)，文件名能保持一致。确定后就开始接收文件，存到指定的位置。<br/><br/>
+如果设置 producer.setDeliveryMode(DeliveryMode.PERSISTENT); 消息持久性的话，发送方传文件的时候，接收方可以不在线，文件会暂存在 ActiveMQ 服务器上，等到接收程序上线后仍然可以收到发过来的文件。<br/><br/>
+参考：1. <a href="http://old.nabble.com/A-problem-with-blobmessage-on-activemq-5.0-td15523989s2354.html" target="_blank" rel="noopener">A problem with blobmessage on activemq 5.0</a><br/><br/>
+        2. <a href="http://activemq.apache.org/blob-messages.html" target="_blank" rel="noopener">Apache ActiveMQ &gt; Features &gt; Message Features &gt; Blob Messages</a><br/><br/>
+        3. <a href="http://activemq.apache.org/async-sends.html" target="_blank" rel="noopener">Apache ActiveMQ &gt; Features &gt; Message Dispatching Features &gt; Async Sends</a>

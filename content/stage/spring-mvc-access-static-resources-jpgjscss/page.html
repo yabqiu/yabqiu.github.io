@@ -1,0 +1,80 @@
+---
+title: SPRING-MVC 访问静态文件, 如 jpg/js/css
+url: /spring-mvc-access-static-resources-jpgjscss/
+date: 2012-03-15T09:59:49-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Spring
+tags: 
+  - mvc
+  - Spring
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4541 
+wpStatus: publish
+views: 3688
+lastmod: 2021-06-17T16:34:04-05:00
+---
+
+如何你的DispatcherServlet拦截 <em>.do这样的URL，就不存在访问不到静态资源的问题。如果你的DispatcherServlet拦截“/”，拦截了所有的请求，同时对</em>.js,*.jpg的访问也就被拦截了。</p>
+<br/>
+ 目的：可以正常访问静态文件，不要找不到静态文件报404。<br />
+ <br />
+<strong>方案一：激活Tomcat的defaultServlet来处理静态文件</strong><br/><br/>
+<pre class="lang:default decode:true">&lt;servlet-mapping&gt;
+    &lt;servlet-name&gt;default&lt;/servlet-name&gt;
+    &lt;url-pattern&gt;*.jpg&lt;/url-pattern&gt;
+&lt;/servlet-mapping&gt;
+&lt;servlet-mapping&gt;
+    &lt;servlet-name&gt;default&lt;/servlet-name&gt;
+    &lt;url-pattern&gt;*.js&lt;/url-pattern&gt;
+&lt;/servlet-mapping&gt;
+&lt;servlet-mapping&gt;
+    &lt;servlet-name&gt;default&lt;/servlet-name&gt;
+    &lt;url-pattern&gt;*.css&lt;/url-pattern&gt;
+&lt;/servlet-mapping&gt;  </pre>
+<br/>
+<div>要配置多个，每种文件配置一个 <!--more-->  </div>
+<br/>
+要写在DispatcherServlet的前面， 让defaultServlet先拦截，这个就不会进入Spring了，我想性能是最好的吧。<br/><br/>
+<pre class="lang:default decode:true">Tomcat, Jetty, JBoss, and GlassFish  默认 Servlet的名字 -- "default"
+Google App Engine 默认 Servlet的名字 -- "_ah_default"
+Resin 默认 Servlet的名字 -- "resin-file"
+WebLogic 默认 Servlet的名字  -- "FileServlet"
+WebSphere  默认 Servlet的名字 -- "SimpleFileServlet"</pre>
+<br/>
+<strong>方案二： 在spring3.0.4以后版本提供了mvc:resources </strong><br/><br/>
+&lt;mvc:resources 的使用方法：<br/><br/>
+<div>
+<pre class="lang:default decode:true">&lt;!--对静态资源文件的访问--&gt;
+&lt;mvc:resources mapping="/images/**" location="/images/" /&gt;</pre>
+  /images /**映射到 <span style="color: #800000;">ResourceHttpRequestHandler</span> 进行处理，location指定静态资源的位置.可以是web application根目录下、jar包里面，这样可以把静态资源压缩到jar包中。<span style="color: #800000;">cache-period</span> 可以使得静态资源进行web cache  
+</div>
+<br/>
+如果出现下面的错误，可能是没有配置 <span style="color: #800000;">&lt;mvc:annotation-driven /&gt;</span> 的原因。 <br />
+报错WARNING: No mapping found for HTTP request with URI [/mvc/user/findUser/lisi/770] in DispatcherServlet with name 'springMVC'<br/><br/>
+使用 &lt;mvc:resources/&gt; 元素,把 mapping 的 URI 注册到 SimpleUrlHandlerMapping的urlMap 中,<br />
+key 为 mapping 的 URI pattern值,而 value为 ResourceHttpRequestHandler,<br />
+这样就巧妙的把对静态资源的访问由 HandlerMapping 转到 ResourceHttpRequestHandler 处理并返回,所以就支持 classpath 目录, jar 包内静态资源的访问.<br />
+另外需要注意的一点是,不要对 SimpleUrlHandlerMapping 设置 defaultHandler. 因为对 static uri 的 defaultHandler 就是ResourceHttpRequestHandler,<br />
+否则无法处理static resources request.<br/><br/>
+<strong>方案三 ，使用&lt;mvc:default-servlet-handler/&gt;</strong><br/><br/>
+<div>
+<pre class="lang:default decode:true">&lt;mvc:default-servlet-handler/&gt;</pre>
+</div>
+<br/>
+会把 "/**" url,注册到 SimpleUrlHandlerMapping 的 urlMap 中,把对静态资源的访问由 HandlerMapping 转到 org.springframework.web.servlet.resource.DefaultServletHttpRequestHandler 处理并返回.<br />
+DefaultServletHttpRequestHandler 使用就是各个 Servlet 容器自己的默认 Servlet.<br/><br/>
+补充说明：多个HandlerMapping的执行顺序问题：<br/><br/>
+DefaultAnnotationHandlerMapping 的 order 属性值是：0<br/><br/>
+&lt;mvc:resources/ &gt;自动注册的 SimpleUrlHandlerMapping 的 order 属性值是： 2147483646<br/><br/>
+&lt;mvc:default-servlet-handler/&gt;自动注册的 SimpleUrlHandlerMapping 的 order 属性值是：2147483647<br/><br/>
+spring 会先执行 order 值比较小的。当访问一个 a.jpg 图片文件时，先通过 DefaultAnnotationHandlerMapping 来找处理器，一定是找不到的，我们没有叫 a.jpg 的 Action。再按 order 值升序找，由于最后一个 SimpleUrlHandlerMapping 是匹配 "/**" 的，所以一定会匹配上，再响应图片。<br/><br/>
+访问一个图片，还要走层层匹配。真不知性能如何？改天做一下压力测试，与Apache比一比。<br/><br/>
+最后再说明一下，如何你的 DispatcherServlet 拦截 *.do 这样的 URL，就不存上述问题了。<br/><br/>
+转自：http://lzy83925.iteye.com/blog/1186609

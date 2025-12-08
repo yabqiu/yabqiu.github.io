@@ -1,0 +1,131 @@
+---
+title: Python 中创建 PostgreSQL 数据库连接池
+url: /python-create-postgresql-connection-pool/
+date: 2021-10-14T14:07:45-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - PostgreSQL
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11830 
+wpStatus: publish
+views: 2156
+lastmod: 2022-05-04T14:44:00-05:00
+---
+
+征战 Java 多年，习惯于使用数据库之前都必须创建一个连接池，即使是单线程的应用，只要有多个方法中需用到数据库连接，建立一两个连接的也会考虑先池化他们。连接池的好处多多，1) 如果反复创建连接相当耗时，2) 对于单个连接一路用到底的应用，有连接池时避免了数据库连接对象传来传去，3) 忘记关连接了，连接池幸许还能帮忙在一定时长后关掉，当然密集取连接的应用势将耗尽连接，3) 一个应用打开连接的数量是可控的<br/><br/>
+接触到 Python 后，在使用 PostgreSQL 也自然而然的考虑创建连接池，使用时从池中取，用完后还回去，而不是每次需要连接时创建一个物理的。Python 连接 PostgreSQL 是主要有两个包，<a href="https://pypi.org/project/py-postgresql/">py-postgresql</a> 和 <a href="https://pypi.org/project/psycopg2/">psycopg2</a>, 而本文的实例将使用后者。<br/><br/>
+Psycopg 在 <a href="https://www.psycopg.org/docs/pool.html">psycopg2.pool</a> 模块中提供了两个连接池的实现在，它们都继承自 psycopg2.pool.AbstractConnectionPool, 该抽象类的基本方法是<br/><br/>
+<ol>
+    <li>getconn(key=None): 获取连接</li>
+    <li>putconn(conn, key=None, close=False): 归还连接</li>
+    <li>closeall(): 关闭连接池中的所有连接</li>
+</ol>
+<br/>
+<!--more-->两个连接池的实现类是<br/><br/>
+<ol>
+    <li>psycopg2.pool.SimpleConnectionPool(minconn, maxconn, *args, **kwars): 给单线程应用用的</li>
+    <li>psycopg2.pool.ThreadedConnectionPool(minconn, maxconn, *args, **kwars): 多线程时更安全，其实就是在 getconn() 和 putconn() 时加了锁来控制</li>
+</ol>
+<br/>
+所以最安全保险的做法还是使用 ThreadedConnectionPool, 在单线程应用中, SimpleConnectionPool  也不见得比 ThreadedConnectionPool 效率高多少。<br/><br/>
+下面来看一个具体的连接池实现，其中用到了 Context Manager, 使用时结合 <code>with</code> 键字更方便，用完后不用显式的调用 <code>putconn()</code> 归还连接<br/><br/>
+db_helper.py<br/><br/>
+<pre class="lang:default decode:true">from psycopg2 import pool
+from psycopg2.extras import RealDictCursor
+from contextlib import contextmanager
+import atexit<br/><br/>
+
+class DBHelper:
+    def __init__(self):
+        self._connection_pool = None<br/><br/>
+    def initialize_connection_pool(self):
+        db_dsn = 'postgresql://admin:password@localhost/testdb?connect_timeout=5'
+        self._connection_pool = pool.ThreadedConnectionPool(1, 3，db_dsn)<br/><br/>
+    @contextmanager
+    def get_resource(self, autocommit=True):
+        if self._connection_pool is None:
+            self.initialize_connection_pool()<br/><br/>
+        conn = self._connection_pool.getconn()
+        conn.autocommit = autocommit
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        try:
+            yield cursor, conn
+        finally:
+            cursor.close()
+            self._connection_pool.putconn(conn)<br/><br/>
+    def shutdown_connection_pool(self):
+        if self._connection_pool is not None:
+            self._connection_pool.closeall()<br/><br/>
+
+db_helper = DBHelper()<br/><br/>
+
+@atexit.register
+def shutdown_connection_pool():
+    db_helper.shutdown_connection_pool()</pre>
+<br/>
+几点说明：<br/><br/>
+<ol>
+    <li>只在第一次调用 <code>get_resource()</code> 时创建连接池，而不是在 <code>from db_helper import db_helper</code> 引用时就创建连接池</li>
+    <li>Context Manager 返回了两个对象，cursor 和 connection, 需要用  connection 管理事物时用它</li>
+    <li>默认时 cursor 返回的记录是字典，而非数组</li>
+    <li>默认时连接为自动提交</li>
+    <li>最后的 @atexit.register 那个  ShutdownHook 可能有点多余，在进程退出时连接也被关闭，TIME_WAIT 时间应该会稍长些</li>
+</ol>
+<br/>
+使用方式<br/><br/>
+如果不用事物<br/><br/>
+<pre class="lang:default decode:true">from db_helper import db_helper<br/><br/>
+
+with db_helper.get_resource() as (cursor, _):
+    cursor.execute('select * from users')
+    for record in cursor.fetchall():
+        ... process record, record['name'] ... </pre>
+<br/>
+如果需要用到事物<br/><br/>
+<pre class="lang:default decode:true">with db_helper.get_resource(autocommit=False) as (cursor, _):
+    try:
+        cursor.execute('update users set name = %s where id = %s', ('new_name', 1))
+        cursor.execute('delete from orders where user_id = %s', (1,))
+        conn.commit()
+    except:
+        conn.rollback()</pre>
+<br/>
+在写作本文时，查看 <a href="https://www.psycopg.org/">psycopg</a> 的官网时，发现 Psycopg 3.0 正式版在 2021-10-13 日发布了(<a href="https://www.psycopg.org/articles/2021/10/13/psycopg-30-released/">Psycopg 3.0 released</a>), 更好的支持 async。在 Psycopg2 2.2 版本时就开始支持异步了。而且还注意到 Psycopg 的主要部分是用 C 实现的，才使得它效率比较高，也难怪经常用 <code>pip install psycopg2</code> 安装不成功，而要用 <code>pip install psycopg2-binary</code> 来安装的原因。<br/><br/>
+在创建连接池时加上参数 keepalivesXxx 能让服务器及时断掉死链接，否则在 Linux 下默认要 2 个小时后才断开。死链接的情况发生在客户端异常退出(如断电)时先前建立的链接就变为死链接了。<br/><br/>
+<blockquote>
+pool.ThreadedConnectionPool(1, 3, db_dsn, keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=5)
+</blockquote>
+<br/>
+PostgreSQL 服务端会对连接在空闲 tcp_keepalives_idle 秒后，主动发送tcp_keepalives_count 个 tcp_keeplive 侦测包，每个侦探包在 tcp_keepalives_interval 秒内都没有回应，就认为是死连接，于是切断它。<br/><br/>
+[2022-05-04] 小小改进<br/><br/>
+<pre class="lang:default mark:2,5-8 decode:true ">@contextmanager
+def get_resource(self, autocommit=True) -&gt; Union[RealDictCursor, tuple[RealDictCursor, connection]]:
+    ......
+    try:
+        if autocommit:
+            yield cursor
+        else:
+            yield cursor, conn
+    ......</pre>
+<br/>
+根据条件来返回 cursor 或 (cursor, connection), 使用的时候就不需要 <code>_</code> 了<br/><br/>
+<pre class="lang:default decode:true ">with get_resource() as cursor:
+    ......<br/><br/>
+with get_resource(false) as (cursor, connection):
+    ......</pre>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://www.jianshu.com/p/0670a48870d4">PostgreSql连接池(psycopg2.pool)</a></li>
+    <li><a href="https://stackoverflow.com/questions/11889104/should-postgresql-connections-be-pooled-in-a-python-web-app-or-create-a-new-con">Should PostgreSQL connections be pooled in a Python web app, or create a new connection per request?</a></li>
+    <li><a href="https://codereview.stackexchange.com/questions/257671/simple-connection-pooling-with-psycopg2">Simple Connection Pooling with psycopg2</a></li>
+</ol>

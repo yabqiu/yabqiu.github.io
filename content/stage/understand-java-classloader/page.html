@@ -1,0 +1,209 @@
+---
+title: 二、我对java中类装载的理解(摘)
+url: /understand-java-classloader/
+date: 2009-04-10T11:13:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - JVM
+tags: 
+  - Java
+  - ClassLoader
+  - JVM
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 282 
+wpStatus: publish
+views: 524
+lastmod: 2010-08-10T10:15:30-05:00
+---
+
+1.Java中的所有类，必须被装载到jvm中才能运行，这个装载工作是由jvm中的类装载器完成的，<br/>
+类装载器所做的工作实质是把类文件从硬盘读取到内存中<br/>
+<br/>
+2.java中的类大致分为三种：<br/>
+    1.系统类<br/>
+    2.扩展类<br/>
+    3.由程序员自定义的类<br/>
+<br/>
+3.类装载方式，有两种<br/>
+    1.隐式装载， 程序在运行过程中当碰到通过new 等方式生成对象时，隐式调用类装载器加载对应的类到jvm中，<br/>
+    2.显式装载， 通过class.forname()等方法，显式加载需要的类<br/>
+  隐式加载与显式加载的区别：<br/>
+    两者本质是一样?， <!--more--><br/>
+    ？<br/>
+<br/>
+4.类加载的动态性体现<br/>
+    一个应用程序总是由n多个类组成，Java程序启动时，并不是一次把所有的类全部加载后再<br/>
+运行，它总是先把保证程序运行的基础类一次性加载到jvm中，其它类等到jvm用到的时候再加载，这样的好处是节省了内存的开销，因为java最早就是为嵌入式系统而设计的，内存宝贵，这是一种可以理解的机制，而用到时再加载这也是java动态性的一种体现<br/>
+<br/>
+5．java类装载器<br/>
+    Java中的类装载器实质上也是类，功能是把类载入jvm中，值得注意的是jvm的类装载器并不是一个，而是三个，层次结构如下：<br/>
+      Bootstrap Loader  - 负责加载系统类<br/>
+            |<br/>
+          - - ExtClassLoader  - 负责加载扩展类<br/>
+                          |<br/>
+                      - - AppClassLoader  - 负责加载应用类<br/>
+        为什么要有三个类加载器，一方面是分工，各自负责各自的区块，另一方面为了实现委托模型，下面会谈到该模型<br/>
+<br/>
+6. 类加载器之间是如何协调工作的<br/>
+      前面说了，java中有三个类加载器，问题就来了，碰到一个类需要加载时，它们之间是如何协调工作的，即java是如何区分一个类该由哪个类加载器来完成呢。<br/>
+在这里java采用了委托模型机制，这个机制简单来讲，就是“类装载器有载入类的需求时，会先请示其Parent使用其搜索路径帮忙载入，如果Parent 找不到,那么才由自己依照自己的搜索路径搜索类”，注意喔，这句话具有递归性<br/>
+下面举一个例子来说明，为了更好的理解，先弄清楚几行代码：<br/>
+Public class Test{<br/>
+    Public static void main(String[] arg){<br/>
+      ClassLoader c  = Test.class.getClassLoader();  //获取Test类的类加载器<br/>
+        System.out.println(c); <br/>
+      ClassLoader c1 = c.getParent();  //获取c这个类加载器的父类加载器<br/>
+        System.out.println(c1);<br/>
+      ClassLoader c2 = c1.getParent();//获取c1这个类加载器的父类加载器<br/>
+        System.out.println(c2);<br/>
+  }<br/>
+}<br/>
+把以上代码存到d:\my 文件夹下，直接编译，然后在dos模式下运行<br/>
+D:\my\java Test<br/>
+    。。。AppClassLoader。。。<br/>
+    。。。ExtClassLoader。。。<br/>
+    Null<br/>
+<br/>
+D:\my<br/>
+<br/>
+注： 。。。表示省略了内容<br/>
+可以看出Test是由AppClassLoader加载器加载的<br/>
+AppClassLoader的Parent 加载器是 ExtClassLoader<br/>
+<br/>
+但是ExtClassLoader的Parent为 null 是怎么回事呵，朋友们留意的话，前面有提到Bootstrap Loader是用C++语言写的,依java的观点来看，逻辑上并不存在Bootstrap Loader的类实体，所以在java程序代码里试图打印出其内容时，我们就会看到输出为null<br/>
+【注：以下内容大部分引用java深度历险】<br/>
+弄明白了上面的示例，接下来直接进入类装载的委托模型实例，写两个文件，如下：<br/>
+文件：Test1.java<br/>
+Public class Test1{<br/>
+    Public static void main(String[] arg){<br/>
+        System.out.println(Test1.class.getClassLoader());<br/>
+        Test2 t2 = new Test2();<br/>
+        T2.print();<br/>
+  }<br/>
+}<br/>
+<br/>
+文件： Test2.java<br/>
+Public class Test2{<br/>
+    Public void prin(){<br/>
+        System.out.println(this.getClass().getClassLoader());<br/>
+    }<br/>
+}<br/>
+<br/>
+这两个类的作用就是打印出载入它们的类装载器是谁， 将这两个文件保存到d:\my目录下，编译后，我们在复制两份，分别置于 &lt;JRE所在目录&gt;\classes下（注意，刚开始我们的系统下没有此目录，需自己建立） 与 &lt;JRE所在目录&gt;\lib\ext\classes下（同样注意，开始我们的系统下也没此目录，手工建立）, 然后切换到d:\my目录下开始测试，<br/>
+<br/>
+测试一：<br/>
+&lt;JRE所在目录&gt;\classes下<br/>
+Test1.class<br/>
+Test2.class<br/>
+<br/>
+&lt;JRE所在目录&gt;\lib\ext\classes下<br/>
+Test1.class<br/>
+Test2.class<br/>
+<br/>
+D:\my下<br/>
+Test1.class<br/>
+Test2.class<br/>
+<br/>
+dos下输入运行命令，结果如下：<br/>
+D:\my&gt;java Test1<br/>
+Null<br/>
+Null<br/>
+<br/>
+D:\my&gt;<br/>
+   <br/>
+    从输出结果我们可以看出，当AppClassLoader要载入Test1.class时，先请其Parent，也就是ExtClassLoader来载入，而ExtclassLoader又请求其Parent,即Bootstrap Loader来载入Test1.class. 由于 &lt;JRE所在目录&gt;\Classes目录为Bootstrap Loader的搜索路径之一，所以Bootstrap Loader找到了Test1.class,因此将它载入，接着在Test1.class之内有载入Test2.class的需求，由于Test1.class是由Bootstrap Loader所载入，所以Test2.class内定是由Bootstrap Loader根据其搜索路径来找，因Test2.class也位于Bootstrap Loader可以找到的路径下，所以也被载入了，最后我们看到Test1.class与Test2.class都是由Bootstrap Loader（null）载入。<br/>
+<br/>
+测试二：<br/>
+&lt;JRE所在目录&gt;\classes下<br/>
+Test1.class<br/>
+<br/>
+&lt;JRE所在目录&gt;\lib\ext\classes下<br/>
+Test1.class<br/>
+Test2.class<br/>
+<br/>
+D:\my下<br/>
+Test1.class<br/>
+Test2.class<br/>
+<br/>
+dos下输入运行命令，结果如下：<br/>
+D:\my&gt;java Test1<br/>
+Null<br/>
+Exception in thread “main” java.lang.NoClassdefFoundError:Test2 at Test1.main。。。<br/>
+D:\my&gt;<br/>
+<br/>
+    从输出结果我们可以看出，当AppClassLoader要载入Test1.class时，先请其Parent，也就是ExtClassLoader来载入，而ExtclassLoader又请求其Parent,即Bootstrap Loader来载入Test1.class. 由于 &lt;JRE所在目录&gt;\Classes目录为Bootstrap Loader的搜索路径之一，所以Bootstrap Loader找到了Test1.class,因此将它载入，接着在Test1.class之内有载入Test2.class的需求，由于Test1.class是由Bootstrap Loader所载入，所以Test2.class内定是由Bootstrap Loader根据其搜索路径来找，但是因为Bootstrap Loader根本找不到Test2.class（被我们删除了），而Bootstrap Loader又没有Parent，所以无法载入Test2.class.最后我们看到Test1.class是由Bootstrap Loader（null）载入，而Test2.class则无法载入<br/>
+<br/>
+测试三<br/>
+&lt;JRE所在目录&gt;\classes下<br/>
+<br/>
+Test2.class<br/>
+<br/>
+&lt;JRE所在目录&gt;\lib\ext\classes下<br/>
+Test1.class<br/>
+Test2.class<br/>
+<br/>
+D:\my下<br/>
+Test1.class<br/>
+Test2.class<br/>
+<br/>
+dos下输入运行命令，结果如下：<br/>
+D:\my&gt;java Test1<br/>
+。。。ExtClassLoader。。。<br/>
+Null<br/>
+<br/>
+D:\my&gt;<br/>
+<br/>
+    从输出结果我们可以看出，当AppClassLoader要载入Test1.class时，先请其Parent，也就是ExtClassLoader来载入，而ExtclassLoader又请求其Parent,即Bootstrap Loader来载入Test1.class.但是Bootstrap Loader无法在其搜索路径下找到Test1.class(被我们删掉了)，所以ExtClassLoader只得自己搜索，因此ExtClassLoader在其搜索路径 &lt;JRE所在目录&gt;\lib\ext\classes下找到了Test1.class,因此将它载入，接着在Test1.class之内有载入Test2.class的需求，由于Test1.class是由ExtClassLoader所载入，所以Test2.class内定是由ExtClassLoader根据其搜索路径来找，但是因为ExtClassLoader有Parent,所以先由Bootstrap Loader帮忙寻找，Test2.class位于Bootstrap Loader可以找到的路径下，所以被Bootstrap Loader载入了.最后我们看到Test1.class是由ExtClassLoader载入，而Test2.class则是由Bootstrap Loader（null）载入<br/>
+<br/>
+    了解了以上规则，请朋友们自行分析以下场景的执行结果<br/>
+<br/>
+测试四：<br/>
+&lt;JRE所在目录&gt;\classes下<br/>
+<br/>
+&lt;JRE所在目录&gt;\lib\ext\classes下<br/>
+Test1.class<br/>
+Test2.class<br/>
+<br/>
+D:\my下<br/>
+Test1.class<br/>
+Test2.class<br/>
+<br/>
+测试五：<br/>
+&lt;JRE所在目录&gt;\classes下<br/>
+<br/>
+&lt;JRE所在目录&gt;\lib\ext\classes下<br/>
+Test1.class<br/>
+<br/>
+D:\my下<br/>
+Test1.class<br/>
+Test2.class<br/>
+<br/>
+测试六：<br/>
+&lt;JRE所在目录&gt;\classes下<br/>
+<br/>
+&lt;JRE所在目录&gt;\lib\ext\classes下<br/>
+<br/>
+Test2.class<br/>
+<br/>
+D:\my下<br/>
+Test1.class<br/>
+Test2.class<br/>
+<br/>
+测试七：<br/>
+&lt;JRE所在目录&gt;\classes下<br/>
+<br/>
+&lt;JRE所在目录&gt;\lib\ext\classes下<br/>
+<br/>
+D:\my下<br/>
+Test1.class<br/>
+Test2.class<br/>
+<br/>
+以上理解，错漏之处请朋友们及时指出，以免怠误大家<br/>
+<br/>
+摘自：<a href="http://topic.csdn.net/u/20090331/11/0D5E721C-0F61-4F60-9C0A-C643F649022D.html">http://topic.csdn.net/u/20090331/11/0D5E721C-0F61-4F60-9C0A-C643F649022D.html</a>

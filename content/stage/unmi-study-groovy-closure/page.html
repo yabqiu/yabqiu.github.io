@@ -1,0 +1,152 @@
+---
+title: Unmi 学习 Groovy 之闭包
+url: /unmi-study-groovy-closure/
+date: 2008-09-03T12:04:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Groovy
+tags: 
+  - Groovy
+  - Closure
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 335 
+wpStatus: publish
+views: 464
+lastmod: 2021-09-03T21:11:07-05:00
+---
+
+<strong>一. 认识闭包</strong></p>
+<br/>
+将代码块作为方法参数进行传递，这种机制就叫做闭包。闭包可以引用在创建闭包的范围中可见的变量。最近关于闭包的讨论也比较多，闭包能使语言更具灵动性，在动态脚本语言中较广泛的支持，如 Perl、Python、Ruby、JavaScript，还有我们的 Groovy。<br/><br/>
+有些语言能把函数作为参数传递，如 JavaScript 的回调函数，Python，甚至是 C++ 的函数指针。而 Java 在这方面又略逊一筹，需搬动一个匿名的内部类来实现类似的功能，内部类只能访问外部声明为 final 的变量。不过有呼声要在 Java SE 7 中增加闭包特性，让我们试目以待吧。<br/><br/>
+Groovy 这回大概是从 Ruby 那儿偷得闭包的语法。前面说这么多，其实你看到了就会发现，其实闭包很简单的，不信，请看：<!--more--><br/><br/>
+<pre class="brush:groovy">logo = {
+   println "Closure";
+}
+logo.call();
+logo();</pre>
+<br/>
+用大括号括起来的，给它一个名字 logo 的那段就是一个闭包(有点像 Java 中的语句块)；闭包可以通过执行它的 <span style="color: #800080;">call()</span> 方法调用，或者直接把它当作一个常规方法对待。闭包也可以没有名字，比如下面要讲的集合方法中用的闭包。<br/><br/>
+<strong>二. 闭包的参数</strong><br/><br/>
+闭包可以有参数。如果是一个参数的话，该参数就直接映射到名为 it 的变量，如：<br/><br/>
+<pre class="lang:default decode:true">discount = { it * 0.8}; //当然你不想用 it 也行，那就指定了 { name -&gt; name * 0.8 }
+println discount(200);  //输出 160.0</pre>
+<br/>
+如果是多个参数的闭包，则在闭包中用 "-&gt;" 把参数列表和实现隔开，如：(当然一个参数也可以这么方式定义的)<br/><br/>
+<pre class="lang:default decode:true">totalPrice = {subtotal, tax, discount -&gt;
+    subtotal * discount * (1+tax);
+}
+println totalPrice(100,0.2,0.3); //输出为 36.00</pre>
+<br/>
+我看到这里，怎么越来越觉得闭包那么像 C/C++ 中的宏定义呢？<br/><br/>
+调用闭包时，如果参数数量不对会抛出 <span style="color: #800080;">IncorrectClosureArgumentException</span>；不过对于一个参数的闭包，可以少传但不能多传参数，不传参数时，闭包认为 it 为 null。<br/><br/>
+<strong>三. 闭包的传递</strong><br/><br/>
+闭包在实现上是扩展自 <span style="color: #800080;">groovy.lang.Closure</span> 类，因为它们是类，所以可以作为参数传递给其他的方法，下面就来看一个例子：<br/><br/>
+<pre class="lang:default decode:true">class Handler{
+    def action;           //用来保存一个闭包的实例
+    def handle(object){
+       action(object);    //调用闭包，并传入参数 object
+    }
+}<br/><br/>
+//声明两个闭包，都是可接受一个参数
+log = {object-&gt;println "Action occured: ${object}"};
+save ={object-&gt;println "Object saved to the database: ${object}"};<br/><br/>
+logHandler = new Handler(action:log);   //创建时初始化 action 为 log 闭包
+saveHandler = new Handler(action:save); //创建时初始化 action 为 save 闭包<br/><br/>
+obj = "Status changed";
+logHandler.handle(obj);   //执行 action 所指向的闭包 log
+saveHandler.handle(obj);  //执行 action 所指向的闭包 save</pre>
+<br/>
+输出为：<br/><br/>
+<span style="color: #0000ff;">Action occured: Status changed<br />
+Object saved to the database: Status changed</span><br/><br/>
+上面这种用法可用在事件触发、回调操作或策略模式中。<br/><br/>
+<strong>四. 闭包与变量作用域</strong><br/><br/>
+在 Groovy 中闭包可以访问创建它的上下文中定义的变量，可在闭包中修改；而且闭包内部定义的变量在周围的上下文中也是可见的。看如下代码片断：<br/><br/>
+<pre class="brush:groovy">tax = 0.2;
+c1 = {
+    tax += 0.1;     //闭包中能访问并修改外围的变量
+    discount = 0.2;
+}<br/><br/>
+c1();
+println tax;
+println discount;  //闭包中的变量在外围也能访问到</pre>
+<br/>
+执行的结果是：<br/><br/>
+<span style="color: #0000ff;">0.3<br />
+0.2</span><br/><br/>
+<strong>五. 闭包与集合操作</strong><br/><br/>
+当闭包与集合整合时，它们展现了真正的威力。Groovy 中的 List、Map、String、和 Range 都有接受闭包参数的额外方法，譬如字符串也是字符的集合，也可以这么用。<br/><br/>
+涉及到的集合操作有 each、collect、inject、find、findAll、every、any。下面以例子来帮助理解这些方法的使用。<br/><br/>
+<pre class="brush:groovy">[1,2,3].each {print it+1}; //List 的 each 方法，输出 234<br/><br/>
+["Name":"Unmi","Skill":"Java"].each{
+    print "${it.key}: ${it.value} " //Map 的 each 方法，输出 Name: Unmi Skill: Java
+}; <br/><br/>
+"Groovy".each {print it.toUpperCase()};  //String 的 each 方法，输出 GROOVY<br/><br/>
+(1..3).each {print it+1};    //Range 的 each 方法，输出 234</pre>
+<br/>
+<hr /><br/><br/>
+<strong>注意：</strong>上面的闭包传给方法，如果是在 GroovyShell 中逐行敲入代码时，起始花括号"{" 必须与调用方法在同一行上，比如说写成下面的方式就有问题：<br/><br/>
+<pre class="brush:groovy">[1,2,3].each
+{
+    print it+1
+}</pre>
+<br/>
+然而如果你想要在单独一行上指定起始花括号，可以使用下语法(调用方法后加个圆括号)：<br/><br/>
+<pre class="brush:groovy">[1,2,3].each (
+  {
+      print it+1
+  }
+)</pre>
+<br/>
+要是写在 .groovy 文件中或是在 GroovyConsole 中不受这个限制，但是为规范和不致换个环境又出错，还是应该让起起始花括号"{" 与调用方法在同一行。<br/><br/>
+其实怎么去理解这种要求呢？主要是两点：<br/><br/>
+其一是为什么我们通常不写这个圆括呢？那是 Groovy 允许方法调用时省略圆括号<br/><br/>
+还有就是在 GroovyShell 下，如果输完方法名，如 each，然后马上回车，就报错<br/><br/>
+<span style="color: #ff1493;">ERROR groovy.lang.MissingPropertyException: Exception evaluating property 'each' for java.util.ArrayList, Reason: groovy<br />
+.lang.MissingPropertyException: No such property: each for class: java.lang.Integer<br />
+at groovysh_evaluate.run (groovysh_evaluate:1)<br />
+...</span><br/><br/>
+只有方法名后面加个圆括号，它才知道是参数列表开始，直至匹配的右圆括号结束，或是加了花括，它也知道是一个闭包的开始，直到匹配的花括号结束。<br/><br/>
+<hr /><br/><br/>
+<strong>1)</strong> collect() 方法利用指定的闭包转换集合的元素<br/><br/>
+<pre class="brush:groovy">println ([1,2,3].collect{it*2});  //输出 [2,4,6]</pre>
+<br/>
+<strong>2)</strong> inject() 方法，可将前一次的迭代的结果传递给下一次迭代，请看例子：<br/><br/>
+<pre class="lang:default decode:true">[1,2,3].inject 0, {prevItem,item -&gt;
+    println "Previous: ${prevItem} - Current: ${item}"
+    return item; //把当前值返回作为下次迭代时的注入值
+}</pre>
+<br/>
+输出为：<br/><br/>
+<span style="color: #0000ff;">Previous: 0 - Current: 1<br />
+Previous: 1 - Current: 2<br />
+Previous: 2 - Current: 3</span><br/><br/>
+在当前迭代中能知道上一次所迭代的值。inject 接受两个参数，第一次迭代中使用的注入值，和将要使用的闭包。这个闭包也必须定义两个参数，分别为上次迭代的注入值和当前的元素。注意在闭包中必须返回下次迭代中注入的值。否则，就会假设为 null。<br/><br/>
+为了现好的理解发这个注入语法，我们将上述例子分开来写成如下：<br/><br/>
+<pre class="lang:default decode:true">list = [1,2,3]
+closure = {prevItem,item -&gt;
+    println "Previous: ${prevItem} - Current: ${item}"
+    return item; //把当前值返回作为下次迭代时的注入值
+}
+list.inject(0,closure) //同时给 inject 方法调用参数框上圆括号(可选的)</pre>
+<br/>
+<strong>3)</strong> find() 方法找到符合闭包中所定义条件的第一次出现的元素，找不到则返回 null<br/><br/>
+<pre class="lang:default decode:true">println([2,5,7,9].find { it&gt;5 }); //输出为 7</pre>
+<br/>
+<strong>4)</strong> findAll() 方法是返回所有符合闭包中所定义条件的元素所组成的集合<br/><br/>
+<pre class="lang:default decode:true">println([2,5,7,9].findAll { it&gt;5 }); //输出为 [7, 9]</pre>
+<br/>
+<strong>5)</strong> every() 方法检查集合中是否每一个元素都符合闭包中指定的条件，是则返回 true，否则为 false<br/><br/>
+<pre class="lang:default decode:true">println([2,5,7,9].every { it&gt;1 }); //输出为 true，如果闭中写成 it&gt;3 则输出 false</pre>
+<br/>
+<strong>6)</strong> any() 方法则检查集合中是否有一个元素符合闭包中指定的条件，有则返回 true，否则为 false<br/><br/>
+<pre class="lang:default decode:true ">println([2,5,7,9].any { it&gt;8 }); //输出为 true</pre>
+<br/>
+参考：1. 《Java 脚本编程语言、框架与模式》第 4 章

@@ -1,0 +1,107 @@
+---
+title: 基于 Groovy 的自动化构建工具 Gradle 入门
+url: /groovy-based-auto-builder-gradle-get-started/
+date: 2014-04-20T23:20:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2014/04/gradle_logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Gradle
+  - builder
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6358 
+wpStatus: publish
+views: 4275
+lastmod: 2023-12-13T00:08:44-06:00
+---
+
+本人工作之初没有使用自动化构建，后来敏捷了，开始使用 Ant - 完全面向过程的定义步骤，不进行依赖管理。再发展到 Maven，面向对象的方式管理工程，有了依赖的管理，JAR 包统一从中央仓库获得，保存在本地库。同时产生了 Ivy + Ant，让 Ant 也能管理依赖，不过 JAR 包依赖仓库也是用 Maven 的。</p>
+<br/>
+前面都是用 XML 来配置的，虽说 XML 的标签描述性也很强，但阅读性还是有些牵强，并且 Maven 和 Ant+Ivy 都需要 IDE 的支持，比如在 Eclipse 中有专门 <strong>Maven Dependencies</strong> 或 <strong>ivy.xml [*]</strong> 中列出项目的依赖包，这里常会出现些问题。<br/><br/>
+而我今天想尝试使用的是基于 Groovy 的 Gradle，只要一个 build.gradle 文件，实质是一个 groovy 文件，由于可以 DSL，所以 Gradle 比 XML 更写意，更主要的是 Gradle 项目不需要 IDE 的特别支持，<a href="#maven_ivy">见后面的图</a>。<br/><br/>
+先要安装 Gradle，在我的 Mac 系统下我是用 <code>brew install gradle</code> 安装的，不同平台下可能用 yum, apt-get，安装后执行 <code>gradle</code> 命令验证。<br/><br/>
+接着按以下步骤：<br/><br/>
+<span style="background-color: #ffffff; color: #0000ff; font-size: 12pt;"><strong>1. 创建项目目录</strong></span> testgradle，并进入到新创建的目录<br/><br/>
+<blockquote>
+mkdir testgradle<br />
+cd testgradle<!--more-->
+</blockquote>
+<br/>
+<span style="font-size: 12pt; color: #0000ff;"><strong>2. 创建 <code>build.gradle </code>文件</strong></span>，内容：<br/><br/>
+<pre class="brush:groovy">apply plugin: 'java'
+apply plugin: 'eclipse'  //apply plugin: 'idea'<br/><br/>
+repositories {
+    mavenCentral()
+}<br/><br/>
+dependencies {
+    compile(
+        'ch.qos.logback:logback-classic:1.1.2',
+        'com.google.guava:guava:16.0'
+    )
+    testCompile(
+        'junit:junit:4.11'
+    )
+}</pre>
+<br/>
+这是一个 Groovy 脚本，如果要创建一个 IntelliJ IDEA 项目，上面就用 <code>apply plugin: 'idea'</code>，指定 Gradle 使用 Maven 的中央库。然后是依赖库，编译期，测试期的，指定特定版本包的格式也比 Maven 要简洁。<br/><br/>
+像 Maven 一样，Gradle 也可配置 providedCompile 和 providedRuntime 类型的依赖，即仅在编译时或运行时用到的依赖。<br/><br/>
+<strong><span style="color: #0000ff; font-size: 12pt;">3. 创建源文件目录</span></strong>，和 Maven 的目录布局一致<br/><br/>
+<pre class="brush:bash">mkdir -p src/main/{java,resources}
+mkdir -p src/test/{java,resources}</pre>
+<br/>
+也可以在 build.gradle 用 sourceSets 定义一个 Task 来准备上面的目录<br/><br/>
+<strong><span style="color: #0000ff; font-size: 12pt;">4. 生成 Eclipse 项目</span></strong>，执行命令：<br/><br/>
+gradle eclipse<br/><br/>
+Gradle 命令比较节约屏幕，默认是当前行不停的擦除再显示信息的<br/><br/>
+<blockquote>
+yanbin@8wqn4m1 ~/D/testgradle&gt; gradle eclipse<br />
+:eclipseClasspath<br />
+:eclipseJdt<br />
+:eclipseProject<br />
+:eclipse
+BUILD SUCCESSFUL
+Total time: 4.269 secs
+</blockquote>
+<br/>
+这样在当前目录下使产生了 Eclipe 项目要求的东西<br/><br/>
+<blockquote>
+.classpath   .gradle      .project     .settings
+</blockquote>
+<br/>
+如果执行 gradle 时带上  --info 或 --debug 参数将会滚屏显示详细构建过程的信息<br/><br/>
+现在把 testgradle 项目导入到 Eclipse 就是下面的情形，Gradle 象 Maven 一样能处理依赖的依赖<br/><br/>
+<img class="aligncenter wp-image-6361" src="http://unmi.cc/wp-content/uploads/2014/04/gradle-eclipse-libraries-1024x269.png" alt="gradle-eclipse-libraries" width="800" height="210" /><br />
+从上图看到下载的依赖包在 ~/.gradle/caches 目录中，在 Eclipse 中象普通 Java 项目那样第三方包列在 <code>Referenced Libraries</code> 下，这样不需要第三方 Eclipse 插件便能运行。<br/><br/>
+<span style="font-size: 12pt; color: #0000ff;"><strong>5. 构建</strong></span><br/><br/>
+因为不依赖于 IDE 的支持，所以很容易在 Eclipse/Idea 中进行调试，运行。可以执行 Gradle 的下面 task 来构建，或跑测试<br/><br/>
+<blockquote>
+gradle build<br />
+gradle javadoc<br />
+gradle test
+</blockquote>
+<br/>
+<hr /><br/><br/>
+<span style="font-size: 12pt; color: #ff0000;"><strong>以下内容仅作参考：</strong></span><br/><br/>
+用 gradle tasks 可列出所有可用的 Task<br/><br/>
+<a href="http://unmi.cc/wp-content/uploads/2014/04/gradle_tasks.png"><img class="aligncenter wp-image-6362" src="http://unmi.cc/wp-content/uploads/2014/04/gradle_tasks-872x1024.png" alt="gradle_tasks" width="800" height="939" /></a><br />
+<a id="maven_ivy"></a>Eclipse 需要特定的插件来支持 Maven 和 Ivy 产生的依赖<br/><br/>
+<table style="margin-left: auto; margin-right: auto;" width="800">
+<tbody>
+<tr>
+<td><a href="http://unmi.cc/wp-content/uploads/2014/04/maven-libraries.png"><img class="aligncenter wp-image-6359" src="http://unmi.cc/wp-content/uploads/2014/04/maven-libraries.png" alt="maven-libraries" width="400" height="141" /></a></td>
+<td><a href="http://unmi.cc/wp-content/uploads/2014/04/ant+ivy-libraries.png"><img class="aligncenter wp-image-6360" src="http://unmi.cc/wp-content/uploads/2014/04/ant+ivy-libraries.png" alt="ant+ivy-libraries" width="400" height="112" /></a></td>
+</tr>
+</tbody>
+</table>
+<br/>
+再继续看下 Gradle 究竟为何物：<br/><br/>
+<a href="http://unmi.cc/wp-content/uploads/2014/04/gradle-version.png"><img class="aligncenter wp-image-6365" src="http://unmi.cc/wp-content/uploads/2014/04/gradle-version-1024x498.png" alt="gradle-version" width="800" height="389" /></a><br/><br/>
+从上面我们发现 Gradle 也是在 Any+Ivy 基础上发展而来的。再列下 gradle 的 lib 目录下有什么 JAR 文件，就知道它还用到了哪些包。<br/><br/>
+<a href="http://www.gradle.org/docs/current/userguide/userguide.html" target="_blank" rel="noopener">Gradle 官方用户指南</a>

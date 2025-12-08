@@ -1,0 +1,127 @@
+---
+title: 使用 PostgreSQL 的 uuid 字段类型
+url: /use-postgresql-uuid-field-data-type/
+date: 2018-05-21T01:14:42-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/postgresql-logo.png"
+categories:
+  - Database
+tags: 
+  - PostgreSQL
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8762 
+wpStatus: publish
+views: 6063
+lastmod: 2021-09-10T12:42:31-05:00
+---
+
+上一篇 <a href="/use-sql-server-uniqueidentifier-data-type/">使用 SQL Server 的 uniqueidentifier 字段类型</a> 了解了 SQL Server 中如何使用 uniqueidentifier 字段类型后，现在来看下 PostgreSQL 中如何使用 uuid 字段类型。在 PostgreSQL 的字段类型是 <code>uuid</code> 了，所以创建一个带有 <code>uuid</code> 字段的表是</p>
+<br/>
+<blockquote>
+CREATE TABLE customers (<br />
+    id uuid PRIMARY KEY,<br />
+    name VARCHAR(36)<br />
+);
+</blockquote>
+<br/>
+我们这里设置 id 字段类型为 <code>uuid</code>, 并且它是一个主键。也可以应用函数指定它的默认值，下面将会讲述到。<br/><br/>
+然后用 SQL 语句来向该表插入记录<!--more--><br/><br/>
+<pre class="lang:default decode:true">insert into customers(id, name) values('0681757b-5f92-42c2-a4cd-90976f50225f', 'World')<br/><br/>
+--以下两条语句将会失败
+insert into customers(id, name) values('0681757b-5f92-42c2-a4cd-90976f50225f', 'Upper Case')  --破坏了主键约束
+insert into customers(id, name) values('x681757b-5f92-42c2-a4cd-90976f50225f', 'Changed first letter to x') --不是一个合法的 uuid
+</pre>
+<br/>
+<code>uuid</code> 字段值必须为一个合法的 UUID 字符串, 我们可以用 Java 的 <code>java.util.UUID.randomUUID().toString()</code> 来生成。同样 UUID 按模式 <code>xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</code> 展示出来也是它的外部表现形式，它内部是以 16 位来存储的，所以改变字符的大小写也是同一个值。插入非法的 uuid 字符串不被接受，也就是该字符串不能用 <code>java.util.UUID.fromString("your-input")</code> 还原为 <code>UUID</code> 对象就是不合法的。<br/><br/>
+这儿是一个 SQL Server 的 uniqueidentifier 和 PostgreSQL 的 uuid 字段的对比: <a href="http://www.postgresonline.com/journal/archives/179-Universal-Unique-Identifiers-PostgreSQL-SQL-Server-Compare.html">UNIVERSAL UNIQUE IDENTIFIERS POSTGRESQL SQL SERVER COMPARE</a><br/><br/>
+前面还落下一个问题，即如何为 <code>uuid</code> 字段设定默认值及调用 PostgreSQL 函数来生成 <code>uuid</code> 值<br/><br/>
+从搜索到的资料来看，PostgreSQL 中可以调用<code>uuid_generate_v1()</code> 或 <code>uuid_generate_v4()</code> 等函数生成 <code>uuid</code>，于是我们试一下<br/><br/>
+<pre class="lang:default decode:true">select uuid_generate_v1();
+select uuid_generate_v4();</pre>
+<br/>
+均提示函数不存在，这是因为它们依赖于一个第三方模块 <code>uuid-ossp</code>, 在使用它的函数之前必须用 <code>CREATE EXTENSION</code> 安装该模块<br/><br/>
+<pre class="lang:default decode:true ">CREATE EXTENSION IF NOT EXISTS "uuid-ossp";</pre>
+<br/>
+只有安装了 <code>uuid-ossp</code> 之后，上面的那两个函数 <code>uuid_generate_v1()</code> 和 <code>uuid_generate_v4()</code> 才能调用, 而且这时候才能在创建表时为 <code>uuid</code> 字段使用其中一个函数作为默认值<br/><br/>
+<pre class="lang:default decode:true">CREATE TABLE customers (
+    id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(36)
+)</pre>
+<br/>
+<code>uuid-ossp</code> 模块包含的所有函数，和 <code>uuid_generate_v1()</code> 与 <code>uuid_generate_v4()</code> 之间的区别请查看链接 <a href="https://www.postgresql.org/docs/9.4/static/uuid-ossp.html">https://www.postgresql.org/docs/9.4/static/uuid-ossp.html</a><br/><br/>
+参观一下插入记录后查询 <code>uuid</code> 字段是怎么显示的，如下图<br/><br/>
+<a href="/wp-content/uploads/2018/05/postgresql-uuid-2.png"><img class="aligncenter size-full wp-image-8764" src="/wp-content/uploads/2018/05/postgresql-uuid-2.png" alt="" width="758" height="282" /></a><br/><br/>
+最后，也来看下 JDBC 中如何操作 <code>uuid</code> 字段<br/><br/>
+读取 <code>uuid</code> 字段仍然是用 <code>rs.getString(column)</code>，<code>rs.getObject(column)</code> 得到的是一个 <code>java.util.UUID</code> 对象。<br/><br/>
+JDBC 在应用 <code>PreparedStatement</code> 插入或更新 <code>uuid</code> 字段，只能用 <code>PreparedStatement</code> 的 <code>setObject(...)</code> 方法<br/><br/>
+<pre class="lang:default decode:true">Class.forName("org.postgresql.Driver");
+Connection conn = DriverManager.getConnection(
+    "jdbc:postgresql://localhost:5432/postgres", "postgres", "mysecretpassword");<br/><br/>
+PreparedStatement pstmt = conn.prepareStatement("insert into customers(id, name) values(?, ?)");<br/><br/>
+pstmt.setObject(1, UUID.randomUUID());<br/><br/>
+//以下两种方式调 uuid 类型字段的值均会报错
+//pstmt.setObject(1, UUID.randomUUID().toString());
+//pstmt.setString(1, UUID.randomUUID().toString());
+        
+pstmt.setString(2, "hello");<br/><br/>
+pstmt.execute();</pre>
+<br/>
+以上用 <code>pstmt.setObject(1, UUID.randomUUID())</code> 可以正常插入一个 uuid 值。而如果尝试把 <code>uuid</code> 类型字段当作一个 <code>VARCHAR</code> 字段类型用<br/><br/>
+<blockquote>
+pstmt.setObject(1, UUID.randomUUID().toString());<br />
+pstmt.setString(1, UUID.randomUUID().toString());
+</blockquote>
+<br/>
+将会得到错误信息<br/><br/>
+<blockquote>
+Exception in thread "main" org.postgresql.util.PSQLException: ERROR: column "id" is of type uuid but expression is of type character varying<br />
+    Hint: You will need to rewrite or cast the expression.<br />
+    Position: 40<br />
+        at org.postgresql.core.v3.QueryExecutorImpl.receiveErrorResponse(QueryExecutorImpl.java:2433)<br />
+        at org.postgresql.core.v3.QueryExecutorImpl.processResults(QueryExecutorImpl.java:2178)<br />
+        at org.postgresql.core.v3.QueryExecutorImpl.execute(QueryExecutorImpl.java:306)<br />
+        at org.postgresql.jdbc.PgStatement.executeInternal(PgStatement.java:441)<br />
+        at org.postgresql.jdbc.PgStatement.execute(PgStatement.java:365)<br />
+        at org.postgresql.jdbc.PgPreparedStatement.executeWithFlags(PgPreparedStatement.java:155)<br />
+        at org.postgresql.jdbc.PgPreparedStatement.execute(PgPreparedStatement.java:144)
+</blockquote>
+<br/>
+而从前一篇<a href="/use-sql-server-uniqueidentifier-data-type/">使用 SQL Server 的 uniqueidentifier 字段类型</a> 看到的是 SQL Server 用 JDBC 操作时是可以把  <code>uniqueidentifier</code> 字段当作 <code>VARCHAR</code> 类型来对待，这与 PostgreSQL 的 <code>uuid</code> 字段类型是不同的。<br/><br/>
+JDBC 插入 PostgreSQL 的 <code>uuid</code> 字段还有一种比之 <code>setObject(1, uuid)</code> 更烦琐的操作<br/><br/>
+<pre class="lang:default decode:true ">PGobject newUUID = new PGobject();
+newUUID.setType("uuid");
+newUUID.setValue(UUID.randomUUID().toString());
+pstmt.setObject(1, newUUID);</pre>
+<br/>
+在 PostgreSQL 的 PreparedStatement 的实现类 <code>PgPreparedStatement</code> (该类的可见度为默认，非 public) 有一个私有方法<br/><br/>
+<blockquote>
+private void setUuid(int parameterIndex, UUID uuid) throws SQLException { ... }
+</blockquote>
+<br/>
+该方法只被 <code>setObject(...)</code> 在判定字段类型为 <code>uuid</code> 后调用，基本确定 <code>uuid</code> 操作时最简单的方式还是用 <code>setObject(...)</code><br/><br/>
+<blockquote>
+pstmt.setObject(index, UUID.randomUUID());<br />
+pstmt.setObject(index, UUID.fromString("&lt;uuid-string&gt;"));
+</blockquote>
+<br/>
+由此想到另一个问题，查询 <code>uuid</code> 字段后如果 <code>getObject(index)</code> 得到的是什么类型了，由 <code>setObject(index, value)</code> 和 <code>getObject(index)</code> 这么一对反操作，你应该猜到了，<code>getObject(index)</code> 得到的是一个真真切切的 <code>UUID</code> 对象<br/><br/>
+<pre class="lang:default decode:true ">ResultSet rs = conn.createStatement().executeQuery("select * from customers");
+while (rs.next()) {
+    UUID uuid = (UUID)rs.getObject(1);
+}</pre>
+<br/>
+这与 SQL Server 的又一个不同之处，SQL Server 的 <code>uniqueidentifer</code> 字段查询出来 <code>getObject(index)</code> 获得的也是一个字符串。<br/><br/>
+&nbsp;<br/><br/>
+<hr /><br/><br/>
+2019-05-16<br/><br/>
+使用 JdbcTemplate 操作 PostgreSQL 的 UUID 类型字段，需要把字符串转换回 UUID 类型<br/><br/>
+<pre class="lang:default decode:true">postgreSQLJdbcTemplate.update("insert into customers(id, name) values(?, ?)",
+   UUID.fromString("d98ffda8-77ec-11e9-8f9e-2a86e4085a59"), "Yanbin");</pre>
+<br/>
+不能直接用字符串形式的 UUID, 否则 JdbcTemplate 会尝试用 <code>setString(index, uuid)</code> 来设置参数。

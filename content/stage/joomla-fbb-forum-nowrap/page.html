@@ -1,0 +1,62 @@
+---
+title: Joomla 扩展使用手记：F!BB 论坛最新话题页话题内容提示不换行的解决
+url: /joomla-fbb-forum-nowrap/
+date: 2009-10-09T22:06:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Joomla
+tags: 
+  - Joomla
+  - F!BB
+  - nowrap
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 225 
+wpStatus: publish
+views: 359
+lastmod: 2010-09-17T07:34:09-05:00
+---
+
+在对 F!BB 和 Kunena Forum 这两个论坛组件进行对比时，很容易会发现，在最新话题页面中，鼠标悬停在贴子标题上，它们都会提示贴子内容。Kunena 的提示能正确换行，而 F!BB 的提示内容无法换行，全部挤在一团，实在丑陋。再继续看看它们的显示样式，Kunena 是用 &lt;a&gt; 的 title 属性来提示的，可以认识回车 Chr(10)；F!BB 却创新的使用了 &lt;div&gt; 来显示内容提示，所以无法把内容中的 Chr(10) 转换成显示时的 &lt;br&gt;。<br/>
+<br/>
+注意的，不管是 F!BB 也好，还是 Kunena Forum，都必须设置论坛模板为 default_ex 时才会最新话题贴子内容提示的效果。<br/>
+<br/>
+知道问题的症结所在，解决就容易了。<br/>
+<br/>
+先简述一下 Kunena Forum 内容提示的实现。它的最新话题页面<!--more-->是 /components/com_kunena/template/default_ex/latestx.php，它包含了同目录下的 flat.php 来显示贴子标题。在 flat.php 的 239 行(不同版本可能不同行) 代码：<br/>
+<br/>
+&lt;?php echo CKunenaLink::GetThreadLink('view', $leaf-&gt;catid, $leaf-&gt;id, kunena_htmlspecialchars(stripslashes($leaf-&gt;subject)), kunena_htmlspecialchars(stripslashes($messagetext[$leaf-&gt;id])) , 'follow', 'fb-topic-title fbm');?&gt;<br/>
+<br/>
+第五个参数  kunena_htmlspecialchars(stripslashes($messagetext[$leaf-&gt;id]))  就是要显示的 title 属性值。在 /components/com_kunena/lib/kunena.link.class.php 中的 CKunenaLink::GetThreadLink() 方法就是把第五个参数直接作为 &lt;a&gt;  的 title 属性的。<br/>
+<br/>
+现在来看看 F!BB  的内容提示的实现。它的最新话题页面相应的就是 /components/com_fbb/template/default_ex/latestx.php，同样是用包含的同目录下的 flat.php 来显示贴子。在该 flat.php 的 284 行和 285 行是这样的内容：<br/>
+<br/>
+         FBTools::buildBox2(_FB_MSG,'',$message . '&lt;br /&gt;' . $replyLink ,fb_link::GetThreadLink('view', $leaf-&gt;catid, $leaf-&gt;id, $subject, '' , 'follow', 'fb-topic-title fbm info',1));echo $viewers2;<br/>
+         //echo fb_link::GetThreadLink('view', $leaf-&gt;catid, $leaf-&gt;id, $subject, $message , 'follow', 'fb-topic-title fbm'),$viewers2;?&gt;<br/>
+<br/>
+这里就给了我们两种解决办法：<br/>
+<br/>
+1）注释掉第一行，启用第二行，使用的是与 Kunena 一样的 title 提示方法。F!BB 在代码中还是预留了那种古老的方式。<br/>
+<br/>
+2）在 FBTools::buildBox2() 方法中作文章，该方法在 /components/com_fbb/class.fbb.php 中，大概是 783 行，把原来的：<br/>
+<br/>
+&lt;div style="color: #006699;"&gt;&lt;?php echo $content; ?&gt;&lt;/div&gt;<br/>
+<br/>
+改为：<br/>
+<br/>
+&lt;div style="color: #006699;"&gt;&lt;?php echo str_replace(Chr(10),"&lt;br&gt;",$content); ?&gt;&lt;/div&gt;<br/>
+<br/>
+就是要把在 &lt;div&gt; 提示层中内容的硬回车符 Chr(10) 转换为网页能认识的换行符 &lt;br&gt;。<br/>
+<br/>
+这样就解决了，去看看效果吧。<br/>
+<br/>
+F!BB  和 Kunena 无论是 title 还是用 &lt;div&gt; 来提示，它们都会截取部分贴子内容进行提示的。<br/>
+<br/>
+另外 F!BB 1.5.96 RC 中文版弹出来的提示层离鼠标有点远，所以光标很难移到那个层上，层中的回复链接也点击不到，而英文版的提示层一出现，光标即在其中，可点击到回复链接的。目前还不道样式是怎么控制的。---- 终于找到为什么会出现这个问题了，因为有几个组件在 IE8 下显示走样，所以我在模板里加了一行：<br/>
+&lt;META content=IE=7 http-equiv=X-UA-Compatible&gt;<br/>
+使之与 IE-7 保持兼容，可是却影响到了这里，可以单独调这里的样式。其实用 &lt;div&gt; 的提示层在 IE6 下还显示不出来，所以用 title 属性来提示也是可以的。

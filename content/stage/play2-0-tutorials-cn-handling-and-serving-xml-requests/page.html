@@ -1,0 +1,90 @@
+---
+title: Play 2.0 中文资料 - 使用 XML
+url: /play2-0-tutorials-cn-handling-and-serving-xml-requests/
+date: 2013-01-15T11:20:40-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+  - PlayFramework
+tags: 
+  - Scala
+  - play
+  - PlayFramework
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4917 
+wpStatus: publish
+views: 527
+lastmod: 2021-05-19T16:42:14-05:00
+---
+
+<span style="color: #0000ff;">Unmi 注: 有了前面对 Play 2.0 的 Json 支持的了解。见：1. <a title="Play 2.0 中文资料 - Play JSON 库" href="http://unmi.cc/play2-0-tutorials-cn-play-json-library" target="_blank" rel="noopener"><span style="color: #0000ff;">Play 2.0 中文资料 - Play JSON 库</span></a>，2. <a title="Play 2.0 中文资料 - 处理和响应 JSON 请求" href="/play2-0-tutorials-cn-handling-and-serving-json-requests" target="_blank" rel="noopener"><span style="color: #0000ff;">Play 2.0 中文资料 - 处理和响应 JSON 请求</span></a>， 3. <a title="Play 2.0 中文资料 - Play JSON 库使用泛型" href="/play2-0-tutorials-cn-json-library-with-generics" target="_blank" rel="noopener"><span style="color: #0000ff;">Play 2.0 中文资料 - Play JSON 库使用泛型</span></a>。现在来看 Play 2.0 对 XML 的支持就更简单了，原因是 Scala 使用 Json 还需依赖于第三方的库 Jackson，而 Scala 对 XML 的支持直接利益于它的内建语法。如在 Scala 控制台下：</span><br/><br/>
+<p style="text-align: center;"><span style="color: #0000ff;"><img class="aligncenter wp-image-5360" src="/wp-content/uploads/2013/01/play-scala-xml.png" alt="play-scala-xml" /></span><br />
+<span style="color: #0000ff;">上面演示了 Scala XML 遍历 XML，访问属性，文本节点。方法和遍历 JSON 类似，也有 \ 和 \\ 方法。例如 user\"@name" 访问 name 属性。<br />
+</span></p>
+<br/>
+<span style="color: #0000ff;">而且有了 Scala 这样的内建语法，想要实现 toXML, fromXML 方法也很简单。</span><br/><br/>
+<strong><span style="font-size: medium;">处理 XML 请求</span></strong><br/><br/>
+XML 请求是指请求体为一个有效的 XML 数据的 HTTP 请求. 必须用 <code>Content-Type</code> 头指定 MIME 类型为 <code>text/xml</code>.<!--more--><br/><br/>
+默认情况下，<code>Action</code> 使用的是 <strong>any content</strong> 作为 Body 解析器, 它使得你获取到的 body 可转换成一个 XML (实际是一个 <code>NodeSeq</code>):<br/><br/>
+<pre class="lang:default decode:true">def sayHello = Action { request =&gt;
+  request.body.asXml.map { xml =&gt;
+    (xml \\ "name" headOption).map(_.text).map { name =&gt;
+      Ok("Hello " + name)
+    }.getOrElse {
+      BadRequest("Missing parameter [name]")
+    }
+  }.getOrElse {
+    BadRequest("Expecting Xml data")
+  }
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: headOption 方法是取第一个节点，如上面只会处理找到的第一个 name 节点，如果不调用  headOption 方法则会遍历所有的 name 节点。</span><br/><br/>
+更好的方法 (也是更简单的) 是指定我们自己的 <code>BodyParser，它会告诉</code> Play 把内容体直接解析为 XML:<br/><br/>
+<pre class="lang:default decode:true">def sayHello = Action(parse.xml) { request =&gt;
+  (request.body \\ "name" headOption).map(_.text).map { name =&gt;
+    Ok("Hello " + name)
+  }.getOrElse {
+    BadRequest("Missing parameter [name]")
+  }
+}</pre>
+<br/>
+<blockquote>
+<strong>注:</strong> 当使用 XML 作为 Body 解析器时, <code>request.body</code> 就直接是个有效的 <code>NodeSeq 了</code>.
+</blockquote>
+<br/>
+你可以在命令行下用命令 <strong>cURL</strong> 进行测试:<br/><br/>
+<pre class="lang:default decode:true ">curl 
+  --header "Content-type: text/xml" 
+  --request POST 
+  --data '&lt;name&gt;Guillaume&lt;/name&gt;' 
+  http://localhost:9000/sayHello</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 同样在 Unix 簇系统下，命令分号须用 \ 进行续行，并注意加上相应的空格。可能要给 curl 加上 -v，或 -i 才能看到这些详细的输出。</span><br/><br/>
+回应是:<br/><br/>
+<pre class="brush:scala">HTTP/1.1 200 OK
+Content-Type: text/plain; charset=utf-8
+Content-Length: 15<br/><br/>
+Hello Guillaume</pre>
+<br/>
+<strong><span style="font-size: medium;">输出 XML 应用</span></strong><br/><br/>
+在我们前面的例子中处理了 XML 请求, 但我们输出的详应是用的 <code>text/plain</code>. 让我们加以变化，使之回送出一个有效的 XML HTTP 响应:<br/><br/>
+<pre class="lang:default decode:true">def sayHello = Action(parse.xml) { request =&gt;
+  (request.body \\ "name" headOption).map(_.text).map { name =&gt;
+    Ok(&lt;message status="OK"&gt;Hello {name}&lt;/message&gt;)
+  }.getOrElse {
+    BadRequest(&lt;message status="KO"&gt;Missing parameter [name]&lt;/message&gt;)
+  }
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 传给  Ok 方法的数据类型是 scala.xml.Elem，该响应则会自动加上  Content-Type: text/xml。</span><br/><br/>
+现在的回应是:<br/><br/>
+<pre class="lang:default decode:true ">HTTP/1.1 200 OK
+Content-Type: text/xml; charset=utf-8
+Content-Length: 46<br/><br/>
+&lt;message status="OK"&gt;Hello Guillaume&lt;/message&gt;</pre>

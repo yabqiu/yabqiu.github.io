@@ -1,0 +1,202 @@
+---
+title: Spring Boot 如何选择 Cache 实现的
+url: /how-springboot-select-cache-implementation/
+date: 2022-08-15T15:46:36-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - Spring
+  - Spring Boot
+  - Cache
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12519 
+wpStatus: publish
+views: 773
+lastmod: 2022-08-15T16:05:52-05:00
+---
+
+写作此篇是作为对 <a href="https://yanbin.blog/spring-cache-different-cache-types/">Spring 使用 Cache 解析及使用不同类型的 Cache</a> 一文的补充，该文中提到了自定 CacheManager 及配置 <code>spring.cache.type</code> 来选择自己的 Cache 实例，但对 Spring 是如何确定具体 Cache 实现未作展开。本文将介绍选择 Cache 实现的几种方式<br/><br/>
+<ol>
+    <li>默认选择 Cache</li>
+    <li>声明 Spring Bean <code>Cache</code></li>
+    <li>声明 Spring Bean <code>CacheManager</code></li>
+    <li>通过 <code>spring.cache.type</code> 属性选择</li>
+    <li>引入相应的 Cache 实现依赖</li>
+</ol>
+<br/>
+<!--more-->首先来看 SpringBoot 所有支持的 Cache 实现，在 <a href="https://github.com/spring-projects/spring-boot/blob/main/spring-boot-project/spring-boot-autoconfigure/src/main/java/org/springframework/boot/autoconfigure/cache/CacheConfigurations.java">CacheConfigurations</a> 类中，我们看到<br/><br/>
+<pre class="lang:default decode:true">static {
+    Map&lt;CacheType, String&gt; mappings = new EnumMap&lt;&gt;(CacheType.class);
+    mappings.put(CacheType.GENERIC, GenericCacheConfiguration.class.getName());
+    mappings.put(CacheType.HAZELCAST, HazelcastCacheConfiguration.class.getName());
+    mappings.put(CacheType.JCACHE, JCacheCacheConfiguration.class.getName());
+    mappings.put(CacheType.COUCHBASE, CouchbaseCacheConfiguration.class.getName());
+    mappings.put(CacheType.REDIS, RedisCacheConfiguration.class.getName());
+    mappings.put(CacheType.CAFFEINE, CaffeineCacheConfiguration.class.getName());
+    mappings.put(CacheType.CACHE2K, Cache2kCacheConfiguration.class.getName());
+    mappings.put(CacheType.SIMPLE, SimpleCacheConfiguration.class.getName());
+    mappings.put(CacheType.NONE, NoOpCacheConfiguration.class.getName());
+    MAPPINGS = Collections.unmodifiableMap(mappings);
+}</pre>
+<br/>
+或者是在 <a href="https://github.com/spring-projects/spring-boot/blob/main/spring-boot-project/spring-boot-autoconfigure/src/main/java/org/springframework/boot/autoconfigure/cache/CacheType.java">CacheType</a> 中的枚举值定义<br/><br/>
+<pre class="lang:default decode:true">public enum CacheType {
+    GENERIC,
+    JCACHE,
+    HAZELCAST,
+    COUCHBASE,
+    REDIS,
+    CACHE2K,
+    CAFFEINE,
+    SIMPLE,
+    NONE
+}</pre>
+<br/>
+我们目前所能选择的 Cache 实现只能出自于上面几种，当然通过定义 <code>Cache(GenericCacheCofiguration)</code> 或 <code>CacheManager(SimpleCacheConfiguration)</code> 的方式就能无限可能了。<br/><br/>
+注意， CacheType 枚举值的定义也决定了 Spring 引入相应的 XXXCacheConfiguration 类的顺序，这对选择使用哪种 Cache 是有影响的。<br/><br/>
+<h3>默认选择 Cache</h3><br/><br/>
+当我们在一个干净的 Spring 环境中，以上的 #2 - #5 的条件都未满足的情况下，SpringBoot 将选择 <code>SimpleCacheConfiguration</code>, 而不是 <code>GenericCacheConfiguration</code>. 原因是这两个 SpringBean 依赖的条件不同<br/><br/>
+SimpleCacheConfiguration<br/><br/>
+<pre class="lang:default decode:true" title="SimpleCacheConfiguration">@Configuration(proxyBeanMethods = false)
+@ConditionalOnMissingBean(CacheManager.class)
+@Conditional(CacheCondition.class)
+class SimpleCacheConfiguration {
+    ......
+}</pre>
+<br/>
+GenericCacheConfiguration<br/><br/>
+<pre class="lang:default decode:true" title="GenericCacheConfiguration">@Configuration(proxyBeanMethods = false)
+@ConditionalOnBean(Cache.class)
+@ConditionalOnMissingBean(CacheManager.class)
+@Conditional(CacheCondition.class)
+class GenericCacheConfiguration {
+    ......
+}</pre>
+<br/>
+因为 <code>Cache</code> Bean 也不存在，所以选择的是 <code>SimpleCacheConfiguration</code>。<br/><br/>
+再比较一下 NonOpCacheConfiguration<br/><br/>
+<pre class="lang:default decode:true">@Configuration(proxyBeanMethods = false)
+@ConditionalOnMissingBean(CacheManager.class)
+@Conditional(CacheCondition.class)
+class NoOpCacheConfiguration {
+    ......
+}</pre>
+<br/>
+它和 SimpleCacheConfiguration 有相同的 @ConditionalXxx 条件，那为什么不会默认为 <code>NoOpCacheConfiguration</code> 呢？<br/><br/>
+原因是在 <a href="https://github.com/spring-projects/spring-boot/blob/main/spring-boot-project/spring-boot-autoconfigure/src/main/java/org/springframework/boot/autoconfigure/cache/CacheAutoConfiguration.java#L126">CacheAutoConfiguration.CacheConfigurationIMportSelector.selectImports()</a> 方法中先引入的是 SimpleCacheConfiguration，NoOpCacheConfiguration 是最后被引入的。 它在初始化 CacheManager 实例(ConcurrentMapCacheManager) 后，使得 <code>NoOpCacheConfiguration</code> 的 <code>@OnditionalOnMissingBean(CacheManager.class)</code> 不能满足，所以选择的是 <code>SimpleCacheConfiguration</code><br/><br/>
+而其他的使用了第三方库的 Cache 必须依赖于是否引入了相应的库。<br/><br/>
+<h3>声明了 <code>Cache</code> Bean 后选择 GenericCacheConfiguration</h3><br/><br/>
+仍然要记记住 Spring 引入以下三种无第三方库依赖的 XxxCacheConfiguration 的顺序是<br/><br/>
+<ol>
+    <li>GenericCacheConfiguration</li>
+    <li>SimpleCacheConfiguration</li>
+    <li>NoOpCacheConfiguration</li>
+</ol>
+<br/>
+它们都不想看到 <code>CacheManager</code> 实例，但 GenericCacheConfiguration 在存在 <code>Cache</code> 实例时被选择，所以只要声明一个自己的 <code>Cache</code><br/><br/>
+验证很简单，在 Java config 中声明一个 Cache<br/><br/>
+<pre class="lang:default decode:true ">@Configuration
+public class AppConfig {<br/><br/>
+    @Bean
+    public Cache cache() {
+        return new ConcurrentMapCache("xxx");
+    }
+}</pre>
+<br/>
+这样的话，使用 @Cacheable 等注解将会使用 <code>GenericCacheConfiguration</code> 实现<br/><br/>
+<h3>声明了 <code>CacheManager</code> Bean 就直接用该 CacheManager</h3><br/><br/>
+所有 XxxCacheConfiguration 都排斥 <code>CacheManager</code> Bean, 所以只要声明了自己的 <code>CacheManager</code> 的话就很明确了，没有其他任何的 XxxCacheConfigruation 的事情了。<br/><br/>
+比如我们使用 Google Guava 的 Cache<br/><br/>
+<pre class="lang:default decode:true">@Configuration
+public class AppConfig {
+    @Bean
+    public CacheManager userCacheManager() {
+        return new ConcurrentMapCacheManager("user"){
+            public Cache createConcurrentMapCache(String name){
+                return new ConcurrentMapCache(name, CacheBuilder.newBuilder()
+                        .expireAfterWrite(5, TimeUnit.MINUTES).maximumSize(1000).build().asMap(), false);
+            }
+        };
+    }
+}</pre>
+<br/>
+<h3>通过 <code>spring.cache.type</code> 选择 Cache</h3><br/><br/>
+在既没有 <code>Cache</code> 和 <code>CacheManager</code> Bean 实例定义的情况下，如果设置属性 <code>spring.cache.type=None</code>, 将会选择 <code>NoOpCacheConfiguration</code> 中定义的 <code>NoOpCacheManager</code>, 因为 <code>spring.cache.type=None</code> 将会产生下面的效果<br/><br/>
+<ol>
+    <li>GenericCacheConfiguration： @Conditional(CacheCondition.class) match = false</li>
+    <li>SimpleCacheConfiguration: @Conditional(CacheCondition.class) match = false</li>
+    <li>NoOpCacheConfiguration: @Conditional(CacheCondition.class) match = true</li>
+</ol>
+<br/>
+唯有 NoOpCacheConfiguration 能满足初始化的条件<br/><br/>
+所以通过配置 <code>spring.cache.type</code> 可以强制选择所需的 XxxCacheConfiguration，以及其中的 CacheManager, 而不管在自己的应用中是否声明了自己 Cache 或 CacheManager，因为 <code>spring.cache.type</code> 直接否决掉不符合条件的 @Conditional(CacheCondition.class)。<br/><br/>
+<h3>启用第三方 Cache 实现</h3><br/><br/>
+欲知如何启用第三方的 Cache 实现，那就直接看相应的 XxxCacheConfiguration 需满足的条件。其实对前面讲到的 GenericCacheConfiguration, SimpleCacheConfigruation, 和  NoOpCacheConfigruation 都是相同的道理。<br/><br/>
+比如要用 EhCache 的话，打开 EhcacheCacheConfiguration 类的声明<br/><br/>
+<pre class="lang:default decode:true ">@Configuration(proxyBeanMethods = false)
+@ConditionalOnClass({ Cache.class, EhCacheCacheManager.class })
+@ConditionalOnMissingBean(org.springframework.cache.CacheManager.class)
+@Conditional({ CacheCondition.class, EhCacheCacheConfiguration.ConfigAvailableCondition.class })
+class EhCacheCacheConfiguration {
+    ......
+}</pre>
+<br/>
+必须满足的条件有<br/><br/>
+<ol>
+    <li>存在类 <code>net.sf.ehcache.Cache</code> 和 <code>org.springframework.cache.ehcache.EhCacheCacheManager</code></li>
+    <li>不要声明 <code>CacheManager</code> Bean</li>
+    <li>不要配置 <code>spring.cache.type</code>，有 spring.cache.type 的话，值只能为 Ehcache(不区分大小写)</li>
+    <li>要配置 Ehcache 的配置文件 classpath:/ehcache.xml</li>
+</ol>
+<br/>
+注：<code>spring.cache.type</code> 除了设置为 <code>None</code> 禁用 Cache 用，其实没什么用<br/><br/>
+因此我们要做的就是(假定为 Maven 项目)<br/><br/>
+引入依赖，在 pom.xml 中要具备<br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;net.sf.ehcache&lt;/groupId&gt;
+    &lt;artifactId&gt;ehcache&lt;/artifactId&gt;
+    &lt;version&gt;2.10.9.2&lt;/version&gt;
+&lt;/dependency&gt;
+&lt;dependency&gt;
+    &lt;groupId&gt;org.springframework&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-context-support&lt;/artifactId&gt;
+    &lt;version&gt;5.3.20&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+添加 Ehcache 配置文件 src/main/resources/ehcache.xml<br/><br/>
+<pre class="lang:default decode:true">&lt;ehcache&gt;
+    &lt;cache name="users" maxEntriesLocalHeap="10000"/&gt;
+&lt;/ehcache&gt;</pre>
+<br/>
+这是一个最简陋但能工作的配置文件<br/><br/>
+现在使用 @Cacheable 等注解将使用 Ehcache 缓存。<br/><br/>
+其他的 Cache 实现也类似，再比如 CaffeienCacheConfiguration<br/><br/>
+<pre class="lang:default decode:true">@Configuration(proxyBeanMethods = false)
+@ConditionalOnClass({ Caffeine.class, CaffeineCacheManager.class })
+@ConditionalOnMissingBean(CacheManager.class)
+@Conditional({ CacheCondition.class })
+class CaffeineCacheConfiguration {
+    ......
+}</pre>
+<br/>
+要有 <code>com.github.benmanes.caffeine.cache.Caffeine</code> 类等条件。<br/><br/>
+如果不清楚 XxxCacheConfiguration 是否能被初始化， 可在 <code>application.properties</code> 中配置 <code>debug=true</code>, 输出 <code>CONDITIONS EVALUATION REPORT</code> 的内容<br/><br/>
+<blockquote>
+EhCacheCacheConfiguration matched:<br />
+    - @ConditionalOnClass found required classes 'net.sf.ehcache.Cache', 'org.springframework.cache.ehcache.EhCacheCacheManager' (OnClassCondition)<br />
+    - Cache org.springframework.boot.autoconfigure.cache.EhCacheCacheConfiguration EHCACHE cache type (CacheCondition)<br />
+    - ResourceCondition (EhCache) found resource 'classpath:/ehcache.xml' (EhCacheCacheConfiguration.ConfigAvailableCondition)<br />
+    - @ConditionalOnMissingBean (types: org.springframework.cache.CacheManager; SearchStrategy: all) did not find any beans (OnBeanCondition)<br />
+<br />
+CaffeineCacheConfiguration:<br />
+Did not match:<br />
+    - @ConditionalOnClass did not find required class 'com.github.benmanes.caffeine.cache.Caffeine' (OnClassCondition)
+</blockquote>

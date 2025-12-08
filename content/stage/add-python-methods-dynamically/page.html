@@ -1,0 +1,155 @@
+---
+title: Python 对象当函数使及动态添加方法
+url: /add-python-methods-dynamically/
+date: 2019-02-08T02:42:41-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - __call__
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9304 
+wpStatus: publish
+views: 606
+lastmod: 2019-02-08T02:44:55-06:00
+---
+
+<p>继续阅读 《Python Tricks: The Book》，书中说到 "Objects Can Behave Like Functions", 就是把对象当成函数来调用，在普通对象后加个括号就能调用相应的 <code>__call__</code> 函数。下面是书中的例子</p>
+
+<blockquote><br/>
+<p>class Adder:<br /><br/>
+    def __init__(self, n):<br /><br/>
+        self.n = n<br /><br/>
+<br /><br/>
+    def __call__(self, x):<br /><br/>
+        return self.n + x</p>
+
+</blockquote>
+
+<p>然后是应用类 <code>Adder</code> 的代码</p>
+
+<blockquote><br/>
+<p>plus_3 = Adder(3)<br /><br/>
+plus_3(4)  # 普通对象 plus_3 当成函数来用</p>
+
+</blockquote>
+
+<p>上面 <code>plus_3</code> 是一个普能的对象，并非一个函数，但如果把它当成函数来看待，那么 <code>plus_3(4)</code> 就会去寻找相应的 <code>__call__</code> 函数。<!--more--></p>
+
+<p>这种行为与 Scala 的 case class 或  apply() 函数很类似。来一段 Scala 代码的演示</p>
+
+<pre class="lang:default decode:true">case class User(val id: Int) {<br/>
+  def apply(name: String) {<br/>
+    println(s"Id: ${id}, Hello ${name}")<br/>
+  }<br/>
+}<br/>
+<br/>
+val user = User(1)  # case class 实例的创建，其实是 new User(1) 的缩写形式<br/>
+user("Yanbin")</pre>
+
+<p>上面的 Scala 执行输出</p>
+
+<blockquote><br/>
+<p>Id: 1, Hello Yanbin</p>
+
+</blockquote>
+
+<p>这里的对象 <code>user</code> 后直接加括号，当函数来对待实质是调用相应的 <code>apply(name)</code> 函数。</p>
+
+<p>进一步延伸，对于自定义的类我们可以事先创建 <code>__call__</code> 函数进行把对象当函数来用，但是对于别人创建的类是否能动态的添加 <code>__call__</code> 方法呢？这一部分的内容或许与上面所介绍的无多大的关系，不过既然是观后感，不妨列在一块。</p>
+
+<h3>动态添加方法</h3><br/>
+<p>比如说有一个没定义 <code>__call__</code> 方法的类</p>
+
+<pre class="lang:default decode:true">class Adder:<br/>
+    def __init__(self, n):<br/>
+        self.n = n</pre>
+
+<p>如何实现出与前面同样的效果来</p>
+
+<pre class="lang:default decode:true">plus_3 = Adder(3)<br/>
+plus_3(4)</pre>
+
+<p>上面的 <code>plus_3(4)</code>  会报 <code>TypeError: 'Adder' object is not callable</code>，因为作为一个鸭子找不到 <code>__call__</code> 方法。</p>
+
+<p>其实也很简单，Python 的类或对象都是动态的，直接事后对 <code>Adder</code> 加个 <code>__call__</code> 方法就成。下面写成 lambda 的形式</p>
+
+<h4>给类添加实例方法</h4><br/>
+<p>这里我们定义一个 <code>foo(self, x)</code> 方法，后面的实例都使用相同的 <code>foo</code> 方法定义。</p>
+
+<pre class="lang:default decode:true">&gt;&gt;&gt; def foo(self, x):<br/>
+	self.n = self.n + x<br/>
+	<br/>
+&gt;&gt;&gt; Adder.__call__ = foo<br/>
+&gt;&gt;&gt; plus_3 = Adder(3)<br/>
+&gt;&gt;&gt; plus_3(4)<br/>
+&gt;&gt;&gt; plus_3.n<br/>
+&gt;&gt;&gt; plus_3.__call__<br/>
+&lt;bound method foo of &lt;__main__.Adder object at 0x7fac93f9e940&gt;&gt;</pre>
+
+<p>这里注意到 <code>plus_3.__call__</code> 是一个 <code>bound method</code>.</p>
+
+<h4>给对象添加实例方法</h4><br/>
+<p>如果持有的是一个 <code>Adder</code> 的对象 <code>plus_3</code>，不直接给 <code>Adder</code> 类增添 <code>__call__</code> 属性，又该如何实现 <code>plus_3(4)</code> 的调用呢？用 <code>plus_3.__class__</code> 就行。关键代码如下</p>
+
+<pre class="lang:default decode:true">&gt;&gt;&gt; plus_3.__class__.__call__ = foo<br/>
+&gt;&gt;&gt; plus_3(4)          # 同样的效果</pre>
+
+<p>但是不能像下面那样直接给 <code>plus_3</code> 实例添加 <code>__call__</code> 方法，比如下面的做法就有问题</p>
+
+<pre class="lang:default decode:true">&gt;&gt;&gt; plus_3.__call__ = foo<br/>
+&gt;&gt;&gt; plus_3(4)      # 错误: TypeError: 'Adder' object is not callable<br/>
+&gt;&gt;&gt; plus_3.__call__(4)  # 错误: TypeError: foo() missing 1 required positional argument: 'x'<br/>
+&gt;&gt;&gt; plus_3.__call__<br/>
+&lt;function foo at 0x7fac97d04598&gt;</pre>
+
+<p><code>plus_3.__call__</code> 是一个 <code>function</code>, 即 <code>unbound method</code>。</p>
+
+<p><code>plus_3.__call__(4)</code> 中的参数传递给了 <code>foo(self, x)</code> 的第一个参数 <code>self</code> 了，而 <code>x</code> 没得到参数。</p>
+
+<p>因为这时候 <code>foo</code> 并未当作一个实例方法，更准确讲是 <code>bound method</code>, 即方法的第一个参数是实例本身，通过用 <code>self</code> 作为形参名。</p>
+
+<p>那是否能直接用 <code>plus_3.__call__</code> 的方式来添加新的 <code>bound method</code> 方法呢？这时候可以应用 <code>types</code> 模块，下面进行尝试</p>
+
+<pre class="lang:default decode:true">&gt;&gt;&gt; plus_3 = Adder(3)<br/>
+&gt;&gt;&gt; import types<br/>
+&gt;&gt;&gt; plus_3.__call__ = types.MethodType(foo, plus_3)<br/>
+&gt;&gt;&gt; callable(plus_3)<br/>
+False                   # 所以仍然不能用 plus_3(4) 的方式<br/>
+&gt;&gt;&gt; plus_3.__call__(4)  # 前面确实添加了 __call__ 方法<br/>
+&gt;&gt;&gt; plus_3.n<br/>
+6                       # 并且 self 也是凑效的<br/>
+<br/>
+&gt;&gt;&gt; plus_3.__call__<br/>
+&lt;bound method foo of &lt;__main__.Adder object at 0x7fac93fb0438&gt;&gt;</pre>
+
+<p>上面虽然是可以添加上一个  <code>__call__</code> 方法，它确实是一个  <code>bound method</code>, 但是只能显式的用  <code>__call__</code>  来调用，有点特殊。再次尝试</p>
+
+<pre class="lang:default decode:true">&gt;&gt;&gt; from functools import partial<br/>
+&gt;&gt;&gt; plus_3.__call = partial(foo, plus_3)<br/>
+&gt;&gt;&gt; callable(plus_3)<br/>
+False                     # 仍然不是 callable<br/>
+&gt;&gt;&gt; plus_3.__call__(4)    # 这样没问题<br/>
+&gt;&gt;&gt; plus_3.__call__<br/>
+functools.partial(&lt;function foo at 0x7fac97d04598&gt;, &lt;__main__.Adder object at 0x7fac93fb0438&gt;)</pre>
+
+<p>用 <code>types.MethodType</code> 确实可以添加 <code>bound method</code>, 但是由它添加的  <code>__call__</code> 方法后并不能改变 <code>callable</code> 为 <code>False</code> 的特征，所以无法用 <code>plus_3(4)</code> 的方式来调用 <code>__call__</code> 方法。同时证明了有  <code>__call__</code> bound method 的对象也不一定能当作函数来调用。</p>
+
+<p>一个 Python 对象的 <code>callable</code> 为 <code>True</code>，直接当函数来调用也可能失败，但是 <code>callable</code> 为 <code>False</code> 的话，当函数调用必定失败。当有一个 <code>bound</code> <code>__call__</code> 方法时，<code>callable</code> 仍然为 <code>False</code> 时就要深入 <code>callable</code> 的源代码来看判定规则了。</p>
+
+<p>链接：</p>
+
+<ol>
+
+	<li><a href="https://stackoverflow.com/questions/972/adding-a-method-to-an-existing-object-instance">Adding a Method to an Existing Object Instance</a></li>
+
+	<li><a href="https://docs.python.org/3/library/functions.html#callable">callable(object)</a></li>
+
+</ol>

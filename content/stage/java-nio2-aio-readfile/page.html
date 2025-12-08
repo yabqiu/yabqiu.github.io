@@ -1,0 +1,129 @@
+---
+title: Java NIO2(AIO) 进行文件异步读取
+url: /java-nio2-aio-readfile/
+date: 2015-01-12T17:33:25-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - NIO
+  - aio
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6756 
+wpStatus: publish
+views: 3381
+lastmod: 2021-09-03T17:57:15-05:00
+---
+
+在  NodeJS 中进行异步操作很简单，而 Java 到了  7 开始才支持异步的 IO 操作。虽然之前的版本有引入非阻塞 IO，但编码中还不易体现出它的优越性。亮一下 NodeJS 用异步 IO 的例子：</p>
+<br/>
+<span style="color: #800000;">var fs = require('fs');</span><br />
+<span style="color: #800000;">fs.readFile('Test.scala', 'utf-8', function(err, data){</span><br />
+<span style="color: #800000;">  if( !err ) {</span><br />
+<span style="color: #800000;">    console.log(data);</span><br />
+<span style="color: #800000;">  }</span><br />
+<span style="color: #800000;">});</span><br/><br/>
+console.log('continue doing other thins');<br/><br/>
+执行输出是<br/><br/>
+<span style="color: #800000;">continue doing other things</span><br />
+<span style="color: #800000;">CONTENT FROM FILE Test.scala</span><br/><br/>
+对的，理想中的异步操作就是，传递回调函数来读取文件，读取完成后招待回调，且不阻塞主线程。<br/><br/>
+在 Java 8 之前，因为没有 Lambda 支持只能应用内部类的方式。JDK 提供了以下异步 Channel 来实现异步操作<br/><br/>
+<strong>AsynchronousFileChannel</strong><!--more--><br />
+AsynchronousSocketChannel<br />
+AsynchronousServerSocketChannel<br />
+AsynchronousDatagramChannel<br/><br/>
+获取异步结果的方式有 Future 和  CompletionHandler<br/><br/>
+例子看下两种方式的代码实现：<br/><br/>
+<span style="color: #0000ff;"><strong> 1. CompletionHandler 回调</strong></span><br/><br/>
+<pre class="lang:default decode:true">public static void main(String[] args) throws IOException, InterruptedException {
+  Path path = Paths.get("Test.Scala");<br/><br/>
+  AsynchronousFileChannel asynchronousFileChannel = AsynchronousFileChannel.open(path);
+  ByteBuffer buffer = ByteBuffer.allocate(100);<br/><br/>
+  asynchronousFileChannel.read(buffer, 0, "attachment information",
+      new CompletionHandler&lt;Integer, Object&gt;() {<br/><br/>
+        @Override
+        public void completed(Integer readCount, Object attachment) {
+          System.out.println(attachment);
+          System.out.println(new String(buffer.array()));
+        }<br/><br/>
+        @Override
+        public void failed(Throwable exc, Object attachment) {
+          System.out.println("Error:" + exc);
+        }
+      });<br/><br/>
+  System.out.println("continue doing other things");<br/><br/>
+  Thread.sleep(1000);<br/><br/>
+}</pre>
+<br/>
+参数 Object attachment 可以用来携带你自己需要的信息，上面代码只读取一次。如果大文件需要多次读缓冲，这就要用递归，麻烦些了。<br/><br/>
+完整的读取文件所有内容的代码可参考：<a href="http://www.java2s.com/Code/Java/JDK-7/ReadingfromafileusingtheAsynchronousFileChannelclass.htm" target="_blank" rel="noopener">Reading from a file using the AsynchronousFileChannel class</a><br/><br/>
+上面代码输出<br/><br/>
+<span style="color: #800000;">continue doing other things</span><br />
+<span style="color: #800000;">attachment information</span><br />
+<span style="color: #800000;">CONTENT FROM FILE Test.scala</span><br/><br/>
+也说明了读取时不会阻断程序继续往下执行，读取就绪后呼叫 CompletionHandler 实例。<br/><br/>
+<span style="color: #0000ff;"><strong>2. Future 方式</strong></span><br/><br/>
+<pre class="lang:default decode:true">public static void main(String[] args) throws Exception {
+  AsynchronousFileChannel asynFileChannel =
+      AsynchronousFileChannel.open(Paths.get("Test.Scala"), StandardOpenOption.READ);
+  ByteBuffer buffer = ByteBuffer.allocate(100);
+  Future&lt;Integer&gt; future = asynFileChannel.read(buffer, 0);<br/><br/>
+  while (!future.isDone()) {
+    System.out.println(new String(buffer.array(), 0, result.get()));
+  }<br/><br/>
+}</pre>
+<br/>
+在 while(!result.isDone()) 处仍然阻碍了主线程继续往下执行。<br/><br/>
+或者要自己启动线程来处理 future 而影响主线程往下执行，或者要 <code>ExecutorService</code> 帮忙。<br/><br/>
+个人认为只有像 NodeJS 或  CompletionHandler 那样隐藏线程细节的异步才是真异步编程。又由于 CompletionHandler 不是一个 SAM 类型的接口，所以也就无法直接转换为 Lambda 表达式。<br/><br/>
+我们可以把 CompletionHandler 拆成两个 SAM 来应用 Java8 的 Lambda 表达式，下面是我做的一个尝试<br/><br/>
+<pre class="lang:default decode:true ">package test;<br/><br/>
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.AsynchronousFileChannel;
+import java.nio.channels.CompletionHandler;
+import java.nio.file.Paths;<br/><br/>
+public class TestNIO2 {<br/><br/>
+  public static void main(String[] args) throws IOException, InterruptedException {<br/><br/>
+    read(AsynchronousFileChannel.open(Paths.get("Test.Scala")), ByteBuffer.allocate(100), 0,
+        "start reading", (readCount, buffer, attachment) -&gt; {
+          System.out.println(attachment);
+          System.out.println(new String(buffer.array(), 0, readCount));
+        }, (exc, attachment) -&gt; {
+          System.out.println("Error:" + exc);
+        });<br/><br/>
+    System.out.println("continue doing other things");<br/><br/>
+    Thread.sleep(1000);<br/><br/>
+  }<br/><br/>
+
+  static &lt;A&gt; void read(AsynchronousFileChannel channel, ByteBuffer buffer, long position,
+      A attachment, final ReadSuccess&lt;A&gt; success, final ReadFailed&lt;A&gt; failure) {
+    channel.read(buffer, 0, attachment, new CompletionHandler&lt;Integer, A&gt;() {<br/><br/>
+      @Override
+      public void completed(Integer readCount, A attachment) {
+        success.apply(readCount, buffer, attachment);
+      }<br/><br/>
+      @Override
+      public void failed(Throwable exc, A attachment) {
+        failure.apply(exc, attachment);
+      }
+    });
+  }<br/><br/>
+}<br/><br/>
+
+interface ReadSuccess&lt;A&gt; {
+  void apply(Integer readCount, ByteBuffer buffer, A attachment);
+}<br/><br/>
+
+interface ReadFailed&lt;A&gt; {
+  void apply(Throwable exc, A attachment);
+}</pre>
+<br/>
+注意，上面的代码仍然只读取了一次数据到 ByteBuffer 中，文件大小超过 100 的字节将读不全，需要进一步递归处理。若只用来读取文件我们可以把  read() 的第二，三位置上的参数 ByteBuffer buffer, Long position 隐藏起来，可完全实现 NodeJS 的调用方式。

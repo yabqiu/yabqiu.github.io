@@ -1,0 +1,213 @@
+---
+title: Joomla! 1.5 安装程序完全导读【转】
+url: /joomla-1-5-installation-guide/
+date: 2009-09-09T23:27:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Joomla
+tags: 
+  - Joomla
+  - blog
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 236 
+wpStatus: publish
+views: 234
+lastmod: 2021-09-02T11:18:24-05:00
+---
+
+<p class="copyright">本文来源于：<a href="http://www.maycode.com/index.php/hotspot/39-joomla-inspect/526-joomla-15-installation-code-comprehend.html"><span style="color: #2970a6;">http://www.maycode.com/index.php/hotspot/39-joomla-inspect/526-joomla-15-installation-code-comprehend.html</span></a></p>
+<br/>
+<p class="copyright">本文依照 Joomla! 1.5 Stable 版本的安装程序写作，文中所引用代码均来自实际程序文件。<span id="more-104"> </span></p>
+<br/>
+我们从安装程序入口文件 <strong>/installation/index.php </strong>开始。</p>
+<br/>
+<h2>1. 常量定义</h2><br/><br/>
+index.php 文件起始处定义了若干常量：<br/><br/>
+<pre>define( '_JEXEC', 1 );
+define( 'JPATH_BASE', dirname( __FILE__ ) );
+define( 'DS', DIRECTORY_SEPARATOR );</pre>
+<br/>
+<strong>_JEXEC </strong>是一个标志量，表示程序正常启动(通过合法入口 /index.php 访问)。Joomla! 在其他所有的 .php 程序起始处，均通过执行以下代码，阻止直接访问非入口程序的请求，这是出于安全的考虑：<!--more--><br/><br/>
+<pre>// no direct access
+defined( '_JEXEC' ) or die( 'Restricted access' );</pre>
+<br/>
+<strong>JPATH_BASE </strong>顾名思义，是指安装程序的根目录，注意它与 PHP 预定义变量 $_SERVER['DOCUMENT_ROOT'] 的区别，后者是当前的 www 虚拟主机在文件系统中的根目录，它是前者的上级目录。__FILE__ 是 PHP 的魔术常量之一：<br/><br/>
+<table border="1" summary="几个 PHP 的“魔术常量”">
+<thead>
+<tr>
+<th>名称</th>
+<th>说明</th>
+</tr>
+<tr>
+<td><strong>__LINE__</strong></td>
+<td>文件中的当前行号。</td>
+</tr>
+<tr>
+<td><strong><br />
+<span style="color: #ffffff;"><br />
+<span style="color: #000000;">__FILE__</span><br />
+</span><br />
+</strong></td>
+<td>文件的完整路径和文件名。如果用在包含文件中，则返回包含文件名。自 PHP 4.0.2 起，<strong>__FILE__</strong> 总是包含一个绝对路径，而在此之前的版本有时会包含一个相对路径。</td>
+</tr>
+<tr>
+<td><strong>__FUNCTION__</strong></td>
+<td>函数名称（PHP 4.3.0 新加）。自 PHP 5 起本常量返回该函数被定义时的名字（区分大小写）。在 PHP 4 中该值总是小写字母的。</td>
+</tr>
+<tr>
+<td><strong>__CLASS__</strong></td>
+<td>类的名称（PHP 4.3.0 新加）。自 PHP 5 起本常量返回该类被定义时的名字（区分大小写）。在 PHP 4 中该值总是小写字母的。</td>
+</tr>
+<tr>
+<td><strong>__METHOD__</strong></td>
+<td>类的方法名（PHP 5.0.0 新加）。返回该方法被定义时的名字（区分大小写）。</td>
+</tr>
+</thead>
+</table>
+<br/>
+定义 <strong>DS</strong> 则完全是为了方便程序书写和阅读，DIRECTORY_SEPARATOR 是 PHP 的预定义常量之一，指目录分隔符，在 Windows 中是反斜杠(backslash) <strong>\</strong>，在 Linux 中是斜杠(slash) /。<br/><br/>
+<h2>2. 引入框架定义</h2><br/><br/>
+在常量定义之后，通过两个包含文件引入了 Joomla! 安装程序的框架定义：<br/><br/>
+<pre>require_once ( JPATH_BASE .DS.'includes'.DS.'defines.php' );
+require_once ( JPATH_BASE .DS.'includes'.DS.'framework.php' );</pre>
+<br/>
+这两个文件的实际位置在 <strong>/installation/includes/</strong> 目录中。打开 /installation/includes/defines.php 文件，这里定义了若干与路径有关的常量，包括：<br/><br/>
+<dl>
+<dt>JPATH_ROOT</dt>
+<dd>Joomla! 根目录，当 Joomla! 被配置为独立的虚拟主机程序是地，此变量相当于 $_SERVER['DOCUMENT_ROOT']</dd>
+<dt>JPATH_SITE</dt>
+<dd>Joomla! 站点目录，JPATH_ROOT 的别名</dd>
+<dt>JPATH_CONFIGURATION</dt>
+<dd>配置文件保存目录</dd>
+<dt>JPATH_ADMINISTRATOR</dt>
+<dd>后台管理程序根目录</dd>
+<dt>JPATH_XMLRPC</dt>
+<dd>XMLRPC 目录</dd>
+<dt>JPATH_LIBRARIES</dt>
+<dd>库程序目录</dd>
+<dt>JPATH_PLUGINS</dt>
+<dd>插件目录</dd>
+<dt>JPATH_INSTALLATION</dt>
+<dd>安装程序目录</dd>
+<dt>JPATH_THEMES</dt>
+<dd>外观模板目录</dd>
+<dt>JPATH_CACHE</dt>
+<dd>缓存目录</dd>
+</dl><br/><br/>
+好了，我们可以关闭 defines.php 文件了。再来看看 /installation/includes/framework.php 文件中有些什么，首先是 PHP 配置调整：<br/><br/>
+<pre>error_reporting( E_ALL );
+@set_magic_quotes_runtime( 0 );      <br/><br/>
+@ini_set('zend.ze1_compatibility_mode', '0');</pre>
+<br/>
+此处做了这么几件事：<br/><br/>
+<ul>
+    <li>打开 PHP 报错，要求回显从错误(Error)到提醒(Notice)的全部异常信息；</li>
+    <li>关闭运行时魔术引号(magic_quotes_runtime)功能。此功能将对所有来自外部(包括数据库或文本文件)的字符串中的引号进行转义，即在其前面加上反斜杠 \ 或使用两个连续单引号替换所有的单引号(当打开 magic_quotes_sybase 开关时)。PHP 不鼓励使用此功能，从 PHP 6.0.0 开始它将被废除；</li>
+    <li>关闭 Zend 引擎 1(PHP 4) 兼容模式。PHP 官方文档中提到：这影响到了对象的复制、构造（无属性的对象会产生 FALSE 或 0）及比较。此模式下，对象将以值传递，而不是默认的引用传递。</li>
+</ul><br/><br/>
+Joomla! 的程序设计完全遵循面向对象思想，且书写非常规范，在这种前提下，这些兼容功能只会造成困扰，不如舍弃之。<br/><br/>
+接着检查 Joomla! 安装状态：<br/><br/>
+<pre class="lang:default decode:true">if (file_exists( JPATH_CONFIGURATION . DS . 'configuration.php' ) &amp;&amp; (filesize( JPATH_CONFIGURATION . DS . 'configuration.php' ) &gt; 10) &amp;&amp; !file_exists( JPATH_INSTALLATION . DS . 'index.php' )) {
+ header( 'Location: ../index.php' );
+ exit();
+}</pre>
+<br/>
+如果配置文件　/configuration.php 已经存在且包括配置信息，并且安装程序已被移除，则自动转向首页。这段语句似乎没有实际意义，针对谁呢？至少不是针对安装程序本身的。<br/><br/>
+然后载入库程序装载器：<br/><br/>
+<pre>require_once( JPATH_LIBRARIES . DS . 'loader.php' );</pre>
+<br/>
+通过这个装载程序，可以模拟类似 JAVA import 的程序导入方式。我们看紧接着的两行代码：<br/><br/>
+<pre>jimport( 'joomla.base.object' );
+jimport( 'joomla.environment.request' );</pre>
+<br/>
+实际完成的功能是引入了 /libraries/joomla/base/object.php 和 /libraries/joomla/environment/request.php 两个文件。当然，事实上 <strong>jimport </strong>和 JAVA 中的 import 语句还是有区别的，因为 PHP 尚不支持 OO 中非常重要的命名空间(namespace)功能。<br/><br/>
+object.php 和 request.php 文件分别定义了 JObject 类和 JRequest 类。JObject 类在 Joomla! 中这所有子类的基类，即所有非基类都必须直接或间接地继承 JObject 类。JObject 定义中值得玩味的是它对构造函数的处理：<br/><br/>
+<pre class="lang:default decode:true ">function JObject()
+{  $args = func_get_args();
+ call_user_func_array(array(&amp;$this, '__construct'), $args);
+}    <br/><br/>
+function __construct() {}</pre>
+<br/>
+PHP 4 中将与类同名的成员函数作为其构造函数，这与 JAVA 和 C++ 类似。而 PHP 5 支持固定名称的构造函数 <strong>__construct() </strong>和析构函数 <strong>__destruct()</strong>。JObject 中同时定义两种形式的构造函数 JObject() 和 __contruc()，而所有子类一律按 PHP 5 的规范以 __construct 命名构造函数。这样，当 Joomla! 运行在 PHP 5 上时，JObject() 方法将被忽略；而运行在 PHP 4 上时，解释器找不到与子类同名的成员函数，认为子类中未定义构造函数，因此在创建子类对象时，将调用父类 JObject 的构造函数 JObject()，而 JObject() 的功能即是调用对象自身的 __contruct() 方法，并将所有参数传递给它，也即实现了将子类定义中的 __contruct() 方法作为其构造函数的目的。这样，子类作者在编写构造函数时，不必再考虑 PHP 的版本差异，但是需要注意子类定义中不得再出现与类名相同的成员函数，否则会导致混乱。<br/><br/>
+JRequest 类是大部分 IO 操作都需要使用的类，在定义了这个类之后，Joomla! 立刻使用它完成了一步非常谨慎的操作：<br/><br/>
+<pre>JRequest::clean();</pre>
+<br/>
+clean() 方法检查所有当前已经存在的全局变量($GLOBALS 数组)及超全局变量(超全局变量包括 $_FILES, $_ENV, $_GET, $_POST, $_COOKIE, $_SERVER, $_SESSION, $_REQUEST)，清除了所有非超全局变量以及超全局变量中可能存在的不安全的数据。经过这一步，之前在程序中定义的任何变量都将被释放。<br/><br/>
+然后又定义了一个常量 JPATH_INCLUDES，说实话我非常不理解为什么不把这个定义放在 /installation/includes/defines.php 中？<br/><br/>
+<pre>// Installation file includes
+define( 'JPATH_INCLUDES', dirname(__FILE__) );</pre>
+<br/>
+接下来进入 framework.php 的正题，即载入 Joomla! 的 API 框架定义：<br/><br/>
+<pre>/*
+ * Joomla! framework loading
+ */    <br/><br/>
+// Include object abstract class
+jimport( 'joomla.utilities.compat.compat' );    <br/><br/>
+// Joomla! library imports
+jimport( 'joomla.environment.response' );
+jimport( 'joomla.database.table' );
+jimport( 'joomla.user.user');
+jimport( 'joomla.environment.uri' );
+jimport( 'joomla.user.user');
+jimport( 'joomla.factory' );
+jimport( 'joomla.methods' );
+jimport( 'joomla.filesystem.*' );
+jimport( 'joomla.html.parameter' );
+jimport( 'joomla.utilities.array' );
+jimport( 'joomla.utilities.error' );
+jimport( 'joomla.utilities.utility' );
+jimport( 'joomla.version' );</pre>
+<br/>
+我们来看看这些文件的用途：<br/><br/>
+<dl>
+<dt>joomla.utilities.compat.compat</dt>
+<dd>当 PHP 版本低于5时，自动载入补丁程序，以支持 file_put_contents() 和 clone() 函数</dd>
+<dt>joomla.environment.response</dt>
+<dd>定义 JResponse 类，用于访问响应变量(response variables)，包括消息头(header)和消息主体(body)</dd>
+<dt>joomla.database.table</dt>
+<dd>定义抽象类 JTable, 所有数据表的映射类都继承自此类</dd>
+<dt>joomla.user.user</dt>
+<dd>定义 JUser 类，处理所有与用户信息有关的交互</dd>
+<dt>joomla.environment.uri</dt>
+<dd>定义 JURI (注意全部是大写)类，用于解析、处理和生成 URI，它的另一个功能是提供当前执行脚本的 URI</dd>
+<dt>joomla.user.user</dt>
+<dd>又定义一遍 JUser 类，不是他晕了，就是我太肤浅</dd>
+<dt>joomla.factory</dt>
+<dd>定义静态类 JFactory，用于按工厂模式生成对象实例</dd>
+<dt>joomla.methods</dt>
+<dd>定义 JRoute 和 JText 类，分别用于输出可读的 URI 和本地化文本，实际上它们只是简单封装了 JRouter (注意区别)类和 JLanguage 类</dd>
+<dt>joomla.filesystem.*</dt>
+<dd>定义文件系统包，内含 JArchive (文件压缩)、JFile (文件访问和控制)、JFolder (文件夹访问和控制)、JPath (文件路径处理)类</dd>
+<dt>joomla.html.parameter</dt>
+<dd>定义 JParameter 类</dd>
+<dt>joomla.utilities.array</dt>
+<dd>定义 JArrayHelper 类</dd>
+<dt>joomla.utilities.error</dt>
+<dd>定义 JError 类</dd>
+<dt>joomla.utilities.utility</dt>
+<dd>定义 JUtility 类</dd>
+<dt>joomla.version</dt>
+<dd>定义 JVersion 类</dd>
+<dt>joomla.utilities.string</dt>
+<dd>定义 JString 类</dd>
+</dl><br/><br/>
+最后，framework.php 读取了 task 参数，以决定是否引用 JString 类，这是一个专门用于处理 utf-8 编码字符串的静态类：<br/><br/>
+<pre>// JString should only be loaded after pre-install checks
+$task = JRequest::getCmd( 'task' );
+if (!($task == '' || $task == 'preinstall' || $task == 'lang')) {
+ jimport( 'joomla.utilities.string' );
+}</pre>
+<br/>
+说实话我真是看不过这抠门劲儿，直接引用了又能咋样？框架定义本身不应该涉及任何 IO 操作，为了一点点性能上的优化就破坏了这个原则，不值当。不过也可能是我站着说话不腰疼，因为定义 JString 类需要引入 utf-8 兼容补丁，在语言选择和安装前检查这些步骤中引入这一补丁，可能会带来麻烦：<br/><br/>
+<pre>jimport('joomla.utilities.compat.phputf8env');
+jimport('phputf8.utf8');</pre>
+<br/>
+<!-- google_ad_section_end --><br/><br/>
+&lt;<br/><br/>
+p class="under">摘自：<a href="http://www.sanywork.cn/www/program/20090316104.html">http://www.sanywork.cn/www/program/20090316104.html</a>

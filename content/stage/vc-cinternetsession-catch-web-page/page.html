@@ -1,0 +1,65 @@
+---
+title: VC中使用CInternetSession抓取网页内容
+url: /vc-cinternetsession-catch-web-page/
+date: 2007-06-23T07:10:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - C++/VB
+tags: 
+  - VC
+  - CInternetSession
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 508 
+wpStatus: publish
+views: 832
+lastmod: 2021-09-03T10:15:50-05:00
+---
+
+在 VC 中用 WinInet 的 CInternetSession::OpenURL(url),得到一个 CFile,读取其中的内容即可，详细代码如下</p>
+<br/>
+<pre class="lang:default decode:true">#include &lt;stdio.h&gt;
+#include &lt;afxinet.h&gt;<br/><br/>
+int main(int argc, char* argv[])
+{
+    CInternetSession session("HttpClient");
+    char * url = " http://www.imobile.com.cn/simcard.php?simcard=1392658";
+    CHttpFile* pfile = (CHttpFile *)session.OpenURL(url);<br/><br/>
+    DWORD dwStatusCode;
+    pfile -&gt; QueryInfoStatusCode(dwStatusCode);
+    if(dwStatusCode == HTTP_STATUS_OK)
+    {
+       CString content;
+        CString data;
+        while (pfile -&gt; ReadString(data))
+        {
+            content  += data + "\r\n";
+        }
+        content.TrimRight();
+        printf(" %s\n " ,(LPCTSTR)content);
+    }
+    pfile -&gt; Close();
+    delete pfile;
+    session.Close();<br/><br/>
+    return   0 ;
+}</pre>
+<br/>
+其他如不从缓存中读取内容及如何使用代理连接现在就不说了，可以参考下面的链接，或者下次补上。另外不妨看看 Java 是如何读取 URL 内容的，更简单<br/><br/>
+<!--more--><br/><br/>
+<pre class="lang:default decode:true ">GetMethod httpMethod = new GetMethod("http://unmi.blogcn.com");
+int statusCode = new HttpClient().executeMethod(httpMethod);
+if(statusCode == HttpStatus.SC_OK)
+{
+    System.out.println(httpMethod.getResponseBodyAsString());
+}
+httpMethod.releaseConnection();</pre>
+<br/>
+内容取过来之后，总是希望从中拣出需要的数据，可惜 VC6 中没有自己的正则表达式库，所以下一步要学用 boost 的正则表达式库。<br/><br/>
+参考链接：1. <a href="http://www.w3china.org/blog/more.asp?name=dashee&amp;id=14828">VC++6.0 通过HTTP方式获取网页</a><br />
+          2. <a href="http://post.10026.com/vc/network/200510315004_4324348.shtml">CInternetSession获取网页内容的问题</a><br />
+          3. <a href="http://blog.csdn.net/kikistorm/archive/2007/03/22/1537742.aspx">利用CInternetSession从网站获取信息，并利用CString拆分查找特定信息</a>

@@ -1,0 +1,68 @@
+---
+title: Spring 学习点滴，《Spring in Action》笔记（四）
+url: /spring-in-action-notes-4/
+date: 2007-06-07T10:53:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - Spring
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 515 
+wpStatus: publish
+views: 360
+lastmod: 2021-09-03T10:17:46-05:00
+---
+
+<ol>
+<li>更为精彩的是自动代理的方式来总体配置各分散类中方法的事物属性，结合使用 DefaultAdvisorAutoProxyCreator, TransactionAttributeSourceAdvisor 和 TransactionInterceptor （我还需要详细理清楚）(P181)</p></li>
+</ol>
+<br/>
+62. 当使用自动代理时，MethodMapTransationAttributeSource 就能很多的派上用场了，它的 methodMap 属性中可以指定哪个类的哪个方法，可以使用通配符(P182)<br/><br/>
+<strong>第七章. 访问企业服务</strong><br/><br/>
+<!--more--><br/><br/>
+<hr /><br/><br/>
+63. 对于 JndiObjectFactoryBean 查找 jndi  资源未提及，如何设置 jndiEnvironment 属性，如果是在J2EE容器中运行，没什么问题，只是以单独应用程序运行时却未加说明，如下在容器外运行需要加上 jndiEnvironment 配置，指定实现类，及URL等(P217)<br/><br/>
+<pre class="lang:default decode:true">&lt;property name="jndiEnvironment"&gt;
+    &lt;props&gt;
+        &lt;prop key="java.naming.factory.initial"&gt;
+            org.apache.naming.java.javaURLContextFactory
+        &lt;/prop&gt;
+        &lt;prop key="java.naming.factory.url.pkgs"&gt;
+            org.apache.naming
+        &lt;/prop&gt;
+    &lt;/props&gt;
+&lt;/property&gt;</pre>
+<br/>
+64.发送电子邮件配置 SimpleMailMessage 时也未说明，如果 SMTP 发送前需要验证该如何配置。需加上 mail.smtp.auth属性为 true，和验证时用户名和密码，Spring 验证时是通过 getTransport("smtp").connect(host,user,passwd) 来验证的。(P218)<br/><br/>
+<pre class="lang:default decode:true ">&lt;bean id="mailSender" class="org.springframework.mail.javamail.JavaMailSenderImpl"&gt;
+    &lt;property name="javaMailProperties"&gt;
+        &lt;props&gt;
+            &lt;prop key="mail.smtp.auth"&gt;true&lt;/prop&gt;
+        &lt;/props&gt;
+    &lt;/property&gt;
+    &lt;property name="host"&gt;
+        &lt;value&gt;mail.2911.net&lt;/value&gt;
+    &lt;/property&gt;
+    &lt;property name="username"&gt;
+        &lt;value&gt;unmi&lt;/value&gt;
+    &lt;/property&gt;
+    &lt;property name="password"&gt;
+        &lt;value&gt;unmi1234&lt;/value&gt;
+    &lt;/property&gt;
+&lt;/bean&gt;</pre>
+<br/>
+这样取到 mailSender 后，就能调用它的 send(SimpleMailMessage msg) 发送邮件，自动进行密码验证。Spring也还是不够完美，可以配置 JavaMailSenderImpl 的 session 属性，但却无法应用上 session.getProperties() 中的许多项配置。Spring中能配置 SimpleMailMessage，然后再配合 Velocity 的邮件内容模板，确实很方便<br/><br/>
+65. 搭配 Spring的 ScheduledTimerTask 和 jdk 的TimerTask,再配置 TimerFactoryBean 就会自动启动定时器了，这种方式可配置的参数太少了，只能设置从现在开始隔多久（delay）以什么频度 (period) 执行某个任务(P222)<br/><br/>
+66. 更高级的定时器用 Quartz 来调度，这个工具以前单独使用过，可像 Unix 的 cron 那般灵活配置。在 MyEclipse 中使用Quartz时需要引入 Spring 1.2 Misc Libraries 所包含的包（含quartz-1.5.2.jar）(P224)<br/><br/>
+67. 94,96,97,104这几页中配置&lt;value ref=""/&gt;要写成&lt;ref bean=""/&gt;才对<br/><br/>
+68. 从前往后的被包容关系是：JobClass-&gt;JobDetailBean-&gt;Trigger-&gt;TimerFactoryBean, 有两种 Trigger，分别是 SimpleTriggerBean 和 CronTriggerBean。SimpleTriggerBean 和 ScheduledTimerTask 基本等价，Quartz 的威力全部体现在 CronTriggerBean 上的，可灵活的配置它的cronExpression 属性控制排程，最后需配置 SchedulerFactoryBean (它和 TimerFactoryBean 是基本等价) 来启动定时器(P227)<br/><br/>
+69. MethodInvokingTimerTaskFactoryBean+ScheduledTimerTask+TimerFactoryBean 可定时调用某个类（或对象）的某个方法，这个类只需要是一个普通Java类，被调度的方法不能有参数。 MethodInvokingJobDetailFactoryBean+SimpleTriggerBean（或CronTriggerBean）+SchedulerFactoryBean 定时调用某个类（或对象）的某个方法，这个类只需要是一个普通Java类，被调度的方法不能有参数(P228)<br/><br/>
+70. 书中并未描述 0/10 每10个单位触发执行的配置形式，需注意 */? 的使用，定义好 CronExpression 后需好好测试真正行为。 Spring 调用 JMS 发送消息的用法先搁一下，在SOA/MQ 的大环境下一定派得上用场的(P229)

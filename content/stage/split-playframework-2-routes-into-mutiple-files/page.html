@@ -1,0 +1,83 @@
+---
+title: 拆分 Playframework 2 的 routes 为多个文件
+url: /split-playframework-2-routes-into-mutiple-files/
+date: 2016-02-22T23:33:39-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PlayFramework
+tags: 
+  - play2
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7138 
+wpStatus: publish
+views: 980
+lastmod: 2021-05-04T15:58:30-05:00
+---
+
+我们用 Playframework 2 时，当 routes 中太多的路由配置时，我们可能会考虑把它们归类分布到多个文件中去。比如按 API 或用途分，有些是 RESTful API，有些是 Web 页面的，对于这种情景，我们可以由以下几个文件来组织：</p>
+<br/>
+1. routes 文件，这个仍然是充当入口<br/><br/>
+<pre class="lang:default decode:true">-&gt;      /       general.Routes
+-&gt;      /api    api.Routes
+-&gt;      /web    web.Routes</pre>
+<br/>
+这里穿插着来解释下，<code>-&gt;</code> 是固定写法，表示要去别外寻找了，紧接着的 /, /api, 和 /web 是分类路由的上下文了，例如，访问 api.routes 中定义的 /customers 的完整 API 路径就是 /test/customers。最后一部分是全类名，并非指别的路由文件的名称，像文件 general.routes 编译后会生成 general 包下生成  Routes.scala 文件，即类为 general.Routes.<!--more--><br/><br/>
+2. general.routes<br/><br/>
+<pre class="brush:text">GET    /index            controllers.Application.index()
+GET    /assets/*file     controllers.Assets.versioned(path="/public", file: Asset)</pre>
+<br/>
+像前面在 routes 文件中是直接用 <code>-&gt; / general.Routes</code> 来引用 general.routes 文件的，上下文 / 并不会改变 general.routes 中路由的访问方式，所以我们可以把 general.routes 中的内容搬移到 routes 文件中。<br/><br/>
+3. api.routes<br/><br/>
+<pre class="brush:text">GET   /customers        controllers.CustomersController.index()</pre>
+<br/>
+4. web.routes<br/><br/>
+<pre class="brush:text">GET  /customers         controllers.CustomersController.listPage()</pre>
+<br/>
+路由文件全分配到位，我们运行 activator compile 看下生成了什么，就是下面这张图<br/><br/>
+<img class="aligncenter size-large wp-image-7140" src="/wp-content/uploads/2016/02/play2_routes-800x475.png" alt="play2_routes" width="800" height="475" /><br/><br/>
+从上面那张图我们明明白白的知道，general.routes, api.routes 和 web.routes 都产生出相应的包名，类都是 Routes。<br/><br/>
+如果上面做下来你没有遇到编译错误的话，那你算是幸运的，我所遇到的错误是<br/><br/>
+<blockquote>
+<span style="color: #800000;">[error] /Users/yanbin/Desktop/playtest/app/views/main.scala.html:8: value Assets is not a member of object controllers.routes</span><br />
+<span style="color: #800000;">[error]         &lt;link rel="stylesheet" media="screen" href="@routes.Assets.versioned("stylesheets/main.css")"&gt;</span><br />
+<span style="color: #800000;">[error]                                                             ^</span><br />
+<span style="color: #800000;">[error] /Users/yanbin/Desktop/playtest/app/views/main.scala.html:9: value Assets is not a member of object controllers.routes</span><br />
+<span style="color: #800000;">[error]         &lt;link rel="shortcut icon" type="image/png" href="@routes.Assets.versioned("images/favicon.png")"&gt;</span><br />
+<span style="color: #800000;">[error]                                                                  ^</span><br />
+<span style="color: #800000;">[error] /Users/yanbin/Desktop/playtest/app/views/main.scala.html:10: value Assets is not a member of object controllers.routes</span><br />
+<span style="color: #800000;">[error]         &lt;script src="@routes.Assets.versioned("javascripts/hello.js")" type="text/javascript"&gt;&lt;/script&gt;</span><br />
+<span style="color: #800000;">[error] </span>                             ^
+</blockquote>
+<br/>
+我当时也是半天摸不着头脑，后来发现错误中的 @routes.Assets 本该是定义在 target/scala-2.11/routes/main/controllers/routes.java 中的<br/><br/>
+public static final controllers.ReverseAssets Assets .....<br/><br/>
+这个文件注释中也告诉了我们该文件怎么产生的，例如本例中是<br/><br/>
+<blockquote>
+<span style="color: #800000;">// @GENERATOR:play-routes-compiler</span><br />
+<span style="color: #800000;">// @SOURCE:/Users/yanbin/Desktop/playtest/conf/web.routes</span><br />
+<span style="color: #800000;">// @DATE:Mon Feb 22 23:05:47 CST 2016</span>
+</blockquote>
+<br/>
+如果不拆分 routes 文件的话，上面指示的 @SOURCE 应该就是 /Users/yanbin/Desktop/playtest/conf/routes, 而 routes.java 中的 Assets 常量是由下面这行生成的<br/><br/>
+<pre class="brush:text ">GET    /assets/*file     controllers.Assets.versioned(path="/public", file: Asset)</pre>
+<br/>
+<strong>因此我们必须把这行写一份到 web.routes 文件中</strong>，重新编译就可以通过了。<br/><br/>
+类似的，如果我们编译时碰到  @javascript.Assets........ 引用资源时的错误，解决方法也是一样的。<br/><br/>
+Playframework 的一位开发人员对此的解释是 <a title=" [2.3.9] splitted routes are not recompiled #4430 " href="https://github.com/playframework/playframework/issues/4430">https://github.com/playframework/playframework/issues/4430</a>:<br/><br/>
+<blockquote>
+Does <code>api.routes</code> contain any routes to any controllers in the <code>controllers</code> package? If so, then that's the reason, the reverse router from <code>api.routes</code> for the <code>controllers</code> package is overwriting the reverse router from <code>routes</code> for the <code>controllers</code> package, different routes files must address controllers in different packages.
+</blockquote>
+<br/>
+其次，不妨留意下 @routes.Assets.versioned("stylesheets/main.css") 在不同情况下产生的全路径也是有有差异，但不影响使用。如可能是<br/><br/>
+/public/stylesheets/main.css      或   /web/public/stylesheets/main.css<br/><br/>
+Play 2 支持这样简单的把 routes 拆到多个文件中的做法好像是 2.3 开始提供的。记得我们刚开始升级到 Play 2 的时候，如果在 routes 文件中要写成<br/><br/>
+-&gt;  /web   web.Routes<br/><br/>
+那还得为 web 建立一个 sbt 子项目，web.Routes  中用到的类都必须放在 web 子项目中，于是子项目之间，或子项目与主项目之间类相互间访问就成了一个大问题，这也就是为什么我们当时不得不把所有的东西堆在一个 routes 文件中。<br/><br/>
+参考：1. <a href="https://groups.google.com/d/msg/play-framework/dxDRml0khdY/92Sf48Fhs4MJ">https://groups.google.com/d/msg/play-framework/dxDRml0khdY/92Sf48Fhs4MJ</a><br/><br/>
+&nbsp;

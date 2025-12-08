@@ -1,0 +1,126 @@
+---
+title: Play 2.0 中文资料 - Play JSON 库使用泛型
+url: /play2-0-tutorials-cn-json-library-with-generics/
+date: 2013-01-14T11:23:14-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+  - PlayFramework
+tags: 
+  - Scala
+  - PlayFramework
+  - play2.0
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4903 
+wpStatus: publish
+views: 806
+lastmod: 2021-05-19T16:44:07-05:00
+---
+
+<ul style="float: right; border-left: solid 1px green; border-bottom: solid 1px green;">
+    <li><strong>使用 Json </strong>
+<ul>
+    <li><a href="/play2-0-tutorials-cn-play-json-library" target="_blank" rel="noopener">Play Json 库 </a></li>
+    <li><a href="/play2-0-tutorials-cn-handling-and-serving-json-requests" target="_blank" rel="noopener">处理 Json 请求</a></li>
+    <li><a href="/play2-0-tutorials-cn-json-library-with-generics">Play Json 库使用泛型 </a></li>
+</ul>
+</li>
+</ul><br/><br/>
+<strong><span style="font-size: medium;">概述</span></strong><br/><br/>
+当使用基于 JSON 库的 typeclass<span style="color: #0000ff;">(Unmi: typeclass 还没摸准翻译成什么词较合适，此前译作 类型类，觉得有点不妥，所以暂时保留原样)</span> 时，可能会把泛型支持包含进这些 typeclass 中来. 针对基于终端控制查询参数，使用基本的结构作为查询结果的 REST API 来说可能是一个很好的应用方式.<br/><br/>
+<strong><span style="font-size: medium;">Scala 对泛型的支持</span></strong><br/><br/>
+给定如下基本的结构作为搜索结果:<br/><br/>
+<pre class="brush:scala">case class SearchResults[T](
+    elements: List[T], 
+    page: Int, 
+    pageSize: Int, 
+    total :Int
+)</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 上面  case class 涉及到了 Scala 的样本类的特性，Scala 会给这个类自动添加一些句法：1）添加与类名一致的工厂方法，2）参数列表中的所有参数前隐式获得了 val 前缀，即会由相应的的实例变量保持状态，3）自动添加了 toString, hashCode, 和  equals 方法。<!--more--></span><br/><br/>
+现在你必须确保读写方法能够处理泛型，它以为你声明了隐式的参数用于支持类型 T 的读写.<br/><br/>
+<pre class="lang:default decode:true">object SearchResults
+{
+  implicit def searchResultsReads[T](implicit fmt: Reads[T]): Reads[SearchResults[T]] = new Reads[SearchResults[T]] {
+    def reads(json: JsValue): SearchResults[T] = new SearchResults[T] (<br/><br/>
+     (json \ "elements") match {
+        case JsArray(ts) =&gt; ts.map(t =&gt; fromJson(t)(fmt))
+        case _ =&gt; throw new RuntimeException("Elements MUST be a list")
+      },
+      (json \ "page").as[Int],
+      (json \ "pageSize").as[Int],
+      (json \ "total").as[Int]
+    )
+  }<br/><br/>
+  implicit def searchResultsWrites[T](implicit fmt: Writes[T]): Writes[SearchResults[T]] = new Writes[SearchResults[T]] {
+    def writes(ts: SearchResults[T]) = JsObject(Seq(
+        "page" -&gt; JsNumber(ts.page),
+        "pageSize" -&gt; JsNumber(ts.pageSize),
+        "total" -&gt; JsNumber(ts.total),
+        "elements" -&gt; JsArray(ts.elements.map(toJson(_)))
+    ))  
+  }
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 这应该是比较高阶的应用了，一般不用太关注这里的细节。而且上面的代码我运行时在行 <span style="color: #800000;">case JsArray(ts) =&gt; ts.map(t =&gt; fromJson(t)(fmt))</span> 上会报错误 “<span style="color: #800000;">type mismatch; found: Seq[T] required: List[T]</span>”，需把 elements 类型改为  Seq[T]。可运行的完整的 SearchResults.scala 如下：</span><br/><br/>
+<pre class="lang:default decode:true">import play.api.libs.json._
+import play.api.libs.json.Json._<br/><br/>
+case class SearchResults[T](
+    elements: Seq[T], 
+    page: Int, 
+    pageSize: Int, 
+    total :Int
+)<br/><br/>
+object SearchResults
+{
+  implicit def searchResultsReads[T](implicit fmt: Reads[T]): Reads[SearchResults[T]] = new Reads[SearchResults[T]] {
+    def reads(json: JsValue): SearchResults[T] = new SearchResults[T] (<br/><br/>
+     (json \ "elements") match {
+          case JsArray(ts) =&gt; ts.map(t =&gt; fromJson(t)(fmt))
+          case _ =&gt; throw new RuntimeException("Elements MUST be a list")
+      },
+      (json \ "page").as[Int],
+      (json \ "pageSize").as[Int],
+      (json \ "total").as[Int]
+    )
+  }<br/><br/>
+  implicit def searchResultsWrites[T](implicit fmt: Writes[T]): Writes[SearchResults[T]] = new Writes[SearchResults[T]] {
+    def writes(ts: SearchResults[T]) = JsObject(Seq(
+        "page" -&gt; JsNumber(ts.page),
+        "pageSize" -&gt; JsNumber(ts.pageSize),
+        "total" -&gt; JsNumber(ts.total),
+        "elements" -&gt; JsArray(ts.elements.map(toJson(_)))
+    ))  
+  }
+}</pre>
+<br/>
+<strong><span style="font-size: medium;">基本的 JSON 数据类型</span></strong><br/><br/>
+给定上面的类型类, 你可以轻易的创建和使用作何与 <code>play.api.libs.json</code> 包中基本数据类型一致的类型<br/><br/>
+<pre class="lang:default decode:true">val input = """{"page": 1,"pageSize":2, "total": 3, "elements" : [1, 2, 3]}"""
+val ret = play.api.libs.json.Json.parse(input).as[SearchResults[Int]]</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 在 Controller 中用  Ok(toJson(ret)) 就能输出 JSON 字符串了。如果没有前面声明的  object SearchResults[T] 话，在执行 as[SearchResults[Int]] 就会报错：</span><br/><br/>
+<span style="color: #0000ff;">No Json deserializer found for type models.SearchResults[Int]. Try to implement an implicit Reads or Format for this type. </span><br/><br/>
+<strong><span style="font-size: medium;">更复杂的类型</span></strong><br/><br/>
+一个更为复杂的 Json 对象要能被支持的话，还须确保它自己定义的序列化和反序列化的方法:<br/><br/>
+<pre class="lang:default decode:true">case class Foo(name: String, entry: Int) <br/><br/>
+object Foo {
+  implicit object FopReads extends Format[Foo] {
+    def reads(json: JsValue) = Foo(
+      (json \ "name").as[String],
+      (json \ "entry").as[Int])
+    def writes(ts: Foo) = JsObject(Seq(
+      "name" -&gt; JsString(ts.name),
+      "entry" -&gt; JsNumber(ts.entry)))
+  }
+}</pre>
+<br/>
+有了这个设置后，样本类 ‘‘Foo’’ 就可以用作 ‘‘SearchResults’’ 的一部分了(Unmi: 放在中括号中，作为 SearchResults 的泛类型).<br/><br/>
+<pre class="lang:default decode:true ">val input = """{"page": 1,"pageSize":2, "total": 3, "elements" : [ {"name" : "foo", "entry" : 1 }, {"name" : "bar", "entry" : 2 }]}"""
+val ret = play.api.libs.json.Json.parse(input).as[SearchResults[Foo]]</pre>

@@ -1,0 +1,114 @@
+---
+title: Unmi 学习 Groovy 之命名参数
+url: /unmi-study-groovy-named-paramter/
+date: 2008-09-09T00:09:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Groovy
+tags: 
+  - Groovy
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 334 
+wpStatus: publish
+views: 667
+lastmod: 2021-09-02T14:23:46-05:00
+---
+
+Groovy 中提供了一个减少输入的特性叫做命名参数(Named Parameter)。GroovyBean 可以通过在构造器调用中传递冒号隔开的属性名称和值进行构建。如：</p>
+<br/>
+<pre class="brush:groovy">car = new Car(model : "BMW", color : "black");</pre>
+<br/>
+其实类似的用法早已有之，这有如 C++ 中的初始化成员列表，VB、Python、Transact-SQL 中的命名参数，JavaScript 中的 JSON  写法，Ruby 中提供的 syntax sugar用 hash 模拟所谓的 keyword argument。<br/><br/>
+我们先详细介绍 Groovy 的命名参数的用法与本质，然而再附上其他一些语言类似用法的实例，纵向贯通以加深印象。<br/><br/>
+要说从外部表现上好像是先调用了空构造方法，然后是相应的 setter 方法进行设值。因此，我们所直接想像的应该相当于下列 Java 代码<!--more--><br/><br/>
+<pre class="brush:java">Car car = new Car();
+car.setModel("BMW");
+car.setColor("black");</pre>
+<br/>
+不过，假如你把 Groovy  生成的 class 文件反编译一下就会发现 Groovy 为上面那行生成了如下代码：<br/><br/>
+<pre class="lang:default decode:true">Class class1 = Car.class;
+Class class2 = groovy.lang.MetaClass.class;
+Car car = ((Car) (ScriptBytecodeAdapter.invokeNewN(class1, class1, ((Object) (new Object[] {
+    ScriptBytecodeAdapter.createMap(new Object[] {//Groovy 把命名参数转换成一个对象数组
+        "model", "BMW", "color", "black"     //然后放到 Map 中，通过相应的 setter 方法或属性名反射赋值
+    })
+})))));</pre>
+<br/>
+所以若再加以试验，就会知道那个 Car 必须要有一个空的构造方法，这是必要条件。但它们的属性值如果有相应的 setter 方法就用 setter 方法赋值，如果没有就直接通过反射进行设值。所以并不要求属性有相应的 setter 方法，甚至是私有属性而无相应的 setter 方法也不打紧。即使只有一个光头的 setter 方法，无对应属性也是可以的。－－有点啰嗦，觉得有用的话，可尽力去理解。<br/><br/>
+Groovy 是通过 org.codehaus.groovy.runtime.ScriptBytecodeAdapter 来完成这一过程的，看到 Bytecode 就知道它大概做了一些不光明的事情。<br/><br/>
+前面看到了，一行代码可以完成多行代码的功能。迫不急切地，我们还是来点有实效性的东西，例如构造一个 JFrame 窗口：<br/><br/>
+<pre class="lang:default decode:true">JFrame frame = new JFrame(
+    title:"Named Parameter",
+    size:[400,300],
+    location:new Point(300,200),
+    defaultCloseOperation:JFrame.EXIT_ON_CLOSE,
+    visible:true);</pre>
+<br/>
+对上面那样一个过程，我们可以一句话说完，简洁易懂。要领就在于你只要发现可用的属性(不管是私有的还是别的)，或是 setXxx() 方法的那个 xxx (符合 JavaBean 规范即可) 就可以拿来作为命名参数的名字。<br/><br/>
+还应注意的是：在给 size 赋值时 size:[400,300] 使用到了隐式构造(Implicit constructors)，size 原本接收的是一个 Dimension，而实质 [400,300] 就是隐式的调用了 new Dimension(400,300)。所以 location 属性也可以写成 [300,200]。隐式构造还常用于 Builder 中，如  SwingBuilder。<br/><br/>
+命名参数不仅可以应用于构造实例时，还能运用于普通方法调用上，而且这种机制了可以接受 Map 对象作为参数的方法：<br/><br/>
+例如，前面的那么代码可以写成：<br/><br/>
+<pre class="brush:groovy">car = new Car(["model":"BMW","color":"black"])          //小注：在 GroovyEclipse 中最后那个中括号 "]" 的输入有点难度</pre>
+<br/>
+并且生成的字节码与原来完全一样，总之都是转换成对象数组，然后反射赋值。<br/><br/>
+再说一个接受 Map 参数的方法，以命名参数形式来调用的例子：<br/><br/>
+<pre class="brush:groovy">def desc(dog){
+    println dog.name;
+    println dog.breed;
+}</pre>
+<br/>
+调用时可用以下两种形式，效果是完全一样的：<br/><br/>
+<pre class="brush:groovy">desc(name : "Lina", breed : "Labrador");
+desc(["name" : "Lina", "breed" : "Labrador"]);</pre>
+<br/>
+为有助于理解，还是反编译出以上两行生成的 Java 代码(都是一样的)：<br/><br/>
+<pre class="lang:default decode:true">Class class1 = Car.class;
+Class class2 = groovy.lang.MetaClass.class;
+ScriptBytecodeAdapter.invokeStaticMethodN(class1, class1, "desc", new Object[] {
+    ScriptBytecodeAdapter.createMap(new Object[] {
+        "name", "Lina", "breed", "Labrador"  //不管怎么样，仍然是转换成对象数组，放到 Map 中，再逐个处理
+    })
+});</pre>
+<br/>
+用 Map 的形式只适用于键是字符串的情况。<br/><br/>
+前面例子中的属性值都是字符串，其实是可以接受任何的属性类型，例如：<br/><br/>
+<pre class="brush:groovy">car = new Car(manufactureDate: new Date(), height: 2);  //假定 Car 有这两个属性</pre>
+<br/>
+注意：前面的代码以都是在 Groovy 1.5.6 版本中测验过，以及这一版本生成的字节码；可能其他版本生成的字节码略有不同，但执行结果应不会有差异。<br/><br/>
+<strong>附录：(对比其他几个语言的命名参数用法)<br />
+</strong><em><span style="color: #ff0000;">这里只是说类似，但是千万要注意 Groovy  的命名参数不能像 VB/Python/Transact-SQL 那样，调用方法时指示哪个参数是什么。Groovy 的命名参数是针对于类的属性(或者是 setter 方法)或 Map 的 Key。</span></em><br/><br/>
+<strong>1)</strong> C++ 的初始化成员列表：<br/><br/>
+<pre class="brush:cpp">Child::Child(char* surname):Parent(surname),name(10),height(20)
+{   //surname 同时传递给父构造方法，并初始化成员变量 name 和 height
+};  //似乎 C++ 的东西总是那么深不可测，这里只见识一下它的这一特性即可</pre>
+<br/>
+<strong>2)</strong> VB 的命名参数：<br/><br/>
+<pre class="lang:default decode:true">Sub say(Optional code As String, Optional name As String)
+   MsgBox "Hello " &amp; code
+End Sub<br/><br/>
+Private Sub Command1_Click()
+  say code:="Unmi"
+End Sub</pre>
+<br/>
+<strong>3)</strong> Ruby 的做法：ruby 其实没有所谓的 keyword argument，而是提供一个syntax sugar用 hash 模拟。<br/><br/>
+<pre class="lang:default decode:true ">def image(opt={})
+    default_opt = {:height =&gt; 25, :width =&gt; 10}
+    default_opt.merge! opt
+    #opt中同样key的內容会覆盖default_opt中key的value
+end</pre>
+<br/>
+<strong>4)</strong> Transact-SQL 中的命名参数：<br/><br/>
+<pre class="brush:sql">my_proc @second = 2, @first = 1, @third = 3</pre>
+<br/>
+其他像 Python、JavaScript 等各种语言的命名参数的用法就没必要继续列了。但据此我们能体验到这一特性确有其方便可取之处。<br/><br/>
+参考：1. 《Java 脚本编程，语言、框架与模式》第 4 章<br />
+2. 《Groovy in Action》第 7 章 Dynamic object orientation, Groovy style<br />
+3. <a href="http://blog.chinaunix.net/u/21790/showart_323092.html" target="_blank" rel="noopener">C++初始化成员列表（member initialization list）</a><br />
+4. <a href="http://groups.google.com/group/rubytw/browse_thread/thread/428e213ee2b77acb" target="_blank" rel="noopener">Ruby慣寫法</a><br />
+5. <a href="http://www.woodpecker.org.cn/diveintopython/power_of_introspection/optional_arguments.html" target="_blank" rel="noopener">Python 使用可选参数和命名参数</a>

@@ -1,0 +1,61 @@
+---
+title: 如何杀掉(kill)Oracle中的会话(Session)
+url: /kill-oracle-session/
+date: 2007-03-21T18:09:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2006/01/oracle-logo.png"
+categories:
+  - Database
+tags: 
+  - database
+  - Oracle
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 530 
+wpStatus: publish
+views: 603
+lastmod: 2019-11-10T16:10:22-06:00
+---
+
+有时，Oracle中造成一些表被死锁或者会话异常退出，如执行了更新记录操作后，既没有commit也没有rollback,网络就断开了，也会造表或记录被锁住，待到超时后才会被解开，那样都会造成应用操作被阻塞。<br/><br/>
+可以以Oralce管理员权限用户登录Oracle数据，查询到被锁的对象，然后杀除指定的会话。<br/><br/>
+用下面的语句查询被锁的对象，可以带上更多约束条件，如schemaname等更精确的匹配。<!--more--><br/><br/>
+<div class="dp-highlighter">
+<pre class="lang:default decode:true  ">SELECT
+ a.object_id, a.session_id, b.object_name, c.*   
+FROM
+ v$locked_object a, dba_objects b, v$session c   
+WHERE
+ a.object_id = b.object_id   
+AND
+ a.SESSION_ID = c.sid(+)   </pre>
+</div>
+<br/>
+杀Seesion的SQL语句语法如下：<br/><br/>
+<div class="dp-highlighter">
+<ol class="dp-sql">
+    <li class="alt"><span class="keyword">alter</span> system kill session 'sid, serial#'   </li>
+</ol>
+</div>
+<br/>
+如上面查出来的一条记录的sid是53, serial#为663,就执行以下的语句<br/><br/>
+<div class="dp-highlighter">
+<ol class="dp-sql">
+    <li class="alt"><span class="keyword">alter</span> system kill session '53,663'   </li>
+</ol>
+</div>
+<br/>
+如果要一次性杀死多个会话，一个一个填写sid和serial#十分的繁琐，应该在查询被锁对象的同时拼凑出多条的杀会话语句，以分号分隔，一起复制下来，然后就可以批量的执行了。<br/><br/>
+拼凑kill语句的方式如下，下面加了一个过滤条件和一个排序，杀除真正关心的表，并且着重注意超时时间过长的会话。<br/><br/>
+<pre class="brush:sql">SELECT 'alter system kill session ''' || c.sid || '' || ',' || c.serial# ||''';',
+       a.object_id, a.session_id, b.object_name, c.*
+  FROM v$locked_object a, dba_objects b, v$session c
+ WHERE a.object_id = b.object_id
+   AND a.SESSION_ID = c.sid(+)
+   AND schemaname = 'Unmi'
+ ORDER BY logon_time</pre>

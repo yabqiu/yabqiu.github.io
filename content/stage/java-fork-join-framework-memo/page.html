@@ -1,0 +1,139 @@
+---
+title: Java 的  fork-join 框架实例备忘
+url: /java-fork-join-framework-memo/
+date: 2015-12-29T00:17:41-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - for-join
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7122 
+wpStatus: publish
+views: 1460
+lastmod: 2021-09-03T17:28:51-05:00
+---
+
+Java 7 首次引入了 fork/join 框架，但一直未曾直接尝试. 而且基本上也很少在实际项目中直接写 fork-join 的代码，在我们使用第三方组件时倒是间接会接触到 fork/join 框架。譬如 Akka 的 fork-join-executor, sbt 执行测试用例时也是默认 fork/join 并发执行。fork-join 可以帮助我们把计算任务粒度细化，并更有效的利用多 CPU 内核。<br/><br/>
+fork-join 与 map-reduce 有些相妨，在 Java 7 时代我其实是忽视了它的存在。目今正在了解 Java 8 的  parallelStream 时，因为它的底层实现也是 fork/join, 所以有兴致去稍加体验一下。fork/join 的算法简单来讲就是递归对半去细化计算任务，及到不能细化时由多内核(线程)去计算被拆分的任务，最后反方向把结果汇总。<br/><br/>
+下面是从 《Java 8 IN ACTION》中截的一个说明 fork/join 的处理过程<!--more--><br/><br/>
+<img class="aligncenter wp-image-7123" src="/wp-content/uploads/2015/12/fork-join-framework-800x660.png" alt="fork-join-framework" width="750" height="619" /><br/><br/>
+以下是代码演示实现，更有助于理解 fork/join 是如何工作的<br/><br/>
+<pre class="lang:default decode:true ">import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinTask;
+import java.util.concurrent.RecursiveTask;
+import java.util.stream.LongStream;<br/><br/>
+public class ForkJoinDemo {<br/><br/>
+  public static void main(String[] args) {
+    long[] numbers = LongStream.rangeClosed(1, 100000L).toArray();
+    ForkJoinTask&lt;Long&gt; task = new ForkJoinSumCalculator(numbers);
+    Long result = new ForkJoinPool().invoke(task);
+    System.out.printf("Final result: %s, CPU cores: %s\n", result,
+      Runtime.getRuntime().availableProcessors());
+  }<br/><br/>
+}<br/><br/>
+
+class ForkJoinSumCalculator extends RecursiveTask&lt;Long&gt; {<br/><br/>
+  private final long[] numbers;
+  private final int start;
+  private final int end;<br/><br/>
+  public static final long THRESHOLD = 10_000L;<br/><br/>
+  public ForkJoinSumCalculator(long[] numbers) {
+    this(numbers, 0, numbers.length);
+  }<br/><br/>
+  private ForkJoinSumCalculator(long[] numbers, int start, int end) {
+    this.numbers = numbers;
+    this.start = start;
+    this.end = end;
+  }<br/><br/>
+  @Override
+  protected Long compute() {
+    int length = end - start;
+    if (length &lt;= THRESHOLD) {
+      return computeSequentially();
+    }<br/><br/>
+    //fork schedules task on new thread, compute reuses the same thread
+//    return new ForkJoinSumCalculator(numbers, start, start + length / 2).fork().join()
+//           + new ForkJoinSumCalculator(numbers, start + length / 2, end).compute();<br/><br/>
+    ForkJoinSumCalculator leftTask = new ForkJoinSumCalculator(numbers, start, start + length / 2);
+    leftTask.fork();<br/><br/>
+    ForkJoinSumCalculator rightTask = new ForkJoinSumCalculator(numbers, start + length / 2, end);<br/><br/>
+    Long rightResult = rightTask.compute();
+    Long leftResult = leftTask.join();<br/><br/>
+    return leftResult + rightResult;
+  }<br/><br/>
+  private long computeSequentially() {
+    System.out.printf("Summation from %s to %s, calculated by thread %s\n", start, (end - 1), Thread.currentThread().getName());
+    long sum = 0;
+    for (int i = start; i &lt; end; i++) {
+      sum += numbers[i];
+    }
+    return sum;
+  }
+}</pre>
+<br/>
+fork/join 的任务要继承算 RecursiveTask&lt;T&gt;，并在 compute() 方法同时决定任务的细化粒度和如何合并结果.<br/><br/>
+leftTask.fork(); 将把任务委派给新的线程执行<br />
+rightTask.compute(); 将重用本线程完成进一步任务，因为没必要把当前线程释放再取用. 写成 rightTask.fork().join(); 也能出正确的结果<br/><br/>
+注: 以上代码只是一个对 fork/join 过程的演示，在该代码的 fork/join 并未能提升计算性能。因为每个计算任务并不耗时，拆分任务(fork) 和合并计算结果(join) ，以及创建使用多线程这些辅助过程本身都重于实际的计算任务。所以 fork/join 的目的是要拆分耗时的任务，充分发挥多内核的优势来更有效的完成整体计算。<br/><br/>
+看下输出结果：<br/><br/>
+<blockquote>
+Summation from 18750 to 24999, calculated by thread ForkJoinPool-1-worker-4<br />
+Summation from 6250 to 12499, calculated by thread ForkJoinPool-1-worker-0<br />
+Summation from 93750 to 99999, calculated by thread ForkJoinPool-1-worker-1<br />
+Summation from 87500 to 93749, calculated by thread ForkJoinPool-1-worker-7<br />
+Summation from 56250 to 62499, calculated by thread ForkJoinPool-1-worker-6<br />
+Summation from 43750 to 49999, calculated by thread ForkJoinPool-1-worker-2<br />
+Summation from 81250 to 87499, calculated by thread ForkJoinPool-1-worker-5<br />
+Summation from 68750 to 74999, calculated by thread ForkJoinPool-1-worker-3<br />
+Summation from 37500 to 43749, calculated by thread ForkJoinPool-1-worker-2<br />
+Summation from 75000 to 81249, calculated by thread ForkJoinPool-1-worker-1<br />
+Summation from 50000 to 56249, calculated by thread ForkJoinPool-1-worker-7<br />
+Summation from 0 to 6249, calculated by thread ForkJoinPool-1-worker-0<br />
+Summation from 12500 to 18749, calculated by thread ForkJoinPool-1-worker-4<br />
+Summation from 25000 to 31249, calculated by thread ForkJoinPool-1-worker-5<br />
+Summation from 31250 to 37499, calculated by thread ForkJoinPool-1-worker-2<br />
+Summation from 62500 to 68749, calculated by thread ForkJoinPool-1-worker-3<br />
+Final result: 5000050000, CPU cores: 8
+</blockquote>
+<br/>
+fork/join 使用的是 ForkJoinPool 线程池，默认数量为机器的逻辑内核数即 Runtime.getRuntime().availableProcessors() 的值，我的机器是 8 核的。从输出中看到了任务被分拆为每次计算 10000 个数字，分别于线程池中的 ForkJoinPool-1-workerX(0-7) 来执行。<br/><br/>
+fork/join 的关键就是如何拆分任务和怎么把每个计算结果合并。<br/><br/>
+未例中可以启用注释掉的代码<br/><br/>
+<pre class="brush:java">return new ForkJoinSumCalculator(numbers, start, start + length / 2).fork().join()
+       + new ForkJoinSumCalculator(numbers, start + length / 2, end).compute();</pre>
+<br/>
+看起来似乎是完全一样的，但执行后的输出却令我有些迷惑<br/><br/>
+<blockquote>
+Summation from 0 to 6249, calculated by thread ForkJoinPool-1-worker-3<br />
+Summation from 6250 to 12499, calculated by thread ForkJoinPool-1-worker-1<br />
+Summation from 12500 to 18749, calculated by thread ForkJoinPool-1-worker-2<br />
+Summation from 18750 to 24999, calculated by thread ForkJoinPool-1-worker-2<br />
+Summation from 25000 to 31249, calculated by thread ForkJoinPool-1-worker-2<br />
+Summation from 31250 to 37499, calculated by thread ForkJoinPool-1-worker-1<br />
+Summation from 37500 to 43749, calculated by thread ForkJoinPool-1-worker-1<br />
+Summation from 43750 to 49999, calculated by thread ForkJoinPool-1-worker-1<br />
+Summation from 50000 to 56249, calculated by thread ForkJoinPool-1-worker-1<br />
+Summation from 56250 to 62499, calculated by thread ForkJoinPool-1-worker-1<br />
+Summation from 62500 to 68749, calculated by thread ForkJoinPool-1-worker-1<br />
+Summation from 68750 to 74999, calculated by thread ForkJoinPool-1-worker-1<br />
+Summation from 75000 to 81249, calculated by thread ForkJoinPool-1-worker-1<br />
+Summation from 81250 to 87499, calculated by thread ForkJoinPool-1-worker-1<br />
+Summation from 87500 to 93749, calculated by thread ForkJoinPool-1-worker-1<br />
+Summation from 93750 to 99999, calculated by thread ForkJoinPool-1-worker-1<br />
+Final result: 5000050000, CPU cores: 8
+</blockquote>
+<br/>
+基本只有 2-3 个线程参与计算，而不像前面的所有线程，这和顺序有关系了，必须是先 fork, compute, 再 join, 即基本过程是<br/><br/>
+<blockquote>
+leftTask.fork();<br />
+rightTask.compute();<br />
+leftTask.join();
+</blockquote>

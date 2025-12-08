@@ -1,0 +1,132 @@
+---
+title: 灵活控制 Hibernate 的日志或 SQL 输出，以便于诊断
+url: /hibernate-log-sql-log4j-slf4j/
+date: 2011-01-06T06:45:45-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Hibernate
+tags: 
+  - SLF4J
+  - Log4J
+  - Sql
+  - Hibernate
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3006 
+wpStatus: publish
+views: 8278
+lastmod: 2021-09-03T12:07:10-05:00
+---
+
+我们在使用 Hibernate 时一般只会关注是否显示生成的 SQL 语句，不过有些时候还不够。默认时 Hibernate 执行的 SQL 语句是打印在控制台上的，它也可以配置为输出给 Log4J 或是 Log4Back，还能显示出更详细的参数和取值信息。这里简单讲来。</p>
+<br/>
+Hibernate 的配置文件 hibernate.cfg.xml 里提供有三个有关显示 SQL 的配置项，如果是与 Spring 联合，也可以配置到 Spring 的配置中。它们的取值是 boolean 值。<br/><br/>
+1) hibernate.show_sql - 是否显示所生成 SQL 语句，我们最常和它打交道<br />
+2) hibernate.format_sql - 是否格式化生成的 SQL 语句，增加可读性，不然全挤在一行<br />
+3) hibernate.use_sql_comments - 是否显示注释，用以指出什么操作产生的 SQL 语句，相比上面两条而言，这个配置会稍稍陌生些<br/><br/>
+ 来看看加了上面三条配置后产生的效果，执行了 Hibernate 查询后，在控制台上产生如下输出：<!--more--><br/><br/>
+Hibernate:<br />
+    <span style="color: #ff0000;">/* load collection cc.unmi.test.model.Post.securities */</span> select<br />
+        securities0_.post_id as post1_7_1_,<br />
+        security1_.shareclassid as sharecla1_16_0_,<br />
+        security1_.company_id as company2_16_0_,<br />
+    from<br />
+        Post_Security_Relationship securities0_<br />
+    inner join<br />
+        unmi.securities security1_<br />
+            on securities0_.shareclassid=security1_.shareclassid<br />
+    where<br />
+        securities0_.post_id=?<br/><br/>
+hibernate.show_sql 控制全局是否显示生成的 SQL 语句，hibernate.format_sql 格式化后的效果如上，不然就是一行，而 hibernate.use_sql_comments 输出的是红色的部分，表明是在加哉 securities 集合时所执行的 SQL 语句。<br/><br/>
+Hibernate 默认是把 SQL 语句是输出到控制台，而控制台中的内容查阅起来并不方便，例如超过控制台缓存的内容会被清掉，不是谁都能看到控制台，难以与时间关联起来。虽然有些应用服务器会把控制台输出重定向到文件，但总没有 Log4J 或 Slf4J 那样的专业日志工具来得便捷。<br/><br/>
+因为 Hibernate 在输出 SQL 时使用的 logger 名为 org.hibernate.SQL, 所以想要让 SQL 语句输出到 Log4J 或是 Slf4J 日志中(日志文件或是记在别处，由 Appender 决定的)，只要在 log4j.properties(log4j.xml 参考相应配置) 中加上：<br/><br/>
+ <span style="color: #800000;">log4j.logger.org.hibernate.SQL=DEBUG</span><br/><br/>
+记得同时把 Hibernate 配置文件中(或者 Spring 中关于 Hibernate 的配置中) 的 hibernate.show_sql 设置为 false，不然可能在控制台下会有双份输出(Log4J 配置了 ConsoleAppender 时)。<br/><br/>
+如果就用的是 Log4Back 的话，就在 Log4Back 的配置文件 log4back.xml 中加上：<br/><br/>
+<span style="color: #800000;">&lt;logger name="org.hibernate.SQL" level="DEBUG"/&gt;</span><br/><br/>
+这时的日志输出格式与控制台下没多少分别，只是跟着 Log4J 或 Slf4J 跑而已，像：<br/><br/>
+<span style="color: #ff0000;">20:13:40.757 [http-8080-1] DEBUG org.hibernate.SQL -</span><br />
+    /* load collection cc.unmi.test.model.Post.tags */ select<br />
+        tags0_.post_id as post1_7_1_,<br />
+        tags0_.tag_id as tag2_1_,<br />
+        elementite1_.id as id3_0_,<br />
+    from<br />
+        Post_Tag_Relationship tags0_<br />
+    inner join<br />
+        unmi.element_item elementite1_<br />
+            on tags0_.tag_id=elementite1_.id<br />
+    where<br />
+        tags0_.post_id=?<br/><br/>
+只有红色部分不同，应用上了 Log4J 或 Slf4J 的配置了，可以看到执行的时间、线程等相关信息。<br/><br/>
+我们想知道前面输出的 SQL 语句中的 ? 参数代表的实际值是什么，还需要打开一个日志 org.hibernate.type.descriptor.sql.BasicBinder 的输出级别为 TRACE，这里同时把 org.hibernate.type.descriptor.sql.BasicExtractor 的输出级别也设置为 TRACE，来看看效果：<br/><br/>
+log4j.properties 中配置为：<br/><br/>
+<span style="color: #993300;">log4j.logger.org.hibernate.type.descriptor.sql.BasicBinder=TRACE<br />
+log4j. loggerorg.hibernate.type.descriptor.sql.BasicExtractor=TRACE</span><br/><br/>
+logback.xml 中配置为：<br/><br/>
+<span style="color: #993300;">&lt;logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="TRACE"/&gt;<br />
+&lt;logger name="org.hibernate.type.descriptor.sql.BasicExtractor" level="TRACE"/&gt;</span><br/><br/>
+之后看输出：<br/><br/>
+20:13:40.710 [http-8080-1] DEBUG org.hibernate.SQL -<br />
+    /* load collection cc.unmi.test.model.Post.categories */ select<br />
+        categories0_.post_id as post1_7_1_,<br />
+        elementite1_.id as id3_0_,<br />
+    from<br />
+        Post_Category_Relationship categories0_<br />
+    inner join<br />
+        unmi.element_item elementite1_<br />
+            on categories0_.category_id=elementite1_.id<br />
+    where<br />
+        categories0_.post_id=?<br />
+<span style="color: #ff0000;">20:13:40.710 [http-8080-1] TRACE org.hibernate.type.descriptor.sql.BasicBinder - binding parameter [1] as [INTEGER] - 10<br />
+</span><span style="color: #0000ff;">20:13:40.710 [http-8080-1] TRACE org.hibernate.type.descriptor.sql.BasicExtractor - found [1002] as column [id3_0_]<br />
+20:13:40.710 [http-8080-1] TRACE org.hibernate.type.descriptor.sql.BasicExtractor - found [10] as column [post1_7_1_]</span><br/><br/>
+红色部分是 org.hibernate.type.descriptor.sql.BasicBinder=TRACE 控制的，显示了绑定给 SQL 的参数列表。蓝色部分是 org.hibernate.type.descriptor.sql.BasicExtractor=TRACE 控制的，显示了查询后记录的字段值。注意这两个属性是要设置到 TRACE 级别，所以在一般日志的全局 DEBUG 级别之下，它们会表示不受影响。 <br/><br/>
+有时候想要显示查询中命名参数的值，用 :email 而不是 ? 的形式，则还需要引入两个<br/><br/>
+log4j.logger.org.hibernate.engine.QueryParameters=DEBUG<br />
+log4j.logger.org.hibernate.engine.query.HQLQueryPlan=DEBUG<br/><br/>
+效果是这样的：<br/><br/>
+20:13:40.710 [http-8080-1] org.hibernate.engine.query.HQLQueryPlan - find: from User where email = :email<br />
+20:13:40.710 [http-8080-1] org.hibernate.engine.QueryParameters - named parameters: <a href="mailto:{email=fantasia@sina.com">{email=fantasia@sina.com</a>}<br />
+20:13:40.726 [http-8080-1] org.hibernate.SQL -<br />
+    /* named HQL query findUserByEmail */ select<br />
+        user0_.id as id0_,<br />
+        user0_.email as email0_,<br />
+        user0_.enabled as enabled0_,<br />
+        user0_.encodedPassword as encodedP8_0_<br />
+    from<br />
+        User user0_<br />
+    where<br />
+        user0_.email=?<br/><br/>
+对上面综合一下，比较好的配置可以参考：<br/><br/>
+hibernate.cfg.xml 中配置：<br/><br/>
+<pre class="lang:default decode:true">&lt;property name="hibernate.show_sql"&gt;false&lt;/property&gt;
+&lt;property name="hibernate.format_sql"&gt;true&lt;/property&gt;
+&lt;property name="hibernate.use_sql_comments"&gt;true&lt;/property&gt;</pre>
+<br/>
+ 或者是在 Spring 中关于 Hibernate 的配置属性：<br/><br/>
+<pre class="lang:default decode:true">&lt;prop key="hibernate.show_sql"&gt;false&lt;/prop&gt;
+&lt;prop key="hibernate.format_sql"&gt;true&lt;/prop&gt;
+&lt;prop key="hibernate.use_sql_comments"&gt;true&lt;/prop&gt;</pre>
+<br/>
+而在日志配置中，如 log4j.properties 中配置：<br/><br/>
+<pre class="brush:text">log4j.logger.org.hibernate.type.descriptor.sql.BasicBinder=TRACE
+log4j.logger.org.hibernate.type.descriptor.sql.BasicExtractor=TRACE
+log4j.logger.org.hibernate.SQL=DEBUG
+log4j.logger.org.hibernate.engine.QueryParameters=DEBUG
+log4j.logger.org.hibernate.engine.query.HQLQueryPlan=DEBUG</pre>
+<br/>
+倘若用的是 Slf4J 话，就在 logback.xml 中配置：<br/><br/>
+<pre class="lang:default decode:true ">&lt;logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="TRACE"/&gt;
+&lt;logger name="org.hibernate.type.descriptor.sql.BasicExtractor" level="TRACE"/&gt;
+&lt;logger name="org.hibernate.SQL" level="DEBUG"/&gt;
+&lt;logger name="org.hibernate.engine.QueryParameters" level="DEBUG"/&gt;
+&lt;logger name="org.hibernate.engine.query.HQLQueryPlan" level="DEBUG"/&gt;</pre>
+<br/>
+如果你会觉得日志太多的话，反正我是会这么觉得，那么可考虑把 org.hibernate.type.descriptor.sql.BasicExtractor 设置为 DEBUG，或不设置该配置项。<br/><br/>
+<span style="color: #ff0000;">注： 本文是在 Hibernate 3.6.0 Final 下做的测试，如果是用的其他版本的 Hibernate，尤其是 Hibernate 2.x 可能配置很不相象了，需斟酌应对。</span><br/><br/>
+参考：1. <a href="http://geeklondon.com/blog/view/the-blind-needing-the-bind" target="_blank" rel="noopener">Hibernate Parameter Logging</a>

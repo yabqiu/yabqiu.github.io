@@ -1,0 +1,120 @@
+---
+title: VC使用C API 连接操作MySQL数据库
+url: /vc-c-api-access-mysql/
+date: 2007-07-23T12:59:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2011/04/2X2_mysql.png"
+categories:
+  - C++/VB
+tags: 
+  - VC
+  - Mysql
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 500 
+wpStatus: publish
+views: 602
+lastmod: 2021-09-03T10:11:37-05:00
+---
+
+一切尽在代码中,代码中也太多了if/else,可以对它进行更好的函数及至类的封装，规范的处理好异常。<!--more--></p>
+<br/>
+<pre class="lang:default decode:true ">#include &lt;windows.h&gt;<br/><br/>
+//需要在VC的Options设置一个include路径指向'%mysql_home%/inlude'目录
+#include &lt;mysql.h&gt;<br/><br/>
+//设置一个lib路径指向'%mysql_home%/lib/opt'目录 (mysql5.0是个目录)
+#pragma comment(lib,"libmysql.lib") <br/><br/>
+#define host_name "localhost"  //数据库服务器
+#define db_name "test"         //数据库名
+#define user_name "root"       //用户名
+#define password ""            //密码 &lt;img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" data-wp-more="more" data-wp-more-text="" class="wp-more-tag mce-wp-more" alt="" title="Read more..." data-mce-resize="false" data-mce-placeholder="1"&gt;<br/><br/>
+int main(int argc,char * argv[]) {   
+    char szSqlText[500] ;   
+    MYSQL *conn;  
+    MYSQL_RES *rs;   
+    MYSQL_ROW row;  
+    //注意它的声明 typedef char **MYSQL_ROW，字符串数组<br/><br/>
+ BOOL bCreate = FALSE;   
+    conn = mysql_init(NULL);   <br/><br/>
+    if(conn == NULL) {   
+       fprintf(stderr,"mysql_init() failed (probably out of memory)\n");   
+       exit(1);   
+    }   <br/><br/>
+    if(mysql_real_connect(conn,host_name,user_name,password, db_name,MYSQL_PORT,NULL,0) == NULL) {   <br/><br/>
+        //在MYSQL初始化之后的操作如果有错误，可以用mysql_errno(MYSQL*)和
+        //mysql_errer(MYSQL*) 分别获得出错代号和描述<br/><br/>
+        fprintf(stderr,"mysql_real_connect() failed:\nError %u (%s)\n",mysql_errno(conn),mysql_error(conn));   
+        exit(1);   
+    }   <br/><br/>
+    printf("connect to db successful.\n");   <br/><br/>
+    if(bCreate){   <br/><br/>
+        //第一次运行创建一个表mytable
+        sprintf(szSqlText,"create table mytable(time datetime,s1 char(6),s2 char(11),s3 int,s4 int)");   <br/><br/>
+        if(mysql_query(conn,szSqlText)) {   
+            printf("Can't create table.\n");   
+            mysql_close(conn);   
+            return 0;   
+        }   
+    }   <br/><br/>
+    sprintf(szSqlText,"insert into mytable values('2000-3-10 21:01:30','Test','MySQLTest',2000,3)");   <br/><br/>
+    if(mysql_query(conn,szSqlText)) {   
+        printf("Insert values error:\nError %u (%s)\n", mysql_errno(conn),mysql_error(conn));   
+        mysql_close(conn);   <br/><br/>
+        return 0;   
+    } else{   <br/><br/>
+        //insert/delete/update 语句可用mysql-affected_rows()得到受作用的行
+         printf("INSERT statement succeeded: %lu rows affected\n",(unsigned long)mysql_affected_rows(conn));   
+    }   <br/><br/>
+    //查询数据
+    sprintf(szSqlText,"select * from mytable");   <br/><br/>
+    //执行成功则返回零
+    if(mysql_query(conn,szSqlText) != 0) {   
+        mysql_close(conn);   
+        return 0;   
+    } else {   <br/><br/>
+        //立即从服务器返回所有行，存储到本地，产生结果集，失败则返回NULL
+        rs = mysql_store_result(conn);   <br/><br/>
+        //结果集是保留在服务器上，fetch_row时才逐行从服务器上取<br/><br/>
+        //rs = mysql_use_result(conn);<br/><br/>
+        //Get query result.<br/><br/>
+        int count = (int)mysql_num_rows(rs);   
+        printf("Query: %s.\n%ld records found.\n",szSqlText,count);   <br/><br/>
+        //MYSQL_ROW是一个指向数值数组的指针,row[0],row[1]...row[列数-1]
+        //所有的数据类型都以字符串返回，即使是数字型，要进行串转换
+        //NULL指针代表数据库字段的NULL,应经常检查列是否为NULL<br/><br/>
+        while((row = mysql_fetch_row(rs)) != NULL){ 
+            //返回NULL，则说明不再有行<br/><br/>
+            for(unsigned int i=0; i&lt;mysql_num_fields(rs);i++){   
+                if(i&gt;0)   
+                    fputc('\t',stdout);   
+                printf("%s",row[i]!=NULL ? row[i]:"NULL");   
+            }   
+            fputc('\n',stdout);   
+        }   <br/><br/>
+        //使用完后，释放结果集占用内存
+        mysql_free_result(rs);   
+     }   <br/><br/>
+  mysql_close(conn);   
+     return 0;   
+}   <br/><br/>
+//最后，注意查询语句中字符串的转义 select a from t where a=''1',是要出错的
+//空字符转换为'\0',这里的0 是可打印的ASCII 码0，而不是空。
+//反斜线、单引号和双引号分别转换为‘\\’、‘\'’ 和‘\"’
+//你也可以用mysql_escape_string(to_str,from_str,from_len)转换sql语句</pre>
+<br/>
+输出结果是：<br />
+connect to db successful.<br />
+INSERT statement succeeded: 1 rows affected<br />
+Query: select * from mytable.<br />
+8 records found.<br />
+2000-03-10 21:01:30     Test    MySQLTest       2000    3<br />
+2000-03-10 21:01:30     Test    MySQLTest       2000    3<br />
+2000-03-10 21:01:30     Test    MySQLTest       2000    3<br />
+2000-03-10 21:01:30     Test    MySQLTest       2000    3<br />
+2000-03-10 21:01:30     Test    MySQLTest       2000    3<br />
+Press any key to continue

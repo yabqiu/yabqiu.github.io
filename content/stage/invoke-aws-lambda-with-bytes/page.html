@@ -1,0 +1,229 @@
+---
+title: 调用 AWS Lambda 时如何传送字节数组
+url: /invoke-aws-lambda-with-bytes/
+date: 2024-08-20T12:52:35-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - lambda
+  - AWS
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13705 
+wpStatus: publish
+views: 120
+lastmod: 2024-08-20T13:36:59-05:00
+---
+
+本文主要验证用 Python 写的 AWS Lambda 与 Java 客户端之间如何双向传递二进制数据，这里不涉及到 Lambda 流输入输出的问题。比如一个 Python AWS Lambda 的处理方法声明是<br/><br/>
+<blockquote>
+def lambda_handler(event, context):<br />
+    pass  # or do something
+</blockquote>
+<br/>
+通过我们用 Lambda 调用时会传给 <code>event</code> 一个 JSON 格式的字符串，反应到 AWS Lambda 时 <code>event</code> 就是一个字典。但当要传递二进制数据如何做呢？直觉的做法就是用 base64 编码二进制字节为普通的字符串，比如要节约网络传输的数据量，需要对文本进行压缩，格式可以是这样<br/><br/>
+<blockquote>
+{"input": base64Encode(gzipCompress("text content......"))}
+</blockquote>
+<br/>
+然后在 Lambda 端取出 <code>input</code> 的值作相应的 base64 解码再解压缩。<br/><br/>
+对于大文本，即使是压缩后再编码为 base64 也比直接传送原始文本数据要节约网络带宽。<br/><br/>
+这种方案实际也是可行的，然而我们在实际使用 Java AWS Lambda SDK 时有些动作会自动帮我们实现的，那就是二进制数据自动 base64 编码。<!--more--><br/><br/>
+下面来进行验证<br/><br/>
+<h3>Java AWS Lambda 客户端如何向 Lambda 发送字节数组</h3><br/><br/>
+我们写一个最简单的 Python AWS Lambda, Lambda 函数命名为 test-bytes<br/><br/>
+<pre class="lang:default decode:true">def lambda_handler(event, context):
+    print(event)
+    return "Hello from Lambda!"</pre>
+<br/>
+关于如何从 Lambda 中向客户端返回字节数据将在本文后半部分讲解，首先专注在如何解决输入二进制数据<br/><br/>
+然后在 Java 项目中引入相应的依赖，这里是一个 Maven 项目，将使用 AWS SDK 2, 在 pom.xml 要用到的依赖<br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;software.amazon.awssdk&lt;/groupId&gt;
+    &lt;artifactId&gt;sso&lt;/artifactId&gt;
+    &lt;version&gt;2.25.58&lt;/version&gt;
+&lt;/dependency&gt;
+&lt;dependency&gt;
+    &lt;groupId&gt;software.amazon.awssdk&lt;/groupId&gt;
+    &lt;artifactId&gt;lambda&lt;/artifactId&gt;
+    &lt;version&gt;2.25.58&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+本地配置好 AWS Credentials, 这里不提<br/><br/>
+先测试传明文的 Java AWS Lambda 客户端<br/><br/>
+<pre class="lang:default decode:true">LambdaClient client = LambdaClient.create();<br/><br/>
+Map&lt;String, Object&gt; data = Map.of("input", "string content");<br/><br/>
+SdkBytes payload = SdkBytes.fromUtf8String(JsonUtils.toJson(data));
+InvokeResponse response = client.invoke(request -&gt; request.functionName("test-bytes").payload(payload));<br/><br/>
+System.out.println(response.payload().asUtf8String());</pre>
+<br/>
+执行后客户输出<br/><br/>
+<blockquote>
+"Hello from Lambda"
+</blockquote>
+<br/>
+<span style="color: #0000ff;">请留意输出的字符串两端还包含的双引号，测试的 response.payload().asUtf8String().length() 为 19, 说明内容包含双引号本身</span><br/><br/>
+AWS Lambda 端的 print(event) 相应输出为<br/><br/>
+<blockquote>
+{'input': 'string content'}
+</blockquote>
+<br/>
+发往服务端的 payload 必须是一个 JSON 对象，因为 Lambda 的 event 是一个 dict, 试图发送一个简单的字符串将不被允许的<br/><br/>
+<pre class="lang:default decode:true">SdkBytes payload = SdkBytes.fromUtf8String("Hello");
+InvokeResponse response = client.invoke(request -&gt; request.functionName("test-bytes").payload(payload));</pre>
+<br/>
+以上代码在进行 client.invoke() 时会报错<br/><br/>
+<blockquote>
+Exception in thread "main" software.amazon.awssdk.services.lambda.model.InvalidRequestContentException: Could not parse request body into json: Could not parse payload into json: Unrecognized token 'Hello': was expecting (JSON String, Number, Array, Object or token 'null', 'true' or 'false')<br />
+at [Source: (byte[])"Hello"; line: 1, column: 6] (Service: Lambda, Status Code: 400, Request ID: dcf2ab7f-9df5-46f6-b644-1da164a691c1)
+</blockquote>
+<br/>
+Lambda 并未被调用，错误上说是 expecting(JSON String, number, Array, Object or token 'null' or 'false'), 准确来说是要一个 JSON 对象，才能映射到 lambda_handler 的 event 参数。<br/><br/>
+SdkBytes payload 是可以构建出来，如果查看 SdkBytes.fromUtfString("Hello").asUtf8String() 看到的是原始的 "Hello", 问题出在调 Lambda 时无法构造出 event 对象，请求到了某个 Gateway, 但未触发 Lambda 的执行。<br/><br/>
+所以 Lambda 的 Payload 从上面的测试来看首先必须是一个 JSON 对象，然后我们可以在值上下文章，比如尝试某一个字段用二进制字节数组<br/><br/>
+<pre class="lang:default decode:true">Map&lt;String, Object&gt; data = Map.of(
+    "input", "string content".getBytes(),
+    "other", "something else");<br/><br/>
+SdkBytes payload = SdkBytes.fromUtf8String(JsonUtils.toJson(data));
+System.out.println(payload.asUtf8String());<br/><br/>
+InvokeResponse response = client.invoke(request -&gt; request.functionName("test-bytes").payload(payload));</pre>
+<br/>
+调用 Lambda 正常，客户端看到 payload.asUtfString() 输出为<br/><br/>
+<blockquote>
+{"input":"c3RyaW5nIGNvbnRlbnQ=","other":"something else"}
+</blockquote>
+<br/>
+AWS Lambda 端接收到的也是<br/><br/>
+<blockquote>
+{'other': 'something else', 'input': 'c3RyaW5nIGNvbnRlbnQ='}
+</blockquote>
+<br/>
+而 "c3RyaW5nIGNvbnRlbnQ=" 正是 "string content" 的 base64 编码，在服务端只需作相应的解码就行<br/><br/>
+<pre class="lang:default decode:true">the_input = base64.decodebytes(event["input"].encode())</pre>
+<br/>
+我们发现其实 base64 是在 Lambda 客户端由 SdkBytes 自动完成的，SdkBytes 对字符串类型数据不作任何转换，而只对字节数组进行 base64 编码。这就给了我们一个启发，压缩的数据直接以字节数组形式出现在数据中即可, 不用手工进行 base64 转换<br/><br/>
+<pre class="lang:default decode:true">Map&lt;String, Object&gt; data = Map.of(
+    "input", GzipUtils.compress("string content".getBytes()),
+    "other", "something else");<br/><br/>
+SdkBytes payload = SdkBytes.fromUtf8String(JsonUtils.toJson(data));
+System.out.println(payload.asUtf8String());<br/><br/>
+InvokeResponse response = client.invoke(request -&gt; request.functionName("test-bytes").payload(payload));
+</pre>
+<br/>
+客户端输出的 payload.asUtf8String() 为<br/><br/>
+<blockquote>
+{"other":"something else","input":"H4sIAAAAAAAA/ysuKcrMS1dIzs8rSc0rAQCyG+OzDgAAAA=="}
+</blockquote>
+<br/>
+在 AWS Lambda 端同样看到<br/><br/>
+<blockquote>
+{'other': 'something else', 'input': 'H4sIAAAAAAAA/ysuKcrMS1dIzs8rSc0rAQCyG+OzDgAAAA=='}
+</blockquote>
+<br/>
+而 H4sIAAAAAAAA/ysuKcrMS1dIzs8rSc0rAQCyG+OzDgAAAA== 就是压缩后数据的 base64 编码，注意到 base64 编码后的字符串返回比原始字符串大多了，这只是原始字符串太短的缘故。<br/><br/>
+SdkBytes 有其他几个静态方法，比如用 SdkBytes.fromByteArray() 就能让我们全过程使用字节数组，而无需字符串与字节数组间来回倒换<br/><br/>
+<pre class="lang:default decode:true ">SdkBytes payload = SdkBytes.fromByteArray(JsonUtils.toJsonBytes(data));</pre>
+<br/>
+小结<br/><br/>
+SdkBytes 能自动对字节数组内容进行 base64 编码，其余类型保持原样，但在 AWS Lambda 服务端需手工进行 base64 解码，然后是压缩的数据再进行解压缩。<br/><br/>
+<h3>AWS Lambda 如何向客户端返回字节数组</h3><br/><br/>
+AWS Lambda 服务端与客户端之间互传 UTF 字符串是友好的，所以把任何二进制数据进行 base64 编码后再传输是永远可行的方案。那么我们还是要看 AWS Lambda 可为我们自动做些什么？<br/><br/>
+改造前面的 Lambda 代码，如果我们直接从函数中返回一个字节数组会如何呢？<br/><br/>
+<pre class="lang:default decode:true">def lambda_handler(event, context):
+    return  "Hello from Lambda".encode()</pre>
+<br/>
+用 Java 客户端测试<br/><br/>
+<pre class="lang:default decode:true">SdkBytes payload = SdkBytes.fromUtf8String("{}");
+InvokeResponse response = client.invoke(request -&gt; request.functionName("test-bytes").payload(payload));
+System.out.println(response.payload().asUtf8String());</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+Hello from Lambda
+</blockquote>
+<br/>
+这个两端不包含双引号的输出才是我们想要的<br/><br/>
+在 Python AWS Lambda 中可以返回一个字典对象，测试<br/><br/>
+<pre class="lang:default decode:true">def lambda_handler(event, context):
+    return {
+        "statusCode": 200,
+        "body": "Hello from Lambda"
+    }
+</pre>
+<br/>
+再运行前面的 Java 客户端测试得到<br/><br/>
+<blockquote>
+{"statusCode": 200, "body": "Hello from Lambda"}
+</blockquote>
+<br/>
+AWS Lambda 返回中包含字节数组<br/><br/>
+<pre class="lang:default decode:true">def lambda_handler(event, context):
+    return {
+        "statusCode": 200,
+        "body": b"Hello from Lambda"
+    }</pre>
+<br/>
+运行 Java 客户端的输出是一样的<br/><br/>
+<blockquote>
+{"statusCode": 200, "body": "Hello from Lambda"}
+</blockquote>
+<br/>
+AWS Lambda 输出中包含非 UTF8 字符的字节数组(GZip 压缩数据)<br/><br/>
+<pre class="lang:default decode:true">def lambda_handler(event, context):
+    return gzip.compress(b"Hello from Lambda")</pre>
+<br/>
+在 Java 客户端无法把收到的 payload.asUtf8String() 转换成 Utf8 字符串，错误是<br/><br/>
+<blockquote>
+Exception in thread "main" java.io.UncheckedIOException: Cannot encode string.<br />
+    at software.amazon.awssdk.utils.StringUtils.fromBytes(StringUtils.java:578)<br />
+    at software.amazon.awssdk.core.BytesWrapper.asString(BytesWrapper.java:92)<br />
+    at software.amazon.awssdk.core.BytesWrapper.asUtf8String(BytesWrapper.java:100)
+</blockquote>
+<br/>
+改造前面的 Java 客户端为<br/><br/>
+<pre class="lang:default decode:true">SdkBytes payload = SdkBytes.fromUtf8String("{}");
+InvokeResponse response = client.invoke(request -&gt; request.functionName("test-bytes").payload(payload));
+System.out.println(new String(response.payload().asByteArray()));</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+x��f��H���WH+��U�I�MJI�=W�
+</blockquote>
+<br/>
+没错，那就是乱码，但只要能收到从 AWS Lambda 发过来的数据就成功了一大半，剩下的事只要解码，只要对 response.payload().asByteArray() 解压缩就行，用<br/><br/>
+<pre class="lang:default decode:true">String result = new String(GzipUtils.decompress(response.payload().asByteArray()));
+System.out.println(result);</pre>
+<br/>
+又看到输出为<br/><br/>
+<blockquote>
+Hello from Lambda
+</blockquote>
+<br/>
+现在感觉 Python AWS Lambda 对输出的处理有点凌乱，接着往下看，如果把压缩字节数组放到一个字典中返回会怎么样<br/><br/>
+<pre class="lang:default decode:true ">def lambda_handler(event, context):
+    return {
+        "statusCode": 200,
+        "body": gzip.compress(b"Hello from Lambda")
+    }
+</pre>
+<br/>
+客户端收到的 new String(response.payload().asByteArray() 内容是<br/><br/>
+<blockquote>
+{"errorMessage": "Unable to marshal response: 'utf-8' codec can't decode byte 0x8b in position 1: invalid start byte", "errorType": "Runtime.MarshalError", "requestId": "3c4b9a8e-1b2a-47d4-b764-87e42ac46015", "stackTrace": []}
+</blockquote>
+<br/>
+由此可见，在字典中的值不允许非 UTF8 字符集的内容。<br/><br/>
+小结：<br/><br/>
+<ol>
+    <li>Lambda 中直接返回字符串，如 <code>return "Hello from Lambda"</code>, 客户端获得的输出包含两端双引号，相当于 json.dumps("Hello from Lambda") 的输出。因此仅返回字符串时应该返回它的字节形式，即 <code>return b"Hello from Lambda"</code></li>
+    <li>Lambda 中直接返回的字节数组可以客户端用 response.payload().asByteArray() 原样获得，客户端作相应的反射解码就行</li>
+    <li>Lambda 中嵌入在字典中的非 UTF8 字符集的字节数组(如压缩后的数据)无法返回给客户端，需要进行手工 base64 编码</li>
+    <li>如果在 Lambda 中正常结果 <code>return gzip.compress(data)</code>, 异常时返回 <code>return {"error_code": "xxx", "error_message": "yyy"}</code>, 那么在客户端可以先检测收到的字节是码是 gzip, 否则就是错误响应</li>
+</ol>

@@ -1,0 +1,35 @@
+---
+title: WordPress 站点带宽几天就耗尽，都是 WP Gravatar Mini Cache 惹的祸
+url: /plugin-wp-gravatar-mini-cache-exhaust-bandwidth/
+date: 2011-12-27T09:34:20-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - WordPress
+tags: 
+  - wordpress
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4078 
+wpStatus: publish
+views: 755
+lastmod: 2021-06-17T16:34:56-05:00
+---
+
+有两个月里，本站点只能月头坚持七八天，基本处于瘫患状态。访问时就出现几行文字信息，现在不记得啦，大概就是域名被临时挂起了。后来才知道是因为有限的带宽已消耗怠尽，才不允许访问的。似乎这种情况还能给我带来点惊喜，我的网站有这么受欢迎吗！从 Google 的网站分析数据来看，并不是这样，那么就是有异常了。</p>
+<br/>
+站点停了几十天后，第一次找了下原因，似乎我站点上提供了几个文件下载量特别大，于是把那几个文件搬到文件分享网站上去分流，还是不奏效，没几天还是收到带宽将要耗尽的邮件通知。是不是别的几个服务器目录中的文件被人拼命下了呢，于是把它们改了名，还用插件对文件的下载进行了监控，未见异常。就这样，仍是没过几天，网站再一次被关闭了，距离月底还有几十天。<!--more--><br/><br/>
+其实关于是什么原因导致网站被关闭在 DirectAdmin 面板和邮件里说的很明白的，如 User unmi has been suspended for bandwidth overusage。<br/><br/>
+于是苦等了二十多天，本站自动开启后进到 DirectAdmin 管理界面里找原因，看带宽使用数据，才发现了问题的真正所在，截了几个图：<br/><br/>
+<img class="aligncenter size-full wp-image-4102" title="unmi.cc.suspend1" src="/wp-content/uploads/2011/12/unmi.cc.suspend1.png" alt="" width="689" height="264" /><br/><br/>
+这个图中显示了绝大多数的带宽占用都来自于对  /wp-content/plugins/wp-gravatar-mini-cache/iava/ 目录中图片文件的访问。<br/><br/>
+<p style="text-align: center;"><img class="size-full wp-image-4103 aligncenter" title="unmi.cc.suspend2" src="http://unmi.cc/wp-content/uploads/2011/12/unmi.cc.suspend2.png" alt="" width="534" height="204" /></p>
+<br/>
+看上图中 2011 12 02 日的访问，以及前一个月的情况，每天会产生 900 M 左右的流量，所有没几天这个站点就被禁用了，后来的一天 100 多 M 是正常的。<br/><br/>
+通过上面两个图，已经可以确定完全是大量的访问 /wp-content/plugins/wp-gravatar-mini-cache/iava/ 中的图片文件产生的，而这是由插件 <a href="http://wordpress.org/extend/plugins/wp-gravatar-mini-cache/">wp-gravatar-mini-cache</a> 生成的目录。这个目录起初是因为 GFW 的原因造成不能正常显示头像而安装上去，缓存头像用的，其实也正常工作了好多个月，现在却出问题了，所以必须把它移除。但是单纯的让那些图片不存在(404)，由于网站有其他插件的存在而并不能减少相关的流量，不得不采用的办法就是在 /wp-content/plugins/wp-gravatar-mini-cache/iava/ 目录中加上 .htaccess 文件，内容为：<br/><br/>
+Order deny,allow Deny from all<br/><br/>
+这样就禁止了对该目录中文件的由于，从而消除了无意义的流量损耗，才能让本站点真正快乐坚挺的扛下去。

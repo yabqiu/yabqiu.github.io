@@ -1,0 +1,140 @@
+---
+title: DWR 的 DWRUtil.addRows() 函数的使用
+url: /dwr-dwrutil-addrows-function/
+date: 2009-06-12T02:55:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - DWR
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 263 
+wpStatus: publish
+views: 565
+lastmod: 2021-09-03T20:51:20-05:00
+---
+
+使用 DWR 一个常用的操作就是取到的数据往表格里填充，这就是 DWR 的 DWRUtil.addRows() 操作了，本篇就是以例子详细说明这个函数的用法。而另一个移除所有表格行的操作 DWRUtil.removeAllRows() 使用简单就不多说明了。</p>
+<br/>
+开始的时候我们还是要对这个函数的原型加以说明，虽然有些俗套，但还是必要的：<br/><br/>
+<span style="color: #800080;">DWRUtil.addRows(id, array, cellfuncs, [options]);</span><br/><br/>
+描述:<br />
+向指定id的table元素添加行。它使用数组中的每一个元素(对象)在table中创建一行。然后用 cellfuncs 数组中的对应的函数创建一个列。单元格是依次用 cellfunc 根据没有数组中的元素创建出来的。<br/><br/>
+DWR1.1开始，addRows()也可以用对象(遍历对象的属性创建行)做为数据。如果你用一个对象代替一个数组来创建单元格，这个对象会被传递给cell函数。<!--more--><br/><br/>
+参数(前三个函数 id, array, cellfuncs 是必须的):<br/><br/>
+id: table元素的id(最好是tbody元素的id)<br />
+array: 数组(DWR1.1以后可以是对象，这种用法会有代码说明)，做为更新表格数据。<br />
+cellfuncs: 函数数组，从传递过来的行数据中提取单元格数据。每个函数对应于一列<br/><br/>
+options: 一个包含选项的对象(见下面)<br />
+选项包括:<br />
+rowCreator: 一个用来创建行的函数(例如，你希望个tr加个css). 默认是返回一个document.createElement("tr")<br />
+cellCreator: 一个用来创建单元格的函数(例如，用th代替td). 默认返回一个document.createElement("td")<br />
+escapeHtml: true 或 false，设定是忽略创建列时 cellfunc 函数中返回的 HTML 代码，默认为 true<br/><br/>
+现在来看个最常用的例子，两列的表格，代码中用到的 util.js 文件可以直接从 dwr.jar 中的 uk/ltd/getahead/dwr(1.x) 或 org/directwebremoting(2.x 及上) 目录中取得：<br/><br/>
+页面元素的代码如下，我们用 id="listTable" 标记了一个表格的 &lt;tbody&gt; 我们以后的 js 操作都是基于这个表格的。<br/><br/>
+<pre class="lang:default decode:true">&lt;script type='text/javascript' src='util.js'&gt;&lt;/script&gt;
+&lt;table border=1 width="200"&gt;
+    &lt;tr&gt;&lt;th&gt;ID&lt;/th&gt;&lt;th&gt;Name&lt;/th&gt;&lt;/tr&gt;
+    &lt;tbody id="listTable"&gt;&lt;/tbody&gt;
+&lt;/table&gt;</pre>
+<br/>
+JS 操作代码，你可以把这段对 DWRUtil.addRows() 函数的调用放在自定义的 function window.onload(){......} 中就能在文档加载完后自动调用。<br/><br/>
+<pre class="brush:js">//页面加载完后自动执行
+function window.onload(){
+     var arr = [{id:'1',name:'Unmi'},{id:2,name:'Kypfos'}]; //定义一个含有两个对象的数组
+     DWRUtil.addRows("listTable",arr,[
+           //创建第一列的函数，传入 arr 中的对象,返回单元格内容, 即 id 值
+           function(item){return item.id;}, <br/><br/>
+           //创建第二列的函数，传入 arr 中的对象,返回单元格内容, 即 name 值
+           function(item){return item.name;}
+         ]
+     );
+}</pre>
+<br/>
+说明：<br/><br/>
+要添加的行数由第二个数组参数 arr 的元素个数(arr.lengh) 决定的。如果第二个参数为一个对象，则该对象的每个属性对应一行。<br/><br/>
+每行要创建多少列是由第三个参数 cellfuncs 中的函数个数决定的。所以上面代码中的 cellfuncs 函数数组中可以是一个函数，也可以是三个甚至更多，只是显示出来对不齐的。只要记住这些函数的参数是 arr 中的元素，且 cellfuncs 不能为空。<br/><br/>
+如果 arr 是个普通的数组，addRows() 会遍历每一个数据元素：<br/><br/>
+<pre class="lang:default decode:true">var arr = ['Unmi','Kypfos'}]; //定义一个含有两个字符串的数组
+DWRUtil.addRows("listTable",arr,[
+      //创建第一列的函数，传入 arr 中的字符串,返回单元格内容, 即参数
+      function(item){return item;}, <br/><br/>
+      //创建第二列的函数，传入 arr 中的字符串,返回单元格内容, 即参数
+      function(item){return item;}
+    ]
+);</pre>
+<br/>
+下面我们来看第二个参数 array 为对象的情况时的代码：<br/><br/>
+<pre class="lang:default decode:true ">var obj = {line1:'1,Unmi',line2:'2,Kypfos'}; //定义一个对象，两属性 line1 和 line2
+DWRUtil.addRows("listTable",obj,[
+      //创建第一列的函数，传入 arr 中某个属性,返回单元格内容, 即逗号前部分
+      function(item){return item.split(',')[0]}, <br/><br/>
+      //创建第二列的函数，传入 arr 中某个属性,返回单元格内容, 即逗号后部分
+      function(item){return item.split(',')[1];}
+    ]
+);</pre>
+<br/>
+说明：<br/><br/>
+可以看到，要添加的行数由第二个对象参数 obj 的属性个数(for(i in obj))决定的。<br/><br/>
+创建行时传入到 cellfuncs 函数数组中函数的参数是当前遍历的对象 obj 的属性，如上面第一遍是 line1 属性，然而是 line2 属性。cellfuncs 中函数的个数也是不一定的，但不能为空。<br/><br/>
+如果要在某列显示一个 HTML 元素，比如一个链接，我们可以这样写某个列的创建函数。我们第一个例子的基础上修改 cellfuncs 参数中的第二个函数如下：<br/><br/>
+<pre class="lang:default decode:true">var arr = [{id:'1',name:'Unmi'},{id:2,name:'Kypfos'}]; //定义一个含有两个对象的数组
+DWRUtil.addRows("listTable",arr,[
+      //创建第一列的函数，传入 arr 中的对象,返回单元格内容，即 id 值
+      function(item){return item.id;}, <br/><br/>
+      //创建第二列的函数，传入 arr 中的对象,显示 name，并在 name 上加上一个连接
+      function(item){
+         var hLink = document.createElement("a");
+         hLink.setAttribute("href","show.do?id="+item.id);
+         hLink.innerHTML=item.name;
+         return hLink;
+      }
+    ]
+);</pre>
+<br/>
+简单点想，我们为什么不能在这个函数中直接返回 "&lt;a href='show.do?id="+item.id+"'&gt;"+item.name+"&lt;/a&gt;" 这么一段 HTML 代码吗？这个想法不错，只是默认情况下，它会把 &lt;a href='show.do?id=1'&gt;Unmi&lt;/a&gt; 字符串原样的显示在页面上，而不个链接。所以要引入 DWRUtil.addRows() 的可选的第四个参数中的一个属性 escapeHtml，把它设置为 false 就能显示超链接了。<br/><br/>
+还是在第一个例子的情况下，我们把 DWRUtil.addRows() 函数的调用代码改写成如下：<br/><br/>
+<pre class="lang:default decode:true">var arr = [{id:'1',name:'Unmi'},{id:2,name:'Kypfos'}]; //定义一个含有两个对象的数组
+DWRUtil.addRows("listTable",arr,[
+      //创建第一列的函数，传入 arr 中的对象,返回单元格内容，即 id 值
+      function(item){return item.id;}, <br/><br/>
+      //创建第二列的函数，传入 arr 中的对象,显示 name，并在 name 上加上一个连接
+      function(item){
+        return "&lt;a href='show.do?id="+item.id+"'&gt;"+item.name+"&lt;/a&gt;";
+      }
+    ],{escapeHtml:false}
+);</pre>
+<br/>
+到此为止，DWRUtil.addRows() 中的四个参数都用到了，具体的第四个参数 [options] 中还有两个函数属性 rowCreator 和 cellCreator 未涉及到。这两个属性分别是用来创建行(tr) 和单元格(td) 的，所以它们的默认行为分别是<br/><br/>
+return document.createElement("tr");  和 return document.createElement("td");<br/><br/>
+我们定制这两个创建函数可以对创建的行与单元格用样式来润色，或者在其中附着上事件。看如下的代码：<br/><br/>
+<pre class="lang:default decode:true ">var arr = [{id:'1',name:'Unmi'},{id:2,name:'Kypfos'},{id:3,name:'Fantaisa'}];
+DWRUtil.addRows("listTable",arr,[
+      function(item){return item.id;},
+      function(item){return item.name;}
+    ],{
+        rowCreator:function(options) { //自定义 tr 的创建行为
+            var row = document.createElement("tr");
+            row.style.backgroundColor = "rgb(" + (options.rowIndex * 50) + ",100,100)";
+            return row;
+        },
+        cellCreator:function(options) { //自定义 td 的创建行为
+                 var td = document.createElement("td");
+                 td.style.fontWeight = "bold";
+                 return td;
+             }
+           }
+     );</pre>
+<br/>
+上面两个函数 rowCreator 和 cellCreator 需传入一个对象参数，这个参数有七个属性，分别是 rowCreator cellCreator rowData rowIndex rowNum data cellNum。<br/><br/>
+我想，上面那么多例子，对于 DWRUtil.addRows() 函数能应用到的场合应该都述及到了。<br/><br/>
+参考：1. <a href="http://directwebremoting.org/dwr/browser/util/addRows.html" target="_blank" rel="noopener">DWR 官方的 addRows() 说明</a><br />
+        2. <a href="/botson/archive/2008/04/23/194952.html">http://www.blogjava.net/botson/archive/2008/04/23/194952.html</a><br />
+        3. <a href="http://hi.baidu.com/sayjava/blog/item/f2dc1ccbf8ab55f852664f19.html">http://hi.baidu.com/sayjava/blog/item/f2dc1ccbf8ab55f852664f19.html</a>

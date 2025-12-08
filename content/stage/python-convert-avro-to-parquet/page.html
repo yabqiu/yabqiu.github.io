@@ -1,0 +1,164 @@
+---
+title: Python 转换 Apache Avro 数据为 Parquet 格式
+url: /python-convert-avro-to-parquet/
+date: 2021-05-01T00:11:45-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2021/02/parquet-logo.jpeg"
+categories:
+  - Python
+tags: 
+  - Avro
+  - Parquet
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10737 
+wpStatus: publish
+views: 1254
+lastmod: 2021-05-01T00:11:45-05:00
+---
+
+前面尝试过用 Java 转换 Apache Avro 数据为 Parquet 格式，本文用 Python 来做同样的事情，并且加入 logicalType: date 类型的支持。本测试中的 Avro 数据也是由 Python 代码生成的。<br/><br/>
+重复一句 Avro 与 Parquet 的最粗略的区别：Avro 广泛的应用于数据的序列化，如 Kafka，它是基于行的格式，可被流式处理，而 Parquet 是列式存储格式的，适合于基于列的查询。<br/><br/>
+第一步，生成 Avro 数据文件 user.avro, 须先安装 fastavro<br/><br/>
+<blockquote>
+pip install fastavro
+</blockquote>
+<br/>
+<h3>生成 user.avro 的代码</h3><br/><br/>
+<!--more--><br/><br/>
+<pre class="lang:default decode:true ">from datetime import date<br/><br/>
+from fastavro import parse_schema, writer<br/><br/>
+schema = {
+    "namespace": "data",
+    "type": "record",
+    "name": "User",
+    "fields": [
+        {"name": "id", "type": "int"},
+        {"name": "name", "type": "string"},
+        {"name": "birthday", "type": {"type": "int", "logicalType": "date"}}
+    ]
+}<br/><br/>
+parsed_schema = parse_schema(schema)<br/><br/>
+records = [
+    {'id': 100, 'name': 'Tom', 'birthday': date.today()},
+    {'id': 101, 'name': 'Jerry', 'birthday': date(2019, 4, 24)},
+]<br/><br/>
+with open('user.avro', 'wb') as out:
+    writer(out, parsed_schema, records)</pre>
+<br/>
+产生了一个 user.avro, 用 avro-tools 查看其中的数据与 schema<br/><br/>
+<pre class="lang:default decode:true ">$ avro-tools getschema user.avro
+{
+  "type" : "record",
+  "name" : "User",
+  "namespace" : "data",
+  "fields" : [ {
+    "name" : "id",
+    "type" : "int"
+  }, {
+    "name" : "name",
+    "type" : "string"
+  }, {
+    "name" : "birthday",
+    "type" : {
+      "type" : "int",
+      "logicalType" : "date"
+    }
+  } ]
+}
+$ avro-tools tojson user.avro
+{"id":100,"name":"Tom","birthday":18747}
+{"id":101,"name":"Jerry","birthday":18010}</pre>
+<br/>
+user.avro 数据文件中的 birthday 能识别为 logicalType: date 类型<br/><br/>
+<h3>转换 Avro 为 Parquet</h3><br/><br/>
+先安装 pandas<br/><br/>
+<blockquote>
+pip install pyarrow pandas
+</blockquote>
+<br/>
+转换代码<br/><br/>
+<pre class="lang:default decode:true">import pandas as pd
+from fastavro import reader<br/><br/>
+
+def process(records):
+    df = pd.DataFrame.from_records(records)
+    df.to_parquet('user.parquet')<br/><br/>
+
+with open('user.avro', 'rb') as fo:
+    avro_reader = reader(fo)
+    rs = [r for r in avro_reader]
+    process(rs)</pre>
+<br/>
+用 parque-tools 查看生成的 user.parquet 文件的 schema 与数据<br/><br/>
+<pre class="lang:default decode:true">$ parquet-tools schema user.parquet
+message schema {
+  optional int64 id;
+  optional binary name (STRING);
+  optional int32 birthday (DATE);
+}<br/><br/>
+$ parquet-tools cat --json user.parquet
+{"id":100,"name":"Tom","birthday":18747}
+{"id":101,"name":"Jerry","birthday":18010}</pre>
+<br/>
+数据完全正确，并且 birthday 在 Parquet 的 schema 中仍然是 int32(DATE) 类型。<br/><br/>
+如果喜欢在 Python 中用 Apache 的 avro 库也没问题, 安装 avro<br/><br/>
+<blockquote>
+pip install avro
+</blockquote>
+<br/>
+读取记录的代码如下<br/><br/>
+<pre class="lang:default decode:true">from avro.datafile import DataFileReader
+from avro.io import DatumReader
+with open('user.avro', 'rb') as fo:
+    reader = DataFileReader(fo, DatumReader())
+    rs = [r for r in reader]
+    process(rs)</pre>
+<br/>
+更简单的使用 pandavro 包读取 avro 文件的方式<br/><br/>
+安装 pyarrow 和 pandavro<br/><br/>
+<blockquote>
+pip install pyarrow pandavro
+</blockquote>
+<br/>
+会连带安装多个包，用 pip freeze 看下<br/><br/>
+<blockquote>
+$ pip freeze<br />
+fastavro==1.4.0<br />
+numpy==1.20.2<br />
+pandas==1.2.4<br />
+pandavro==1.6.0<br />
+pyarrow==4.0.0<br />
+python-dateutil==2.8.1<br />
+pytz==2021.1<br />
+six==1.15.0
+</blockquote>
+<br/>
+读取 avro 的代码<br/><br/>
+<pre class="lang:default decode:true">import pandavro as pdx<br/><br/>
+rs = pdx.from_avro('user.avro')
+process(rs)</pre>
+<br/>
+<h3>最后汇总一下如何最简单的转换 Avro 文件为 Parquet 格式</h3><br/><br/>
+须安装的插件<br/><br/>
+<blockquote>
+pip install pyarrow pandas
+</blockquote>
+<br/>
+完整转换 avro 文件为 parquet 文件代码如下<br/><br/>
+<pre class="lang:default decode:true">import pandas as pd
+import pandavro as pdx<br/><br/>
+rs = pdx.from_avro('user.avro')
+df = pd.DataFrame.from_records(rs)
+df.to_parquet('user.parquet')</pre>
+<br/>
+执行代码只须 3 行。代码中虽未显式导入 pyarrow, 但内部会用到，所以必须安装 pyarrow<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://www.confessionsofadataguy.com/big-data-file-showdown-avro-vs-parquet-with-python/">Big Data File Showdown - Avro vs Parquet with Python</a></li>
+</ol>

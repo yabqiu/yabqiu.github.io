@@ -1,0 +1,70 @@
+---
+title: Scala 的参数检查与断言: require, assert, assume 和 ensuring
+url: /scala-parameter-check-and-assertion/
+date: 2016-12-12T13:40:29-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - Assert
+  - Predef
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7622 
+wpStatus: publish
+views: 3957
+lastmod: 2021-09-03T17:01:14-05:00
+---
+
+似乎 C/C++ 的编程人员相比于 Java 更偏爱于断言，JDK 1.4 才开始引入 assert 的支持，但默认是关闭的，需要用 <code>-ea</code> 编译选项打开，否则代码中的 <code>assert</code> 语句全被忽略，一般会在单元测试中开启该选项。简单回顾一下 JDK 自带的断言，它用两种写法<br/><br/>
+<blockquote>
+assert object != null;<br />
+assert object != null : "object can't be null";
+</blockquote>
+<br/>
+第一个参数是个 bool 值，断言失败只会笼统的抛出<code>java.lang.AssertionError</code> 异常，并不区分是在检验方法参数还是中间运算结果。严谨来说我们会希望参数检查不通过时抛出 <code>java.lang.IllegalArgumentException</code>; 而中间运算结果的断言不过希望抛出 <code>java.lang.AssertionError</code>, 最好是 <code>java.lang.IllegalStateException</code>。<br/><br/>
+很多时候我们不会去使用 <code>-ea</code> 编译选项，也就是主动放弃了 JDK 本身的断言功能。介于两个因素(不同的断言错误和默认的断言选项关闭)，Scala 为我们提供了更方便的参数检查与断言方法，它们来自于 <a href="http://www.scala-lang.org/api/rc2/scala/Predef$.html">Predef</a>, 其所定义的方法可以直接使用<br/><br/>
+<img class="aligncenter size-full wp-image-7623" src="/wp-content/uploads/2016/12/Scala-Predef-Require.png" alt="" width="606" height="110" /><!--more--><br/><br/>
+<code>require()</code> 方法用在对参数的检验上，不通过则抛出 <code>IllegalArgumentException</code><br/><br/>
+<img class="aligncenter size-full wp-image-7624" src="/wp-content/uploads/2016/12/Scala-Predef-Assert-Assume.png" alt="" width="564" height="211" /><br/><br/>
+<code>assert()</code> 或 <code>assume()</code> 方法在对中间结果或私有方法的参数进行检验，不成功则抛出 <code>AssertionError</code> 异常，至于是用 <code>assert()</code> 或是 <code>assume()</code> 方法，就各取所好了，Scala 给出的原则如下：<br/><br/>
+<blockquote>
+This method differs from assert only in the intent expressed: assert contains a predicate which needs to be proven, while assume contains an axiom for a static checker
+</blockquote>
+<br/>
+说的是 <code>assert()</code> 包含一下需证明的条件，<code>assume()</code> 代表的是一个公理性的论断。<br/><br/>
+下面是一个简单的应用示例：<br/><br/>
+<pre class="brush:scala">def foo(who: String): Unit = {
+  require(who != null, "who can't be null")
+  val id = findId(who)
+  assert(id != null)
+  //or
+  assume(id != null, "can't find id by: " + who)
+}</pre>
+<br/>
+上面可以看出，由于这些方法是定义在 <code>Predef</code> 中的，而 <code>Predef</code> 对象的方法默认是被静态引入了的，所以无需写成 <code>Predef.require()</code> 这样子。<br/><br/>
+<code>Predef</code> 的 assert, assume 也是可以 scalac 的 <code>-Xdisable-assertions</code> 进行关闭，记住默认是打开的。<br/><br/>
+说到这里，又不能不提一下 <a href="/scala-ensuring-usage/">Scala 中 ensuring 方法的使用说明</a>， <br/><br/>
+<img class="aligncenter size-full wp-image-7627" src="/wp-content/uploads/2016/12/Scala-Predef-Ensuring.png" alt="" width="546" height="123" /><br/><br/>
+这是一种略显怪异的语法，相当于是块外处理，断言未成功抛出的异常类型是 <code>java.lang.AssertionError</code>. 来自于之前的例子<br/><br/>
+<pre class="lang:default decode:true">private def widen(w: Int): Element = {
+  if(w &lt; width){
+    this
+  } ensuring(_.width &gt; 10) //这里欲断言返回结果 this，所有两 if 后的花括号不能省略
+  else {
+    val left = elem(' ', (w - width)/2, height)
+    var right = elem(' ', (w - width - left.width, height)
+    left beside this beside right
+  } ensuring(w &lt;= _.width) //断言的是上一行 left beside this beside right 结果
+} ensuring((w + _.width) &gt; 100) //ensuring 断言可以放在方法体外了，用来断言最终的结果</pre>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="http://maxondev.com/scala-preconditions-assert-assume-require-ensuring/">Scala preconditions (assert, assume, require, ensuring)</a></li>
+    <li><a href="http://unmi.cc/scala-ensuring-usage/">Scala 中 ensuring 方法的使用说明</a></li>
+</ol>

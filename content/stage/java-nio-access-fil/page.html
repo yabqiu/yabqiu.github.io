@@ -1,0 +1,94 @@
+---
+title: Java NIO 入门学习(读写文件)
+url: /java-nio-access-fil/
+date: 2010-03-18T05:51:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - NIO
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 215 
+wpStatus: publish
+views: 1570
+lastmod: 2021-09-02T11:09:14-05:00
+---
+
+我们用原有 IO 读写文件应该不会陌生了，顺带回顾一下，大致两种：</p>
+<br/>
+1. 在 InputStream 或 OutputStream 上读写字节或字节数组，读 InputStream 时用是否返回 -1 来判断是否到达末尾。<br />
+2. 包装成 Reader/Writer 可以直接读写字符串，进一步包装到 BufferedReader/BufferedWriter 就可以按行读写了。readLine() 时看是否返回 null 断定是否读完了最后一行。<br/><br/>
+现在我们要用 NIO 来读写文件，肯定是要用到 Channel 和 Buffer 了。一句话描述过程就是从 FileInputStream 得到的 FileChannel 中读取数据到 Buffer 中，再处理 Buffer 中的数据。看代码：<!--more--><br/><br/>
+<pre class="lang:default decode:true">public static void main(String[] args) throws Exception {
+    FileInputStream fis = new FileInputStream("C:/Java/jdk1.6.0_18/LICENSE");<br/><br/>
+    //得到文件通道
+    FileChannel fc = fis.getChannel();<br/><br/>
+    //分配与文件尺寸等大的缓冲区
+    ByteBuffer bf = ByteBuffer.allocate((int) fc.size());<br/><br/>
+    //整个文件内容全读入缓冲区，即是内存映射文件
+    fc.read(bf);<br/><br/>
+    //把缓冲中当前位置回复为零
+    bf.rewind();<br/><br/>
+    //输出缓冲区中的内容
+    while (bf.hasRemaining()) {
+        System.out.print((char) bf.get());
+    }
+}</pre>
+<br/>
+上面程序使用了一个与文件尺寸等大的缓冲区，正好能一次性把文件内容全部读入内存，如果文件过多将是十分耗费的内存的，所以我们可能须手工指定某个大小(如 1024,2048) 的缓冲区，然后分多次读入文件内容到缓冲区中。这时候程序就是下面那样子了：<br/><br/>
+<pre class="lang:default decode:true ">public static void main(String[] args) throws Exception {
+    FileInputStream fis = new FileInputStream("C:/Java/jdk1.6.0_18/LICENSE");<br/><br/>
+    // 得到文件通道
+    FileChannel fc = fis.getChannel();<br/><br/>
+    // 指定大小为 1024 的缓冲区
+    ByteBuffer bf = ByteBuffer.allocate(1024);<br/><br/>
+    // 读取通道中的下一块数据到缓冲区中
+    // 缓冲区的 position 即为当前缓冲区中最后有效位置
+    while (fc.read(bf) != -1) {<br/><br/>
+        //把缓冲中当前位置回复为零，前把缓冲区的 limit 设置为之前 position 值
+        bf.flip();<br/><br/>
+        // 输出缓冲区中的内容
+        while (bf.hasRemaining()) {
+            System.out.print((char) bf.get());
+        }<br/><br/>
+        // 清理缓冲区，准备再次读取数据
+        bf.clear();
+    }
+}</pre>
+<br/>
+留意对缓冲区的 rewind()/flip()/clear() 操作所产生的影响，即对 position/limit/mark 等标志的影响。最后提醒操作完之后，要关闭通道和输入流。<br/><br/>
+用 ByteBuffer 知道了怎么读文件内容(当然，还未涉及到中文内容)并打印到屏幕后，再来看看 NIO 怎么写文件：<br/><br/>
+<pre class="lang:default decode:true ">public static void main(String[] args) throws FileNotFoundException, IOException{
+    FileOutputStream fos = new FileOutputStream("c:/nio.tst");<br/><br/>
+    // 得到文件通道
+    FileChannel fc = fos.getChannel();<br/><br/>
+    // 指定大小为 1024 的缓冲区
+    ByteBuffer bf = ByteBuffer.allocate(1024);<br/><br/>
+    // 要写入文件的字符串
+    String greeting = "Hello, Java NIO";<br/><br/>
+    //把以上字符串逐字放入缓冲区
+    for (int i = 0; i &lt; greeting.length(); i++) {
+        bf.putChar(greeting.charAt(i));
+    }<br/><br/>
+    // 记得执行这个方法，使得 position=0, limit=30, 才能写入正确的数据
+    // 否则 position 为 30, limit 为 1024，将会把 30 之后的全部空数据(0) 填到文件中
+    bf.flip();<br/><br/>
+    // 缓冲区数据写入到文件中，会把缓冲区中从 position 到 limit 之间的数据写入文件
+    fc.write(bf);<br/><br/>
+    fc.close(); //关闭文件通道
+    fos.close(); //关闭文件输出流
+}</pre>
+<br/>
+同样的，如果是写入中文内容，也需要进行字符集的相关处理。执行后在 C 盘根目录下产生 nio.tst 文件，内容就是 Hello, Java NIO。此代码的关键之处就是对缓冲的 flip() 调用，你可以在调试模式下观察到 flip() 方法调用前后，缓冲区 bf 的 position/limit 属性的变化。试着注释掉 flip() 代码，看看两次生成的 nio.tst 文件内容是不是大相径庭。<br/><br/>
+所以，要用好 NIO，缓冲区的 mark/position/limit/capacity 属性应理解，以及 clear()/flip()/rewind() 分别会怎么影响到以上属性。<br/><br/>
+还有，虽然说通道是双向的，字面上不像流那样区分输入通道或是输出通道，但实际通道也存在只读或只写的特性，例如由 FileInputStream.getChannel() 获得的通道是无法写入内容的，由 FileOutputStream.getChannel() 获得的通道是不能读的，否则会抛出相应的异常 NonWritableChannelException 和 NonReadableChannelException。而且 Buffer 也存在着是否只读的属性。<br/><br/>
+前面的代码在这里只是说明用 NIO 读写文件应如何处理，并不是说比起用旧 IO 流式的写法效率就更高了。NIO 的高效率只会体现在有些时候，并非任何时候都优于旧 IO，那是块操作和字节操作的区别，用 NIO 时要小心内存。伸手就能摘到的梨用不着搬个凳子，何况旧 IO 实现起来还更简洁些呢!<br/><br/>
+参考：1. <a href="http://v64500.javaeye.com/blog/228397" target="_blank" rel="noopener">nio文件读写</a><br />
+        2. <a href="http://www.java2s.com/CN/Code/Java/File-Input-Output/UseNIOtoreadatextfile.htm" target="_blank" rel="noopener">使用NIO的读文本文件</a>

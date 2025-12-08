@@ -1,0 +1,220 @@
+---
+title: PHP 的 MVC 框架参考实现
+url: /php-mvc-reference-implementation/
+date: 2010-04-24T14:18:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PHP
+tags: 
+  - php
+  - mvc
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 193 
+wpStatus: publish
+views: 931
+lastmod: 2021-06-02T23:30:45-05:00
+---
+
+MVC 模式在 Java 中表现的尤为出众，不光 Swing 是按照 MVC 来设计的，而且 Java 的 Web 框架也是 MVC1、MVC2 的。MVC 模式对于开发维护确有许多好处，所以 PHP 的框架，如 Zend、Symfony，PHP 的产品 Wordpress 和 Joomla 都应用了 MVC 模式。PHP 不像 Servlet 那样有成熟的规范，如 web.xml、servlet、filter 等，但变换着一些把式同样能实现出优雅的 MVC 模式。这里简单介绍一下 PHP 是如何实现 MVC 模式，参照了了 Zend 的实现，我觉得还有许多改进的地方。说明的时候会拿它的各部分与 Struts1 的 MVC 相比较。</p>
+<br/>
+在 HTTP 环境中的 MVC 模式一句话描述就是：控制器根据 URI，把请求转给相应的 Action，由 Action 调用模型方法处理或得到数据，再选择相应的视图呈现界面。用过 Struts1 的请保留一些 Struts1 的实现原理，现在来看 PHP 的实现方式。<br/><br/>
+<!--more--><br/><br/>
+本例参考了 《PHP 高级程序设计 模式、框架与测试》一书中关于 MVC 的介绍，因本人受 Struts 等 MVC 的影响，所以对原书中的示例进行了大刀阔斧、面目全非的改造。代码结构如下：<br/><br/>
+<div align="center"><img src="/wp-content/uploads/2010/04/php_mvc.jpg" /></div>
+<br/>
+lib 目录中为本 MVC 的核心代码，application 目录中为应用代码，index.php 为入口文件兼具引导功能。<br/><br/>
+<strong>第一要素：统一口径(/index.php)：</strong><br/><br/>
+要让 HTTP 请求都能进入到我们的 MVC 框架来，需要流经一个统一的入口，这里就是 /index.php 文件，也就是必须全部用 <a href="http://ip/index.php/controller=user&amp;name=Unmi">http://<em>localhost/MvcSample</em>/index.php/controller=user&amp;name=Unmi</a>.. 这样的方式来访问，你可以用某种方式让其他的 php 文件被禁止直接访问。<br/><br/>
+<em>在 Struts1 中，是在 web.xml 中配置由 ActionServlet 处理所有的 *.do 的请求，Struts2 也是在 web.xml 中配置由 FilterDispatcher 来拦截所有的请求。而 PHP 没有像 Java Web 那么多的规范，但可以借助于 mod_rewrite 模块，将某些请求转发给 /index.php 处理，具体做法是在应用的根目录下建立一个 .htaccess 文件，内容为:</em><br/><br/>
+RewriteEngine On<br />
+RewriteRule !\.(js|gif|png|css)$ index.php<br/><br/>
+意思为除图片、js、css 文件都把请求定向给 index.php，当然 .htaccess 还是应该进行更优化配置的，还有就是在 Apache 中要启用 mod_rewrite 模块。有了 .htaccess 后，你随便输入些像 <a href="http://localhost/app/sfsf/sdfsdf"><em>http://localhost/MvcSample/sfsf/sdfsdf</em></a><em> 的地址都不会是 404 错误，而是全部转向到了 /index.php。/index.php 便成了一个统一的入口，后面发生的事情可受控了。</em><br/><br/>
+来看看 index.php 文件的内容：<br/><br/>
+<pre class="lang:default decode:true">&lt;?php
+//导入组件
+require_once('lib/front.php');
+require_once('lib/controller.php');
+require_once('lib/view.php');<br/><br/>
+//初始化前端控制器
+$front = new FrontController();<br/><br/>
+//转发请求到相应的控制器
+//route 就是路由的意思，就是分布请求，Struts 里是用 Dispatch 的概念
+$front-&gt;route();<br/><br/>
+//显示页面数据
+echo $front-&gt;getBody();</pre>
+<br/>
+<strong>第二要素：前端控制器(lib/front.php)</strong><br/><br/>
+在 index.php 中调用了前端控制器 FrontController 的 route() 路由方法，根据 URL 中的参数找到相应的控制器，调用相应的方法，获得数据并使用视图显示出来。例如有 URL <a href="http://ip/index.php?controller=user&amp;method=user_list&amp;name=Unmi">http://<em>localhost/MvcSample</em>/index.php?controller=user&amp;method=user_list&amp;name=Unmi</a>，在 route() 方法中就会调用 UserController 的 user_list 方法执行业务逻辑，获得相应的数据，最后使用视图 views/user/list.php 显示页面。<br/><br/>
+需要特别注意的是控制器名与脚本文件、视图文件的对应规则，可自行约定。脚本文件需要临时 include 进来，你也可以用 SPL 的自动加载机制来加载文件。看代码 front.php<br/><br/>
+<pre class="lang:default decode:true">&lt;?php<br/><br/>
+class FrontController{
+    protected $_controller, $_method, $_params, $_body;<br/><br/>
+    public function __construct(){
+        $this-&gt;_controller = $_REQUEST['controller'];
+        $this-&gt;_method = $_REQUEST['method'];
+        $this-&gt;_params = $_REQUEST;
+    }<br/><br/>
+    public function route(){
+        //引入控制器文件
+        include dirname(__FILE__) .'/../application/controllers/'.$this-&gt;_controller.'_controller.php';
+        $controller_class_name = ucwords($this-&gt;_controller . 'Controller');
+        $rc = new ReflectionClass($controller_class_name);
+        $controller = $rc-&gt;newInstance();
+        $view_file;
+        if($rc-&gt;isSubclassOf('AbstractController')){
+            if(!empty($this-&gt;_method)){
+                if($rc-&gt;hasMethod($this-&gt;_method)){
+                    $method = $rc-&gt;getMethod($this-&gt;_method);
+                    $view_file = $method-&gt;invoke($controller,$this-&gt;_params);
+                }else{
+                    throw new Exception("Method " . $this-&gt;_method . " not exists");
+                }
+            }else{
+                $view_file = $controller-&gt;execute($this-&gt;_params);
+            }
+            $view = new View();
+            //返回数据是数组则分散以键值对存到 View 里
+            if(is_array($controller-&gt;get_data())){
+                foreach($controller-&gt;get_data() as $key=&gt;$val){
+                    $view[$key] = $val;
+                }
+            }else{ //非数组则以 data 键存到 View 里
+                $view-&gt;data = $controller-&gt;get_data();
+            }
+            $result = $view-&gt;render($view_file);
+            $this-&gt;setBody($result);
+        }else{
+            throw new Exception("Not Extends AbstractController");
+        }
+    }<br/><br/>
+    public function getController(){
+        return $this-&gt;_controller;
+    }<br/><br/>
+    public function getParams(){
+        return $this-&gt;_params;
+    }<br/><br/>
+    public function getBody(){
+        return $this-&gt;_body;
+    }<br/><br/>
+    public function setBody($body){
+        $this-&gt;_body = $body;
+    }
+}</pre>
+<br/>
+这个 FrontController  的功能和 Struts1 的 ActiveServlet、DispatchAction 十分相似。因为 PHP 没有应用范围内全局的东西，像 Servlet 的 JVM，也没有像 JSP/ASP 那种 application 的变量，所以很多 PHP 的 MVC 框架都基本不用配置文件来配置 URL--Controller(Action)--View 间的映射关系。其实如果应用上内存高速缓存，如 Memcached，或内存数据数据库，如 Sqlit，我想也可以做出像 Struts 那样的 MVC 框架的。<br/><br/>
+<strong>第三要素：视图呈现数据(lib/view)</strong><br/><br/>
+在 FrontController 的 route() 方法最后要调用视图来渲染数据，显示出来。视图最终要关联到某个模板，可以是 php 文件，也可以用 php 专门的模板组件。看看 view.php 的代码，继承自 ArrayObject 来存放显示数据，<br/><br/>
+<pre class="lang:default decode:true">&lt;?php<br/><br/>
+class View extends ArrayObject{
+    public function __construct(){
+        parent::__construct(array(), ArrayObject::ARRAY_AS_PROPS);
+    }<br/><br/>
+    public function render($file){
+        ob_start();
+        include($file);
+        return ob_get_clean();
+    }
+}</pre>
+<br/>
+<strong>第四要素：所有控制器的基类(controller.php)</strong><br/><br/>
+<pre class="lang:default decode:true">&lt;?php
+//你的自定义控制器要继承这个抽象类
+abstract class AbstractController{
+    protected $_data;      //存储数据<br/><br/>
+    //默认的执行方法
+    abstract function execute($params);<br/><br/>
+    function get_data(){
+        return $this-&gt;_data;
+    }
+}</pre>
+<br/>
+你自己写的所有的控制器都必须继承自它，execute($params) 是 controller 的默认执行方法。这个控制器相当于 Struts1 中的 Action 类。<br/><br/>
+MVC 中的模型没什么好说的，它其实不影响到框架的实现，无论用什么框架，模型都是必不可少的。好啦，到现在，PHP MVC 的基础框架就完成了，开始来应用它了，应用代码在 application 目录中，还是分布来看具体的应用步骤：<br/><br/>
+<strong>第一步：实现自己的控制器(application/controllers/user_controller.php)<br />
+</strong><br/><br/>
+<pre class="lang:default decode:true">&lt;?php
+//用户控制器
+class UserController extends AbstractController {<br/><br/>
+    //默认执行方法，调用模型方法获取数据
+    //页面显示的数据设置给 $_data 进而传递给 View
+    public function execute($params){
+        include(dirname(__FILE__) . '/../models/user_model.php');
+        $user_model = new UserModel();
+        $this-&gt;_data = array('name'=&gt;$user_model-&gt;wo_am_i());
+        return dirname(__FILE__) . '/../views/user/index.php';
+    }<br/><br/>
+    //URL 中用 method=user_list 指定了参数则会执行这个方法
+    public function user_list($params){
+        include(dirname(__FILE__) . '/../models/user_model.php');
+        $user_model = new UserModel();
+        $this-&gt;_data = $user_model-&gt;get_user_list($params['id']);
+        return dirname(__FILE__) . '/../views/user/list.php';
+    }
+}</pre>
+<br/>
+请求参数中没有 method 参数时执行 execute() 方法，当 method=user_list 时执行上面的 user_list 方法，它们分别转向到不同的模板文件，一个是 views/user/index.php，另一个是 views/user/list.php 文件。<br/><br/>
+<strong>第二：实现你的 Model(application/model/user_model.php)<br />
+</strong><br/><br/>
+<pre class="lang:default decode:true">&lt;?php
+//用户模型，就是些业务方法，严格来讲模型是些数据对象
+class UserModel {
+    public function wo_am_i(){
+        return "Unmi";
+    }<br/><br/>
+    public function get_user_list($id){
+        $array = array('Unmi','Fantasia','Kypfos');
+        return $array;
+    }
+}</pre>
+<br/>
+这一步，前面也提过，没什么好说的，那是业务相关的东西，该怎么就怎么。<br/><br/>
+<strong>第三：显示界面的模板文件(application/views/user/index.php 和 application/views/user/list.php)</strong><br/><br/>
+模板仍然是属于视图的范畴，是视图的某种表现方式之一，这里用到的是 php 文件作为模板，请看那两文件内容：<br/><br/>
+<pre class="lang:default decode:true">&lt;!-- application/views/user/index.php --&gt;
+Hello, I am &lt;?php echo $this-&gt;name; ?&gt;!</pre>
+<br/>
+<pre class="lang:default decode:true ">&lt;!-- application/views/user/list.php --&gt;
+用户列表：
+&lt;table border="1" style="border-collapse: collapse"&gt;
+&lt;?php
+    foreach($this as $key=&gt;$value){
+        echo "&lt;tr&gt;&lt;td&gt;" . ($key+1) . "&lt;/td&gt;&lt;td&gt;$value&lt;/td&gt;&lt;/tr&gt;";
+    }
+?&gt;
+&lt;/table&gt;</pre>
+<br/>
+注意，在这两个 PHP 文件中是如何取得后台数据的。在控制器或模型类中可以有多个实现方法，而一个网站的 PHP 显示模板文件应该相对较多，所以模板文件进一步按控制器名再分一级目录来存放。<br/><br/>
+<strong>最后：看看执行效果</strong><br/><br/>
+假设你你的 PHP 站点部署后要通过 <a href="http://localhost/MvcSample/index.php">http://localhost/MvcSample/index.php</a> 来访问，比如直接把 MvcSample 目录拷到了 Apache 的 htdocs 目录中。<br/><br/>
+URL: <a href="http://localhost/MvcSample/index.php?controller=user">http://localhost/MvcSample/index.php?controller=user</a><br/><br/>
+页面显示：<br/><br/>
+Hello, I am Unmi!<br/><br/>
+说明：首先进到 index.php，调用 FrontController.route() 方法，根据 controller=user，且无 method 参数，定位到 UserController.execute() 方法，最后用 views/user/index.php 来显示数据。<br/><br/>
+URL: <a href="http://localhost/MvcSample/index.php?controller=user&amp;method=user_list&amp;name=Unmi">http://localhost/MvcSample/index.php?controller=user&amp;method=user_list&amp;name=Unmi</a><br/><br/>
+页面显示：<br/><br/>
+用户列表：<br/><br/>
+<table style="border-collapse: collapse;" border="1">
+<tbody>
+<tr>
+<td>1</td>
+<td>Unmi</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Fantasia</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Kypfos</td>
+</tr>
+</tbody>
+</table>
+<br/>
+说明：首先进到 index.php，调用 FrontController.route() 方法，根据 controller=user&amp;method=user_list 参数，定位到 UserController.user_list() 方法，最后用 views/user/list.php 来显示数据。<br/><br/>
+如果是用 PHP 实现一个像 Struts 那样的 MVC 框架，我想应该比 Struts 来得简单。有闲时值得一试。

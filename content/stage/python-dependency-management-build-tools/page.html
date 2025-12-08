@@ -1,0 +1,294 @@
+---
+title: Python 依赖管理与构建工具(CookieCutter, PyScaffold, PyBuilder, Poetry)
+url: /python-dependency-management-build-tools/
+date: 2021-09-30T22:28:45-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - CI
+  - Poetry
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11762 
+wpStatus: publish
+views: 1280
+lastmod: 2023-01-23T14:39:52-06:00
+---
+
+Python 历时这么久以来至今还未有一个事实上标准的项目管理及构建工具，以至于造成 Python 项目的结构与构建方式五花八门。这或许是体现了 Python 的自由意志。不像 Java 在经历了最初的手工构建，到半自动化的 Ant, 再到 Maven 基本就是事实上的标准了。其间 Maven 还接受了其他的 Gradle(Android 项目主推), SBT(主要是 Scala 项目), Ant+Ivy, Buildr 等的挑战，但都很难撼动 Maven 的江湖地位，而且其他的差不多遵循了 Maven 的目录布局。</p>
+<br/>
+回到 Python，产生过 pip, pipenv, conda 那样的包管理工具，但对项目的目录布局没有任何约定。关于构建很多还是延续了传统的 Makefile 的方式，再就是加上 setup.py 和 build.py 用程序代码来进行安装与构建。关于项目目录布局，有做成项目模板的，然后做成工具来应用项目模板。下面大概浏览一下四个工具的使用<br/><br/>
+<ol>
+    <li>CookieCutter</li>
+    <li>PyScaffold</li>
+    <li>PyBuilder</li>
+    <li>Poetry</li>
+</ol>
+<br/>
+<!--more--><br/><br/>
+<h3>CookieCutter 一个经典的 Python 项目目录结构</h3><br/><br/>
+<blockquote>
+$ pip install cookiecutter<br />
+$ cookiecutter gh:audreyr/cookiecutter-pypackage   # 以 github 上的 audreyr/cookiecutter-pypackage 为模板，再回答一堆的问题生成一个 Python 项目<br />
+......<br />
+project_name [Python Boilerplate]: sample<br />
+......
+</blockquote>
+<br/>
+最后由 <a href="https://cookiecutter.readthedocs.io/">cookiecutter</a> 生成的项目模板是下面的样子<br/><br/>
+<pre class="lang:default decode:true ">$ tree sample
+sample
+├── AUTHORS.rst
+├── CONTRIBUTING.rst
+├── HISTORY.rst
+├── LICENSE
+├── MANIFEST.in
+├── Makefile
+├── README.rst
+├── docs
+│   ├── Makefile
+│   ├── authors.rst
+│   ├── conf.py
+│   ├── contributing.rst
+│   ├── history.rst
+│   ├── index.rst
+│   ├── installation.rst
+│   ├── make.bat
+│   ├── readme.rst
+│   └── usage.rst
+├── requirements_dev.txt
+├── sample
+│   ├── __init__.py
+│   ├── cli.py
+│   └── sample.py
+├── setup.cfg
+├── setup.py
+├── tests
+│   ├── __init__.py
+│   └── test_sample.py
+└── tox.ini<br/><br/>
+3 directories, 26 files</pre>
+<br/>
+这大概是当前比较流行的目录结构的主体框架，主要元素是<br/><br/>
+<pre class="lang:default decode:true">$ tree sample
+sample
+├── Makefile
+├── README.rst
+├── docs
+│   └── index.rst
+├── requirements.txt
+├── sample
+│   ├── __init__.py
+│   └── sample.py
+├── setup.cfg
+├── setup.py
+└── tests
+    ├── __init__.py
+    └── test_sample.py</pre>
+<br/>
+项目 sample 目录中重复 sample 目录中放置 Python 源文件，<code>tests</code> 目录中是测试文件，再加一个 <code>docs</code> 目录放文档，README.rst, 其他的用于构建的 setup, setup.cfg 和 Makefile 文件。<br/><br/>
+这其实是一个很经典的 Python 项目结构，接下来的构建就用 <code>make</code> 命令了，输入 <code>make</code> 会看到定义在 Makefile 文件中的指令<br/><br/>
+<pre class="lang:default decode:true">$ make
+clean                remove all build, test, coverage and Python artifacts
+clean-build          remove build artifacts
+clean-pyc            remove Python file artifacts
+clean-test           remove test and coverage artifacts
+lint                 check style
+test                 run tests quickly with the default Python
+test-all             run tests on every Python version with tox
+coverage             check code coverage quickly with the default Python
+docs                 generate Sphinx HTML documentation, including API docs
+servedocs            compile the docs watching for changes
+release              package and upload a release
+dist                 builds source and wheel package
+install              install the package to the active Python's site-packages</pre>
+<br/>
+为使用上面的构建过程，需要安装相应的包，如 <code>tox</code>, <code>wheel</code>, <code>coverage</code>, <code>sphinx</code>, <code>flake8</code>, 它们都可以通过  <code>pip</code> 来安装。之后就可以 <code>make test</code>, <code>make coverage</code>, <code>make docs</code>，<code>make dist</code> 等。其中 <code>make docs</code> 可以生成一个很漂亮的 Web 文档。<br/><br/>
+另一个 Python 的  CookieCutter 模板 <a href="https://github.com/Kwpolska/python-project-template">https://github.com/Kwpolska/python-project-template</a><br/><br/>
+<h3>PyScaffold 创建一个项目</h3><br/><br/>
+<a href="https://pyscaffold.org">PyScaffold</a> 顾名思义，它是一个用来创建 Python 项目脚手架的工具，安装和使用<br/><br/>
+<blockquote>
+$ pip install pyscaffold<br />
+$ putup sample
+</blockquote>
+<br/>
+这样创建了一个 Python 项目，目录结构与前面  cookiecutter 所选的模板差不多，只不过它把源文件放在了 <code>src</code> 目录，而非 <code>sample</code> 目录。<br/><br/>
+<pre class="lang:default decode:true ">tree sample
+sample
+├── AUTHORS.rst
+├── CHANGELOG.rst
+├── CONTRIBUTING.rst
+├── LICENSE.txt
+├── README.rst
+├── docs
+│   ├── Makefile
+│   ├── _static
+│   ├── authors.rst
+│   ├── changelog.rst
+│   ├── conf.py
+│   ├── contributing.rst
+│   ├── index.rst
+│   ├── license.rst
+│   ├── readme.rst
+│   └── requirements.txt
+├── pyproject.toml
+├── setup.cfg
+├── setup.py
+├── src
+│   └── sample
+│       ├── __init__.py
+│       └── skeleton.py
+├── tests
+│   ├── conftest.py
+│   └── test_skeleton.py
+└── tox.ini</pre>
+<br/>
+整个项目的构建就要用 <code>tox</code> 这个工具了。<code>tox</code> 是一个自动化测试和构建工具，它在构建过程中可创建 Python 虚拟环境，这让测试和构建能有一个干净的环境。<br/><br/>
+<code>tox -av</code> 能显示出定义在 <code>tox.ini</code> 中所有的任务<br/><br/>
+<pre class="lang:default decode:true ">$ tox -av
+default environments:
+default   -&gt; Invoke pytest to run automated tests<br/><br/>
+additional environments:
+build     -&gt; Build the package in isolation according to PEP517, see https://github.com/pypa/build
+clean     -&gt; Remove old distribution files and temporary build artifacts (./build and ./dist)
+docs      -&gt; Invoke sphinx-build to build the docs
+doctests  -&gt; Invoke sphinx-build to run doctests
+linkcheck -&gt; Check for broken links in the documentation
+publish   -&gt; Publish the package you have been developing to a package index server. By default, it uses testpypi. If you really want to publish your package to be publicly accessible in PyPI, use the `-- --repository pypi` option.</pre>
+<br/>
+要执行哪个命令便用 <code>tox -e build</code>, <code>tox -e docs</code> 等, 下面是如何使用 PyScaffold 的动图<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/09/pyscaffold-demo.gif"><img class="aligncenter wp-image-11764" src="https://yanbin.blog/wp-content/uploads/2021/09/pyscaffold-demo.gif" alt="" width="799" height="508" /></a><br/><br/>
+在我体验 tox 命令过程中，每一步好像都比较慢，应该是创建虚拟机要花些时间。<br/><br/>
+<h3>PyBuilder</h3><br/><br/>
+最好再看另一个构建工具 <a href="https://pybuilder.io/">PyBuilder</a>， 它所创建出的目录结构很接近于 Maven, 下面来瞧瞧<br/><br/>
+<blockquote>
+$ pip install pybuilder<br />
+$ mkdir sample &amp;&amp; cd sample               # 项目目录需手工创建<br />
+$ pyb --start-project                              # 回答一些问题后创建所需的目录和文件
+</blockquote>
+<br/>
+完后看下它的目录结构<br/><br/>
+<pre class="lang:default decode:true">sample $ tree
+.
+├── build.py
+├── docs
+├── pyproject.toml
+├── setup.py
+└── src
+    ├── main
+    │   ├── python
+    │   └── scripts
+    └── unittest
+        └── python</pre>
+<br/>
+构建过程仍然是用 <code>pyb</code> 命令，可用 <code>pyb -h</code> 查看帮助，<code>pyb -t</code> 列出所有的任务, PyBuilder 的任务是以插件的方式加入的，插件配置在  <code>build.py</code> 文件中。<br/><br/>
+<pre class="lang:default decode:true">sample$ pyb -t
+Tasks found for project "sample":
+                  analyze -  Execute analysis plugins.
+                            depends on tasks: prepare run_unit_tests
+                    clean - Cleans the generated output.
+          compile_sources - Compiles source files that need compilation.
+                            depends on tasks: prepare
+                 coverage - &lt;no description available&gt;
+                            depends on tasks: verify
+                  install - Installs the published project.
+                            depends on tasks: package publish(optional)
+                  package - Packages the application. Package a python application.
+                            depends on tasks: compile_sources run_unit_tests(optional)
+                  prepare - Prepares the project for building. Creates target VEnvs
+        print_module_path - Print the module path.
+       print_scripts_path - Print the script path.
+                  publish - Publishes the project.
+                            depends on tasks: package verify(optional) coverage(optional)
+    run_integration_tests - Runs integration tests on the packaged application.
+                            depends on tasks: package
+           run_unit_tests - Runs all unit tests. Runs unit tests based on Python's unittest module
+                            depends on tasks: compile_sources
+                   upload - Upload a project to PyPi.
+                   verify - Verifies the project and possibly integration tests.
+                            depends on tasks: run_integration_tests(optional)
+sample$ pyb run_unit_tests</pre>
+<br/>
+PyBuilder 也是在构建或测试之前创建虚拟环境, 从 0.12.9 版开始可通过参数 <code>--no-venvs</code> 跳过创建虚拟环境这一步。使用了 <code>--no-venvs</code> 的话 Python 代码将会在运行  <code>pyb</code> 的当前 Python 环境中执行，所需的依赖将要手工安装。<br/><br/>
+项目的依赖也要定义在 <code>build.py</code> 文件中<br/><br/>
+<pre class="lang:default decode:true ">@init
+def set_properties(project):
+    project.depends_on('boto3', '&gt;=1.18.52')
+    project.build_depends_on('mock')</pre>
+<br/>
+随后在执行 <code>pyb</code> 创建虚拟环境时就会安装上面的依赖，并在其中运行测试与构建。<br/><br/>
+<h3>Poetry</h3><br/><br/>
+最后一个 <a href="https://python-poetry.org/">Poetry</a>, 感觉这是一个更为成熟，项目活跃度也更高的 Python 构建，它有着更强大的信赖管理功能，用 <code>poetry add boto3</code> 就能添加依赖，<code>poetry show --tree</code> 显示出依赖树。看下如何安装及创建一个项目<br/><br/>
+<blockquote>
+$ pip install poetry<br />
+$ poetry new sample
+</blockquote>
+<br/>
+注：Poetry 推荐的安装方式是<br/><br/>
+<blockquote>
+$ curl https://raw.githubusercontent.com/python-poetry/poetry/master/install-poetry.py | python3 -
+</blockquote>
+<br/>
+因为 <code>pip install poetry</code> 会往当前 Python 环境中安装它自己的许多依赖，可能会造成包版本的冲突。<br/><br/>
+它创建的项目比上面都简单<br/><br/>
+<pre class="lang:default decode:true">$ tree sample
+sample
+├── README.rst
+├── pyproject.toml
+├── sample
+│   └── __init__.py
+└── tests
+    ├── __init__.py
+    └── test_sample.py</pre>
+<br/>
+如果给 <code>poetry new</code> 带上 <code>--src</code> 参数，那么源文件目录 <code>sample</code> 会放在 <code>src</code>  目录下，即 <code>sample/src/sample</code>.<br/><br/>
+<code>poetry init</code> 会在当前目录中生成 <code>pyproject.toml</code> 文件，目录等的生成需手动完成。<br/><br/>
+它不关注文档的生成，代码规范的检查，代码覆盖率都没有。它的项目配置更集中，全部在 <code>pyproject.toml</code> 文件中，<code>toml</code> 是什么呢？它是一种配置文件的格式 <a href="https://github.com/toml-lang/toml">Tom's Obvious, Minimal Language</a>.<br/><br/>
+<code>pyproject.toml</code> 有些类似 NodeJS 的 <code>package.json</code> 文件，比如 poetry add, poetry install 命令的行<br/><br/>
+<ol>
+    <li>poetry add boto3       # 往 pyproject.toml 中添加对  boto3 的依赖并安装(add 还能从本地或 git 来安装依赖 ), 用 <code>--dev</code> 参数是给开发时用的</li>
+    <li>poetry install               # 将依照 pyproject.toml 文件中定义安装相应的依赖到当前的 Python 虚拟环境中，比如在 &lt;test-venv&gt;/lib/python3.9/site-packages 目录中，安装好模块后也可让测试用例使用</li>
+</ol>
+<br/>
+其他主要的<br/><br/>
+<ol>
+    <li>poetry build                # 构建可安装的 *.whl 和 tar.gz 文件</li>
+    <li>poetry shell                 # 会根据定义在 pyproject.toml 文件中的依赖创建并使用虚拟环境</li>
+    <li>poetry env use 3.11    # 使用某个特定的 Python  版本创建虚拟环境</li>
+    <li>poetry env list --full-path  # 列出虚拟环境的完整路径</li>
+    <li>poetry run pytest       # 运行使用 pytest 的测试用例，如 tests/test_sample.py</li>
+    <li>poetry run python -m unittest tests/sample_tests.py   # 运行 unittest 测试用例</li>
+    <li>poetry export --without-hashes --output requirements.txt  # 导出 requirements.txt 文件, --dev  导出含 dev 的依赖<br />
+或者用 poetry export --without-hashes &gt; requirements.txt</li>
+</ol>
+<br/>
+<code>poetry run</code> 能执行任何系统命令，只是它会在它要的虚拟环境中执行。所以可以想见，<code>poetry</code> 的项目要生成文档或覆盖率都必须用 <code>poetry run ...</code> 命令来支持 <code>sphinx</code>, <code>coverage</code> 或 <code>flake8</code>。 <br/><br/>
+在 sample 目录(与 pyproject.toml 文件平级)中创建文件 <code>my_module.py</code>, 内容为<br/><br/>
+<pre class="lang:default decode:true ">def main():
+    print('hello poetry')</pre>
+<br/>
+然后在 <code>pyproject.toml</code> 中写上<br/><br/>
+<pre class="lang:default decode:true ">[tool.poetry.scripts]
+my-script="sample.my_module:main"</pre>
+<br/>
+再执行<br/><br/>
+<blockquote>
+$ poetry run my-script
+</blockquote>
+<br/>
+就会输出 "hello poetry"。<br/><br/>
+通过对以上四个工具的认识，项目结构的复杂度由 cookiecutter-pyproject -&gt; PyScaffold -&gt; PyBuilder -&gt; Poetry 依次降低，使用的难度大略也是相同的顺序。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://medium.com/@cristobalcl/set-up-tests-linters-and-type-checking-in-python-projects-in-2020-9cc1b1e2750d">Set up tests, linters and type checking in Python projects in 2020</a>(介绍了 poetry 项目如何支持 coverage, lint 和 type checking)</li>
+    <li><a href="https://snyk.io/blog/dependency-management-tools-python/">Dependency management tools for Python</a></li>
+</ol>
+<br/>
+&nbsp;

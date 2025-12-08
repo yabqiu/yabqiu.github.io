@@ -1,0 +1,55 @@
+---
+title: 如何查找JBoss所发布的JNDI资源
+url: /jboss-locate-jndi-resource/
+date: 2006-01-09T10:22:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - JBoss
+  - JNDI
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 595 
+wpStatus: publish
+views: 1058
+lastmod: 2020-07-09T16:30:21-05:00
+---
+
+J2EE容器分为Servlet容器和EJB容器，例如Tomcat就是一个Servlet容器，WebLogic，WebSphere Application Server，JBoss就是EJB容器。他们都提供JNDI的支持，你可以把任何资源（如DataSource、JMS、Queue、Mail甚至是URL资源）都绑定到JNDI上下文中，这样可以降低组件间的耦合性。</p>
+<br/>
+通常的Servlet容器（如Tomcat、Resin）中的JNDI资源只能被容器中的程序查到、使用，而不能在容器外引用，也就是只能被容器所以进程所用；而EJB容器中的JNDI资源却可以在容器外，或者是另一台机器上的程序查找到并透明使用，因为EJB本来就是要为分布式服务的。EJB容器中的JNDI资源可以通过JNP、RMI、IIOP、T3或文件引用的方式发布出去。<!--more--><br/><br/>
+    每种EJB容器都会用某些JNDI协议，如JNP 是 JBOSS 提供的JNDI协议,IIOP 是 WebSphere 提供的JNDI协议, T3 是 Weblogic 提供的 JNDI 协议。<br/><br/>
+    如果你仔细看看JBoss启动时控制台上打印的信息，你就会看到，JBoss在发布JNDI资源时大概做了一些什么操作：（下面为抽出来的一些非连续信息）<br/><br/>
+    [WebService] Using RMI server codebase: <a href="http://unmi-e10c1a2b40:8083/">http://unmi-e10c1a2b40:8083/</a><br/><br/>
+    [NamingService] Started jndi bootstrap jnpPort=1099, rmiPort=1098, backlog=50, bindAddress=/0.0.0.0, Client SocketFactory=null, Server <a href="mailto:SocketFactory=org.jboss.net.sockets.DefaultSocketFactory@ad093076">SocketFactory=org.jboss.net.sockets.DefaultSocketFactory@ad093076</a><br/><br/>
+    [MailService] Mail Service bound to java:/Mail<br/><br/>
+    [ConnectionFactoryBindingService] Bound ConnectionManager 'jboss.jca:service=DataSourceBinding,name=DefaultDS' to JNDI name 'java:DefaultDS'<br/><br/>
+    [A] Bound to JNDI name: queue/A<br/><br/>
+    [testQueue] Bound to JNDI name: queue/testQueue<br/><br/>
+    [securedTopic] Bound to JNDI name: topic/securedTopic<br/><br/>
+    [UILServerILService] JBossMQ UIL service available at : /0.0.0.0:8093<br/><br/>
+    [DLQ] Bound to JNDI name: queue/DLQ<br/><br/>
+由上可以看出JBoss是通过RMI发布他的JNDI资源的，可以看到jnpPort为1099。并打印出所有绑定的JNDI名称（当然上面不是所有的）。那么我们在容器上与容器外（和另一台机上）如何引用上面的JNDI资源呢，下以查找消息队列queue/testQueue为例：<br/><br/>
+<pre class="brush:java">Hashtable env = new Hashtable();
+env.put(Context.INITIAL_CONTEXT_FACTORY, "org.jnp.interfaces.NamingContextFactory");<br/><br/>
+//下面这一行其实是可以不需要的
+//env.put(Context.URL_PKG_PREFIXES,"org.jboss.naming:org.jnp.interfaces");
+env.put(Context.PROVIDER_URL, "jnp://192.168.1.100:1099");<br/><br/>
+//如果本程序运行在与JBoss同一机器则可用下面省略形式
+//env.put(Context.PROVIDER_URL,"localhost");<br/><br/>
+Context ctx = new InitialContext(env);
+Queue queue = (Queue)ctx.lookup("queue/testQueue");</pre>
+<br/>
+就这么简单，在远端取到的Queue实例可以当是本地的一样用，在你看来没什么差别，记得要把 jboss.jar 和 jnp-client.jar 加到你的 CLASSPATH 中，如果是在JBoss的容器中查找叫做 queue/testQueue 的JNDI资源，就可以免了设置Context的环境变量，因为能直接从容器中获取，需要写的代码就只需要两行了：<br/><br/>
+<pre class="brush:java">Context ctx = new InitialContext();
+Queue queue = (Queue)ctx.lookup("queue/testQueue");</pre>
+<br/>
+当然在容器中要用JNDI上的资源一般不会写代码去查找，基本是作为引用资源配置到web.xml或别的配置文件中。<br/><br/>
+其他方式发布出来的资源我有时间再去看看，对于更细的东西Unmi也不是很清楚，天天忙工作，都没时间看书了。

@@ -1,0 +1,96 @@
+---
+title: Oracle 过程中执行动态 SQL 或 DDL 语句
+url: /oracle-procedure-execute-dynamic-sql-or-ddl/
+date: 2009-02-05T06:07:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Database
+tags: 
+  - database
+  - Oracle
+  - Sql
+  - ddl
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 297 
+wpStatus: publish
+views: 1301
+lastmod: 2021-09-02T11:47:37-05:00
+---
+
+如果你用的是 Oracle 8i 及以上的版本，那简单，在过程中用 execute immediate sql_str 就行, sql_str 是一个拼凑的 SQL 语句，但这个动态语句中带参数，或 Select 的结果要 into 到变量中时就要稍加留心一下了。而在 8i 以前的版本(谁还用这么古老的玩艺，总有些不得已的地方，老系统考虑升级成本遗留下来的，应用软件所伴随着的等)，都没法用 execute immediate，就得使用 DBMS_SQL 包来实现了</p>
+<br/>
+何谓动态 SQL 和 DDL 语句呢？通常在过程中要操作的表名、字段名都必须是明确的，否则编译过程时就要报错，但如果这两者也用变量名来表示就是动态的。DDL 就是数据库对象定义的操作，如 CREATE TABLE/VIEW/INDEX/SYN/CLUSTER....，及这些对象的删除、修改操作等等。<!--more--><br/><br/>
+比如在 Oracle 中有执行下面过程块的意图时，就要使用到 execute immediate 或是 DBMS_SQL 包了。当然下面的语句块是通不过的。<br/><br/>
+<pre class="lang:default decode:true ">declare
+    col_name varchar2(30) := 'name'; --假定表user存在name字段
+    col_val  varchar2(30);
+begin
+    select col_name into col_val --按照惯常思维，可能就会这么写
+        from user where age between 18 and 25;   --编译时会提示列名不存在的
+    drop table t2;  --不能直接执行 DDL 语句，后面查询 t2 编译器就无能为力了
+end;</pre>
+<br/>
+现在我们提出对上面问题的解，针对第一个 Select 语句来说明，并假设查询中还带有参数。块中的 DDL 也是类似的解法。例子因力图涵盖更多内容，所以稍显复杂，如果不需要 into (如 update/delete 语句)，或者不带参数，会简单多了，应不难简化。有两种处理方法，以 8i  为分水岭。<br/><br/>
+<strong>1. Oracle 8i 及以上版本的过程中处理动态 SQL 语句的办法</strong><br/><br/>
+<pre class="lang:default decode:true">declare
+    v_col_name varchar2(30) := 'name'; --字段名 name 用变量来表示
+    v_user_name  varchar2(30); --用户名称
+    v_user_age  integer;       --用户年龄
+    v_sql_str  varchar2(500);  --动态 SQL 语句
+begin
+    v_sql_str := 'select '||v_col_name||',age from users --字段名后面不能紧随 into 到变量了
+                   where age between :start_age and :end_age and rownum=1'; --两个命名参数<br/><br/>
+    --用 execute immediate 动态执行 SQL 语句
+    --注意其后的 into 字段值到变量的写法，还有 using 来代入参数
+    execute immediate v_sql_str into v_user_name,v_user_age using 18,25; <br/><br/>
+    dbms_output.put_line('第一个符合条件的用户：'||v_user_name||'，年龄：'||v_user_age);
+end;</pre>
+<br/>
+除此之外，在 Oracle 8i 及以上版本中，还能用 DBMS_UTILITY.EXEC_DDL_STATEMENT(ddl_sql_str) 执行 DDL 语句。<br/><br/>
+<strong>2. Oracle 8i 以下版本相应解决之道，用 DBMS_SQL 包，如 Oracle 8.0.5 中</strong><br/><br/>
+如果也用 execute immediate 的话编译过程时就会报如下错误：<br/><br/>
+Error: PLS-00103: 出现符号"IMMEDIATE"在需要下列之一时：<br />
+       :=.(@%;<br />
+       符号":=在"IMMEDIATE"继续之前已插入。<br />
+Line: 3<br/><br/>
+<pre class="lang:default decode:true">declare
+    v_col_name varchar2(30) := 'name'; --字段名 name 用变量来表示
+    v_user_name  varchar2(30); --用户名称
+    v_user_age  integer;       --用户年龄
+    v_sql_str  varchar2(500);  --动态 SQL 语句<br/><br/>
+    v_cursorid   integer; --游标 ID
+    v_dummy   integer; --定义一个哑元变量<br/><br/>
+begin
+    v_sql_str := 'select '||v_col_name||',age from users --字段名后面不能紧随 into 到变量了
+                   where age between :start_age and :end_age'; --两个命名参数<br/><br/>
+    v_cursorid := dbms_sql.open_cursor;   -- 为处理打开光标<br/><br/>
+    dbms_sql.parse(v_cursorid,v_sql_str,dbms_sql.NATIVE);  -- 分析SQL字符串<br/><br/>
+    dbms_sql.bind_variable(v_cursorid,'start_age',8);  --绑定变量 8 到 start_age
+    dbms_sql.bind_variable(v_cursorid,'end_age',25);  --绑定变量 25 到 end_age<br/><br/>
+    --定义输出的列,1为第1列,v_col_name任意，30是宽度，对于是VARCHAR2,CHAR类型要指定列宽
+    dbms_sql.define_column(v_cursorid,1,v_col_name,30);
+    dbms_sql.define_column(v_cursorid,2,v_user_age); --定义第2列，数字类型,无须指定列宽<br/><br/>
+    --也可用 execute_and_fetch 执行后立即 fetch 第一行，其后还能 fetch_rows获取其余记录
+    v_dummy := dbms_sql.execute(v_cursorid); --执行语句，<br/><br/>
+    while(dbms_sql.fetch_rows(v_cursorid)&gt;0) --有记录时，fetch_rows 总是返回 1，否则为0
+    loop
+        dbms_sql.column_value(v_cursorid,1,v_user_name); --获取第一列的输出值
+        dbms_sql.column_value(v_cursorid,2,v_user_age);  --获取第一列的输出值<br/><br/>
+        dbms_output.put_line('符合条件的用户：'||v_user_name||'，年龄：'||v_user_age);
+    end loop;<br/><br/>
+    dbms_sql.close_cursor(v_cursorid);  --关闭光标
+end;</pre>
+<br/>
+真的是很复杂啊，有条件还是赶紧升级你的数据库吧，越高越好。当然，如果你只是用来执行一个简单的语句，没有参数，不在乎返回值的话，那也不是很费事。<br/><br/>
+需注意一个问题，在执行 dbms_sql.define_column() 定义列时，如果指定了列宽，就会认为是字符串类型，并且编译时也要求字符串类型必须指定宽度。在用 dbms_sql.column_value() 接收输出值时必须符合前面的定义。比如在定义第 2 列 age 时也加了列宽参数，如<br/><br/>
+dbms_sql.define_column(v_cursorid,2,v_user_age,10); --对于非字符串类型加了列宽参数也能编译通过，只是被误认为字符串<br/><br/>
+那在上面代码中接收这个字段值 dbms_sql.column_value(v_cursorid,2,v_user_age) 时就会报类型不匹配的错误(<span style="color: #ff0000;">ORA-06562:   输出自变量的类型必须与列或赋值变量的类型匹配</span><span style="color: #000000;">)</span>，因为前面定义该列时，加了列宽就被认为是字符串类型，不能用数字型的 v_user_age 接收该字段值。<br/><br/>
+参考：1. <a href="http://topic.csdn.net/t/20030224/11/1459290.html" target="_blank" rel="noopener">EXECUTE Immediate 在oralce 8中出现的问题</a><br />
+        2. <a href="http://www.builder.com.cn/2007/1004/534550.shtml" target="_blank" rel="noopener">带参数动态执行sql语句:Execute Immediate</a><br />
+        3. <a href="http://taosst.javaeye.com/blog/284770" target="_blank" rel="noopener">关于dbms_sql的使用</a>

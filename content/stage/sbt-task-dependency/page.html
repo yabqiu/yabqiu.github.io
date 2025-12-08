@@ -1,0 +1,166 @@
+---
+title: sbt 任务间的依赖
+url: /sbt-task-dependency/
+date: 2016-04-23T00:08:10-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - sbt
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7230 
+wpStatus: publish
+views: 375
+lastmod: 2023-12-13T00:03:30-06:00
+---
+
+项目中的 <code>build.sbt</code> 中发现定义任务时有 <code>task2 &lt;&lt;= task1 map {...}</code> 这样任务依赖的写法, 这个  <code>&lt;&lt;=</code> 方法有点晦涩难懂, 读过 <code>sbt in action</code> 之后才知道这是 sbt 0.12 或之前的做法, sbt 0.13 之后不这么用了, 直接访问下 task1.value 就行, 因此前面可改写为 <code>task2 := {task1.value; ...}</code>, 这也使得定义任务依赖时与普通任务一致风格了. 新的写法得益于 Scala 2.10 的宏特性, 后面还会讲到.</p>
+<br/>
+对于依赖于多个任务的情况, 在 sbt 0.13 前面分别是这样的, 假定有三个 Task(task1, task2, 和 task3)<br/><br/>
+<blockquote>
+val task1 = taskKey[Int]("task 1")<br />
+val task2 = taskKey[Int]("task 2")<br />
+val task3 = taskKey[Int]("task 3")
+</blockquote>
+<br/>
+如果 task3 依赖于 task1 和 task 2<br/><br/>
+sbt 0.13 前后版本中的写法分别是<br/><br/>
+<pre class="lang:default decode:true">//sbt 0.12 及更早版本, 当然 sbt 0.13 中也能这样写
+//http://www.scala-sbt.org/0.12.2/docs/Detailed-Topics/Tasks.html#dependencies
+task3 &lt;&lt;= (task1, task2).map((t1, t2) =&gt; t1 + t2)  //task1, task2 并发执行<br/><br/>
+//sbt 0.13 后, 推荐这种新写法
+task3 := task1.value + task2.value //task1, task2 也是并发执行</pre>
+<br/>
+像任务的 <code>.value</code> 属性其实是一个宏定义, 源码<!--more--><br/><br/>
+<pre class="brush:scala">@compileTimeOnly("`value` can only be used within a task or setting macro, such as :=, +=, ++=, Def.task, or Def.setting.")
+def value: T = macro InputWrapper.valueMacroImpl[T]</pre>
+<br/>
+所谓的 Scala 的宏与 C/C++ 的宏效果很类似, 试想 sbt 在执行 task3 之前会有一个宏替换的操作, 在 <code>task1.value</code> ,<code>task2.value</code> 处执行 task1 和 task2 任务, 并把结果放在此处, 最后才把两结果相加. sbt 只对 task 或 setting 定义中的 <code>task.value</code> 进行宏处理, 如果在自定义的方法中也调用 <code>task.value</code> 你将会收到宏定义上一行一样的编译错误.<br/><br/>
+为说明宏的先于本身任务先执行, 可以看下面一个例子:<br/><br/>
+<pre class="brush:scala">task1 := {
+  println("task1"); 1
+}<br/><br/>
+task2 := {
+  println("task2"); 2
+}<br/><br/>
+task3 := {
+  if(false) {
+    println("task3")   //因为 if 条件是 false, 所以不会打印 task3
+    task1.value        //这个宏处理时执行的, 所以不受控于前面的 if 条件
+  } else { 
+    task2.value
+  }
+}</pre>
+<br/>
+执行后是这样的<br/><br/>
+<blockquote>
+➜  test sbt<br />
+[info] Set current project to test (in build file:/Users/yanbin/test/)<br />
+> show task3<br />
+task1<br />
+task2<br />
+[info] 2<br />
+[success] Total time: 0 s, completed Apr 22, 2016 10:54:20 PM<br />
+> inspect tree task3<br />
+[info] *:task3 = Task[Int]<br />
+[info]   +-*:task1 = Task[Int]<br />
+[info]   +-*:task2 = Task[Int]
+</blockquote>
+<br/>
+由上可见, 尽管 task1.value 写在了 if(false) 条件中, 但是它仍然被执行了, 这就是宏处理的功劳, 而其中的 `println("task3") 受控于 false 条件.<br/><br/>
+sbt 中被依赖的任务是并发执行的, 所以不因为谁写在前面就谁先执行,  看个例子<br/><br/>
+<pre class="brush:scala ">task1 := {
+  Thread.sleep(500)     //暂停半秒
+  println("task1"); 1
+}<br/><br/>
+task2 := {
+  println("task2"); 2
+}<br/><br/>
+task3 := task1.value + task2.value //尽管 task1 写在 task2 之前, 但 task2 的结果先打印出, 可知它们是并发执行的</pre>
+<br/>
+执行 task3<br/><br/>
+<blockquote>
+&gt; task3<br />
+task2<br />
+task1
+</blockquote>
+<br/>
+可见 task1 和  task2 是并发执行的, task2 并不需要等待 task1<br/><br/>
+<strong>那么如何让任务依赖有先后顺序呢?</strong> 可以使用 <code>dependsOn()</code> 方法了, 同样针对 <code>&lt;&lt;=</code> 和 <code>:=</code> 可以有两种写法<br/><br/>
+<pre class="lang:default decode:true">task3 &lt;&lt;= task2.dependsOn(task1)<br/><br/>
+task3 := task2.dependsOn(task1).value  //推荐这个新的写法</pre>
+<br/>
+这样 task2 排在 task1 之后执行, <code>dependsOn()</code> 可以串取起来, 并且它的原型是 <code>dependsOn(tasks: AnyInitTask*)</code> , 所以它可以同时接受多个参数(它们要并发执行了)<br/><br/>
+<strong>如何在内置任务之前做些事情呢?</strong> 把原任务呼出使其依赖别的任务, 比如在 <code>run</code> 之前执行某个任务, 同样列出新旧两种写法<br/><br/>
+<pre class="lang:default decode:true">run &lt;&lt;= (run in Runtime).dependsOn task2<br/><br/>
+run := (run in Runtime).dependsOn(task2).evaluated  //推荐这个新的写法</pre>
+<br/>
+sbt 官方文档 : <a href="http://www.scala-sbt.org/0.13.5/docs/Detailed-Topics/Tasks.html#modifying-an-existing-task">Modifying an Existing Task</a>.<br/><br/>
+<strong>如何让依赖间条件依赖?</strong> 像是动态依赖, 还是接回上面的例子, 想要在 <code>task</code> 执行结果为 100 时才执行 <code>run in Runtime</code>, 想像中的代码如下:<br/><br/>
+<pre class="brush:scala">run := {
+  if(task1.value == 100) {
+    (run in Runtime).evaluated
+  }
+}</pre>
+<br/>
+这里有两个问题: 1) task1 和  (run in Runtime) 是并发执行的, 2) (run in Runtime) 在判断条件之前的宏处理阶段就已经先执行完了. 所以 (run in Runtime) 无论如何都会执行, 我行我素, 完全与 if 条件无关.<br/><br/>
+针对于此, 我们有一个不甚完美的解决, 还是用 <code>dependsOn()</code> 方法, task1 在某种情况下调用 <code>sys.error("error occurs")</code>, 那么它后面的所有任务就不再执行了, 回到 sbt 控制后. 片断代码如下:<br/><br/>
+<pre class="brush:scala">task1 := {
+  Thread.sleep(500)
+  println(12); 1
+}<br/><br/>
+task1 := {
+  if(parallelExecution.value)
+    sys.error("can't run in parallel mode")
+  else 2
+}</pre>
+<br/>
+项目中有一个 Scala 文件<br/><br/>
+<pre class="brush:scala">object Main extends App {
+  println("Hello World.")
+}</pre>
+<br/>
+所以如果 run 正常执行了可以输出 <code>Hello World.</code>, 现在来看看条件控制执行 run<br/><br/>
+<img class="aligncenter size-large wp-image-7232" src="/wp-content/uploads/2016/04/sbt-sys.error_-800x314.png" alt="sbt-sys.error" width="800" height="314" /><br/><br/>
+<code>parallelExecution</code> 默认为 true, 所以第一次执行 task3 时 run 没被执行直接退到 sbt 控制台, 然后把 <code>parallelExecution</code> 设置为 false 后, task3 就能执行 run 任务了.<br/><br/>
+参见 sbt 官方文档: <a href="http://www.scala-sbt.org/0.13.5/docs/Detailed-Topics/Tasks.html#handling-failure">Handling Failure</a><br/><br/>
+sbt 0.13 中好像有一种更精确控制条件执行任务的办法: <a href="http://www.scala-sbt.org/0.13.5/docs/Detailed-Topics/Tasks.html#dynamic-computations-with-def-taskdyn">Dynamic Computations with Def.taskDyn</a>, 试了一下还是可以的:<br/><br/>
+<pre class="brush:scala">val stringTask = taskKey[String]("string task")
+val intTask = taskKey[Int]("int task")
+val myTask = taskKey[Unit]("my task")<br/><br/>
+stringTask := "dev"<br/><br/>
+intTask := {
+  println("intTask"); 5
+}<br/><br/>
+val dynamic = Def.taskDyn {
+  // decide what to evaluate based on the value of `stringTask`
+  if(stringTask.value == "dev")
+    Def.task {
+      3
+    }
+  else
+  // create the production task: only evaluated if the value
+  //    of the stringTask is not "dev"
+    Def.task {
+      intTask.value + 5
+    }
+}<br/><br/>
+myTask := {
+  val num = dynamic.value
+  println(s"Number selected was $num")
+}</pre>
+<br/>
+执行效果:<br/><br/>
+<img class="aligncenter wp-image-7235" src="/wp-content/uploads/2016/04/sbt-taskDyn-800x395.png" alt="sbt-taskDyn" width="600" height="296" /><br/><br/>
+方向是对了, 只是对于 InputTask <code>run in Runtime</code> 来说在 <code>Def.task</code> 中无处安身, 写成<br/><br/>
+<pre class="brush:scala">Def.task {
+  (run in Runtime).value
+}</pre>
+<br/>
+这样不会去执行内置的 <code>run</code> 任务, 在 <code>Def.task</code> 又不允许写成 <code>(run in Runtime).evaluated</code>. 目前还尚不清楚如何把动态任务应用到修改内置的 <code>run</code> 任务.

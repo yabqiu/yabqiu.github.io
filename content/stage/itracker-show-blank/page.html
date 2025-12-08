@@ -1,0 +1,125 @@
+---
+title: 对iTracker的小修正，使之正确显示描述中的空格（解决代码退格显示）
+url: /itracker-show-blank/
+date: 2007-09-27T10:47:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Bug
+  - iTracker
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 485 
+wpStatus: publish
+views: 404
+lastmod: 2019-11-30T10:11:53-06:00
+---
+
+ITracker 是基于 J2EE 的 issue/bug 跟踪系统，支持多用户、多项目、邮件通知等，更多特征请查看<a href="http://www.cowsultants.com/features.html">http://www.cowsultants.com/features.html</a> 。这里还有一个在线 <a href="http://www.cowsultants.com:8080/itracker">demo</a> 可以试用，用户名和密码都是 guest。</p>
+<br/>
+类似的产品还有 <a href="http://scarab.tigris.org/">Scarab</a>、<a href="http://opinionplugin.sourceforge.net/begin.html">ELIPS</a>、<a href="http://sourceforge.net/projects/bugtracker/">Bugtracker</a>、<a href="http://www.gjt.org/pkg/bugrat/">BugRat</a>、<a href="http://abuky.sunsite.dk/index.html">Abuky</a>、<a href="http://trackit.sourceforge.net/">TrackIt</a>、<a href="https://jtrac.dev.java.net/">jTrac</a>、<a href="http://www.bugzilla.org/">Bugzilla</a>、<a href="http://jtrac.info/">JTrac</a>、<a href="http://pdune.sourceforge.net/">Project Dune</a>.<br/><br/>
+iTracker确实是个好东西，但对一个东西过熟了，难免期望值就更高了。如果你用 iTracker 作过 Code Review 的话，你就会发现，你贴上去的代码，浏览显示出来的是代码中的空格少了，尤其是没了退格规范显示了。例如，你贴的代码是：<!--more--><br/><br/>
+<blockquote>int len = input.length();<br />
+for(int i = 0; i &lt; len; i++)<br />
+{<br />
+    char c = input.charAt(i);<br />
+    if(c == '\'')<br />
+        sb.append("''");<br />
+    else<br />
+        sb.append(c);<br />
+}</blockquote>
+<br/>
+结果显示出来的却成如下样子<br/><br/>
+<blockquote>
+int len = input.length();<br />
+for(int i = 0; i &lt; len; i++)<br />
+{<br />
+char c = input.charAt(i);<br />
+if(c == '\'')<br />
+sb.append("''");<br />
+else<br />
+sb.append(c);<br />
+}
+</blockquote>
+<br/>
+对于现像的准确描述是：<br />
+1。每行行首的空格(或者Tab)，不论多少个都被去除<br />
+2。每行行间的多个空格(或者Tab)，只会显示一个空格<br/><br/>
+如果提的恰好是关于代码规范的问题，那就没办法用来说明问题了。<br/><br/>
+这是有赖于HTML给我们的处理结果，记得最早我们使用HTML的时候大多都会产生这样一个迷惑，网页中如何输入空格？因为无论我们在HTML源文件输入多少个空格，浏览器总是对我们爱理不理，后来有大哥哥大姐姐告诉我们说，输入法切换到全角时，在HTML源文件中输入空格，浏览器中能正常显示，我们照做了，果然行，再后来我们知识进步了，知道 &amp;nbsp; 和&lt;pre&gt;&lt;/pre&gt;的功用，也可能体验到了全角空格可能在不同字符集下造成乱码。(有些题外话了)<br/><br/>
+下面就来说如何能让贴的代码显示时是它的原本样式，以及需作何修改。首先假设你下载的是 iTracker Express 版，并解压缩在 <span style="color: #cc0000;">C:\itracker_2.4.2\</span>，那么你的应用的包就是 <span style="color: #cc0000;">C:\itracker_2.4.2\jboss-3.2.5\server\default\deploy\itracker.ear</span> 包，我们下面就是要对这个包动手术了。<br/><br/>
+无论是 jar、war 还是 ear 文件，它们都是标准的 zip 文件，如果你的 winrar/winzip 没有关联与它们关联，那就用手动 Open With 吧。<br/><br/>
+刚开始我也没有意识到是上面的原因，翻了一下代码没发现有对输入文本每行行首去空格处理，在数据库表 issuehistorybean 中保存着完好格式。<br/><br/>
+我们先从页面显示数起，好看个端倪，用 winrar/winzip 解开 <span style="color: #cc0000;">itracker.ear\web-app.war</span> 看到 <span style="color: #cc0000;">view_issue.jsp </span>中显示描述的代码是：<br/><br/>
+<div class="dp-highlighter">
+&lt;it:formatHistoryEntry projectOptions="&lt;%= project.getOptions() %&gt;"&gt;&lt;%= history[i].getDescription() %&gt;&lt;/it:formatHistoryEntry&gt;
+</div>
+<br/>
+由此我们需要追踪到formatHistoryEntry标签实现，代码是 <span style="color: #cc0000;">itracker.ear\web-app.war\WEB-INF\lib\itracker_taglib.jar\cowsultants\itracker\web\taglib\FormatHistoryEntryTag.class</span>,反编译这个代码，可以看到在 doEndTag()方法中有         <br/><br/>
+<div class="dp-highlighter">
+<pre class="lang:default decode:true">if(ProjectUtilities.hasOption(1, projectOptions))   
+        text = HTMLUtilities.removeMarkup(text);   
+    else  
+    if(ProjectUtilities.hasOption(64, projectOptions))   
+        text = HTMLUtilities.escapeTags(text);   
+    else  
+        text = HTMLUtilities.newlinesToBreaks(text);  </pre>
+</div>
+<br/>
+最后一行，是对文本框中输入的回车转换成&lt;br&gt;正确换行用的，进入这个方法吧，在 <span style="color: #cc0000;">itracker.ear\ejb-app.jar\cowsultants\itracker\ejb\client\util\HTMLUtilities.class</span> 中 <span style="color: #cc0000;">newlinesToBreaks(String input)</span> 代码如下：<br/><br/>
+<div class="dp-highlighter">
+<pre class="lang:default decode:true">public static String newlinesToBreaks(String input)   
+{   
+    if(input == null || "".equals(input) || input.indexOf('\n') == -1)   
+        return input;   
+    StringBuffer buf = new StringBuffer();   
+    char chars[] = input.toCharArray();   
+    for(int i = 0; i &lt; chars.length; i++)   
+    {   
+        if(chars[i] == '\r')   
+            continue;   
+        if(chars[i] == '\n')   
+            buf.append("&lt;br&gt;");   
+        else  
+            buf.append(chars[i]);   
+    }   
+  
+    return buf.toString();   
+}  </pre>
+</div>
+<br/>
+（我们要注意在<span style="color: #cc0000;">itracker.ear\web-app.war\WEB-INF\lib\itrackerClient.jar\cowsultants\itracker\ejb\client\util</span>也有 <span style="color: #cc0000;">HTMLUtilities</span> 类，但页面标签并非调用这个类）<br />
+它忽略掉了行首空格和行间多个空格的显示，那么我们在这里要处理的就是把空格原本转换为 &amp;nbsp;，把Tab显示为四个或八个 &amp;nbsp;，我这里有四个 &amp;nbsp;表示一个Tab吧，所以把上面的 <span style="color: #cc0000;">newlinesToBreaks(String input)</span>代码改写成：<br/><br/>
+<div class="dp-highlighter">
+<pre class="lang:default decode:true  ">public static String newlinesToBreaks(String input)   
+{   
+    if(input == null || "".equals(input) || input.indexOf('\n') == -1)   
+        return input;   
+    StringBuffer buf = new StringBuffer();   
+    char chars[] = input.toCharArray();   
+    for(int i = 0; i &lt; chars.length; i++)   
+    {   
+        if(chars[i] == '\r')   
+            continue;   
+        if(chars[i] == '\n')   
+            buf.append("&lt;br&gt;");   
+    else if(chars[i] == '')  //把一个空格转换成一个 &amp;nbsp;   
+        buf.append("&amp;nbsp;");   
+    else if(chars[i] == '\t') //把一个Tab转换成四个 &amp;nbsp;   
+        buf.append("&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;");   
+        else  
+            buf.append(chars[i]);   
+    }   
+  
+    return buf.toString();   
+}  </pre>
+</div>
+<br/>
+    编译成 <span style="color: #cc0000;">HTMLUtilities.class</span> 文件，放在它原来的位置中，编译的时候需要在 classpath 中加上 <span style="color: #cc0000;">ejb-app.jar</span>，并且要编译成JVM1.4的目标代码（用 JDK1.4 编译或者高版本 JDK 编译时带上参数 <span style="color: #3333ff;">-source 1.4 -target 1.4</span>）。<br/><br/>
+    最后，如果你的itracker是运行着的，改变了 itracker.ear 后你会发现 jboss 会自动重启，再浏览一下原来bug中的描述是否正常，肯定没问题啦，除非你操作有误，或者就是我文字组织的实在太烂。

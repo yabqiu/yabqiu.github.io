@@ -1,0 +1,239 @@
+---
+title: JDBC 连接串中指定当前 schema(含 Oracle, DB2, PostgreSQL 和 SQLServer)
+url: /jdbc-conn-string-specify-current-schema/
+date: 2022-02-03T11:22:14-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Database
+tags: 
+  - Java
+  - JDBC
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12215 
+wpStatus: publish
+views: 7433
+lastmod: 2022-02-22T20:58:25-06:00
+---
+
+现在流行数据都有 Schema 的概念，一般作为数据库对象(表，函数，存储过程等)的命名空间。所以在数据库端往往存在 实例/数据库/Schema 这样层级划分。对于 DB2 和 Oracle 用客户端创建一个新的数据库并非易事，灵活的在数据库中较轻量的划分隔离空间的办法因数据库类型而异<br/><br/>
+<ol>
+    <li>MySQL:  创建数据库(create database), create schema 是 create database 的别名</li>
+    <li>PostgreSQL: create database 创建新的数据库，或在当前数据库下用 create schema 创建 schema</li>
+    <li>SQLServer: 和 PostgreSQL 一样的自由，create database 创建新的数据库，或在当前数据库下用 create schema 创建 schema</li>
+    <li>DB2： 用 create schema 创建新的 schema, 或创建数据库对象时直接加上前缀，create table abc.test1..., 没有 abc schema 则会自动创建</li>
+    <li>Oracle: create schema 较麻烦，涉及到 authorization. 但可以通过 create user 创建新用户后就有了对应的新 schema</li>
+</ol>
+<br/>
+下面我们来了解下在 PostgreSQL/SQLServer 中创建新的 schema，如何在 JDBC 连接字串中指定默认 schema, 同时也涉及到 database/schema/user 的创建以及在 SQL 中如何切换。<!--more--><br/><br/>
+<h3>MySQL 数据库</h3><br/><br/>
+创建新的数据库，要连接新的数据库只要在 JDBC 连接字串中把数据库改下就行<br/><br/>
+<pre class="lang:default decode:true ">create database new_db;
+use new_db;</pre>
+<br/>
+JDBC 连接串是<br/><br/>
+<blockquote>
+jdbc:mysql://host:3306/new_db
+</blockquote>
+<br/>
+<h3>PostgreSQL 数据库</h3><br/><br/>
+它默认的 Schema 是 <code>public</code>, 创建，删除和使用新的 Schema SQL 语句是<br/><br/>
+<pre class="lang:default decode:true ">create schema my_schema;
+set search_path=my_schema;<br/><br/>
+drop schema if exists my_schema cascade;  -- 其下的数据库对象一并被删除</pre>
+<br/>
+PostgreSQL 依据 <code>search_path</code> 来定位数据库对象，如上面用 <code>select * from t1</code> 时就会从 my_schema 中找 t1 表<br/><br/>
+search_path 还能设定多个 schema, 如果执行<br/><br/>
+<pre class="lang:default decode:true">set search_path=my_schema,public</pre>
+<br/>
+当执行 <code>select * from t1</code> 时先从 <code>my_schema</code> schema找是否有 <code>t1</code> 表，找到就用它，没找到的话再从 <code>public</code> schema 中找。所以两个  schema 中都有表 <code>t1</code> 的话，就 <code>my_schema</code> 的。也可指定 schema 来明确查询，如<br/><br/>
+<pre class="lang:default decode:true">select * from public.t1</pre>
+<br/>
+为当前用户指定 <code>search_path</code> 的 SQL 是<br/><br/>
+<pre class="lang:default decode:true">alter user user_name set search_path to 'my_schema'</pre>
+<br/>
+<div data-pm-slice="1 1 []" data-en-clipboard="true">假如用的是 <a href="https://jdbc.postgresql.org/documentation/publicapi/org/postgresql/ds/PGSimpleDataSource.html" rev="en_rl_none">PGSimpleDataSource</a> 连接池实现, 可以针对 dataSource 调用 setCurrentSchema() 方法来指定默认的 schema</div>
+<br/>
+<div data-pm-slice="1 1 []" data-en-clipboard="true">
+<pre class="lang:default decode:true">import org.postgresql.ds.PGSimpleDataSource;
+...
+PSSimpoeDataSource dataSource = new PSSimpleDataSource();
+dataSource.setCurrentSchema("my_schema");</pre>
+回到 JDBC 连接字符串，从 PostgreSQL 提供的 JDBC 驱动 <a href="https://jdbc.postgresql.org/documentation/94/connect.html#connection-parameters">9.4</a> 版本开始，可以用参数 currentSchema=my_schema
+<pre class="lang:default decode:true ">jdbc:postgresql://localhost:5432/mydatabase?currentSchema=my_schema</pre>
+java.sql.Connection 提供有一个  setSchema() 方法，它依赖于 JDBC 驱动的实现，对于 PostgreSQL 的驱动，调用
+<pre class="lang:default decode:true ">conn.setSchema(my_schema);</pre>
+也能有效的切换到想要的 schema，但用 <code>set schema my_schema</code>, 能直接影响到 search_path 和 current_schema 的值。
+下面是 search_path, current_schema, 引用函数，函数内部对表的引用的关系
+<pre class="lang:default decode:true">create table public.t1(c1 int);
+insert into public.t1(c1) values(1);<br/><br/>
+
+create schema my_schema;
+create table my_schema.t1(c1 int);
+insert into my_schema.t1(c1) values(2);<br/><br/>
+select * from t1  -- c1: 1<br/><br/>
+create or replace function my_schema.get_data()
+  returns table (c1 int)
+  language plpgsql
+as $$
+begin
+    return query select * from t1;
+end; $$<br/><br/>
+show search_path   -- public, public, "$user"
+select current_schema();  -- public
+select * from my_schema.get_data() -- c1: 1<br/><br/>
+
+set schema 'my_schema';
+show search_path;   -- my_schema 
+select current_schema();  -- my_schema 
+select * from my_schema.get_data() -- c1: 2<br/><br/>
+set schema 'public';
+show search_path;  -- public
+select current_schema(); -- public
+select * from my_schema.get_data() -- c1: 1<br/><br/>
+set search_path='my_schema'
+show search_path        -- my_schema
+select current_schema(); -- my_schema
+select * from my_schema.get_data()  -- c1: 2<br/><br/>
+set search_path to public, my_schema
+show search_path        -- public,my_schema
+select current_schema() -- public
+select * from my_schema.get_data();  -- c1: 1<br/><br/>
+set search_path to my_schema, public
+show search_path        -- my_schema, public
+select current_schema() -- my_schema
+select * from my_schema.get_data();  -- c1: 2</pre>
+设置 schema 时同时修改 search_path 的值为 schema。修改 search_path 后，第一个值将作为当前 schema 的值。函数或存储过程内部对其他对象引用是依据当前 schema, 与当前函数或存储过程的所属 schema 无关。
+<h3>SQL Server(又名 MS SQL)</h3>
+SQLServer 默认的 schema 是 dbo, 试过多种方式来指定新用户的默认 schema，但都无法工作
+<pre class="lang:default decode:true">create database sales
+use sales
+create login test_login with password='ksd23%sdf', default_database=sales;
+create user new_user for login test_login with default_schema=my_schema;
+exec sp_changedbowner 'new_user'<br/><br/>
+--exec sp_addrolemember 'db_owner', 'new_user'
+--sp_addlogin 'new_user', 'ksd23%sdf', 'master'
+--alter user new_user with default_schema=new_schema
+--SELECT name, default_schema_name FROM sys.database_principals</pre>
+执行上面的语，可以用 new_user 登陆，但是看到的 <code>select schema_name()</code> 仍然是 <code>dbo</code>, 虽然用
+<blockquote>
+select name, default_schema_name from sys.database_principals
+</blockquote>
+看到的 sales 数据库是 my_schema
+所以对于 SQL Server 只有一个办法就是使用表，存储过程的时候都加上 schema 前缀。不过 SQL Server 有一个聪明的地方就是在函数或存储过程中会访问与当前函数或存储过程所在 schema 中的资源。比如定义了函数
+<pre class="lang:default decode:true">CREATE FUNCTION new_schema.test_fn()  
+RETURNS TABLE  
+AS  
+RETURN   
+(  
+  select * from t1
+);  </pre>
+在用
+<pre class="lang:default decode:true ">select * from new_schema.test_fn()</pre>
+调用时，函数中的 <code>select * from t1</code> 就会访问 <code>new_schema.t1</code> 表，这是比较安全的。 DB2 和 PostgreSQL 中存储过程/函数中访问其他资源是以当前会话的 schema 为准。
+SQL Server 用 <code>drop schema new_schema</code> 删除时必须先把该 schema 下的资源全删除了才行。
+<h3>DB2</h3>
+DB2 中创建表或其他数据库对象时加上前缀就会自动创建相应的 schema, 如
+<pre class="lang:default decode:true">create table my_schema.t1(c1 integer);
+drop table my_schema.t1 if exits;</pre>
+ 也可以显式的创建 schema
+<pre class="lang:default decode:true">create schema my_schema;
+set schema my_schema;<br/><br/>
+create table t1(c1 integer); -- under my_schema<br/><br/>
+-- drop all objects under my_schema, then do
+drop schema my_schema restrict;</pre>
+会话中可以切换 schema, 删除 schema 前也必须确保它是空的
+JDBC 连接串中指定 schema
+<pre class="lang:default decode:true">jdbc:db2://localhost:50000/test_db:currentSchema=MY_SCHEMA;</pre>
+<strong><span style="color: #0000ff;">这里特别要注意，MY_SCHEMA 必须是全大写，并且最后的分号</span> <code>;</code> <span style="color: #0000ff;">必不可少</span></strong>。
+在 DB2 的函数或存储过程中也需要小心的情况是，其中定位资源时是用当前会话中的 schema, 而与怎么引用该存储过程或函数无关。下面的例子
+<pre class="lang:default decode:true">CREATE TABLE schema1.t1(c1 integer);  -- 同时创建 Schema SCHEMA1 
+creaet SCHEMA schema2;
+SET SCHEMA schema2;
+VALUES CURRENT SCHEMA;   -- SCHEMA2<br/><br/>
+CREATE OR REPLACE FUNCTION schema1.test_fn()
+  RETURNS TABLE (c1 integer)
+  
+  LANGUAGE SQL
+  READS SQL DATA
+  NO EXTERNAL ACTION
+  RETURN
+    SELECT c1 FROM t1;</pre>
+以上创建函数 <code>schema1.test_fn()</code> 无法成功，因为当前 schema 是 schema2,  而在 schema2 中不存在表 <code>t1</code>,错误是
+<blockquote>
+SQL Error [42704]: "SCHEMA2.T1" is an undefined name.. SQLCODE=-204, SQLSTATE=42704, DRIVER=4.26.14
+</blockquote>
+要想成功创建该函数，有两种方式
+<ol>
+    <li>用 set schema schema1 切换当前 schema 为 schema1</li>
+    <li>在 schema2 中创建一个表 <code>t1</code></li>
+</ol>
+我们采取第二种方式，保存当前 schema 为 schema2 的情况下，创建表 <code>t1</code>, 并插入数据以测试函数的行为
+<pre class="lang:default decode:true ">CREATE table schema2.t1(c1 integer);
+INSERT INTO schema1.t1 values(1);
+INSERT INTO schema2.t1 values(2);</pre>
+再执行以上的函数创建语句，就能建立 <code>schema1.test_fn()</code> 函数，测试
+<pre class="lang:default decode:true ">SET SCHEMA schema2;
+SELECT * FROM TABLE(schema1.test_fn());  -- C1: 2<br/><br/>
+SET SCHEMA schema1;
+SELECT * FROM TABLE(schema1.test_fn());  -- C1: 2</pre>
+由以上可知，DB2 内部默认时对哪个 schema 下对象的访问是编译期绑定的，这与 PostgreSQL 的运行期由当前上下文(schema) 动态绑定是不一样的。
+DB2 中除了在函数或存储过程中使用表时能根据上下文(current schema) 来定位，在函数或存储过程中调用其他函数或存储过程时的定位规则又不一样了。
+比如连接 DB2 后创建 schema <code>test</code>, 并且设置了它为当前 schema
+<pre class="lang:default decode:true">values current_schema; -- schema1<br/><br/>
+CREATE OR REPLACE PROCEDURE another_proc()
+LANGUAGE SQL
+BEGIN   
+END<br/><br/>
+CREATE OR REPLACE PROCEDURE test_proc()
+LANGUAGE SQL
+BEGIN   
+    CALL another_proc();
+END</pre>
+在创建 test_proc 时不能成功，出现如下错误
+<blockquote>
+SQL Error [42884]: No authorized routine named "ANOTHER_PROC" of type "PROCEDURE" having compatible arguments was found.. SQLCODE=-440, SQLSTATE=42884, DRIVER=4.26.14
+</blockquote>
+就是找不到先前创建的 <code>another_prod</code>, 原因是定位函数或存储过程与 current_schema 无关，而是依赖于 <code>current_path</code>
+<pre class="lang:default decode:true ">values CURRENT_PATH;
+</pre>
+输出为
+<blockquote>
+"SYSIBM","SYSFUN","SYSPROC","SYSIBMADM","DB2USER"
+</blockquote>
+TEST 不在其中，只要执行下面的 <code>set current path</code> 语句 <code>test_proc</code> 存储过程就能创建成功。
+<pre class="lang:default decode:true">SET CURRENT PATH = "SCHEMA1","SYSIBM","SYSFUN","SYSPROC","SYSIBMADM","DB2USER"
+</pre>
+注意 <code>SCHEMA1</code> 也是要全大写的。反应到 JDBC 连接字符串的话就需要 <code>currentFunctionPath=SCHEMA1;</code> 属性，因此针对 DB2，使用新的 Schema 的话完整的 JDBC 连接串就是
+<pre class="lang:default decode:true ">jdbc:db2://localhost:50000/test_db:currentSchema=MY_SCHEMA;currentFunctionPath=MY_SCHEMA;</pre>
+<h3>Oracle</h3>
+在 Oracle 中无论是创建新的 database 和 schema 都不是容易的事，但是我们可以创建一个新的用户，每个用户有自己的 schema。以下是创建新用户并授权的语句
+<pre class="lang:default decode:true">create user new_user identified by your_password;
+--grant create session to new_user;
+--grant unlimited tablespace to new_user;
+grant all privileges to new_user;
+create table new_user.t1(c1 integer);<br/><br/>
+alter session set current_schema=new_user
+create table t1(c1 integer);   -- under new_user
+drop user new_user cascade;</pre>
+Oracle 还允许级联的删除用户，连同其下的表或其他数据库对象一起删除。
+有了新用户后，新的 JDBC 连接串就是
+<blockquote>
+jdbc:oracle:thin:new_user/your_password@localhost:1521:ee
+</blockquote>
+而且也不存在像 PostgreSQL 和 DB2 中函数或存储过程引用对象的问题。
+同样，试图调用 java.sql.Connection 的 <code>conn.setSchema(new_user)</code> 也是不工作的，因为 Oracle 的驱动压根没实现该方法。
+<h3>总结</h3>
+<ol>
+    <li>MySQL 中 database 和 schema 是一个概念，它靠 database 来隔离数据库对象</li>
+    <li>Oracle 中采取用户来隔离数据库对象也还不错</li>
+    <li>PostgreSQL 的函数或存储过程中对未指定 schema 的数据库对象的访问的规则是在调用时动态绑定到当前会话中的 schema</li>
+    <li>DB2 的函数或存储过程中如有对未指 schema 的数据库对象的访问规则是在创建时静态绑定到当前会话的 schema</li>
+    <li>以上 #3 和 #4 中，函数或存储过程中内部默认的 schema 都与创建或调用函数或存储过程时的 schema 前缀无关</li>
+</ol>
+</div>

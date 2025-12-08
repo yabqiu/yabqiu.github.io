@@ -1,0 +1,68 @@
+---
+title: Java 语言的几个缺陷之二: equals() 比较字符串
+url: /java-language-defect-2-equals-compare-strings/
+date: 2016-07-09T00:50:45-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - java-wanted
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7348 
+wpStatus: publish
+views: 786
+lastmod: 2021-09-03T17:19:56-05:00
+---
+
+对于面向对象的语言不知道除了 Java 还有没别的语言会拿怎么比较两个字符串相等频频作为面试题来考. 原本是在编程语言中两个字符串内容是否相等时用 <code>==</code> 比较时却可能是不对的. 在 Java 中</p>
+<br/>
+<blockquote>
+"ab" == "ab"                                                                                   //true<br />
+"ab" == "new String("ab")                                                          //false<br />
+"ab" == String.value("ab")                                                         //true<br />
+new String("ab").equals(new String("ab"))                            //true<br />
+new String("ab").intern() == new String("ab").intern()      //true
+</blockquote>
+<br/>
+在 Java 中明明看到两个字符串内容一样用 <code>==</code> 进行比较多数时候不是你想要的结果, 只有用 <code>equals()</code> 方法才是王道.  使用 Java 的字符串必须了解它内部是怎么存储的. 比于上面的结果我不作细说, 主要涉及到字符串常量池及内部状态, <code>==</code> 比较引用, <code>equals()</code> 比较内容.<br/><br/>
+Java 还常常对 <code>equals</code> 比较字符串津津乐道, 而我仍然认为它是语言设计上的一个缺陷, 所以 JVM 上的其他编程语言如 Groovy, Scala 纷纷倒勾, 无一不是用<code>==</code> 来比较字符串的内容, 它们也提供字符串引用的比较, 但多少人实际关心两个字符串的引用是否相同呢, 反正字符串设计的是 Immutable 的.<br/><br/>
+若说是因为 Java 不支持操作符的重载, 但可以像 Scala, Groovy 那样在编译器上下功夫的. 最终我想依然是受累于 100% 源代码与二进制的兼容性, 改进的话会造成早先代码的行为错乱.<!--more--><br/><br/>
+Groovy 和  Scala  在比较两个字符串只管用 <code>==</code> 号, 它们能先判断引用是否相等, 然后再调用 <code>equals()</code> 方法来比较, 所以 <code>==</code> 比较内容时还不怕 <code>null</code> 值的干扰. Groovy 在调用 <code>equalse()</code> 之前会用 <code>compareTo</code> 先判断.<br/><br/>
+顺道一下, Groovy 想要比较引用时用 <code>is()</code> 方法, 如<br/><br/>
+<pre class="lang:default decode:true">groovy:000&gt; "ab".is("ab")
+===&gt; true
+groovy:000&gt; "ab".is(new String("ab"))
+===&gt; false</pre>
+<br/>
+而在 Scala 中要比较两引用时用 <code>eq</code> 或 <code>ne</code> 方法,如<br/><br/>
+<pre class="lang:default decode:true ">scala&gt; "ab" eq "ab"
+res13: Boolean = true<br/><br/>
+scala&gt; "ab" eq new String("ab")
+&lt;console&gt;:12: warning: comparing a fresh object using `eq' will always yield false
+ "ab" eq new String("ab")
+ ^
+res14: Boolean = false<br/><br/>
+scala&gt; val v = new String("ab")
+v: String = ab<br/><br/>
+scala&gt; "ab" eq v
+res15: Boolean = false<br/><br/>
+scala&gt; "ab" ne v
+res16: Boolean = true</pre>
+<br/>
+Scala 也很聪明, 如果用 eq 时有一边是刚 <code>new</code> 出来的对象, 那么肯定是 <code>false</code><br/><br/>
+C# 用 <code>Object.referenceEquals()</code> 来比较两个对象的引用, 看<br/><br/>
+<pre class="brush:c#"> char[] array = { 'a', 'b' };
+ "ab" == new String(array);                          //true
+ Object.ReferenceEquals("ab", "ab");                 //true
+ Object.ReferenceEquals("ab", new String(array));    //false</pre>
+<br/>
+其他类似于脚本的语言只会更忠实的用<code>==</code> 比较内容.<br/><br/>
+要说能寻找到不能用 <code>==</code> 比较字符串的踪迹那就是 C/C++ 了, 传统 C 字符串必须用  <code>strcmp</code> 函数比较, C++ string 类型用 <code>compare</code> 函数. 其实 std:string 已对 <code>==</code> 操作符进行了重载, 所以也可以放心的用 <code>==</code> 比较两字符串的内容.<br/><br/>
+字符串是那么如此最常用的一种结构, Java 却使得它们在比较内容上让人如此迷惑, 造就了一道经典面试题. 容易出错而违反常规的东西不是什么好玩意, 一切当顺其自然才是.

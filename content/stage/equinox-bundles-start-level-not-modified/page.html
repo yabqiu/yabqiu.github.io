@@ -1,0 +1,98 @@
+---
+title: 启动 Equinox 时出现 The System Bundle's start level can not be modified. 错误
+url: /equinox-bundles-start-level-not-modified/
+date: 2010-03-29T23:17:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Equinox
+  - OSGI
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 211 
+wpStatus: publish
+views: 1387
+lastmod: 2010-08-20T14:15:36-05:00
+---
+
+使用 Eclipse 的 OSGI 实现 Equinox，通过 config.ini 配置文件在命令行时启动 Equinox 时，可以进到 osgi&gt; 是提示符，但是除 org.eclipse.osgi_3.5.2.R35x_v20100126 是 STARTING 外，其他的 Bundle 都是 RESOLVED 状态，没法进入到 ACTIVE 状态，osgi&gt; start xxx 也不行。<br/>
+<br/>
+然后看目录 configuration 目录中生成的日志文件，是如下错误：<br/>
+<br/>
+<span style="color: #ff0000;">!SESSION 2010-03-30 11:40:40.156 -----------------------------------------------<br/>
+eclipse.buildId=unknown<br/>
+java.version=1.6.0_18<br/>
+java.vendor=Sun Microsystems Inc.<br/>
+BootLoader constants: OS=win32, ARCH=x86_64, WS=win32, NL=zh_CN<br/>
+Command-line arguments:  -console<!--more--></span><br/>
+<br/>
+<span style="color: #ff0000;">!ENTRY org.eclipse.osgi 4 0 2010-03-30 11:40:42.156<br/>
+!MESSAGE Startup error<br/>
+!STACK 1<br/>
+java.lang.IllegalArgumentException: The System Bundle's start level can not be modified.<br/>
+ at org.eclipse.osgi.framework.internal.core.StartLevelManager.setBundleStartLevel(StartLevelManager.java:371)<br/>
+ at org.eclipse.core.runtime.adaptor.EclipseStarter.installBundles(EclipseStarter.java:1060)<br/>
+ at org.eclipse.core.runtime.adaptor.EclipseStarter.loadBasicBundles(EclipseStarter.java:631)<br/>
+ at org.eclipse.core.runtime.adaptor.EclipseStarter.startup(EclipseStarter.java:301)<br/>
+ at org.eclipse.core.runtime.adaptor.EclipseStarter.run(EclipseStarter.java:175)<br/>
+ at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)<br/>
+ at sun.reflect.NativeMethodAccessorImpl.invoke(Unknown Source)<br/>
+ at sun.reflect.DelegatingMethodAccessorImpl.invoke(Unknown Source)<br/>
+ at java.lang.reflect.Method.invoke(Unknown Source)<br/>
+ at org.eclipse.equinox.launcher.Main.invokeFramework(Main.java:559)<br/>
+ at org.eclipse.equinox.launcher.Main.basicRun(Main.java:514)<br/>
+ at org.eclipse.equinox.launcher.Main.run(Main.java:1311)<br/>
+ at org.eclipse.equinox.launcher.Main.main(Main.java:1287)<br/>
+</span><br/>
+<br/>
+再看看 config.ini 文件中内容是<br/>
+<br/>
+<span style="color: #0000ff;">osgi.noShutdown=true</span><br/>
+<br/>
+<span style="color: #0000ff;">osgi.bundles=UserValidatorBundle_1.0.0.201003301134.jar@start,\<br/>
+             LdapValidatorBundle_1.0.0.201003301134.jar@start,\<br/>
+             DbValidatorBundle_1.0.0.201003301134.jar@start,\<br/>
+             org.eclipse.osgi_3.5.2.R35x_v20100126.jar@start</span><br/>
+<br/>
+<span style="color: #0000ff;">osgi.bundles.defaultStartLevel=4</span><br/>
+<br/>
+以为是不能设置 osgi.bundles.defaultStartLevel 属性，把该行去掉了，故障依旧；又以为框架包 org.eclipse.osgi_3.5.2.R35x_v20100126.jar 应该放在最前面，调了下个，一样的错误。<br/>
+<br/>
+古鸽到了 <a href="http://www.jetbrains.net/devnet/thread/282538" target="_blank">Running Eclipse RCP applications in IntelliJ 9</a>, 有人犯一样的错误，回复里面说啦：<br/>
+<br/>
+<span style="color: #800080;">Your start configuration contains the bundle org.eclipse.osgi, which is the system bundle for Equinox.</span><br/>
+<br/>
+<span style="color: #800080;">Please remove it from the list of bundles to be installed.</span><br/>
+<br/>
+做法就是在 osgi.bundles 中不要写那个 Equinox 的框架包 org.eclipse.osgi_3.5.2.R35x_v20100126.jar，config.ini 写成:<br/>
+<br/>
+<span style="color: #0000ff;">osgi.bundles=UserValidatorBundle_1.0.0.201003301134.jar@start,\<br/>
+             LdapValidatorBundle_1.0.0.201003301134.jar@start,\<br/>
+             DbValidatorBundle_1.0.0.201003301134.jar@start</span><br/>
+<br/>
+就 OK 啦，现在你的 Bundle 都可以激活了。<br/>
+<br/>
+你的 org.eclipse.osgi_3.5.2.R35x_v20100126.jar 包仍然需要躺在目录 plugins 目录中，只是它是核心的包，不需要你手工来加载。如果 org.eclipse.osgi_3.5.2.R35x_v20100126.jar 文件也不存在，启动时日志里你将会看到这样的信息：<br/>
+<div><span style="color: #ff0000;">!SESSION Tue Mar 30 11:46:24 CST 2010 ------------------------------------------<br/>
+!ENTRY org.eclipse.equinox.launcher 4 0 2010-03-30 11:46:24.484<br/>
+!MESSAGE Exception launching the Eclipse Platform:<br/>
+!STACK<br/>
+java.lang.RuntimeException: Could not find framework<br/>
+ at org.eclipse.equinox.launcher.Main.getBootPath(Main.java:880)<br/>
+ at org.eclipse.equinox.launcher.Main.basicRun(Main.java:498)<br/>
+ at org.eclipse.equinox.launcher.Main.run(Main.java:1311)<br/>
+ at org.eclipse.equinox.launcher.Main.main(Main.java:1287)<span style="color: #ff0000;"><span style="color: #ff0000;"> </span></span></span></div>
+
+<span style="color: #ff0000;"><span style="color: #ff0000;"><span style="color: #ff0000;"> <br/>
+<br/>
+</span></span> <br/>
+<br/>
+</span><br/>
+<br/>
+<span style="color: #000000;">参考: 1. <a href="http://www.jetbrains.net/devnet/thread/282538" target="_blank">Running Eclipse RCP applications in IntelliJ 9</a></span>

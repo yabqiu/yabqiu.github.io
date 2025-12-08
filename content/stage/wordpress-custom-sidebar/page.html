@@ -1,0 +1,84 @@
+---
+title: 打造自己的WordPress侧边栏[转]
+url: /wordpress-custom-sidebar/
+date: 2010-04-28T03:12:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - WordPress
+tags: 
+  - wordpress
+  - sidebar
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 186 
+wpStatus: publish
+views: 627
+lastmod: 2021-09-02T10:52:03-05:00
+---
+
+倘若自己把一些需要的widget直接写进WordPress侧边栏sidebar.php里，在打开网页时，会比在后台添加的widget速度要快一些。道理很简单，如果在后台添加那些widget, 相当于dynamic_sidebar，然后去get一些option之类的函数，会比直接写进sidebar.php里多一些查询和调用的过程。<br />
+而且，大家也发现了，在后台的提供的widget里并非都是你想要的。所以有时候自己写一些widget，还是蛮有趣的。</p>
+<br/>
+好比说，我现在想加一个友情链接（Blogroll）在侧边栏里，该怎么去写呢？ 很简单，在模板的sidebar.php里加上:<br/><br/>
+<pre class="lang:default decode:true">&lt;!--blogroll--&gt;
+&lt;div class="widget"&gt;
+    &lt;h2&gt;友情链接&lt;/h2&gt;
+    &lt;ul&gt;
+        &lt;?php wp_list_bookmarks('orderby=rand&amp;limit=10&amp;categorize=0&amp;title_li='); ?&gt;
+    &lt;/ul&gt;
+&lt;/div&gt;</pre>
+<br/>
+<div class="blockcode">
+<em><!--more--></em>
+</div>
+<br/>
+是不是很简单，当然，如果为了让这个显示的更美观一些，就要配合模板的CSS做一些调整了。在这段代码里，主要是调用了<em>wp_list_bookmarks</em>，后面的括号里相当于我们在后台设置的一些option,只是这里我们就可以把它写成固定形式，以方便快速的调用。<br/><br/>
+要找到这些option的设置并不难，在安装Wordpress的目录下，有一个wp-includes的文件夹，里面就有一个widget.php, 打开一看，立马就有一种豁然开朗的感觉了。^_^<br/><br/>
+接下来就可以随心所欲的添加里面所提供的所有widget了，把一些option写成你想要的，再打开页面来，加载的时间会有减少的。<br/><br/>
+试着添加个文件分类（categories）吧：在function <em>wp_widget_categories</em>，它可以用下拉菜单的形式<em>wp_dropdown_categories($cat_args);</em> 也可以用列表的形式<em>wp_list_categories($cat_args);</em>，如果是做成列表的话，添加下面的代码就可以了:<br/><br/>
+<div class="blockcode">
+<pre class="lang:default decode:true ">&lt;!-- categories --&gt;
+&lt;div class="widget"&gt;
+    &lt;h2&gt;文章分类&lt;/h2&gt;
+    &lt;ul&gt;
+        &lt;?php wp_list_cats('sort_column=name&amp;optioncount=0&amp;depth=1'); ?&gt;
+    &lt;/ul&gt;
+&lt;/div&gt;</pre>
+</div>
+<br/>
+如果有什么不会设置的widget呢，可以看看那些已经在sidebar里写了widget的模板，可以学到很多哦。<br/><br/>
+可是有些想实现的东西在widget.php里没有，那该怎么添加呢？ 比如说随机文章啊，最多阅读之类的。<br/><br/>
+添加随机文章，可以用到: <em>get_posts(’numberposts=10&amp;orderby=rand’);</em> 主要就是这个orderby=rand, 从数据库里拿出来的文章就会做一个随机的排序，具体代码如下:<br/><br/>
+<pre class="lang:default decode:true">&lt;!-- random posts--&gt;
+&lt;div class="widget"&gt;
+    &lt;h2&gt;随机文章&lt;/h2&gt;
+        &lt;ul&gt;
+            &lt;?php $posts = get_posts('numberposts=10&amp;orderby=rand');
+                foreach($posts as $post) {
+                    setup_postdata($post);
+                    echo '&lt;li&gt;&lt;a href="' . get_permalink(). '"&gt;' . get_the_title() . '&lt;/a&gt;&lt;/li&gt;';
+                }
+                $post = $posts[0];
+            ?&gt;
+        &lt;/ul&gt;
+&lt;/div&gt;</pre>
+<br/>
+至于最多阅读呢，会用到一个<a href="http://wordpress.org/extend/plugins/wp-postviews/" target="_blank" rel="noopener">WP-PostViews</a>的插件，启用后，在侧边栏里添加:<br/><br/>
+<div class="blockcode">
+<pre class="lang:default decode:true ">&lt;!-- most viewed posts --&gt;
+&lt;div class="widget"&gt;
+    &lt;h2&gt;最多阅读&lt;/h2&gt;
+    &lt;ul&gt;
+          &lt;?php get_most_viewed('post', 10); ?&gt;
+    &lt;/ul&gt;
+&lt;/div&gt;</pre>
+</div>
+<br/>
+如果想看到每天，每周，每月的最多浏览数，用一个<a href="http://wordpress.org/extend/plugins/wp-postviews-plus/" target="_blank" rel="noopener">WP-PostViews Plus</a>的插件就行了，主函数改成:&lt;?php get_timespan_most_viewed(’post’, 10, 30, true,false); ?&gt; 30 就是所查询的天数。这样你就可以做一个文章阅读量的排行榜了。周冠军，月冠军和年度总冠军将相继产生。 <br/><br/>
+当然我这里只是给一个思路，你可以写的更好。比如不同页面上用到的侧边栏也不尽相同，这样更好不是吗，当然你也一定能打造的更加完美的。有什么问题可以给我留言，也欢迎大家共同讨论，共同学习。<br/><br/>
+转自：<a href="http://wordpress.org.cn/thread-30805-1-1.html">http://wordpress.org.cn/thread-30805-1-1.html</a>

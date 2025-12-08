@@ -1,0 +1,117 @@
+---
+title: Struts2 使用 xslt 结果类型如何把字符串直接作为 Document 内容(终结)
+url: /struts2-xslt-string-document-final/
+date: 2011-04-12T06:47:14-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Struts
+tags: 
+  - xslt
+  - Struts2
+  - Struts
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3432 
+wpStatus: publish
+views: 676
+lastmod: 2021-09-03T13:55:11-05:00
+---
+
+前面两篇：<a href="http://unmi.cc/struts2-xsltresult-details" target="_blank" rel="noopener">Struts2 使用 XSLTResult 输出页面内容详解</a> 和 <a href="http://unmi.cc/struts2-xsltresult-string-to-document" target="_blank" rel="noopener">Struts2 使用 xslt 结果类型如何把字符串直接作为 Document 内容</a> 对 Struts2 如何使用 xslt 结果和怎么把字符串直接作为 Document 内容进行的讲解、研究和探讨。关于 Action 中的字符怎么直接作为 xslt 的内容已有一种方法，就是把 String 转换成 org.w3c.dom.Document 类型再送给 xslt 文件。</p>
+<br/>
+同时也发现 Struts2 使用了 <a href="http://oss.org.cn/ossdocs/framework/struts/2.0.0/core-apidocs/org/apache/struts2/views/xslt/StringAdapter.html#StringAdapter%28org.apache.struts2.views.xslt.AdapterFactory,%20org.apache.struts2.views.xslt.AdapterNode,%20java.lang.String,%20java.lang.String%29" target="_blank" rel="noopener">org.apache.struts2.views.xslt.StringAdapter</a> 了对字符串的处理，并提供了 parseStringAsXML 的开关选项(虽然是无从设置它的值)，但即使把 parseStringAsXML 设置成了 true，送给 xslt 文件的内容也是被包裹上了 &lt;result&gt; 根节点，xslt 中不得不用 &lt;xsl:template match="/result/你的根节点"&gt; 来应用模板。<br/><br/>
+通过在上一篇 <a href="http://unmi.cc/struts2-xsltresult-string-to-document" target="_blank" rel="noopener">Struts2 使用 xslt 结果类型如何把字符串直接作为 Document 内容</a> 里琢磨来琢磨去的探寻，着实又走了不少弯路，甚至是误入了歧途，但终究是找到了一个较好的办法来让 Action 直接送 String 表示的 Document 给 xslt 文件。那就是自定义 StringXSLTResult，<!--more-->继承自 <a href="http://www.jarvana.com/jarvana/view/org/apache/struts/struts2-core/2.2.1.1/struts2-core-2.2.1.1-javadoc.jar%21/org/apache/struts2/views/xslt/XSLTResult.html" target="_blank" rel="noopener">org.apache.struts2.views.xslt.XSLTResult</a>，只需要覆盖它的 getDOMSourceForStack(Object value) 方法。完整的 StringXSLTResult 类代码如下：<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.teststruts2.webcontext;<br/><br/>
+import java.io.StringReader;<br/><br/>
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.transform.Source;<br/><br/>
+import org.apache.struts2.views.xslt.XSLTResult;
+import org.xml.sax.InputSource;<br/><br/>
+/**
+ * 自定义的 XSLTResult，默认会把字符串直接转换为 Document,保持原来的结构
+ * &lt;br/&gt; 这和 StringAdapter 的 ParseStringAsXML 是不同的，不会包上 &lt;result&gt; 节点
+ * parseStringAsXML 默认为 true
+ * @see org.apache.struts2.views.xslt.StringAdapter
+ * @author Unmi
+ * CreateTime: Apr 12, 2011
+ */
+@SuppressWarnings("serial")
+public class StringXSLTResult extends XSLTResult {<br/><br/>
+    private boolean parseStringAsXML = true;
+    
+    public void setParseStringAsXML(boolean parseStringAsXML) {
+        this.parseStringAsXML = parseStringAsXML;
+    }<br/><br/>
+    @Override
+    protected Source getDOMSourceForStack(Object value) throws IllegalAccessException, InstantiationException {
+        
+        //是字符串且 parseStringAsXML 为 true 时，直接转换为 org.w3c.dom.Document
+        //出现异常或其他条件时沿用传统的 XSLTResult 处理方式
+        if(parseStringAsXML &amp;&amp; value instanceof String){
+            try {
+                DocumentBuilder builder = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+                value = builder.parse(new InputSource(new StringReader((String)value)));
+            } catch (Exception e) {
+                //throw new IllegalAccessException("Can't cast value to Document type.");
+                return super.getDOMSourceForStack(value);
+            }           
+        }
+        
+        return super.getDOMSourceForStack(value);
+    }
+}</pre>
+<br/>
+现在如何使用它呢，先要在 struts.xml 文件中配置：<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!DOCTYPE struts PUBLIC
+        "-//Apache Software Foundation//DTD Struts Configuration 2.0//EN"
+        "http://struts.apache.org/dtds/struts-2.0.dtd"&gt;<br/><br/>
+&lt;struts&gt;<br/><br/>
+    &lt;package name="unmi" namespace="/" extends="struts-default"&gt;
+       
+        &lt;result-types&gt;
+            &lt;!-- 定义 StringXSLTResult, 为区别与内置的 xslt, 我们命名为 sxslt --&gt;
+            &lt;result-type name="sxslt" class="cc.unmi.teststruts2.webcontext.StringXSLTResult"/&gt;
+        &lt;/result-types&gt;
+    
+        &lt;action name="user" class="cc.unmi.teststruts2.action.UserAction"&gt;
+            &lt;result type="sxslt"&gt; &lt;!-- 这里使用上面定义的 sxslt, 其他属性与 xslt 是一样的 --&gt;
+                &lt;param name="exposedValue"&gt;xmlString&lt;/param&gt;
+                &lt;param name="stylesheetLocation "&gt;/xslt/user.xslt&lt;/param&gt;
+                &lt;param name="noCache"&gt;true&lt;/param&gt;
+            &lt;/result&gt;
+        &lt;/action&gt;
+    &lt;/package&gt;<br/><br/>
+&lt;/struts&gt;</pre>
+<br/>
+现在 Action 中只需要向 xslt 直接输送字符串就行：<br/><br/>
+<div>
+<pre class="lang:default decode:true ">public String execute(){
+    String xmlString = "&lt;user&gt;&lt;name&gt;Unmi&lt;/name&gt;&lt;/user&gt;"
+    Map&lt;String, Object&gt; contextMap = ActionContext.getContext().getContextMap();
+    contextMap.put("xmlString", xmlString);
+    return SUCCESS;
+}</pre>
+</div>
+<br/>
+在 /xslt/user.xslt 里，&lt;user&gt; 就是它所要处理 Document 的根节点了，没有额外的 &lt;result&gt;，所以 user.xslt 的内容写成：<br/><br/>
+<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;xsl:stylesheet version="1.0"
+    xmlns:xsl="http://www.w3.org/1999/XSL/Transform"&gt;<br/><br/>
+    &lt;xsl:output method="xml" omit-xml-declaration="yes" /&gt;
+    
+    &lt;xsl:template match="/user"&gt;
+        &lt;xsl:value-of select="name"/&gt;
+    &lt;/xsl:template&gt;
+ 
+&lt;/xsl:stylesheet&gt;</pre>
+<br/>
+上面显示出来的就是 Unmi 了。总之，记住了根节点不再是 &lt;result&gt; 了。以后碰到直接调用 Service 获得的是 XML String 的时候就可以使用这个自定义的 sxslt 结果了。<br/><br/>
+参考：1. <a href="http://unmi.cc/struts2-xsltresult-details" target="_blank" rel="noopener">Struts2 使用 XSLTResult 输出页面内容详解</a><br />
+             3. <a href="http://unmi.cc/struts2-xsltresult-string-to-document" target="_blank" rel="noopener">Struts2 使用 xslt 结果类型如何把字符串直接作为 Document 内容</a>

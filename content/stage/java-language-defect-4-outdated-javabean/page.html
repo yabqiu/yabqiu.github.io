@@ -1,0 +1,79 @@
+---
+title: Java 语言的几个缺陷之四: 过时的 JavaBean
+url: /java-language-defect-4-outdated-javabean/
+date: 2016-07-09T03:35:14-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - java-wanted
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7353 
+wpStatus: publish
+views: 744
+lastmod: 2021-09-03T17:19:29-05:00
+---
+
+曾几何时在业务分层结构中的 VO 或 DTO 层充斥着无数的标准 JavaBean 类, 那些碍手脚的 getter/setter 方法简值不忍直视. 或许 JavaBean 设定规范的用意是当某些属性为只读时不提供 setter 方法, 而实际使用时, 因 getter/setter 都同时具备, 那么 JavaBean 的所有私有属性又何异于公有属性呢. </p>
+<br/>
+更别说对于某些形式的属性名, 若属性名为 <code>xCoordinate</code>  时, 它所对应的 getter 方法分别是 <code>getxCoordinate()</code>,一般的 IDE 都会为它自动生成 <code>getXCoordinate()</code> 方法, 这是错误的.  实际上 <code>getXCoordinate()</code> 对应的属性名是 <code>XCoordinate</code>. <br/><br/>
+所以 Play Framework 1 以及 Play Framework 2.4.6 之前的版本采用了字节码增强的技术, 实现了像 Objective-C 的 @property 的特性, 即只要声明公有属性, 编译器为该属性生成默认的 getter/setter 方法, 您也可以手工去覆盖个别默认的 getter/setter 方法.<br/><br/>
+因此在 Play Framework 中书写的的  model 类就只需要属性了, 像<br/><br/>
+<pre class="brush:java">public class User {
+  public int id;
+  public String name;
+  public String email;
+  public String address;
+}</pre>
+<br/>
+就这么简单, 想像一下如果我们为一个众多属性的 model 类补全所有的 getter/setter 方法读起来有多恐怖.<!--more--><br/><br/>
+现在 Play Framework 来到了 Java 8, 函数式气味越来越浓, 也就不推荐为 model 类的所有属性自动产生 getter/setter 方法. 我们需要尽量的不可变性, 所以上面的类就变成了<br/><br/>
+<pre class="brush:java">public class User {
+  public final int id;
+  public final String name;
+  public final String email;
+  public final String address;<br/><br/>
+  public User(int id, String name, String email, String address) {
+    this.id = id;
+    this.name = name;
+    this.email = email;
+    this.address = address;
+  }
+}</pre>
+<br/>
+把每一个属性都 <code>final</code> 化之后, 我们就必须加上一个构造函数去初始化所有的   final 属性, 这个构造函数就是一个冗余的样板代码(Boilerplate code) 了. 当然目前 Java 还没有办法解决这个构造函数了, 但我们不妨学学 Scala, Dart 语言为声明一个上面的类是怎么做的.<br/><br/>
+<strong>Scala 的  case class</strong><br/><br/>
+<pre class="lang:default decode:true">scala&gt; case class User(id: Int, name: String, email: String, address: String)
+defined class User<br/><br/>
+scala&gt; User(1, "Yanbin", "fantasia@sina.com", "Chicago").name
+res17: String = Yanbin</pre>
+<br/>
+Scala 只要 case class User(id: Int, name: String, email: String, address: String) 这一行语句便有了一切, 属性是不可变的, 有了默认的构造函数, equals(), hashCode(), toString() 方法都自动有了.<br/><br/>
+<strong>Dart</strong><br/><br/>
+<pre class="brush:java ">class User {
+  final int id;
+  final String name;
+  final String email;
+  final String address;<br/><br/>
+  User(this.id, this.name, this.email, this.address);
+}<br/><br/>
+var user = new User(100, "Yanbin", "fantasia@sina.com", "Chicago");
+print(user.id);
+user.name = "ChangeIt"; //报错 Uncaught TypeError: (intermediate value).set$name is not a function</pre>
+<br/>
+由上可以看出其实 Dart 与  Java 对比并未改善多少, 只不过是省去了像 <code>this.name=name</code> 那样的语句. 而且从上面的报错信息也能看出 dart 总是通过 set$xxx/get$xxx 来设置与获取值.<br/><br/>
+要说这方面算是 IntelliJ 的  Kotlin 向 Scala 学到不少, 来看看它是如何处理的<br/><br/>
+<strong>Kotlin</strong><br/><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; class User(val id: Int, val name: String, val email: String, val address: String)
+>&gt;&gt; var user = User(100, "Yanbin", "fantasia@sina.com", "Chicago")
+>&gt;&gt; user.name
+Yanbin</pre>
+<br/>
+我要举报  Kotlin 抄袭了 Scala, 也有 <code>var</code> 和 <code>val</code> 之分, 不同之处是在声明类是 Scala 默认的属性是 <code>val</code>, 而 Kotlin 则必须指明  <code>val</code>  或 <code>var</code>, 没有 val/var 的话属性不可访问. 还有 Kotlin 没有像 Scala 的 case class 那样生成 equals(), hashCode(), 和  toString() 方法.

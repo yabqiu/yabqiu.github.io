@@ -1,0 +1,131 @@
+---
+title: Python print 立即打印内容到重定向的文件
+url: /python-redirect-print-immediately/
+date: 2020-03-16T11:17:27-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - Buffer
+  - print
+  - flush
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9853 
+wpStatus: publish
+views: 2858
+lastmod: 2020-03-16T11:30:09-05:00
+---
+
+看到本文标题也许要奇怪了，Python 的 print 难道不是也上可以看到结果的吗？在 Python shell 下只要 <br/><br/>
+<blockquote>
+&gt;&gt; print('Hello world!')<br />
+Hello world!
+</blockquote>
+<br/>
+不就立马能看到控制台输出的 "Hello world!" 吗。或者是一个 Python 脚本文件 hello.py<br/><br/>
+<blockquote>
+import time<br />
+<br />
+for i in range(3):<br />
+    print('Hello {}'.format(i))<br />
+    time.sleep(3)
+</blockquote>
+<br/>
+然后执行 <code>python hello.py</code> 的话，我们也同样能看到在控制台下在预定的每 3 秒输出一行<br/><br/>
+<blockquote>
+Hello 0<br />
+Hello 1<br />
+Hello 2
+</blockquote>
+<br/>
+但执行下面的命令试图重定向输出到文件时的效果就不一样了<!--more--><br/><br/>
+<blockquote>
+$ python hello.py &gt; bb.txt &amp;<br />
+$ tail -f bb.txt
+</blockquote>
+<br/>
+我们希望内容输出到文件 bb.txt 中，并且 tail -f bb.txt 实时看到每 3 秒有一行输出的效果。但实际却不好呀我们所愿，tail -f bb.txt 在 9 秒钟内没有任何输出，最后一瞬间看到所有三行内容同时输出。这样的话, 我们在使用重定向 print 输出日志到文件的同时，就无法实时观测到执行效果。究其原因是 print 的内容重定向到文件时有一个缓冲区，只有缓冲区满后才会把当前缓冲区中所有内容输出到文件，这就造成了 tail -f 延迟。<br/><br/>
+知道了原因就好办了，那就把缓冲区大小设置为 0 吧，或者每次 print 后 flush 一次缓冲区强型输出就是了。因此可有如下解决办法<br/><br/>
+<h4>Python 3.3+ 版本</h4><br/><br/>
+在 Python 3.3 及后版本的  print 函数引进了一个 flush 参数，它默认为 False, 只要每次指定为 True 就行了<br/><br/>
+<pre class="lang:default mark:4 decode:true">import time<br/><br/>
+for i in range(3):
+    print('Hello {}'.format(i), flush=True)
+    time.sleep(3)</pre>
+<br/>
+现在<br/><br/>
+<blockquote>
+$ python hello.py &gt; bb.txt &amp;<br />
+$ tail -f bb.txt
+</blockquote>
+<br/>
+就能看到与直接执行 python hello.py 同样的效果了，输出是实时的，每 3 秒有一行输出。<br/><br/>
+<h4>Python 3.3 之前的版本(含 Python 2)</h4><br/><br/>
+Python 都要 3.9 了，Python 3.3 之前的版本几乎是不可能再用，但还是提一下在这之前如何刷新输出缓冲，见如下代码<br/><br/>
+<pre class="lang:default mark:6 decode:true">import time
+import sys<br/><br/>
+for i in range(3):
+    print 'Hello {}'.format(i)
+    sys.stdout.flush()    # 需要紧随每个 print 语句后执行一次
+    time.sleep(3)</pre>
+<br/>
+<h4>改变 print 的 flush 参数值为 True</h4><br/><br/>
+针对于 Python 3.3 +，如果想 print 重定向输出到文件时能看到实时效果的话，我们必须给每个 print 加上 flush=True 的参数。这有些麻烦，所以进一步，能否改变 print 的 flush  的参数默认值为 True 呢？没问题，瞧下面的代码<br/><br/>
+<pre class="lang:default mark:2,3 decode:true">import time
+import functools
+print = functools.partial(print, flush=True)<br/><br/>
+for i in range(3):
+    print('Hello {}'.format(i))
+    time.sleep(3)
+</pre>
+<br/>
+<h4>关闭输出缓冲区</h4><br/><br/>
+正如前面那样，有缓冲区时只要每次 flush 一下缓冲就立即输出，另一方面我们还可直接把缓冲区关闭掉，即缓冲区大小为 0. 需要设置环境变量 <code>PYTHONUNBUFFERED=TRUE</code><br/><br/>
+类 Unix 系统<br/><br/>
+<blockquote>
+export PYTHONUNBUFFERED=TRUE
+</blockquote>
+<br/>
+Windows 系统<br/><br/>
+<blockquote>
+set PYTHONUNBUFFERED=TRUE
+</blockquote>
+<br/>
+设置了 <code>PYTHONUNBUFFERED=TRUE</code> 后，执行最初的代码<br/><br/>
+<pre class="lang:default decode:true ">import time
+for i in range(3):
+    print('Hello {}'.format(i))
+    time.sleep(3)</pre>
+<br/>
+<blockquote>
+$ python hello.py &gt; bb.txt &amp;<br />
+$ tail -f bb.txt
+</blockquote>
+<br/>
+就能实时看到一行行的输出了，这种方式对于第三方的 Python 库中的 print 也管用。<br/><br/>
+还有一种设置 PYTHONUNBUFFERED=TRUE 的方式，就是启动 Python 解释器时加上 <code>-u</code> 参数，这种方式只影响当前程序<br/><br/>
+<blockquote>
+$ python -u hello.py &gt; bb.txt<br />
+$ tail -f bb.txt
+</blockquote>
+<br/>
+设置环境变量 <code>PYTHONUNBUFFERED=TRUE</code>  与 <code>-u</code> 参数都不具有代码侵入性，相比而言 <code>-u</code> 是一种更为完美的解决方式，因它不会影响到其他的 Python 程序。<br/><br/>
+最后小结一下无缓冲输出的各种解决方案<br/><br/>
+<ol>
+    <li>print('hello', flush=True)   指定 flush 参数为 True</li>
+    <li>print = functools.partial(print, flush=True)  改变 print  的 flush 默认值为 True</li>
+    <li>设置环境变量 PYTHONUNBUFFERED=TRUE</li>
+    <li>python -u 启动 PYTHONUNBUFFERED=TRUE  的 Python 解释器 </li>
+</ol>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://stackoverflow.com/questions/230751/how-to-flush-output-of-print-function">How to flush output of print function?</a></li>
+</ol>

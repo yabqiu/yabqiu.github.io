@@ -1,0 +1,51 @@
+---
+title: Linux 下仅用 iptables 实现为透明代理服务器
+url: /linux-iptables-transparent-proxy/
+date: 2008-12-15T00:15:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Linux/Unix
+tags: 
+  - Linux
+  - Proxy
+  - iptables
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 309 
+wpStatus: publish
+views: 6139
+lastmod: 2021-09-02T11:49:07-05:00
+---
+
+在网上 Google/Baidu  一下 “iptables 代理服务器” 多是讲的 iptables 结合 Squid 来实现透明代理的，用 iptables 把请求转发到 Squid  的代理端口上的，由于 Squid 有其局限性，不能支持 POP3、SMTP 和 P2P 协议。所以想在不影响多数人上网方式，集中控制的情况下，给自己单独开个小灶，用 iptables 在代理服务器上另辟一条溪径。</p>
+<br/>
+代理服务器有两网卡：<br/><br/>
+eth0 10.1.0.1  连接内部的网卡<br />
+eth1 202.x.x.x       能上互联网的网卡<br/><br/>
+建立脚本，比如 /usr/local/transparent_proxy.sh，内容如下：<!--more--><br/><br/>
+<pre class="lang:default decode:true ">#!/bin/sh
+echo "1"&gt;/proc/sys/net/ipv4/ip_forward
+/sbin/modprobe ip_tables
+/sbin/modprobe ip_nat_ftp<br/><br/>
+#如果这台机器是拨号上网的，EXTIF 可能是 ppp+
+EXTIF=eth1
+ANY=0.0.0.0/0<br/><br/>
+#比如说你个人的机器 ip 是 10.1.0.80 的话，这样配置就你一个人可用这条线路
+LAN=10.1.0.80/32<br/><br/>
+/sbin/iptables -F INPUT
+/sbin/iptables -F OUTPUT
+/sbin/iptables -F FORWARD
+/sbin/iptables -F -t nat<br/><br/>
+/sbin/iptables -P INPUT ACCEPT
+/sbin/iptables -P OUTPUT ACCEPT
+/sbin/iptables -P FORWARD ACCEPT<br/><br/>
+/sbin/iptables -t nat -A POSTROUTING -s $LAN -o $EXTIF -j MASQUERADE</pre>
+<br/>
+脚本用 chmod 改为可执行，然后执行这个脚本，还要确保 iptables 服务是启动了的。用 service iptables start 启动 iptables 服务。乐意的话你还可以把执行这段脚本的命令写到自启动脚本中，如 /etc/init.d/rc.local，注意不用的 Linux 发行版可能自启动脚本不一样的。<br/><br/>
+然后在客户机上设置网关和 DNS 为这台代理服务器 10.1.0.1 即可。OK，现在浏览器等各个软件都可以不用设置代理服务器了，协议也不受限制了。<br/><br/>
+参考：<a href="/tedeyang/archive/2007/11/23/162729.html" target="_blank" rel="noopener">1. 在ubuntu下配置代理服务器（iptables）</a>

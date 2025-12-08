@@ -1,0 +1,163 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第六章. Job 存储和持久化 (第五部分)
+url: /quartz-job-scheduling-framework-6-5/
+date: 2008-06-02T08:58:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/10/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 384 
+wpStatus: publish
+views: 832
+lastmod: 2020-03-22T11:45:45-05:00
+---
+
+<strong>十. 使用数据库存储 Scheduler 信息</strong><br/><br/>
+<strong>·加载 Job 到数据库中</strong><br/><br/>
+在前面有一节，"使用内存存储 Scheduler 信息"，我们谈到关于在使用 <span style="color: #800080;">RAMJobStore</span> 时如何加载 Job 和 Trigger 信息到内存中。那么  Job 和 Trigger 又是如何加载到数据库中的呢？存在以下几个方法把 Job 信息存入到数据库：<br/><br/>
+    · 在你的程序中加入 Job 信息<br/><br/>
+    · 使用 <span style="color: #800080;">JobInitializationPlugin<br />
+</span><br />
+    · 使用 Quartz Web 应用程序<br/><br/>
+我们在前面的 <span style="color: #800080;">RAMJobStore</span> 章节中讨论过前面两种途径。当它们用于 JDBC <span style="color: #800080;">JobStore</span> 时，并没有多大不同，只些许例外。首先，你需要知道，当使用这两个方法式，Job 信息是在数据库中的。甚至在你停止了程序后，这些信息仍然保留在数据库中。甚至是你不在你的程序中使用 <span style="color: #800080;">JobInitializationPlugin</span> 时，这些信息也还在数据库中。基于这一点，它是会从数据库中找寻 Job 信息。第八章涵盖了 <span style="color: #800080;">JobInitializationPlugin</span> 和常用的 Quartz 插件。<!--more--><br/><br/>
+最后一种方法可能是最有意思的。我们还没有谈论到 Quartz Web 应用，但是我们在第十三章 "Quartz 和 Web 应用" 是这么做的。在现在呢，你应当知道 Quartz Web 应用是一个基于浏览器的 GUI 程序，它是设计用来管理 Quartz Scheduler。它是由 Quartz 用户设计的，它为加入 Job 和 Trigger、启动和暂停 Scheduler 和发布其他功能呈现了一个相当好的界面。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>通过 SQL 工具加载 Job</strong>最后还有一种能用于加载 Job 信息的方法，但仅在这儿提一下，并不鼓励你去尝试它。这种方法是使用本地 SQL 直接操作 Quartz 表来尝试加载和/或修改信息。使用本地查询工具来加入 Job 信息到数据库中只在少数时候这样做，但是很容易破坏数据进而导致所有 Job 不能正确运行。无论如何应尽力避免用这种方法。</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<strong>十一. 使用 <span style="color: #800080;">JobStoreCMT</span></strong><br/><br/>
+许多我们在前面章节对 <span style="color: #800080;">JobStoreTX</span> 所说的和做的对于另一版本的 JDBC <span style="color: #800080;">JobStore</span>，<span style="color: #800080;">JobStoreCMT</span> 来也是适用的。再说，也没说所有，这不足为奇，因为它们都是 <span style="color: #800080;">JobStore</span> 类型，它们都是设计成用 JDBC 来与关系型数据库交互。也都是继承自共同的基类。<br/><br/>
+<span style="color: #800080;">JobStoreCMT</span> 被设计成参与到容器的事物边界内。这意味着容器创建一个 JTA 事物并使之对于 <span style="color: #800080;">JobStore</span> 可用。Quartz 与 <span style="color: #800080;">JobStore</span> 的交互保持在这个事物中。假如出现任何问题，Quartz 能给容器一个信号，它希望通过调用事物的 <span style="color: #800080;">setRollbackOnly()</span> 使事物回滚。<br/><br/>
+<strong>·配置 <span style="color: #800080;">JobStoreCMT</span></strong><br/><br/>
+同之前的 <span style="color: #800080;">JobStoreTX</span> 和 <span style="color: #800080;">RAMJobStore</span> 一样，要使用 JobStoreCMT 的第一步是告知 Scheduler 你打算用 <span style="color: #800080;">JobStoreCMT</span>。和以前类似，也是通过在 <span style="color: #800080;">quartz.properties</span> 文件中设置 <span style="color: #800080;">JobStore</span> 类属性来做到这一点的：<br/><br/>
+<span style="color: #800080;">org.quartz.jobStore.class = org.quartz.impl.jdbcjobstore.JobStoreCMT</span><br/><br/>
+如果属性文件中存在 <span style="color: #800080;">RAMJobStore</span> 行，要确保移除了它。<br/><br/>
+<strong>·配置 <span style="color: #800080;">DriverDelegate</span> 类</strong><br/><br/>
+你也是需要像为 <span style="color: #800080;">JobStoreTX</span> 所做的那样选择 <span style="color: #800080;">DriverDelegate</span>。Quartz 依靠一个 <span style="color: #800080;">DriverDelegate</span> 与给定的数据库通信。代理负责了与 JDBC Driver，也就是数据库的所有通信。<br/><br/>
+回到表 6.2 中的 <span style="color: #800080;">DriverDelegate</span> 列表，并基于你的数据库平台和环境选择一个。要加 MS SQLServer 代理到 <span style="color: #800080;">quart.properties</span> 文件，那就加入下一行：<br/><br/>
+<span style="color: #800080;">org.quartz.jobStore.driverDelegateClass = org.quartz.impl.jdbcjobstore.MSSQLDelegate</span><br/><br/>
+你可以使几个属性来帮助调整 <span style="color: #800080;">JobStoreCMT</span>。表 6.5 列举了全部设置项。<br/><br/>
+<table border="0" width="650" cellpadding="5">
+<caption><strong>表 6.5. 用于设置 <span style="color: #800080;">JobStoreCMT</span> 的配置属性</strong></caption>
+<tbody>
+<tr>
+<td><strong>属性</strong></td>
+<td><strong>默认值</strong></td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.driverDelegateClass</span></td>
+<td>&nbsp;</td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>能够理解不同数据库系统中特定方言的驱动代理</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.dataSource</span></td>
+<td>&nbsp;</td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>这是一个用于 <span style="color: #800080;">quartz.properties</span> 文件的数据源配置块的名字。</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.nonManagedTXDataSource</span></td>
+<td>&nbsp;</td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong><br />
+<span style="color: #800080;">JobStoreCMT</span> 需要一个(第二个) 数据源，它所包含的连接不作为容器管理事特的一部分。 这个属性值必须是一个定义在配置属性文件中的数据源的名字。这个数据源必须包含非容器管理事物(non-CMT) 连接，换名话说就是, 它产生的连接可让 Quartz 直接合法的调用它的 <span style="color: #800080;">commit()</span> 和 <span style="color: #800080;">rollback()</span> 方法。</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.tablePrefix</span></td>
+<td><span style="color: #800080;">QRTZ_</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>这是指定给 Scheduler 的一套数据库表名的前缀。Schedulers 在指定了不同前缀时可在同一数据库中使用不同的表。</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.useProperties</span></td>
+<td><span style="color: #800080;">False</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>"use properties" 标记指示着持久性 JobStore 所有在 JobDataMap 中的值都是字符串，因此能以 名-值 对的形式存储，而不用让更复杂的对象以序列化的形式存入 BLOB 列中。这样会更方便，因为让你避免了发生于序列化你的非字符串的类到 BLOB 时的有关类版本的问题。</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.misfireThreshold</span></td>
+<td><span style="color: #800080;">60000</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>在 Trigger 被认为是错过触发之前，Scheduler 还容许 Trigger 通过它的下次触发时间的毫秒数(译者注：据原文翻译，真的不好理解，实际效果可参看：<a href="http://www.blogjava.net/Unmi/archive/2007/10/23/153413.html" target="_blank" rel="noopener noreferrer">http://www.blogjava.net/Unmi/archive/2007/10/23/153413.html</a> 我在评论中的实验)。默认值(假如你未在配置中存在这一属性条目) 是 <span style="color: #800080;">60000</span>(60 秒)。这个不仅限于 <span style="color: #800080;">JDBC-JobStore</span>；它也可作为 <span style="color: #800080;">RAMJobStore</span> 的参数</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.isClustered</span></td>
+<td><span style="color: #800080;">False</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>设置此为 true 来打开集群特性。假如你有多个 Quartz 实例使用同一套数据库表时这个属性必须设置为 true。</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.clusterCheckinInterval</span></td>
+<td><span style="color: #800080;">15000</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>设置一个频度(毫秒)，用于实例报告给集群中的其他实例。这会影响到侦测失败实例的敏捷度。它只用于设置了 <span style="color: #800080;">isClustered</span> 为 true 的时候。</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.maxMisfiresToHandleAtATime</span></td>
+<td><span style="color: #800080;">20</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong> 这是 <span style="color: #800080;">JobStore</span> 能处理的错过触发的 Trigger 的最大数量。处理太多(超过两打) 很快会导致数据库表被锁定够长的时间，这样就妨碍了触发别的(还未错过触发) trigger 执行的性能。</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.dontSetAutoCommitFalse</span></td>
+<td><span style="color: #800080;">False</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>设置这个参数为 true 则告诉 Quartz 不要调用从 DataSource 获取到的连接的 <span style="color: #800080;">setAutoCommit(false)</span> 方法. 这在少些情况下是有帮助的、例如你有一个驱动在已是 off 时又调用了这个方法会有所抱怨. 这个属性默认为 false，因为多数驱动需要调用 <span style="color: #800080;">setAutoCommit(false)</span> 方法。</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.selectWithLockSQL</span></td>
+<td><span style="color: #800080;">SELECT * FROM {0}LOCKS WHERE LOCK_NAME = ? FOR UPDATE</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>这必须是一个从 LOCKS 表查询一行并对这行记录加锁的 SQL 语句。假如未设置，默认值就是 <span style="color: #800080;">SELECT * FROM {0}LOCKS WHERE LOCK_NAME = ? FOR UPDATE</span><span style="color: #000000;">，这能在大部分数据库上工作。<span style="color: #800080;">{0}</span> 会在运行期间被前面你配置的 <span style="color: #800080;">TABLE_PREFIX</span> 所替换。</span></td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.dontSetNonManagedTX<br />
+ConnectionAutoCommitFalse</span></td>
+<td> <span style="color: #800080;">False<br />
+</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>这个属性同 <span style="color: #800080;">org.quartz.jobStore.dontSetAutoCommitFalse</span>, 只是它还可以应用于不受管理事物的数据源(<span style="color: #800080;">nonManagedTXDataSource</span>)。</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.txIsolationLevelSerializable</span></td>
+<td><span style="color: #800080;">False</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>值为 True 时告诉 Quartz (当使用 <span style="color: #800080;">JobStoreTX</span> 或 <span style="color: #800080;">CMT</span> 时) 调用 JDBC 连接的 <span style="color: #800080;">setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE)</span> 方法。这能助于防止某些数据库在高负荷和长事物时的锁超时。</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.txIsolationLevelReadCommitted</span></td>
+<td><span style="color: #800080;">False</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>当设置为 true 时，这一属性告诉 Quartz 调用不受管理的 JDBC 连接的 <span style="color: #800080;">setTransactionIsolation(Connection.TRANSACTION_READ_UNCOMMITTED)</span> 方法。这能助于防止某些数据库(如 DB2) 在高负荷和长事物时的锁超时。</td>
+</tr>
+</tbody>
+</table>

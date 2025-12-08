@@ -1,0 +1,90 @@
+---
+title: Tomcat 使用 Log4j 输出详细系统日志信息，快速诊断启动故障
+url: /tomcat-log4j-system-logs/
+date: 2008-07-07T05:27:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/09/tomcat-logo.png"
+categories:
+  - Mid-Ware
+tags: 
+  - Log4J
+  - debug
+  - Tomcat
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 375 
+wpStatus: publish
+views: 1494
+lastmod: 2020-03-22T12:18:14-05:00
+---
+
+Tomcat 启动时的系统日志默认是由 JdkLog14Logger 打印出来的，如<br/><br/>
+<span style="color: #0000ff;">2008-7-7 11:19:34 org.apache.catalina.core.StandardEngine start<br />
+信息: Starting Servlet Engine: Apache Tomcat/5.0.28<br />
+2008-7-7 11:19:34 org.apache.catalina.core.StandardHost start<br />
+信息: XML validation disabled<br />
+2008-7-7 11:19:34 org.apache.catalina.core.StandardHost getDeployer<br />
+信息: Create Host deployer for direct deployment ( non-jmx )</span><br/><br/>
+那我们能不能用 Log4J 来输出这种系统日志呢？我们知道像 Apache 那样的大部分开源框架、组件都是用通用日志组件 (commons-logging) 来输出日志的，因此如果把 commons-logging 和 log4j 搭配使用就能输出十分详尽的日志信息。<!--more--><br/><br/>
+尤其是碰到 Tomcat 几乎能令人抓狂的 Error filterStart ，如控制台下得到如下信息：<br/><br/>
+<span style="color: #0000ff;">2007-3-13 17:43:46 org.apache.catalina.core.StandardContext start<br />
+严重: Error filterStart<br />
+2007-3-13 17:43:46 org.apache.catalina.core.StandardContext start<br />
+严重: Context startup failed due to previous errors</span><br/><br/>
+而茫然不知所措时，免不了会胡乱猜测，更容易使你的注意力集中在所有的 filter 本身上，其实有些冤枉 filter 了。至少网上针对这个问题有许多不明确的解，有配置文件问题的，有缺类少包的问题等，不一定能和你的实际问题对上号。<br/><br/>
+其实大可不必受如此之周折，解铃仍需寄铃人吗，由 Tomcat 给你落下的结，当然要 Tomcat 告诉你是怎么回事。很多人在自己的应用中会安放一个日志文件，却可能忽略掉 Tomcat 自身的日志文件，在 logs 目录下的 localhost_log.yyyy-MM-dd.txt 就事，记住只要碰到关于 Tomcat 本身启动的问题，查看其中当前的日志信息的话，问题就会坦荡荡荡显露在你的前面，基本也就能迎刃而解了。<br/><br/>
+前面讲过，commons-logging+log4j 可以输出极详尽的信息，那现在就来说说如何配置。很多人开发过程中是通过 MyEclipse 来启动 Tomcat 的，所有这里包括两种方法，分别介绍如下：<br/><br/>
+1. MyEclipse 启动 Tomcat 使用 Log4j 输出日志信息的配置<br/><br/>
+在 MyEclipse 的 Tomcat 服务器配置中的 Prepend to classpath 或者 Append to classpath 中加入<br/><br/>
+commons-logging-1.1.jar<br />
+log4j-1.2.13.jar<br />
+以及 log4j.properties 所在目录，如 D:\Tomcat\Tomcat 5.0.28-Test\bin<br/><br/>
+如图：<br/><br/>
+<div><img class=" aligncenter" src="/wp-content/uploads/2008/07/TomcatWithLog4j.jpg" alt="" border="0" /></div>
+<br/>
+我是把 commons-logging-1.1.jar、log4j-1.2.13.jar 和 log4j.properties 都放在 %TOMCAT_HOME%\bin 目录下的，当然你也可以放在别处。<br/><br/>
+完了之后，通过 MyEclipse 启动 Tomcat 时就能看到让你眼花花的日志滚屏，请根据实际需要在log4j.properties 中屏蔽你不想关注的内容。所以像这种日志信息最好是记录在文件中，屏幕的缓冲区是有限且耗内存的。真正需要的时候你就可以从这个日志文件里读懂 Tomcat 的启动全过程。<br/><br/>
+如果你明白 commons-logging.properties 的功用，你也可以把这个文件放在与 log4j.properties 所在的目录下，可在其中指定其他 log 实现类，详见 commons-logging.properties 文件的内容。<br/><br/>
+2. startup.bat 启动 Tomcat 使用 Log4j 输出日志信息的配置<br/><br/>
+按前面推荐的做法，把 commons-logging-1.1.jar、log4j-1.2.13.jar 和 log4j.properties 都放在 %TOMCAT_HOME%\bin 目录下，然后修改 catalina.bat 文件，找到<br/><br/>
+<span style="color: #0000ff;">set CLASSPATH=%CLASSPATH%;%CATALINA_HOME%\bin\bootstrap.jar</span><br/><br/>
+行，在其后附上这两个包和 log4j.properties 所在目录到 classpath 上，修改后就是：<br/><br/>
+<span style="color: #0000ff;">set CLASSPATH=%CLASSPATH%;%CATALINA_HOME%\bin\bootstrap.jar;%CATALINA_HOME%\bin\commons-logging-1.1.jar;%CATALINA_HOME%\bin\log4j-1.2.13.jar;%CATALINA_HOME%\bin<br />
+</span><br />
+保存，通过 startup.bat 启动就会用 log4j 来输出启动日志了，其他平台下的 Tomcat，请参照平台特性修改 catalina.sh 吧。<br/><br/>
+同样，你也可以应用 commons-logging.properties 指定其他的 log 实现，因为 Log4j 是它的默认实现，所以可省去。<br/><br/>
+用 Log4j 输出的启动日志形式如下：<br/><br/>
+<span style="color: #0000ff;">15:36:37,859 org.apache.catalina.startup.Embedded.initNaming(Embedded.java:922) - Setting naming prefix=org.apache.naming<br />
+15:36:38,046 org.apache.catalina.startup.Catalina.createStartDigester(Catalina.java:350) - Digester for server.xml created 171<br />
+15:36:38,218 org.apache.catalina.core.NamingContextListener.&lt;init&gt;(NamingContextListener.java:83) - new NamingContextListener<br />
+</span><br />
+许多你希望深入了解的内部细节都可以通过这样一份日志追踪到。<br/><br/>
+附上这两个属性文件的：log4j.properties 和 commons-logging.properties。<br/><br/>
+log4j.properties<br/><br/>
+<pre class="brush:c#">log4j.rootLogger=DEBUG,stdout,file<br/><br/>
+## direct log messages to stdout ###
+log4j.appender.stdout=org.apache.log4j.ConsoleAppender
+log4j.appender.stdout.Target=System.out
+log4j.appender.stdout.layout=org.apache.log4j.PatternLayout
+log4j.appender.stdout.layout.ConversionPattern=%d{ABSOLUTE} %l - %m%n<br/><br/>
+## direct messages to file SystemOut.log ###
+log4j.appender.file=org.apache.log4j.FileAppender
+log4j.appender.file.File=../logs/SystemOut.log
+log4j.appender.file.Append=false
+log4j.appender.file.layout=org.apache.log4j.PatternLayout
+log4j.appender.file.layout.ConversionPattern=%d{ABSOLUTE} %l - %m%n<br/><br/>
+## block packages that you  don't care about ###
+log4j.logger.org.apache.commons.digester=ERROR
+log4j.logger.org.apache.commons.beanutils=ERROR
+log4j.logger.org.apache.commons.modeler=ERROR</pre>
+<br/>
+commons-logging.properties<br/><br/>
+<pre class="brush:c#">org.apache.commons.logging.Log=org.apache.commons.logging.impl.Log4JLogger<br/><br/>
+#Please refer to the Log implementations in package org.apache.commons.logging.impl#
+#org.apache.commons.logging.Log=org.apache.commons.logging.impl.Jdk14Logger
+#org.apache.commons.logging.Log=org.apache.commons.logging.impl.SimpleLog</pre>

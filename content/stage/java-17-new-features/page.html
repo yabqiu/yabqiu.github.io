@@ -1,0 +1,107 @@
+---
+title: Java 17 新特性
+url: /java-17-new-features/
+date: 2025-07-12T16:39:19-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - new features
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14298 
+wpStatus: publish
+views: 75
+lastmod: 2025-07-12T16:39:19-05:00
+---
+
+昨天单列了 <a href="https://yanbin.blog/java-17-new-features-sealed-classes">Java 17 新特性之密封类型</a>, 继续刷 <a href="https://www.oracle.com/java/technologies/javase/17-relnote-issues.html">What's New in JDK 17 - New Features and Enhancements</a>.</p>
+<br/>
+<h3>switch 模式匹配(预览)</h3><br/><br/>
+在 Java 21 才正式放出，主动就是原来的 switch...case 语句可以写成表达式的方式，有返回值, 无需每个分支的 break, 并增加模式匹配功能，比如匹配类型，带约束子条件，匹配 record 的字段值等，这里不展开说明，待到详细了解 Java 21 新特性时再深入研究。<br/><br/>
+<h3>新的 macOS 渲染管道</h3><br/><br/>
+英文是 New macOS Rendering Pipeline, 主要是 Swing API 如果配置系统属性 <code>-Dsun.java2d.meta=true</code> 就可以用 Apple Metal 替代 OpenGL 加速渲染界面，很少写 Java Swing 桌面应用的略过。<br/><br/>
+<h3>新的 API 可访问大图标 </h3><br/><br/>
+同样是在对 Swing 的改进，可用 FileSystemView 加载解析度的图标<!--more--><br/><br/>
+<pre class="lang:default decode:true">import javax.swing.filechooser.FileSytemView;<br/><br/>
+FileSystemView fsv = FileSystemView.getFileSystemView();
+Icon icon = fsv.getSystemIcon(new File("application.exe"), 64, 64);
+JLabel label = new JLabel(icon);
+</pre>
+<br/>
+<h3>DatagramSocket 可直接加入和离开多播组</h3><br/><br/>
+写网络应用的可以关注，以前写 Socket 多播应用需使用 java.net.MulticastSocket, 现在的 java.net.DataramSocket 有了两个新的方法<br/><br/>
+<blockquote>
+joinGroup(SocketAddress mcastaddr, NetworkInterface netIf)<br />
+leaveGroup(SocketAddress mcastaddr, NetworkInterface netIf)
+</blockquote>
+<br/>
+对于此特性，本人有兴趣稍加深入，什么是多播(又叫组播)，它是如何工作的，有何有途。由多播可拓展到单播，广播，任播的概念，这得另启一篇新的日志。<br/><br/>
+<h3>增强伪随机数的生成</h3><br/><br/>
+为伪随机数生成(PRNGs - <strong>p</strong>seudo<strong>r</strong>andom <strong>n</strong>umber <strong>g</strong>enerator<strong>s</strong>) 提供了新的接口类型和实现(如新接口 RandomGenerator 和新类 RandomGeneratorFactory)。还包括 jumpable PRNGs 和额外的 splittable PRNS 算法(LXM)。这个增强与我们实际应用可能不那么紧密。<br/><br/>
+<h3>与 JavaDoc 相关的两个特性</h3><br/><br/>
+JavaDoc 生成文档时，发现源文件中有问题用 <code>^</code> 标识位置，JavaDoc 新加了 <code>New API</code> 页面用来支持 <code>@since</code> 标签，优化了 <code>Deprecated</code> 页面<br/><br/>
+<h3>访问外部函数和内存 API(孵化期)</h3><br/><br/>
+允许 Java 访问 JVM 外代码和数据，比如不而要脆弱且危险的 JNI 就是调用本地库和数据。这个有点期待，目前都是用 JNI 来调用 C++ 写的共享库，直接在 Java 代码中用该特征调用外部共享库好像有些麻烦，但这会繁荣类似于 JNA, JNR 那样第三方库。<br/><br/>
+<h3>JDK 飞行记录器(Flight Recorder) 支持反序列化事件</h3><br/><br/>
+原来我们会用 JVisualVM, JConsole, 或商业的 YourKit, Profiler 来分析 JVM 的性能，这需要 Java 程序启用 JMX 扩展，并且对应用性能有一定的影响。Flight Recorder (JDK 11+ 内置, JDK 8u262+ 也支持，需命令行开启) 是内建于 JVM 的性能分析和事件记录工具，几乎没有性能开销，可用于线上生产环境。<br/><br/>
+启动时启用<br/><br/>
+<blockquote>
+java -XX:StartFlightRecording=duration=60s,filename=recording.jfr -jar myapp.jar
+</blockquote>
+<br/>
+运行时启用<br/><br/>
+<blockquote>
+jcmd &lt;pid&gt; JFR.start name=profile filename=recording.jfr duration=1m settings=profile
+</blockquote>
+<br/>
+完后停止<br/><br/>
+<blockquote>
+jcmd &lt;pid&gt; JFR.stop name=profile
+</blockquote>
+<br/>
+Java 14+ 可以编程方式启动 JFR(Java Flight Recorder)，Java 14+ 开始自带了 jfr 命令<br/><br/>
+Java 17+ 支持通过 jfr 命令附加目标进程采样<br/><br/>
+<blockquote>
+jfr start --pid &lt;pid&gt; --duration 1m --filename profile.jfr --settings profile
+</blockquote>
+<br/>
+ 飞行数据记录在 recording.jfr 文件中，然手可用 JMC(Java Mission Control http://jdk.java.net/jmc/) 打开 recording.jfr 文件进行分析, 或可用 jfr 和 JVisualVM分析。下面的在 JMC 中打开  recording.jfr 文件时的样子<br/><br/>
+<h3><a href="https://yanbin.blog/wp-content/uploads/2025/07/java17-new-features-6-3.png"><img class="wp-image-14323 aligncenter" src="https://yanbin.blog/wp-content/uploads/2025/07/java17-new-features-6-3-800x557.png" alt="" width="603" height="420" /></a>新增 Console.charset() 方法</h3><br/><br/>
+它返回由主机环境或用户指定的输入输出字符集，它与  Charset.defaultCharset() 的值可能不用。<br/><br/>
+<blockquote>
+Console console = System.console();<br />
+var charset = console.charset();
+</blockquote>
+<br/>
+<h3>支持本地字符集的系统属性名 <code>native.encoding</code></h3><br/><br/>
+比如使用该属性名，在 Linux 或 macOS  下指定为 UTF-8，在 Windows 下指定为 Cp1252<br/><br/>
+<h3>新增 java.time.InstantSource 接口</h3><br/><br/>
+java.time.InstantSource 成为了抽象类 java.time.Clock 的接口。InstantSource 表明只关注当前时刻，不含时区信息。<br/><br/>
+<h3>新增 16 进制的格式化与解析工具类 java.util.HexFormat</h3><br/><br/>
+可用它在 16 进制与原始类型或字节数组间转换，还可指定分隔符，前/后缀，大/小写格式<br/><br/>
+<blockquote>
+HexFormat.of().toHexDigits(999999); // 000f423f<br />
+HexFormat.of().formatHex(new byte[]{56, 72}); // 3848
+</blockquote>
+<br/>
+<h3>支持 ARM 64(Apple 芯片) 架构的 macOS</h3><br/><br/>
+<h3>keytool 命令支持新参数 -genkeypair</h3><br/><br/>
+<h3>logging 支持异步刷出日志</h3><br/><br/>
+这是 log4j2 或 logback 早就支持的功能，为避免日志对业务线程的影响。日志先写入到缓冲中，然后由日志框架在某个时机刷出到控制台，文件或其他目的地。用 <code>-Xlog:async</code> 开启异步输出日志的功能，<code>XX:AsyncLogBufferSize=&lt;bytes&gt;</code> 指定缓冲区多大时刷新。<br/><br/>
+<pre class="lang:default decode:true ">import java.util.logging.Logger;<br/><br/>
+public class Main {
+    private static final Logger logger = Logger.getLogger(Main.class.getName());<br/><br/>
+    public static void main(String[] args) {
+        logger.info("test1");
+    }
+}
+</pre>
+<br/>
+尽管 JDK 一直很努力的在发展自己的通用日志组件, 并且也在 java.util.logging.SimpleFormatter 中支持 “%1$tb %1$td, %1$tY %1$tl:%1$tM:%1$tS %1$Tp %2$s%n%4$s: %5$s%n” 那么模式配置，编程方式或用 logging.properties 配置文件，但与 slf4j + logback, 或  log4j2 那样的第三方日志框架相比显然是差远了，为何就不放弃呢。或许 JDK 的 java.util.logging 通用框架能得到某些只用 JDK 不引入第三方组件绿党人的青睐。

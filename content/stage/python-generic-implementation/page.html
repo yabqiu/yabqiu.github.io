@@ -1,0 +1,99 @@
+---
+title: Python 中泛型的实现
+url: /python-generic-implementation/
+date: 2022-06-15T12:44:42-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Python
+tags: 
+  - generic
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12425 
+wpStatus: publish
+views: 1913
+lastmod: 2022-06-15T12:44:42-05:00
+---
+
+在学习 Python 3.10 新特性时，其中有个类型别名(TypeAlias), 所举的例子是</p>
+<br/>
+<blockquote>
+StrCache = 'Cache[str]' # a type alias<br />
+LOG_PREFIX = 'LOG[DEBUG]' # a module constant
+</blockquote>
+<br/>
+可写成<br/><br/>
+<blockquote>
+StrCache: TypeAlias = 'Cache[str]' # a type alias<br />
+LOG_PREFIX = 'LOG[DEBUG]' # a module constant
+</blockquote>
+<br/>
+这让 StrCache 更像是一个类型别名，而不是一个看起来明显就是 <code>Cache[str]</code> 的字符串变量(实际上它确实是)。<br/><br/>
+本文不在 TypeAlias 本身，而是从 <code>Cache[str]</code> 能看出 Python 似乎也能支持像 Java 那样的泛型, 就像 Python 内置支持的 List[str] 或 list[str] 那样。<br/><br/>
+那么来看 Python 怎么去实现一个只能放入字符串的  <code>Cache[str]</code> Cache, 而不能放入别的类型。<!--more--><br/><br/>
+<pre class="lang:default decode:true">from typing import TypeVar, Generic<br/><br/>
+T = TypeVar('T')<br/><br/>
+class Cache(Generic[T]):
+    def __init__(self) -&gt; None:
+        self.items: dict[str, T] = {}<br/><br/>
+    def put(self, key: str, item: T) -&gt; None:
+        self.items[key] = item                  # Line 13<br/><br/>
+    def get(self, key: str) -&gt; T:
+        return self.items.get(key)</pre>
+<br/>
+我们依然用到的是 Python 的 typing 模块，所以上面代码仍然是属于类 type hints 的范畴，对 Python 解释器不构成约束，只会影响到 mypy 这样的检查工具<br/><br/>
+使用上面的类<br/><br/>
+<pre class="lang:default mark:5 decode:true">cache = Cache[str]()<br/><br/>
+cache.put('a', 'abc')
+print(cache.get('a'))<br/><br/>
+cache.put('b', 123)                           # Line 21
+print(cache.get('b'))</pre>
+<br/>
+使用 <code>python test.py</code> 命令执行一切正常，输出为<br/><br/>
+<blockquote>
+abc<br />
+123
+</blockquote>
+<br/>
+但在 IntelliJ IDEA 中，上面高亮的第五行 <code>cache.put('b', 123)</code> 行上会提示<br/><br/>
+<blockquote>
+Expected type 'str' (matched generic type 'T'), got 'int' instead
+</blockquote>
+<br/>
+如果用 <code>mypy</code> 来检测<br/><br/>
+<blockquote>
+$ mypy tt.py<br />
+tt.py:13: error: Incompatible return value type (got "Optional[T]", expected "T")<br />
+tt.py:21: error: Argument 2 to "put" of "Cache" has incompatible type "int"; expected "str"<br />
+Found 2 errors in 1 file (checked 1 source file)
+</blockquote>
+<br/>
+typing 模块中除了上面用到的 Generic, TypeVar 外，还有更多的类型约束，像 Mapping, Iterator, Sequence。还有更多的类似于 Java 的泛型功能<br/><br/>
+<h3>泛型子类型</h3><br/><br/>
+<pre class="lang:default decode:true ">from typing import TypeVar, Generic<br/><br/>
+T = TypeVar('T')<br/><br/>
+class Cache(Generic[T]):
+    pass<br/><br/>
+
+class TTLCache(Cache[T]):
+    pass</pre>
+<br/>
+<h3>泛型函数</h3><br/><br/>
+<pre class="lang:default decode:true ">from typing import TypeVar, Sequence<br/><br/>
+T = TypeVar('T')      # Declare type variable<br/><br/>
+def first(seq: Sequence[T]) -&gt; T:   # Generic function
+    return seq[0]</pre>
+<br/>
+更多用法，在此不一一列出。写自己的实现代码使用泛型的需要其实并不大，除非做第三方的通用库会用到泛型写法，这让别人用起来更清晰。<br/><br/>
+更多功能请参考 <a href="https://mypy.readthedocs.io/en/stable/generics.html">https://mypy.readthedocs.io/en/stable/generics.html</a><br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://mypy.readthedocs.io/en/stable/generics.html">mypy 0.961 document - Generics</a></li>
+</ol>
+<br/>
+&nbsp;

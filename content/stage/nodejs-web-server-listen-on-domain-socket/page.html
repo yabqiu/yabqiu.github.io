@@ -1,0 +1,102 @@
+---
+title: NodeJS 的 Web 服务也可以监听在 sock 文件
+url: /nodejs-web-server-listen-on-domain-socket/
+date: 2015-01-25T22:30:27-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - NodeJS
+tags: 
+  - node.js
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6783 
+wpStatus: publish
+views: 691
+lastmod: 2015-01-26T15:59:34-06:00
+---
+
+像 NodeJS 写的 TCP 服务可以监听在某个 sock 文件(Domain Socket) 上，它的 HTTP 服务也能这么干。虽然作为 HTTP 服务连接某个 sock 文件的意义不大，所以这里只算是一个纯粹的尝试。<br/>
+<br/>
+TCP 服务是这样写<br/>
+<blockquote><br/>
+<pre>var net = require('net');<br/>
+net.createServer(function (socket) {<br/>
+  socket.on('data', function (data) {<br/>
+    socket.write('received: ' + data);<br/>
+  });<br/>
+}).listen('/tmp/node_tcp.sock');</pre>
+
+</blockquote>
+
+连接上面那个 '/tmp/node_tcp.sock'<br/>
+<blockquote>✗ telnet /tmp/node_tcp.sock<br/>
+Trying /tmp/node_tcp.sock...<br/>
+Connected to (null).<br/>
+Escape character is '^]'.<br/>
+Hello World!<br/>
+received: Hello World!</blockquote>
+
+准确说来本文应该是 NodeJS 的 TCP 和 HTTP 监听 Domain Socket 文件。<!--more--><br/>
+<br/>
+对于  TCP 监听 Domain Socket 还是很常用的，比如有时对本机的数据库或缓存的访问就会这么做，像用 '/tmp/mysql.sock' 来访问本机 MySQL 服务，这样就不需要启动 TCP 端口暴露出来，安全性有所提高，性能上也有一定的提升。<br/>
+<br/>
+现在来看看 NodeJS 的 HTTP 监听在 Domain Socket 上, 从经典的例子来改造下<br/>
+<pre class="brush:js">var http = require('http');<br/>
+http.createServer(function (req, res) {<br/>
+  res.writeHead(200, {'Content-Type': 'text/plain'});<br/>
+  res.end('Hello World\n');<br/>
+}).listen('/tmp/node_http.sock');<br/>
+console.log('Server running at /tmp/node_http.sock');</pre>
+
+尚不知如何在浏览器中访问以上的 HTTP 服务，所以用 telnet 测试<br/>
+<blockquote>✗ telnet /tmp/node_http.sock<br/>
+Trying /tmp/node_http.sock...<br/>
+Connected to (null).<br/>
+Escape character is '^]'.<br/>
+GET / HTTP/1.1<br/>
+<br/>
+HTTP/1.1 200 OK<br/>
+Content-Type: text/plain<br/>
+Date: Mon, 26 Jan 2015 04:21:09 GMT<br/>
+Connection: keep-alive<br/>
+Transfer-Encoding: chunked<br/>
+<br/>
+c<br/>
+Hello World<br/>
+<br/>
+0</blockquote>
+
+能正确处理对  '/tmp/node_http.sock' 上的 HTTP 请求。<br/>
+<br/>
+用 NodeJS HTTP Client 来访问<br/>
+<pre class="brush:js">var http = require('http');<br/>
+<br/>
+var options = {<br/>
+  socketPath: '/tmp/node_http.sock',<br/>
+  method: 'GET',<br/>
+  path: '/'<br/>
+};<br/>
+<br/>
+var req = http.request(options, function(res){<br/>
+  console.log('STATUS: ' + res.statusCode);<br/>
+  console.log('HEADERS: ' + JSON.stringify(res.headers));<br/>
+<br/>
+  res.on('data', function (chunk){<br/>
+    console.log(chunk.toString());<br/>
+  });<br/>
+});<br/>
+<br/>
+req.end();</pre>
+
+执行上面的代码，假如文件名是 http_client.js,<br/>
+<blockquote>✗ node http_client.js<br/>
+STATUS: 200<br/>
+HEADERS: {"content-type":"text/plain","date":"Mon, 26 Jan 2015 04:25:49 GMT","connection":"close","transfer-encoding":"chunked"}<br/>
+Hello World</blockquote>
+
+本文只作记录，现在还想不到让 HTTP 服务监听在 Domain Socket 上的实际用意，况且浏览器也无法对它进行访问。

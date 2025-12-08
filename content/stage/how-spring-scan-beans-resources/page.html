@@ -1,0 +1,164 @@
+---
+title: 记录一下 Spring 如何扫描注解的 Bean 与资源
+url: /how-spring-scan-beans-resources/
+date: 2017-11-04T22:55:45-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - Spring
+  - Resource
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8339 
+wpStatus: publish
+views: 2607
+lastmod: 2021-09-10T12:55:28-05:00
+---
+
+<h3>Spring 相关代码分析</h3><br/><br/>
+本文通过对 Spring 的源代码来理解它是如何扫描 Bean 与资源的，因为自己有一个类似的需求，想把一堆的配置文件丢到 resources 下某个目录中，在程序启动的时候能加载它们。因为文件名是不一定的，所以不能直接指定文件名来加载，通过对 Spring 扫描资源的理解后，可以在自己的代码中手工扫描那些配置文件，以后有任何新的配置文件只需要扔到相应的配置目录即可。<br/><br/>
+下面以一个最简单的 Spring Boot 项目为例，调试并观察源代码<br/><br/>
+<pre class="lang:default decode:true ">@SpringBootApplication
+@ComponentScan(basePackages = "cc.unmi")
+public class DemoApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(DemoApplication.class, args);
+    }
+}</pre>
+<br/>
+还是直奔主题吧，不一步一步的去探寻到底是哪个实现类去扫描资源的，用 Google 找到的是 <a href="https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/context/annotation/ClassPathScanningCandidateComponentProvider.html"><code>ClassPathScanningCandidateComponentProvider</code></a>, 因此直接在这个类的敏感位置上打上断点，比如它的构造函数<!--more--><br/><br/>
+<blockquote>
+public ClassPathScanningCandidateComponentProvider(boolean useDefaultFilters, Environment environment) 
+</blockquote>
+<br/>
+<a href="/wp-content/uploads/2017/11/spring-bean-resources-1.png"><img class="aligncenter wp-image-8340 size-large" src="/wp-content/uploads/2017/11/spring-bean-resources-1-800x312.png" alt="" width="800" height="312" /></a><br/><br/>
+从该截图中可看到从 AnnotationConfigApplicationContext 是如何到达 <code>ClassPathScanningCandidateComponentProvider</code> 的。不妨初步打量一下这个类<br/><br/>
+我们可以看到 <code>DEFAULT_RESOURCE_PATTERN = "**/*.class</code>, 比如前面设置的 <code>@ComponentScan(basePackages = "cc.unmi")</code>, 会转换为搜索模式 <code>classpath*:cc/unmi/**/*.class"</code>.<br/><br/>
+<a href="/wp-content/uploads/2017/11/spring-bean-resources-3.png"><img class="aligncenter size-large wp-image-8343" src="/wp-content/uploads/2017/11/spring-bean-resources-3-800x230.png" alt="" width="800" height="230" /></a><br/><br/>
+<code>resourcePatternResolver</code> 的实现类是 <code><a href="https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/core/io/support/PathMatchingResourcePatternResolver.html">PathMatchingResourcePatternResolver</a></code>, 所使用的匹配模式是 <code>AntPathMatcher</code>.<br/><br/>
+它的注册 Filter 的方法<br/><br/>
+<pre class="lang:default decode:true ">protected void registerDefaultFilters() {
+    this.includeFilters.add(new AnnotationTypeFilter(Component.class));
+    ClassLoader cl = ClassPathScanningCandidateComponentProvider.class.getClassLoader();
+    try {
+        this.includeFilters.add(new AnnotationTypeFilter(
+                ((Class&lt;? extends Annotation&gt;) ClassUtils.forName("javax.annotation.ManagedBean", cl)), false));
+        logger.debug("JSR-250 'javax.annotation.ManagedBean' found and supported for component scanning");
+    }
+    catch (ClassNotFoundException ex) {
+        // JSR-250 1.1 API (as included in Java EE 6) not available - simply skip.
+    }
+    try {
+        this.includeFilters.add(new AnnotationTypeFilter(
+                ((Class&lt;? extends Annotation&gt;) ClassUtils.forName("javax.inject.Named", cl)), false));
+        logger.debug("JSR-330 'javax.inject.Named' annotation found and supported for component scanning");
+    }
+    catch (ClassNotFoundException ex) {
+        // JSR-330 API not available - simply skip.
+    }
+}</pre>
+<br/>
+说明了它会扫描 <code>@Component</code> 及它的子类型注解的类; 支持用 JSR-250 的 <code>javax.annotation.ManagedBean</code> 注解的类; 支持用 <code>javax.inject.Named</code> 注解的类。下图是 <code>@Component</code> 及其子类型<br/><br/>
+<a href="/wp-content/uploads/2017/11/spring-bean-resources-2.png"><img class="aligncenter size-full wp-image-8342" src="/wp-content/uploads/2017/11/spring-bean-resources-2.png" alt="" width="543" height="214" /></a><br/><br/>
+最后干实事的方法就是那个 <code>this.resourcePatternResolver.getResources(packageSearchPath)</code>, 来看下它给我们带来了什么<br/><br/>
+<a href="/wp-content/uploads/2017/11/spring-bean-resources-4.png"><img class="aligncenter size-large wp-image-8344" src="/wp-content/uploads/2017/11/spring-bean-resources-4-800x177.png" alt="" width="800" height="177" /></a><br/><br/>
+它返回的是 Resource 列表，有了 Resource 我们就可以读取资源的内容，如果是类的话或以转换为类的全路径加载它。而后 Spring 会通过前面的过滤条件(@Component 或  @Named) 把相应的 Bean 注册到 Spring 上下文中。<br/><br/>
+<h3>方法一，直接使用 PathMatchingResourcePatternResolver</h3><br/><br/>
+至此，我们了解到 Spring 如何加载 JavaBean, 那么资源文件是怎么加载的呢？可以用同样的办法，还是在当前断点的位置上，换个 Pattern 来试试。比如看下 Spring Boot 在 classpath 下给我们提供了什么 xml 资源，用 `this.resourcePatternResolver.getResources("classpath*:**/springframework/**/*.xml")`<br/><br/>
+<a href="/wp-content/uploads/2017/11/spring-bean-resources-5.png"><img class="aligncenter size-large wp-image-8345" src="/wp-content/uploads/2017/11/spring-bean-resources-5-800x137.png" alt="" width="800" height="137" /></a><br/><br/>
+自已的放在 resources 目录或子目录的资源文件也可以这么加载。<br/><br/>
+或者在任何时候我们都可以直接使用<br/><br/>
+<blockquote>
+new PathMatchingResourcePatternResolver().getResources("classpath*:**/springframework/**/*.xml")
+</blockquote>
+<br/>
+获得与上图同样的结果。<br/><br/>
+现在我们假设需求是在 <code>reources/abc</code> 中可以旋转任意的配置文件 1.json, 2.json, 3.json ...., 那么要加载它们只需用<br/><br/>
+<blockquote>
+new PathMatchingResourcePatternResolver().getResources("classpath*:abc/*.json")
+</blockquote>
+<br/>
+在 Spring 项目中全权交给 Spring 自己就能搞定了。<br/><br/>
+<h3>方法二：使用 ApplicationContext</h3><br/><br/>
+等着，还没完, 其实我们是绕了一个大大的弯又回来了，早发现 ApplicationContext 有 getResources(String)/getResource(String) 方法便无需看那么多源代码，也就根本不会有本文的出现。巡着 <code><a href="https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/core/io/support/PathMatchingResourcePatternResolver.html">PathMatchingResourcePatternResolver</a></code>, 找到它的一个父接口 <a href="https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/core/io/support/ResourcePatternResolver.html">ResourcePatternResolver</a>，其中定义了<br/><br/>
+<blockquote>
+Resource[] getResources(java.lang.String locationPattern)
+</blockquote>
+<br/>
+方法，并且发现它有一个子接口竟然是 <a href="https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/context/ApplicationContext.html">ApplicationContext</a>, 多么熟悉的味道。事情就变得简单多了，想要获得 ApplicationContext 还不容易, 任意一个 SpringBean 实现 ApplicationContextAware 就行。请看下方的例子<br/><br/>
+<pre class="lang:default decode:true">@Named
+public class UserService implements ApplicationContextAware {<br/><br/>
+    @Override
+    public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
+        try {
+            Resource[] resources = applicationContext.getResources("classpath*:**/springframework/**/*.xml");
+            Stream.of(resources).forEach(resource -&gt; System.out::println);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+URL [jar:file:/Users/Yanbin/.m2/repository/org/springframework/boot/spring-boot/1.4.2.RELEASE/spring-boot-1.4.2.RELEASE.jar!/org/springframework/boot/context/embedded/tomcat/empty-web.xml]<br />
+URL [jar:file:/Users/Yanbin/.m2/repository/org/springframework/boot/spring-boot/1.4.2.RELEASE/spring-boot-1.4.2.RELEASE.jar!/org/springframework/boot/logging/logback/console-appender.xml]<br />
+URL [jar:file:/Users/Yanbin/.m2/repository/org/springframework/boot/spring-boot/1.4.2.RELEASE/spring-boot-1.4.2.RELEASE.jar!/org/springframework/boot/logging/logback/defaults.xml]<br />
+URL [jar:file:/Users/Yanbin/.m2/repository/org/springframework/boot/spring-boot/1.4.2.RELEASE/spring-boot-1.4.2.RELEASE.jar!/org/springframework/boot/logging/logback/file-appender.xml]<br />
+URL [jar:file:/Users/Yanbin/.m2/repository/org/springframework/boot/spring-boot/1.4.2.RELEASE/spring-boot-1.4.2.RELEASE.jar!/org/springframework/boot/logging/logback/base.xml]<br />
+URL [jar:file:/Users/Yanbin/.m2/repository/org/springframework/boot/spring-boot/1.4.2.RELEASE/spring-boot-1.4.2.RELEASE.jar!/org/springframework/boot/logging/log4j2/log4j2-file.xml]<br />
+URL [jar:file:/Users/Yanbin/.m2/repository/org/springframework/boot/spring-boot/1.4.2.RELEASE/spring-boot-1.4.2.RELEASE.jar!/org/springframework/boot/logging/log4j2/log4j2.xml]<br />
+URL [jar:file:/Users/Yanbin/.m2/repository/org/springframework/spring-context/4.3.4.RELEASE/spring-context-4.3.4.RELEASE.jar!/org/springframework/remoting/rmi/RmiInvocationWrapperRTD.xml]
+</blockquote>
+<br/>
+注意前面那个 Pattern 还真不能省略 <code>classpath</code> 后那个星号直接写成 <code>classpath:**/springframework/**/*.xml</code>, 这是不对的，会什么也找不到。<br/><br/>
+<h3>方法三：使用 ResourceLoader</h3><br/><br/>
+PathMatchingResourcePatternResolver 还有一个父接口 <a href="https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/core/io/ResourceLoader.html"><code>ResourceLoader</code></a>, 它有相应的 <code>ResourceLoaderAware</code>, 也就是说在 SpringBean 中可以方便的注入 ResourceLoader. ResourceLoader 接口只定义了一个方法<br/><br/>
+<blockquote>
+Resource getResource(java.lang.String location)
+</blockquote>
+<br/>
+它似乎无法满足我们批量加载资源的要求，但是当我们读到 ResourceLoaderAware 的接口定义方法<br/><br/>
+<blockquote>
+void setResourceLoader(ResourceLoader resourceLoader)
+</blockquote>
+<br/>
+其中有注释<br/><br/>
+<blockquote>
+This might be a ResourcePatternResolver, which can be checked through instanceof ResourcePatternResolver. See also the ResourcePatternUtils.getResourcePatternResolver method.
+</blockquote>
+<br/>
+说它极可能是一个 <code>ResourcePatternResolver</code>, 再不济还能用 <a href="https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/core/io/support/ResourcePatternUtils.html#getResourcePatternResolver-org.springframework.core.io.ResourceLoader-"><code>ResourcePatternUtils.getResourcePatternResolver(resourceLoader)</code></a> 获得相应的 <code>ResourcePatternResolver</code>. 这样的话就可以调用<br/><br/>
+<blockquote>
+Resource[] getResources(java.lang.String locationPattern)
+</blockquote>
+<br/>
+那么相应的代码就是<br/><br/>
+<pre class="lang:default decode:true">@Named
+public class UserService implements ResourceLoaderAware {<br/><br/>
+    @Override
+    public void setResourceLoader(ResourceLoader resourceLoader) {
+        ResourcePatternResolver resourcePatternResolver = ResourcePatternUtils.getResourcePatternResolver(resourceLoader);
+        try {
+            Resource[] resources = resourcePatternResolver.getResources("classpath*:**/springframework/**/*.xml");
+            Stream.of(resources).forEach(System.out::println);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+</pre>
+<br/>
+其实上面 <code>setResourceLoader(ResourceLoader resourceLoader)</code> 的参数在 Spring Boot 中是 <code>AnnotationConfigApplicationContext</code>, 它当然是一个 <code>ResourcePatternResolver</code>, 使用 <a href="https://github.com/spring-projects/spring-framework/blob/master/spring-core/src/main/java/org/springframework/core/io/support/ResourcePatternUtils.java#L61"><code>ResourcePatternUtils.getResourcePatternResolver(resourceLoader)</code></a> 方法让代码更简法些，看看这个方法的源代码就清楚了。<br/><br/>
+相关链接：<br/><br/>
+<ol>
+    <li><a href="https://docs.spring.io/spring/docs/3.0.0.M3/reference/html/ch04s12.html">Classpath scanning, managed components and writing configurations using Java</a></li>
+</ol>

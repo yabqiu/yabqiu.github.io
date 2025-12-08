@@ -1,0 +1,54 @@
+---
+title: Unmi 的 Struts2 学习笔记(十一)
+url: /unmi-study-struts2-11/
+date: 2008-04-28T11:46:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/05/struts-logo.jpeg"
+categories:
+  - Struts
+tags: 
+  - Struts2
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 409 
+wpStatus: publish
+views: 356
+lastmod: 2020-03-22T11:17:23-05:00
+---
+
+你尽可以做个良民，为群体效率而本份的遵循个人秩序，然而事与愿违，非但不能因此提升群体的效率，而你势必失去诸多的机会，不会有人褒奖你，更得不到同情，只得自觉的天真。</p>
+<br/>
+1. 模板目录－＞主题目录－＞主题(模板文件) 这是模板/主题的目录组织方式。以实际为例，打开 struts2-core-2.x.x.jar 可以看到里面有一个 template，在 template 下有5个目录 ajax、css_xhtml、simple、xhtml 和 archive，其中前四个分别是 ajax、css_xhtml、simple、xhtml 主题的目录，每个主题目录中有各自的模板文件，主要是 ftl 文件，还有 css 和 js 文件。最后一个 archive 是归档的主题目录，其下又有 ajax、simple、xhtml、模板文件是 .vm 文件。由此可知 Struts2 大力推荐的模板语言是 FreeMarker，而不是 Velocity，以后要好好看看 FreeMarker，只知道 FreeMarkder 更 XML 化。<!--more--><br/><br/>
+2. 上面看到模板目录名是 template，是 struts2-core-2.x.x.jar 中，其实目录名是由 struts.ui.templateDir 常量来指定的，只是默认值是 template。意味着 Struts 2 从 Web 应用的 template 目录或 CLASSPATH 的 template 目录(包) 中依次加载特定的模板文件。<br/><br/>
+3. 比如我们使用一个 select 标签，且指定主题为 xhtml，则加载模板文件的顺序为 (1) Web 应用/template/xhmlt/select.flt    (2) CLASSPATH/template/xhtml/select.ftl。Struts2 默认是用的 FreeMarkder 模板技术，可设置常量 struts.ui.templateSuffix 来改变默认的模板技术，可选值有 ftl、vm、jsp。但是对于 vm 和 jsp 要自己提供完整的实现，Struts2 可没帮你做这些。<br/><br/>
+4. 有时候我们想要自定义主题，如你希望输入框前的标签显示红颜色，你不想要校验错误提示在输入框正上方而是右边。当然你可以修改 struts2-core-2.x.x.jar 中 template 下某个主题的模板文件，或拷一份到 Web 应用目录的 template 目录修改要定制的模板，这样做总有些不爽。Struts2 还支持两种更灵活的主题定制方式。包装和继承现有主题，可以同时使用。<br />
+最简单的主题定制方式是利用主题模板的加载优先级，把自定义的模板文件放在优先级高的目录，比如放一个 text.ftl 在 WEB-INF/classes/template/xhtml/ 目录下，它将覆盖掉 struts2-core-2.x.x.jar 里的 template/xhtml/text.ftl 的定义。<br/><br/>
+5. 先看一个包装的例子，在 xhtml 下的 combobox.ftl 的内容如下：<br />
+&lt;#include "/${parameters.templateDir}/${parameters.theme}/controlheader.ftl" /&gt;<br/><br/>
+&lt;#include "/${parameters.templateDir}/simple/combobox.ftl" /&gt;<br />
+    &lt;#include "/${parameters.templateDir}/xhtml/controlfooter.ftl" /&gt;&lt;#nt/&gt;<br />
+它就是对 simple/combobox.ftl 的基础上包装上一个 controlheader.ftl 和一个 controlfooter.ftl，包装的局限性是你仍然是要为每一个 UI 组件提供单独模板文件，即全套的。<br />
+和设计模式中的包装(装饰)模式如出一辙，如 BufferedInputStream 包装了 InputStream，但在 BufferedInputStream 提供了全套的和 InputStream  一样的操作方法。<br/><br/>
+6. 再说继承来自定义主题，如果简单改变个别 UI 的风格，继承就是最为高效的了。此继承与 Java 的继承(即extends) 也是一马事。要改变或要新加的用自己定义的，其他的延用父主题的。举个例子，自定义一个名为 custom 的主题继承自 xhtml，只改变 select 标签的风格，你要做的就是编辑自己的一个 select.ftl 放在 WEB-INF/classes/template/custom 下，并在此目录下放一文件 theme.properties，内容是:<br />
+#指定该主题以 xhtml 为基础进行扩展<br />
+parent=xhml<br/><br/>
+使用可指定给 UI 标签，例如 &lt;s:form name="aa" theme="custom" ...，效果就会是 form 下的 select 使用了在 custom 目录下自定义的 select.ftl，其他的直接使用父主题 xhtml 中的模板文件。Struts2 提供的 ajax 主题就是继承自 xhtml 主题的。<br/><br/>
+7. 简单说一下 Struts2 的内建主题，包括 simple、xhtml、css_xhtml 和 ajax。simple 主题不用多说，比Struts1 的 html 标签还弱些，只对应简单的 html 元素，不生成额外内容。xhtml 是默认主题，是对 simple 主题的包装和扩展(也就是继承)，该主题下有一个 head.ftl 用来导入 javascript 类库(如 dojo)。xhtml 在 simple 的基础上增加了以下特性：<br />
+    1) 针对 HTML 标签(如 textfield和select标签) 使用标准的两列表格布局<br />
+    2) 每个 HTML 标签有 label 属性，默认左边显示，可通过 labelposition 属性设定位置<br />
+    3) 自动输出后台校验错误或 javascript 前端校验错误<br/><br/>
+8. 继续 Struts2 的内建主题的话题。css_xhtml 主题是对 xhtml 的扩展，显示是加入了 css 样式控制特性。ajax 主题是对 xhtml 主题的扩展，在 xhtml 主题的每个标签增加了 ajax 的支持(以 Djoj 和 DWR 为基础)。所增 Ajax 特性有：<br />
+    1) Ajax 方式的客户端校验<br />
+    2) 远程表单的异步提交<br />
+    3) 高级 div 标签，允许局部更新<br />
+    4) 高级 a 标签，允许动态加载并执行远端的 javascript 代码。<br />
+    5) 提供支持 ajax 的 tabbedPanel<br />
+    6) 提供“富客户端” 模型的 pub-sub 事件模型<br/><br/>
+9. 先前有网友问过我，他用了 Struts2 的校验，但是错误输出是在输入框的上方，但希望错误信息是显示在输入框的右方，该如何做。当时我只告诉了他要修改模板文件，也只是大概告诉了他是在某个 template 目录下的一个 ftl 文件，因那时具体操作自己也不太清楚。现在知道了线索，但实际修改还是很麻烦的。<br />
+    输入框　&lt;s:textfield .../&gt; 默认是用的 xhtml/text.flt 模板，text.ftl 包装了 smple/text.ftl，错误信息可以追溯发现是在 controlheader-core.ftl 中定义显示的，所以你可以把 xthml/text.ftl 和 controlheader-core.ftl 拷到 WEB-INF/classes/template/xhtml 目录中进行修改，WEB-INF/classes/template/xhtml 中的模板文件是优先于 struts2-core-2.x.x.jar 里的 template/xhtml 目录中的模板文件加载。<br/><br/>
+10. 看有些地方只笼统介绍说：所有表单元素都存在一个特殊的属性：form，这个属性引用元素所在表单，通过该属性实现表单元素与表单间的交互，例如可通过 ${parameters.form.id} 访问表单的 ID。对这句话我只是感到一头雾水，查看像 &lt;s:textfield .../&gt; 等标签并无 form 属性，用 &lt;s:textfield value="${parameters.form.id}" name="aa"/&gt; 也看不到输出所在表单的 ID。去网上找找，才知道前面那句话有出入，其实说的是在主题模板文件里的用法，打开一些主题模板文件，如 combobox.ftl 或 controlheader-core.ftl 文件，你就能看到许多的 parameters 的表示法-- parameters.required、parameters.id。想见一下 parameters 属性才是根本，它代表了表单元素的属性集，parameters 说来还有点像 this，this.id、this.form.id、this.required 等等...

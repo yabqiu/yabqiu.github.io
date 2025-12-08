@@ -1,0 +1,291 @@
+---
+title: Lucene 应用 WordNet 的同义词典实现同义词检索(C#版)
+url: /lucene-wordnet-synonym-search-csharp/
+date: 2010-07-14T22:35:48-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - .Net
+tags: 
+  - C#
+  - 同义词
+  - Lucene
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 37 
+wpStatus: publish
+views: 2357
+lastmod: 2021-09-02T10:32:41-05:00
+---
+
+同义词检索应该很多时候会用得上的，举个简单的例子，我们搜索关键字 good 的时候，与 well 和 fine 等的词条也可能是你想要的结果。这里我们不自己建立同义词库，直接使用 WordNet 的同义词库，本篇介绍 C# 版的实现步骤，还会有续篇--Java 版。<br/><br/>
+由于 Lucene 是发源于 Java，所以 C# 的应用者就没有 Java 的那么幸福了，Java 版已经有 3.0.2 可下载，C# 的版本还必须从 SVN 库里：<a href="https://svn.apache.org/repos/asf/lucene/lucene.net/tags/Lucene.Net_2_9_2/">https://svn.apache.org/repos/asf/lucene/lucene.net/tags/Lucene.Net_2_9_2/</a> 才能取到最新的 2.9.2 的源码，二制包还只有 2.0 的。<!--more--><br/><br/>
+接下来就是用 VS 来编译它的，不多说。只是注意到在 contrib 目录中有 WordNet.Net 解决方案，这是我们想要的，编译 WordNet.Net 可得到三个可执行文件：<br/><br/>
+1. Syns2Index.exe  用来根据 WordNet 的同义词库建立同义词索引文件，同义词本身也是通过 Lucene 来查询到的<br />
+2. SynLookup.exe  从同义词索引中查找某个词有哪些同义词<br />
+3. SynExpand.exe   与 SynLookup 差不多，只是多了个权重值，大概就是同义程度<br/><br/>
+好啦，有了 Lucene.Net.dll 和上面那三个文件，我们下面来说进一步的步骤：<br/><br/>
+<strong>二. 下载 WordNet 的同义词库<br />
+</strong><br />
+可以从 <a href="http://wordnetcode.princeton.edu/3.0/">http://wordnetcode.princeton.edu/3.0/</a> 下载 <a href="http://wordnetcode.princeton.edu/3.0/WNprolog-3.0.tar.gz" target="_blank" rel="noopener">WNprolog-3.0.tar.gz</a> 文件。然后解压到某个目录，如 D:\WNprolog-3.0，其中子目录 prolog 中有许多的 pl 文件，下面要用到的就是 wn_s.pl<br/><br/>
+<strong>三. 生成同义词 Lucene 索引</strong><br/><br/>
+使用命令<br/><br/>
+Syns2Index.exe d:\WNprolog-3.0\prolog\wn_s.pl syn_index<br/><br/>
+第二个参数是生成索引的目录，由它来帮你创建该目录，执行时间大约 40 秒。这是顺利的时候，也许你也会根本无法成功，执行 Syns2Index.exe 的时候出现下面的错误：<br/><br/>
+<blockquote>
+Unhandled Exception: System.ArgumentException: maxBufferedDocs must at least be 2 when enabled<br />
+    at Lucene.Net.Index.IndexWriter.SetMaxBufferedDocs(Int32 maxBufferedDocs)<br />
+    at WorldNet.Net.Syns2Index.Index(String indexDir, IDictionary word2Nums, IDictionary num2Words)<br />
+    at WorldNet.Net.Syns2Index.Main(String[] args)
+</blockquote>
+<br/>
+莫急，手中有源码，心里不用慌，只要找到 Syns2Index 工程，改动 Syns2Index.cs 文件中的<br/><br/>
+writer.SetMaxBufferedDocs(writer.GetMaxBufferedDocs() * 2*/); //GetMaxBufferedDocs() 本身就为 0，翻多少倍也是白搭<br/><br/>
+为<br/><br/>
+writer.SetMaxBufferedDocs(100); //所以直接改为 100 或大于 2 的数就行<br/><br/>
+重新使用新编译的 Syns2Index.exe 执行上一条命令即可。成功执行后，可以看到新生成了一个索引目录 syn_index, 约 3 M。<br/><br/>
+现在可以用另两个命令来测试一下索引文件:<br/><br/>
+<blockquote>
+D:\wordnet&gt;SynLookup.exe syn_index hi<br />
+Synonyms found for "hi":<br />
+hawaii<br />
+hello<br />
+howdy<br />
+hullo
+D:\wordnet&gt;SynExpand.exe syn_index hi<br />
+Query: hi hawaii^0.9 hello^0.9 howdy^0.9 hullo^0.9
+</blockquote>
+<br/>
+也可以用 Luke - Lucene Index ToolBox 来查看索引，两个字段，syn 和 word，通过 word:hi 就可以搜索到 syn:hawaii hello howdy hullo<br/><br/>
+<strong>四. 使用同义词分析器、过滤器进行检索</strong><br/><br/>
+相比，Java 程序员要轻松许多，有现成的 lucene-wordnet-3.0.2.jar，里面有一些现在的代码可以用。C# 的那些分析器和过滤器就得自己写了，或许我已走入了一个岔道，但也不算崎岖。<br/><br/>
+小步骤就不具体描述了，直接上代码，大家从代码中去理解：<br/><br/>
+同义词引擎接口<br/><br/>
+<pre class="lang:default decode:true">using System.Collections.Generic;<br/><br/>
+namespace Com.Unmi.Searching
+{
+    /// &lt;summary&gt;
+    /// Summary description for ISynonymEngine
+    /// &lt;/summary&gt;
+    public interface ISynonymEngine
+    {
+        IEnumerable&lt;string&gt; GetSynonyms(string word);
+    }
+}</pre>
+<br/>
+同义词引擎实现类<br/><br/>
+<pre class="lang:default decode:true">using System.IO;
+using System.Collections.Generic;
+using Lucene.Net.Analysis;
+using Lucene.Net.Analysis.Standard;
+using Lucene.Net.Documents;
+using Lucene.Net.QueryParsers;
+using Lucene.Net.Search;
+using Lucene.Net.Store;<br/><br/>
+using LuceneDirectory = Lucene.Net.Store.Directory;
+using Version = Lucene.Net.Util.Version;<br/><br/>
+namespace Com.Unmi.Searching
+{
+    /// &lt;summary&gt;
+    /// Summary description for WordNetSynonymEngine
+    /// &lt;/summary&gt;
+    public class WordNetSynonymEngine : ISynonymEngine
+    {<br/><br/>
+        private IndexSearcher searcher;
+        private Analyzer analyzer = new StandardAnalyzer();<br/><br/>
+        //syn_index_directory 为前面用 Syns2Index 生成的同义词索引目录
+        public WordNetSynonymEngine(string syn_index_directory)
+        {<br/><br/>
+            LuceneDirectory indexDir = FSDirectory.Open(new DirectoryInfo(syn_index_directory));
+            searcher = new IndexSearcher(indexDir, true);
+        }<br/><br/>
+        public IEnumerable&lt;string&gt; GetSynonyms(string word)
+        {
+            QueryParser parser = new QueryParser(Version.LUCENE_29, "word", analyzer);
+            Query query = parser.Parse(word);
+            Hits hits = searcher.Search(query);<br/><br/>
+            //this will contain a list, of lists of words that go together
+            List&lt;string&gt; Synonyms = new List&lt;string&gt;();<br/><br/>
+            for (int i = 0; i &lt; hits.Length(); i++)
+            {
+                Field[] fields = hits.Doc(i).GetFields("syn");
+                foreach (Field field in fields)
+                {
+                    Synonyms.Add(field.StringValue());
+                }
+            }<br/><br/>
+            return Synonyms;
+        }
+    }
+}</pre>
+<br/>
+过滤器，下面的分析器要用到<br/><br/>
+<pre class="lang:default decode:true">using System;
+using System.Collections.Generic;
+using Lucene.Net.Analysis;<br/><br/>
+namespace Com.Unmi.Searching
+{
+    /// &lt;summary&gt;
+    /// Summary description for SynonymFilter
+    /// &lt;/summary&gt;
+    public class SynonymFilter : TokenFilter
+    {
+        private Queue&lt;Token&gt; synonymTokenQueue = new Queue&lt;Token&gt;();<br/><br/>
+        public ISynonymEngine SynonymEngine { get; private set; }<br/><br/>
+        public SynonymFilter(TokenStream input, ISynonymEngine synonymEngine)
+            : base(input)
+        {
+            if (synonymEngine == null)
+                throw new ArgumentNullException("synonymEngine");<br/><br/>
+            SynonymEngine = synonymEngine;
+        }<br/><br/>
+        public override Token Next()
+        {
+            // if our synonymTokens queue contains any tokens, return the next one.
+            if (synonymTokenQueue.Count &gt; 0)
+            {
+                return synonymTokenQueue.Dequeue();
+            }<br/><br/>
+            //get the next token from the input stream
+            Token token = input.Next();<br/><br/>
+            //if the token is null, then it is the end of stream, so return null
+            if (token == null)
+                return null;<br/><br/>
+            //retrieve the synonyms
+            IEnumerable&lt;string&gt; synonyms = SynonymEngine.GetSynonyms(token.TermText());<br/><br/>
+            //if we don't have any synonyms just return the token
+            if (synonyms == null)
+            {
+                return token;
+            }<br/><br/>
+            //if we do have synonyms, add them to the synonymQueue,
+            // and then return the original token
+            foreach (string syn in synonyms)
+            {
+                //make sure we don't add the same word
+                if (!token.TermText().Equals(syn))
+                {
+                    //create the synonymToken
+                    Token synToken = new Token(syn, token.StartOffset(),
+                              t.EndOffset(), "&lt;SYNONYM&gt;");<br/><br/>
+                    // set the position increment to zero
+                    // this tells lucene the synonym is
+                    // in the exact same location as the originating word
+                    synToken.SetPositionIncrement(0);<br/><br/>
+                    //add the synToken to the synonyms queue
+                    synonymTokenQueue.Enqueue(synToken);
+                }
+            }<br/><br/>
+            //after adding the syn to the queue, return the original token
+            return token;
+        }
+    }
+}
+</pre>
+<br/>
+分析器，使用了多个过滤器，当然最主要是用到了上面定义的同义词过滤器<br/><br/>
+<pre class="lang:default decode:true">using Lucene.Net.Analysis;
+using Lucene.Net.Analysis.Standard;<br/><br/>
+namespace Com.Unmi.Searching
+{
+    public class SynonymAnalyzer : Analyzer
+    {
+        public ISynonymEngine SynonymEngine { get; private set; }<br/><br/>
+        public SynonymAnalyzer(ISynonymEngine engine)
+        {
+            SynonymEngine = engine;
+        }<br/><br/>
+        public override TokenStream TokenStream(string fieldName, System.IO.TextReader reader)
+        {
+            //create the tokenizer
+            TokenStream result = new StandardTokenizer(reader);<br/><br/>
+            //add in filters
+            // first normalize the StandardTokenizer
+            result = new StandardFilter(result);<br/><br/>
+            // makes sure everything is lower case
+            result = new LowerCaseFilter(result);<br/><br/>
+            // use the default list of Stop Words, provided by the StopAnalyzer class.
+            result = new StopFilter(result, StopAnalyzer.ENGLISH_STOP_WORDS);<br/><br/>
+            // injects the synonyms.
+            result = new SynonymFilter(result, SynonymEngine);<br/><br/>
+            //return the built token stream.
+            return result;
+        }
+    }
+}</pre>
+<br/>
+最后，当然是要应用上面的同义词引擎和过滤器，分析器了<br/><br/>
+<pre class="lang:default decode:true ">using System.IO;
+using System.Web;
+using Lucene.Net.Index;
+using System;
+using Lucene.Net.Analysis.Standard;
+using Lucene.Net.Documents;
+using System.Collections.Generic;
+using Lucene.Net.Analysis;
+using Lucene.Net.Search;
+using Lucene.Net.QueryParsers;
+using Lucene.Net.Store;
+using Version = Lucene.Net.Util.Version;
+using System.Collections;
+using Lucene.Net.Highlight;<br/><br/>
+using LuceneDirectory = Lucene.Net.Store.Directory;<br/><br/>
+namespace Com.Unmi.Searching
+{
+    public class Searcher
+    {
+        /// &lt;summary&gt;
+        /// 假定前面创建的同义词索引目录是 d:\indexes\syn_index，
+        /// 要搜索的内容索引目录是 d:\indexes\file_index, 且索引中有两字段 file 和 content
+        /// IndexEntry 是你自己创建的一个搜索结果类，有两属性 file 和 fragment
+        /// &lt;/summary&gt;
+        /// &lt;param name="querystring"&gt;queryString&lt;/param&gt;
+        public static List&lt;IndexEntry&gt; Search(queryString)
+        {
+            //Now SynonymAnalyzer
+            ISynonymEngine synonymEngine = new WordNetSynonymEngine(@"d:\indexes\syn_index");
+            Analyzer analyzer = new SynonymAnalyzer(synonymEngine);<br/><br/>
+            LuceneDirectory indexDir = FSDirectory.Open(new DirectoryInfo(@"d:\indexes\file_index");
+            IndexSearcher searcher = new IndexSearcher(indexDir, true);<br/><br/>
+            QueryParser parser = new QueryParser(Version.LUCENE_29,"content", analyzer);<br/><br/>
+            Query query = parser.Parse(queryString);<br/><br/>
+            Hits hits = searcher.Search(query);<br/><br/>
+   //返回类型是一个 IndexEntry 列表，它有两个属性 file 和 fragment
+            List&lt;IndexEntry&gt; entries = new List&lt;IndexEntry&gt;();<br/><br/>
+            //这里还用到了 Contrib 里的另一个 Lucene 辅助组件，高亮显示搜索关键字
+            SimpleHTMLFormatter simpleHTMLFormatter = new SimpleHTMLFormatter("&lt;span style='background-color:#23dc23;color:white'&gt;", "&lt;/span&gt;");
+            Highlighter highlighter = new Highlighter(simpleHTMLFormatter, new QueryScorer(query)); <br/><br/>
+            highlighter.SetTextFragmenter(new SimpleFragmenter(256));
+            highlighter.SetMaxDocBytesToAnalyze(int.MaxValue);<br/><br/>
+            Analyzer standAnalyzer = new StandardAnalyzer();<br/><br/>
+            for (int i = 0; i &lt; hits.Length(); i++)
+            {
+                Document doc = hits.Doc(i);<br/><br/>
+                //Any time, can't use the SynonymAnalyzer here
+    //注意，这里不能用前面的 SynonymAnalyzer 实例，否则将会陷入一系列可怕的循环
+                string fragment = highlighter.GetBestFragment(standAnalyzer/*analyzer*/, "content", doc.Get("content"));<br/><br/>
+                IndexEntry entry = new IndexEntry(doc.Get("file"), fragment);
+                entries.Add(entry);
+            }<br/><br/>
+            return entries;
+        }
+    }
+}</pre>
+<br/>
+<strong>五. 看看同义词检索的效果</strong><br/><br/>
+看前面一大面，也不知道有几人能到达这里，该感性的认识一下，上图看真相：<br/><br/>
+<div><a href="/wp-content/uploads/2010/07/wordnet2.png"><img class="aligncenter" style="border: 0pt none;" src="/wp-content/uploads/2010/07/wordnet1.png" alt="" width="750" height="240" border="0" /> </a></div>
+<br/>
+搜索 ok，由于 fine 是 ok 的同义词，所以也被检索到，要有其他同义的结果也能显示出来的。<br/><br/>
+参考：<br/><br/>
+<ol>
+    <li><a href="http://deepfuture.javaeye.com/blog/573943" target="_blank" rel="noopener">e-使用sandbox的wordnet完成同义词索引</a></li>
+    <li><a href="http://www.chencer.com/techno/java/lucene/wordnet.html">http://www.chencer.com/techno/java/lucene/wordnet.html</a></li>
+    <li><a href="http://www.java2s.com/Open-Source/Java-Document/Net/lucene-connector/org.apache.lucene.wordnet.htm" target="_blank" rel="noopener">lucene connector » org.apache.lucene.wordnet</a></li>
+    <li><a href="http://www.codeproject.com/KB/cs/lucene_custom_analyzer.aspx" target="_blank" rel="noopener">Lucene.Net – Custom Synonym Analyzer</a>(本文比较多的参考这篇)</li>
+    <li><a href="http://hi.baidu.com/lewutian/blog/item/44a98f170a15c90d4a90a79e.html" target="_blank" rel="noopener">Lucene in action 笔记 analysis篇</a></li>
+</ol>

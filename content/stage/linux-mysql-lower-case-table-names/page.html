@@ -1,0 +1,57 @@
+---
+title: 让 MySQL 在 Linux 下表名不区分大小写(实为表名全小写)
+url: /linux-mysql-lower-case-table-names/
+date: 2011-04-16T23:35:03-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2011/04/2X2_mysql.png"
+categories:
+  - Database
+tags: 
+  - Linux
+  - Mysql
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3439 
+wpStatus: publish
+views: 4312
+lastmod: 2011-04-17T21:12:54-05:00
+---
+
+把 Windows 下的应用部署到 Linux 下，使用到了 Quartz 集群的特性，所以建了 MySql 的中间表，一启动看到报错：<br/>
+<br/>
+Invocation of init method failed; nested exception is org.quartz.JobPersistenceException: Couldn't retrieve trigger: Table 'unmijob.QRTZ_TRIGGERS' doesn't exist [See nested exception: com.mysql.jdbc.exceptions.jdbc4.MySQLSyntaxErrorException: Table 'unmijob.QRTZ_TRIGGERS' doesn't exist]<br/>
+<br/>
+用 MySQL 客户端连接到那个数据库，看到 qrtz_triggers 表确确实实是存在的，MySQL 也是安装在 Linux 下的。在大小写敏感的操作系统中，估摸着会不会是表名大小的因素呢? 于是把 qrtz_triggers 改为大写的 QRTZ_TRIGGERS，再次启动应用服务器，这时候出现的是：<!--more--><br/>
+<br/>
+Invocation of init method failed; nested exception is org.quartz.JobPersistenceException: Couldn't retrieve trigger: Table 'unmijob.QRTZ_CRON_TRIGGERS' doesn't exist [See nested exception: com.mysql.jdbc.exceptions.jdbc4.MySQLSyntaxErrorException: Table 'unmijob.QRTZ_CRON_TRIGGERS' doesn't exist]<br/>
+<br/>
+说明表 QRTZ_TRIGGERS 表是找到了，找不到下面的  QRTZ_CRON_TRIGGERS 表。这样的现像面前说明在 Linux 下 MySQL 表明是区分大小写是暴露无疑了，以前多是在 windows 下写程序，而且代码中的 sql 语句表明也都是用小写，所以未碰到。现在 Quartz 偏喜欢大写，问题也就这样来了。<br/>
+<br/>
+知道原因，找解决办法就可有的放矢了，google mysql linux 表名不区分大小写，答案立马找到：<br/>
+<br/>
+需要改 MySQL 的配置文件，Linux 下 MySQL 的配置文件可能是 /etc/my.cnf，或 /etc/mysql/my.cnf，这依赖于你的安装方式。假如是 /etc/my.cnf，那么执行<br/>
+<br/>
+<span style="color: #800000;">sudo vi /etc/my.cnf</span><br/>
+<br/>
+在 [mysqld] 节中添加：<br/>
+<br/>
+<span style="color: #800000;">lower_case_table_names=1</span><br/>
+<br/>
+然后保存，用 sudo /etc/init.d/mysql restart 重启 MySQL 服务便让 Linux 系统对表名大小写不敏感了。<br/>
+<br/>
+其实准确来说不是说 Linux 对于 MySQL 表名忽略大小写，而是应用上面的配置后，MySQL 服务程序会来自于应用程序里的请求的表名转换为小写，如你查询 select*  UNMI_TABLE，MySQL 会认为是查询的 select * from unmi_table，所以在加入<br/>
+<br/>
+lower_case_table_names=1<br/>
+<br/>
+之前时你必须把表名都改为小写。也就是在创建表时都用小写名字，如果创建的表名为 UNMI_TABLE，那么程序中无论是执行 select * from UNMI_TABLE 还是执行 select * from unmi_table 都会碰到类似下面的错误：<br/>
+<br/>
+Invocation of init method failed; nested exception is org.quartz.JobPersistenceException: Couldn't retrieve trigger: Table 'unmijob.qrtz_triggers' doesn't exist [See nested exception: com.mysql.jdbc.exceptions.jdbc4.MySQLSyntaxErrorException: Table 'unmijob.qrtz_triggers' doesn't exist]<br/>
+<br/>
+因为 MySQL 服务程序认为表名就是小写的 unmi_table，而在数据库中的表名不是这样子的。<br/>
+<br/>
+而且此时在 MySQL 客户端都无法把 QRTZ_TRIGGERS 改成 qrtz_triggers. 因为表名的大小写是与文件系统中的数据目录下的 frm 文件相对应的。

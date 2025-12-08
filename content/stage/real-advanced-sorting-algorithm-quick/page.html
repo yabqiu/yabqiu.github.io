@@ -1,0 +1,224 @@
+---
+title: 真正有些水准的排序算法 - 快速排序
+url: /real-advanced-sorting-algorithm-quick/
+date: 2020-04-15T15:41:30-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2020/04/algorithm-icon.png"
+categories:
+  - Algorithm
+tags: 
+  - Sort
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10155 
+wpStatus: publish
+views: 746
+lastmod: 2020-04-26T14:22:31-05:00
+---
+
+冒泡和选择排序的简单粗暴也许在某些人眼里都不能称作算法，现在要进入一种更优雅的排序算法，快速排序。它使用分而治之(Divide and Conquer, D&amp;G) 的策略，要应用到递归调用。快速排序敢说自己快速，也确实比选择排序快很多很多。冒泡和选择排序，尤其是选择排序是非常自然的排序算法，而快速排序就不是一般人会随意想出来的。<br/><br/>
+快速排序的演绎需要用递归来思考循环的问题，然而我之前总是在及力用循环来避免递归调用，有趣的是诸如 Haskell 等函数式编译语言根本没有循环，只能用递归来编写循环的效果。来看一个简单的例子，比如要从 1 加到 100，我们很自然会用循环从 1 累加到 100，如果换成递归，看下面的代码<br/><br/>
+<pre class="lang:default decode:true">def summary(arr):
+    if len(arr) == 0:
+        return 0
+    else:
+        return arr[0] + summary(arr[1:])<br/><br/>
+
+print(summary(list(range(1, 101))))  # 5050</pre>
+<br/>
+递归有助于我们把大问题分解为小问题，上面代码的思维是数组的和总是很一个元素加上剩下元素列表的和，直到最后元素列表为空(和为 0)。<!--more--><br/><br/>
+快速排序的要理如下：<br/><br/>
+<ol>
+    <li>从待排序的列表中找一个基准值(随机选择或以第一个元素为基准值)</li>
+    <li>以上列表可分为三部分：小于基准值的子列表，基准值，大于基准值的子列表。这三部分从整体看是有序的</li>
+    <li>对 #2 中小于基准值和大于基准值两个子列表再次应用快速排序进一步分解</li>
+    <li>直到子列表长度为 1 或 0 时返回，因为此时列表是有序的</li>
+    <li>最后把全部分解出来的部分合并就是一个有序的列表</li>
+</ol>
+<br/>
+例如，对列表 [3, 5, 2, 1, 4] 总是取第首元素为基准值时的排序过程<br/><br/>
+<blockquote>
+[2, 1]    <span style="color: #800000;">3</span>    [5,  4]<br />
+[1] <span style="color: #008000;">2</span>     <span style="color: #800000;">3</span>    [4]  <span style="color: #008000;">5</span>
+</blockquote>
+<br/>
+反映成 Python 代码如下：<br/><br/>
+<pre class="lang:default decode:true">def quicksort(array):
+    if len(array) &lt; 2:
+        return array<br/><br/>
+    pivot = array[0]
+    left = []
+    right = []
+    for item in array[1:]:
+        if item &lt;= pivot:
+            left.append(item)
+        else:
+            right.append(item)<br/><br/>
+    return quicksort(left) + [pivot] + quicksort(right)</pre>
+<br/>
+上面的代码是取首元素为基准值; 下面有优化后的代码，取中值为基准值，专门应对顺序不够乱的列表<br/><br/>
+本来也想贴一张动图来展示快速排序的整个过程，但是觉得网上找的几个动图并不那么直观，用文本列出的排序过程也好理解。<br/><br/>
+我们对比一下快速排序与选择排序看它有多快, 上一篇中的选择排序的代码重新回顾如下：<br/><br/>
+<pre class="lang:default decode:true ">def selection_sort(array):
+    length = len(array)
+    for i in range(length):
+        for j in range(i+1, length):
+            if array[i] &gt; array[j]:
+                array[i], array[j] = array[j], array[i]</pre>
+<br/>
+测试它们对相同含 100000 个数字的列表<br/><br/>
+<pre class="lang:default decode:true">array1 = random.sample(range(100000+1), 100000)
+array2 = array1.copy()</pre>
+<br/>
+结果对比如下(排 10 万个元素)：<br/><br/>
+<ol>
+    <li>quick_sort(array1):        耗时 0.25448 秒</li>
+    <li>selection_sort(array2):  耗时 658.633 秒(10 分多钟), 我居然能等这么久 </li>
+</ol>
+<br/>
+等排序的元素越多，悬殊越大，再看排 1 万个元素的时间对比：<br/><br/>
+<ol>
+    <li>quick_sort(array1):        耗时 0.023277 秒，没多大差别</li>
+    <li>selection_sort(array2):  耗时 6.18316 秒</li>
+</ol>
+<br/>
+快速排序的时间复杂度为 O(n log <span style="font-size: 13.3333px;">n</span>), 而选择排序的时间复杂度为 O(n<sup>2</sup>)。<br/><br/>
+快速排序最喜欢乱序的列表，这样选择一个基准值后，左右子列表大小相当，这样递归处理左右子列表产生的函数调用栈的层次不会太深。如果对一个有序列表进行排序(吃饭撑着，但谁知道有无序)，还是像上面那样每次取第一个元素为基准值，子列表为空，剩余元素全在右子列表中，这时候就出现了快速排序的最糟糕时间复杂度 O(n<sup>2</sup>)，而且还会出现栈溢出。<br/><br/>
+用上面的 quicksort 函数来排序有序的 1 万个元素列表<br/><br/>
+<blockquote>
+quicksort(list(range(999)))
+</blockquote>
+<br/>
+Python 中出现错误：RecursionError: maximum recursion depth exceeded while calling a Python object<br/><br/>
+quicksort(list(range(998))  没问题，也就是我所用的 Python 的调用栈深度 <code>sys.getrecursionlimit()</code> 不能超过 1000。<br/><br/>
+所以还得对前面快速排序进行优化，选取基准值不能一味的用第一个元素，我们可以取一个中值或随机值。<br/><br/>
+改进后的快速排序代码，取中值为基准值<br/><br/>
+<pre class="lang:default decode:true">def quicksort(array):
+    if len(array) &lt; 2:
+        return array<br/><br/>
+    index = len(array) // 2
+    pivot = array[index]
+    left = []
+    right = []
+    for item in (array[:index] + array[index+1:]):
+        if item &lt;= pivot:
+            left.append(item)
+        else:
+            right.append(item)<br/><br/>
+    return quicksort(left) + [pivot] + quicksort(right)</pre>
+<br/>
+看实时执行过程(或点击链接新窗口中查看：<a href="http://pythontutor.com/visualize.html#code=def%20quicksort%28array%29%3A%0A%20%20%20%20if%20len%28array%29%20%3C%202%3A%0A%20%20%20%20%20%20%20%20return%20array%0A%0A%20%20%20%20index%20%3D%20len%28array%29%20//%202%0A%20%20%20%20pivot%20%3D%20array%5Bindex%5D%0A%20%20%20%20left%20%3D%20%5B%5D%0A%20%20%20%20right%20%3D%20%5B%5D%0A%20%20%20%20for%20item%20in%20%28array%5B%3Aindex%5D%20%2B%20array%5Bindex%2B1%3A%5D%29%3A%0A%20%20%20%20%20%20%20%20if%20item%20%3C%3D%20pivot%3A%0A%20%20%20%20%20%20%20%20%20%20%20%20left.append%28item%29%0A%20%20%20%20%20%20%20%20else%3A%0A%20%20%20%20%20%20%20%20%20%20%20%20right.append%28item%29%0A%0A%20%20%20%20return%20quicksort%28left%29%20%2B%20%5Bpivot%5D%20%2B%20quicksort%28right%29%0A%20%20%20%20%0A%20%20%20%20%0Aquicksort%28%5B24,%208,%2042,%2075,%2029,%2077,%2038,%2057%5D%29&amp;cumulative=false&amp;curInstr=2&amp;heapPrimitives=nevernest&amp;mode=display&amp;origin=opt-frontend.js&amp;py=3&amp;rawInputLstJSON=%5B%5D&amp;textReferences=false" target="_blank" rel="noopener noreferrer">快速排序可视过程</a>)：<br/><br/>
+<iframe width="900" height="590" frameborder="0" src="https://pythontutor.com/iframe-embed.html#code=def%20quicksort%28array%29%3A%0A%20%20%20%20if%20len%28array%29%20%3C%202%3A%0A%20%20%20%20%20%20%20%20return%20array%0A%0A%20%20%20%20index%20%3D%20len%28array%29%20//%202%0A%20%20%20%20pivot%20%3D%20array%5Bindex%5D%0A%20%20%20%20left%20%3D%20%5B%5D%0A%20%20%20%20right%20%3D%20%5B%5D%0A%20%20%20%20for%20item%20in%20%28array%5B%3Aindex%5D%20%2B%20array%5Bindex%2B1%3A%5D%29%3A%0A%20%20%20%20%20%20%20%20if%20item%20%3C%3D%20pivot%3A%0A%20%20%20%20%20%20%20%20%20%20%20%20left.append%28item%29%0A%20%20%20%20%20%20%20%20else%3A%0A%20%20%20%20%20%20%20%20%20%20%20%20right.append%28item%29%0A%0A%20%20%20%20return%20quicksort%28left%29%20%2B%20%5Bpivot%5D%20%2B%20quicksort%28right%29%0A%20%20%20%20%0A%0Aquicksort%28%5B24,%208,%2042,%2075,%2029,%2077,%2038,%2057%5D%29&amp;codeDivHeight=400&amp;codeDivWidth=350&amp;cumulative=false&amp;curInstr=2&amp;heapPrimitives=nevernest&amp;origin=opt-frontend.js&amp;py=3&amp;rawInputLstJSON=%5B%5D&amp;textReferences=false"><span data-mce-type="bookmark" style="display: inline-block; width: 0px; overflow: hidden; line-height: 0;" class="mce_SELRES_start">﻿</span><span data-mce-type="bookmark" style="display: inline-block; width: 0px; overflow: hidden; line-height: 0;" class="mce_SELRES_start">﻿</span><span data-mce-type="bookmark" style="display: inline-block; width: 0px; overflow: hidden; line-height: 0;" class="mce_SELRES_start">﻿</span><span data-mce-type="bookmark" style="display: inline-block; width: 0px; overflow: hidden; line-height: 0;" class="mce_SELRES_start">﻿</span><span data-mce-type="bookmark" style="display: inline-block; width: 0px; overflow: hidden; line-height: 0;" class="mce_SELRES_start">﻿</span><span data-mce-type="bookmark" style="display: inline-block; width: 0px; overflow: hidden; line-height: 0;" class="mce_SELRES_start">﻿</span><span data-mce-type="bookmark" style="display: inline-block; width: 0px; overflow: hidden; line-height: 0;" class="mce_SELRES_start">﻿</span><span data-mce-type="bookmark" style="display: inline-block; width: 0px; overflow: hidden; line-height: 0;" class="mce_SELRES_start">﻿</span> </iframe><br/><br/>
+现在再不怕用有序的列来踢场子了，排序 1 千万个有序列表<br/><br/>
+<blockquote>
+quicksort(list(range(10000000))) :   耗时为 25.52097 秒
+</blockquote>
+<br/>
+取首位与取中值为基准值时的排序过程对比，中括号外的值是每次分解用的基准值，它的左右就是每次分区后的左右子列表<br/><br/>
+<table style="border-collapse: collapse; width: 48.9832%;">
+<tbody>
+<tr>
+<td style="width: 22.0638%;">取首位为基准值<br />
+[1, 2, 3, 4, 5, 6, 7, 8]<br />
+[] 1 [2, 3, 4, 5, 6, 7, 8]<br />
+[] 1 [] 2 [3, 4, 5, 6, 7, 8]<br />
+[] 1 [] 2 [] 3 [4, 5, 6, 7, 8]<br />
+[] 1 [] 2 [] 3 [] 4 [5, 6, 7, 8]<br />
+[] 1 [] 2 [] 3 [] 4 [] 5 [6, 7, 8]<br />
+[] 1 [] 2 [] 3 [] 4 [] 5 [] 6, [7, 8]<br />
+[] 1 [] 2 [] 3 [] 4 [] 5 [] 6 [] 7 [8]</td>
+<td style="width: 22.3072%;">取中位值为基准值<br />
+[1, 2, 3, 4, 5, 6, 7, 8]<br />
+[1, 2, 3, 4] 5 [6, 7, 8]<br />
+[1, 2], 3, [4] 5 [6] 7 [8]<br />
+[1] 2 [] 3 [4] 5 [6] 7 [8]<br />
+<br />
+<br />
+<br />
+<br />
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+由此可以看出取基准值也是个小技术活儿，不同的基准值造成调用栈的深度是不一样的。<br/><br/>
+《算法图解》书上最后说：<span style="color: #800000;">快速排序的最佳情况也是平均情况。只要你每次都随机的选择一个数组元素作为基准值，快速排序的平均时间就将为 O(n log n)。快速排序是最快的排序算法之一， 也是 D&amp;G 的典范</span>。对于原本有序的列表取随机元素作为基准值还不如直接取中位上的值有效。<br/><br/>
+进一步优化，以上代码每一次方法调用都会产生额外的数组，浪费了不少内存空间，我们完全可以作  In-place 的快速排序，同时注意基准值的选择，不能简单的选择最低或最高位上的值，否则要排一个有序的大数组就是一个灾难<br/><br/>
+<pre class="lang:default decode:true">import random<br/><br/>
+
+def quicksort(array, low, high):
+    if low &gt;= high:
+        return<br/><br/>
+    i, j = low, high
+    pivot = array[random.randint(low, high)]  # 随机选择一个基准值<br/><br/>
+    while i &lt;= j:
+        while array[i] &lt; pivot:
+            i += 1
+        while array[j] &gt; pivot:
+            j -= 1
+        if i &lt;= j:
+            array[i], array[j] = array[j], array[i]
+            i, j = i + 1, j - 1
+    quicksort(array, low, j)
+    quicksort(array, i, high)</pre>
+<br/>
+同样测试一下对有序数组  <code>list(range(10000000))</code> 的排序，耗时为 30.71732 秒，为上一段代码略慢，但节约了内存。<br/><br/>
+这里每次都用了 <code>random.randin(low, high)</code> 来找到随机位置，调用多了产生随机数也是个负担，如果换成取中值的方式，并且基线条件也换成了只要子列表为 1 个元素(不能等到长度为零)便返回<br/><br/>
+<span style="color: #ff0000;"><strong>[推荐]In-place 快速排序</strong></span><br/><br/>
+<pre class="lang:default decode:true">def quicksort(array, low, high):
+    if high - low &lt; 2:
+        return<br/><br/>
+    i, j = low, high
+    pivot = array[low + (high - low + 1) // 2]<br/><br/>
+    while i &lt;= j:
+        while array[i] &lt; pivot:
+            i += 1
+        while array[j] &gt; pivot:
+            j -= 1
+        if i &lt;= j:
+            array[i], array[j] = array[j], array[i]
+            i, j = i + 1, j - 1
+    quicksort(array, low, j)
+    quicksort(array, i, high)</pre>
+<br/>
+排序执行过程(或点击链接新窗口中查看：<a href="http://pythontutor.com/visualize.html#code=def%20quicksort%28array,%20low,%20high%29%3A%0A%20%20%20%20if%20high%20-%20low%20%3C%202%3A%0A%20%20%20%20%20%20%20%20return%0A%0A%20%20%20%20i,%20j%20%3D%20low,%20high%0A%20%20%20%20pivot%20%3D%20array%5Blow%20%2B%20%28high%20-%20low%20%2B%201%29%20//%202%5D%0A%0A%20%20%20%20while%20i%20%3C%3D%20j%3A%0A%20%20%20%20%20%20%20%20while%20array%5Bi%5D%20%3C%20pivot%3A%0A%20%20%20%20%20%20%20%20%20%20%20%20i%20%2B%3D%201%0A%20%20%20%20%20%20%20%20while%20array%5Bj%5D%20%3E%20pivot%3A%0A%20%20%20%20%20%20%20%20%20%20%20%20j%20-%3D%201%0A%20%20%20%20%20%20%20%20if%20i%20%3C%3D%20j%3A%0A%20%20%20%20%20%20%20%20%20%20%20%20array%5Bi%5D,%20array%5Bj%5D%20%3D%20array%5Bj%5D,%20array%5Bi%5D%0A%20%20%20%20%20%20%20%20%20%20%20%20i,%20j%20%3D%20i%20%2B%201,%20j%20-%201%0A%20%20%20%20quicksort%28array,%20low,%20j%29%0A%20%20%20%20quicksort%28array,%20i,%20high%29%0A%20%20%20%20%0A%0Aitems%20%3D%20%5B24,%208,%2042,%2075,%2029,%2077,%2038,%2057%5D%0Aquicksort%28items,%200,%20len%28items%29-1%29&amp;cumulative=false&amp;curInstr=2&amp;heapPrimitives=nevernest&amp;mode=display&amp;origin=opt-frontend.js&amp;py=3&amp;rawInputLstJSON=%5B%5D&amp;textReferences=false" target="_blank" rel="noopener noreferrer">快速排序可视过程</a>)：<br/><br/>
+<iframe width="890" height="600" frameborder="0" src="https://pythontutor.com/iframe-embed.html#code=def%20partition%28arr,%20low,%20high%29%3A%0A%20%20%20%20i%20%3D%20%28low%20-%201%29%0A%20%20%20%20mid%20%3D%20low%20%2B%20%28high%20-%20low%20%2B%201%29%20//%202%0A%20%20%20%20pivot%20%3D%20arr%5Bmid%5D%20%20%23%20pivot%0A%20%20%20%20arr%5Bmid%5D,%20arr%5Bhigh%5D%20%3D%20arr%5Bhigh%5D,%20arr%5Bmid%5D%0A%0A%20%20%20%20for%20j%20in%20range%28low,%20high%29%3A%0A%20%20%20%20%20%20%20%20if%20arr%5Bj%5D%20%3C%3D%20pivot%3A%0A%20%20%20%20%20%20%20%20%20%20%20%20i%20%3D%20i%20%2B%201%0A%20%20%20%20%20%20%20%20%20%20%20%20arr%5Bi%5D,%20arr%5Bj%5D%20%3D%20arr%5Bj%5D,%20arr%5Bi%5D%0A%0A%20%20%20%20arr%5Bi%20%2B%201%5D,%20arr%5Bhigh%5D%20%3D%20arr%5Bhigh%5D,%20arr%5Bi%20%2B%201%5D%0A%20%20%20%20return%20%28i%20%2B%201%29%0A%0A%0Adef%20quicksort%28arr,%20low,%20high%29%3A%0A%20%20%20%20if%20low%20%3C%20high%3A%0A%20%20%20%20%20%20%20%20pi%20%3D%20partition%28arr,%20low,%20high%29%0A%0A%20%20%20%20%20%20%20%20quicksort%28arr,%20low,%20pi%20-%201%29%0A%20%20%20%20%20%20%20%20quicksort%28arr,%20pi%20%2B%201,%20high%29%0A%20%20%20%20%20%20%20%20%0A%20%20%20%20%20%20%20%20%0Aitems%20%3D%20%5B24,%208,%2042,%2075,%2029,%2077,%2038,%2057%5D%0Aquicksort%28items,%200,%20len%28items%29%20-1%29&amp;codeDivHeight=400&amp;codeDivWidth=350&amp;cumulative=false&amp;curInstr=3&amp;heapPrimitives=nevernest&amp;origin=opt-frontend.js&amp;py=3&amp;rawInputLstJSON=%5B%5D&amp;textReferences=false"><span data-mce-type="bookmark" style="display: inline-block; width: 0px; overflow: hidden; line-height: 0;" class="mce_SELRES_start">﻿</span><span data-mce-type="bookmark" style="display: inline-block; width: 0px; overflow: hidden; line-height: 0;" class="mce_SELRES_start">﻿</span><span data-mce-type="bookmark" style="display: inline-block; width: 0px; overflow: hidden; line-height: 0;" class="mce_SELRES_start">﻿</span> </iframe><br/><br/>
+再来测试对 <code>list(range(10000000))</code> 的排序，耗时为 17.94254, 这已经是目前最好成绩了，且内存也不浪费。<br/><br/>
+再来一种写法<br/><br/>
+<pre class="lang:default decode:true">def partition(arr, low, high):
+    i = (low - 1)
+    mid = low + (high - low + 1) // 2
+    pivot = arr[mid]  # pivot
+    arr[mid], arr[high] = arr[high], arr[mid]<br/><br/>
+    for j in range(low, high):
+        if arr[j] &lt;= pivot:
+            i = i + 1
+            arr[i], arr[j] = arr[j], arr[i]<br/><br/>
+    arr[i + 1], arr[high] = arr[high], arr[i + 1]
+    return (i + 1)<br/><br/>
+
+def quicksort(arr, low, high):
+    if low &lt; high:
+        pi = partition(arr, low, high)<br/><br/>
+        quicksort(arr, low, pi - 1)
+        quicksort(arr, pi + 1, high)</pre>
+<br/>
+记住，快速排序的一个边际条件就是能否快速排好一个有序的大数组，如果排一个 1 亿个有序组很慢或调用栈溢出，那也不行。<br/><br/>
+来看看 Java 快速排序的能耐， Arrays.sort()<br/><br/>
+<pre class="lang:default decode:true">int[] array = IntStream.range(0, 100000000).toArray();
+long start = System.currentTimeMillis();
+Arrays.sort(array);
+System.out.println(System.currentTimeMillis() - start);</pre>
+<br/>
+只需要大约 180 毫秒，比以上任何一种 Python 代码都快多的多，因为它是用的是一种叫做双基准值的快速排序方法，java.util.DualPivotQuickSort，JDK 7 新引入的。原理如下：<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/04/dual_pivot_quicksort.png"><img class="aligncenter size-full wp-image-10170" src="https://yanbin.blog/wp-content/uploads/2020/04/dual_pivot_quicksort.png" alt="" width="551" height="549" /></a>相关链接:<br/><br/>
+<ol>
+    <li><a href="https://medium.com/@Awdesh/dual-pivot-quick-sort-javas-default-sorting-algorithm-for-primitive-types-77342e1df5e5">Dual Pivot Quick Sort : Java’s default sorting algorithm for primitive types.</a></li>
+    <li><a href="https://codeblab.com/wp-content/uploads/2009/09/DualPivotQuicksort.pdf">Dual-Pivot Quicksort algorithm</a></li>
+    <li><a href="https://www.geeksforgeeks.org/dual-pivot-quicksort/">Dual pivot Quicksort</a></li>
+</ol>

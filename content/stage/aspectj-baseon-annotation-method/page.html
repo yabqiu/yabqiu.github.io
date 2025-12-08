@@ -1,0 +1,150 @@
+---
+title: AspectJ 基于自定义的方法注解来拦截方法
+url: /aspectj-baseon-annotation-method/
+date: 2012-08-16T08:57:29-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - AspectJ
+  - ajdt
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4678 
+wpStatus: publish
+views: 10458
+lastmod: 2021-04-25T22:12:47-05:00
+---
+
+通常在使用 AspectJ 时都是基于识别方法的规则来进行方法拦截，例如切片里这样写</p>
+<br/>
+<code>@Pointcut</code><code>(</code><code>"execution(* *..StockService.getBaseInfo(..))")</code><br/><br/>
+<code></code>它拦截到的是以 StockService 结尾的，方法名为 getBaseInfo，参数任意，返回值任意的方法。而我这里要说的一种方式是基于自定义注解来拦截方法的，此处的注解不是指 @Aspect, @Pointcut, 或 @Before 那一堆东西，而是指你可以自定义一个注解，如 @cc.unmi.testaspectj.MonitorMethod，被它所注解的方法即被拦截，像：<br/><br/>
+@cc.unmi.testaspectj.MonitorMethod<br />
+public void foo();<br/><br/>
+这可以给我们很大的自由度来快捷控制哪些方法需要被拦截，加个上面的注解 @MonitorMethod 即可，而不像从前那般要想像用什么规则去匹配某个方法，用 || 连接起来，同时还要防止影响到别的不期望被拦截的方法。<br/><br/>
+需要的代码并不多，四步，创建自定义注解类 MonitorMethod, 需被拦截的方法加上 @MonitorMethod，方面类，测试类。<!--more--><br/><br/>
+1. MonitorMethod.java<br/><br/>
+<pre class="brush:java">package cc.unmi.testaspectj;<br/><br/>
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;<br/><br/>
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.METHOD)
+public @interface MonitorMethod {
+    String value() default "";
+}</pre>
+<br/>
+2. MethodExecutionTime.java<br/><br/>
+<pre class="lang:default decode:true ">package cc.unmi.testaspectj;<br/><br/>
+import org.aspectj.lang.ProceedingJoinPoint;
+import org.aspectj.lang.annotation.Around;
+import org.aspectj.lang.annotation.Aspect;
+import org.springframework.util.StopWatch;<br/><br/>
+/**
+ * @author Unmi
+ */<br/><br/>
+@Aspect
+public class MethodExecutionTime {
+          
+    @Around("execution(* *.*(..)) &amp;&amp; @annotation(cc.unmi.testaspectj.MonitorMethod)")
+    public Object profile(ProceedingJoinPoint  pjp) throws Throwable {
+        StopWatch sw = new StopWatch(getClass().getSimpleName());
+        try {
+            sw.start(pjp.getSignature().toShortString());
+            return pjp.proceed();
+        } finally {
+            sw.stop();
+            System.out.println(sw.prettyPrint());
+        }
+    }
+}</pre>
+<br/>
+上面是简单的写法，也可以把 @Pointcut 和 @Around 分开来，如先声明<br/><br/>
+@Pointcut("execution(* *.*(..)) &amp;&amp; @annotation(cc.unmi.testaspectj.MonitorMethod)")<br />
+public void methodsToBeProfiled(){}<br/><br/>
+把用<br/><br/>
+@Around("methodsToBeProfiled()")<br/><br/>
+注解到 profile() 方法<br/><br/>
+3. StockService.java<br/><br/>
+<pre class="brush:java">package cc.unmi.testaspectj;<br/><br/>
+/**
+ * @author Unmi
+ */
+public class StockService {
+    
+    @MonitorMethod
+    public String getBaseInfo(String ticker){
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        return "";
+    }
+}</pre>
+<br/>
+4. AspectJTestClient.java<br/><br/>
+<pre class="brush:java">package cc.unmi.testaspectj;<br/><br/>
+/**
+ * @author Unmi
+ */
+public class AspectJTestClient {<br/><br/>
+    public static void main(String[] args) {
+        
+        new StockService().getBaseInfo("MSFT");
+        
+        //new FundService().getBaseInfo("BBBIX");
+    }
+}</pre>
+<br/>
+这样，因为 StockService 的 getBaseInfo 加上了 @MonitorMethod 注解，所以可被拦截到，假如有个类 FundService 的 getBaseInfo 方法未加上 @MonitorMethod 注解，将不被拦截到。<br/><br/>
+执行结果如下：<br/><br/>
+<pre class="brush:text">StopWatch 'MethodExecutionTime': running time (millis) = 500
+-----------------------------------------
+ms     %     Task name
+-----------------------------------------
+00500  100%  StockService.getBaseInfo(..)</pre>
+<br/>
+如果你用 AJDT 的话，可以在 MethodExecutionTime.java 和 StockService.java 编辑器里看到箭头指示拦截到了什么方法，以及 Cross References View 中看到关联关系。<br/><br/>
+<hr /><br/><br/>
+<span style="color: #0000ff;"><strong>补充(2015-01-21)</strong></span><br/><br/>
+因为写此文时是用的 AJDT 插件做的，所以是自动织入的，如果是命令行的话就要用到  ajc 或 aspectjtools.jar 来编译，可以直接起动 aspecttools.jar AspectJ Browser 来处理。这里以 Mac 平台命令行为例，假如项目目录结构如下：<br/><br/>
+<pre>├── lib
+│   ├── aspectjrt.jar
+│   ├── aspectjtools.jar
+│   ├── aspectjweaver.jar
+│   └── spring-core-2.5.6.jar
+└── src
+    └── cc
+        └── unmi
+            └── testaspectj
+            ├── AspectJTestClient.java
+            ├── MethodExecutionTime.java
+            ├── MonitorMethod.java
+            └── StockService.java
+</pre>
+<br/>
+编译：<br/><br/>
+$ javac -classpath lib/aspectjtools.jar:lib/aspectjrt.jar:lib/spring-core-2.5.6.jar org.aspectj.tools.ajc.Main -d bin -source 1.7  src/cc/unmi/testaspectj/*<br/><br/>
+执行：<br/><br/>
+$java -classpath bin:lib/aspectjrt:lib/spring-core-2.5.6.jar:lib/aspectjweaver.jar cc.unmi.testaspectj.AspectJTestClient<br/><br/>
+这样就输出上面的结果：<br/><br/>
+StopWatch 'MethodExecutionTime': running time (millis) = 505<br />
+-----------------------------------------<br />
+ms     %     Task name<br />
+-----------------------------------------<br />
+00505  100%  StockService.getBaseInfo(..)<br/><br/>
+<hr /><br/><br/>
+由于 Spring 2.0 开始支持 AspectJ，因此你可以把上面的方法应用到 Spring 中去。可参考：<br/><br/>
+1. <a href="http://unmi.cc/spring-aspectj-intercept-method" target="_blank" rel="noopener">Spring+AspectJ+ 简单方式来拦截方法，监测性能</a><br />
+2.<a href="http://unmi.cc/aop-spring-aspectj-method-invoke-time" target="_blank" rel="noopener">用 AOP 来记录每个方法的执行时间(Spring 或直接 AspectJ)</a>,<br/><br/>
+参考：http://www.captaindebug.com/2011/09/using-springs-aspectj-support-and.html<br/><br/>
+<hr /><br/><br/>
+好像在通过 Spring 使用 AspectJ 时私有方法不被拦截到，而单独用 AspectJ 不会有这样的局限。

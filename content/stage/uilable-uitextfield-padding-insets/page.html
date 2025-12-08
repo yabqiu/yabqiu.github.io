@@ -1,0 +1,116 @@
+---
+title: 设置 UILabel 和 UITextField 的 Padding 或 Insets
+url: /uilable-uitextfield-padding-insets/
+date: 2011-11-01T13:01:49-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - UILabel
+  - UITextField
+  - Padding
+  - Insets
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4060 
+wpStatus: publish
+views: 23954
+lastmod: 2021-09-03T14:46:18-05:00
+---
+
+iOS 的控件，只看到 <a href="http://developer.apple.com/library/ios/#documentation/UIKit/Reference/UIButton_Class/UIButton/UIButton.html">UIButton</a> 可以设置 Padding/Insets，即按钮上文字或图片与按钮边界的间隙，对与 CSS 来说叫做 Padding，在 iOS 中叫做 Insets，UIButton 设置 Insets 相应的属性如下：</p>
+<br/>
+Configuring Edge Insets<br/><br/>
+      contentEdgeInsets  property<br />
+      titleEdgeInsets  property<br />
+      imageEdgeInsets  property <br/><br/>
+它们接受的属性类型是：UIEdgeInsets，由函数 UIEdgeInsetsMake ( CGFloat top, CGFloat left, CGFloat bottom, CGFloat right );     构造出，分别表示其中的内容/标题/图片离各边的距离。<br/><br/>
+在 xib 中也有界面来对按钮的这三个 EdgeInsets 属性的设置，分别是按钮的 Edge 和 Inset 属性。<br/><br/>
+印像中，Swing 的许多组件都可设置 Insets 属性，可对于 iOS 的控件就没那么幸运了，比如我想设置 UILable 或 UITextField 中的文本离边界的间隙，无伦是在 xib 里还是直接代码的方式都无能为力，因为它们根据未开放相应的属性让你去控制。<!--more--><br/><br/>
+办法当然还是有的，自定义相应自己的控件了，比如 InsetsLabel 或是  InsetsTextField，接着就是覆盖某些个方法来达成。<br/><br/>
+首先来看 UILabel 的子类 InsetsLabel 的实现代码：<br/><br/>
+<pre class="lang:default decode:true">//1.header file
+#import &lt;UIKit/UIKit.h&gt;<br/><br/>
+@interface InsetsLabel : UILabel
+@property(nonatomic) UIEdgeInsets insets;
+-(id) initWithFrame:(CGRect)frame andInsets: (UIEdgeInsets) insets;
+-(id) initWithInsets: (UIEdgeInsets) insets;
+@end<br/><br/>
+//2. implementation file
+#import "InsetsLabel.h"<br/><br/>
+@implementation InsetsLabel
+@synthesize insets=_insets;
+-(id) initWithFrame:(CGRect)frame andInsets:(UIEdgeInsets)insets {
+    self = [super initWithFrame:frame];
+    if(self){
+        self.insets = insets;
+    }
+    return self;
+}<br/><br/>
+-(id) initWithInsets:(UIEdgeInsets)insets {
+    self = [super init];
+    if(self){
+        self.insets = insets;
+    }
+    return self;
+}<br/><br/>
+-(void) drawTextInRect:(CGRect)rect {
+    return [super drawTextInRect:UIEdgeInsetsInsetRect(rect, self.insets)];
+}</pre>
+<br/>
+关键就是覆盖了 -(void) drawTextInRect: (CGRect) rect; 方法，在画  Label 的文本时分别设置文本与  Label 四个边的间隙，即画在 Label 内的一个小矩形内，这个例子提供了便利的构造函数，提供自己的 UIEdgeInsets 属性。另外，函数 UIEdgeInsetsInsetRect(CGRect, UIEdgeInsets) 应该是好理解的。<br/><br/>
+再看如何设置 UITextField 中文本到四边的间距，这里也可以定义自己的 InsetsTextField：<br/><br/>
+<pre class="lang:default decode:true">//
+//  Created by Unmi on 11/2/11.
+//  Copyright (c) 2011 http://unmi.cc. All rights reserved.
+//<br/><br/>
+#import &lt;UIKit/UIKit.h&gt;<br/><br/>
+@interface InsetsTextField : UITextField
+@end<br/><br/>
+@implementation InsetsTextField
+//控制 placeHolder 的位置，左右缩 20
+- (CGRect)textRectForBounds:(CGRect)bounds {
+    return CGRectInset( bounds , 20 , 0 );
+}<br/><br/>
+// 控制文本的位置，左右缩 20
+- (CGRect)editingRectForBounds:(CGRect)bounds {
+    return CGRectInset( bounds , 20 , 0 );
+}
+@end<br/><br/>
+//-----------------------------------------------------------------
+//下面是使用 InsetsTextField 的代码，可放在 viewDidLoad 等代理方法中
+InsetsTextField *insetTextField = [[InsetsTextField alloc]
+                                  initWithFrame:CGRectMake(10, 10, 180, 25)];<br/><br/>
+//须手动设置它的 borderStyle, 不然看不到边框的
+insetsTextField.borderStyle = UITextBorderStyleRoundedRect;
+[self.view addSubview:insetsTextField];
+[insetsTextField release];</pre>
+<br/>
+效果如下：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter" src="/wp-content/uploads/2011/11/InsetsTextField.png" alt="Unmi InsetsTextField" width="214" height="57" /></p>
+<br/>
+上面更像是借鉴的 InsetsLabel 的实现，其实对于 UITextField 还有更好的实现办法，而且更简单，因为 UITextFiled 原来就支持的做法。比如它可以让你做出在文本框最前方固定一个 $ 符号，表示这个文本框是输入钱的，第一个$ 是不能被删除的。确实，你可以在 TextField 上贴个 Label，然后文本框的光标后移，稍显麻烦了。<br/><br/>
+而 UITextField 可以直接设置 leftView 或 rightView, 然后文本输入区域就在 leftView 和 rightView 之间了，看例子：<br/><br/>
+<pre class="brush:objc ">UILabel *paddingView = [[UILabel alloc] initWithFrame:CGRectMake(0, 0, 10, 25)];
+paddingView.text = @"$";
+paddingView.textColor = [UIColor darkGrayColor];
+paddingView.backgroundColor = [UIColor clearColor];
+textfield.leftView = paddingView;
+textfield.leftViewMode = UITextFieldViewModeAlways;</pre>
+<br/>
+rightView 也是一样的设置方式，其中的  Mode 有四种，看到名字应该不难理解：<br/><br/>
+    UITextFieldViewModeNever,<br />
+    UITextFieldViewModeWhileEditing,<br />
+    UITextFieldViewModeUnlessEditing,<br />
+    UITextFieldViewModeAlways<br/><br/>
+它的效果呢就更酷了：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter" src="/wp-content/uploads/2011/11/UITextField_LeftView1.png" alt="Unmi TextField LeftView RightView" width="173" height="48" />文本框的起始光标是从上图数字 1 位置开始的。</p>
+<br/>
+实际应用中，对于 UITextField 如果有类似的需求，我会毫不犹豫的使用 leftView/rightView 属性来设置。<br/><br/>
+参考：1. <a href="http://stackoverflow.com/questions/2694411/text-inset-for-uitextfield" target="_blank" rel="noopener">http://stackoverflow.com/questions/2694411/text-inset-for-uitextfield</a><br />
+            2. <a href="http://stackoverflow.com/questions/5674655/uitextfield-align-left-margin">http://stackoverflow.com/questions/5674655/uitextfield-align-left-margin</a>

@@ -1,0 +1,82 @@
+---
+title: 为语法高亮插件 SyntaxHighlighter Evolved 进行优化
+url: /optimize-syntaxhighlighter-evolved/
+date: 2010-08-25T13:41:30-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - WordPress
+tags: 
+  - wordpress
+  - Higlighter
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2172 
+wpStatus: publish
+views: 1490
+lastmod: 2021-05-03T00:18:57-05:00
+---
+
+前面有一篇 <a href="http://unmi.cc/wordpress-use-syntaxhighlighter-evolved" target="_blank" rel="noopener">用 SyntaxHighlighter Evolved 作为自已的代码加亮插件</a> 介绍了 <a href="http://www.viper007bond.com/wordpress-plugins/syntaxhighlighter/" target="_blank" rel="noopener">SyntaxHighlighter Evolved</a> 插件。当前所用的版本是 2.3.8,  我现在是用 &lt;pre class='brush:java'&gt;code here&lt;/pre&gt; 的形式来加亮代码，所以必须选上后台的 Load All Brushes 选项，用 [ code lang="js]code here[/code] 会动态的加载所需的 shBrushXxx.js 文件。后一种方式会有些问题，因而这里也是针对前一种方式来进行优化的，因为 Load All Brushes 选项一旦选上，页面将会依次:</p>
+<br/>
+&lt;script type='text/javascript' src='...shBrushAS3.js?ver=2.1.364b'&gt;&lt;/script&gt;<br />
+&lt;script type='text/javascript' src='...shBrushBash.js?ver=2.1.364b'&gt;&lt;/script&gt;<!--more--><br />
+&lt;script type='text/javascript' src='...shBrushColdFusion.js?ver=2.1.364b'&gt;&lt;/script&gt;<br />
+..............................等等 27 个 shBrushXxx.js<br/><br/>
+不厌其烦的一大片来加载所有的 js，不选 Load All Brushes 的话，&lt;pre&gt; 中的代码是被该插件视而不见的。现在要对其进行的优化，主要从两个方面：<br/><br/>
+1) 把全部的 27 个 shBrushXxx.js 文件合并到一个 js 文件中，如 shBrushes.js，这样可以减少加载那些 js 时 HTTP 连接的消耗，如果是 Keep-Alive 还好些。<br/><br/>
+2) 对合并后的 shBrushes.js 文件进一步压缩，节约网络流量，有好的 js 压缩工具可以选择众多 js 文件压缩并合并。<br/><br/>
+在压缩时一定要注意等压缩的 js 文件中一条语句必须用分号结束，否则压缩后会出现 ; expected。例如，有七八个 shBrushXxx.js 文件中必须压缩前手工加上一个分号，都是出现在像<br/><br/>
+SyntaxHighlighter.brushes.Scala.prototype = new SyntaxHighlighter.Highlighter();<br/><br/>
+之前的一个大括号后面要加上一个分号。<br/><br/>
+JS 的压缩工具很多，有很多在线的，我这里用的是 Jspacker 客户端 JS 压缩工具，可以选择多个文件压缩并合并到一个文件中，所有内容都放在一行里头了。可以直接下载我做好了的 <a href="http://unmi.cc/wp-content/plugins/syntaxhighlighter/syntaxhighlighter/scripts/shBrushes.js" target="_blank" rel="noopener">shBrushes.js</a> 文件，并放到 SyntaxHighlighter Evolved 的插件目录下 syntaxhighlighter/scripts 子目录中。<br/><br/>
+现在完成了第一步，以后只需加载一个被压缩的 shBrushes.js 即可，接下来得告诉插件怎么去只加载这个 js，而不加载别的。要修改插件文件了，该插件总共就只有一个 php 文件 syntaxhighlighter.php，不动它还能动谁啊。<br/><br/>
+可以在 wp-admin 中，用插件编辑器打开该文件，在第 47 行有：<br/><br/>
+wp_register_script( 'syntaxhighlighter-brush-as3',        plugins_url('syntaxh..................<br/><br/>
+看到这里正在注册所有的 Brush，我们制作好的 shBrushes.js 可在它前面注册，注意要写在：<br/><br/>
+wp_register_script( 'syntaxhighlighter-core',             plugins_url('syntaxhigh..................<br/><br/>
+加载核心 js 之后就行，加上一行:<br/><br/>
+wp_register_script( 'syntaxhighlighter-all-brushes', plugins_url('syntaxhighlighter/syntaxhighlighter/scripts/shBrushes.js'),  array('syntaxhighlighter-core'), $this-&gt;agshver );<br/><br/>
+注册完成，还需要处理真加载，即反应到 &lt;script src="...shBrushes.js"&gt;&lt;/script&gt; 上才行。还是在这个文件中，找到<br/><br/>
+function maybe_output_scripts()  函数定义，把如下代码<br/><br/>
+<pre class="lang:default decode:true">  if ( 1 == $this-&gt;settings['loadallbrushes'] )
+      $this-&gt;usedbrushes = array_flip( array_values( $this-&gt;brushes ) );<br/><br/>
+  if ( empty($this-&gt;usedbrushes) )
+      return;<br/><br/>
+  $scripts = array();
+  foreach ( $this-&gt;usedbrushes as $brush =&gt; $unused )
+      $scripts[] = 'syntaxhighlighter-brush-' . strtolower( $brush );<br/><br/>
+  wp_print_scripts( $scripts );
+</pre>
+<br/>
+替换为：<br/><br/>
+<pre class="lang:default decode:true">  if ( 1 == $this-&gt;settings['loadallbrushes'] )
+      $scripts = 'syntaxhighlighter-all-brushes';
+  wp_print_scripts($scripts);
+</pre>
+<br/>
+也就是设置了 Load All Brushes 时，直接加载我们指定的 shBrushes.js 文件即可，不用去依据 Brush 名字依次加载别的 js. 而且这么做应该也不会影响到 [ code lang="js"]code here[/code] 对代码的语法加亮。<br/><br/>
+其实压缩在这里性能体现不是很明显，未压缩前 27 个 js 总体积是 85.4 K，压缩后的 shBrushes.js 大小为 37.3, 比例是有，但绝对量不大。主要还是由多个变为一个不仅页面简洁，而且可以节约不少连接的建立过程。<br/><br/>
+<hr /><br/><br/>
+从 SyntaxHighlighter Evolved 3 的版本开同时支持 SyntaxHighlighter 2 和 3，我选择使用 Syntaxhighlighter 3，针对它来优化的步骤有一些不同。<br/><br/>
+1. 压缩 shCore.js 之外的 js 文件到 syntaxhighlighter/syntaxhilighter3/ 目录下<br/><br/>
+2. 在 syntaxhighlighter.php 文件中，找到下面代码行：<br/><br/>
+<pre class="lang:default decode:true">wp_register_script('syntaxhighlighter-core', plugins_url('syntaxhighlighter/' .$this-&gt;shfolder .
+ '/scripts/shCore.js'), array(),$this-&gt;agshver );</pre>
+<br/>
+在它之后加上：<br/><br/>
+<pre class="lang:default decode:true">wp_register_script( 'syntaxhighlighter-brush-all', plugins_url('syntaxhighlighter/' . $this-&gt;shfolder . 
+  '/shBrushAll.js'), array('syntaxhighlighter-core'), $this-&gt;agshver );</pre>
+<br/>
+3. 找到函数 function maybe_output_scripts(), 里的：<br/><br/>
+<pre class="lang:default decode:true">$this-&gt;usedbrushes = array_flip( array_values( $this-&gt;brushes ) );</pre>
+<br/>
+把上行替换为：<br/><br/>
+<pre class="lang:default decode:true ">$this-&gt;usedbrushes = array('all'=&gt;'all');</pre>
+<br/>
+即告完工。<br/><br/>
+这里附上一个针对 SyntaxHighlighter Evolved 3.0.83 已压缩合并好的 js 文件下载链接： <a href="http://unmi.cc/wp-content/downloads/shBrushAll.js">shBrushAll.js</a>。

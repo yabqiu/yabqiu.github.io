@@ -1,0 +1,227 @@
+---
+title: Spring 中 FactoryBean 的使用
+url: /spring-work-with-factorybean/
+date: 2019-03-07T21:01:38-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - FactoryBean
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9324 
+wpStatus: publish
+views: 1156
+lastmod: 2019-03-07T21:20:49-06:00
+---
+
+<p>许久没记录笔记了，这回来重新熟悉一下 Spring 中 FactoryBean 的使用，顾名思义，它是用来获得相应 Bean 的工厂的。它与另一个 Spring 中的接口 BeanFactory 的作用不一样的，不能多说了。FactoryBean 和 BeanFactory 都是在 <code>org.springframework.beans.factory</code> 包中，谁能一看类名搞清楚它们的差别？</p>
+
+<ol>
+
+	<li>FactoryBean: 用于创建某个特定的 Spring bean 的工厂类</li>
+
+	<li>BeanFactory: Spring 上下文的最顶层接口，如 <code>ApplicationContext</code> 就继承了该接口，它可称之为所有 Spring bean 的工厂</li>
+
+</ol>
+
+<p>这儿说的是第一个 FactoryBean, 它的接口声明是</p>
+
+<pre class="lang:default decode:true ">public interface FactoryBean&lt;T&gt; {<br/>
+    T getObject() throws Exception;<br/>
+    Class&lt;?&gt; getObjectType();<br/>
+    boolean isSingleton();<br/>
+}</pre>
+
+<p>它最终的效果是，Spring 容器中注册一个名称为 abcFactoryBean 的 <code>AbcFactoryBean</code> 实例，通后名称 <code>abcFactoryBean</code> 获得的实际上是相应 <code>AbcFactoryBean.getObject()</code> 返回的对象，类型为 <code>getObjectType()</code>, <code>isSingleton()</code> 是否是单例。<!--more--></p>
+
+<p>原本不太想细究它，由于看到了 <code>FactoryBean</code> 下的子子孙孙们，意识到在以后的 Spring 应用中还是大有文章可做。下面是在一个最基本的 SpringBoot 项目中的 FactoryBean 的所有实现类</p>
+
+<p><a href="https://yanbin.blog/wp-content/uploads/2019/03/springboot-factorybean-hierarchy.png"><img class="aligncenter wp-image-9325" src="https://yanbin.blog/wp-content/uploads/2019/03/springboot-factorybean-hierarchy-800x977.png" alt="" width="875" height="1069" /></a></p>
+
+<p>例如其中的 <code>ThreadPoolExecutorFactoryBean</code>, <code>ForkJoinPoolFactoryBean</code> 可用于便利的创建线程池，<code>ServiceLocatorFactoryBean</code> 用于查找 Bean 的。以后如果想要某一个具体的 Bean 声明起来可能麻烦，这时候可以查阅一下是否有相应的 FactoryBean，配置会更简单些。</p>
+
+<p>看到这里后，还可能是不知所以，下面来看个实际的例子，分几步：</p>
+
+<h3>实际要的 Bean 实现(Sender)</h3><br/>
+<p>在应用中实际需要一个 Sender 实例，但我们不直接把它声明为一个 Spring 的 Bean</p>
+
+<pre class="lang:default decode:true">package yanbin.blog;<br/>
+<br/>
+//这里没有 @Name, @Component 之类的注册用于声明为一个 Spring Bean<br/>
+public class Sender {<br/>
+<br/>
+    private String receiver;<br/>
+<br/>
+    public Sender(String receiver) {<br/>
+        this.receiver = receiver;<br/>
+    }<br/>
+<br/>
+    public void send() {<br/>
+        System.out.println("Send message to " + receiver);<br/>
+    }<br/>
+}</pre>
+
+<p><strong>着重强调一下，在使用 FactoryBean 时，实际的 Bean 实现(这里的 Sender) 不需要显式的注册到 Spring 上下文中，它的实例会由相应的 FactoryBean 注册的。</strong></p>
+
+<h3>Sender 的 FactoryBean 实现 SenderFactoryBean</h3><br/>
+<p>加了 @Named 注解，根据 Spring Bean 默认命名规则，我们知道它会注册一个 <code>senderFactory</code> 的 Spring bean。</p>
+
+<pre class="lang:default decode:true">package yanbin.blog;<br/>
+<br/>
+import org.springframework.beans.factory.FactoryBean;<br/>
+<br/>
+import javax.inject.Named;<br/>
+<br/>
+@Named<br/>
+public class SenderFactoryBean implements FactoryBean&lt;Sender&gt; {<br/>
+<br/>
+    private String receiver;<br/>
+<br/>
+    public void setReceiver(String receiver) {<br/>
+        this.receiver = receiver;<br/>
+    }<br/>
+<br/>
+    @Override<br/>
+    public Sender getObject() throws Exception {<br/>
+        return new Sender(receiver == null ? "Sun" : receiver);<br/>
+    }<br/>
+<br/>
+    @Override<br/>
+    public Class&lt;?&gt; getObjectType() {<br/>
+        return Sender.class;<br/>
+    }<br/>
+<br/>
+    @Override<br/>
+    public boolean isSingleton() {<br/>
+        return false;<br/>
+    }<br/>
+}<br/>
+</pre>
+
+<p>那么这个名为 <code>senderFactoryBean</code> 的 Spring bean 的类型就显得有些特别了。看以下的测试代码</p>
+
+<h3>客户端测试程序 DemoApplication</h3><br/>
+<p>下面用代码来验证在 Spring 容器中类型分别为 <code>Sender</code> 和 <code>SenderFactory</code> 的 Bean 到底是什么</p>
+
+<pre class="lang:default decode:true">package yanbin.blog;<br/>
+<br/>
+import org.springframework.boot.SpringApplication;<br/>
+import org.springframework.boot.autoconfigure.SpringBootApplication;<br/>
+import org.springframework.context.ApplicationContext;<br/>
+<br/>
+@SpringBootApplication<br/>
+public class DemoApplication {<br/>
+<br/>
+    public static void main(String[] args) {<br/>
+        ApplicationContext context = SpringApplication.run(DemoApplication.class, args);<br/>
+<br/>
+        context.getBeansOfType(Sender.class).forEach((beanName, object) -&gt;<br/>
+            System.out.println(beanName + "=&gt; " + object));<br/>
+<br/>
+        context.getBeansOfType(SenderFactory.class).forEach((beanName, object) -&gt;<br/>
+            System.out.println(beanName + "=&gt; " + object));<br/>
+<br/>
+        context.getBean(Sender.class).send();<br/>
+    }<br/>
+}</pre>
+
+<p>以上代码输出如下：</p>
+
+<blockquote><br/>
+<p>senderFactoryBean=&gt; yanbin.blog.Sender@12591ac8<br /><br/>
+&amp;senderFactoryBean=&gt; yanbin.blog.SenderFactoryBean@38145825<br /><br/>
+Send message to Sun</p>
+
+</blockquote>
+
+<p><code>senderFactory</code> 的类型是一个 <code>Sender</code> 实例，它就是 <code>SenderFactory.getObject()</code> 返回的实例。而 <code>&amp;senderFactory</code> 才是我们看似用 <code>@Named</code> 注册到 Spring 上下文的 <code>SenderFactory</code> 实例，此处, <code>&amp;</code> 像是 C 中的取地址操作一般。也就是说，如果我们要在其他的 Spring Bean 中引用它，可以用以下方式指定名称</p>
+
+<pre class="lang:default decode:true">import org.springframework.beans.factory.annotation.Qualifier;<br/>
+...<br/>
+<br/>
+@Inject<br/>
+@Qualifier("senderFactory")<br/>
+private Sender sender;<br/>
+<br/>
+@Resource(name = "&amp;senderFactory")<br/>
+private SenderFactory senderFactory;<br/>
+<br/>
+public MailService(@Named("sender") Sender sender) {<br/>
+    this.sender = sender;<br/>
+}</pre>
+
+<p>如果觉得 <code>senderFactory</code> 名称对应的竟然是一个 <code>Sender</code> 实例而别扭，那么注册 <code>SenderFactory</code> 时可以指定名称为 <code>sender</code>, 如</p>
+
+<pre class="lang:default decode:true">@Named("sender")<br/>
+public class SenderFactory implements FactoryBean&lt;Sender&gt; {<br/>
+    ......</pre>
+
+<p>或者用 JavaConfig 配置时用下面的形式</p>
+
+<pre class="lang:default decode:true">@Bean(name = "sender")<br/>
+public SenderFactoryBean senderFactoryBean() {<br/>
+    SenderFactoryBean factory = new SenderFactoryBean();<br/>
+    factory.setReceiver("Moon");<br/>
+    return factory;<br/>
+}</pre>
+
+<p>记住，AbcFactoryBean 在 Spring 中会返回它的 getObject() 对应的类型 Abc，所以声明的 FactoryBean 最好指定一个更有意义的名称。</p>
+
+<p>使用 JavaConfig 时看下程序的输出(需要把 SenderFactoryBean 上的 @Name 注解去掉)</p>
+
+<blockquote><br/>
+<p>sender=&gt; yanbin.blog.Sender@1df8da7a<br /><br/>
+&amp;sender=&gt; yanbin.blog.SenderFactoryBean@7486b455<br /><br/>
+Send message to Moon</p>
+
+</blockquote>
+
+<p>这时看到 <code>sender</code> 对应的是 Sender 实例，而带 <code>&amp;</code> 前缀的 <code>&amp;sender</code> 是相应的 SenderFactoryBean 实例。一般来说我们不会直接用到这个 FactoryBean 实例，除非我们基于它再行配置，手动调用它 <code>getObject()</code> 方法来获得一个不同的实例。不过这种用法会比较危险，它可能会修改现有的 <code>sender</code> 对应实例的状态。</p>
+
+<h3>一个应用实例</h3><br/>
+<p>有关于 Spring 的  FactoryBean 的内容就这么多了，最后来看一个应用 <code>ThreadPoolExecutorFactoryBean</code> 的例子</p>
+
+<pre class="lang:default decode:true">@Bean(name = "threadPool")<br/>
+public ThreadPoolExecutorFactoryBean threadPoolExecutorFactoryBean() {<br/>
+    ThreadPoolExecutorFactoryBean factory = new ThreadPoolExecutorFactoryBean();<br/>
+    factory.setCorePoolSize(5);<br/>
+    factory.setMaxPoolSize(5);<br/>
+    factory.setQueueCapacity(50);<br/>
+    factory.setThreadNamePrefix("kafka");<br/>
+    factory.setDaemon(true);<br/>
+    factory.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());<br/>
+    return factory;<br/>
+}</pre>
+
+<p>这样的话，在容器里我们就有了一个名为 <code>threadPool</code> 线程池实例。看到上面，基本 <code>ThreadPoolExecutorFactoryBean</code> 我们可以轻松的定制具有以下功能线程池</p>
+
+<ol>
+
+	<li>线程池的大小是 5</li>
+
+	<li>线程池的等待队列大小为 50，如果用 <code>Executors.newFixedThreadPool(5)</code> 得到的是一个等待队列超大的线程池，容易暴掉内存</li>
+
+	<li>线程池中线程名的前缀为 kafka, 日志中输出更友好, 这比定义一个自己的 ThreadFactory 来指定名称简单</li>
+
+	<li>线程池中线程的 daemon 属性可定制，可决定主线退出后，线程池是否强制关掉。以前也要通过 ThreadFactory 来定制 daemon</li>
+
+	<li>RejectedExecutionHandler 设置为 CallerRunsPolicy 后，可以在线程池等待队列满了之后，任务提交线程自己撸起袖子亲自干塞不进去的活，不至于光看着别人忙，白白浪费一个劳动力</li>
+
+</ol>
+
+<p>其他的 FactoryBean 都值得发掘。</p>
+
+<p>链接：</p>
+
+<ol>
+
+	<li><a href="https://www.baeldung.com/spring-factorybean">How to use the Spring FactoryBean?</a></li>
+
+</ol>

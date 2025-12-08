@@ -1,0 +1,86 @@
+---
+title: 创建兼容 IE/FireFox 的 event 及 event 的 srcElement、fromElement、toElement 属性
+url: /ie-firefox-event-srcelement-fromelement-toelement/
+date: 2009-07-10T06:49:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Web/JS
+tags: 
+  - javascript
+  - IE
+  - FireFox
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 246 
+wpStatus: publish
+views: 3208
+lastmod: 2021-09-02T11:25:29-05:00
+---
+
+自然，我们都习惯了 IE，在 IE 中要在函数中获得各事件对象很容易，直接用 event、event.srcElemtn、event.fromElement、event.toElement 就行了。在 FireFox 中获得触发事件的元素可以用 event.target，但其他两个 fromElement 和 toElement 就要费些周折。<br/><br/>
+所以，为了保持一致的使用方式，也为了保持原有的使用习惯，我们加入以下 JS 代码(代码有些紧凑，未加注释，应该很好理解)：<!--more--><br/><br/>
+<pre class="lang:default decode:true">&lt;script language="javascript"&gt;<br/><br/>
+  if(window.addEventListener) { FixPrototypeForGecko(); }  <br/><br/>
+  function  FixPrototypeForGecko()
+  {
+      HTMLElement.prototype.__defineGetter__("runtimeStyle",element_prototype_get_runtimeStyle);
+      window.constructor.prototype.__defineGetter__("event",window_prototype_get_event);
+      Event.prototype.__defineGetter__("srcElement",event_prototype_get_srcElement);
+      Event.prototype.__defineGetter__("fromElement",  element_prototype_get_fromElement);
+      Event.prototype.__defineGetter__("toElement", element_prototype_get_toElement);<br/><br/>
+  }  <br/><br/>
+  function  element_prototype_get_runtimeStyle() { return  this.style; }
+  function  window_prototype_get_event() { return  SearchEvent(); }
+  function  event_prototype_get_srcElement() { return  this.target; }  <br/><br/>
+  function element_prototype_get_fromElement() {
+      var node;
+      if(this.type == "mouseover") node = this.relatedTarget;
+      else if (this.type == "mouseout") node = this.target;
+      if(!node) return;
+      while (node.nodeType != 1)
+          node = node.parentNode;
+      return node;
+  }<br/><br/>
+  function  element_prototype_get_toElement() {
+          var node;
+          if(this.type == "mouseout")  node = this.relatedTarget;
+          else if (this.type == "mouseover") node = this.target;
+          if(!node) return;
+          while (node.nodeType != 1)
+             node = node.parentNode;
+          return node;
+  }<br/><br/>
+  function  SearchEvent()
+  {
+      if(document.all) return  window.event;  <br/><br/>
+      func = SearchEvent.caller;  <br/><br/>
+      while(func!=null){
+          var  arg0=func.arguments[0];  <br/><br/>
+          if(arg0 instanceof Event) {
+              return  arg0;
+          }
+         func=func.caller;
+      }
+      return   null;
+  }
+&lt;/script&gt;</pre>
+<br/>
+好了，现在不管是在 IE 中还是在 FireFox 中，触发事件后都有了 event、event.srcElement、event.fromElement、event.toElement 属性了。这就来做个测试吧：<br/><br/>
+<pre class="lang:default decode:true ">&lt;script&gt;
+  function test(){
+      alert("event:" + event +", srcElement:"+event.srcElement.innerHTML+
+        ", fromElement:"+event.fromElement.innerHTML + ", toElement:"+event.toElement.innerHTML)
+  }
+&lt;/script&gt;<br/><br/>
+&lt;button onmouseout="test()"&gt;MouseOut&lt;/button&gt;&lt;button onmouseover="test()"&gt;MouseOver&lt;/button&gt;</pre>
+<br/>
+页面中有两个按钮 MouseOut 和 MouseOver，你掠过第一个按钮到第二个按钮上是，有看到这样内容的窗口：<br/><br/>
+<div><img src="/wp-content/uploads/2009/07/event_element.jpg" alt="" border="0" /></div>
+<br/>
+从上图可以看出，其实我是在 Google 的 Chrome 浏览器中作的测试，也是有效的。标题虽说是兼容 IE 和 FireFox，但宽松点说就是 IE  和非 IE，因为 IE 总喜欢剑起偏锋，不按规范办事，不过这种事在 IE 8 中是收敛了许多。<br/><br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

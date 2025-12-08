@@ -1,0 +1,79 @@
+---
+title: Play2.3 自定义模板类型 -- Java 版
+url: /play2-3-custom-view-template-java/
+date: 2014-09-07T01:05:51-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PlayFramework
+tags: 
+  - play2
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6585 
+wpStatus: publish
+views: 1023
+lastmod: 2021-09-04T12:11:32-05:00
+---
+
+在上一篇 <a title="Play2 自定义模板类型 (Java&amp;Scala)" href="http://unmi.cc/play2-custom-template-type-java-scala/" target="_blank" rel="noopener">Play2 自定义模板类型 (Java&amp;Scala)</a>，是基于 Play2.2 怎么自定义 Json 模板类型，分别用 Java 和 Scala 实现。从 Play2.3 开始，模板明确了是用 <a href="https://github.com/spray/twirl" target="_blank" rel="noopener">Twirl</a>，所以构建文件上的配置略有不同，并且模板编译出的源文件位置也不一样，Play2.2 前生成的模板源文件在 <code>target/scala-2.10/src_managed/main/views</code> 目录，现在是生成在 <code>target/twirl/main/views</code> 目录。</p>
+<br/>
+在 Play2.3 中仍然是默认只支持 html, txt, xml, js 四种类型的模板，见 <a href="https://github.com/playframework/twirl/blob/master/sbt-twirl/src/main/scala/play/twirl/sbt/SbtTwirl.scala" target="_blank" rel="noopener">SbtTwirl</a>。我们这里还是以增加 Json 模板支持为例，且只介绍用 Java 的方式。因为 Play2 尽管可以用 Java 来编写应用，但实现部份基本是 Scala，所以如果用 Scala 来进行扩展相对来说来比用 Java 简单些。<br/><br/>
+Play2.3 官方的自定义模板的文档 <a href="https://www.playframework.com/documentation/2.3.x/JavaCustomTemplateFormat" target="_blank" rel="noopener">Adding support for a custom format to the template engine</a> 有些出入，似乎还未来得急更新，以实操为证。<br/><br/>
+还是从构建文件开始<!--more--><br/><br/>
+<strong>一： 修改 build.sbt 文件</strong>，加上 (你要是愿意用 Build.scala 也无妨):<br/><br/>
+<pre class="lang:default decode:true ">import play.twirl.sbt.Import.TwirlKeys
+......
+......<br/><br/>
+TwirlKeys.templateFormats += ("json" -&gt; "templates.JsonFormat.instance")</pre>
+<br/>
+<code>play.twirl.sbt.Import.TwirlKeys</code> 下总共有以下六个关于模板的配置项<br/><br/>
+<code>twirlVersion</code>, <code>templateFormats</code>, <code>templateImports</code> , <code>useOldParser</code>, <code>sourceEncoding</code>, <code>compileTemplates</code><br/><br/>
+<strong>二：Json.java</strong><br/><br/>
+<pre class="lang:default decode:true">package templates;<br/><br/>
+import play.twirl.api.BufferedContent;
+import scala.collection.immutable.Seq;
+import scala.collection.immutable.Vector;<br/><br/>
+public class Json extends BufferedContent&lt;Json&gt; {<br/><br/>
+  public Json(String jsonString) {
+    super(Vector.&lt;Json&gt;empty(), jsonString);
+  }<br/><br/>
+  public Json(Seq&lt;Json&gt; elements) {
+    super(elements, "");
+  }<br/><br/>
+  public String contentType() {
+    return "application/json";
+  }
+}</pre>
+<br/>
+需要额外处理通过 Seq&lt;Json&gt; 构造 Json 实例。<br/><br/>
+<strong>三：JsonFormat.java</strong><br/><br/>
+<pre class="lang:default decode:true ">package templates;<br/><br/>
+import play.twirl.api.Format;
+import scala.collection.immutable.Seq;<br/><br/>
+public class JsonFormat implements Format&lt;Json&gt; {<br/><br/>
+  @Override
+  public Json raw(String text) {
+    return new Json(text);
+  }<br/><br/>
+  @Override
+  public Json escape(String text) {
+    return new Json(text);
+  }<br/><br/>
+  @Override
+  public Json empty() {
+    return new Json("");
+  }<br/><br/>
+  @Override
+  public Json fill(Seq&lt;Json&gt; elements) {
+    return new Json(elements);
+  }<br/><br/>
+  public static final JsonFormat instance = new JsonFormat();
+}</pre>
+<br/>
+现在的 Format 多了两个抽象方法, empty() 和 fill(Seq&lt;Json&gt; elements)<br/><br/>
+其余怎么写模板文件，怎么在 Controller 中渲染和这里 <a title="Play2 自定义模板类型 (Java&amp;Scala)" href="http://unmi.cc/play2-custom-template-type-java-scala/" target="_blank" rel="noopener">Play2 自定义模板类型 (Java&amp;Scala)</a> 是一样的。

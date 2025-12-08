@@ -1,0 +1,125 @@
+---
+title: Scala 如何测试异常
+url: /scala-how-to-test-exception/
+date: 2015-08-20T21:42:37-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - Scala
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6993 
+wpStatus: publish
+views: 919
+lastmod: 2021-09-03T17:48:31-05:00
+---
+
+几年前整理过一篇 <a href="http://unmi.cc/junit-4-how-to-test-exceptions/">JUnit 4 如何正确测试异常</a>，类似的问题：如何在 Scala 中测试异常呢？因 Scala 可以完全采用 JUnit 测试用例的风格，所以当然可以运用 Java 的三种方式来测试异常，即</p>
+<br/>
+<ol>
+    <li>try { 待测试代码; fail() } catch(某种异常) {断言}</li>
+    <li>@Test(expected = Exception.class)</li>
+    <li>@Rule</li>
+</ol>
+<br/>
+回到 Scala 中来，我并不那么情愿在 Scala 中使用 JUnit 的 @Test def testMethod() 这样的测试方法风格，而多少采用 BDD 或者叫更 DSL 的风格。<br/><br/>
+那看看我们 Scala 有些什么独到的异常测试方法<br/><br/>
+<span style="color: #0000ff; font-size: 12pt;"><strong>一： intercept</strong></span><!--more--><br/><br/>
+<pre class="lang:default decode:true">import org.scalatest.FlatSpec<br/><br/>
+class ScalaExceptionTest extends FlatSpec {
+  "An empty Set" should "produce NoSuchElementException when head is invoked" in {
+    intercept[NoSuchElementException] {
+      Set.empty.head
+    }
+  }
+}</pre>
+<br/>
+测试结果<br/><br/>
+<img class="aligncenter wp-image-6999" src="/wp-content/uploads/2015/08/scala-intercept-800x305.png" alt="scala-intercept" width="600" height="229" /><br/><br/>
+打开 <code>intercept</code> 方法的源码，其实这就是 try-catch 的方式。intercept 方法的源码如下：<br/><br/>
+<pre class="lang:default decode:true">def intercept[T &lt;: AnyRef](f: =&gt; Any)(implicit manifest: Manifest[T]): T = {
+  val clazz = manifest.erasure.asInstanceOf[Class[T]]
+  val caught = try {
+    f
+    None
+  }
+  catch {
+    case u: Throwable =&gt; {
+      if (!clazz.isAssignableFrom(u.getClass)) {
+        val s = Resources("wrongException", clazz.getName, u.getClass.getName)
+        throw newAssertionFailedException(Some(s), Some(u), 4)
+      }
+      else {
+        Some(u)
+      }
+    }
+  }
+  caught match {
+    case None =&gt;
+      val message = Resources("exceptionExpected", clazz.getName)
+      throw newAssertionFailedException(Some(message), None, 4)
+    case Some(e) =&gt; e.asInstanceOf[T] // I know this cast will succeed, becuase isAssignableFrom succeeded above
+  }
+}</pre>
+<br/>
+intercept() 方法返回的是当前抛出的异常，所以可以对它的返回值进行更详细的断言<br/><br/>
+<pre class="lang:default decode:true">val s = "hi"
+val thrown = intercept[IndexOutOfBoundsException] {
+  s.charAt(-1)
+}
+assert(thrown.getMessage === "String index out of range: -1")</pre>
+<br/>
+<span style="color: #0000ff; font-size: 12pt;"><strong>二：thrownBy</strong></span><br/><br/>
+<pre class="lang:default decode:true">import org.scalatest.{MustMatchers, WordSpec}<br/><br/>
+class ScalaExceptionTest extends WordSpec with MustMatchers{<br/><br/>
+  "An empty Set produce NoSuchElementException when head is invoked" in {
+    a[NoSuchElementException] must be thrownBy {
+      Set.empty.head
+    }
+  }
+}</pre>
+<br/>
+执行之后的描述信息是<br/><br/>
+<pre class="brush:text">[info] ScalaExceptionTest:
+[info] - An empty Set produce NoSuchElementException when head is invoked
+[info] ScalaTest
+[info] Run completed in 1 second, 247 milliseconds.
+[info] Total number of tests run: 1
+[info] Suites: completed 1, aborted 0
+[info] Tests: succeeded 1, failed 0, canceled 0, ignored 0, pending 0
+[info] All tests passed.</pre>
+<br/>
+也就是 <code>in {}</code> 中的执行代码从描述信息并没有帮助，虽然它看上去很美。<br/><br/>
+thrownBy 的实现方式与 intercept 是一样的。<br/><br/>
+第一代 specs 可以用 <strong><span style="color: #0000ff;">throwA/throwAn</span></strong> 方法，现在转到  <a href="http://specs2.org/">specs2</a> 了，specs 已停止开发，从 <a href="https://code.google.com/p/specs/">https://code.google.com/p/specs/</a> 找了个例子：<br/><br/>
+<pre class="lang:default decode:true">"A full stack"-&gt;-(fullStack) should {
+  behave like "A non-empty stack below full capacity"
+  "throw an exception when sent #push" in {
+    stack.push(11) must throwAn[Error]
+  }
+}</pre>
+<br/>
+Scala 使用 Java 的风格与 <a href="http://unmi.cc/junit-4-how-to-test-exceptions/">JUnit 4 如何正确测试异常</a> 中的用法基本一致的。try-catch 方式也只是存在语法上的差异<br/><br/>
+<pre class="lang:default decode:true ">import org.junit.Assert._
+import org.junit.Test<br/><br/>
+class ScalaExceptionTest{<br/><br/>
+  @Test def testInvokeHeadOnEmptySet: Unit = {
+    try {
+      Set.empty.head
+      fail("nothing thrown")
+    } catch {
+      case err: NoSuchElementException =&gt; // test success
+      case t: Throwable =&gt; fail(s"caught ${t.getClass.getName} instead of NoSuchElementException")
+    }
+  }
+}</pre>
+<br/>
+总之，Scala 风格的异常测试也就是 intercept 和 thrownBy 两种。<br/><br/>
+参考：1. <a href="http://www.scalatest.org/" target="_blank" rel="noopener">ScalaTest</a><br />
+          2. <a href="https://code.google.com/p/specs/" target="_blank" rel="noopener">specs</a>

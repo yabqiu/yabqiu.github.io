@@ -1,0 +1,134 @@
+---
+title: Play 2.0 中文资料 - 应用程序全局对象
+url: /play2-0-tutorials-cn-application-global-object/
+date: 2013-01-17T10:30:20-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+  - PlayFramework
+tags: 
+  - 翻译
+  - Scala
+  - play2.0
+  - playframewok
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5381 
+wpStatus: publish
+views: 953
+lastmod: 2014-01-25T18:19:13-06:00
+---
+
+<strong><span style="font-size: large;">应用全局设置</span></strong><br/>
+<br/>
+<strong><span style="font-size: medium;">全局对象</span></strong><br/>
+<br/>
+在你的项目中定义一个 <code>Global</code>&nbsp;对象，它为你处理应用的全局设置.&nbsp;这个对象必须定义在默认包中(即不带 package&nbsp;声明的包).<br/>
+<pre class="brush:scala">import play.api._<br/>
+<br/>
+object Global extends GlobalSettings {<br/>
+<br/>
+}</pre>
+
+<blockquote><strong>小贴士:</strong>&nbsp;你也可使用 <code>application.global</code> key&nbsp;值在在配置中指定自己的 <code>GlobalSettings</code>&nbsp;实现类名称.</blockquote>
+
+<span style="color: #0000ff;">Unmi&nbsp;注: GlobalSettings.scala&nbsp;放在&nbsp;app&nbsp;目录比较合适，Scala&nbsp;的 package&nbsp;层次与目录并不存在严格的对应关系。</span><br/>
+<br/>
+<span style="color: #0000ff;">要说呢，不带 package&nbsp;声明的写法确实不是什么好习惯，因为其他带 package&nbsp;声明的类无法使用它。见：<a title="为何Java的有包名的类不能引用默认包中的类" href="http://unmi.cc/java-cannot-import-default-package" target="_blank"><span style="color: #0000ff;">为何Java的有包名的类不能引用默认包中的类</span></a>。这就对了，本来这个全局对象就不是给别的类用的 － Don't call me, I'll call you。</span><br/>
+<br/>
+<strong><span style="font-size: medium;">勾住应用启动和停止事件</span></strong><br/>
+<br/>
+你可以覆盖方法 <code>onStart</code> 和 <code>onStop</code>，它们会在应用的生命周期启动，停止时得到通知:<!--more--><br/>
+<pre class="brush:scala">import play.api._<br/>
+<br/>
+object Global extends GlobalSettings {<br/>
+<br/>
+  override def onStart(app: Application) {<br/>
+    Logger.info("Application has started")<br/>
+  }  <br/>
+<br/>
+  override def onStop(app: Application) {<br/>
+    Logger.info("Application shutdown...")<br/>
+  }  <br/>
+<br/>
+}</pre>
+
+<span style="color: #0000ff;">Unmi&nbsp;注:&nbsp;Play 1.x&nbsp;时代要实现这样的 Bootstrap，必须实现自己的 Job，@OnApplicationStart 标注类，它的 doJob() 方法就会在应用启动时执行，@OnApplicationStop 标注的 Job 会在应用停止时执行。参考：<a href="http://www.playframework.org/documentation/1.2.5/jobs" target="_blank"><span style="color: #0000ff;">http://www.playframework.org/documentation/1.2.5/jobs</span></a>。但是&nbsp;Play 1.x&nbsp;这样做可以让你用 @OnApplicationStart&nbsp;或 @OnApplicationStop&nbsp;标注多个类或启动多个 Job。</span><br/>
+<br/>
+<span style="color: #0000ff;">不管是原来的&nbsp; @OnApplicationStart，还是现在的&nbsp; onStart，其实是在第一个请求进来时执行的。</span><br/>
+<br/>
+<span style="font-size: medium;"><strong>提供应用的错误页面</strong></span><br/>
+<br/>
+当你的应用出现一个异常时,&nbsp; <code>onError</code>&nbsp;方法将会得到执行.&nbsp;它默认时被用作内部框架错误页面:<br/>
+<pre class="brush:scala">import play.api._<br/>
+import play.api.mvc._<br/>
+import play.api.mvc.Results._<br/>
+<br/>
+object Global extends GlobalSettings {<br/>
+<br/>
+  override def onError(request: RequestHeader, ex: Throwable) = {<br/>
+    InternalServerError(<br/>
+      views.html.errorPage(ex)<br/>
+    )<br/>
+  }  <br/>
+<br/>
+}</pre>
+
+<strong><span style="font-size: medium;">处理找不到 Action&nbsp;和绑定错误</span></strong><br/>
+<br/>
+If the framework doesn’t find an <code>Action</code> for a request, the <code>onHandlerNotFound</code> operation will be called:<br/>
+<pre class="brush:scala">import play.api._<br/>
+import play.api.mvc._<br/>
+import play.api.mvc.Results._<br/>
+<br/>
+object Global extends GlobalSettings {<br/>
+<br/>
+  override def onHandlerNotFound(request: RequestHeader): Result = {<br/>
+    NotFound(<br/>
+      views.html.notFoundPage(request.path)<br/>
+    )<br/>
+  }  <br/>
+<br/>
+}</pre>
+
+在找到了&nbsp;Route&nbsp;但现代派定请求参数时出现问题时，<code>onBadRequest</code>&nbsp;方法就会被调用<span style="color: #0000ff;">(Unmi&nbsp;注:&nbsp;Play 1.x&nbsp;是否有这样的机制呢？)</span>:<br/>
+<pre class="brush:scala">import play.api._<br/>
+import play.api.mvc._<br/>
+import play.api.mvc.Results._<br/>
+<br/>
+object Global extends GlobalSettings {<br/>
+<br/>
+  override def onBadRequest(request: RequestHeader, error: String) = {<br/>
+    BadRequest("Bad Request: " + error)<br/>
+  }  <br/>
+<br/>
+}</pre>
+
+<span style="font-size: large;"><strong>拦截请求</strong></span><br/>
+<br/>
+<strong><span style="font-size: medium;">覆盖 onRouteRequest&nbsp;方法</span></strong><br/>
+<br/>
+<code>Global</code>&nbsp;对象的另一个重要的方面是它还提供了一种方式去拦截请求，并在请求派发给&nbsp;Action&nbsp;之前执行业务逻辑.<br/>
+<blockquote><strong>小贴士</strong>&nbsp;这个勾也可用于劫持请求,&nbsp;允许开发者插入他们自己的请求路由机制.</blockquote>
+
+让我们来看它实际是怎么工作的:<br/>
+<pre class="brush:scala">import play.api._<br/>
+import play.api.mvc._<br/>
+<br/>
+// Note: this is in the default package.<br/>
+object Global extends GlobalSettings {<br/>
+<br/>
+  override def onRouteRequest(request: RequestHeader): Option[Handler] = {<br/>
+     println("executed before every request:" + request.toString)<br/>
+     super.onRouteRequest(request)<br/>
+  }<br/>
+<br/>
+}</pre>
+
+使用 <a title="Play 2.0 中文资料 - 组合 Action" href="http://unmi.cc/play2-0-tutorials-cn-actions-composition" target="_blank">Action 组合</a>&nbsp;还可以去拦截特定的&nbsp;Action&nbsp;方法。<a href=" ScalaActionsComposition"><br/>
+</a>

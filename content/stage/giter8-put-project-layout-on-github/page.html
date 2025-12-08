@@ -1,0 +1,115 @@
+---
+title: Giter8 -- 把项目布局模板放到 GitHub 上
+url: /giter8-put-project-layout-on-github/
+date: 2016-10-14T23:08:49-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - giter8
+  - git
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7484 
+wpStatus: publish
+views: 1083
+lastmod: 2021-05-11T20:34:14-05:00
+---
+
+因为学习或做些小 Demo, 会临时建立一个项目, 项目的布局也常有类似, 不想每次为一个 Maven 项目而执行 <code>mkdir -p example/src/{main,test}/{java,resources}</code>, 或是通过 IDE 来创建, 于是萌生了把自己常用的项目模板放到 GitHub 上的想法. 我们当然可以把直接在 GitHub 上创建一个个项目模板仓库, 想用时只要 <code>git clone</code> 下来, 但克隆的总是与 GitHub 上相应的仓库有关联.</p>
+<br/>
+Google 了, 有不少方法能建立项目基本框架, 如<br/><br/>
+<ol>
+    <li><a href="https://maven.apache.org/guides/mini/guide-creating-archetypes.html">创建 Maven 项目骨架</a>,  <code>mvn archetype:generate -DarchetypeGroupId=.....</code></li>
+    <li><a href="http://unmi.cc/sbt-np-create-folders-build-sbt/">sbt 的 np 插件可以快速生成项目目录</a></li>
+    <li>YEOMAN 也有自己的 <a href="http://yeoman.io/generators/">Generator</a>, 很强大也复杂</li>
+</ol>
+<br/>
+再就是现在要介绍的, 比较适合于我的口味的 <a href="http://www.foundweekends.org/giter8/">Giter8</a>, 简单实用, 定义模板更是轻松自如. Giter8 是构建在 <a href="http://www.scala-sbt.org/0.13/docs/Setup.html">sbt launcher</a> 之上的用于从 GitHub 或其他任何 Git 仓库中攫取项目模板的命令行工具. 模板定义简单, 支持变量的提示输入. 下面是安装, 使用, 以及建立自己的模板:<!--more--><br/><br/>
+<h2>安装 Giter8</h2><br/><br/>
+只介绍在 Mac OS X 下用 brew 的安装, 其他安装方式请参见 <a href="http://www.foundweekends.org/giter8/setup.html">http://www.foundweekends.org/giter8/setup.html</a>(中文版 <a href="https://yanbin.gitbooks.io/giter8/content/giter8/setup.html">https://yanbin.gitbooks.io/giter8/content/giter8/setup.html</a>)<br/><br/>
+<blockquote>
+<span style="color: #800000;">$ brew install giter8</span>
+</blockquote>
+<br/>
+安装之后, 可执行文件为 <code>g8</code>, 中英文结合念出来可不那么文雅.<br/><br/>
+<h2>下载模板</h2><br/><br/>
+这里有一个 <a href="https://github.com/foundweekends/giter8/wiki/giter8-templates">giter8 模板</a>的列表, 谁都可以编辑这个文件, 所以我们要是创建了自己的模板也可以加到这个列表中去, 我们选一个来下载, 如 <code>softprops/unfiltered.g8</code><br/><br/>
+<blockquote>
+<span style="color: #800000;">$ g8 <a style="color: #800000;" href="https://github.com/softprops/unfiltered.g8">softprops/unfiltered.g8</a></span>
+<span style="color: #800000;">This template generates an Unfiltered project. By default it depends</span><br />
+<span style="color: #800000;">on "unfiltered-jetty". For AJP support, set unfiltered_module to</span><br />
+<span style="color: #800000;">"unfiltered-jetty-ajp".</span>
+<span style="color: #800000;">name [My Web Project]: myweb</span><br />
+<span style="color: #800000;">version [0.1.0-SNAPSHOT]:</span><br />
+<span style="color: #800000;">unfiltered_version [ls(unfiltered, unfiltered)]:</span>
+<span style="color: #800000;">Template applied in ./myweb</span>
+<span style="color: #800000;">$ tree myweb</span><br />
+<span style="color: #800000;">myweb</span><br />
+<span style="color: #800000;">├── build.sbt</span><br />
+<span style="color: #800000;">└── src</span><br />
+<span style="color: #800000;">         ├── main</span><br />
+<span style="color: #800000;">         │       ├── resources</span><br />
+<span style="color: #800000;">         │       │   ├── avsl.conf</span><br />
+<span style="color: #800000;">         │       │   └── www</span><br />
+<span style="color: #800000;">         │       │             └── css</span><br />
+<span style="color: #800000;">         │       │                      └── app.css</span><br />
+<span style="color: #800000;">         │       └── scala</span><br />
+<span style="color: #800000;">         │                └── Example.scala</span><br />
+<span style="color: #800000;">         └── test</span><br />
+<span style="color: #800000;">                  └── scala</span><br />
+<span style="color: #800000;">                           └── ExampleSpec.scala</span>
+<span style="color: #800000;">8 directories, 5 files</span>
+</blockquote>
+<br/>
+也可以输入 GitHub 上仓库的全路径, 如<br/><br/>
+<blockquote>
+$ g8 https://github.com/softprops/unfiltered.g8.git<br />
+$ g8 softprops/unfiltered.g8 --name=myweb --version=1.0 --unfiltered_version=200  #提供两部属性可一步到位的创建项目
+</blockquote>
+<br/>
+所以 <code>g8</code> 也允许我们把项目模板托管在别的 git 服务器上.<br/><br/>
+上面发生了什么? <code>g8</code> 从 <a href="https://github.com/softprops/unfiltered.g8">softprops/unfiltered.g8</a> 上下载模板定义 <code>src/main/g8</code>, 提示输入的变量定义在 <code>src/main/g8/default.properties</code> 中, 文件内容, 目录都可以使用像 <span style="color: #666666; font-family: monospace;"><span style="background-color: #fafafa;"><code>$name$</code> 来引用输入的值. <code>default.properties</code> 中的 <code>description</code> 字符串用于描述模板, 就是我们见到的 <code>This template generates an Unfiltered project.....</code> 字样.</span></span><br/><br/>
+创建自己的模板<br/><br/>
+这一步才是我们真正目的所在, 可以参考已有的模板来创建自己的.<br/><br/>
+<ol>
+    <li>一个项目模板就是一个 Git 仓库, 并且 Giter8 模板仓库必须以  <code>.g8</code> 结尾, 例如 <code>yabqiu/basic-maven-archetype.g8</code></li>
+    <li>实际的项目模板通常放在仓库的 <code>src/main/g8</code> 目录下, 如果这个目录不存在则仓库根目录取而代之(不建议)</li>
+    <li>模板目录中的 <code>default.properties</code> 中定义待输入的变量和默认值</li>
+</ol>
+<br/>
+<code>default.properties</code> 中又有几个特性值得一提:<br/><br/>
+<ol>
+    <li>属性可以用在任何地方, 如文件内容, 文件名, 甚至是路径 <code>src/$package$</code></li>
+    <li><code>name</code> 属性兼做项目创建时的目录名</li>
+    <li><code>package</code> 属性在用作路径时会进行目录展开, 例如 <code>src/$package$</code>, 并且输入的 <code>package</code> 是 <code>cc.unmi</code>, 那么生成的目录会是 <code>src/cc/unmi/</code>, 而不是字面的 <code>src/cc.unmi</code></li>
+    <li><code>description</code> 定义的字符串会首先被 <code>g8</code> 显示出来</li>
+</ol>
+<br/>
+由于空目录是无法提交到 Git 上去的, 如果想要模板中有目录 <span style="color: #666666; font-family: monospace;"><span style="background-color: #fafafa;"><code>src/main/resources</code>,但暂时没东西往 <code>resources</code> 目录中放, 那么姑且放个点文件 <code>.gitkeep</code>,这样才能把 <code>空目录</code> 提交到 Git 上.</span></span><br/><br/>
+这是本人创造的第一个基本的 Maven  项目的模板, https://github.com/yabqiu/maven-archetype.g8, 可用<br/><br/>
+<blockquote>
+<span style="color: #800000;">$ g8 yabqiu/maven-archetype</span>
+</blockquote>
+<br/>
+另外最后还值得一提的有:<br/><br/>
+在提交模板到 GitHub 之前可用  <code>g8 file://yabqiu/maven-archetype.g8/</code> 进行测试. 在使用变量时可进行格式化, 如输入 name 为  <code>My Project</code> 时, 文件中写成 <code>$name;format="normalize"$</code> 得到 <code>my-project</code>; <code>$organization__packaged$</code> 放在目录名中将把输入的  <code>cc.unmi</code> 转换为目录 <code>cc/unmi</code>. 还能用 sbt  的 <code>Giter8Plugin</code> 进行模板测试.<br/><br/>
+更多高级话题请参考: <a href="http://www.foundweekends.org/giter8/Combined+Pages.html">Giter8 -- Combined Pages</a>, 这是已翻译的 Giter8 文档 <a href="https://yanbin.gitbooks.io/giter8/content/">https://yanbin.gitbooks.io/giter8/content/</a>.<br/><br/>
+<hr /><br/><br/>
+<strong>2021-05-11</strong><br/><br/>
+换了台 Macbook Pro, 系统还是 10.15.7, 在用  <code>brew install giter8</code> 时出现错误<br/><br/>
+<blockquote>
+Error: giter8 has been disabled because it fetches unversioned dependencies at runtime!
+</blockquote>
+<br/>
+Google 搜索后无解，不过可以用 <code>sbt new</code> 来使用 <code>giter8</code> 插件<br/><br/>
+<blockquote>
+$ sbt new yabqiu/spring-boot-1-starter.g8
+</blockquote>
+<br/>
+和 <code>g8 yabqiu/spring-boot-1-starter.g8</code>  一样的效果，从 github 上的 <code>yabqiu/spring-boot-1-starter.g8</code> 下载模板，输入信息，定制项目。

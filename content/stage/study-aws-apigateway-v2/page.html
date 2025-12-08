@@ -1,0 +1,421 @@
+---
+title: 学习使用 AWS API Gateway V2
+url: /study-aws-apigateway-v2/
+date: 2021-12-23T00:46:20-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - Terraform
+  - APIGateway
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12054 
+wpStatus: publish
+views: 749
+lastmod: 2022-01-10T20:05:23-06:00
+---
+
+<p>关于 AWS API Gateway V1, 写过一篇笔记 <a href="https://yanbin.blog/lambda-api-gateway-with-api-key/">Lambda + API Gateway 创建需 API Key 验证的 API</a>。 AWS 又推出了 API Gateway V2(服务管理/理解层面), 它同样可以用来作 HTTP-PROXY 调用 REST API, WebSocket; AWS-PROXY 调用 Lambda, 还能直接调用 AWS 的其他服务，如 StepFunction, SQS 等。</p>
+
+<p>但是  API Gateway V2 把 V1 中的 API Key 验证功能去掉了，这有点为了赚钱耍无赖了，先前是 API Key 验证不过时不会调用 Lambda, 现在可用 Lambda 来验证 API 调用，也就是不管 API Key 对与不对，都会去调用 Lambda 从而实现从你的帐户上扣钱的功能。</p>
+
+<p>在 V1 中创建整套服务的过程基本是  Resource -&gt; Method -&gt; Integration -&gt; Stage。而在 V2 中的过程是 Integration -&gt; Route -&gt; Stage, 把 Resource 和 Method  合而为一，比如 Route Key 写成 <code>GET /users</code>.</p>
+
+<p>下面照旧以 Terraform 的方式来叙述使用 API Gateway V2 如何实现 HTTP 代理，调用 Lambda, 及使用 AWS 服务(以 SQS 为例)，或与 VPC 内部的服务集成。首先是一个基本的框架，含 API 本身和 Stage<!--more--></p>
+
+<pre class="lang:default decode:true">resource "aws_apigatewayv2_api" "example" {<br/>
+  name          = "test-http-api"<br/>
+  protocol_type = "HTTP"<br/>
+}<br/>
+<br/>
+resource "aws_apigatewayv2_stage" "example" {<br/>
+  api_id = aws_apigatewayv2_api.example.id<br/>
+  name   = "stg"<br/>
+  auto_deploy = true<br/>
+}<br/>
+</pre>
+
+<p>执行后回到 AWS 的 Web 控制台看到的就是 API Gateway V2 的界面，AWS 并不会告诉你这是 V2 的界面，但可留意到左边的菜单不一样了，由 V1 的 API/Resources 变成了 Develop/Routes, 其他操作菜单的也都有了变化</p>
+
+<p>Stage 帮我们产生了一个 Invoke URL, 比如 Stage 为 stg, 得到一个类似这样的 URL https://fsoaey6ra4.execute-api.us-east-1.amazonaws.com/stg. 接着就看各种功能的实现</p>
+
+<h3>API Gateway V2 与 Lambda 的集成</h3><br/>
+<p>基本要素与 API Gateway V1 保持一致，外部访问用 GET/POST/PUT 等，但 API Gateway 内部与 Lambda 的通信是用 POST 的，同时要具备相应的权限，因为在 Lambda 方面同样是加上相应的 API Gateway 触发器。</p>
+
+<pre class="lang:default decode:true">resource "aws_apigatewayv2_integration" "lambda" {<br/>
+  api_id           = aws_apigatewayv2_api.example.id<br/>
+  integration_type = "AWS_PROXY"<br/>
+  integration_method = "POST"<br/>
+  integration_uri    = aws_lambda_function.example.invoke_arn<br/>
+  payload_format_version = "2.0"<br/>
+}<br/>
+<br/>
+resource "aws_apigatewayv2_route" "lambda" {<br/>
+  api_id = aws_apigatewayv2_api.example.id<br/>
+  route_key = "GET /lambda/users/{userId}"<br/>
+  target = "integrations/${aws_apigatewayv2_integration.lambda.id}"<br/>
+}<br/>
+<br/>
+resource "aws_lambda_permission" "allow_api_gateway" {<br/>
+  action        = "lambda:InvokeFunction"<br/>
+  function_name = aws_lambda_function.example.function_name<br/>
+  principal     = "apigateway.amazonaws.com"<br/>
+  source_arn    = "${aws_apigatewayv2_api.example.execution_arn}/*/GET/lambda/users/{userId}"<br/>
+}</pre>
+
+<p>Lambda 资源的创建这里省略了，上面的 <code>route_key</code> 需要更稍加理解，它是 V1 中的 <code>method resource</code> 的合成表示方式，比如 POST /lambda/users 等。甚至还能用  <code>$default</code>, 表示对 Invoke URL 任何形式的请求, 但对于集成 Lambda 的 Gateway, 设置 route_key 为 <code>$default</code> 的话，<code>aws_lambda_permission</code> 中的 <code>source_arn</code> 将变得难以配置。</p>
+
+<p>配置好后，用下面的方式就能调用 Lambda</p>
+
+<blockquote><br/>
+<p>$ curl https://fsoaey6ra4.execute-api.us-east-1.amazonaws.com/stg/lambda/users/1234</p>
+
+</blockquote>
+
+<p>在 Lambda 中可打印出完整的 event, 可帮助我们理解怎么传递，及解析请求数据的。</p>
+
+<h3>API Gateway V2 作为 HTTP(S) 代理</h3><br/>
+<p>我们可完全用 API Gateway V2 作为一个 HTTP(S) 的代理，发往 API Gateway 上的所有请求全部转发到后端 HTTP(S) 服务</p>
+
+<pre class="lang:default decode:true">resource "aws_apigatewayv2_integration" "http-proxy" {<br/>
+  api_id           = aws_apigatewayv2_api.example.id<br/>
+  integration_type = "HTTP_PROXY"<br/>
+<br/>
+  integration_method = "ANY"<br/>
+  integration_uri    = "http://example.com/{proxy}"<br/>
+}<br/>
+<br/>
+resource "aws_apigatewayv2_route" "http-proxy" {<br/>
+  api_id    = aws_apigatewayv2_api.example.id<br/>
+  route_key = "ANY /go/{proxy+}"<br/>
+  target = "integrations/${aws_apigatewayv2_integration.http-proxy.id}"<br/>
+}</pre>
+
+<p>上面 integration_type 和 route_key 中的 method 都是 <code>ANY</code>, 并且由 <code>ANY /go/{proxy+}</code> 到 <code>ANY http://example.com/{proxy}</code> 产生的效果就是</p>
+
+<ol>
+
+	<li>GET https://fsoaey6ra4.execute-api.us-east-1.amazonaws.com/stg/go/   -&gt; GET http://examle.com/</li>
+
+	<li>POST https://fsoaey6ra4.execute-api.us-east-1.amazonaws.com/stg/go/aaa/bbb  -&gt; POST http://example.com/aaa/bbb</li>
+
+	<li>......</li>
+
+</ol>
+
+<p>也可以显式的逐个指定 route_key, 如下面那样随意发挥</p>
+
+<p>route_key = "GET /abc", integration_method="POST", integration_url = "http://example.com/xyz/kk"</p>
+
+<p><span style="color: #800000;">但是必须清楚一点，API Gateway 的  HTTP_PROXY 只能直接与 public 的 HTTP(S) 集成，也就是你在 VPC 内部创建了的 EC2 或  ECS 启动的 HTTP(S) 服务不能直接访问，必须外加一个 ELB 和 VPC Link 才能与 API Gateway 连接起来，后面会讲到。</span></p>
+
+<h3>API Gateway V2 与  AWS 服务的集成(以 SQS 为例)</h3><br/>
+<p>API Gateway V2 除了调用 Lambda 外，还能调用 AWS 的其他服务，下面以 SQS-SendMessage 为例</p>
+
+<pre class="lang:default decode:true">resource "aws_apigatewayv2_integration" "sqs" {<br/>
+  api_id              = aws_apigatewayv2_api.example.id<br/>
+  credentials_arn     = "&lt;IAM role arn here&gt;"<br/>
+  integration_type    = "AWS_PROXY"<br/>
+  integration_subtype = "SQS-SendMessage"<br/>
+<br/>
+  request_parameters = {<br/>
+    "QueueUrl"    = "$request.header.queueUrl"<br/>
+    "MessageBody" = "$request.body.message"<br/>
+  }<br/>
+}<br/>
+<br/>
+resource "aws_apigatewayv2_route" "sqs" {<br/>
+  api_id    = aws_apigatewayv2_api.example.id<br/>
+  route_key = "POST /sqs"<br/>
+  target = "integrations/${aws_apigatewayv2_integration.sqs.id}"<br/>
+}<br/>
+</pre>
+
+<p>如果 IAM role  的权限没问题的话，下面的请求将能发送一条 SQS 消息到队列中</p>
+
+<blockquote><br/>
+<p>$ curl -X POST -H "queueUrl:https://sqs.us-east-1.amazonaws.com/123456789088/test-queue" \<br /><br/>
+    -H "content-type:application/json" \<br /><br/>
+    https://fsoaey6ra4.execute-api.us-east-1.amazonaws.com/stg/sqs \<br /><br/>
+    --data '{"message": "your message body here"}'</p>
+
+</blockquote>
+
+<p>当 <code>integration_type</code> 为 <code>AWS_PROXY</code> 时，<code>integration_subtype</code> 要以选择以下其中一个：</p>
+
+<ol>
+
+	<li>EventBridge-PutEvents</li>
+
+	<li>SQS-SendMessage</li>
+
+	<li>SQS-ReceiveMessage</li>
+
+	<li>SQS-DeleteMessage</li>
+
+	<li>SQS-PurgeQueue</li>
+
+	<li>AppConfig-GetConfiguration</li>
+
+	<li>Kinesis-PutRecord</li>
+
+	<li>StepFunctions-StartExecution</li>
+
+	<li>StepFunctions-StartSyncExecution</li>
+
+	<li>StepFunctions-StopExecution</li>
+
+</ol>
+
+<p>详情见 <a href="https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-aws-services-reference.html">Integration subtype reference</a></p>
+
+<p>关于 request_parameters，response_parameters 的映射可参考 <a href="https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-parameter-mapping.html">Transforming API requests and responses</a></p>
+
+<p>另外，如果在调用 API Gateway 时出现无法理解的错误时，请启用 API Gateway 的 Logging, 并在 Log format 中按相同规则添加以下三个字段</p>
+
+<ol>
+
+	<li>$context.integrationErrorMessage</li>
+
+	<li> $context.error.message</li>
+
+	<li>$context.error.responseType</li>
+
+</ol>
+
+<p>更多 API Gateway 日志相关的字段，请见 <a href="https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-logging-variables.html">Customizing HTTP API access logs</a></p>
+
+<h3>API Gateway V2 连接 Private ELB</h3><br/>
+<p>这样做的好处估计是用 Private ELB 提供多数的服务内部使用，其中少数 API 需要暴露给外部，所以就以 API Gateway 作为桥梁。为此，首先需创建一个 VPC Link, 自然就要提供相应的 Security Group, Subnet，以及需要被连接的 Private ELB 的监听器的 ARN</p>
+
+<pre class="lang:default decode:true">resource "aws_apigatewayv2_vpc_link" "private" {<br/>
+  name               = "private_api"<br/>
+  security_group_ids = ["sg-111e222g"]<br/>
+  subnet_ids         = ["subnet-1122aa8f", "subnet-aa123e86"]<br/>
+}<br/>
+<br/>
+resource "aws_apigatewayv2_integration" "vpc" {<br/>
+  api_id           = aws_apigatewayv2_api.example.id<br/>
+  credentials_arn  = "&lt;IAM role ARN here&gt;"<br/>
+  integration_type = "HTTP_PROXY"<br/>
+  integration_uri  = "&lt;Your ELB Listener ARN here&gt;"<br/>
+<br/>
+  integration_method = "ANY"<br/>
+  connection_type    = "VPC_LINK"<br/>
+  connection_id      = aws_apigatewayv2_vpc_link.private.id<br/>
+}<br/>
+<br/>
+resource "aws_apigatewayv2_route" "vpc" {<br/>
+  api_id    = aws_apigatewayv2_api.example.id<br/>
+  route_key = "ANY /{proxy+}"<br/>
+  target = "integrations/${aws_apigatewayv2_integration.vpc.id}"<br/>
+}</pre>
+
+<p>与前面的 HTTP_PROXY 大致类似，不同的就是 <code>connection_type</code> 为 VPC_LINK。完后，访问 Invoke URL 的所有类型的请求悉数转发到了 ELB 监听器上了。</p>
+
+<p>API Gateway 使用 VPC_LINK 就能打通与 VPC 内部的服务，在网络通路上把请求代理到 EC2 机器上是没问题的，或可借助于 Route 53 解析到某个 Private 的 EC2 上，但它没提供这样的功能，因为跳过 ELB 的话估计会少赚些钱。</p>
+
+<h3>总结</h3><br/>
+<p>配置 API Gateway 时很容易碰到各种问题，比使用 ELB + ECS 碰到的问题会多得多，因为 API Gateway 与后端服务之间对我们来说是个黑盒子。</p>
+
+<p>API Gateway V2 配置的重点在 <code>aws_apigatewayv2_integration</code>, 还有许多参数前面尚未提及，如代理时的 <code>passthrough_behavior</code>. <code>payload_format_version</code> 2.0 比 1.0 更宽松，Lambda 中返回的字符串自动封装。还有 <code>response_parameters</code> 等等。</p>
+
+<p>API Gateway V2 与 V1 相比而言就只觉得写 route_key 比单独的定义每一个 Resource, Method 要简单，其实质好像没有什么变化。所以在 AWS Web 控制台并不标识出是 V2 还是 V1 大概也就是这个原因, 因为对于用户而言还真就是控制台 UI 的变化而已。</p>
+
+<p>其他的， API Gateway V2 集成 WebSocket 或许还有些新的内容，实际工作中还未真正用过 WebSocket，故未作深究。</p>
+
+<hr /><br/>
+<p>[2022-01-10]：API Gateway V1 和 V2 的 Lambda 请求 event 数据格式是不一样的，以下分别是 V1 和 V2 的 event</p>
+
+<p>API Gateway V1 Lambda event:</p>
+
+<pre class="height-set:true lang:default decode:true">{<br/>
+    "resource": "/version",<br/>
+    "path": "/version",<br/>
+    "httpMethod": "GET",<br/>
+    "headers": {<br/>
+        "Accept": "*/*",<br/>
+        "Accept-Encoding": "gzip, deflate, br",<br/>
+        "Cache-Control": "no-cache",<br/>
+        "CloudFront-Forwarded-Proto": "https",<br/>
+        "CloudFront-Is-Desktop-Viewer": "true",<br/>
+        "CloudFront-Is-Mobile-Viewer": "false",<br/>
+        "CloudFront-Is-SmartTV-Viewer": "false",<br/>
+        "CloudFront-Is-Tablet-Viewer": "false",<br/>
+        "CloudFront-Viewer-Country": "US",<br/>
+        "Host": "2ek2gezgwa.execute-api.us-east-1.amazonaws.com",<br/>
+        "Postman-Token": "eba2a85c-e1a0-4fed-96de-e7cbef7bfa50",<br/>
+        "User-Agent": "PostmanRuntime/7.28.4",<br/>
+        "Via": "1.1 6232ab8d1c60778053fd7b2d4bbeb7e4.cloudfront.net (CloudFront)",<br/>
+        "X-Amz-Cf-Id": "xHpEidy5FPriZAD_uYzpR-BOgtD1zduLHBIfrUWzG5VfFiMv4T8L0w==",<br/>
+        "X-Amzn-Trace-Id": "Root=1-61dcd392-714872c96460463307ba18f1",<br/>
+        "x-api-key": "2343252ZE9",<br/>
+        "X-Forwarded-For": "206.220.18.42, 64.252.169.166",<br/>
+        "X-Forwarded-Port": "443",<br/>
+        "X-Forwarded-Proto": "https"<br/>
+    },<br/>
+    "multiValueHeaders": {<br/>
+        "Accept": [<br/>
+            "*/*"<br/>
+        ],<br/>
+        "Accept-Encoding": [<br/>
+            "gzip, deflate, br"<br/>
+        ],<br/>
+        "Cache-Control": [<br/>
+            "no-cache"<br/>
+        ],<br/>
+        "CloudFront-Forwarded-Proto": [<br/>
+            "https"<br/>
+        ],<br/>
+        "CloudFront-Is-Desktop-Viewer": [<br/>
+            "true"<br/>
+        ],<br/>
+        "CloudFront-Is-Mobile-Viewer": [<br/>
+            "false"<br/>
+        ],<br/>
+        "CloudFront-Is-SmartTV-Viewer": [<br/>
+            "false"<br/>
+        ],<br/>
+        "CloudFront-Is-Tablet-Viewer": [<br/>
+            "false"<br/>
+        ],<br/>
+        "CloudFront-Viewer-Country": [<br/>
+            "US"<br/>
+        ],<br/>
+        "Host": [<br/>
+            "2ek2gezgwa.execute-api.us-east-1.amazonaws.com"<br/>
+        ],<br/>
+        "Postman-Token": [<br/>
+            "eba2a85c-e1a0-4fed-96de-e7cbef7bfa50"<br/>
+        ],<br/>
+        "User-Agent": [<br/>
+            "PostmanRuntime/7.28.4"<br/>
+        ],<br/>
+        "Via": [<br/>
+            "1.1 6232ab8d1c60778053fd7b2d4bbeb7e4.cloudfront.net (CloudFront)"<br/>
+        ],<br/>
+        "X-Amz-Cf-Id": [<br/>
+            "xHpEidy5FPriZAD_uYzpR-BOgtD1zduLHBIfrUWzG5VfFiMv4T8L0w=="<br/>
+        ],<br/>
+        "X-Amzn-Trace-Id": [<br/>
+            "Root=1-61dcd392-714872c96460463307ba18f1"<br/>
+        ],<br/>
+        "x-api-key": [<br/>
+            "pmjb339byoPdgfiSmMR6aUmSsO6QPPX2gHJOKZE9"<br/>
+        ],<br/>
+        "X-Forwarded-For": [<br/>
+            "206.220.18.42, 64.252.169.166"<br/>
+        ],<br/>
+        "X-Forwarded-Port": [<br/>
+            "443"<br/>
+        ],<br/>
+        "X-Forwarded-Proto": [<br/>
+            "https"<br/>
+        ]<br/>
+    },<br/>
+    "queryStringParameters": {<br/>
+        "debug": ""<br/>
+    },<br/>
+    "multiValueQueryStringParameters": {<br/>
+        "debug": [<br/>
+            ""<br/>
+        ]<br/>
+    },<br/>
+    "pathParameters": null,<br/>
+    "stageVariables": null,<br/>
+    "requestContext": {<br/>
+        "resourceId": "rovr9k",<br/>
+        "resourcePath": "/version",<br/>
+        "httpMethod": "GET",<br/>
+        "extendedRequestId": "LwX-5E7yoAMFpJg=",<br/>
+        "requestTime": "11/Jan/2022:00:47:14 +0000",<br/>
+        "path": "/qa/version",<br/>
+        "accountId": "913903414417",<br/>
+        "protocol": "HTTP/1.1",<br/>
+        "stage": "qa",<br/>
+        "domainPrefix": "2ek2gezgwa",<br/>
+        "requestTimeEpoch": 1641862034361,<br/>
+        "requestId": "ab3d1839-d4a7-4e8c-8b43-270e426c6875",<br/>
+        "identity": {<br/>
+            "cognitoIdentityPoolId": null,<br/>
+            "cognitoIdentityId": null,<br/>
+            "apiKey": "2343252ZE9",<br/>
+            "principalOrgId": null,<br/>
+            "cognitoAuthenticationType": null,<br/>
+            "userArn": null,<br/>
+            "apiKeyId": "64rntwaq2h",<br/>
+            "userAgent": "PostmanRuntime/7.28.4",<br/>
+            "accountId": null,<br/>
+            "caller": null,<br/>
+            "sourceIp": "206.220.18.42",<br/>
+            "accessKey": null,<br/>
+            "cognitoAuthenticationProvider": null,<br/>
+            "user": null<br/>
+        },<br/>
+        "domainName": "2ek2gezgwa.execute-api.us-east-1.amazonaws.com",<br/>
+        "apiId": "2ek2gezgwa"<br/>
+    },<br/>
+    "body": null,<br/>
+    "isBase64Encoded": false<br/>
+}</pre>
+
+<p>API Gateway V2 Lambda event</p>
+
+<pre class="height-set:true lang:default decode:true">{<br/>
+    "version": "2.0",<br/>
+    "routeKey": "GET /version",<br/>
+    "rawPath": "/stg/version",<br/>
+    "rawQueryString": "debug",<br/>
+    "headers": {<br/>
+        "accept": "application/json",<br/>
+        "accept-encoding": "gzip, deflate, br",<br/>
+        "cache-control": "no-cache",<br/>
+        "content-length": "0",<br/>
+        "content-type": "application/json",<br/>
+        "host": "uz6f6zn2h3.execute-api.us-east-1.amazonaws.com",<br/>
+        "postman-token": "fdab8cbf-00ec-43c4-81e7-ffe64fe395ba",<br/>
+        "user-agent": "PostmanRuntime/7.28.4",<br/>
+        "x-amzn-trace-id": "Root=1-61dcd659-16a484e4706350e007c7bbb6",<br/>
+        "x-forwarded-for": "67.175.2.251",<br/>
+        "x-forwarded-port": "443",<br/>
+        "x-forwarded-proto": "https"<br/>
+    },<br/>
+    "queryStringParameters": {<br/>
+        "debug": ""<br/>
+    },<br/>
+    "requestContext": {<br/>
+        "accountId": "913903414417",<br/>
+        "apiId": "uz6f6zn2h3",<br/>
+        "domainName": "uz6f6zn2h3.execute-api.us-east-1.amazonaws.com",<br/>
+        "domainPrefix": "uz6f6zn2h3",<br/>
+        "http": {<br/>
+            "method": "GET",<br/>
+            "path": "/stg/version",<br/>
+            "protocol": "HTTP/1.1",<br/>
+            "sourceIp": "67.175.2.251",<br/>
+            "userAgent": "PostmanRuntime/7.28.4"<br/>
+        },<br/>
+        "requestId": "LwZt8hFbIAMEMWw=",<br/>
+        "routeKey": "GET /version",<br/>
+        "stage": "stg",<br/>
+        "time": "11/Jan/2022:00:59:05 +0000",<br/>
+        "timeEpoch": 1641862745096<br/>
+    },<br/>
+    "isBase64Encoded": false<br/>
+}</pre>
+
+<p>Lambda 在处理 Event 时要注意，关于 Key 的大小写，可以把 event 转换为 CaseInsensitiveDict 来保持兼容</p>
+
+<pre class="lang:default decode:true">from requests.structures import CaseInsensitiveDict<br/>
+event = CaseInsensitiveDict(originalEvent)</pre>
+
+<p>确定请求资源也不一样，V1 中取 httpMethod 和 resource 组合，V2 中要取 routeKey。</p>
+
+<!-- wp:paragraph --><!-- /wp:paragraph -->

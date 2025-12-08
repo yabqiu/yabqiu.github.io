@@ -1,0 +1,107 @@
+---
+title: Swift 学习笔记(闭包)
+url: /swift-learning-closues/
+date: 2015-11-24T00:49:14-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Swift
+tags: 
+  - Swift
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7065 
+wpStatus: publish
+views: 348
+lastmod: 2021-05-04T16:03:05-05:00
+---
+
+谈到函数式编程，恐怕最不能放过的就是闭包。闭包的定义总是不那么清晰，好像每种语言都有小许的差别。通常说的是可以捕获(访问)外部变量语句块，Swift 的闭包类似于 Objective-C 的 Block 或其他语言的 Lambda 表达式。所以闭包同 Lambda 基本上是同义词。</p>
+<br/>
+现在还没完， Swift 认为全局函数(有名字的，不能捕获外部变量)和嵌套函数(有名字，可捕获外部变量)也认为是特殊的闭包。闭包表达式(无名字的闭)才是真正意义上的闭包，它用最简洁的方式来书写一个函数。因此它尽了最大的可能的作了约定性的简化，例如参数与返回类型的推断，return 的省略，无参或只有一个参数的简化。<br/><br/>
+闭包的语法形式<br/><br/>
+<span style="color: #800000;">   { (<code>parameters</code>) -&gt; <code>return</code> <code>type</code> in</span><br />
+<span style="color: #800000;">        <code>statements</code></span><br />
+<span style="color: #800000;">    }</span><br/><br/>
+闭包中可用常量参数(let)，变量参数(var), inout 参数，甚至是可变个数参数，但是不能用默认参数。说白了，闭包也就是无名函数的另一种写法。<!--more--><br/><br/>
+在 Java8 中为了保持兼容性，所以设计出了 SAM(Single Abstract Method)，让 Java8 的 Lambda 表达式与含有 SAM 的类型进行 1:1 映射。在 Swift 可无须这般，它直接就是在某处接受一个函数，那么符合格式(参数到返回值的)函数就可以放到这里来，你也可以写成闭包形式。回到 Objective-C 可以想像是要求一个 Selector 或是一个 Block，也就是匹配类型就是。<br/><br/>
+譬如说数组排序时可以接受函数类型参数是<br/><br/>
+<img class="aligncenter wp-image-7066" src="/wp-content/uploads/2015/11/Swift-closure-1-800x137.png" alt="Swift-closure-1" width="450" height="77" /><br/><br/>
+<span style="color: #800000;">(String, String) -&gt; Bool</span><br/><br/>
+那么我们可以定义一个函数传给它，或者定义成一个闭包传过去，以及逐步的不讲道理的简化方式<br/><br/>
+<pre class="lang:default decode:true">let fruits = ["Apple", "Pear", "Banana"]<br/><br/>
+func sorter(s1: String, s2: String) -&gt; Bool {
+    return s1 &gt; s2
+}<br/><br/>
+fruits.sort(sorter)  //通过函数名，传入已定义的函数<br/><br/>
+let sorterRef = sorter
+fruits.sort(sorterRef) //传入函数(闭包) 类型变量<br/><br/>
+//以下是闭包
+let a = fruits.sort({(s1: String, s2: String) -&gt; Bool in return s1 &lt; s2}) //完整而冗余的格式
+fruits.sort({(s1: String, s2: String) in return s1 &lt; s2}) //带有参数类型和 return 关键字
+fruits.sort({(s1, s2) in return s1 &lt; s2}) //***** 标准格式 *****
+fruits.sort({s1, s2 in return s1 &lt; s2}) //省去参数列表两边的括号，仍然有 return 关键字
+fruits.sort({(s1, s2) in s1 &lt; s2})   //只省去了 return 关键字
+fruits.sort({s1, s2 in s1 &lt; s2})     //同时省去了参数列表两边的括号和 return 关键字
+fruits.sort({$0 &lt; $1})       //省略了参数列表，默认用 $0, $1, $2 ... 依次代表各参数
+fruits.sort(&gt;)               //操作数都省了，这是一个二元操作符，所以相当于 $0 &gt; $1<br/><br/>
+let numbers = [1, 4, 2, 3]
+numbers.sort(&lt;)              //整数数组的排序也可以这么省
+</pre>
+<br/>
+*闭包中，只有一条语时才能省去 return 关键字<br/><br/>
+<strong>尾闭包(Trailing Closure)</strong><br/><br/>
+<span style="text-decoration: underline;">如果闭包是作为函数的最后一个参数，那么它可以单独甩在外面，在圆括号；而如果闭包是作为函数的唯一个参数，那么除适用前一原则外，还允许把圆括号也省去</span>，分别是<br/><br/>
+<pre class="lang:default decode:true">fruits.sort(){ $0 &lt; $1 }
+fruits.sort { $0 &lt; $1 }<br/><br/>
+func op(n1: Int, _ n2: Int, _ fn: (Int, Int) -&gt; Int) -&gt; Int {
+    return fn(n1, n2)
+}<br/><br/>
+op(2, 5) {
+    var tmp = $0 + $1
+    tmp = tmp * 3
+    return tmp + ($0 * $1)
+}
+</pre>
+<br/>
+这种简化法在闭包体比较长时很有意义，{} 里表明了这是一个操作块。比如上面的 op 函数第三个参数接受的闭包写了三行，假装它比较复杂一些。<br/><br/>
+<strong>闭包捕获外部变量</strong><br/><br/>
+Swift 的闭包捕获外部常，变量的特性与 Javascript 是一样的，在这点上是比 Java 8 要灵活<br/><br/>
+<pre class="lang:default decode:true">func increase(step: Int) -&gt; (Int -&gt; Int){
+    let localValue = 10
+    return { $0 + step + localValue } //这其实是一个嵌套函数，捕获了外部函数的参数和局部变量
+}<br/><br/>
+increase(10)(5)        //25<br/><br/>
+var base = 20
+let foo: (Int -&gt; Int) = { 
+  base = base + 3      //闭包中可以修改外部变量的值，这比函数的参数还强悍
+  return base + $0     //让它捕获外部变量 base, 所以 base 要先于 foo 声明
+}<br/><br/>
+foo(7)                //30
+foo(7)                //33
+base = 30             //改变外部变量，影响闭包的调用
+foo(7)                //40
+</pre>
+<br/>
+<strong>@noescape 闭包</strong><br/><br/>
+如果传入函数中的闭包在函数返回前就完成了调用，那么这个闭包就是 @noescape 的，意味着不能逃离函数而存在。如果传入函数的闭包在函数返回后还想调用它，那就不是一个 @noescape 的了，强型加 @noescape 注解就要报编译错误的，例如<br/><br/>
+<pre class="lang:default decode:true ">func withNoescapeClosure(@noescape closure: () -&gt; Void) {
+    x = 200    //加了 @noescape, 使得隐式的访问 self 的变量 x，相当于 self.x = 200
+    closure()  //函数返回后便不能调用 closure() 了，所以 closure 是 noescape 的
+}<br/><br/>
+
+var op: ()-&gt;Void
+func withEscapingClosure(@noescape closure: () -&gt; Void) {   //需要去掉这里的 @noescape
+    op = closure //函数赋给了外部变量，别人还有机会在函数外部调用，所以就不是 noescape；编译错误
+}
+</pre>
+<br/>
+withEscapingClosure() 中强型给 closure 加上 @noescape 编译时会报<br/><br/>
+<span style="color: #800000;">Invalid conversion from non-escaping function of type '@noescape () -&gt; Void'</span><br/><br/>
+那么 @noescape 有什么作用呢？它可以使用该中隐式的访问 self 的变量。<br/><br/>
+参考：<a href="https://developer.apple.com/library/ios/documentation/Swift/Conceptual/Swift_Programming_Language/Closures.html#//apple_ref/doc/uid/TP40014097-CH11-ID94" target="_blank" rel="noopener">Closures</a><br/><br/>
+&nbsp;

@@ -1,0 +1,236 @@
+---
+title: Python Poetry 项目中相对路径模块引用的问题
+url: /python-poetry-relative-import-issues/
+date: 2021-10-09T00:20:08-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2021/10/python-poetry-logo.png"
+categories:
+  - Python
+tags: 
+  - Poetry
+  - sys.path
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11810 
+wpStatus: publish
+views: 1295
+lastmod: 2021-10-09T01:16:51-05:00
+---
+
+最近一直在折腾 Python 项目，通过对几个 Python 项目依赖管理与构建工具的对比，最后选择了 <a href="https://python-poetry.org/">Poetry</a>。它管理依赖，构建与发布包还是简单的多，不需要处理 setup.py, setup.cfg 和 Makefile 文件, 甚至都不需要了解 wheel 是什么就能往 PyPI 发布包了。</p>
+<br/>
+可是，别看 Poetry 的官网一直守护着一副小清新的形像，其实照样处处是坑，其中一个就是与相对引用有关的问题。我们来看下什么样的现像，最后的结论就是：在 Python 中避免使用相对路径引用，因为相对路径的上下文经常在变，然后必要时先执行 <code>poetry install</code>, 甚至把入口代码拉到包外头去。<br/><br/>
+什么是相对引用与绝对路径引用，比如在一个包 <code>my_package</code> 中有两个模块(Python 文件) app.py 和 utils, app.py 中对 utils 资源的引用可以写成<br/><br/>
+<blockquote>
+from utils import md5               # 不确定 utils 是一个包还是一个模块，有点像是隐式相对路径模块引用<br />
+from .utils import md5              # 同一目录中的 utils 模块<br />
+import .utils<br />
+from ..utils import md5             # 上一级目录中的 utils 模块 (如果 utils.py 在与 app.py 上一级目录的话)<br />
+from my_package.utils import md5  # 绝对引用，总是从包名开始
+</blockquote>
+<br/>
+注意 from 后面的 <code>.</code> 与 <code>..</code>，相对路径引用不能直接 import, 如不能 <code>import .utils.md5</code><br/><br/>
+<!--more-->我们用 <code>poetry new my-package</code> 命令创建一个 Python 项目，它的目录结构如下：<br/><br/>
+<pre class="lang:default decode:true">.
+└── my-package
+    ├── README.rst
+    ├── my_package
+    │   └── __init__.py
+    ├── pyproject.toml
+    └── tests
+        ├── __init__.py
+        └── test_my_package.py</pre>
+<br/>
+项目目录为 <code>my-package</code>, 其中再来一个"同名"的目录 <code>my_package</code> 作为包名，里头是 Python 源文件。由于项目名称中用了中杠(my-package), 作为包名的就把中杠替换成下划线。如果用 <code>poetry new my_package</code> 的话项目目录名与包名就都是一样的了。后面部分在阅读时请注意把 <code>.../my-package</code> 与 <code>.../my_package</code> 区分开来。<br/><br/>
+<h3>执行产品代码时的 sys.path</h3><br/><br/>
+现在我们在 my_package 目录中创建两个文件 utils.py 和  app.py, 它们的内容分别为<br/><br/>
+utils.py<br/><br/>
+<pre class="lang:default decode:true ">import hashlib
+import json<br/><br/>
+
+def md5(obj):
+    return hashlib.md5(json.dumps(obj, sort_keys=True).encode()).hexdigest()</pre>
+<br/>
+app.py<br/><br/>
+<pre class="lang:default decode:true ">import sys
+from utils import md5<br/><br/>
+
+def handler():
+    print('main sys.path')
+    print('\n'.join(sys.path))
+    return md5("abc")<br/><br/>
+
+if __name__ == '__main__':
+    handler()</pre>
+<br/>
+在命令行中执行 app.py, 假定后面的工作目录都是 /Users/yanbin/my-package<br/><br/>
+<blockquote>
+(.venv) my-package$ python my_package/app.py<br />
+main sys.path<br />
+/Users/yanbin/my-package/my_package<br />
+/usr/local/Cellar/python@3.9/3.9.7/Frameworks/Python.framework/Versions/3.9/lib/python39.zip<br />
+/usr/local/Cellar/python@3.9/3.9.7/Frameworks/Python.framework/Versions/3.9/lib/python3.9<br />
+/usr/local/Cellar/python@3.9/3.9.7/Frameworks/Python.framework/Versions/3.9/lib/python3.9/lib-dynload<br />
+/Users/yanbin/.venv/lib/python3.9/site-packages
+</blockquote>
+<br/>
+这里打印出 <code>sys.path</code> 中包按序搜索的路径列表。<code>/Users/yanbin/.venv</code> 是 Python 虚拟环境的目录，中间三行 <code>/usr/local/Cellar/python@3.9/***</code> 是系统中 Python 的目录，最后一行 <code>/Users/yanbin/.venv/lib/python3.9/site-packages</code> 是虚拟环境中安装包的位置，如果运行 <code>poetry install</code> 将会把 <code>my_package</code> 安装到此处。<br/><br/>
+注：用 <code>poetry run python my_package/app.py</code> 是一样的效果<br/><br/>
+<h3>pytest 运行时的 sys.path</h3><br/><br/>
+再来到 pytest 测试，在 <code>tests</code> 目录中创建 <code>test_app.py</code> 文件，内容如下<br/><br/>
+<pre class="lang:default decode:true">import sys
+# from my_package.app import handler<br/><br/>
+
+def test_handler():
+    print('test sys.path')
+    print('\n'.join(sys.path))
+    assert 1 == 2</pre>
+<br/>
+执行一下 <code>pytest</code> 或 <code>poetry run pytest</code>，之所以写成 <code>assert 1 == 2</code> 让该测试失败是为了打印出在 pytest 中的 <code>sys.path</code> 列表<br/><br/>
+<blockquote>
+(.venv) my-package $ pytest<br />
+.......
+tests/test_app.py:8: AssertionError<br />
+------------------------------------------------------- Captured stdout call ------------------------------------------------------------------<br />
+test sys.path<br />
+/Users/yanbin/my-package<br />
+/Users/yanbin/.venv/bin<br />
+/usr/local/Cellar/python@3.9/3.9.7/Frameworks/Python.framework/Versions/3.9/lib/python39.zip<br />
+/usr/local/Cellar/python@3.9/3.9.7/Frameworks/Python.framework/Versions/3.9/lib/python3.9<br />
+/usr/local/Cellar/python@3.9/3.9.7/Frameworks/Python.framework/Versions/3.9/lib/python3.9/lib-dynload<br />
+/Users/yanbin/.venv/lib/python3.9/site-packages<br />
+=============================== short test summary info =====================================<br />
+FAILED tests/test_app.py::test_handler - assert 1 == 2
+</blockquote>
+<br/>
+这里要注意 <code>main sys.path</code> 与 <code>test sys.path</code> 中的区别<br/><br/>
+<ol>
+    <li>在 <code>main sys.path</code> 中没有 <code>/Users/yanbin/my-package</code>, 只有 <code>/Users/yanbin/my-package/my_package</code></li>
+    <li>在 <code>test sys.path</code> 中没有 <code>/Users/yanbin/my-package/my_package</code>, 只有 <code>/Users/yanbin/my-package</code></li>
+    <li>另外，在 <code>test sys.path</code> 中多加了 <code>pytest</code> 所在的目录 <code>/Users/yanbin/.venv/bin</code></li>
+</ol>
+<br/>
+<h3>pytest 要求显式的相对路径引用</h3><br/><br/>
+再把 <code>test_app.py</code> 中的注释符号 <code>#</code> 去掉，新的 <code>test-app.py</code> 就是<br/><br/>
+<pre class="lang:default decode:true ">import sys
+from my_package.app import handler<br/><br/>
+
+def test_handler():
+    print('test sys.path')
+    print('\n'.join(sys.path))
+    assert 1 == 2</pre>
+<br/>
+执行 <code>pytest</code>, 这时候我们将会看到编译的错误<br/><br/>
+<blockquote>
+(.venv) my-package $ pytest<br />
+......<br />
+tests/test_app.py:2: in &lt;module&gt;<br />
+    from my_package.app import handler<br />
+my_package/app.py:2: in &lt;module&gt;<br />
+    from utils import md5<br />
+E ModuleNotFoundError: No module named 'utils'
+</blockquote>
+<br/>
+说是找不到模块 <code>utils</code>，而在 <code>my_package/app.py</code> 中是通过<br/><br/>
+<blockquote>
+from utils import md5
+</blockquote>
+<br/>
+的方式来使用 <code>utils</code> 模块的。要解决 <code>pytest</code> 的这个找不到模块 <code>utils</code> 的问题，可以修改 <code>my_package/app.py</code>，把上面的语句改成<br/><br/>
+<blockquote>
+from .utils import md5
+</blockquote>
+<br/>
+再运行 <code>pytest</code> 就能找到 <code>utils</code> 的模块了， <code>pytest</code> 这边的问题是得到了解决。<br/><br/>
+<h3>执行产品代码时不认可显式相对路径引用</h3><br/><br/>
+可是按下个葫芦却浮起个瓢。维持上一步对 <code>my_pacakge/app.py</code> 的修改，回过头来执行一下  <code>python my_package/app.py</code><br/><br/>
+<blockquote>
+(.venv) my-package $ python my_package/app.py<br />
+Traceback (most recent call last):<br />
+    File "/Users/yanbin/my-package/my_package/app.py", line 2, in &lt;module&gt;<br />
+        from .utils import md5<br />
+ImportError: attempted relative import with no known parent package
+</blockquote>
+<br/>
+这至少对我来说并不陌生，试图不从包名开始用相对路径来引入模块失败。要同时把 <code>pytest</code> 和 <code>python my_package/app.py</code> 这两碗水端平，还得尝试采用绝对路径引用，需把<br/><br/>
+<blockquote>
+from .utils import md5
+</blockquote>
+<br/>
+改成<br/><br/>
+<blockquote>
+from my_package.utils import md5
+</blockquote>
+<br/>
+再执行 <code>python my_package/app.py</code>, 期待万事大吉，可这次收到的错误是在写作本文之前始料未及的，这次说找不到 <code>my_package</code> 了<br/><br/>
+<blockquote>
+(.venv) my-package git:(:|) python my_package/app.py<br />
+Traceback (most recent call last):<br />
+    File "/Users/yanbin/my-package/my_package/app.py", line 2, in &lt;module&gt;<br />
+        from my_package.utils import md5<br />
+ModuleNotFoundError: No module named 'my_package'
+</blockquote>
+<br/>
+因为 <code>main sys.path</code> 中包含的 <code>/Users/yanbin/my-package/my_pacakge</code>, 所以在 <code>my_package</code> 包里边的代码反而不知道谁是 <code>my_package</code> "模块"。相应的，在 <code>test sys.path</code> 中因为有 <code>/Users/yanbin/my-package</code>，所以 <code>pytest</code> 倒没事。<br/><br/>
+<h3>同时解决产品代码的执行与 pytest</h3><br/><br/>
+为了吃力的讨好两头，有几个解决办法<br/><br/>
+<ol>
+    <li>运行 <code>poetry install</code>, 然后再执行 <code>python my_package/app.py</code>, 因为 <code>poetry install</code> 会在 <code>/Users/yanbin/.venv/lib/python3.9/site-packages</code> 下生成一个  <code>my_package.pth</code> 文件，内容为<br/><br/>
+<blockquote> /Users/yanbin/my-package<br />
+见 <a href="https://yanbin.blog/pth-file-append-python-module-search-path/">用 .pth 文件附加 Python 模块搜索路径</a></blockquote>
+</li>
+    <li>把 <code>app.py</code> 文件挪出到 <code>.../my-package</code> 目录下，执行 <code>python app.py</code> 就没问题，因为此时会把 <code>app.py</code> 所在的  <code>/Users/yanbin/my-package</code> 目录加到 <code>sys.path</code> 列表中去，从 <code>.../my-package</code> 开始是可以找到 <code>my_package</code> 包的</li>
+    <li>如果是在 IntelliJ IDEA 中执行 <code>my_pacakage/app.py</code> 也能成功，因为 IntelliJ IDEA 也把 <code>/Users/yanbin/my-pacakge</code> 加到了 <code>sys.path</code> 中</li>
+</ol>
+<br/>
+在 <code>app.py</code> 使用绝对路径引用的一个关键是 <code>pytest</code> 不会有问题了。<br/><br/>
+还有一个必须请注意的是，要是在代码中使用了像 <code>from .utils import md5</code> 这种相对引用，用  <code>poetry publish</code> 发布后的包被别的项目所引用后依然会出现找不到模块的现像。<br/><br/>
+<h3>Poetry new project-name --src 的问题</h3><br/><br/>
+Poetry 在创建项目时支持 <code>--src</code> 参数，允许把包目录放在 <code>src</code> 目录下，形成的目录结构是<br/><br/>
+<pre class="lang:default decode:true">(.venv) $ poetry new my-package --src
+Created package my_package in my-package
+(.venv) $ tree my-package
+my-package
+├── README.rst
+├── pyproject.toml
+├── src
+│   └── my_package
+│       └── __init__.py
+└── tests
+    ├── __init__.py
+    └── test_my_package.py</pre>
+<br/>
+这样的目录结构看似清晰了些，但会让包路径更复杂.<br/><br/>
+<ol>
+    <li>在 <code>main sys.path</code> 中附加的是路径 <code>/Users/yanbin/my-package/src/my_package</code></li>
+    <li>而在  <code>test sys.path</code> 中是只有与 tests 目录平级的 <code>/Users/yanbin/my-package</code> 目录</li>
+</ol>
+<br/>
+为了让 <code>pytest</code>  能够被执行，并通过 IDE 的语法关，在测试代码中引入模块甚至要写成 <code>from src.my_package.app import handler</code>, 这当然是不可取。或者在 tests 目录中创建 <code>context.py</code> 文件，内容<br/><br/>
+<pre class="lang:default decode:true ">import os
+import sys<br/><br/>
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
+_ = 0</pre>
+<br/>
+然后在每一个测试源文件中加上 <code>from .context import _</code>, 这样也不怎么好, IDE 处处会提示无法引入包或模块，况且前面也说过，我们的目的是要杜绝相对路径引用<br/><br/>
+如果用了 <code>--src</code> 参数创建的项目，更好的办法是要在执行  <code>pytest</code> 之前必须先运行  <code>poetry install</code>。<br/><br/>
+<h3>照例总结一下</h3><br/><br/>
+内容不是有一点儿乱，最后总结一下吧，弄了大半天，焦点还必须集中在 <code>sys.path</code>，像在 Java 中时时要留意 classpath 一样。<br/><br/>
+假如用 <code>poetry new my-package</code> 创建的项目在  <code>/Users/yanbin/my-package</code> 目录下，那么<br/><br/>
+<ol>
+    <li><code>main sys.path</code> 中附加有 <code>/Users/yanbin/my-package/my_package</code></li>
+    <li>如果在 <code>.../my_package</code> 中的 main 代码既要用 <code>import my_package.utils</code> 绝对路径引用，又要能用 <code>python my_package/app.py</code> 直接执行，还不想用 <code>poetry install</code>, 就只能把 <code>app.py</code> 移到与 <code>.../my_package</code> 外层去。<br />
+也就是说，执行入口可以移出到包外</li>
+    <li><code>test sys.path</code> 中附加有 <code>/Users/yanbin/my-package</code></li>
+    <li><code>poetry install</code> 会在虚拟环境的 <code>site-packages</code> 下生成 <code>my_package.pth</code> 文件，内容为 <code>/Users/yanbin/my-package</code>, 这使用得在产品代码运行时可用绝对路径 <code>from my_package.utils import md5</code> 的引用形式</li>
+    <li>避免使用相对路径的引用，相对路径中的当前路径飘忽不定</li>
+    <li>使用 poetry 创建项目时，最好不要在项目目录与包目录中加上 <code>src</code> 这一层，避免用 <code>poetry new &lt;project-name&gt; --src</code></li>
+    <li>类似 IntelliJ IDEA 这样的 IDE 在执行 Python 文件时会补上自己的 <code>sys.path</code> 条目，IDE 中能执行并不代表命令行就没问题</li>
+</ol>
+<br/>
+后来又发现不少第三方的包也在使用 <code>from .abc import xyz</code>, <code>from ..abc import xyz</code> 的方式引入模块. 看起来杜绝使用相对路径引用的企图有些偏颇。

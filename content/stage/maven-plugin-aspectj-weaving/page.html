@@ -1,0 +1,299 @@
+---
+title: 使用插件 aspectj-maven-plugin 织入 AspectJ AOP
+url: /maven-plugin-aspectj-weaving/
+date: 2017-09-30T22:08:07-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Aop
+  - AspectJ
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8294 
+wpStatus: publish
+views: 6399
+lastmod: 2021-09-10T12:57:42-05:00
+---
+
+昨天刚刚侍弄完 <a href="/spring-intercept-method-based-on-annotation/">Spring 下基于自定义注解拦截方法调用</a>，现在试下纯 AspectJ 的方式来打造，因为不是每一个项目都是 Spring。这次要推到 5 年前试验过用 javac 命令行编译的方式织入方面，见 <a href="/aspectj-baseon-annotation-method/">AspectJ 基于自定义的方法注解来拦截方法</a>，这次着重在用 <a href="http://www.mojohaus.org/aspectj-maven-plugin/index.html">aspectj-maven-plugin</a> 插件的方法来织入 AspectJ 方面。<br/><br/>
+基本上代码还是昨天的，需求还是一样的:<br/><br/>
+被 @LogStartTime 注解的方法在进入该方法时记录当前时间在 ThreadLocal 中，并能根据 @LogStartTime 的属性值决定处理逻辑<br/><br/>
+因为 Java5+ 之后 AspectJ 可以写成 Java 类加注解的方式，*.aj 文件一般都没太大必要了，所以可以和 Spring AOP 共用一个 @Aspect 注解的方面代码 <code>MethodStartAspect</code>。<br/><br/>
+我们将采用编译器织入，因此项目依赖只需要一个 <code>org.aspectj:aspectjrt:1.8.0</code>, 它也不会引入别的组件。同样我们从 Main 方法和测试用例两方面来验证实现的效果，下面是整个测试项目的布局，以及依赖，除掉单元测试的其时就只需要一个 jar 包。<!--more--><br/><br/>
+<a href="/wp-content/uploads/2017/09/maven-plugin-aspectj.png"><img class="aligncenter size-full wp-image-8314" src="/wp-content/uploads/2017/09/maven-plugin-aspectj.png" alt="" width="594" height="445" /></a><br/><br/>
+继续罗列代码<br/><br/>
+<h4>@LogStartTime, 注解被拦截的方法</h4><br/><br/>
+<pre class="lang:default decode:true ">@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface LogStartTime {
+    String value() default "";
+}</pre>
+<br/>
+<h4>MethodStartAspect, 定义切面和 Advice</h4><br/><br/>
+<pre class="lang:default decode:true ">@Aspect
+public class MethodStartAspect {<br/><br/>
+    private static ThreadLocal&lt;Long&gt; startTime = new ThreadLocal&lt;&gt;();<br/><br/>
+    @Pointcut("execution(* cc.unmi..*(..)) &amp;&amp; @annotation(logStartTime)")
+    private void logStartTimePointcut(LogStartTime logStartTime) {<br/><br/>
+    }<br/><br/>
+    @Before("logStartTimePointcut(logStartTime)")
+    public void setStartTimeInThreadLocal(LogStartTime logStartTime) {
+        System.out.println(logStartTime.value());
+        startTime.set(System.currentTimeMillis());
+        System.out.println("saved method start time in threadLocal");
+    }<br/><br/>
+    public static Long getStartTime() {
+        return startTime.get();
+    }<br/><br/>
+    public static void clearStartTime() {
+        startTime.set(null);
+    }
+}</pre>
+<br/>
+只要用 <code>@Aspect</code> 标识出它是一个 Aspect, 或者也可以完全用 AspectJ 语法，创建 *.aj 文件，里面写 <code>public aspect MethodStartAspect</code> 这样的的定义。在进入有注解 <code>@LogStartTime</code> 方法之前把当前时间写到 ThreadLocal 中去，并可读取注解的属性值。<br/><br/>
+<h4>UserService, 被拦截的方法用了 @LogStartTime 注解</h4><br/><br/>
+<pre class="lang:default decode:true">public class UserService {<br/><br/>
+    @LogStartTime("Hello World")
+    public String fetchUserById(int userId) {
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }<br/><br/>
+        System.out.println("start time: " + MethodStartAspect.getStartTime());<br/><br/>
+        return "nameOf" + userId;
+    }
+}</pre>
+<br/>
+<h4>HelloAop, 使用被 AOP 的代码</h4><br/><br/>
+<pre class="lang:default decode:true ">public class HelloAop {<br/><br/>
+    public static void main(String[] args) {
+        UserService userService = new UserService();
+        System.out.println(userService.fetchUserById(234));
+    }
+}</pre>
+<br/>
+现在直接执行 HelloAop 是没有什么特别效果的，因为编译器没有被告知的情况下是不知道 <code>@LogStartTime</code> 和 <code>@Aspect</code> 所代表的意义的。执行 HelloAop 只会说<br/><br/>
+<blockquote>
+start time: null<br />
+nameOf234
+</blockquote>
+<br/>
+这时候的重头戏就是 aspectj-maven-plugin 这个 Maven 插件的了，需要在 pom.xml 文件中加上以下构建插件<br/><br/>
+<pre class="lang:default decode:true">&lt;plugin&gt;
+    &lt;groupId&gt;org.codehaus.mojo&lt;/groupId&gt;
+    &lt;artifactId&gt;aspectj-maven-plugin&lt;/artifactId&gt;
+    &lt;version&gt;1.10&lt;/version&gt;
+    &lt;configuration&gt;
+        &lt;complianceLevel&gt;1.8&lt;/complianceLevel&gt;
+        &lt;source&gt;1.8&lt;/source&gt;
+    &lt;/configuration&gt;
+    &lt;executions&gt;
+        &lt;execution&gt;
+            &lt;goals&gt;
+                &lt;goal&gt;compile&lt;/goal&gt;
+&lt;!--                &lt;goal&gt;test-compile&lt;/goal&gt;--&gt;
+            &lt;/goals&gt;
+        &lt;/execution&gt;
+    &lt;/executions&gt;
+&lt;/plugin&gt;</pre>
+<br/>
+多数情况下只需要让切面作用到正式代码上去，所以绑定任务到 <code>compile</code>。 没什么实际的理由要在测试代码中应用切面。<br/><br/>
+我们可以来到命令行下来执行相应的 Maven 命令<br/><br/>
+<blockquote>
+mvn compile    #编译代码，上面插件会把切面应用到连接点上去，我们待会可以看下织入了方面的字节码
+mvn exec:java -Dexec.mainClass="cc.unmi.HelloAop"  #Maven 下执行 Main 方法
+</blockquote>
+<br/>
+效果如下：<br/><br/>
+<a href="/wp-content/uploads/2017/09/maven-plugin-aspectj-1.png"><img class="aligncenter wp-image-8317 size-full" src="/wp-content/uploads/2017/09/maven-plugin-aspectj-1.png" alt="" width="566" height="208" /></a><br/><br/>
+看到以上的输出，说明方面确实介入到了 UserService 的被 @LogStartTime 注解的 <code>fetchUserById(int userId)</code> 方法。<br/><br/>
+下面用单元测试来验证一下，我们创建<br/><br/>
+<h4>HelloAopTest 测试用例</h4><br/><br/>
+<pre class="lang:default decode:true ">public class HelloAopTest {<br/><br/>
+    @Before
+    public void setup() {
+        MethodStartAspect.clearStartTime();
+    }<br/><br/>
+    @Test
+    public void testSettingMethodStartTimeInThreadLocal() {
+        new UserService().fetchUserById(9999);<br/><br/>
+        assertThat(MethodStartAspect.getStartTime(), notNullValue());
+    }
+}</pre>
+<br/>
+仍然是在 Maven 命令行下执行 <code>mvn test</code>, 测试结果截屏如下<br/><br/>
+<a href="/wp-content/uploads/2017/09/maven-plugin-aspectj-2.png"><img class="aligncenter size-full wp-image-8318" src="/wp-content/uploads/2017/09/maven-plugin-aspectj-2.png" alt="" width="560" height="257" /></a>没问题。<br/><br/>
+<h4>发生了什么？</h4><br/><br/>
+我们说这是编译器把方面织入到了字节码中，那么来看一下到底发生了什么。别的类生成的字节码没任何异样，只有方面类和被关注的类，如 MethodStartAspect 和 UserService 生成的字节码与往常不同。在 IDEA 中打开 UserService 生成的类反编译后的代码：<br/><br/>
+<pre class="lang:default decode:true " title="UserService 反编译的代码">package cc.unmi.service;<br/><br/>
+import cc.unmi.aspects.LogStartTime;
+import cc.unmi.aspects.MethodStartAspect;
+import java.lang.annotation.Annotation;<br/><br/>
+public class UserService {
+    public UserService() {
+    }<br/><br/>
+    @LogStartTime("Hello World")
+    public String fetchUserById(int userId) {
+        MethodStartAspect var10000 = MethodStartAspect.aspectOf();
+        Annotation var10001 = ajc$anno$0;
+        if (ajc$anno$0 == null) {
+            var10001 = ajc$anno$0 = UserService.class.getDeclaredMethod("fetchUserById", Integer.TYPE).getAnnotation(LogStartTime.class);
+        }<br/><br/>
+        var10000.setStartTimeInThreadLocal((LogStartTime)var10001);<br/><br/>
+        try {
+            Thread.sleep(1000L);
+        } catch (InterruptedException var3) {
+            var3.printStackTrace();
+        }<br/><br/>
+        System.out.println("start time: " + MethodStartAspect.getStartTime());
+        return "nameOf" + userId;
+    }
+}</pre>
+<br/>
+我们看到在关注方法实现前端插入了对 <code>MethodStartAspect</code> 的 <code>setStartTimeInThreadLocal()</code> 的调用，也就是说把方面应用到了 <code>UserService.fetchUserById(int userId)</code> 上了。<br/><br/>
+再看下 <code>MethodStartAspect</code> 字节码反编译出的代码<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.aspects;<br/><br/>
+import org.aspectj.lang.NoAspectBoundException;
+import org.aspectj.lang.annotation.Aspect;
+import org.aspectj.lang.annotation.Before;<br/><br/>
+@Aspect
+public class MethodStartAspect {
+    private static ThreadLocal&lt;Long&gt; startTime = new ThreadLocal();<br/><br/>
+    static {
+        try {
+            ajc$postClinit();
+        } catch (Throwable var1) {
+            ajc$initFailureCause = var1;
+        }<br/><br/>
+    }<br/><br/>
+    public MethodStartAspect() {
+    }<br/><br/>
+    @Before("logStartTimePointcut(logStartTime)")
+    public void setStartTimeInThreadLocal(LogStartTime logStartTime) {
+        System.out.println(logStartTime.value());
+        startTime.set(System.currentTimeMillis());
+        System.out.println("saved method start time in threadLocal");
+    }<br/><br/>
+    public static Long getStartTime() {
+        return (Long)startTime.get();
+    }<br/><br/>
+    public static void clearStartTime() {
+        startTime.set((Object)null);
+    }<br/><br/>
+    public static MethodStartAspect aspectOf() {
+        if (ajc$perSingletonInstance == null) {
+            throw new NoAspectBoundException("cc.unmi.aspects.MethodStartAspect", ajc$initFailureCause);
+        } else {
+            return ajc$perSingletonInstance;
+        }
+    }<br/><br/>
+    public static boolean hasAspect() {
+        return ajc$perSingletonInstance != null;
+    }
+}</pre>
+<br/>
+加入了静态初始化代码块，以及关注方法中要调用的 <code>public static MethodStartAspect aspectOf()</code> 静态方法。<br/><br/>
+再次说明一下，我们了解到使用 aspectj-maven-plugin 插件会对方面类(如 MethodStartAspect)以及被连接的类(如 UserService) 的字节码进行修改，这对我们接下来把切面定义在另一个模块时如何配置 pom.xml 会有所帮助。<br/><br/>
+<h3>切面定义由另一模块提供</h3><br/><br/>
+到目前为止的例子都是在一个模块中既包含切面定义类，又包含被连接的类，所以只要在同一个 pom.xml 中简单配置就行。在实际应用场景中，我们很可能用一个单独的 Maven 模块来进行方面的定义，然后连接到另一个模块中去。我们来看一下这种场景该如何配置两个模块的 pom.xml 文件。<br/><br/>
+假设我们把方面定义相关的类 <code>@LogStartTime</code> 和 <code>MethodStartAspect</code> 移动一个单独的模块中去，该模块命名为 <code>aspects</code>; 然后需要被切入的代码 <code>UserService</code> 放在模块 <code>clients</code> 中。整个项目目录结构如下组织：<br/><br/>
+<a href="/wp-content/uploads/2017/09/maven-plugin-aspectj-3.png"><img class="aligncenter size-full wp-image-8322" src="/wp-content/uploads/2017/09/maven-plugin-aspectj-3.png" alt="" width="593" height="481" /></a><br/><br/>
+由于我们知道了提供切面定义的模块的在编译器时字节码需要被修改，所以模块 <code>aspects</code> 的 pom.xml 需要如下的配置<br/><br/>
+<pre class="lang:default decode:true ">    &lt;dependencies&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.aspectj&lt;/groupId&gt;
+            &lt;artifactId&gt;aspectjrt&lt;/artifactId&gt;
+            &lt;version&gt;1.8.9&lt;/version&gt;
+        &lt;/dependency&gt;
+    &lt;/dependencies&gt;<br/><br/>
+    &lt;build&gt;
+        &lt;plugins&gt;
+            &lt;plugin&gt;
+                &lt;groupId&gt;org.codehaus.mojo&lt;/groupId&gt;
+                &lt;artifactId&gt;aspectj-maven-plugin&lt;/artifactId&gt;
+                &lt;version&gt;1.10&lt;/version&gt;
+                &lt;configuration&gt;
+                    &lt;complianceLevel&gt;1.8&lt;/complianceLevel&gt;
+                    &lt;source&gt;1.8&lt;/source&gt;
+                &lt;/configuration&gt;
+                &lt;executions&gt;
+                    &lt;execution&gt;
+                        &lt;goals&gt;
+                            &lt;goal&gt;compile&lt;/goal&gt;
+                        &lt;/goals&gt;
+                    &lt;/execution&gt;
+                &lt;/executions&gt;
+            &lt;/plugin&gt;
+        &lt;/plugins&gt;
+    &lt;/build&gt;</pre>
+<br/>
+这样编译器的 <code>MethodStartAspect</code> 类中会插入静态方法 <code>aspectOf()</code>, <code>hasAspect()</code>, 以及静态初始化代码块。如该提供切面定义的模块不配置 <code>aspectj-maven-plugin</code>, 将在执行后面被连接的 <code>UserService.fetchUserById(..)</code> 时出现 <code>MethodStartAspect.aspectOf()</code> 方法找不到的错误。<br/><br/>
+而 UserService 的字节码也将被修改，所以模块 <code>clients</code> 也需要有 <code>aspectj-maven-plugin</code> 的配置，但与之前有所不同, 见下：<br/><br/>
+<pre class="lang:default mark:2-6,18-23 decode:true">    &lt;dependencies&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;cc.unmi&lt;/groupId&gt;
+            &lt;artifactId&gt;aspects&lt;/artifactId&gt;
+            &lt;version&gt;1.0-SNAPSHOT&lt;/version&gt;
+        &lt;/dependency&gt;
+    &lt;/dependencies&gt;<br/><br/>
+    &lt;build&gt;
+        &lt;plugins&gt;
+            &lt;plugin&gt;
+                &lt;groupId&gt;org.codehaus.mojo&lt;/groupId&gt;
+                &lt;artifactId&gt;aspectj-maven-plugin&lt;/artifactId&gt;
+                &lt;version&gt;1.10&lt;/version&gt;
+                &lt;configuration&gt;
+                    &lt;complianceLevel&gt;1.8&lt;/complianceLevel&gt;
+                    &lt;source&gt;1.8&lt;/source&gt;
+                    &lt;aspectLibraries&gt;
+                        &lt;aspectLibrary&gt;
+                            &lt;groupId&gt;cc.unmi&lt;/groupId&gt;
+                            &lt;artifactId&gt;aspects&lt;/artifactId&gt;
+                        &lt;/aspectLibrary&gt;
+                    &lt;/aspectLibraries&gt;
+                &lt;/configuration&gt;
+                &lt;executions&gt;
+                    &lt;execution&gt;
+                        &lt;goals&gt;
+                            &lt;goal&gt;compile&lt;/goal&gt;
+                        &lt;/goals&gt;
+                    &lt;/execution&gt;
+                &lt;/executions&gt;
+            &lt;/plugin&gt;
+        &lt;/plugins&gt;
+    &lt;/build&gt;</pre>
+<br/>
+<ol>
+    <li>由 <code>clients</code> 要 <code>aspects</code> 来提供切面定义，所以需要依赖 <code>aspects</code> 模块</li>
+    <li>因为切面定义源文件不在本模块中，所以需要用 &lt;aspectLibraries&gt; 配置来指定切面定义提供者模块</li>
+    <li>由于 <code>aspects</code> 模块中配置了 <code>org.aspectj:aspectjrt:1.8.9</code> 依赖，会传递到 <code>clients</code> 模块，所以它不用配置</li>
+</ol>
+<br/>
+现在可以进到 <code>clients</code> 模块，命令行下执行<br/><br/>
+<blockquote>
+mvn exec:java -Dexec.mainClass="cc.unmi.HelloAop"<br />
+mvn test
+</blockquote>
+<br/>
+能得到同样的执行结果<br/><br/>
+<a href="/wp-content/uploads/2017/09/maven-plugin-aspectj-4.png"><img class="aligncenter size-full wp-image-8323" src="/wp-content/uploads/2017/09/maven-plugin-aspectj-4.png" alt="" width="566" height="207" /></a><br/><br/>
+<a href="/wp-content/uploads/2017/09/maven-plugin-aspectj-5.png"><img class="aligncenter size-full wp-image-8324" src="/wp-content/uploads/2017/09/maven-plugin-aspectj-5.png" alt="" width="529" height="208" /></a><br/><br/>
+<h3>AspectJ 与 JDK 9</h3><br/><br/>
+本文所有测试都是在 JDK 1.8 环境下进行的。<br/><br/>
+一开始因为我的电脑安装了 JDK 9, 配置了 <code>aspectj-maven-plugin</code> 后在 JDK 9 的环境下执行 <code>mvn compile</code> 就出现如下的错误：<br/><br/>
+<a href="/wp-content/uploads/2017/09/maven-plugin-aspectj-6.png"><img class="aligncenter size-large wp-image-8325" src="/wp-content/uploads/2017/09/maven-plugin-aspectj-6-800x54.png" alt="" width="800" height="54" /></a><br/><br/>
+查看了下  <code>java -version</code> 显示的是 JDK 9，后来通过 $JAVA_HOME, $PATH 的配置让 <code>java -version</code> 显示为 JDK 8 也是一样的错误，因为 <code>/usr/bin/java -version</code> 仍然是 JDK 9。因为 JDK 9 模块化处理后，相应目录中没有了 tools.jar 文件上，只有把  JDK 9 卸载后，<code>/usr/bin/java -version</code> 恢复为 JDK 8 后才能正常使用 <code>aspectj-maven-plugin</code>.<br/><br/>
+这应该是目前 AspectJ 尚不能与 JDK 9 兼容的缘故。<br/><br/>
+本文示例代码在 Github 仓库 <a href="https://github.com/yabqiu/maven-weave-aspectj" target="_blank" rel="noopener">maven-weave-aspectj</a>.<br/><br/>
+参考链接：<br/><br/>
+<ol>
+    <li><a href="https://blog.jayway.com/2015/09/15/configuring-maven-to-use-standalone-aspects/">Configuring Maven to use standalong aspects</a></li>
+    <li><a href="http://linbinghe.com/2017/65db25bc.html">关于 AspectJ, 你需要知道的一切</a></li>
+</ol>

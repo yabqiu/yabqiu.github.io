@@ -1,0 +1,66 @@
+---
+title: Apache .htaccess 重定向在别名应用中的问题
+url: /apache2-htaccess-redirect-alias/
+date: 2013-11-24T07:26:55-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Mid-Ware
+tags: 
+  - Apache
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5792 
+wpStatus: publish
+views: 501
+lastmod: 2014-01-27T11:12:32-06:00
+---
+
+在 Apache 应用的目录中有 .htaccess 文件来进行重定向，目的是实现省略扩展名 .php 来访问相应的 php 文件，例如用 url<br/>
+<br/>
+http://localhost/unmi/forgotPassword&nbsp; 来访问&nbsp; http://localhost/unmi/forgotPassword.php<br/>
+<br/>
+.htaccess 文件的内容是：<br/>
+<blockquote>RewriteEngine on<br/>
+RewriteCond %{REQUEST_FILENAME} !-d<br/>
+RewriteCond %{REQUEST_FILENAME}\.php -f<br/>
+RewriteRule ^(.*)$ $1.php</blockquote>
+
+结果访问 http://localhost/unmi/forgotPassword 时出现错误：<br/>
+<blockquote><br/>
+<h1>Not Found</h1><br/>
+The requested URL /data/unmi/forgotPassword.php was not found on this server.</blockquote>
+
+实际上文件 /data/unmi/forgotPassword.php 是存在的。这就奇怪了，怀疑过是文件权限的问题(Mac 平台)，改成 755 也不行。也经为是 AllowOverride 的问题，可它的值我设置成了 All 啊，又不是 None，应该不是症结所在。<br/>
+<br/>
+费了一番功夫也明白了我是配置了别名来访问应用的，在 Apache httpd.conf 中是这样定义的别名：<!--more--><br/>
+<blockquote>Alias /unmi/ "/data/unmi/"<br/>
+&lt;Directory "/data/unmi/"&gt;<br/>
+&nbsp;&nbsp;&nbsp; Options All<br/>
+&nbsp;&nbsp;&nbsp; AllowOverride All<br/>
+&nbsp;&nbsp;&nbsp; Order deny,allow<br/>
+&nbsp;&nbsp;&nbsp; Allow from all<br/>
+&lt;/Directory&gt;</blockquote>
+
+注：上面为图省事，把 Options, AllowOverride, Allow from 都简单配为 All 值<br/>
+<br/>
+Not Found 的原因就是在别名定义的应用中使用 .htaccess 重定向时，我们还需在 .htaccess 中加上 RewriteBase 指定基准目录。完整的 .htaccess 内容如下：<br/>
+<blockquote>RewriteEngine on<br/>
+<span style="color: #0000ff;"><strong>RewriteBase /unmi/</strong></span><br/>
+RewriteCond %{REQUEST_FILENAME} !-d<br/>
+RewriteCond %{REQUEST_FILENAME}\.php -f<br/>
+RewriteRule ^(.*)$ $1.php</blockquote>
+
+RewriteBase 指定下前面配置的那个别名，即 &nbsp;/unmi/<br/>
+<br/>
+这样就能完成别名应用中的 forgotPassword 到 forgotPassword.php 的重定向了。<br/>
+<br/>
+同在 Tomcat 不能正确启动时总是别忘了去查看 $TOMCAT_HOME/logs/catalina.out 文件找原因一样，Apache 下有问题，一般在 Apache 的日志文件中能找到重要线索。<br/>
+<br/>
+Mac 的 Apache2 错误日志文件一般是 /var/log/apache2/error_log; 访问日志文件 /var/log/apache2.access_log，访问日志中可以发现你定义别名时斜杠 / 够不够。<br/>
+<br/>
+另外：Mac Apache2 的配置文件是 /etc/apache2/httpd.conf。

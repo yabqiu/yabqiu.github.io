@@ -1,0 +1,82 @@
+---
+title: Play Framework 2.1(Scala) 调用 WebService 返回 Response
+url: /play-framework-2-1-scala-webservice-return-response/
+date: 2013-09-18T12:07:13-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PlayFramework
+tags: 
+  - play
+  - play2.1
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5715 
+wpStatus: publish
+views: 2167
+lastmod: 2021-05-10T10:22:42-05:00
+---
+
+在 Play Framework 2.1 中用 Scala 编程进行 WebService 调用想返回 Response，或 xml, json 结果时，初入可能会费些功夫，因为无论是 WS.url.get，或 post, put 方法返回的都是个 Future[Response] 对象，也就是如何从 Future[Response] 如何分离出 Response 对象的问题。</p>
+<br/>
+这里我们 map, 或 match/case 也可以取出其中 response 对象来，如果要作为结果返回还要用到 Await.result() 方法。<br/><br/>
+为了不把代码出现在摘在页面中，这里插点内容，像是拖延时间的战术。<br/><br/>
+如果你在使用 Play Framework 2 with Scala 时碰到这个错误：<br/><br/>
+Error: Cannot find an implicit ExecutionContext, either require one yourself or import ExecutionContext.Implicits.global<br/><br/>
+依照 <a href="http://play.lighthouseapp.com/projects/82401/tickets/899-error-cannot-find-an-implicit-executioncontext-either-require-one-yourself-or-import-executioncontextimplicitsglobal" target="_blank" rel="noopener">899 号 Issue</a>, 解决办法是你必须加上这个引入语句：<br/><br/>
+import play.api.libs.concurrent.execution.Implicits._<br/><br/>
+因为里面有我们需要用到的隐式的 global 吧。<br/><br/>
+下面是我用来请求 WebService 返回 Response 的代码：<!--more--><br/><br/>
+<pre class="lang:default decode:true">package services<br/><br/>
+import play.api.libs.ws._<br/><br/>
+import play.api.libs.json._
+import scala.concurrent.Future
+import play.api.libs.concurrent.Execution.Implicits._
+import com.ning.http.client.Realm.AuthScheme<br/><br/>
+import scala.concurrent.Await
+import scala.concurrent.duration.DurationInt<br/><br/>
+object MyWebService {
+    
+    def getJson(url: String) : Response = {
+      
+//      Future[Response]
+      val responseFuture = WS.url(url).withAuth("name", "pass", AuthScheme.BASIC).get
+      val response = Await.result(responseFuture, 5 seconds)
+      
+//      response.status
+//      response.statusText
+//      response.xml
+//      response.json
+      response
+    }
+}
+</pre>
+<br/>
+response 有上面列出的那些属性可以直接获得状态，xml, 或 json 类型数据<br/><br/>
+看了网上的，其实这个更不错：<br/><br/>
+<pre class="lang:default decode:true ">import play.api.libs.ws.WS
+import play.api.libs.concurrent.Execution.Implicits._
+import scala.concurrent.Await
+import scala.concurrent.duration._
+import scala.language.postfixOps<br/><br/>
+object WebserviceCallParseXML {<br/><br/>
+  val responseFuture = WS.url("http://api.server.com/rest/")
+    .withAuth("test", "test", com.ning.http.client.Realm.AuthScheme.BASIC)
+    .get()<br/><br/>
+  val resultFuture = responseFuture map { response =&gt;
+    response.status match {
+      case 200 =&gt; Some(response.xml)
+      case _ =&gt; None
+    }
+  }<br/><br/>
+  val result = Await.result(resultFuture, 5 seconds)<br/><br/>
+  println(if (result.isDefined) result.get else "No result found" )<br/><br/>
+}</pre>
+<br/>
+&nbsp;<br/><br/>
+参考： <a href="http://stackoverflow.com/questions/14927039/webservice-call-in-play2-scala" target="_blank" rel="noopener">Webservice call in Play2 Scala</a><br/><br/>
+&nbsp;

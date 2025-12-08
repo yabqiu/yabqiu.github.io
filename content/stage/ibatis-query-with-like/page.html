@@ -1,0 +1,85 @@
+---
+title: iBatis 中 Like '%iBatis%' 的写法实现模糊查询
+url: /ibatis-query-with-like/
+date: 2007-05-06T06:35:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/04/mybatis-logo.jpeg"
+categories:
+  - iBatis
+tags: 
+  - iBatis
+  - SqlMap
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 524 
+wpStatus: publish
+views: 321
+lastmod: 2021-09-03T10:19:51-05:00
+---
+
+<pre class="brush:sql">select * from person where name = 'unmi'</pre>
+<br/>
+iBatis 开发指南告诉我们，当 Person 对象的 name 属性不为 null 时启用 name 查询条件在映射文件 person.xml 中的配置为</p>
+<br/>
+<pre class="lang:default decode:true">&lt;select id="getPersonsByName" resultClass="com.unmi.Person"&gt;
+    select id as id,name as name,passwd as passwd from person
+        &lt;dynamic prepend="WHERE"&gt;
+            &lt;isNotNull prepend="AND" property="name"&gt;
+                (name like #name#)
+            &lt;/isNotNull&gt;
+        &lt;/dynamic&gt;
+&lt;/select&gt;</pre>
+<br/>
+<!--more-->再用如下的代码调用<br/><br/>
+<pre class="brush:java">Person person = new Person();
+person.setName("unmi");
+List list = sqlMap.queryForList("getPersonsByName", person);</pre>
+<br/>
+执行效果翻译成 sql 语句就是<br/><br/>
+<pre class="brush:sql">select * from person where name like 'unmi'</pre>
+<br/>
+这实际上是一个完全匹配的查询，与用等号写成如下语句是一致的<br/><br/>
+我们之所以要用 like 谓词，一般都想实现模糊查询，比如说 name 以 'unmi' 开始、结束或包含 'unmi' 的记录，如下<br/><br/>
+<pre class="brush:sql">select * from person where name like 'unmi%';
+select * from person where name like '%unmi';
+select * from person where name like '%unmi%';</pre>
+<br/>
+也就是如上的 like 语义在 person.xml中应该怎么表述呢？我曾经是想当然的尝试把<br />
+(name like #name#) 写成  (name like '%#name#%')  或 (name like %#name#%) ，都没法通过，分别报错<br/><br/>
+<span style="color: #0000ff;">java.sql.SQLException</span><br/><br/>
+<div><span style="color: #ff0000;">: Invalid argument in JDBC call: parameter index out of range: 1<span style="color: #ff0000;"><span style="color: #ff0000;"> </span></span></span></div>
+<br/>
+<span style="color: #ff0000;"><span style="color: #ff0000;"><span style="color: #ff0000;"> </span></span></span>和<br />
+<span style="color: #0000ff;"><br />
+java.sql.SQLException</span><br/><br/>
+<div><span style="color: #ff0000;">: Unexpected token: % in statement [   select id......<span style="color: #ff0000;"><span style="color: #ff0000;"> </span></span></span></div>
+<br/>
+<span style="color: #ff0000;"><span style="color: #ff0000;"><span style="color: #ff0000;"> </span></span></span>那么正确的写法是什么呢？在网上找到一个解答 <a href="http://opensource.atlassian.com/confluence/oss/display/IBATIS/How+do+I+use+LIKE+in+my+queries">How do I use LIKE in my queries</a>，方法有两种<br />
+1. 是把上面 (name like '%#name#%') 的 # 换成 $, 也就是 (name like '%$name$%')<br />
+2. 是用 || 连接字符串的方式，写成 (name like '%' || #name# || '%')<br />
+但却不能写成 (name like '%'||$name$||'%') ，不能又要出错<br/><br/>
+<span style="color: #0000ff;">java.sql.SQLException</span><br/><br/>
+<div><span style="color: #ff0000;">: Column not found: UNMI in statement [select id......<span style="color: #ff0000;"><span style="color: #ff0000;"> </span></span></span></div>
+<br/>
+<span style="color: #ff0000;"><span style="color: #ff0000;"><span style="color: #ff0000;"> </span></span></span>总结一下，在 iBatis 中用 like 的模糊查询的配置如下（两种方式）<br/><br/>
+<pre class="lang:default decode:true ">&lt;select id="getPersonsByName" resultClass="com.unmi.Person"&gt;
+    select id as id,name as name,passwd as passwd from person
+        &lt;dynamic prepend="WHERE"&gt;
+            &lt;isNotNull prepend="AND" property="name"&gt;
+                (name like '%$name$%')
+                &lt;!-- (name like '%'||#name#||'%') --&gt;
+            &lt;/isNotNull&gt;
+    &lt;/dynamic&gt;
+&lt;/select&gt;</pre>
+<br/>
+不知细心的诸位注意到没有，这同时也是我在组织上面文字时产生的疑问：<br />
+1. 写成 (name like '%'||$name$||'%') 为什就不行呢？# 和 $ 有什么区别呢？<br />
+2. 还有明明是写成的 unmi，为什么报错的时候又是全大写的 UNMI 呢？<br />
+具体的异同我们可能还需从源代码中找，简单的只要知道，$name$ 是字面意义的替换，这种形式要注意 SQL 注入的漏洞；#name# 是带类型的替换。至于unmi被转换成大写，还需再研究研究，对于以上两个疑问必要时还可以发挥一下。也要权衡一下花那个时间值不值。<br/><br/>
+参考资料：<br />
+    1. <a href="http://opensource.atlassian.com/confluence/oss/display/IBATIS/How+do+I+use+LIKE+in+my+queries">How do I use LIKE in my queries</a>

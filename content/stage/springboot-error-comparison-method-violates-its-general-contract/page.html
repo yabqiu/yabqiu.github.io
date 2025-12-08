@@ -1,0 +1,315 @@
+---
+title: SpringBoot 应用出错 Comparison method violates its general contract!
+url: /springboot-error-comparison-method-violates-its-general-contract/
+date: 2024-01-07T02:04:08-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - Spring
+  - Sort
+  - Spring Boot
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13462 
+wpStatus: publish
+views: 261
+lastmod: 2024-01-07T02:10:34-06:00
+---
+
+出现此错误的大致环境如下</p>
+<br/>
+<ol>
+    <li>SpringBoot 2.7.17, SpringWeb 项目，所引用入的 spring-webmvc-5.3.30, spring 6 已解决</li>
+    <li>JDK 1.8 或 JDK 17</li>
+    <li>依赖了 jackson-dataformat-xml:2.12.6 和 jackson-dataformat-cbor:2.12.6, 它会在 RestTemplate 加上 application/xml, application/cbor 等 Accept 类型</li>
+    <li>代码中用 RestTemplate 调用此应用的 Endpoint, 未设置任何头</li>
+</ol>
+<br/>
+后面会详细列出能重现此问题的 pom.xml 配置及 Java 代码<br/><br/>
+在执行<br/><br/>
+<blockquote>
+restTemplate.getForEntity("http://localhost:8080/test2", String.class)
+</blockquote>
+<br/>
+时出现如下错误<!--more--><br/><br/>
+<pre class="lang:default decode:true">java.lang.IllegalArgumentException: Comparison method violates its general contract!
+    at java.base/java.util.TimSort.mergeHi(TimSort.java:903) ~[na:na]
+    at java.base/java.util.TimSort.mergeAt(TimSort.java:520) ~[na:na]
+    at java.base/java.util.TimSort.mergeCollapse(TimSort.java:448) ~[na:na]
+    at java.base/java.util.TimSort.sort(TimSort.java:245) ~[na:na]
+    at java.base/java.util.Arrays.sort(Arrays.java:1307) ~[na:na]
+    at java.base/java.util.ArrayList.sort(ArrayList.java:1721) ~[na:na]
+    at org.springframework.http.MediaType.sortBySpecificityAndQuality(MediaType.java:794) ~[spring-web-5.3.30.jar:5.3.30]
+    at org.springframework.web.servlet.mvc.method.annotation.AbstractMessageConverterMethodProcessor.writeWithMessageConverters(AbstractMessageConverterMethodProcessor.java:254) ~[spring-webmvc-5.3.30.jar:5.3.30]
+    at org.springframework.web.servlet.mvc.method.annotation.RequestResponseBodyMethodProcessor.handleReturnValue(RequestResponseBodyMethodProcessor.java:183) ~[spring-webmvc-5.3.30.jar:5.3.30]
+    at org.springframework.web.method.support.HandlerMethodReturnValueHandlerComposite.handleReturnValue(HandlerMethodReturnValueHandlerComposite.java:78) ~[spring-web-5.3.30.jar:5.3.30]
+    at org.springframework.web.servlet.mvc.method.annotation.ServletInvocableHandlerMethod.invokeAndHandle(ServletInvocableHandlerMethod.java:135) ~[spring-webmvc-5.3.30.jar:5.3.30]
+    at org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter.invokeHandlerMethod(RequestMappingHandlerAdapter.java:895) ~[spring-webmvc-5.3.30.jar:5.3.30]
+    at org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerAdapter.handleInternal(RequestMappingHandlerAdapter.java:808) ~[spring-webmvc-5.3.30.jar:5.3.30]
+    at org.springframework.web.servlet.mvc.method.AbstractHandlerMethodAdapter.handle(AbstractHandlerMethodAdapter.java:87) ~[spring-webmvc-5.3.30.jar:5.3.30]
+    at org.springframework.web.servlet.DispatcherServlet.doDispatch(DispatcherServlet.java:1072) ~[spring-webmvc-5.3.30.jar:5.3.30]
+    at org.springframework.web.servlet.DispatcherServlet.doService(DispatcherServlet.java:965) ~[spring-webmvc-5.3.30.jar:5.3.30]
+    at org.springframework.web.servlet.FrameworkServlet.processRequest(FrameworkServlet.java:1006) ~[spring-webmvc-5.3.30.jar:5.3.30]
+    at org.springframework.web.servlet.FrameworkServlet.doGet(FrameworkServlet.java:898) ~[spring-webmvc-5.3.30.jar:5.3.30]</pre>
+<br/>
+问题出在对 MediaType  的排序上<br/><br/>
+前面先摆出了错误，现在详细列出项目代码<br/><br/>
+Maven pom.xml<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd"&gt;
+    &lt;modelVersion&gt;4.0.0&lt;/modelVersion&gt;
+    &lt;parent&gt;
+        &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+        &lt;artifactId&gt;spring-boot-starter-parent&lt;/artifactId&gt;
+        &lt;version&gt;2.7.17&lt;/version&gt;
+        &lt;relativePath/&gt; &lt;!-- lookup parent from repository --&gt;
+    &lt;/parent&gt;
+    &lt;groupId&gt;com.example&lt;/groupId&gt;
+    &lt;artifactId&gt;demo&lt;/artifactId&gt;
+    &lt;version&gt;0.0.1-SNAPSHOT&lt;/version&gt;
+    &lt;name&gt;demo&lt;/name&gt;
+    &lt;description&gt;Demo project for Spring Boot&lt;/description&gt;
+    &lt;properties&gt;
+        &lt;java.version&gt;17&lt;/java.version&gt;
+    &lt;/properties&gt;
+    &lt;dependencies&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+            &lt;artifactId&gt;spring-boot-starter-web&lt;/artifactId&gt;
+        &lt;/dependency&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;com.fasterxml.jackson.dataformat&lt;/groupId&gt;
+            &lt;artifactId&gt;jackson-dataformat-xml&lt;/artifactId&gt;
+            &lt;version&gt;2.12.6&lt;/version&gt;
+        &lt;/dependency&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;com.fasterxml.jackson.dataformat&lt;/groupId&gt;
+            &lt;artifactId&gt;jackson-dataformat-cbor&lt;/artifactId&gt;
+            &lt;version&gt;2.12.6&lt;/version&gt;
+        &lt;/dependency&gt;
+&lt;!--        &lt;dependency&gt;
+            &lt;groupId&gt;com.amazonaws&lt;/groupId&gt;
+            &lt;artifactId&gt;aws-java-sdk-lambda&lt;/artifactId&gt;
+            &lt;version&gt;1.12.472&lt;/version&gt;
+        &lt;/dependency&gt;--&gt;
+        &lt;dependency&gt;
+            &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+            &lt;artifactId&gt;spring-boot-starter-test&lt;/artifactId&gt;
+            &lt;scope&gt;test&lt;/scope&gt;
+        &lt;/dependency&gt;
+    &lt;/dependencies&gt;<br/><br/>
+    &lt;build&gt;
+        &lt;plugins&gt;
+            &lt;plugin&gt;
+                &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+                &lt;artifactId&gt;spring-boot-maven-plugin&lt;/artifactId&gt;
+            &lt;/plugin&gt;
+        &lt;/plugins&gt;
+    &lt;/build&gt;<br/><br/>
+&lt;/project&gt;
+</pre>
+<br/>
+可能不会直接依赖 jackson-dataformat-cbor, 但 aws-java-sdk-lambda 会依赖于它。<br/><br/>
+DemoController.java<br/><br/>
+<pre class="lang:default decode:true ">@RestController
+public class DemoController {<br/><br/>
+    @GetMapping("/test1")
+    public String test1() {
+        RestTemplate restTemplate = new RestTemplateBuilder().build();
+        return restTemplate.getForEntity("http://localhost:8080/test2", String.class).getBody();
+    }<br/><br/>
+    @GetMapping("/test2")
+    public String test2() {
+        return "hello";
+    }
+}</pre>
+<br/>
+代码很简单，/test1 中用 RestTemplate 调用 /test2, 在执行<br/><br/>
+<blockquote>
+return restTemplate.getForEntity("http://localhost:8080/test2", String.class).getBody();
+</blockquote>
+<br/>
+时出现前面的错误<br/><br/>
+我们可以用 curl 命令来测试<br/><br/>
+<blockquote>
+curl http://localhost:8080/test1
+</blockquote>
+<br/>
+我们跟踪到错误代码行 MediaType.sortBySpecificityAndQuality(List&lt;MediaType&gt; mediaType)<br/><br/>
+<pre class="lang:default decode:true">public static void sortBySpecificityAndQuality(List&lt;MediaType&gt; mediaTypes) {
+    Assert.notNull(mediaTypes, "'mediaTypes' must not be null");
+        if (mediaTypes.size() &gt; 1) {
+            mediaTypes.sort(MediaType.SPECIFICITY_COMPARATOR.thenComparing(MediaType.QUALITY_VALUE_COMPARATOR));
+        }
+}</pre>
+<br/>
+不就是对一个列表进行排序，为何会出错。十分好奇这其中会有什么内容<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/01/spring-boot-media-type-2.png"><img class="aligncenter wp-image-13467 size-full" src="https://yanbin.blog/wp-content/uploads/2024/01/spring-boot-media-type-2.png" alt="" width="984" height="1250" /></a><br/><br/>
+50 个元素，从对像的 ID 来看，里面有许多重复的元素，从这点来看就是 Spring 的问题。如果去除重复的元素就只有 6160 ~ 6171，共 19 个元素。<br/><br/>
+如果调试光标停在此处直接执行 <br/><br/>
+<blockquote>
+mediaTypes.sort(MediaType.SPECIFICITY_COMPARATOR.thenComparing(MediaType.QUALITY_VALUE_COMPARATOR))
+</blockquote>
+<br/>
+就会出现最前面的错误<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/01/spring-boot-media-type-5.png"><img class="wp-image-13470 aligncenter" src="https://yanbin.blog/wp-content/uploads/2024/01/spring-boot-media-type-5-800x400.png" alt="" width="827" height="413" /></a><br/><br/>
+再次执行错误则消失，其实只要执行 mediaTypes.sort(MediaType.SPECIFICITY_COMPARATOR) 这部分代码就会出错<br/><br/>
+那这 50 个大量重复的元素是如何得来的呢，进到 org.springframework.web.servlet.mvc.method.annotation.AbstractMessageConverterMethodProcessor<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/01/spring-boot-media-type-3.png"><img class="aligncenter wp-image-13468" src="https://yanbin.blog/wp-content/uploads/2024/01/spring-boot-media-type-3-800x602.png" alt="" width="856" height="644" /></a><br/><br/>
+从两个已经有重复的元素中再次组合出来的。<br/><br/>
+Google 一下大概知道问题出在排序上，TimSort 要求元素大小有传递性，如已知 A&gt;B, B&gt;C, 那么 A 必须大于 C。本人通过简单的自定义 Comparator 的方式尚未能用简单的代码重现出相同的错误。不过我们可以从上面提取出待排序的列表，找出相关的 Comparator 实现，剔除不必要的逻辑，得到下面可重现相同问题的代码<br/><br/>
+<pre class="lang:default decode:true">public ArraySortErrorDemo {
+    public static void main(String[] args) throws Exception {
+        List&lt;MediaType&gt; mediaTypes = Lists.newArrayList(
+            MediaType.APPLICATION_XML,
+            MediaType.APPLICATION_XML,
+            new MediaType("application", "xml", StandardCharsets.UTF_8),
+            MediaType.APPLICATION_XML,
+            new MediaType("application", "xml", StandardCharsets.UTF_8),
+            MediaType.APPLICATION_XML,
+            MediaType.TEXT_XML,
+            MediaType.TEXT_XML,
+            new MediaType("text", "xml", StandardCharsets.UTF_8),
+            new MediaType("text", "xml", StandardCharsets.UTF_8),
+            MediaType.APPLICATION_JSON,
+            MediaType.APPLICATION_JSON,
+            MediaType.APPLICATION_CBOR,
+            new MediaType("application", "*+xml"),
+            new MediaType("application", "*+xml"),
+            new MediaType("application", "xml", StandardCharsets.UTF_8),
+            new MediaType("application", "*+xml", StandardCharsets.UTF_8),
+            new MediaType("application", "xml", StandardCharsets.UTF_8),
+            new MediaType("application", "*+json"),
+            new MediaType("application", "*+json"),
+            MediaType.APPLICATION_JSON,
+            new MediaType("application", "*+json"),
+            MediaType.TEXT_PLAIN,
+            MediaType.ALL,
+            MediaType.APPLICATION_JSON,
+            new MediaType("application", "*+json"),
+            MediaType.APPLICATION_JSON,
+            new MediaType("application", "*+json"),
+            MediaType.APPLICATION_CBOR,
+            new MediaType("application", "xml", StandardCharsets.UTF_8),
+            new MediaType("application", "*+xml", StandardCharsets.UTF_8),
+            new MediaType("application", "*+xml", StandardCharsets.UTF_8)
+        );
+        mediaTypes.sort(SPECIFICITY_COMPARATOR);
+    }<br/><br/>
+    public static final Comparator&lt;MediaType&gt; SPECIFICITY_COMPARATOR = (mediaType1, mediaType2) -&gt; {
+        if (!mediaType1.getType().equals(mediaType2.getType())) {
+            return 0;
+        } else {
+            int paramsSize1 = mediaType1.getParameters().size();
+            int paramsSize2 = mediaType2.getParameters().size();
+            return Integer.compare(paramsSize2, paramsSize1);
+        }
+    };
+}</pre>
+<br/>
+MediaType 是 Spring Web 的 org.springframework.http.MediaType<br/><br/>
+有了上面简短的可重现错误的代码，我们可以有两个方向上的解决办法<br/><br/>
+<ol>
+    <li>如何规避严格的 TimSort 排序规则</li>
+    <li>如何改变 List&lt;MediaType&gt; 列表</li>
+</ol>
+<br/>
+<h3>使用早先的归并排序</h3><br/><br/>
+TimSort 是 JDK 1.8 加进来的，想要避免用 TimSort，即用 JDK 1.8 之前的排序方式，可以配置系统属性，如用 Java 代码<br/><br/>
+<blockquote>
+System.setProperty("java.util.Arrays.useLegacyMergeSort", "true");
+</blockquote>
+<br/>
+有了这一系统属性后，执行前面的 ArraySortErrorDemo 就不会出错了。JDK 应用该属性选择排序算法的代码在 java.util.Arrays 类中，其中相关代码<br/><br/>
+<pre class="lang:default decode:true ">    static final class LegacyMergeSort {
+        @SuppressWarnings("removal")
+        private static final boolean userRequested =
+            java.security.AccessController.doPrivileged(
+                new sun.security.action.GetBooleanAction(
+                    "java.util.Arrays.useLegacyMergeSort")).booleanValue();
+    }</pre>
+<br/>
+算法选择<br/><br/>
+<pre class="lang:default decode:true">    public static void sort(Object[] a) {
+        if (LegacyMergeSort.userRequested)
+            legacyMergeSort(a);
+        else
+            ComparableTimSort.sort(a, 0, a.length, null, 0, 0);
+    }</pre>
+<br/>
+用传统的 legacyMergeSort() 就不会有问题，TimSort 产生了麻烦。<br/><br/>
+<h3>使用 RestTemplate 时加上 Accept 头</h3><br/><br/>
+通过明确设定 RestTemplate 的 Accept 头会影响到 Spring 获得的所支持 MediaType 的列表，在一定程度上减少 TimSort 排序时出问题的概率，但不能完全避免。<br/><br/>
+RestTemplate  请求  /test2 的代码改成<br/><br/>
+<pre class="lang:default decode:true">RestTemplate restTemplate = new RestTemplate();
+RequestEntity&lt;Void&gt; requestEntity = RequestEntity.get(URI.create("http://localhost:8080/test2"))
+     .header(HttpHeaders.ACCEPT, "*/*").build();
+restTemplate.exchange(requestEntity, String.class).getBody();</pre>
+<br/>
+根据实际 /test2 返回的类型，Accept 头改成 <code>text/plain</code> 等都可正常得到响应。当 Accept: */* 时从 /test1 中的 RestTemplate 发出的 HTTP 请求是<br/><br/>
+<blockquote>
+GET /test2 HTTP/1.1\r\n<br />
+Accept: */*\r\n<br />
+User-Agent: Java/17.0.9\r\n<br />
+Host: localhost:8080\r\n<br />
+Connection: keep-alive\r\n<br />
+\r\n
+</blockquote>
+<br/>
+但是用 RestTemplateBuild 设置 DefaultHeader 就不行了，比如下面的用法仍然用相同的出错出现<br/><br/>
+<pre class="lang:default decode:true">RestTemplate restTemplate = new RestTemplateBuilder()
+            .defaultHeader(HttpHeaders.ACCEPT, "*/*")
+            .build();
+restTemplate.getForEntity(URI.create("http://localhost:8080/test2"), String.class).getBody();</pre>
+<br/>
+在 defaultHeader 中设置的 Accept 对 RestTemplate 没有任何影响，比如我们把上面的 defaultHeader(HttpHeaders.ACCEPT, "*/*) 改成<br/><br/>
+<blockquote>
+.defaultHeader(HttpHeaders.ACCEPT, "
+</blockquote>
+<br/>
+观察到的 HTTP 请求是<br/><br/>
+<blockquote>
+GET /test2 HTTP/1.1\r\n<br />
+Accept: text/plain, application/xml, text/xml, application/json, application/cbor, application/*+xml, application/*+json, */*\r\n<br />
+User-Agent: Java/17.0.9\r\n<br />
+Host: localhost:8080\r\n<br />
+Connection: keep-alive\r\n<br />
+\r\n
+</blockquote>
+<br/>
+Accept 头没有变化<br/><br/>
+<h3>升级到 Spring Boot 3</h3><br/><br/>
+如果把 Spring Boot 升级到 3, 所引入的 Spring 是 6，它已解决此问题。SpringBoot 2 中只提升 spring-web 到 6.0 会有兼容问题，如找不到 jakarta/servlet/ServletRequest 等。<br/><br/>
+Spring 6 在 org.springframework.web.servlet.mvc.method.annotation.AbstractMessageConverterMethodProcessor 中对 MediaType 的排序算法用了冒泡排序，在该类的方法<br/><br/>
+<pre class="lang:default decode:true">protected &lt;T&gt; void writeWithMessageConverters(@Nullable T value, MethodParameter returnType,
+        ServletServerHttpRequest inputMessage, ServletServerHttpResponse outputMessage)
+        throws IOException, HttpMediaTypeNotAcceptableException, HttpMessageNotWritableException {
+......
+    List&lt;MediaType&gt; compatibleMediaTypes = new ArrayList&lt;&gt;();
+            determineCompatibleMediaTypes(acceptableTypes, producibleTypes, compatibleMediaTypes);
+    ......
+    MimeTypeUtils.sortBySpecificity(compatibleMediaTypes);
+    ......
+}</pre>
+<br/>
+Spring Web 在获得了 MediaType 列表后，不再直接调用 Arrays.sort() 方法，JDK 1.8 以上会使用 TimSort 排序算法，从而避开了 <code>Comparison method violates its general contract!</code> 的错误。 <br/><br/>
+冒泡排序无疑是最低效的，不过这个列表中的元素不会太多，不会有太大的关系。<br/><br/>
+<h3>总结</h3><br/><br/>
+<ol>
+    <li>从 Spring 6 对此问题的解决，他们也意识到 JDK 1.8 的 TimSort 是个问题，过份要求元素的排序规则</li>
+    <li>其实 Spring 在取得 MediaType 列表之后应该根据对象引用去重后出现的元素</li>
+    <li>RestTemplate 自动会带入的 Accept 头的值请参考 RestTemplate 的默认构造函数，其中会根据是否可找到类附加 Accept 头的值</li>
+    <li>如果清楚不会用到 application/cbor，可从 Maven 中把 jackson-dataformat-cbor 依赖排除</li>
+    <li>一方面是更新到 JDK 8 用到了 TimSort 的问题，更应该及时更新到 SpringBoot 3 让新的  Spring 6 帮我们解决该问题</li>
+    <li>使用 "java.util.Arrays.useLegacyMergeSort" 会影响到系统全局，可能会降低某些列表排序的性能，给 RestTemplate 添加 Accept 头不是稳妥的解决办法，升级依赖才是王道</li>
+</ol>
+<br/>
+&nbsp;

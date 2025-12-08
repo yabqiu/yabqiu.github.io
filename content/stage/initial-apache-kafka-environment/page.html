@@ -1,0 +1,171 @@
+---
+title: 简单搭建 Apache Kafka 分布式消息系统
+url: /initial-apache-kafka-environment/
+date: 2016-10-06T16:12:33-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/kafka-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Kafka
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7456 
+wpStatus: publish
+views: 1390
+lastmod: 2016-10-13T00:27:35-05:00
+---
+
+<p>早先都是用的基于 JMS 规范的消息系统, 像 ActiveMQ, IBM MQSeries 等. 随着互联网的发展, 大约是要适应当今大数据, 高可用性, 高效的需求, 于是诞生了 <a href="http://kafka.apache.org/">Apache Kafka</a> 这一新时代的分布式消息系统. Apache Kafka 也是发布-订阅式的消息系统, 用 Scala 语言写的, 它最初由 LinedIn 开发并贡献到 Apache 基金会.</p>
+
+<p>Kafka 的集群实质是依赖于 ZooKeeper 的集群来协同管理, 所以这里可以参照之前的 <a href="http://unmi.cc/zookeeper-fast-get-started/">ZooKeeper 快速搭建与体验</a> 来搭建一个 ZooKeeper 集群(其实这是一个伪集群, 实际产品中应该把 ZooKeeper 集群分布在不同的机器上).</p>
+
+<p>本文主要是参考官方的 <a href="http://kafka.apache.org/quickstart">Kafka Quickstart</a> 来快速体验 Kafka 消息系统, 下载的 Kafka 自带了 ZooKeeper, 默认只启动了一个  ZooKeeper 节点. 如需 ZooKeeper 集群可以不依赖于 Kafka 自带的 ZooKeeper 而单独搭建.</p>
+
+<p>下面开始演示建立一个最简单的 Kafka 系统<!--more--></p>
+
+<h3>1,  下载并解压</h3><br/>
+<p>当前最新版本是 0.10.01, 我选择的是 Scala 2.11 的 <a href="https://www.apache.org/dyn/closer.cgi?path=/kafka/0.10.0.1/kafka_2.11-0.10.0.1.tgz">kafka_2.11-0.10.0.1.tgz</a>, 下载并解压</p>
+
+<blockquote><br/>
+<p>&gt; tar xzvf kafka_2.11-0.10.0.1.tgz<br /><br/>
+ &gt; cd kafka_2.11-0.10.0.1</p>
+
+</blockquote>
+
+<p>接下来的命令都从 <code>kafka_2.11-0.10.0.1</code> 目录执行. 配置和可执行文件分别在 <code>config</code> 和  <code>bin</code> 目录</p>
+
+<h3>2, 启动 Server</h3><br/>
+<p>包括要启动 ZooKeeper 和 Kafka, Kafka 依赖于 ZooKeeper, 所以 ZooKeeper 须先行启动.</p>
+
+<p><strong>启动 ZooKeeper</strong></p>
+
+<blockquote><br/>
+<p>&gt; bin/zookeeper-server-start.sh config/zookeeper.properties<br /><br/>
+ [2016-10-06 15:06:35,515] INFO Reading configuration from: config/zookeeper.properties (org.apache.zookeeper.server.quorum.QuorumPeerConfig)<br /><br/>
+ .....................<br /><br/>
+ [2016-10-06 15:07:05,603] INFO binding to port 0.0.0.0/0.0.0.0:2181 (org.apache.zookeeper.server.NIOServerCnxnFactory)<br /><br/>
+ [2016-10-06 15:07:07,207] INFO Accepted socket connection from /0:0:0:0:0:0:0:1:65185 (org.apache.zookeeper.server.NIOServerCnxnFactory)<br /><br/>
+ ....................</p>
+
+</blockquote>
+
+<p>从控制台输出或是查看 <code>config/zookeeper.properties</code> 文件, 可以发现 ZooKeeper 启动在端口号 2181 上, 如果带上参数 <code>-daemon</code> 会在后台启动. 可以执行 <code>bin/zookeeper-server-stop.sh</code> 来关闭 ZooKeeper.</p>
+
+<p><strong>启动 Kafka</strong></p>
+
+<blockquote><br/>
+<p>&gt; bin/kafka-server-start.sh config/server.properties<br /><br/>
+ [2016-10-06 15:16:46,169] INFO Session establishment complete on server localhost/127.0.0.1:2181, sessionid = 0x1579b9b40dc0000, negotiated timeout = 6000 (org.apache.zookeeper.ClientCnxn)<br /><br/>
+ ...............<br /><br/>
+ [2016-10-06 15:16:46,593] INFO Awaiting socket connections on 0.0.0.0:9092. (kafka.network.Acceptor)<br /><br/>
+ [2016-10-06 15:16:46,596] INFO [Socket Server on Broker 0], Started 1 acceptor threads (kafka.network.SocketServer)<br /><br/>
+ ..............<br /><br/>
+ [2016-10-06 15:16:46,695] INFO Creating /controller (is it secure? false) (kafka.utils.ZKCheckedEphemeral)<br /><br/>
+ ..............<br /><br/>
+ [2016-10-06 15:17:46,959] INFO Creating /brokers/ids/0 (is it secure? false) (kafka.utils.ZKCheckedEphemeral)<br /><br/>
+ .............</p>
+
+</blockquote>
+
+<p>也可以加 <code>-daemon</code> 在后台启动, 从上面的输出可以看出 Kafka 连接到了 127.0.0.1:2181 上的 ZooKeeper, 并创建了 znode <code>/controller</code> 和 <code>/brokers/ids/0</code>. 如果需要让 Kafka 连接到集群中的 ZooKeeper, 可以修改 <code>config/server.properties</code> 文件, 其中的</p>
+
+<blockquote><br/>
+<p>zookeeper.connect=localhost:2181</p>
+
+</blockquote>
+
+<p>改成像</p>
+
+<blockquote><br/>
+<p>zookeeper.connect=localhost:2181,192.168.0.1:2181,192.168.0.2:2182</p>
+
+</blockquote>
+
+<p>用 <code>bin/kafka-server-stop.sh</code> 关闭 Kafka 服务.</p>
+
+<p>这时候可以用 ZooKeeper 和客户端 <code>zkCli.sh</code> 或 <code>bin/zookeeper-shell.sh</code> 连接 ZooKeeper 服务, 查看有些什么 znode</p>
+
+<blockquote><br/>
+<p>&gt; zkCli.sh -server localhost:2181<br /><br/>
+ # 或 bin/zookeeper-shell.sh localhost:2181<br /><br/>
+ [zk: localhost:2181(CONNECTED) 7] ls /<br /><br/>
+ [controller_epoch, controller, brokers, zookeeper, admin, isr_change_notification, consumers, config]<br /><br/>
+ [zk: localhost:2181(CONNECTED) 8] ls /brokers/topics<br /><br/>
+ []<br /><br/>
+ [zk: localhost:2181(CONNECTED) 10] get /controller<br /><br/>
+ {"version":1,"brokerid":0,"timestamp":"1475785006684"}<br /><br/>
+ cZxid = 0x62<br /><br/>
+ ........</p>
+
+</blockquote>
+
+<p>现在还没有 topic, 这是一下步的事情</p>
+
+<h3>3, 创建主题</h3><br/>
+<p>我们将创建一个名为 <code>test</code> 的 topic</p>
+
+<blockquote><br/>
+<p>&gt; bin/kafka-topics.sh --create --zookeeper localhost:2181 --replication-factor 1 --partitions 1 --topic test<br /><br/>
+ Created topic "test".</p>
+
+</blockquote>
+
+<p>这个命令也可以列出所以的 topic</p>
+
+<blockquote><br/>
+<p>&gt; bin/kafka-topics.sh --list --zookeeper localhost:2181<br /><br/>
+ test</p>
+
+</blockquote>
+
+<p>Topic 是一个活生生的存在于 ZooKeeper 中的 znode, 所以在 ZooKeeper 客户端 <code>zkCli.sh</code> 中能够找到</p>
+
+<blockquote><br/>
+<p>[zk: localhost:2181(CONNECTED) 13] ls /brokers/topics<br /><br/>
+ [test]</p>
+
+</blockquote>
+
+<h3>4, 发送消息</h3><br/>
+<p>我们还是用 Kafka 自带的命令来演示</p>
+
+<blockquote><br/>
+<p>&gt; bin/kafka-console-producer.sh --broker-list localhost:9092 --topic test<br /><br/>
+ This is a message<br /><br/>
+ This is another message</p>
+
+</blockquote>
+
+<h3>5, 消费消息</h3><br/>
+<blockquote><br/>
+<p>&gt; bin/kafka-console-consumer.sh --zookeeper localhost:2181 --topic test --from-beginning<br /><br/>
+ This is a message<br /><br/>
+ This is another message</p>
+
+</blockquote>
+
+<p>我们看到在前一步发送的消息这里可以读取到.</p>
+
+<p>如果我们把 producer 和 consumer 窗口同时打开, 那就是一个单工的实时聊天程序了</p>
+
+<p><img class="aligncenter size-full wp-image-7460" src="http://unmi.cc/wp-content/uploads/2016/10/Kafka-talk.png" alt="kafka-talk" width="735" height="201" /></p>
+
+<p>字符集应该是 UTF-8 了, 中文得了毫无意外的支持. 要是每一端同时实现了 producer 和 consumer 的话, 一个实时全双工的聊天工具就这么简单.</p>
+
+<p>消息上跑通了, 用程序代码来写 Producer 和 Consumer 就不难了.</p>
+
+<p>链接: </p>
+
+<ol>
+
+	<li><a href="http://www.cnblogs.com/smartloli/p/4538173.html">Kafka实战－Kafka Cluster</a></li>
+
+	<li><a href="http://shift-alt-ctrl.iteye.com/blog/1930791">Kafka部署与代码实例</a></li>
+
+</ol>

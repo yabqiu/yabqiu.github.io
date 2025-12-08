@@ -1,0 +1,149 @@
+---
+title: 为何Java的有包名的类不能引用默认包中的类
+url: /java-cannot-import-default-package/
+date: 2006-08-23T11:26:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - Package
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 553 
+wpStatus: publish
+views: 3149
+lastmod: 2010-08-19T12:11:43-05:00
+---
+
+有两个java类，源代码如下：<br/>
+<table style="width: 750px; border-collapse: collapse;" border="1" cellspacing="2" cellpadding="2" bordercolor="#e7f7fe">
+
+<tbody>
+
+<tr valign="top">
+
+<td width="50%"> //没指定包名，也就是在默认包中public class B {<br/>
+  public void print(){<br/>
+    System.out.println("Printed By B Class");<br/>
+  }<br/>
+}</td>
+
+<td width="50%"> package com.unmi;<br/>
+import B; //引用默认包中的B类<br/>
+public class A {<br/>
+  public static void main(String[] args) {<br/>
+    B b = new B(); //在A中想要引用默认包中的B类<br/>
+  }<br/>
+}</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+先不说在IDE中如何编译它们以及会提示什么语法错误，只是用命令javac来编译它们，先是把它们放在同一个目录下，注意的是，虽然A.java有package unmi.com;声明，我们还是先把它放在下B.java同一目录，希望由javac命令来生成相对应的包目录。<!--more--><br/>
+<br/>
+执行1.4或5.0或者是6.0的jdk所带的javac命令编译，提示的错误都是一样的<br/>
+<br/>
+C:\Documents and Settings\unmi\jbproject\test\src&gt;C:\Java\j2sdk1.4.2_10\bin\javac -d .\ A.java<br/>
+或 C:\Documents and Settings\unmi\jbproject\test\src&gt;C:\Java\jdk1.5.0_06\bin\javac -d .\ A.java<br/>
+或 C:\Documents and Settings\unmi\jbproject\test\src&gt;C:\Java\jdk1.6.0\bin\javac -d .\ A.java<br/>
+<br/>
+错误为：<br/>
+<br/>
+A.java:3: 需要 '.'<br/>
+import B; //引用默认包中的B类<br/>
+        ^<br/>
+1 错误<br/>
+<br/>
+如果把 A.java的 import B; 这一行注释掉，用上面的三种jdk进行编译也是出现同样的错误<br/>
+<br/>
+A.java:7: 找不到符号<br/>
+符号： 类 B<br/>
+位置： 类 unmi.com.A<br/>
+    B b = new B();<br/>
+    ^<br/>
+A.java:7: 找不到符号<br/>
+符号： 类 B<br/>
+位置： 类 unmi.com.A<br/>
+    B b = new B();<br/>
+              ^<br/>
+2 错误<br/>
+<br/>
+总之是在带有包名的 A类中不知道怎么去引用默认包(没有包声明)中的类B。事情到此为止也就只会提出一个疑问：Java为何不让带包名的类访问不带包名的类呢？到底有何用意，为什么要有这种限制呢？<br/>
+<br/>
+可是奇怪的事情还在发生，如果我用1.2或1.3的jdk中的javac编译器来编译上面那两个代码，却是可以编译通过的，<br/>
+<br/>
+C:\Documents and Settings\unmi\jbproject\test\src&gt;D:\Borland\JBuilder7\jdk1.3.1\bin\javac -d .\ A.java<br/>
+<br/>
+执行后一切正常,编译出了B.class文件在正前目录下，并且在建立的com\unmi目录中生成了A.class文件，用1.2的jdk的javac编译我在SunOS 5.8操作系统下试过，也没问题的。只要能够成功编译，无论在哪种版本的JVM中执行A.class都能得到预期结果，在A.class中调用B的实例方法print()打印出 Printed By B Class。<br/>
+<br/>
+于是可以看出，这种所谓带包名的类不能访问不带包名的类只是不同版本的java编译器玩的把戏而已。<br/>
+<br/>
+回到编译器中来说，用JBuilder7能正常编译以上代码，无论工程选择何种版本的jdk(比1.3高)；而用JBuilder2005或是Eclipse3.2(其他版本的Eclipse还没有试验过)则不能编译以上代码，会提示以上的语法错误，不管工程选择的是1.2或1.3的jdk也无济于事。当然把以上两代码放在工程中的话需要把A.java放到com\unmi目录中的。看来IDE也有他们自己的独特的行为，大约为启动IDE本身的JVM的版本所决定(我的猜测)。<br/>
+<br/>
+写下这个东西只要阐明一种现象(这也是我偶然用JBuilder2006打开一个JBuilder7中正常使用的工程出现错误才意识到的，而且不能轻易苟同某些人的坚持说非要用JBuilder7才行，同时他们还忽略了一个问题，生成的类既然需要拿到SunOS 5.8下的jvm1.2中运行，那何不一改JBuilder中该工程的Target JVM属性值为All Java SKDs即可)�Ｍ角笠桓鼍烤梗比辉谄绞北嗦胫写罂刹槐�(并且是不应该)试图让包中的类去引用默认包中的类，为使每个类都体现出层次上的关系，应置于某一命名包中，除非一种例外，那是一个统领其他类的类，比如说Main，启动主程序的类，可以放在默认包中(不声明包名)，因为它也不会被其他包中的类引用。<br/>
+<br/>
+继续重复留下那样一个问题：新的JDK的编译器为何要试图阻止从有包名的一个java类引用默认包(未声明包名)的类呢？<br/>
+<br/>
+参考：1. <a href="http://java.sun.com/javase/compatibility_j2se1.4.html" target="_blank">Java 2 Platform, Standard Edition Version 1.4.0 Compatibility with Previous Releases</a>   <br/>
+    <br/>
+The compiler now rejects import statements that import a type from the unnamed namespace. Previous versions of the compiler would accept such import declarations, even though they were arguably not allowed by the language (because the type name appearing in the import clause is not in scope). The specification is being clarified to state clearly that you cannot have a simple name in an import statement, nor can you import from the unnamed namespace.<br/>
+<br/>
+To summarize, the syntax<br/>
+<blockquote><br/>
+<pre>import SimpleName;</pre>
+
+</blockquote>
+
+is no longer legal. Nor is the syntax<br/>
+<blockquote><br/>
+<pre>import ClassInUnnamedNamespace.Nested;</pre>
+
+</blockquote>
+
+which would import a nested class from the unnamed namespace. To fix such problems in your code, move all of the classes from the unnamed namespace into a named namespace.<br/>
+<br/>
+        2. <a href="http://java.sun.com/docs/books/jls/third_edition/html/packages.html#7.4.2" target="_blank">Java Language Specification Third Edition(7.4.2 Unnamed Packages)</a><br/>
+<br/>
+A compilation unit that has no package declaration is part of an unnamed package.<br/>
+<br/>
+<a name="73463"><br/>
+</a><br/>
+<br/>
+Note that an unnamed package cannot have subpackages, since the syntax of a package declaration always includes a reference to a named top level package.<br/>
+<br/>
+<a name="73468"><br/>
+</a>As an example, the compilation unit:<br/>
+<blockquote><br/>
+<pre>class FirstCall {<br/>
+        public static void main(String[] args) {<br/>
+                System.out.println("Mr. Watson, come here. "<br/>
+                                        + "I want you.");<br/>
+        }<br/>
+}</pre>
+
+</blockquote>
+
+<a name="35114"><br/>
+</a>defines a very simple compilation unit as part of an unnamed package.<br/>
+<br/>
+<a name="73470"><br/>
+</a>An implementation of the Java platform must support at least one unnamed package; it may support more than one unnamed package but is not required to do so. Which compilation units are in each unnamed package is determined by the host system.<br/>
+<br/>
+<a name="73469"><br/>
+</a><br/>
+<br/>
+In implementations of the Java platform that use a hierarchical file system for storing packages, one typical strategy is to associate an unnamed package with each directory; only one unnamed package is observable at a time, namely the one that is associated with the "current working directory." The precise meaning of "current working directory" depends on the host system.<br/>
+<br/>
+<a name="73471"><br/>
+</a><br/>
+<br/>
+Unnamed packages are provided by the Java platform principally for convenience when developing small or temporary applications or when just beginning development.

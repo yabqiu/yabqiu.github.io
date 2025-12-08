@@ -1,0 +1,276 @@
+---
+title: Python unittest.mock 的基本使用
+url: /python-unittest-mock-usages/
+date: 2025-10-22T23:27:42-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - test
+  - UnitTest
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14455 
+wpStatus: publish
+views: 126
+lastmod: 2025-10-22T23:27:42-05:00
+---
+
+平时随意用 Python 写的用了就丢的小工具当然没必要写什么单元测试，如果是一个要反复打磨的工具，项目，单元测试就必须重视起来了。因为简单思路写出来的代码将要应对各种未知情形，加之想要大肆的重构，有了足够的测试用例才能安心。</p>
+<br/>
+任何语言白盒的单元测试首先面对的就是 Mock,  不光是应对有副作用的操作，最好是隔离所有不在当前所见到的代码的任何调用，其实像 <code>print</code> 这种有副作用的代码一般是能容忍的，可能也是为何很多测试框架默认会把控制台的输出关掉。<br/><br/>
+在 Python 中，一般基本的东西自己都有，Mock 就直接用 unittest.mock，可应用于所有的单元测试框架中，如 unittest, pytest。另有一块对 uniitest.mock 的简单封装，专为 pytest 提供方便的 pytest-mock。今天先了解 unittest.mock 的使用，它的官方文档是 <a href="https://docs.python.org/3.12/library/unittest.mock.html">unittest.mock -- mock object library</a>。<!--more--><br/><br/>
+unittest.mock 常见的是类 Mock 和 MagicMock, 还有方法(也用作装饰器) patch()。MagicMock(MagicMock(MagicMixin, Mock):) 是增强型的 Mock, 如果愿意的话，可以用 MagicMock  g一撸到底。unittest.mock 的功能和其他语言的 Mock 框架一样，可用来 Mock 方法调用和断言属性，调用次数，参数。Python 的 Mock 可比其他静态语言强大的多，能 Mock 的对象几乎不受限，什么类方法，静态方法，还有 Python 自带库的方法，而且使用起来特别灵活。这大概是得益于 Python 的元编程或可随时动态添加方法和属性的特点。<br/><br/>
+<pre class="wrap:true lang:default decode:true">&gt;&gt;&gt; from unittest.mock import Mock
+>&gt;&gt; m1 = Mock()
+>&gt;&gt; dir(m1)
+['assert_any_call', 'assert_called', 'assert_called_once', 'assert_called_once_with', 'assert_called_with', 'assert_has_calls', 'assert_not_called', 'attach_mock', 'call_args', 'call_args_list', 'call_count', 'called', 'configure_mock', 'method_calls', 'mock_add_spec', 'mock_calls', 'reset_mock', 'return_value', 'side_effect']
+>&gt;&gt; m1.method1.return_value = "hello"
+>&gt;&gt; type(m1.method1)
+&lt;class 'unittest.mock.Mock'&gt;
+>&gt;&gt; v1 = m1.method1()
+>&gt;&gt; v1 'hello'
+>&gt;&gt;
+>&gt;&gt; m1.obj1.obj2.method1.return_value = "world"
+>&gt;&gt; type(m1.obj1)
+&lt;class 'unittest.mock.Mock'&gt;
+>&gt;&gt; type(m1.obj1.obj2.method1)&lt;br&gt;&lt;class 'unittest.mock.Mock'&gt;
+>&gt;&gt; m1.method1.assert_called_once()
+>&gt;&gt; m1.method1.assert_not_called()
+Traceback (most recent call last):
+  File "&lt;stdin&gt;", line 1, in &lt;module&gt;
+  File "/opt/homebrew/Cellar/python@3.12/3.12.11/Frameworks/Python.framework/Versions/3.12/lib/python3.12/unittest/mock.py", line 910, in assert_not_called
+    raise AssertionError(msg)
+AssertionError: Expected 'method1' to not have been called. Called 1 times.
+Calls: [call()].
+>&gt;&gt; m1.attr1=100</pre>
+<br/>
+通过 Mock 或  MagicMock 可以任意(多层次)的添加属性或方法，只要没用 return_value, side_effect, 直接赋值等反回的仍然是一个 Mock。<br/><br/>
+下面进入到各种实际应用场景<br/><br/>
+<h3>Mock 外部方法调用</h3><br/><br/>
+下面的代码，比如 repo.get_data() 需要从数据库中查询数据<br/><br/>
+<pre class="lang:default decode:true ">def foo(repo):
+   data = repo.get_data()
+   return f"hello {data}"</pre>
+<br/>
+测试时需要 Mock 住 repo.get_data() 调用，这时我们的测试用例就可以写成<br/><br/>
+<pre class="lang:default decode:true">def test_foo():
+    mock_repo = Mock()  # 明确 repo 的类型可用 Mock(spec=Repo)
+    mock_repo.get_data.return_value = "mocked data"<br/><br/>
+    result = foo(mock_repo)<br/><br/>
+    assert result == "hello mocked data"
+    mock_repo.get_data.assert_called_once()</pre>
+<br/>
+<h3>Mock 有副作用外部操作(用到 patch)</h3><br/><br/>
+比如一个函数进行了文件删除操作，我们当然不想在单元测试中有这样的破坏性操作，这时候要用到 patch。待测试方法如下<br/><br/>
+<pre class="lang:default decode:true">def foo():
+   folder = os.getenv("XYZ")
+   shutil.rmtree(folder, ignore_errors=True)
+   return f"deleted {folder}"</pre>
+<br/>
+单元测试代码<br/><br/>
+<pre class="lang:default decode:true ">def test_foo():
+    mock_getenv = patch("os.getenv").start()
+    mock_getenv.return_value = "world"<br/><br/>
+    mock_rmtree= patch("shutil.rmtree").start()<br/><br/>
+    result = foo()<br/><br/>
+    assert result == "deleted world"
+    mock_getenv.assert_called_once_with("XYZ")
+    mock_rmtree.assert_called_once_with("world", ignore_errors=True)</pre>
+<br/>
+以上代码可以安全的执行，因为 shutil.rmtree 不会进行实际的操作。如果会删除文件的话基本上测试是不成功的，因为文件系统中大约是没有 "world" 这个目录的。<br/><br/>
+patch("os.getevn").start() 返回的是一个 MagicMock 类型<br/><br/>
+patch 用了 `@contextlib.contextmanager` 注解，所以可以写成  with context manager 的形式，上<br/><br/>
+<pre class="lang:default decode:true">def test_foo():
+    with patch("os.getenv") as mock_getenv, patch("shutil.rmtree") as mock_rmtree:
+        mock_getenv.return_value = "world"<br/><br/>
+        result = foo()<br/><br/>
+        assert result == "deleted world"
+        ...
+</pre>
+<br/>
+这时候就不需要 start() 了<br/><br/>
+patch 还是一个装饰器，所以又有另一种形式，通过装饰器注入函数参数<br/><br/>
+<pre class="lang:default decode:true">@patch("shutil.rmtree")
+@patch("os.getenv")
+def test_foo(mock_getenv, mock_rmtree):
+        mock_getenv.return_value = "world"<br/><br/>
+        result = foo()<br/><br/>
+        assert result == "deleted world"</pre>
+<br/>
+注意 @patch 时方法参数的顺序是相反的，先写的 @patch 声明为最后的参数。Python 的解释是离方法名最近的装饰器最先读取作为第一个方法参数。如果调个位置，写成<br/><br/>
+<pre class="lang:default decode:true">@patch("shutil.rmtree")
+@patch("os.getenv")
+def test_foo(mock_rmtree, mock_getenv):
+        mock_getenv.return_value = "world"</pre>
+<br/>
+测试就会失败了，因为上面的 mock_rmtree 实际上是 patch("os.getenv").start() 产生的值。<br/><br/>
+@patch 还能同时带上 return_value<br/><br/>
+<pre class="lang:default decode:true ">@patch("shutil.rmtree")
+@patch("os.getenv", return_value="world")
+def test_foo(mock_getenv, mock_rmtree):</pre>
+<br/>
+也可 @patch "os", 但必须加上 <code>import os</code> 所在的模块名，例如在 demo.py 中的<br/><br/>
+<pre class="lang:default decode:true ">import os<br/><br/>
+def foo():
+    return os.getenv("XYZ")</pre>
+<br/>
+测试时就用<br/><br/>
+<pre class="lang:default decode:true">@patch("demo.os")
+def test_foo(mock_getenv):
+    mock_getenv.getenv.return_value = "world"<br/><br/>
+    assert foo() == "hello world"</pre>
+<br/>
+<h3>Mock 异常</h3><br/><br/>
+Mock 异常只需要设置 Mock 对象的 side_effect 为一个异常对象即可。比如一个待测试类<br/><br/>
+<pre class="lang:default decode:true">class Demo:
+    def foo(self):
+        try:
+            return self.bar()
+        except Exception as ex:
+            return "wrong: " + str(ex)<br/><br/>
+
+    def bar(self):
+       # do something, may throw exception
+       return "world"</pre>
+<br/>
+想要测试在调用 foo() 时，如果其中的 bar() 抛出异常的情况, 我们可以写下面的测试<br/><br/>
+<pre class="lang:default decode:true ">def test_demo_foo():
+    demo = Demo()
+    demo.bar = Mock()
+    demo.bar.side_effect = KeyError("no key")<br/><br/>
+    result = demo.foo()<br/><br/>
+    assert result == "wrong: 'no key'"</pre>
+<br/>
+通过这个例子，同时也实现了 Java 中 Mock 对象中部分方法时类似 spy 的功能，即这里的 bar() 被 Mock 了, foo() 还是调用原本的方法。<br/><br/>
+<h3>Mock 特定参数的方法调用</h3><br/><br/>
+前面用 side_effect 模拟了抛出异常，它同时也可以定制 Mock 方法不同参数时产生不一样的输出，side_effect 可以接受一个 lambda 或函数作为参数。同样是测试<br/><br/>
+<pre class="lang:default decode:true ">def foo(env_key):
+    return os.getenv(env_key)</pre>
+<br/>
+希望 Mock os.getenv() 输入 KEY1，KEY2，和其他时获得不一样的环境变量值，用下面的测试代码<br/><br/>
+<pre class="lang:default decode:true ">from unittest.mock import patch,call<br/><br/>
+def test_foo():
+    with patch("os.getenv") as mock_getenv:
+        mock_getenv.side_effect = lambda key: {"KEY1": "value1", "KEY2": "value2"}.get(key, None)
+        assert foo("KEY1") == "value1"
+        assert foo("KEY2") == "value2"
+        assert foo("KEY3") is None<br/><br/>
+        mock_getenv.assert_has_calls([call("KEY1"), call("KEY2"), call("KEY3")])</pre>
+<br/>
+但是如何在别的 key 是调用实际的 os.getenv() 方法呢？我们可以先把原始方法在被 Mock 之前保存下来，然后参考下面的方式<br/><br/>
+<pre class="lang:default decode:true">real_getenv = os.getenv  # real method<br/><br/>
+def test_foo():
+    with patch("os.getenv") as mock_getenv:
+        mock_getenv.side_effect = lambda key: {"KEY1": "value1", "KEY2": "value2"}.get(key, real_getenv(key)) # call real method for other keys
+        ...</pre>
+<br/>
+<h3>Mock 构造函数</h3><br/><br/>
+在 Python 中，构造函数可能更多指的是 <code>__new__</code> 函数，但也可能连带提到 <code>__init__</code> 初始函数，而我们在用 MyClass() 创建对象时会调用到前两个函数。Mock 构造函数在 Python 中比 Java 等其他语言简单多了，因为 MyClass  本身就可以看作是一个 callable 函数，只要 Mock 它就行了。<br/><br/>
+<pre class="lang:default decode:true ">class Cat:
+    ...<br/><br/>
+class MyClass:
+    def __init__(self):
+        self.cat = Cat()<br/><br/>
+    def get_cat(self):
+        return self.cat</pre>
+<br/>
+比如，要 Mock MyClass.__init__ 中的 <code>Cat()</code>, 使用代码<br/><br/>
+<pre class="lang:default decode:true ">def test_mock_constructor():
+    with (patch("demo.Cat") as mock_Cat_class):
+        mock_cat = Mock()
+        mock_Cat_class.return_value = mock_cat<br/><br/>
+        my_class = MyClass()<br/><br/>
+        assert my_class.get_cat() == mock_cat</pre>
+<br/>
+unittest.mock 比 Java 的 Mock 框架灵活多了，完全没有构造方法，静态方法，类方法等约束，把它们当作普通方法来 Mock 就行。<br/><br/>
+Mock dunder 方法也没问题，如上一个测试，加上这样的代码行<br/><br/>
+<pre class="lang:default decode:true">my_class = MyClass()
+mock_cat.__repr__ = Mock(return_value = "mocked Cat __repr__ method")<br/><br/>
+assert f"{my_class.get_cat()!r} == ""mocked Cat __repr__ method"</pre>
+<br/>
+所以 Mock __init__ 方法也能尝试一下，从上面的代码来看 Mock dunder 那样的双下划线方法不一定得要 MagicMock, Mock 就能胜任。<br/><br/>
+<h3>patch.object 临时修改某对象的属性或方法</h3><br/><br/>
+我们无需每次都从最初的函数下手，或对已有 Mock 对象动手脚，针对已有实际对象可用 patch.object(target, attribute,...), 如<br/><br/>
+<pre class="lang:default decode:true">class MyClass:
+    def get_value(self):
+        return "hello"<br/><br/>
+    def get_value2(self):
+        return "value2"</pre>
+<br/>
+对已创建的 my_class 实例，我们将只 Mock get_value 方法<br/><br/>
+<pre class="lang:default decode:true ">def test_my_class():
+    my_class = MyClass()
+    with patch.object(my_class, "get_value", return_value="world") as mock_get_value:
+        result = my_class.get_value()
+        assert result == "world"
+        mock_get_value.assert_called_once()<br/><br/>
+        assert my_class.get_value2() == "value2"</pre>
+<br/>
+即使在 path.object 上下文当中，get_value2() 也是调用实际的方法实现。<br/><br/>
+把上面第二三行改成如下方式也是一样的效果<br/><br/>
+<pre class="lang:default decode:true">with patch.object(MyClass, "get_value", return_value="world") as mock_get_value:
+    my_class = MyClass()</pre>
+<br/>
+使用 patch.object(target, attribute,...) 时 target 可以是任何 Python 对象，包括模块本身，类，实例对象，或都是函数， attribute 可以是属性或方法。比如应用到 Mock 前面的  os.getenv 方法<br/><br/>
+<pre class="lang:default decode:true">with patch.object(os, "getenv", return_value="world") as mock_get_value:
+    assert os.getenv("any") == "world"</pre>
+<br/>
+patch.object() 也可作为装饰器来用，如<br/><br/>
+<pre class="lang:default decode:true ">@patch.object(MyClass, "get_value", return_value="world")
+def test_get_value(self, mock_get_data):
+    my_class = MyClass()
+    ...</pre>
+<br/>
+<h3>patch.dict 临时修改 dict 的内容</h3><br/><br/>
+一看  patch.dict 就应该是 patch.object 专门作用于 dict 快捷方法，看官方的例子<br/><br/>
+<pre class="lang:default decode:true ">foo = {}
+@patch.dict(foo, {'newkey': 'newvalue'})
+def test():
+    assert foo == {'newkey': 'newvalue'}<br/><br/>
+test()
+assert foo == {}</pre>
+<br/>
+还有更多的 unittest.mock 使用方法，如 patch.multiple(...), mock_open, sentinel, 这些要实际应用时再查询，巩固。<br/><br/>
+<h3>pytest-mock 简介</h3><br/><br/>
+如果项目中使用 pytest 编写和运行测试用例，建议用 pytest-mock 来 Mock 操作，pytest-mock 是对  unittest.mock 的封装，所以它  100% 兼容后者，学习起来也不难。它主要用借助于 pytest_mock.plugin.MockerFixture 接口来使用，有 Mock 生命周期的自动清理功能，额外提供 spy(), stub(), autospec=True 的功能。<br/><br/>
+大概看一个比较完整的例子，其中把业务代码与测试代码写在了同一个文件 demo.py 中<br/><br/>
+<pre class="lang:default decode:true">import unittest
+import os
+import requests
+import sys
+from pytest_mock.plugin import MockerFixture<br/><br/>
+def get_env_value():
+    return os.getenv("ENV", "default")<br/><br/>
+def fetch_data():
+    env = get_env_value()
+    url = f"https://api.example.com/{env}"
+    response = requests.get(url)
+    return response.text<br/><br/>
+
+def test_fetch_data_with_mock_and_spy(mocker: MockerFixture):
+    mymodule = sys.modules[__name__]<br/><br/>
+    mock_get = mocker.patch("demo.requests.get", return_value=mocker.Mock(text="mocked response"))
+    spy_env = mocker.spy(mymodule, "get_env_value")<br/><br/>
+    result = mymodule.fetch_data()<br/><br/>
+    assert result == "mocked response"
+    spy_env.assert_called_once()
+    mock_get.assert_called_once_with("https://api.example.com/default")<br/><br/>
+if __name__ == '__main__':
+    unittest.main()
+</pre>
+<br/>
+再应用上 stub() 的话，可以把上面代码的 mock_get = mocker.path(...) 换成以下几行<br/><br/>
+<pre class="lang:default decode:true">    mock_get = mocker.patch("demo.requests.get")
+    fake_response = mocker.stub()
+    fake_response.text = "mocked response"
+    mock_get.return_value = fake_response</pre>
+<br/>
+会得到一样的效果。<br/><br/>
+相比于 unittest.mock 的 @patch 前后倒置添加方法参数的方式，pytest-mock 通过单一个参数 mocker: MockerFixture 用起来显得太简洁一些。

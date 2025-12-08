@@ -1,0 +1,155 @@
+---
+title: JavaDoc 编程，书写自定义的 Taglet 支持 @unmi 等
+url: /javadoc-programming-customize-taglet/
+date: 2012-12-16T00:47:02-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - javadoc
+  - taglet
+  - @document
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5280 
+wpStatus: publish
+views: 1733
+lastmod: 2021-09-03T14:54:20-05:00
+---
+
+javadoc 可为我们的 Java 项目生成 API 文档，别人的应该是看得多了，自己的可能不好意思晾出来看。那 Java 源代码里的 @author, @see, @param 等应该是司空见惯了吧。除此之外我们还可以自定义自己的 tag，并让它们的内容按照我们需要的格式生成到 javadoc 文档中，或作他用。还记得没有 Maven 的时代我们是怎样用 XDoclet 生映射文件的吗？现在的 Taglet 定制想要做的事情大抵如此。</p>
+<br/>
+执行一下 <a href="http://docs.oracle.com/javase/6/docs/technotes/tools/windows/javadoc.html" target="_blank" rel="noopener">javadoc</a> 命令看看，一堆的参数可以指定，又有学问在里头，且看：<br/><br/>
+-tag &lt;name&gt;:&lt;locations&gt;:&lt;header&gt;  Specify single argument custom tags<br />
+-taglet                           The fully qualified name of Taglet to register<br />
+-tagletpath                       The path to Taglets<br/><br/>
+和<br/><br/>
+-doclet &lt;class&gt;           Generate output via alternate doclet<br />
+-docletpath &lt;path&gt;        Specify where to find doclet class files<br/><br/>
+关于 doclet 部份这儿暂且不说，单讲 tag 部分的东西。<br/><br/>
+对于自定义 tag，简单的时候，用参数 -tag  都可以不写自己的 taglet 类，例如有这样一个代码：<!--more--><br/><br/>
+<pre class="lang:default decode:true">public class TestJavaDocTag {<br/><br/>
+    /**
+     * @param args input command arguments
+     * @document help
+     * yourself
+     */
+    public static void main(String[] args) {<br/><br/>
+    }
+}</pre>
+<br/>
+上面使用了 @document 自定义 tag，要为它生成文档，可以用命令：<br/><br/>
+javadoc -tag document:a:Document: *.java<br/><br/>
+于是生成的 javadoc 文档中有了：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter wp-image-5281" style="border: 1px solid gray;" src="/wp-content/uploads/2012/12/taglet_1.png" alt="taglet_1" width="750" height="260" /></p>
+<br/>
+-tag 参数的 name, header 部分一对照就知道了，中间那个 location 参数代表修饰谁的注释要被解析，取值有：<br/><br/>
+<b><code>X</code></b> (<a href="http://docs.oracle.com/javase/6/docs/technotes/tools/windows/javadoc.html#spellcheckingtagnames">disable tag</a>)<br />
+<b><code>a</code></b> (all)<br />
+<b><code>o</code></b> (overview)<br />
+<b><code>p</code></b> (packages)<br />
+<b><code>t</code></b> (types, that is classes and interfaces)<br />
+<b><code>c</code></b> (constructors)<br />
+<b><code>m</code></b> (methods)<br />
+<b><code>f</code></b> (fields)<br/><br/>
+上面的 -tag 为 @document 生成的 HTML  是：<br/><br/>
+<pre class="lang:default decode:true">&lt;b&gt;Document:&lt;/b&gt;&lt;/dt&gt;
+  &lt;dd&gt;help
+ yourself&lt;/dd&gt;</pre>
+<br/>
+如果我们要为前面的 @document 生成更具表现力说明，或是另有企图 -- 如提取 @document 后的内容生成自己的外部文件中，那现在就得让 Taglet 登场了。从 DocumentTaglet 代码开始，它需要实现 <a href="http://javasourcecode.org/html/open-source/jdk/jdk-6u23/com/sun/tools/doclets/Taglet.html" target="_blank" rel="noopener">com.sun.tools.doclets.Taglet</a> 接口，要实现它所有的方法。里面有一片的 inField()，inMethod() 等方法，若返回 true 则表示这个标签可作用于这个位置上。<br/><br/>
+那什么是 isInlineTag() 呢，下面这样写的注释就是 Inline Tag: 用大括号括起来的就是 Inline tag，这时取的 tag.text() 就只是 "help"   了。你自己决定 isInlineTag() 方法返回 true 还是 false 吧。<br/><br/>
+<pre class="lang:default decode:true">/**
+ * Inline: {@document help} yourself
+ */
+public static void main(String[] args) {<br/><br/>
+}</pre>
+<br/>
+还有那个注册方法，需 Taglet 接口中没有，但却是一定要写的，方法原型是：<br/><br/>
+<span style="color: #0000ff;">public static void register(Map&lt;String, Taglet&gt; tagletMap)，用来注册要用到的所有 Taglet, 也就是可在此一个个指定什么 tag 由哪一个类来处理。其实这里的 DocumentTaglet 可不实现 Taglet， javadoc -taglet 指定为这个类后所要做的工作就是执行该类的 register(Map&lt;String, Taglet&gt; tagletMap) 方法，至于后面碰到了某个 tag 时才真正去调用对应 Taglet 类的 toString 方法。</span><br/><br/>
+<span style="color: #0000ff;">也就是说在这个 register 方法中可以同时注册多个  Taglet 类实例。这种情况下把现在的 DocumentTaglet 更名为 CustomTags 意义就更准确些。</span><br/><br/>
+关键是那两个 toString() 方法，它的返回值就是要交给 javadoc 显示出来的内容，文章要在这儿做。<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.taglet;<br/><br/>
+import java.util.Map;
+import com.sun.javadoc.Tag;
+import com.sun.tools.doclets.Taglet;<br/><br/>
+public class DocumentTaglet implements Taglet {<br/><br/>
+    private static final String NAME = "document";
+    private static final String HEADER = "Document:";<br/><br/>
+    @Override
+    public String getName() {
+        return NAME;
+    }<br/><br/>
+    @Override
+    public String toString(Tag[] tags) {
+        StringBuilder result = new StringBuilder();
+        for (Tag tag : tags) {
+            result.append("\n&lt;dt&gt;&lt;b&gt;" + HEADER + "&lt;/b&gt;");
+            result.append("&lt;dd style='color:red'&gt;" + tag.text() + "&lt;/dd&gt;");
+        }
+        //or do anything here ......
+        return result.toString();
+    }<br/><br/>
+    @Override
+    public String toString(Tag tag) {
+        return toString(new Tag[] { tag });
+    }<br/><br/>
+    public static void register(Map&lt;String, Taglet&gt; tagletMap) {
+        DocumentTaglet tag = new DocumentTaglet();
+        Taglet t = (Taglet) tagletMap.get(tag.getName());
+        if (t != null) {
+            tagletMap.remove(tag.getName());
+        }
+        tagletMap.put(tag.getName(), tag);
+    }<br/><br/>
+    @Override
+    public boolean inConstructor() {
+        return false;
+    }<br/><br/>
+    @Override
+    public boolean inField() {
+        return false;
+    }<br/><br/>
+    @Override
+    public boolean inMethod() {
+        return true;
+    }<br/><br/>
+    @Override
+    public boolean inOverview() {
+        return false;
+    }<br/><br/>
+    @Override
+    public boolean inPackage() {
+        return false;
+    }<br/><br/>
+    @Override
+    public boolean inType() {
+        return false;
+    }<br/><br/>
+    @Override
+    public boolean isInlineTag() {
+        return true;
+    }
+}</pre>
+<br/>
+把重要的代码前移了，因为用到了 tools.jar 包，所以编译时需把 JDK 目录中的 tools.jar 加到 classpath 上去。实际测试中不管为一个方法写一个还是多个 @document 注释，javadoc 都是直接命中 toString(Tag[] tags) 方法。<br/><br/>
+要是想在 toString(Tag[] tags) 方法中得到被注释的元素的信息，就从 Tag 类型出发，tag.holder() 得到一个 Doc，对应注释的位置，它可能是一个 MethodDoc, ClassDoc, FieldDoc, PackageDoc 等，所以当前被注释元素的信息便可由此而得。<br/><br/>
+在假设编译后的 DocumentTaglet.class 文件在 c:/javadoc_taglet/bin/cc/unmi/taglet 目录下，你可以用下面的命令为前面那个 TestJavaDocTag.java 生成 javadoc 文档：<br/><br/>
+javadoc -taglet cc.unmi.taglet.DocumentTaglet -tagletpath c:/javadoc_taglet/bin<br/><br/>
+生成的 javadoc 的效果就是, @document 的值提取出来，并渲染为红色字体显示：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter wp-image-5283" style="border: 1px solid gray;" src="/wp-content/uploads/2012/12/taglet_2.png" alt="taglet_2" width="750" height="500" /></p>
+<br/>
+我们在生成 javadoc 时，会得到提示：<br/><br/>
+Note: Custom tags that could override future standard tags:  @document. To avoid<br />
+ potential overrides, use at least one period character (.) in custom tag names.<br/><br/>
+那是 javadoc 怕 @document 会与别人重复，希望你能加个命名空间，如写成 @unmi.document 这样子。<br/><br/>
+tools.jar 中还有另外一个 Taglet(<a href="http://docs.oracle.com/javase/6/docs/technotes/guides/javadoc/taglet/overview.html" target="_blank" rel="noopener">com.sun.tools.doclets.internal.toolkit.taglets.Taglet</a>) 接口，尚不知作用何的，Doclet 吗？接着有空也看看 -doclet 参数的应用定制。<br/><br/>
+参考：1. <a href="http://docs.oracle.com/javase/6/docs/technotes/tools/windows/javadoc.html" target="_blank" rel="noopener">javadoc - The Java API Documentation Generator</a><br />
+          2. <a href="http://docs.oracle.com/javase/6/docs/technotes/guides/javadoc/taglet/overview.html" target="_blank" rel="noopener">Taglet Overview</a><br />
+          3. <a href="http://www.developer.com/java/other/article.php/3085991/Javadoc-Programming.htm" target="_blank" rel="noopener">Javadoc Programming</a><br />
+          4. <a href="http://taglets.sourceforge.net/" target="_blank" rel="noopener">Taglets Collection</a>

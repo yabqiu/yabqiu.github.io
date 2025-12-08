@@ -1,0 +1,200 @@
+---
+title: 用 .pth 文件附加 Python 模块搜索路径
+url: /pth-file-append-python-module-search-path/
+date: 2018-11-22T16:57:10-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - Python
+  - .pth
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9124 
+wpStatus: publish
+views: 2542
+lastmod: 2018-11-22T16:57:59-06:00
+---
+
+<p>上一篇 <a href="https://yanbin.blog/python-module-search-path/">Python 的模块搜索路径</a>，介绍了 Python 的模块搜索路径，最终起作用的是 <code>sys.path</code> 路径列表。如果要自定义自己的搜索路径，就是要怎么定制 <code>sys.path</code> 的内容。可以简单的用 <code>PYTHONPATH</code> 环境变量前向添加，这儿将要说的是用 <code>.pth</code> 文件的方式。也可由此进一步理解 Python 依赖管理工具，像  <code>virtualenv</code> 等的工作原理。</p>
+
+<p><code>.pth</code> 文件名是什么，无所谓，Python 只认扩展名。<code>.pth</code> 文件中每行指定一个路径 -- 绝对或相对路径(相对于本  <code>.pth</code> 文件所在的目录)，另外还可以空行或 <code>#</code> 开始的注释行，还能有 <code>import</code> 语句，大概只用来校验是否能导入成功，程序代码中还是需要显示的 import 模块。</p>
+
+<h3><code>.pth</code> 文件放在哪里</h3><br/>
+<p><code>.pth</code> 文件创建好后应该放到哪里去呢？不是 <code>sys.prefix</code> 指示的位置，也不是 <code>sys.path</code> 中任意一个目录，而是  <code>sys.path</code> 中属于 site.packages 的某一个目录中。可以用</p>
+
+<blockquote><br/>
+<p>&gt;&gt;&gt; import site<br /><br/>
+&gt;&gt;&gt; site.getusersitepackages()<br /><br/>
+&gt;&gt;&gt; site.getsitepackages()</p>
+
+</blockquote>
+
+<p>查看到, 看我在  Ubuntu Linux 中看到的内容(为便于阅读，显示列表内容时进行了换行处理)<!--more--></p>
+
+<pre class="lang:default mark:7-10，12，14-16 decode:true">&gt;&gt;&gt; import sys, site<br/>
+&gt;&gt;&gt; sys.path<br/>
+['',<br/>
+ '/usr/lib/python36.zip',<br/>
+ '/usr/lib/python3.6',<br/>
+ '/usr/lib/python3.6/lib-dynload',<br/>
+ '/home/yanbin/.local/lib/python3.6/site-packages',<br/>
+ '/usr/local/lib/python3.6/dist-packages',<br/>
+ '/usr/lib/python3/dist-packages',<br/>
+ '/usr/lib/python3.6/dist-packages']<br/>
+&gt;&gt;&gt; site.getusersitepackages()<br/>
+'/home/yanbin/.local/lib/python3.6/site-packages'<br/>
+&gt;&gt;&gt; site.getsitepackages()<br/>
+['/usr/local/lib/python3.6/dist-packages',<br/>
+ '/usr/lib/python3/dist-packages',<br/>
+ '/usr/lib/python3.6/dist-packages']<br/>
+&gt;&gt;&gt; site.USER_SITE<br/>
+'/home/yanbin/.local/lib/python3.6/site-packages'           <br/>
+&gt;&gt;&gt; site.ENABLE_USER_SITE<br/>
+True<br/>
+</pre>
+
+<p>从上面看到  <code>sys.path</code> 包含了 <code>site.getusersitepackages()</code> 和 <code>site.getsitepackages()</code> 的内容，并且 <code>site.getusersitepackages()</code> 在前</p>
+
+<blockquote><br/>
+<p>'/home/yanbin/.local/lib/python3.6/site-packages',<br /><br/>
+'/usr/local/lib/python3.6/dist-packages',<br /><br/>
+'/usr/lib/python3/dist-packages',<br /><br/>
+'/usr/lib/python3.6/dist-packages'</p>
+
+</blockquote>
+
+<p>而我们的  <code>.pth</code> 文件就可以放到以上四个目录中的任意位置，也可以放置多个 <code>.pth</code> 文件，选择那个目录，一个是搜索的先后顺序，还有就是 <code>.pth</code> 中的相对目录会相对于 <code>.pth</code> 所在的位置。</p>
+
+<p>如果是不考虑多用户共享的情况，并且操作不用 <code>sudo</code> 前缀，我们就把 <code>.pth</code> 文件放到 <code>usersitepackages()</code> 指示的目录下，即 <code>/home/yanbin/.local/lib/python3.6/site-packages</code>。该目录还能直接用如下命令获得得</p>
+
+<blockquote><br/>
+<p>python3 -m site --user-site<br /><br/>
+/home/yanbin/.local/lib/python3.6/site-packages</p>
+
+</blockquote>
+
+<p>在此位置上创建一个文件，命名为 <code>example.pth</code>, 内容如下</p>
+
+<pre class="lang:default decode:true ">/home/program/mymath<br/>
+mymodules</pre>
+
+<p>第一行用的绝对目录，第二行为相对目录，相对于 <code>example.pth</code> 所在的目录 <code>/home/yanbin/.local/lib/python3.6/site-packages</code>。假如以上两个目录</p>
+
+<blockquote><br/>
+<p>/home/program/mymath<br /><br/>
+/home/yanbin/.local/lib/python3.6/site-packages/mymodules</p>
+
+</blockquote>
+
+<p>都存在的话，进到 Python3 Shell, 再次查看 <code>sys.path</code> 的内容就变成了</p>
+
+<pre class="lang:default mark:8-9 decode:true">&gt;&gt;&gt; import sys, site<br/>
+&gt;&gt;&gt; sys.path<br/>
+['',<br/>
+ '/usr/lib/python36.zip',<br/>
+ '/usr/lib/python3.6',<br/>
+ '/usr/lib/python3.6/lib-dynload',<br/>
+ '/home/yanbin/.local/lib/python3.6/site-packages',<br/>
+ '/home/program/mymath',<br/>
+ '/home/yanbin/.local/lib/python3.6/site-packages/mymodules',<br/>
+ '/usr/local/lib/python3.6/dist-packages',<br/>
+ '/usr/lib/python3/dist-packages',<br/>
+ '/usr/lib/python3.6/dist-packages']</pre>
+
+<p>留意上面的顺序，<code>.pth</code> 放在哪个目录下，它所增加的路径就会跟随在那个 site-packages 后面。效果上相当于</p>
+
+<blockquote><br/>
+<p>pos = sys.path.index('/home/yanbin/.local/lib/python3.6/site-packages')<br /><br/>
+sys.path[pos:pos] = ['home/program/mymath', '/home/yanbin/.local/lib/python3.6/site-packages/mymodules']</p>
+
+</blockquote>
+
+<p>如果 <code>example.pth</code> 文件放在 <code>/usr/lib/python3/dist-packages</code> 目录中，那么添加的两个路径也就跟在它后面，并且相对路径也是相对它。</p>
+
+<p>Python 会话启动时会对 <code>.pth</code> 中配置的目录存在性进行检测，如果 <code>example.pth</code> 中配置的 <code>/home/program/mymath</code> 不存在，那么 <code>/home/program/mymath</code> 将不会出现在  <code>sys.path</code> 列表中, 相对路径也是如此。</p>
+
+<h3><code>.pth</code> 文件中 <code>import</code> 的作用</h3><br/>
+<p>再来稍微探讨一下在 <code>.pth</code> 文件中 <code>import</code> 语句的作用，<code>.pth</code> 中除了空行，注释行和目录外，只能有  <code>import</code> 开头的语句。实践中试验了一下，在  <code>.pth</code> 中写上一句</p>
+
+<blockquote><br/>
+<p>import mymath</p>
+
+</blockquote>
+
+<p>并不意味着在程序代码中就能直接用 mymath 模块了，若直接 <code>mymath.pi</code> 使用 <code>mymath</code> 中的属性或方法是会收到</p>
+
+<blockquote><br/>
+<p>NameErro: name 'mymath' is not defined</p>
+
+</blockquote>
+
+<p>的错误，因此尽管在  <code>example.pth</code> 中有  <code>import mymath</code>, 在程序代码中欲使用 <code>mymath</code> 模块的话还必须加上同样的 <code>import mymath</code>。</p>
+
+<p>好像  <code>.pth</code> 中的 <code>import mymath</code> 语句没什么用，却又并不属实。比如说在  <code>.pth</code> 中 <code>import mymathxx</code> 不存在的模块，在进入  Python3  会话时就会收到一个错误</p>
+
+<blockquote><br/>
+<p>➜ ~ python3 <br /><br/>
+Error processing line 4 of /home/yanbin/.local/lib/python3.6/site-packages/example.pth:</p>
+
+<p>Traceback (most recent call last):<br /><br/>
+File "/usr/lib/python3.6/site.py", line 174, in addpackage<br /><br/>
+exec(line)<br /><br/>
+File "&lt;string&gt;", line 1, in &lt;module&gt;<br /><br/>
+ModuleNotFoundError: No module named 'mymathxx'</p>
+
+<p>Remainder of file ignored</p>
+
+</blockquote>
+
+<p>不能加载到模块  <code>mymathxx</code>, 并且 <code>import mymathxx</code> 后的内容被忽略掉，仍能进入 Python3 的  Shell。</p>
+
+<p>所以粗略的感觉 <code>.pth</code> 中的 <code>import</code>  的语句只是用来校验想要加载的模块是否真的存在。当有任何欲加载的模块不能导入的话应当给予重视。</p>
+
+<h3><code>pipenv</code> 和 <code>virtualenv</code> 中的路径初探</h3><br/>
+<p><code>pipenv</code> 和  <code>virtualenv</code> 环境中的 <code>site</code> 没有了  <code>site.getsitepackages()</code> 和 <code>site.getusersitepackages()</code>  这两个方法了。</p>
+
+<h4>pipenv</h4><br/>
+<p><code>pipenv shell</code> ，然后再进入  <code>python3</code> 或者用  <code>pipenv run python3 main.py</code> 来查看 <code>sys.path</code> 的内容，类似如下：</p>
+
+<pre class="lang:default decode:true">'/home/yanbin/myproject'<br/>
+'/home/yanbin/.local/share/virtualenvs/myproject-iMKbKEIX/lib/python36.zip'<br/>
+'/home/yanbin/.local/share/virtualenvs/myproject-iMKbKEIX/lib/python3.6'<br/>
+'/home/yanbin/.local/share/virtualenvs/myproject-iMKbKEIX/lib/python3.6/lib-dynload'<br/>
+'/usr/lib/python3.6'<br/>
+'/home/yanbin/.local/share/virtualenvs/myproject-iMKbKEIX/lib/python3.6/site-packages'</pre>
+
+<h4>virtualenv</h4><br/>
+<p>如果是一个  <code>virtualenv</code> 项目的话，它目录下有自己独套班子,<code>bin</code>, <code>include</code>, <code>lib</code> 目录，<code>bin</code> 下有自己的  python3, pip3 等命令。执行项目自己的  <code>python3</code> 查看 <code>sys.path</code> 内容大致如下：</p>
+
+<pre class="lang:default decode:true">['',<br/>
+ '/home/yanbin/myproject/lib/python36.zip',<br/>
+ '/home/yanbin/myproject/lib/python3.6',<br/>
+ '/home/yanbin/myproject/lib/python3.6/lib-dynload',<br/>
+ '/usr/lib/python3.6',<br/>
+ '/home/yanbin/myproject/lib/python3.6/site-packages']<br/>
+</pre>
+
+<p>几乎所有的依赖都能在项目目录下找到(除  /usr/lib/python3.6 外)，不用跑到用户目录或  Python 公共的  site-packages 目录去找。因此 <code>virtualenv</code> 项目才是一个独立可部署的，打包，拷贝，解压后运行自己的 bin/Python3 命令即可。</p>
+
+<p>链接：</p>
+
+<ol>
+
+	<li><a href="https://docs.python.org/3/library/site.html">Site-specific configuration hook</a></li>
+
+	<li><a href="https://python3-cookbook.readthedocs.io/zh_CN/latest/c10/p09_add_directories_to_sys_path.html">10.9 将文件夹加入到sys.pth</a></li>
+
+	<li><a href="https://v2in.com/pth-file-usage-in-python.html">Python 中 pth 文件的使用</a></li>
+
+	<li><a href="https://docs.python-guide.org/dev/virtualenvs/">Pipenv &amp; Virtual Environments</a></li>
+
+	<li><a href="https://pymotw.com/2/site/">Site-wide configuration</a></li>
+
+</ol>

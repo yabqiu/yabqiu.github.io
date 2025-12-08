@@ -1,0 +1,148 @@
+---
+title: Terraform 使用 - 从最简单例子开始
+url: /terraform-get-started-with-first-sample/
+date: 2017-08-26T13:42:31-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2017/08/terraform_logo.png"
+categories:
+  - AWS
+tags: 
+  - Terraform
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8220 
+wpStatus: publish
+views: 29454
+lastmod: 2021-09-10T13:00:23-05:00
+---
+
+<a href="https://www.terraform.io">Terraform</a> 是一个 IT 基础架构自动化编排工具，它的口号是 "Write, Plan, and create Infrastructure as Code", 基础架构即代码。具体的说就是可以用代码来管理维护 IT 资源，比如针对 AWS，我们可以用它创建，修改，删除 S3 Bucket, Lambda, EC2 实例，Kinesis， VPC 等各种资源。并且在真正运行之前可以看到执行计划(即干运行-dryrun)。由于状态保存到文件中，因此能够离线方式查看资源情况 -- 当然，前提是不要在 Terraform 之外对资源进行修改。</p>
+<br/>
+Terraform 配置的状态除了能够保存在本地文件中，也可以保存到 <a href="https://www.terraform.io/docs/backends/types/consul.html">Consul</a>, <a href="https://www.terraform.io/docs/backends/types/s3.html">S3</a>, azure, http, swift 等处。<br/><br/>
+Terraform 是一个高度可扩展的工具，通过 Provider 来支持新的基础架构，AWS 不过为目前官方内建 68 个 <a href="https://www.terraform.io/docs/providers/index.html">Providers</a> 中的一个。其他能用 Terraform 的地方有 Alicloud(阿里云, 实名制备案才能用), Google Cloud, Heroku, Kubernetes, Microsoft Azure, MySQL, RabbitMQ, Docker 等等。愿意的话可以写自己的 Provider, 如搞个 Kafka 的话，用来管理 Topic 等的创建，维护工作。<br/><br/>
+Terraform 之前我们对 AWS 的操作用的是 awscli, 或 <a href="https://serverless.com/framework/">Serverless</a>。awscli 什么都能做，但它是无状态的，必须明确用不同的命令来创建，修改和删除。Serverless 不是用来管理基础架构的，用它创建  Lambda 时创建资源都是很麻烦的事。AWS 提供的 CloudFormation 才是与 Terraform 较类似的工具，但是看到用法就头疼。<!--more--><br/><br/>
+下面从最简单例子开始，看看怎么用 Terraform 创建，删改，修改 S3 Bucket。本地系统为 Mac OS。<br/><br/>
+<h3>1. Terraform 安装</h3><br/><br/>
+<blockquote>
+brew install terraform
+</blockquote>
+<br/>
+安装后 shell 命令就是 <code>terraform</code>, 常用的是 terraform init, terraform plan, terraform apply<br/><br/>
+<h3>2. 创建配置文件</h3><br/><br/>
+像 git 一样，每个 Terraform 项目需要自己单独的目录空间，所以我们创建一个 terraform-learning 目录<br/><br/>
+<blockquote>
+mkdir terraform-learning<br />
+cd terraform-learning
+</blockquote>
+<br/>
+该目录下的所有  <code>*.tf</code> 文件都会被 Terraform 加载，在初始化 Terraform 工作空间之前必须至少要有一个 <code>*.tf</code> 文件。我们这里建立文件 <code>main.tf</code>, 内容如下<br/><br/>
+<a href="/wp-content/uploads/2017/08/terraform-simple-1.png"><img class="aligncenter size-full wp-image-8222" src="/wp-content/uploads/2017/08/terraform-simple-1.png" alt="" width="390" height="256" /></a><br/><br/>
+Terraform 配置的语法是该公司 HashiCorp 独创的 <a href="https://github.com/hashicorp/hcl">HCL</a>(HashiCorp configuration language), 它可以兼容 JSON 格式。<br/><br/>
+上面 tf 文件在 Vim 中的语法加亮是安装的 <code>hashivim/vim-terraform</code> 插件。<br/><br/>
+我们写好了 <code>*.tf</code> 文件后可以调用 <code>terraform fmt</code> 对配置文件进行格式化，它比较喜欢被 Java 弃用的等号对齐的格式。<br/><br/>
+<h3>3. 配置文件介绍</h3><br/><br/>
+从正式跨入 terraform 命令正题之前先来大概的介绍一下上面那个 <code>main.tf</code> 文件。<br/><br/>
+<strong>1) <a href="https://www.terraform.io/docs/providers/aws/index.html">provider "aws"</a> 部分</strong>，它指定选用什么 provider, 以及验证信息。aws 既允许指定 <code>access_key</code> 和 <code>secret_key</code><br/><br/>
+<blockquote>
+provider "aws" {<br />
+    region           = "us-east-1"<br />
+    access_key  = "your-access-key-here"<br />
+    secret_key   = "your-secret-key-here"<br />
+}
+</blockquote>
+<br/>
+也能够指定证书文件中的 profile<br/><br/>
+<blockquote>
+provider "aws" {<br />
+    region                                  = "us-east-1"<br />
+    shared_credentials_file  = "~/.aws/credentials"   //不指定的话，默认值是 "~/.aws/credentials"<br />
+    profile                                  = "yanbin"                        //不指定的话，默认值是 "default"<br />
+}
+</blockquote>
+<br/>
+如果是使用 shared_credentials_file 中的 profile, 请确定您以预先生成好的 credentials 文件及有效的 profile。<br/><br/>
+更多关于 AWS Provider 的配置请参考 <a href="https://www.terraform.io/docs/providers/aws/index.html">https://www.terraform.io/docs/providers/aws/index.html</a><br/><br/>
+<strong>2) resource "aws_s3_bucket" "s3_bucket" 部分</strong><br/><br/>
+这只是我们今天举的一个小例子，点击链接 <a href="https://www.terraform.io/docs/providers/aws/r/s3_bucket.html">aws_s3_bucket</a> 查看 S3 Bucket 所有的配置项。Terraform 能够管理的所有 AWS 资源也能从前面那个链接中看到。<br/><br/>
+如果 bucket <code>yanbin-test-bucket</code> 不存在的话，运行 <code>terraform apply</code> 将会创建它，否则试图更新该 bucket。此例子只指定了 bucket 的 acl 和 tag 信息。<code>terraform destroy</code> 用来删除已存在的  bucket。<br/><br/>
+注意：terraform 配置文件中只指定要管理的资源对象，并不关心操作资源的行为--创建，修改，删除操作。操作行为与 Terraform 的状态有关系，无则创建，有则修改，更名会拆分为除旧立新两个操作，<code>terraform destroy</code> 用于显式删除资源。后面实例操作时会讲到。<br/><br/>
+注：<code>resource "aws_s3_bucket" "s3_bucket" {</code> 中，resource 后第一个是 type, 即资源名，第二个参是 name。<del>其实 "s3_bucket" 在这里没什么用，只是一个描述或助记符而已</del>。<span style="color: #0000ff;">(2017-08-28): 更正一下，在作为变量引用的时候就要用到它，例如在后面要为 Lambda 创建一个 S3 Event 的 Trigger, 就要写成 <code>event_source_arn = "${aws_s3_bucket.s3_bucket.arn}"</code>, 引用时不需要知道实际的名称。</span><br/><br/>
+<h3>4. 初始化工作目录</h3><br/><br/>
+在初始化 Terraform 工作目录之前， 其他命令如 apply, plan 多是不可用的，提示需要初始化工作目录，命令是<br/><br/>
+<blockquote>
+terraform init
+</blockquote>
+<br/>
+它要做的事情像是 git init 加上 npm install，执行完了 <code>terraform init</code> 之后会在当前目录中生成 <code>.terraform</code> 目录，并依照 <code>*.tf</code> 文件中的配置下载相应的插件。<br/><br/>
+<h3>5. 执行 Terraform 管理命令</h3><br/><br/>
+有了前面的准备之后，终于可以开始运行 Terraform 的管理命令了。Terraform 在正式执行之前提供了预览执行计划的机会，让我们清楚的了解将要做什么<br/><br/>
+<blockquote>
+terraform plan
+</blockquote>
+<br/>
+<a href="/wp-content/uploads/2017/08/terraform-simple-2.png"><img class="aligncenter size-full wp-image-8224" src="/wp-content/uploads/2017/08/terraform-simple-2.png" alt="" width="573" height="562" /></a><br/><br/>
+由此计划还能知道关于 aws_s3_bucket 有些什么配置项，比如配置中可以加上 <code>acceleration_status = "Enabled"</code><br/><br/>
+<blockquote>
+terraform apply
+</blockquote>
+<br/>
+<a href="/wp-content/uploads/2017/08/terraform-simple-3.png"><img class="aligncenter size-full wp-image-8225" src="/wp-content/uploads/2017/08/terraform-simple-3.png" alt="" width="499" height="393" /></a><br/><br/>
+这样便在 AWS 上创建了一个 S3 bucket "yanbin-test-bucket", 同时会在当前目录中生成一个<a href="https://www.terraform.io/docs/state/index.html">状态</a>文件 <code>terraform.tfstate</code>, 它是一个标准的 JSON 文件。这个文件对 Terraform 来说很重要，它会影响 <code>terraform plan</code> 的决策，虽然不会影响到实际的执行效果。我们可以把它存到远端，如 S3 或 Consul。<code>terraform state [list|mv|pull|push|rm|show]</code> 用来操作状态文件。<br/><br/>
+此时什么也不改，再次执行 <code>terraform plan</code>, 会显示没什么要做的<br/><br/>
+<blockquote>
+aws_s3_bucket.s3_bucket: Refreshing state... (ID: yanbin-test-bucket)<br />
+No changes. Infrastructure is up-to-date.
+</blockquote>
+<br/>
+如果对 <code>main.tf</code> 作点小改，改个 tag 属性，再次 <code>terraform plan</code><br/><br/>
+<blockquote>
+~ aws_s3_bucket.s3_bucket<br />
+tags.Name: "Created by Terraform" =&gt; "sCreated by Terraform"
+Plan: 0 to add, 1 to change, 0 to destroy.
+</blockquote>
+<br/>
+为什么说 <code>terraform plan</code> 是基于状态文件 <code>terraform.tfstate</code> 作出的呢？我们可以删除这个状态文件，然后执行 <code>terraform plan</code> 看看<br/><br/>
+<blockquote>
++ aws_s3_bucket.s3_bucket<br />
+    .....<br />
+    bucket: "yanbin-test-bucket"<br />
+    ......<br />
+    tags.Environment: "QA"<br />
+    ......
+Plan: 1 to add, 0 to change, 0 to destroy.
+</blockquote>
+<br/>
+Terraform 由于缺乏 <code>terraform.tfstate</code> 对比，所以认为是要添加一个 bucket, 但是实际执行 <code>terraform apply</code> 时，连接到远端 AWS, 发现该 bucket 已存在就只是进行更新。<code>terraform apply</code> 总能给出正确的操作结果。同理如果状态文件中说有那个 bucket, <code>terraform plan</code> 会说是更新，但 AWS 没有那个  bucket，实际执行 <code>terraform apply</code> 也会进行添加的。<br/><br/>
+<h4>资源更名</h4><br/><br/>
+如果把 <code>main.tf</code> 中的<br/><br/>
+<blockquote>
+bucket = "yanbin-test-bucket"
+</blockquote>
+<br/>
+改成<br/><br/>
+<blockquote>
+bucket = "yanbin-test-bucket-rename"
+</blockquote>
+<br/>
+即欲为 bucket 更名，用 <code>terraform plan</code> 看下计划<br/><br/>
+<a href="/wp-content/uploads/2017/08/terraform-simple-4.png"><img class="aligncenter size-full wp-image-8226" src="/wp-content/uploads/2017/08/terraform-simple-4.png" alt="" width="716" height="324" /></a><br/><br/>
+实际上 <code>terraform apply</code> 也是先删除旧的，再创建新的。Terraform 像 git 一样用不同颜色和  +/- 号来显示变动操作<br/><br/>
+最后是 <code>terraform destroy</code> 命令，把 <code>*.tf</code> 文件中配置的所有资源从 AWS 上清理掉。<br/><br/>
+<h3><span style="color: #0000ff;">关于 Terraform 工作目录中文件命名</span></h3><br/><br/>
+Terraform 运行时会读取工作目录中所有的 <code>*.tf</code>, <code>*.tfvars</code> 文件，所以我们不必把所有的东西都写在单个文件中去，应按职责分列在不同的文件中，例如：<br/><br/>
+<blockquote>
+provider.tf                -- provider 配置<br />
+terraform.tfvars      -- 配置 provider 要用到的变量<br />
+varable.tf                  -- 通用变量<br />
+resource.tf                -- 资源定义<br />
+data.tf                        -- 包文件定义<br />
+output.tf                    -- 输出
+</blockquote>
+<br/>
+以此篇最简单的入门出发，以后可以深入了解 Lambda, Lambda 触发器，及 API Gateway, EC2 实例怎么用 Terraform 来管理，也知晓了资源的可用属性应该到哪里去查。<br/><br/>
+一个小提示：在执行像 <code>terraform plan</code> 或 <code>terraform apply</code> 等命令的时候，可以按下 <code>ctrl + c</code> 让控制台输出详细的日志信息。

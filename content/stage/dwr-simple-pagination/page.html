@@ -1,0 +1,87 @@
+---
+title: 使用 DWR 我是这样做简单分页的[自己记录一下]
+url: /dwr-simple-pagination/
+date: 2009-06-17T21:21:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - Web/JS
+tags: 
+  - Java
+  - DWR
+  - Page
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 260 
+wpStatus: publish
+views: 815
+lastmod: 2021-09-02T11:27:52-05:00
+---
+
+DWR 本身未提供分页的功能，所以这部分要自己来实现。如果把后台的所有记录都拉到页面用 JS 分页，那是很不现实的。因此，虽说是 DWR 分页，但还得服务端来支持，由服务端的远程方法只返回当前页所显示的记录，DWR 自己要明确当前是第几页，是否有上一页、下一页。</p>
+<br/>
+还是用代码来说明吧，分解为三部分代码：<br/><br/>
+1. 暴露给 DWR 调用的 Java 的远程方法<br />
+2. JS 的 DWR 调用<br />
+3. 显示分页导航栏<br/><br/>
+<strong>DWR 要调用的 Java 方法：<!--more--></strong><br/><br/>
+<pre class="lang:default decode:true">/**
+ * 根据预定的条件查询记录 conditions 为查询条件  pageNo 页码，从 1 开始， pageSize 每页的记录数
+ */
+public Map getPageByxtents(Map conditions, int pageNo, int pageSize)    throws Exception {<br/><br/>
+    //获得总记录数
+    Integer recordCount = (Integer) (getSqlMapClient().queryForObject("getCountByExtents", conditions));<br/><br/>
+    // 总页数
+    int pageCount = (int) Math.ceil(recordCount.doubleValue() / pageSize);<br/><br/>
+    // pageNO 超界则取接近的边界值
+    pageNo = (pageNo &gt; pageCount) ? pageCount : (pageNo &lt; 1 ? 1 : pageNo);<br/><br/>
+    int skip = (pageNo - 1) * pageSize;<br/><br/>
+    //这里用的是 iBatis 返回当前页的数据，其他如 JDBC、Hibernate 持久化方化作相应变化
+    List data = getSqlMapClient().queryForList("getByExtents",conditions, skip, pageSize);<br/><br/>
+    Map resultMap = new HashMap();
+    resultMap.put("data", data);
+    resultMap.put("recordCount", recordCount);<br/><br/>
+    //要清楚 JS 得到的数据的结构
+    return resultMap;
+}</pre>
+<br/>
+<strong>JS 的 DWR 调用代码：</strong><br/><br/>
+<pre class="lang:default decode:true">//分页获取查询到的记录
+function search(pageNo){
+    var conditions = {magic:'Unmi',start:100};
+    var pageSize = $('pageSize').value;<br/><br/>
+    //调用前面代码的 getPageByExtends 方法
+    YouDwrRemoteObject.getPageByExtents(conditions,pageNo,pageSize,{
+        callback:function(data){
+            DWRUtil.removeAllRows("listTable"); //移除页面表格中的记录
+            addTableRows(data.data); //把返回的数据添加到表格中，
+            showPageBar(data,pageNo);//调用显示页面导航的函数
+        },
+        errorHandler:function(msg,ex){
+            alert('查询记录错误！')
+        }
+    });
+}</pre>
+<br/>
+<strong> 显示分页导航栏</strong>：<br/><br/>
+<pre class="lang:default decode:true ">//显示页码导航
+function showPageBar(data,pageNo){<br/><br/>
+    var pageCount = Math.ceil(data.recordCount/$('pageSize').value); //总页数
+    var pageStr = "共 " + data.recordCount +" 条记录 第 "+ pageNo+"/"+pageCount + " 页 ";
+    if(pageNo &gt; 1) {
+        pageStr += "&lt;a href='javascript:search(1)'&gt;首 页&lt;/a&gt; &lt;a href='javascript:search("+(pageNo-1)+")'&gt;上一页&lt;/a&gt; ";
+    }
+    if(pageNo &lt; pageCount){
+        pageStr += "&lt;a href='javascript:search("+(pageNo+1)+")'&gt;下一页&lt;/a&gt; &lt;a href='javascript:search("+pageCount+")'&gt;末 页&lt;/a&gt; ";
+    }<br/><br/>
+    pageStr += "&amp;nbsp;";
+    $('pageDiv').innerHTML= pageStr; //"共 115 条记录 第 2/12 页 首 页 上一页 下一页 末 页";
+}</pre>
+<br/>
+显示的页码导航效果是：<br/><br/>
+共 115 条记录  第 3/12 页 <a>首 页</a>  <a>上一页</a>  <a>下一页</a>  <a>末 页</a>

@@ -1,0 +1,162 @@
+---
+title: 实测 Tomcat maxThreads, acceptCount, maxConnections 参数及关系
+url: /how-tomcat-maxthreads-acceptcount-maxconnections/
+date: 2025-05-21T19:41:13-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/09/tomcat-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Tomcat
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14157 
+wpStatus: publish
+views: 130
+lastmod: 2025-05-21T19:47:32-05:00
+---
+
+使用 Tomcat 时应根据服务器的负载和客户端能接受的等待情可适当的调节 maxThreads, acceptCount, maxConnections 的值。这三个参数只有 maxThreads 是最容易理解，即 Tomcat 当前最大同时处理请求的数目，其他两个参数有些模糊。而搜索网络相关的解释发现一些相互矛盾的地方，本文将通过调整这几个值，实际体验它们对请求连接的影响。<br/><br/>
+在测试之前，先看看 Tomcat 官网的解释，你可能不信 AI 的胡说八道，官网仍然是最可信的。在关于 <a href="https://tomcat.apache.org/tomcat-10.0-doc/config/http.html">The HTTP Connector</a> 一章中，找到它们三者之间的说明原文是<br/><br/>
+<blockquote>
+Each incoming, non-asynchronous request requires a thread for the duration of that request. If more simultaneous requests are received than can be handled by the currently available request processing threads, additional threads will be created up to the configured maximum (the value of the <code>maxThreads</code> attribute). If still more simultaneous requests are received, Tomcat will accept new connections until the current number of connections reaches <code>maxConnections</code>. Connections are queued inside the server socket created by the <strong>Connector</strong> until a thread becomes available to process the connection. Once <code>maxConnections</code> has been reached the operating system will queue further connections. The size of the operating system provided connection queue may be controlled by the <code>acceptCount</code> attribute. If the operating system queue fills, further connection requests may be refused or may time out.
+</blockquote>
+<br/>
+用 Google 翻译后<!--more--><br/><br/>
+<blockquote>
+每个传入的非异步请求在该请求的持续时间内都需要一个线程。如果同时收到的请求数超过当前可用的请求处理线程可以处理的数量，则会创建额外的线程，直到达到配置的最大值（maxThreads 属性的值）。如果仍有进来的请求，Tomcat 将接受新连接，直到当前连接数达到 maxConnections。连接在由连接器创建的服务器套接字内排队，直到有线程可用于处理该连接。一旦达到 maxConnections，操作系统将对更多连接进行排队。操作系统提供的连接队列的大小可以通过 acceptCount 属性控制。如果操作系统队列已满，则进一步的连接请求可能会被拒绝或超时。
+</blockquote>
+<br/>
+第二句话要把另一个配置参数 <code>minSpareThreads</code> 扯进来，说的是 Tomcat 启动后会有一个动态的线程池，初始为 minSpareThreads, 根据收到的请求逐步涨至最大 maxThreads 大小。超过 maxThreads 的请求放到 Sockeet 队列中，最多 maxConnections-maxThreads(假设 maxConnections &gt; maxThreads)，再更多的请求就放到操作系统控制的 acceptCount 大小的连接队列中，操作系统队列也满了就可能被拒绝或超时。<br/><br/>
+minSpareThreads 除了作为一个初始大小，在占了一些线程后，它还会通知请求线程池预分配线程，直到 maxThreads 的大小。<br/><br/>
+如果要用 Java 的 ThreadPoolExecutor 来作比的话，有点相当于如下实例<br/><br/>
+<blockquote>
+new ThreadPoolExecutor(minSpareThreads, maxThreads, &lt;ignore keepAliveTime&gt;, &lt;ignore unit&gt;, new LinkBlockingQueue(maxConnections-maxThreads))
+</blockquote>
+<br/>
+如果当前线程池全忙，再提交超过了 maxConnections 数量的任务就会被拒绝，如果要模拟出 acceptCount 的效果就要对超出  maxConnections 的任务再暂存到 acceptCount 大小的队列，再溢出就要真正的拒绝了。<br/><br/>
+实际上这里的 maxThreads 与 maxConnections 有重叠, Connector 的 HTTP threadPool 中正在处理的请求仍然处在 maxConnections  表示的 Server Socket 队列中，用一个图大概描述它们三者之间的关系<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/05/tomcat-numbers.png"><img class="aligncenter wp-image-14210" src="https://yanbin.blog/wp-content/uploads/2025/05/tomcat-numbers.png" alt="" width="774" height="235" /></a><br/><br/>
+maxThreads 也可以大于 maxConnections 的值，情况就稍有不同，只会让 HTTP 线程池很闲，就像商场里有许多的员工，但保安只放一两个客户进去。<br/><br/>
+这三个参数的默认值为<br/><br/>
+<ol>
+    <li>maxThreads: 200, 如果有一个 executor 关联到了当前 connector, 则该值被忽略，而将由 executor 的线程池来决定</li>
+    <li>maxConnections: 8192， 对于 NIO/NIO2 的 connector, 如果置为 -1, 超出 maxThreads 的请求不被计数，相当于无限大的 maxConnections</li>
+    <li>acceptCount: 100</li>
+</ol>
+<br/>
+这三个参数反应到 Springboot 内嵌的 Tomcat 的属性值变成了<br/><br/>
+<ol>
+    <li>server.tomcat.threads.max: 200</li>
+    <li>server.tomcat.max-connections: 8192</li>
+    <li>server.tomcat.accept-count: 100</li>
+</ol>
+<br/>
+同时默认值保持不变。<br/><br/>
+测试前准备一个使用了 spring-boot-starter-web:3.4.5 的项目，Tomcat 版本是 10.1.4，创建 DemoController 类<br/><br/>
+<pre class="lang:default decode:true ">@RestController
+@SpringBootApplication
+public class DemoController {
+    private static final AtomicLong counter = new AtomicLong();<br/><br/>
+    public static void main(String[] args) {
+        SpringApplication.run(DemoController.class, args);
+    }<br/><br/>
+    @GetMapping("/test/{sleep}")
+    public String test(@PathVariable long sleep) throws Exception {
+        if (sleep &lt; 0) {
+            counter.set(0);
+            return "reset";
+        }
+        System.out.println(Thread.currentThread().getName() + ": " + counter.incrementAndGet());
+        Thread.sleep(sleep);
+        return "test";
+    }
+}</pre>
+<br/>
+只有一个 Endpoint /test/{sleep}, sleep 为 0 时重置计数器，当我们传入一个很大的 sleep 值(如 999999999) 时就可以霸占着一个线程。<br/><br/>
+测试工具可以用 JMeter, 主要是要用一定数量的负责请求 http://localhost:8080/test/999999999 进行堵塞，然后用 curl 命令来验证是否能接收新的请求，还是很快就被拒绝。<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/05/tomcat-numbers-2.png"><img class="aligncenter wp-image-14212" src="https://yanbin.blog/wp-content/uploads/2025/05/tomcat-numbers-2-800x332.png" alt="" width="675" height="280" /></a><br/><br/>
+通过调整上面的 Number of Threads (users) 数目来填塞请求，HTTP Request 请求的是 http://localhost:8080/test/99999999<br/><br/>
+为测试方便，把以上三个 Tomcat 参数值降下来<br/><br/>
+第一组测试配置<br/><br/>
+<pre class="lang:default decode:true ">server.tomcat.threads.max=20
+server.tomcat.max-connections=8
+server.tomcat.accept-count=3</pre>
+<br/>
+Number of Threads (user) = 10<br/><br/>
+Tomcat 显示只能同时处理 8 个请求<br/><br/>
+<blockquote>
+http-nio-8080-exec-4: 3<br />
+http-nio-8080-exec-8: 7<br />
+http-nio-8080-exec-2: 6<br />
+http-nio-8080-exec-7: 8<br />
+http-nio-8080-exec-3: 1<br />
+http-nio-8080-exec-6: 5<br />
+http-nio-8080-exec-1: 4<br />
+http-nio-8080-exec-5: 2
+</blockquote>
+<br/>
+尽管 threads.max 为 20 也是有心无力，没有足够的请求放进来，现在还测试 Tomcat 还能接收更多的请求<br/><br/>
+<blockquote>
+curl http://localhost:8080/test/0
+</blockquote>
+<br/>
+只能有一个 curl 请求一直在等待，Tomcat 控制台没有显示新的输出，而更多的 curl 命令都很快(大概 8 秒, 说明有一个 connectionTimeout=8 的设置)提示<br/><br/>
+<blockquote>
+~ curl http://localhost:8080/test/0<br />
+curl: (28) Failed to connect to localhost port 8080 after 7985 ms: Couldn't connect to server
+</blockquote>
+<br/>
+光这一个测试就能解释 maxThread, maxConnections 和 acceptCount 的关系，从以上的 maxConnections=8, acceptCount=3 的配置就能得到下面的结论<br/><br/>
+<ol>
+    <li>maxConnections=8, 首先发送了 10 个请求，其中 8 个在 Server Socket 队列中，并且全被处理当中(maxThreads=20) 足够大</li>
+    <li>10 个请求剩下的 2 个请求被安排到了操作系统的队列中</li>
+    <li>操作系统队列大小 acceptCount=3, 所以还能接受一个 curl 送进来的请求，并一直等待 Server Socket 队列有空闲</li>
+    <li>超出 maxConnection(8) + acceptCount(3) = 11 外的请求，在 connection 超时后被拒绝服务，直接中断连接</li>
+</ol>
+<br/>
+第二组测试配置<br/><br/>
+<pre class="lang:default decode:true ">server.tomcat.threads.max=20
+server.tomcat.max-connections=22
+server.tomcat.accept-count=3</pre>
+<br/>
+把 max-connections 调到比 threads.max 大, 为 22，现实中这样要合理，才不至于 HTTP threadPool 能忙里偷闲<br/><br/>
+JMeter 的  Number of Threads (users) 设置为 22<br/><br/>
+<blockquote>
+http-nio-8080-exec-13: 10<br />
+http-nio-8080-exec-6: 6<br />
+http-nio-8080-exec-1: 1<br />
+http-nio-8080-exec-3: 11<br />
+http-nio-8080-exec-4: 7<br />
+http-nio-8080-exec-10: 2<br />
+http-nio-8080-exec-9: 8<br />
+http-nio-8080-exec-2: 4<br />
+http-nio-8080-exec-7: 3<br />
+http-nio-8080-exec-12: 9<br />
+http-nio-8080-exec-5: 5<br />
+http-nio-8080-exec-11: 12<br />
+http-nio-8080-exec-8: 13<br />
+http-nio-8080-exec-16: 14<br />
+http-nio-8080-exec-14: 17<br />
+http-nio-8080-exec-15: 15<br />
+http-nio-8080-exec-17: 16<br />
+http-nio-8080-exec-19: 18<br />
+http-nio-8080-exec-18: 19<br />
+http-nio-8080-exec-20: 20
+</blockquote>
+<br/>
+同时能处理的请求数为 20， 这应该不会有疑问，再用 curl 应该还能接受 3 个请求<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/05/tomcat-numbers-3.png"><img class="aligncenter wp-image-14213" src="https://yanbin.blog/wp-content/uploads/2025/05/tomcat-numbers-3-800x481.png" alt="" width="669" height="402" /></a><br/><br/>
+当前正在被处理的请仍然还是之前的那 20 位。<br/><br/>
+通过对以上配置的测试，应该是相当清楚的理解了 Tomcat 的 maxThreads, maxConnections 和 acceptCount 之间的关系。这里可以用一个形象的类比，比如说一个洗脚城，洗脚妹与客户一对一的服务, 保安会根据规定最多只让多少位客户留在店里，让其他的客户在等候室等着，等修室满了的话客户就只能找个凉快的地方呆着。<br/><br/>
+<ol>
+    <li>店里多少位洗脚妹就是 maxThreads(HTTP ThreadPool) 的大小，最多能处理的请求数</li>
+    <li>保安能同时允许多少客户留在店里就是 maxConnections(Server Socket Queue) 的大小，包括正在洗脚的或是在店里大厅中等候的。服务完的客户须立即离开，以腾出地方让下一位进来(等候室的客户优先)</li>
+    <li>等候室能容纳的人数就是 acceptCount(操作系统队列) 的大小</li>
+    <li>等候室也满了就只能拒绝服务了</li>
+</ol>

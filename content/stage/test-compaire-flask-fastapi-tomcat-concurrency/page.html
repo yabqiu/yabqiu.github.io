@@ -1,0 +1,347 @@
+---
+title: 体验 Python FastAPI 的并发能力及线, 进程模型
+url: /test-compaire-flask-fastapi-tomcat-concurrency/
+date: 2023-03-19T00:50:47-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2021/12/fastapi-logo.png"
+categories:
+  - Java/JEE
+  - Web/JS
+  - Flask
+tags: 
+  - http
+  - Flask
+  - FastAPI
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12933 
+wpStatus: publish
+views: 7253
+lastmod: 2023-12-13T00:01:28-06:00
+---
+
+本文进行实际测试 FastAPI 的并发能力，即同时能处理多少个请求，另外还能接收多少请求放在等待队列当中; 并找到如何改变默认并发数; 以及它是如何运用线程或进程来处理请求。我们可以此与 Flask 进行对比，<a href="https://yanbin.blog/python-flask-concurrency-thread-process/">参考 Python Flask 框架的并发能力及线,进程模型</a>，是否真如传说中所说的 FastAPI 性能比 Flask 强, FastAPI 是否对得起它那道闪电的 Logo。</p>
+<br/>
+本文使用 JMeter 进行测试，测试机器为 MacBook Pro, CPU 6 核超线程，内存 16 Gb。<br/><br/>
+对于每一种类型 Web 服务基本的测试是每秒发送 2 个请求，连续发送 1000 个，500 秒发送完所有请求，程序中 API 方法接受到请求后 sleep 800 秒，保证在全部 1000 个请求送出之前一直占着连接，并有充足的时间对连接进行分析。在测试极端并发数时，由于在 Mac OS X 尽管设置了 ulimit 最多也只能创建 4000 多一点线程，所以在模拟更多用户数时，JMeter 在远程 Linux(Docker 或虚拟机) 上运行测试用例。<br/><br/>
+请求的 URL 是 http://localhost:8080/?id=${count}, 带一个自增序列用以识别不同的请求， JMeter 的 Thread Group 配置为 Number of Threads (users): 1000, Ramp-up period (seconds): 500<!--more--><br/><br/>
+首先安装依赖<br/><br/>
+<blockquote>
+pip install fastapi<br />
+pip install uvicorn[standard]
+</blockquote>
+<br/>
+<h4>当前安装的最新版本 fastapi==0.94.1, uvicorn==0.21.1</h4><br/><br/>
+<h2>测试同步方法</h2><br/><br/>
+app.py<br/><br/>
+<pre class="lang:default decode:true">from fastapi import FastAPI, Query
+import threading
+import time
+from datetime import datetime
+import os
+import uvicorn<br/><br/>
+app = FastAPI()
+global_request_counter = 0<br/><br/>
+
+@app.get("/")
+def index(request_id: str = Query(..., alias="id")):
+    global global_request_counter
+    global_request_counter += 1
+    thread_name = threading.current_thread().name
+    print(f"{datetime.now()} - {os.getpid()}-{thread_name}: #{global_request_counter} processing request id[{request_id}], sleeping...")
+    time.sleep(800)
+    print(f"{datetime.now()} - {os.getpid()}-{thread_name}: done request id[{request_id}]")
+    return "hello"<br/><br/>
+# 或者用命令方式启动 uvicorn app:app --host 0.0.0.0 --port 8080
+if __name__ == '__main__':
+    uvicorn.run(app, host="0.0.0.0", port=8080)</pre>
+<br/>
+启动 FastAPI<br/><br/>
+<blockquote>
+python app.py 
+</blockquote>
+<br/>
+JMeter 500 秒发送 1000 个请求<br/><br/>
+<blockquote>
+2023-03-18 12:49:17.223115 - 22645-AnyIO worker thread: #1 processing request id[1], sleeping...<br />
+2023-03-18 12:49:17.691865 - 22645-AnyIO worker thread: #2 processing request id[2], sleeping...<br />
+2023-03-18 12:49:18.194323 - 22645-AnyIO worker thread: #3 processing request id[3], sleeping...<br />
+.............................................<br />
+2023-03-18 12:49:36.194418 - 22645-AnyIO worker thread: #39 processing request id[39], sleeping...<br />
+2023-03-18 12:49:36.693199 - 22645-AnyIO worker thread: #40 processing request id[40], sleeping...
+</blockquote>
+<br/>
+40 个请求便到头了, 也就是只有 40 个请求能被同时处理，其余某些都陆续进到等待队列中去了。<br/><br/>
+查看到 127.0.0.1:8080 的连接，还一直在增长<br/><br/>
+<blockquote>
+netstat -na|grep "0 192.168.86.141.8080" | grep ESTABLISHED | wc -l<br />
+353
+</blockquote>
+<br/>
+一直可以达到 1000<br/><br/>
+<blockquote>
+netstat -na|grep "0 192.168.86.141.8080" | grep ESTABLISHED | wc -l<br />
+1000
+</blockquote>
+<br/>
+1000 个请求被全部收纳下，只是前 40 被处理，后面的 960 个乖乖的在队列中等待着空闲线程<br/><br/>
+问题来了，到底能在等待队列中放多少个请求呢？<br/><br/>
+测试 30 秒发 10000 个请求看看(又需要 JMeter 远程测试，所以启动 FastAPI 时需要指定 host="0.0.0.0")，测试中输出的 request id 是完全乱序的，但同时只能处理 40 个请求是不变的。可达到 9992 个连接<br/><br/>
+<blockquote>
+netstat -na|grep "0 192.168.86.141.8080" | grep ESTABLISHED | wc -l<br />
+9992
+</blockquote>
+<br/>
+40 正被处理，其余的来者不拒，只是那 9952 个请求只能在门外等着。要注意 FastAPI 的这个超长的等待队列，可能直接造成 Load Balance 请求超时<br/><br/>
+我们还可以测试一下 AnyIO worker 的线程是否能被重用，打印中输出 <code>threading.current_thread().name</code> 看到的都是同样的线程名称，打印 <code>threading.current_thread().native_id</code> 的话发现 FastAPI 的线程是重用的，实质上是一个大小为 40 的线程池<br/><br/>
+<blockquote>
+2023-03-18 14:27:05.280884 - 8256-67082: #1 processing request id[1], sleeping...<br />
+.......<br />
+2023-03-18 14:40:25.288589 - 8256-67082: done request id[1]<br />
+INFO: 192.168.86.141:53993 - "GET /?id=1 HTTP/1.1" 200 OK<br />
+2023-03-18 14:40:25.291820 - 8256-67082: #41 processing request id[1000], sleeping...
+</blockquote>
+<br/>
+FastAPI 可以修改默认的并发数 40(<a href="https://github.com/tiangolo/fastapi/issues/4221">https://github.com/tiangolo/fastapi/issues/4221</a>)，FastAPI 当前是通过 starlette 来使用 anyio 的，下面代码可以把同时处理的请求数修改为 200, 与 Tomcat 看齐<br/><br/>
+<pre class="lang:default decode:true">from anyio.lowlevel import RunVar
+from anyio import CapacityLimiter<br/><br/>
+@app.on_event("startup")
+def startup():
+    print("start")
+    RunVar("_default_thread_limiter").set(CapacityLimiter(200))</pre>
+<br/>
+现在可以达到 200<br/><br/>
+<blockquote>
+2023-03-18 14:44:45.350316 - 9931-AnyIO worker thread: #1 processing request id[1], sleeping...<br />
+2023-03-18 14:44:45.433839 - 9931-AnyIO worker thread: #2 processing request id[2], sleeping...<br />
+2023-03-18 14:44:45.449986 - 9931-AnyIO worker thread: #3 processing request id[3], sleeping...<br />
+...............................<br />
+2023-03-18 14:44:57.210514 - 9931-AnyIO worker thread: #199 processing request id[199], sleeping...<br />
+2023-03-18 14:44:57.274213 - 9931-AnyIO worker thread: #200 processing request id[200], sleeping...
+</blockquote>
+<br/>
+至于那个请求等待队列的长度，目前尚未找到解决方案。<br/><br/>
+<code>RunVar</code> 的应用要查阅 AnyIO 的代码(<a href="https://github.com/agronholm/anyio">agronholm/anyio</a>), 只找到其他几个 RunVar, RunVar("_root_task"), RunVar("_threadpool_workers"), RunVar("read_events"), RunVar("write_events"), 但没找到与 HTTP 请求队列长度相关的参数。<br/><br/>
+<h3>多进程时</h3><br/><br/>
+启动 FastAPI 用<br/><br/>
+<pre class="lang:default decode:true">if __name__ == '__main__':
+    uvicorn.run("app:app", host="0.0.0.0", workers=2, port=8080)</pre>
+<br/>
+使用了 <code>workers</code> 参数后，application 必须换成字符串形式的 <code>&lt;module&gt;:&lt;attribute&gt;</code> 。它将会启动 workers + 1 个进程，一个主进程与 workers 个服务进程，像下面的输出<br/><br/>
+<blockquote>
+INFO: Started parent process [55964]<br />
+INFO: Started server process [55967]<br />
+INFO: Waiting for application startup.<br />
+INFO: Application startup complete.<br />
+INFO: Started server process [55966]<br />
+INFO: Waiting for application startup.<br />
+INFO: Application startup complete.<br />
+2023-03-18 23:24:20.345108 - 55966-AnyIO worker thread: #1 processing request id[1], sleeping...<br />
+2023-03-18 23:24:20.401789 - 55967-AnyIO worker thread: #1 processing request id[2], sleeping...
+</blockquote>
+<br/>
+主进程承担了进程管理器和请求分发的功能，如服务进程处理多少个请求后重启。每个进程可以默认同时处理 40 个请，求除此之外，每个服务进程与没有使用 workers 参数时是一样的，它们都是使用 AnyIO worker 线程。<br/><br/>
+<h3>用 Hypercorn 启动 FastAPI</h3><br/><br/>
+FastAPI 是基于实现了 ASGI 规范的 Starlette 之上的 Web 框架，除了可以用 Uvicorn 启动 FastAPI, 还能借助于 Hypercorn 来启动。<br/><br/>
+安装 hypercorn<br/><br/>
+<blockquote>
+pip install --upgrade hypercorn[trio]
+</blockquote>
+<br/>
+当前 hypercorn 版本是 0.14.3，启动命令<br/><br/>
+<blockquote>
+hypercorn app:app -b 0.0.0.0:8080
+</blockquote>
+<br/>
+除了启动时显示的信息不同外，线程模型是一样的<br/><br/>
+<blockquote>
+[2023-03-18 23:32:06 -0500] [56702] [INFO] Running on http://0.0.0.0:8080 (CTRL + C to quit)<br />
+2023-03-18 23:32:08.685665 - 56702-AnyIO worker thread: #1 processing request id[1], sleeping...<br />
+2023-03-18 23:32:08.732002 - 56702-AnyIO worker thread: #2 processing request id[2], sleeping...<br />
+......
+</blockquote>
+<br/>
+hypercorn 的 <code>--worker-class</code> 默认为 <code>asyncio</code>, 所以这种情况下修改默认的 40 个同时处理请求数目的方式和用 Uvicorn 启动 FastAPI 是一样的，<code>RunVar("_default_thread_limiter").set(CapacityLimiter(200))</code>。<br/><br/>
+然而，如果用 <code>trio</code> 作为 worker-class 的话, <code>--worker-class trio</code> 命令<br/><br/>
+<blockquote>
+hypercorn app:app -b 0.0.0.0:8080 --worker-class trio
+</blockquote>
+<br/>
+启动后访问<br/><br/>
+<blockquote>
+[2023-03-18 23:33:51 -0500] [56959] [INFO] Running on http://0.0.0.0:8080 (CTRL + C to quit)<br />
+/Users/yanbin/tests/python-web-test/fastapi-web/.venv/lib/python3.10/site-packages/anyio/_backends/_trio.py:164: TrioDeprecationWarning: trio.MultiError is deprecated since Trio 0.22.0; use BaseExceptionGroup (on Python 3.11 and later) or exceptiongroup.BaseExceptionGroup (earlier versions) instead (https://github.com/python-trio/trio/issues/2211)<br />
+class ExceptionGroup(BaseExceptionGroup, trio.MultiError):<br />
+2023-03-18 23:33:55.009472 - 56959-Trio worker thread 0: #1 processing request id[1], sleeping...<br />
+2023-03-18 23:33:55.061132 - 56959-Trio worker thread 1: #2 processing request id[2], sleeping...<br />
+......
+</blockquote>
+<br/>
+仍然是默认只能同时处理 40 个请求。由于不再是使用 AnyIO, 所以无法通过设置 <code>RunVar("_default_thread_limiter").set(CapacityLimiter(200))</code>  来修改并发请求的数量。<br/><br/>
+hypercorn 相应的代码启动方式为<br/><br/>
+<pre class="lang:default decode:true ">if __name__ == '__main__':
+    from hypercorn import Config, run
+    config = Config()
+    config.worker_class = "trio"
+    config.application_path = "app:app"
+    config.bind = ["0.0.0.0:8080"]
+    run.run(config)</pre>
+<br/>
+关于 hypercorn 使用 trio 时如何修改同时处理的请求数目，又是一个难题，暂未找到解决办法<br/><br/>
+hypercorn 还能选择用 --worker-class uvloop, 它最终看到的线程名也是 AnyIO, 也是默认 40 的工作线程，同样能由 <code>RunVar("_default_thread_limiter").set(CapacityLimiter(200))</code>修改工作线程数，唯独使用 trio 作为 --worker-class 需要另辟溪径。<br/><br/>
+<h2>测试 async 方式</h2><br/><br/>
+在 index() 函数前加上 async 关键字<br/><br/>
+<pre class="lang:default decode:true">@app.get("/")
+async def index(request_id: str = Query(..., alias="id")):
+    ....</pre>
+<br/>
+300 秒发送 1000 个请求<br/><br/>
+<blockquote>
+2023-02-18 12:41:28.159685 - 44580-MainThread: #1 processing request id[1], sleeping...
+</blockquote>
+<br/>
+一个请求，直接堵死，和 Flask 的 threaded=False, processes=1 一样的效果。使用 async 的时候一定要谨慎。<br/><br/>
+FastAPI 的 async 接口需要其调用的方法也是 async 的，这样在 await 的时候才能让出线程出来。我们做下面的测试<br/><br/>
+新的 app.py<br/><br/>
+<pre class="lang:default decode:true">import os
+import threading
+from datetime import datetime<br/><br/>
+import uvicorn
+from fastapi import FastAPI, Query
+import asyncio<br/><br/>
+app = FastAPI()
+global_request_counter = 0<br/><br/>
+
+async def foo(request_id):
+    value = await asyncio.sleep(5, result=f'hello #{request_id}')
+    return value<br/><br/>
+@app.get("/")
+async def index(request_id: str = Query(..., alias="id")):
+    global global_request_counter
+    global_request_counter += 1
+    thread_name = threading.current_thread().name
+    print(f"{datetime.now()} - {os.getpid()}-{thread_name}: #{global_request_counter} processing request id[{request_id}], sleeping...")
+    res = await foo(request_id)
+    print(f"{datetime.now()} - {os.getpid()}-{thread_name}: done request id[{request_id}]")
+    return res<br/><br/>
+
+if __name__ == '__main__':
+    uvicorn.run(app, host="0.0.0.0", port=8080)</pre>
+<br/>
+连续发送请求，观察输出<br/><br/>
+<blockquote>
+2023-03-18 15:08:17.876266 - 12105-MainThread: #1 processing request id[1], sleeping...<br />
+2023-03-18 15:08:17.889190 - 12105-MainThread: #2 processing request id[2], sleeping...<br />
+2023-03-18 15:08:17.945985 - 12105-MainThread: #3 processing request id[3], sleeping...<br />
+......<br />
+2023-03-18 15:08:22.877441 - 12105-MainThread: done request id[1]<br />
+INFO: 192.168.86.141:57394 - "GET /?id=1 HTTP/1.1" 200 OK<br />
+2023-03-18 15:08:22.889845 - 12105-MainThread: done request id[2]<br />
+INFO: 192.168.86.141:57395 - "GET /?id=2 HTTP/1.1" 200 OK<br />
+2023-03-18 15:08:22.932657 - 12105-MainThread: #86 processing request id[86], sleeping...<br />
+2023-03-18 15:08:22.947457 - 12105-MainThread: done request id[3]<br />
+INFO: 192.168.86.141:57396 - "GET /?id=3 HTTP/1.1" 200 OK<br />
+2023-03-18 15:08:22.990113 - 12105-MainThread: #87 processing request id[87], sleeping...
+</blockquote>
+<br/>
+这和 Node.js 的机制很类似，是正确的 async/wait 的用法。总之 FastAPI 的 async 需要所调用的其他方法也是 async 的，否则效果适得其反。<br/><br/>
+使用 worker 方式, 无法是用 Uvicorn 或 Hypercorn, 以下两种启动方式<br/><br/>
+<blockquote>
+uvicorn app:app --port 8080 --workers=2<br />
+hypercorn app:app -b 0.0.0.0:8080
+</blockquote>
+<br/>
+在每一个 worker 内部的 async 方法行为是完全一样的。<br/><br/>
+但是 Hypercorn + trio + async 方法就要注意了<br/><br/>
+<blockquote>
+hypercorn app:app -b 0.0.0.0:8080 --worker-class trio
+</blockquote>
+<br/>
+启动没问题<br/><br/>
+<blockquote>
+[2023-03-18 23:59:48 -0500] [59467] [INFO] Running on http://0.0.0.0:8080 (CTRL + C to quit)
+</blockquote>
+<br/>
+如果只是 API 方法，但其中没有用 await 调用其他的 async 的方法(普通方式调用其他的 async 方法除外)，则所有的请求都用 MainThread 处理，一个请求堵塞所有<br/><br/>
+一旦其中用了 await 方式调用了其他的  async 方法，如<br/><br/>
+<pre class="lang:default decode:true">@app.get("/")
+async def index(request_id: str = Query(..., alias="id")):
+    res = await foo(request_id)
+    ......</pre>
+<br/>
+&nbsp;<br/><br/>
+不过一访问 http://localhost:8080/?id=123 就出错<br/><br/>
+<blockquote>
+<span style="color: #800000;">[2023-03-19 00:01:29 -0500] [59467] [ERROR] Error in ASGI Framework</span><br />
+<span style="color: #800000;">......</span><br />
+<span style="color: #800000;"> File "/Users/yanbin/tests/python-web-test/fastapi-web/app.py", line 15, in foo</span><br />
+<span style="color: #800000;">    value = await asyncio.sleep(5, result=f'hello #{request_id}')</span><br />
+<span style="color: #800000;">File "/usr/local/Cellar/python@3.10/3.10.10_1/Frameworks/Python.framework/Versions/3.10/lib/python3.10/asyncio/tasks.py", line 599, in sleep</span><br />
+<span style="color: #800000;">    loop = events.get_running_loop()</span><br />
+<span style="color: #800000;">RuntimeError: no running event loop</span>
+</blockquote>
+<br/>
+<h2>Gunicorn 和 FastAPI</h2><br/><br/>
+最后附加一个如何用 Gunicorn 启动 FastAPI。Gunicorn 支持的是 WSGI 标准，而 FastAPI 是实现了 ASGI 规范，所以 Gunicorn 只支持像 Flask 和 Django 的框架。不过可以用 Gunicorn 作为进程管理器，实际处理请求仍需指定 --worker-class uvicorn.workers.UvicornWorker<br/><br/>
+安装 gunicorn<br/><br/>
+<blockquote>
+pip install gunicorn
+</blockquote>
+<br/>
+启动 FastAPI<br/><br/>
+<blockquote>
+gunicorn app:app --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8080  --workers=2
+</blockquote>
+<br/>
+这与直接用 uvicorn --workers=2 没太大的分别，唯一不同之处是用 gunicorn 来管理子进程。<br/><br/>
+并且使用  gunicorn 时必须指定 --worker-class 为 uvicorn.workers.UvicornWorker，如果用如下命令<br/><br/>
+<blockquote>
+gunicorn app:app --bind 0.0.0.0:8080 --workers=2
+</blockquote>
+<br/>
+可以启动<br/><br/>
+<blockquote>
+[2023-03-19 00:27:33 -0500] [62119] [INFO] Starting gunicorn 20.1.0<br />
+[2023-03-19 00:27:33 -0500] [62119] [INFO] Listening at: http://0.0.0.0:8080 (62119)<br />
+[2023-03-19 00:27:33 -0500] [62119] [INFO] Using worker: sync<br />
+[2023-03-19 00:27:33 -0500] [62122] [INFO] Booting worker with pid: 62122<br />
+[2023-03-19 00:27:33 -0500] [62125] [INFO] Booting worker with pid: 62125
+</blockquote>
+<br/>
+只要一访问就报错<br/><br/>
+<blockquote>
+[2023-03-19 00:27:55 -0500] [62122] [ERROR] Error handling request /?id=123<br />
+Traceback (most recent call last):<br />
+    File "/Users/yanbin/Workspaces/tests/python-web-test/fastapi-web/.venv/lib/python3.10/site-packages/gunicorn/workers/sync.py", line 136, in handle<br />
+        self.handle_request(listener, req, client, addr)<br />
+    File "/Users/yanbin/Workspaces/tests/python-web-test/fastapi-web/.venv/lib/python3.10/site-packages/gunicorn/workers/sync.py", line 179, in handle_request<br />
+        respiter = self.wsgi(environ, resp.start_response)<br />
+TypeError: FastAPI.__call__() missing 1 required positional argument: 'send'
+</blockquote>
+<br/>
+基本上为 FastAPI 配上 Gunicorn 没有什么意义，因为它只承担了一个进程管理器的功能，其余它所有的访问日志配置，SSL 的配置等全然用不上，像是只为用 Gunicorn 而强上它。<br/><br/>
+<h2>总结</h2><br/><br/>
+最后，还是觉得有几点放到总结里头的，方便回顾时直接跳到最后方<br/><br/>
+<ol>
+    <li>使用 FastAPI 直接用 Uvicorn 启动就行，代码或 uvicorn 方式都行。而不像代码启动 Flask 真的只能用于开发过程，产品环境必须用 uwsgi 或 gunicorn</li>
+    <li>FastAPI 的 async API 方法都由 MainThread 调用，因此其中调用的外部耗时方法必须也都是 async，并以 await 方式调用，否则一个请求拦住所有的其他请求 </li>
+    <li>Hypercorn 启动 FastAPI 也没问题，但 Hypercorn 使用 trio 作为 worker class 不能正确工作于 async/await 应用</li>
+    <li>无论是用 Uvicorn 还是 Hypercorn，只要 worker class 是 asyncio(默认的)，就能用 <code>RunVar("_default_thread_limiter").set(CapacityLimiter(200))</code> 的方式修改同时处理的请求数</li>
+    <li>Hypercorn 启动 FastAPI 时采用 trio 作为 worker class, 目前尚未找到如何修改默认的同时访问请求的数目</li>
+    <li>同时处理请求的数目的办法是找到了，但仍不知道如何修改请求等待队列的长度 -- 成千上万的请求堆积在等待队列中易造成 Load Balancer 处理请求超时。<span style="color: #800000;">遗留问题一</span></li>
+    <li>FastAPI 的访问日志定制性不强，可以考虑用 Hypercorn 来定制访问日志的内容。如何使用 Hypercorn 的访问日志及配置不知是否可行，是这<span style="color: #800000;">遗留问题二</span></li>
+    <li>Gunicorn 结合 FastAPI 只是单纯作为一个进程管理器的角色，没有实际应用的意义，本人不建议使用</li>
+    <li>最终建议的启动 FastAPI 的壳是 Uvicorn 或 Hypercorn, 并且用默认的 worker class。它们都能以代码或命令的方式启动 FastAPI</li>
+</ol>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://github.com/tiangolo/fastapi/issues/4221">How to limit the max number of threads with sync endpoints? #4221</a></li>
+</ol>
+<br/>
+&nbsp;

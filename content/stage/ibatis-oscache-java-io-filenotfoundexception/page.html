@@ -1,0 +1,93 @@
+---
+title: iBatis 使用 OSCache 作缓存与 java.io.FileNotFoundException 异常
+url: /ibatis-oscache-java-io-filenotfoundexception/
+date: 2009-08-19T00:09:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iBatis
+tags: 
+  - Java
+  - iBatis
+  - OSCache
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 237 
+wpStatus: publish
+views: 784
+lastmod: 2021-09-02T11:20:33-05:00
+---
+
+这种异常只会发生在 Windows 平台上，可以说是 iBatis 的一个 Bug，大约 iBatis 的开发测试人员都比较热衷于 Unix 族系的平台，而忽略了 Windows 下的兼容性测试。</p>
+<br/>
+出现 FileNotFoundException 异常的情形是这样的：Windows7 + iBatis2.3.0.677 + OSCache2.4.1。<br/><br/>
+iBatis 中配置使用 OSCache 缓存，在映射文件 Product.xml 中有如下声明片断：<br/><br/>
+<pre class="lang:default decode:true">&lt;cacheModel type="OSCACHE" id="productCache"&gt;
+    &lt;flushOnExecute statement="Product.insert"/&gt;
+    &lt;flushOnExecute statement="Product.delete"/&gt;
+&lt;/cacheModel&gt;<br/><br/>
+&lt;select id="getById" cacheModel="productCache" parameterClass="int" resultClass="Product"&gt;
+    select id, name,description as desc1  from test_product where id = #value#
+&lt;/select&gt;</pre>
+<br/>
+OSCache 的 oscache.properties 中指明用磁盘文件缓存数据，注意以下几个配置：<!--more--><br/><br/>
+<pre class="brush:jscript">#不缓存到内存
+cache.memory=false<br/><br/>
+#缓存持久化实现类，磁盘持久化监听器
+cache.persistence.class=com.opensymphony.oscache.plugins.diskpersistence.DiskPersistenceListener<br/><br/>
+#缓存磁盘路径，以后注意观察该目录生成的内容
+cache.path=e:\\OSCache\\cache<br/><br/>
+#选择一种缓存算法，还可选 FIFOCache、UnlimitedCache
+cache.algorithm=com.opensymphony.oscache.base.algorithm.LRUCache</pre>
+<br/>
+Java 测试代码：<br/><br/>
+<pre class="lang:default decode:true">public static void main(String[] args) throws Exception{
+    Reader reader = Resources.getResourceAsReader("SqlMapConfig.xml");
+    SqlMapClient sqlMapClient = SqlMapClientBuilder.buildSqlMapClient(reader);
+    System.out.println(sqlMapClient.queryForObject("Product.getById",5));<br/><br/>
+    //后面同样的查询将不再查询数据库，而是直接使用前面执行放在缓存中的内容
+    System.out.println(sqlMapClient.queryForObject("Product.getById",5));
+}</pre>
+<br/>
+执行上面那段代码，你将会得到异常：<br/><br/>
+<span style="color: #ff0000;">2009-8-19 10:45:52 com.opensymphony.oscache.base.algorithm.AbstractConcurrentReadCache persistStore<br />
+严重: [oscache] Exception persisting 1991729862|2162672802|5|Product.getById|62996507|         select id, name,description as desc1  from test_product where id = ?     |executeQueryForObject<br />
+<span style="color: #000080;">com.opensymphony.oscache.base.persistence.CachePersistenceException</span>: Unable to write 'e:\OSCache\cache\application\1991729862|2162672802|5|Product_31getById|62996507|_49_50_51_52_53_54_55_56_57select_64id,_68name,description_85as_88desc1_94_95from_100test_105product_113where_119id_122=_124_125_126_127_128_129_130|executeQueryForObject.cache' in the cache. Exception: java.io.FileNotFoundException, Message: e:\OSCache\cache\application\1991729862|2162672802|5|Product_31getById|62996507|_49_50_51_52_53_54_55_56_57select_64id,_68name,description_85as_88desc1_94_95from_100test_105product_113where_119id_122=_124_125_126_127_128_129_130|executeQueryForObject.cache (文件名、目录名或卷标语法不正确。)<br />
+ at com.opensymphony.oscache.plugins.diskpersistence.AbstractDiskPersistenceListener.store(<span style="color: #000080;">AbstractDiskPersistenceListener.java:376</span>)<br />
+ at com.opensymphony.oscache.plugins.diskpersistence.AbstractDiskPersistenceListener.store(<span style="color: #000080;">AbstractDiskPersistenceListener.java:238</span>)<br />
+ at com.opensymphony.oscache.base.algorithm.AbstractConcurrentReadCache.persistStore(<span style="color: #000080;">AbstractConcurrentReadCache.java:1113</span>)<br />
+ at com.opensymphony.oscache.base.algorithm.AbstractConcurrentReadCache.put(<span style="color: #000080;">AbstractConcurrentReadCache.java:1623</span>)<br />
+ at com.opensymphony.oscache.base.algorithm.AbstractConcurrentReadCache.put(<span style="color: #000080;">AbstractConcurrentReadCache.java:864</span>)<br />
+ at com.opensymphony.oscache.base.Cache.putInCache(<span style="color: #000080;">Cache.java:637</span>)<br />
+ at com.opensymphony.oscache.base.Cache.putInCache(<span style="color: #000080;">Cache.java:614</span>)<br />
+ at com.opensymphony.oscache.general.GeneralCacheAdministrator.putInCache(<span style="color: #000080;">GeneralCacheAdministrator.java:270</span>)<br />
+ at com.ibatis.sqlmap.engine.cache.oscache.OSCacheController.putObject(<span style="color: #000080;">OSCacheController.java:70</span>)<br />
+ at com.ibatis.sqlmap.engine.cache.CacheModel.putObject(<span style="color: #000080;">CacheModel.java:318</span>)<br />
+ at com.ibatis.sqlmap.engine.mapping.statement.CachingStatement.executeQueryForObject(<span style="color: #000080;">CachingStatement.java:80</span>)<br />
+ at com.ibatis.sqlmap.engine.impl.SqlMapExecutorDelegate.queryForObject(<span style="color: #000080;">SqlMapExecutorDelegate.java:566</span>)<br />
+ at com.ibatis.sqlmap.engine.impl.SqlMapExecutorDelegate.queryForObject(<span style="color: #000080;">SqlMapExecutorDelegate.java:541</span>)<br />
+ at com.ibatis.sqlmap.engine.impl.SqlMapSessionImpl.queryForObject(<span style="color: #000080;">SqlMapSessionImpl.java:106</span>)<br />
+ at com.ibatis.sqlmap.engine.impl.SqlMapClientImpl.queryForObject(<span style="color: #000080;">SqlMapClientImpl.java:83</span>)<br />
+ at com.unmi.TestClient.main(<span style="color: #000080;">TestClient.java:25</span>)</span><br/><br/>
+无法写某个文件，文件找不到，一开始我也以为是 OSCache 那方出了什么差错，所以 Google 的关键词都偏重于 OSCache FileNotFoundExcption。后来结合 iBatis 才艰难的 Google 到了这个：<a href="http://osdir.com/ml/java.ibatisdb.devel/2004-06/msg00079.html">http://osdir.com/ml/java.ibatisdb.devel/2004-06/msg00079.html</a>，也有同问的：<a href="http://forums.opensymphony.com/thread.jspa?messageID=673372">http://forums.opensymphony.com/thread.jspa?messageID=673372</a>&amp;。说句外话，搜索这方面内容时，能时刻为党说话的 Baidu 就不太擅长了，基本上用它来搜索 ‘儿子’ 和药品是无敌的了。<br/><br/>
+看了前面那个贴子，拍了下脑袋，其实早该醒悟的，不就是说的：<span style="color: #ff0000;">'e:\OSCache\cache\application\1991729862|2162672802|5|Product_31getById|62996507|_49_50_51_52_53_54_55_56_57select_64id,_68name,description_85as_88desc1_94_95from_100test_105product_113where_119id_122=_124_125_126_127_128_129_130</span> 文件无法写吗。去看看 e:\OSCache\cache\application 目录中，没有这里提到的文件。如果你试图去手工建立这么一个文件，文件名有多长且不说，但 Windows 肯定要提示你：<strong>文件名不能包含下面任何字符: \ / : * ? " &lt; &gt; |</strong> 。对啦，问题就出在 iBatis 为 OSCache 生成的文件名上。<br/><br/>
+开源的东西对我们使用者有什么好处，就是能完全窥探到源代码呀。我的习惯是开源的组件，总会下载到相应的源代码摆在它的身边。于是 Debug/Step Into 吧，发现前面那个长长的文件名其实就是 OSCache 用来缓存 iBatis 查询得到结果(注：iBatis 被缓存的粒度没 Hibernate 的缓存细，不是以实体对象为单位，而是以查询结果为单位，所以会出现第一次查询的 id=2 or id=3 的结果被缓存了，第二次查询 id=2 时还是从数据库中取得情况) 的 Key，这个 Key 是基于查询语句(含查询条件) 生成的。实现类是 iBatis 的 com.ibatis.sqlmap.engine.cache.CacheKey，它的 toString() 方法返回值就是文件名：<br/><br/>
+<pre class="lang:default decode:true ">public String toString() {
+    StringBuffer returnValue = new StringBuffer().append(hashcode).append('|').append(checksum);
+    for (int i=0; i &lt; paramList.size(); i++) {
+        returnValue.append('|').append(paramList.get(i));
+    }<br/><br/>
+    return returnValue.toString();
+}</pre>
+<br/>
+上面代码生成的文件名就可能包含竖线符号("|")，这在 Windows 平台是不允许的，在 Linux 下是不受此约束的。为了能让 iBatis 在使用文件缓存时保持平台独立性，我们的 Fix 办法可使在该 toString() 方法最后返回时把 | 换成都能够接受的符号，比如 -，即把 return 语句改为：<br/><br/>
+return returnValue.toString().replace('|', '-');<br/><br/>
+可以把修正编译好的 CacheKey.class 替换掉 iBatis jar 包中的相应位置的 CacheKey.class，或者若是 Web 应用，可直接放在 classes 目录中正确位置上，因为 classes 中散装的类文件要优先于 jar 包中的类得到加载。<br/><br/>
+问题需解决了，但还是得注意几点：<br/><br/>
+1. 即使是使用其它缓存实现，也都是由这个 CacheKey 来生成 Key 的，所以若有可能使用其它缓存组件，缓存文件时同样有可能出现类似的问题。<br />
+2. 如果 CacheKey 在结合 SQL 和 参数生成的文件名过长可能也会是个问题，受限于不同的文件系统。设置的缓存目录不要过深，适时完全自定 toString() 方法。<br />
+3. 还有，关于是从缓存中取数据还是从数据库取得问题，这个 CacheKey 的 equals() 方法值得细究，这是我的后话了。

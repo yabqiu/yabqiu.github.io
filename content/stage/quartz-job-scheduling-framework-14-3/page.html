@@ -1,0 +1,138 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第十四章. 工作流中使用 Quartz (第三部分)
+url: /quartz-job-scheduling-framework-14-3/
+date: 2008-08-18T08:22:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 346 
+wpStatus: publish
+views: 375
+lastmod: 2021-09-02T14:29:35-05:00
+---
+
+<strong>四. Quartz 与 OSWorkflow 的集成<br />
+</strong></p>
+<br/>
+OSWorkflow 与 Quartz 集成的第一步是要改变关于 Job 的思维方式。当把 OSWorkflow 引入到你的 Quartz 应用时你需要以完全不同的方式来思考。那也不是说你当前的想法就是糟糕的或不正确的，只是与 Quartz 一同用工作流强迫你生发一些关于是什么组成 Job 的新的思维。你过去概念中的 Job 现成变成了一个 OSWorkflow 函数。你可以认为是你原有 Job 实质上存在的逻辑作为工作流中的步骤。你仍然需要使用 Quartz 的 Job，但是，当与 Quartz 框架集成工作流时，一个 Quartz Job 将用来初始化工作流。在工作流运行时，这个 Job 将会等待它直至结束。<br/><br/>
+在本章前面部分，当我们谈到串联 Job 时，每个 Job 代表了一个独立的任务。Jox X 执行后并完成一个任务，接着通知 Job Y 去执行一个有点关联却是独立的任务。在这两个任务间必须有一些依赖关系，否则你不能把它们链接在一起。<!--more--><br/><br/>
+当加入工作流到这个流程中时，那些独立的 Job 就变身为工作流中的步骤了，而且你仅需要创建单个的 Job。当收到 Scheduler 的通知时，那个 Job 就起过工作流然后等待着工作流的完成。这其中有一些严格的寓意。好消息是，通过使用 OSWorkflow，你只需更少的 Quartz Job，因为早先的 Job 现在成了步骤(实际是函数)。坏消息是假如你有创建了大量的 Job，将要耗费一些工作量去转换 Job 到 OSWorkflow 的函数。<br/><br/>
+<strong>·下载和安装 OSWorkflow</strong><br/><br/>
+你可以从它在 OpenSymphony 站点 <a href="http://www.opensymphony.com/osworkflow">http://www.opensymphony.com/osworkflow</a> 的主页下载完整的发行版。从发布页的根目录获取到二进制版的 OSWorkflow 和其他第三方的库，它们在 <span style="color: #800080;">&lt;OSWORKFLOW_DISTRIBUTION&gt;/lib/core</span> 目录下。把这些二进制包扔到你的项目的 <span style="color: #800080;">lib</span> 目录中。这应当和 Quartz 二进制包所在的同一目录。<br/><br/>
+你必须建立两个配置文件并放置到你的 <span style="color: #800080;">classes</span> 目录中。第一个你需要创建的配置文件叫做 <span style="color: #800080;">osworkflow.xml</span>。这个文件在 OSWorkflow 启动并配置运行时环境时被加载。我们例子中的该文件如代码 14.8 中显示。<br/><br/>
+<strong>代码 14.8. <span style="color: #800080;">osworkfllow.xml</span> 文件用于配置 OSWorkflow 的运行时环境</strong><br/><br/>
+<pre class="lang:default decode:true">&lt;osworkflow&gt;
+  &lt;persistence
+    class="com.opensymphony.workflow.spi.memory.MemoryWorkflowStore"/&gt;
+  &lt;factory class="com.opensymphony.workflow.loader.XMLWorkflowFactory"&gt;
+    &lt;property name="resource" value="workflows.xml" /&gt;
+  &lt;/factory&gt;
+&lt;/osworkflow&gt;</pre>
+<br/>
+假如你再看看 OSWorkflow 的文档，你会发现你可以从多种类型的持久性存储和工作流工厂中作出选择。在代码 14.8 中所用的都是最简单的并且为我们的例子工作的很好的。<br/><br/>
+配置在代码 14.8 中的工作流工厂类叫做 <span style="color: #800080;">XMLWorkflowFactory</span>，它包括一个称为 <span style="color: #800080;">resource</span> 的属性。<span style="color: #800080;">XMLWorkflowFactory</span> 用于加载一个包含了所有工作流的资源文件。在这里的 <span style="color: #800080;">resource</span> 属性的值是 <span style="color: #800080;">workflows.xml</span>。只要你想要多少个，就允许你可以有多少个不同的工作流。每个工作流驻留在一个单独的 XML 文件中，但是你需要以某种方式指定可用的工作流列表给 OSWorkflow 引擎。因为我们已经指定工厂为 <span style="color: #800080;">XMLWorkflowFactory</span>，所以框架会查看 <span style="color: #800080;">workflows.xml</span> 文件来得到可用的工作流并加载它们。代码 14.9 显示了我们例子里的 <span style="color: #800080;">workflows.xml</span> 文件。<br/><br/>
+<strong>代码 14.9. <span style="color: #800080;">workflows.xml</span> 文件定义了应用可用的工作流列表</strong><br/><br/>
+<pre class="lang:default decode:true">&lt;workflows&gt;
+  &lt;workflow
+    name="data-import"
+    type="resource"
+    location="data-import-workflow.xml"/&gt;
+&lt;/workflows&gt;</pre>
+<br/>
+代码 14.9 只列了一个工作流：<span style="color: #800080;">data-import</span>，它将在我们启动工作流时用作参考。实际的工作流定义是破存储在文件 <span style="color: #800080;">data-import-workflow.xml</span> 中的。代码 14.10 显示了 <span style="color: #800080;">data-import</span> 工作流。<br/><br/>
+<strong>代码 14.10. <span style="color: #800080;">data-import</span> 工作流被定义在一个 XML 文件中</strong><br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!DOCTYPE workflow PUBLIC
+                 "-//OpenSymphony Group//DTD OSWorkflow 2.7//EN"
+                 "http://www.opensymphony.com/osworkflow/workflow_2_7.dtd"&gt;
+&lt;workflow&gt;
+    &lt;initial-actions&gt;
+        &lt;action id="1" name="Start Workflow"&gt;
+            &lt;results&gt;
+                &lt;unconditional-result old-status="Finished" status="Queued"
+                    step="1" /&gt;
+            &lt;/results&gt;
+        &lt;/action&gt;
+    &lt;/initial-actions&gt;<br/><br/>
+    &lt;steps&gt;
+        &lt;step id="1" name="Read Files"&gt;
+            &lt;actions&gt;
+                &lt;action id="2" name="Get the files" auto="true"&gt;
+                    &lt;pre-functions&gt;
+                        &lt;function type="class"&gt;
+                            &lt;arg name="class.name"&gt;
+                               org.cavaness.quartzbook.chapter14.ReadFileFunction
+                            &lt;/arg&gt;
+                        &lt;/function&gt;
+                    &lt;/pre-functions&gt;<br/><br/>
+                    &lt;results&gt;
+                        &lt;unconditional-result old-status="Finished"
+                            status="Underway" step="2" /&gt;
+                    &lt;/results&gt;
+                &lt;/action&gt;
+            &lt;/actions&gt;
+        &lt;/step&gt;<br/><br/>
+        &lt;step id="2" name="Send Email Notification"&gt;
+            &lt;actions&gt;
+                &lt;action id="3" name="Get the files" auto="true"&gt;
+                    &lt;pre-functions&gt;
+                        &lt;function type="class"&gt;
+                            &lt;arg name="class.name"&gt;
+                               org.cavaness.quartzbook.chapter14.SendEmailFunction
+                            &lt;/arg&gt;
+                        &lt;/function&gt;
+                    &lt;/pre-functions&gt;<br/><br/>
+                    &lt;results&gt;
+                        &lt;unconditional-result old-status="Finished"
+                            status="Underway" step="3" /&gt;
+                    &lt;/results&gt;
+                &lt;/action&gt;
+            &lt;/actions&gt;
+        &lt;/step&gt;<br/><br/>
+        &lt;step id="3" name="finished" /&gt;
+    &lt;/steps&gt;
+&lt;/workflow&gt;</pre>
+<br/>
+定义在代码 14.10 的工作流包含两个步骤：“读文件” 和 "发 e-mail 通知"。当工作流启动后，<span style="color: #800080;">initial-actions</span> 块被执行，继而它调用步骤 1。当进入到步骤 1 后，or<span style="color: #800080;">g.cavaness.quartzbook.chapter14.ReadFileFunction</span> 的 <span style="color: #800080;">execute()</span> 方法就被调用。代码 14.11 显示了这一函数。<br/><br/>
+<strong>代码 14.11. 工作流引擎在步骤 1 其间调用 <span style="color: #800080;">ReadFileFunction</span></strong><br/><br/>
+<pre class="lang:default decode:true">public class ReadFileFunction implements FunctionProvider {
+     static Log logger = LogFactory.getLog(ReadFileFunction.class);<br/><br/>
+     public void execute(Map transientVars, Map args, PropertySet ps)
+               throws WorkflowException {
+          logger.info("Entered " + this.getClass().getName());<br/><br/>
+          // Read the files and process the data
+          String dirName = (String)transientVars.get("SCAN_DIR");
+          if ( dirName == null ) {
+               throw new InvalidInputException( "Scan dir not set" );
+          }<br/><br/>
+          File dir = new File( dirName );
+          File[] files = dir.listFiles();<br/><br/>
+          int fileCount = files.length;
+          ps.setInt( "FILE_COUNT", fileCount );
+     }
+}</pre>
+<br/>
+当 <span style="color: #800080;">ReadFileFunction</span> 的 <span style="color: #800080;">execute()</span> 方法完成后，工作流会转换到步骤 2。在步骤 2，<span style="color: #800080;">org.cavaness.quartzbook.chapter14.SendEmailFunction</span> 被调用并获得机会执行。<span style="color: #800080;">SendEmailFunction</span> 显示在代码 14.12 中。<br/><br/>
+<strong>代码 14.12. <span style="color: #800080;">SendEmailFunction</span> 在工作流的步骤 2 期间被调用</strong><br/><br/>
+<pre class="brush:java ">public class SendEmailFunction implements FunctionProvider {
+     static Log logger = LogFactory.getLog(SendEmailFunction.class);<br/><br/>
+     public void execute(Map transientVars, Map args, PropertySet ps)
+               throws WorkflowException {
+          logger.info("Entered " + this.getClass().getName());<br/><br/>
+          int fileCount = ps.getInt("FILE_COUNT");
+          logger.info( "File count " + fileCount );<br/><br/>
+          // Email creation code not shown
+     }
+}</pre>
+<br/>
+显然我们漏下了这个函数的实例；也没有对此多加以说明。我们假定你知道如何使用 JavaMail 发送电子邮件。

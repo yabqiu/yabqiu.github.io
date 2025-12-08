@@ -1,0 +1,81 @@
+---
+title: Swift 学习笔记(对象和类)
+url: /swift-learning-class-object/
+date: 2015-11-30T23:24:38-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Swift
+tags: 
+  - Swift
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7080 
+wpStatus: publish
+views: 283
+lastmod: 2015-11-30T23:24:38-06:00
+---
+
+<p>类的最基本特性就是封装, Swift 的类可以想见就是把 let 的常量, var 的变量, func 的方法写在 class 定义里。在此之上就涉及变、常量的初始，实例的初始化。Swift 的类定义与 Java 相比还是有些特别的地方，如属性不存在默认值，必须在构造函数中初始化; 构造函数还是沿用了 Objective-C 的方式，名称都是 init; 实例化时不需要 new 等等。</p><p>Swift 的类终于不用像 Objective-C 那样接口定义和实现分开来写了。</p><p>下面尽量用一个类声明来说明 Swift 类和对象更多的问题<!--more--></p><pre class="brush:swift">public class Vehicle {<br/>
+    public static let CATEGORIES = "Suv"<br/>
+    <br/>
+    let vendor = "Honda"<br/>
+    public let type: String<br/>
+    final var year: Int<br/>
+    var owner: String?<br/>
+    private var color: String<br/>
+    <br/>
+    convenience init() {<br/>
+        self.init("XR-V", year: 2014)<br/>
+        self.color = "Red"<br/>
+    }<br/>
+    <br/>
+    convenience init(_ type: String, year: Int) {<br/>
+        self.init(type: type, year: year, color: "White")<br/>
+    }<br/>
+    <br/>
+    init(type: String, year: Int, color: String) {<br/>
+        self.type = type<br/>
+        self.year = year<br/>
+        self.color = color<br/>
+    }<br/>
+<br/>
+    deinit {<br/>
+        print("I'm done")<br/>
+    }<br/>
+    <br/>
+    func run() {<br/>
+        print(self.owner)<br/>
+    }<br/>
+}<br/>
+<br/>
+print(Vehicle.CATEGORIES)<br/>
+<br/>
+let car1 = Vehicle("Civic", year: 2015)<br/>
+print(car1.type)<br/>
+print(car1.owner)<br/>
+<br/>
+let car2 = Vehicle(type: "CR-V", year: 2013, color: "Blue")<br/>
+print(car2.color)</pre><p>说明：</p><ol><li>类和属性，或方法都可以用 public/private 修饰</li><li>属性或函数可以是 static，同样表示是否是类的方法，只能通过类名来调用</li><li>属性和函数还可以用 final, final 只是说明属性和函数不可被子类重写，它并非 Java 的 final</li><li>Swift 中类的属性必须初始化，在声明时或在构造函数中初始，不存在默认值，除非声明的是 Optional 属性，可默认为 nil</li><li>默认构造函数也是无参数的，构造函数是无返回类型的</li><li>构造函数之间可以互相调用，但发起调用的构造函数必须用 convenience 修饰</li><li>实例的初始化不需其他语言的 new 关键字，直接类名加括号来调用相应的构造函数，这像是调用 Scala object 的 apply() 方法</li><li>调用构造函数时，默认第一个参数的名称也不能省略，除非第一个参数声明为 init(_ type: String...) 的形式</li><li>属性或函数都是通过点 <code>.</code> 来引用，避开了那个不易书写的中括号 <code>[]</code> 来发送消息的方式</li><li>析构器 deinit {}，像 Java 的 finalize() 方法一样，只是它不能被称作一个函数</li><li>定义类时 class 和 struct 基本同意，可以试试把上面的 class 改成 struct，那么就必须把代码中的关键字 final 和 convenience 拿掉，并且不能有 deinit {}</li></ol><p><strong>结构和枚举是值类型</strong>，所以将一个结构或枚举赋值给另一个变量是产生一个拷贝</p><pre class="brush:swift">struct Shape {<br/>
+  var name = "Circle"<br/>
+}<br/>
+<br/>
+var circle = Shape()<br/>
+var oval = circle<br/>
+oval.name = "Oval"<br/>
+<br/>
+print(oval.name)     //输出 Oval<br/>
+print(circle.name)   //输出 Circle</pre><p>而<strong>类是引用类型</strong>，把实例赋值给另一变量，它们将指向同一个对象</p><pre class="brush:swift">class Shape {<br/>
+    var name = "Circle"<br/>
+}<br/>
+<br/>
+var circle = Shape()<br/>
+var oval = circle<br/>
+oval.name = "Oval"<br/>
+<br/>
+print(oval.name)    //输出 Oval<br/>
+print(circle.name)  //输出 Oval</pre><p>Swift 中比较两个变量是否指向同一个对象用 <code>===</code> 对象，不是同一个对象的话用 <code>!==</code> 比较，有点像 Javascript 的做法</p><p>前面已了解了结构与类的最主要的一个区别，即结构是值类型，类是引用类型。同 C/C++, Objective-C 差不多的理由，我们既可用 struct 也能用 class 进行封装，何时用 struct 呢, 请参考如下：</p><ol><li>结构主要是用于把相关联的数值组织在一块</li><li>在被赋值或作为参数传递时，是否需要产生一个拷贝; 结构的内部状态也是值类型</li><li>不需要继承行为时</li></ol><p>一些结构的参考例子：Size(width, height), Coordinate(x, y). 及 String, Array, Dictionary 也是结构，所以它们赋值或传递时会产生拷贝，而 Objective-C 的 NSString, NSArray 和 NSDictionary 是类。</p><p>说到类怎能没有继承呢，继承一般反而简单些，Swift 用 <code>class Car: Vehicle</code> 格式来继承，势必涉及到方法的重载，子类中如何调用父类的构造函数，属性或方法的可见性，用时再细究。</p><p>参考：1. <a href="https://developer.apple.com/library/ios/documentation/Swift/Conceptual/Swift_Programming_Language/ClassesAndStructures.html#//apple_ref/doc/uid/TP40014097-CH13-ID82" target="_blank" rel="nofollow">Classes and Structures</a></p>

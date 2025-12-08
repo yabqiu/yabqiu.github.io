@@ -1,0 +1,195 @@
+---
+title: Play 2.0 中文资料 - 模板引擎(语法)
+url: /play2-0-tutorials-cn-template-engine-syntax/
+date: 2012-10-21T05:33:04-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PlayFramework
+tags: 
+  - 翻译
+  - Scala
+  - PlayFramework
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4895 
+wpStatus: publish
+views: 1996
+lastmod: 2021-05-21T11:15:48-05:00
+---
+
+<ul style="float: right; border-left: solid 1px green; border-bottom: solid 1px green;">
+    <li><strong>模板引擎</strong>
+<ul>
+    <li><a title="Play 2.0 中文资料 - 模板引擎(语法)" href="http://unmi.cc/play2-0-tutorials-cn-template-engine-syntax" target="_blank" rel="noopener">Scala 模板语法 </a></li>
+    <li><a title="Play 2.0 中文资料 - 模板引擎(用例)" href="http://unmi.cc/play2-0-tutorials-cn-template-engine-common-use-cases" target="_blank" rel="noopener">通用案例 </a></li>
+</ul>
+</li>
+</ul><br/><br/>
+<span style="color: #0000ff;">Unmi 注：因为是 Web 框架，所以展示层必不可少，也就是接下来两章，我们进入到 Play2.0 中的模板引擎的世界，不同与Play 1.x 让你眼花缭乱的 ${}, #{}, @{}, @@{}, &amp;{}, %{}% 和 <em>{}</em> 如此众多的标签样式，而在 Play 2.0 中只有一个魔幻的 @ 符号。这就叫化繁为简，Play 1.x 的模板是基于 Groovy 的，而 Play 2.0 是基于 Scala 的，它在效率上也改善不少。</span></p>
+<br/>
+<strong><span style="font-size: medium;">基于 Scala 的类型安全的模板引擎</span></strong><br/><br/>
+Play 2.0 带来了崭新而真正强大的基于 Scala 的模板引擎. 这一新引擎的设计灵感来自于 ASP.NET 的 Razor.  具体表现在:<br/><br/>
+<ul>
+    <li><strong>简洁, 富有表现力, 且流畅</strong>: 它最小化了一个文件所需的字符和按键的数量, 并且开启了一个快速而流畅的代码流. 不像多数的模板语法, 你不必中断你的代码去显式的告诉你的 HTML 说这儿有一个服务端代码块. 解析器足够的聪明，能依据你的代码进行推断(Unmi 注: 推断出哪块代码应该由服务端来执行). 这使得简洁而富有表现力的语法显得更干净,  并且输入变得快速而有乐趣.</li>
+    <li><strong>易学</strong>: 源于其最小化的概念，而让你快速而富有成效的掌握它. 只需用到你现有的 Scala 语言和 HTML 知识.</li>
+    <li><strong>并非新的语言</strong>: 我们尽量选择不去创建一门新语言. 相应的，我们希望能让开发者使用它们现有的 Scala 语言技能。也就是要在选择你自己语言的情况下，提供一套模板标记语法，从而让你书写出令人敬畏的 HTML 结构流.</li>
+    <li><strong>可用任何文本编辑器</strong>: 无须特别的工具，在任何纯文本编辑器中都能保持高效.<!--more--></li>
+</ul><br/><br/>
+模板是需要经过编译的, 因此将你会在浏览器中看到任何的错误:<br/><br/>
+<p style="text-align: center;"><a href="http://www.playframework.org/documentation/2.0.4/resources/manual/scalaGuide/main/templates/images/templatesError.png"><img class="aligncenter" src="http://www.playframework.org/documentation/2.0.4/resources/manual/scalaGuide/main/templates/images/templatesError.png" alt="" width="750" /></a></p>
+<br/>
+<strong><span style="font-size: medium;">概述</span></strong><br/><br/>
+Play 的 Scala 模板是一个简单的文本文件, 它包含都着小块的 Scala 代码. 它们能产生出任何的文本格式的内容, 如 HTML, XML 或 CSV.<br/><br/>
+模板系统设计的让你选择它处理起 HTML 来感觉很舒适, 也让 Web 设计人员很容易用它.<br/><br/>
+模板会被遵循一个简单的命名约定而编译为标准的 Scala 函数: 假如你创建一个 <code>views/Application/index.scala.html</code> 模板文件, 它将生成一个 <code>views.html.Application.index</code> 函数.<br/><br/>
+例如, 这儿是一个简单的模板:<br/><br/>
+<pre class="lang:default decode:true">@(customer: Customer, orders: Seq[Order])<br/><br/>
+&lt;h1&gt;Welcome @customer.name!&lt;/h1&gt;<br/><br/>
+&lt;ul&gt; 
+@orders.map { order =&gt;
+  &lt;li&gt;@order.title&lt;/li&gt;
+} 
+&lt;/ul&gt;</pre>
+<br/>
+然后你可以在任何 Scala 代码中像调用一个函数那样调用它:<br/><br/>
+<pre class="brush:scala">val html = views.html.Application.index(customer, orders)</pre>
+<br/>
+<strong><span style="font-size: medium;">语法: 神奇的 ‘@’ 字符</span></strong><br/><br/>
+Scala 模板仅使用 <code>@</code> 作为单一的特殊字符. 每次遇到这个字符时, 它就标示着一个 Scala 表达式的开始. 它无须你显式的关闭代码块 - 这会从你的代码进行推断:<br/><br/>
+<pre class="lang:default decode:true">Hello @customer.name!
+       ^^^^^^^^^^^^^
+        Scala code</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 看到上面的 ^^^^^^^^^^^^^，可别认为是有些语言编译器在告诉你这行的语法错误，这里只是用来圈划出是一行 Scala 代码。</span><br/><br/>
+因为模板引擎能通过分析你的代码来侦测出你的代码块会在哪里结束, 所以这样只能写简单的表达式. 如果你想插入一个有多个 token (multi-token <span style="color: #0000ff;">Unmi 注: token 是编译原理里的概念，没有一个合适的翻译，只要理解到下面表达式如果不加括号，只会解析出 @customer.firstName 的值，其他原样输出</span>) 的表达式, 那么需要显式的加括号来标记:<br/><br/>
+<pre class="lang:default decode:true">Hello @(customer.firstName + customer.lastName)!
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ 
+                    Scala Code</pre>
+<br/>
+你也可以使用花括号, 就像在 Scala 代码中那样来写多个表达式的语句块:<br/><br/>
+<pre class="lang:default decode:true">Hello @{val name = customer.firstName + customer.lastName; name}!
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                             Scala Code</pre>
+<br/>
+由于 <code>@</code> 是一个特殊字符, 你有时候需要转译它. 这就要用到 <code>@@</code>:<br/><br/>
+<pre class="brush:scala">My email is bob@@example.com</pre>
+<br/>
+<strong><span style="font-size: medium;">模板参数</span></strong><br/><br/>
+模板就是个函数, 所以它会有参数, 模板参数必须声明在模板文件的第一行:<br/><br/>
+<pre class="brush:scala">@(customer: models.Customer, orders: Seq[models.Order])</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 在 Play 1.x 中自定义的标签中，所使用的以下划线开头的变量(如 _name) 即是要传入的参数。</span><br/><br/>
+你还能为参数指定默认值:<br/><br/>
+<pre class="brush:scala">@(title: String = "Home")</pre>
+<br/>
+或甚至可以多个参数组:<br/><br/>
+<pre class="brush:scala">@(title:String)(body: Html)</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 看到上面的写法就是柯里化的参数。</span><br/><br/>
+而且还能用隐式参数:<br/><br/>
+<pre class="brush:scala">@(title: String)(body: Html)(implicit request: RequestHeader)</pre>
+<br/>
+<strong><span style="font-size: medium;">迭代</span></strong><br/><br/>
+你可以使用 Scala 的 for 语句, 依循标准的方式. 但需加说明的是模板编译器会在你的语句块结束前添加一个 <code>yield</code> 关键字:<br/><br/>
+<pre class="lang:default decode:true ">&lt;ul&gt;
+@for(p &lt;- products) {
+  &lt;li&gt;@p.name ($@p.price)&lt;/li&gt;
+} 
+&lt;/ul&gt;</pre>
+<br/>
+你大约知道, 下面这种 for 语句的用法只是遍历传统 Map 的语法糖:<br/><br/>
+<pre class="lang:default decode:true">&lt;ul&gt;
+@products.map { p =&gt;
+  &lt;li&gt;@p.name ($@p.price)&lt;/li&gt;
+} 
+&lt;/ul&gt;</pre>
+<br/>
+<strong><span style="font-size: medium;">If 块</span></strong><br/><br/>
+If 块没什么特别的. 使用 Scala 的 if 语句标语的方式就行:<br/><br/>
+<pre class="lang:default decode:true">@if(items.isEmpty) {
+  &lt;h1&gt;Nothing to display&lt;/h1&gt;
+} else {
+  &lt;h1&gt;@items.size items!&lt;/h1&gt;
+}</pre>
+<br/>
+<strong><span style="font-size: medium;">模式匹配</span></strong><br/><br/>
+你还能在模板中使用模式匹配:<br/><br/>
+<pre class="lang:default decode:true">@connected match {<br/><br/>
+  case models.Admin(name) =&gt; {
+    &lt;span class="admin"&gt;Connected as admin (@name)&lt;/span&gt;
+  }<br/><br/>
+  case models.User(name) =&gt; {
+    &lt;span&gt;Connected as @name&lt;/span&gt;
+  }<br/><br/>
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 模式匹配在语法上当然也是和 Scala 代码一致的，模式匹配在 Scala 是一个比较不容易理解的内容，可能是因为在 Java 中找不到相对应的功能吧。</span><br/><br/>
+<strong><span style="font-size: medium;">声明可重要块</span></strong><br/><br/>
+你可以创建可重用的代码块: <span style="color: #0000ff;">Unmi 注: 其实就是在模板中定义的函数。</span><br/><br/>
+<pre class="lang:default decode:true">@display(product: models.Product) = {
+  @product.name ($@product.price)
+}<br/><br/>
+&lt;ul&gt;
+@products.map { p =&gt;
+  @display(product = p)
+} 
+&lt;/ul&gt;</pre>
+<br/>
+注: 你还可以声明可重用的纯 Scala 块: <span style="color: #0000ff;">Unmi 注: 区别是在方法体前面是否用 “@” 符号，纯 Scala 块中可写纯粹的 Scala 代码，无须再用 "@" 符号了。</span><br/><br/>
+<pre class="lang:default decode:true">@title(text: String) = @{
+  text.split(' ').map(_.capitalize).mkString(" ")
+}<br/><br/>
+&lt;h1&gt;@title("hello world")&lt;/h1&gt;</pre>
+<br/>
+<blockquote>
+<strong>注:</strong> 声明 Scala 块这种方式在模板中有时候很有用, 但是请记住，模板不是一个写复杂逻辑代码的好地方. 通常更好的方式是把这些代码写在一个 Scala 源文件中去(如果你愿意的话，可把这类 Scala 源文件存在 <code>views/</code> 包下).
+</blockquote>
+<br/>
+依据约定, 一个可重用的块名定义是以 <strong>implicit</strong> 开始的，它就会被标记为隐式的 (<code>implicit</code>):<br/><br/>
+<pre class="brush:scala">@implicitFieldConstructor = @{ MyFieldConstructor() }</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 这样上面的 @implicitFieldConstructor 就可以应用到隐式参数上去。</span><br/><br/>
+<strong><span style="font-size: medium;">声明可重用的值</span></strong><br/><br/>
+你可用 <code>defining</code> 帮助方法来定义作用域内的值:<br/><br/>
+<pre class="lang:default decode:true">@defining(user.firstName + " " + user.lastName) { fullName =&gt;
+  &lt;div&gt;Hello @fullName&lt;/div&gt;
+}</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 上面 fullName 就是用 @defining() 定义的 user.firstName +" " + user.lastName 的值，以后用 fullName 变量就行。</span><br/><br/>
+<strong><span style="font-size: medium;">Import 语句</span></strong><br/><br/>
+你可以在模板(或子模板)开始处引入你想要内容:<br/><br/>
+<pre class="brush:scala">@(customer: models.Customer, orders: Seq[models.Order])<br/><br/>
+@import utils._<br/><br/>
+...</pre>
+<br/>
+<strong><span style="font-size: medium;">注释</span></strong><br/><br/>
+你可以用 <code>@* *@</code> 来写服务端的注释块<code></code>:<br/><br/>
+<pre class="lang:default decode:true">@*********************
+ * This is a comment *
+ *********************@</pre>
+<br/>
+你在第一行加上的注释会把当前模板记录到 Scala API 文档中去:<br/><br/>
+<pre class="lang:default decode:true">@*************************************
+ * Home page.                        *
+ *                                   *
+ * @param msg The message to display *
+ *************************************@
+@(msg: String)<br/><br/>
+&lt;h1&gt;@msg&lt;/h1&gt;</pre>
+<br/>
+<strong><span style="font-size: medium;">转义(Escaping)</span></strong><br/><br/>
+默认时, 动态内容会按照模板类型(如 HTML 或 XML) 规则进行转义. 假如你想输出为原始内容, 就用模板的内容类型包裹一下.<br/><br/>
+例如要输出原始的 HTML:<br/><br/>
+<pre class="lang:default decode:true ">&lt;p&gt;
+  @Html(article.content)    
+&lt;/p&gt;</pre>
+<br/>
+<span style="color: #0000ff;">Unmi 注: 比如说，如果 article.content 的内容为  "&lt;div style="color:red"&gt;Hello&lt;/div&gt;"，直接写成 @article.content 将直接输出为：</span><br/><br/>
+<span style="color: #0000ff;">&lt;div style="color:red"&gt;Hello&lt;/div&gt;，  也就是它内部把 &lt; 转义成了  &amp;lt;  &gt; 变成了  &amp;gt;，即 HTML 源文件是  "&amp;lt; style="color:red"&amp;gt;Hello&amp;lt;/div&amp;gt;</span><br/><br/>
+<span style="color: #0000ff;">而写成 @Html(article.content)，输出的 HTML 源文件中还是 &lt;div style="color:red"&gt;Hello&lt;/div&gt;，页面中看到的效果将是：</span><br/><br/>
+<span style="color: #ff0000;">Hello</span>

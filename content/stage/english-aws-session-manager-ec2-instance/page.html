@@ -1,0 +1,140 @@
+---
+title: AWS Session Manager connect to EC2 instance
+url: /english-aws-session-manager-ec2-instance/
+date: 2021-06-24T10:01:22-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - AWS
+  - Cloud
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11031 
+wpStatus: publish
+views: 1065
+lastmod: 2021-06-24T12:19:20-05:00
+---
+
+The most common way to manage a remote machine is SSH (Unix/Linux, Mac) or PowerShell/RDP (Windows), which requires the remote machine to open the corresponding access port and firewall, credentials or SSH Key. When selecting an EC2 instance on AWS console, we can click the "Connect" button, which provides three connection options:</p>
+<br/>
+<ol>
+    <li>EC2 Instance Connect: Requires EC2 to be configured with SSH Key, sshd is started, ssh inbound port allowed by Security Group, <code>ec2-instance-connect</code> installed(sudo yum install ec2-instance-connect)</li>
+    <li>Session Manager: This is what we are going to talk about next. sshd is not required(SSH key is not needed of cause). Security Group only requires outbound port 443. </li>
+    <li>SSH client: Client SSH to EC2 instance, start sshd, allow inbound ssh port 22 by Security Group, use SSH Key or username and password in AMI, or configure to login with domain account after joining the domain.</li>
+</ol>
+<br/>
+AWS Session Manager provides access to EC2 instances through a browser or AWS CLI, and even machines or virtual machines in the local datacenter (requires advanced-instances tier support) , and no longer depends on SSH.<span id="more-10627"></span><br/><br/>
+<h3>Session Manager Overview</h3><br/><br/>
+Session Manager determines who can or cannot be accessed by the IAM access policy. It can be forwarded through the local port, the operation log in the session can be recorded as an audit, and can configure to send a message to Amazon EventBridge or SQS when session open or closed. The session log encrypted by a KMS key.<!--more--><br/><br/>
+The basic condition for EC2 that supports Session Manager access is to run SSM Agent. SSM Agent has successively added support for various functions in its own version upgrade, such as KMS Key encryption, port forwarding and SSH sessions, log functions, etc. It is always better to install the latest version of SSM Agent.<br/><br/>
+SSM Agent will create a <code>ssm-user</code> user acts as a root user or super administrator(Windows). In order to start the SSM Agent on EC2, we should add the AmazonSSMManagedInstanceCore policy to the EC2 IAM Role, or add the required <a href="https://docs.aws.amazon.com/systems-manager/latest/userguide/getting-started-add-permissions-to-existing-profile.html">permissions by</a> referring to <a href="https://docs.aws.amazon.com/systems-manager/latest/userguide/getting-started-add-permissions-to-existing-profile.html">Adding Session Manager permissions to an existing instance profile</a>.<br/><br/>
+Session Manger console, go to https://console.aws.amazon.com/systems-manager/, click Start session, and select the EC2 instance with SSM Agent started from the list. Or on the EC2 instance console https://console.aws.amazon.com/ec2/, select an EC2 instance, click the <code>Connect</code> button, if the instance gets SSM Agent running, we are able to choose to use Session Manager to connect it.<br/><br/>
+AWS CLI: to use command <code>ssm: aws ssm start-session --target i-0c0072d1212832d20</code> to connect the EC2 instance, we need to install Session Manager plugin for AWS CLI locally.<br/><br/>
+If we see <code>Session Manger</code> is enabled for an EC2 instance, that is because someone has configured the EC2 to install and start SSM Agent(or chosen AMI has built-in SSM Agent), and corresponding IAM role permission added. Let’s do it by ourselves from scratch on how to start an EC2 instance supports Session Manager connection.<br/><br/>
+<h3>Session Manager connects to EC2 instance</h3><br/><br/>
+We'll take the image of Amazon ECS-Optimized Amazon Linux 2 AMI (2.0.20210121) as an example, please refer to <a href="https://docs.aws.amazon.com/systems-manager/latest/userguide/sysman-manual-agent-install.html">Manually install SSM Agent on EC2 instances for Linux</a> for details.<br/><br/>
+First, we need to create an IAM role to start EC2, and attach the AmazonSSMManagedInstanceCore policy to the IAM role. We name the IAM role as <code>es2_role_with_ssm_agent</code>. Start an EC2 instance and select above AMI image, then select or create a Security Group to allow outbound port 443 access.<br/><br/>
+Now, after the EC2 instance created, the button <code>Connect</code> of <code>Session Manger</code> becomes usable, click it to start <code>Session Manager</code> session on Web console. Log in user is  <code>ssm-user</code>, which can execute command with <code>sudo</code>.<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-1.png" data-slb-active="1" data-slb-asset="1701683263" data-slb-internal="0" data-slb-group="10627"><img class="aligncenter wp-image-10636" src="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-1-800x447.png" sizes="(max-width: 816px) 100vw, 816px" srcset="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-1-800x447.png 800w, https://yanbin.blog/wp-content/uploads/2021/02/session-manager-1-300x168.png 300w, https://yanbin.blog/wp-content/uploads/2021/02/session-manager-1-768x429.png 768w, https://yanbin.blog/wp-content/uploads/2021/02/session-manager-1-1536x858.png 1536w, https://yanbin.blog/wp-content/uploads/2021/02/session-manager-1.png 1632w" alt="" width="816" height="456" data-attachment-id="10636" data-permalink="https://yanbin.blog/aws-session-manager-ec2-instance/session-manager-1/" data-orig-file="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-1.png" data-orig-size="1632,912" data-comments-opened="1" data-image-meta="{&quot;aperture&quot;:&quot;0&quot;,&quot;credit&quot;:&quot;&quot;,&quot;camera&quot;:&quot;&quot;,&quot;caption&quot;:&quot;&quot;,&quot;created_timestamp&quot;:&quot;0&quot;,&quot;copyright&quot;:&quot;&quot;,&quot;focal_length&quot;:&quot;0&quot;,&quot;iso&quot;:&quot;0&quot;,&quot;shutter_speed&quot;:&quot;0&quot;,&quot;title&quot;:&quot;&quot;,&quot;orientation&quot;:&quot;0&quot;}" data-image-title="session-manager-1" data-image-description="" data-medium-file="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-1-300x168.png" data-large-file="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-1-800x447.png" /></a><br/><br/>
+After logging in, let's inspect <code>ssm-agent</code> process, current user, and check if sshd service started<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-2.png" data-slb-active="1" data-slb-asset="1012299430" data-slb-internal="0" data-slb-group="10627"><img class="aligncenter wp-image-10637" src="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-2-800x345.png" sizes="(max-width: 745px) 100vw, 745px" srcset="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-2-800x345.png 800w, https://yanbin.blog/wp-content/uploads/2021/02/session-manager-2-300x129.png 300w, https://yanbin.blog/wp-content/uploads/2021/02/session-manager-2-768x331.png 768w, https://yanbin.blog/wp-content/uploads/2021/02/session-manager-2.png 1490w" alt="" width="745" height="321" data-attachment-id="10637" data-permalink="https://yanbin.blog/aws-session-manager-ec2-instance/session-manager-2/" data-orig-file="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-2.png" data-orig-size="1490,642" data-comments-opened="1" data-image-meta="{&quot;aperture&quot;:&quot;0&quot;,&quot;credit&quot;:&quot;&quot;,&quot;camera&quot;:&quot;&quot;,&quot;caption&quot;:&quot;&quot;,&quot;created_timestamp&quot;:&quot;0&quot;,&quot;copyright&quot;:&quot;&quot;,&quot;focal_length&quot;:&quot;0&quot;,&quot;iso&quot;:&quot;0&quot;,&quot;shutter_speed&quot;:&quot;0&quot;,&quot;title&quot;:&quot;&quot;,&quot;orientation&quot;:&quot;0&quot;}" data-image-title="session-manager-2" data-image-description="" data-medium-file="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-2-300x129.png" data-large-file="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-2-800x345.png" /></a><br/><br/>
+Here are the necessary conditions for EC2 instances to be connected by Session Manager:<br/><br/>
+<ol>
+    <li>EC2 IAM role requires that the AmazonSSMManagedInstanceCore policy to be attached, or the corresponding permissions are manually added. This will create <code>ssm-user</code> with root permissions when use <code>sudo</code>.</li>
+    <li>Security Group requires EC2 to be able to connect to external port 443, such as 0.0.0.0:443. EC2 will connect to Session Manger servers(proxies) on port 443, no sshd service is required</li>
+    <li>EC2 must start ssm-agent process. From above screenshot, we see there are two processes <code>/usr/bin/amazon-ssm-agent</code>and <code>/usr/bin/ssm-agent-worker</code> listed. one <code>ssm-session-worker</code> process interact with one coming connection.</li>
+</ol>
+<br/>
+Note: If we don't include <code>AmazonSSMManagedInstanceCore</code> policy in EC2 IAM role permission,  we can start <code>ssm-agent</code>, but user <code>ssm-user</code> is not created. No user for <code>Session Manager</code> session, result in unable to connect to the EC2.<br/><br/>
+the AMI Amazon ECS-Optimized Amazon Linux 2 AMI (2.0.20210121) we chose has built-in <code>ssm-agent</code>, while it needs <code>AmazonSSMManagedInstanceCore</code> policy to create <code>ssm-user</code> user.<br/><br/>
+If selected AMI doesn't have build-in <code>ssm-agent</code>, let's take Amazon Linux 2 as an example, you need to add the following line to the <code>userdata</code> of EC2<br/><br/>
+<blockquote>
+sudo yum install -y https://s3.us-east-1.amazonaws.com/amazon-ssm-us-east-1/latest/linux_amd64/amazon-ssm-agent.rpm
+</blockquote>
+<br/>
+Choose any region for this s3. Different Linux distributions have slightly different installation methods<br/><br/>
+<code>ssm-agent</code> would start automatically after installation<br/><br/>
+<h3>Other ways to connect to Session Manager</h3><br/><br/>
+Earlier, we can directly find the EC2 instance, then connect to the Session Manager. We can also go to the Session Manager console to select the EC2 instance with <code>ssm-agent</code> started to initiate the connection. Here are several other ways to use <code>Session Manager</code> off Web console.<br/><br/>
+<h4>Start AWS CLI session locally</h4><br/><br/>
+In addition to installing the AWS CLI locally, we need to install the Session Manager Plugin ( <a href="https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html">(Optional) Install the Session Manager plugin for the AWS CLI</a> , find your own platform requirements). After that, just specify the EC2 instance ID instead of IP address to connect <code>Session Manager</code>.<br/><br/>
+<blockquote>
+$ aws ssm start-session --target i-0c0072d1212832d20<br />
+Starting session with SessionId: yanbin@example.com-0f3cabb8dd1bf0bb4<br />
+sh-4.2$ hostname<br />
+p-172-31-60-8.ec2.internal
+</blockquote>
+<br/>
+This approach looks more professional. It looks like we are using SSH client. In fact, sshd service is not required on the EC2 host. If Session Manager Plugin is not installed, it will prompt below when running <code>aws ssm start-session</code><br/><br/>
+<blockquote>
+SessionManagerPlugin is not found. Please refer to SessionManager Documentation here: http://docs.aws.amazon.com/console/systems-manager/session-manager-plugin-not-found
+</blockquote>
+<br/>
+After <code>Session Manager</code> connected to EC2 instance, we can verify if sshd started or not, closing the SSH service won't impact <code>Session Manager</code> session.<br/><br/>
+<blockquote>
+$ telnet 10.255.57.211 22<br />
+Trying 10.255.57.211...
+</blockquote>
+<br/>
+$ aws ssm start-session --target i-0c0072d1212832d20<br/><br/>
+<blockquote>
+Starting session with SessionId: yabqiu@gmail.com-06065c404df8b1cbe<br />
+sh-4.2$ sudo service sshd status<br />
+openssh-daemon is stopped<br />
+sh-4.2$ netstat -na|grep :22<br />
+sh-4.2$
+</blockquote>
+<br/>
+Connect again with Session Manager<br/><br/>
+<blockquote>
+$ aws ssm start-session --target i-0c0072d1212832d20<br />
+Starting session with SessionId: yanbin@example.com-0f3cabb8dd1bf0bb4<br />
+sh-4.2$ hostname<br />
+p-172-31-60-8.ec2.internal
+</blockquote>
+<br/>
+To further explore how Session Manager communicates with EC2 instance, check network connections on both local machine and EC2 instance.<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-3.png" data-slb-active="1" data-slb-asset="1787101551" data-slb-internal="0" data-slb-group="10627"><img class="aligncenter wp-image-10641" src="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-3-800x270.png" sizes="(max-width: 649px) 100vw, 649px" srcset="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-3-800x270.png 800w, https://yanbin.blog/wp-content/uploads/2021/02/session-manager-3-300x101.png 300w, https://yanbin.blog/wp-content/uploads/2021/02/session-manager-3-768x259.png 768w, https://yanbin.blog/wp-content/uploads/2021/02/session-manager-3.png 1298w" alt="" width="649" height="219" data-attachment-id="10641" data-permalink="https://yanbin.blog/aws-session-manager-ec2-instance/session-manager-3/" data-orig-file="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-3.png" data-orig-size="1298,438" data-comments-opened="1" data-image-meta="{&quot;aperture&quot;:&quot;0&quot;,&quot;credit&quot;:&quot;&quot;,&quot;camera&quot;:&quot;&quot;,&quot;caption&quot;:&quot;&quot;,&quot;created_timestamp&quot;:&quot;0&quot;,&quot;copyright&quot;:&quot;&quot;,&quot;focal_length&quot;:&quot;0&quot;,&quot;iso&quot;:&quot;0&quot;,&quot;shutter_speed&quot;:&quot;0&quot;,&quot;title&quot;:&quot;&quot;,&quot;orientation&quot;:&quot;0&quot;}" data-image-title="session-manager-3" data-image-description="" data-medium-file="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-3-300x101.png" data-large-file="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-3-800x270.png" /></a><br/><br/>
+So it is easy to get the following connection process<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-4.png" data-slb-active="1" data-slb-asset="2029821925" data-slb-internal="0" data-slb-group="10627"><img class="aligncenter wp-image-10643" src="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-4.png" sizes="(max-width: 360px) 100vw, 360px" srcset="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-4.png 720w, https://yanbin.blog/wp-content/uploads/2021/02/session-manager-4-300x228.png 300w" alt="" width="360" height="273" data-attachment-id="10643" data-permalink="https://yanbin.blog/aws-session-manager-ec2-instance/session-manager-4/" data-orig-file="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-4.png" data-orig-size="720,546" data-comments-opened="1" data-image-meta="{&quot;aperture&quot;:&quot;0&quot;,&quot;credit&quot;:&quot;&quot;,&quot;camera&quot;:&quot;&quot;,&quot;caption&quot;:&quot;&quot;,&quot;created_timestamp&quot;:&quot;0&quot;,&quot;copyright&quot;:&quot;&quot;,&quot;focal_length&quot;:&quot;0&quot;,&quot;iso&quot;:&quot;0&quot;,&quot;shutter_speed&quot;:&quot;0&quot;,&quot;title&quot;:&quot;&quot;,&quot;orientation&quot;:&quot;0&quot;}" data-image-title="session-manager-4" data-image-description="" data-medium-file="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-4-300x228.png" data-large-file="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-4.png" /></a><br/><br/>
+&nbsp;<br/><br/>
+This can help us understand why Session Manager does not need SSH and open the corresponding port 22<br/><br/>
+<h4>Client SSH over session manager</h4><br/><br/>
+Link: <a href="https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-getting-started-enable-ssh-connections.html">Step 8: (Optional) Enable SSH connections through Session Manager</a><br/><br/>
+Add below into the client configuration file ~/.ssh/config<br/><br/>
+<blockquote>
+# SSH over Session Manager<br />
+host i-* mi-*<br />
+    ProxyCommand sh -c "aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p'"
+</blockquote>
+<br/>
+Now the EC2 instance needs to open the sshd service, but security group of inbound port 22 is still not needed.<br/><br/>
+Execute command on local<br/><br/>
+<blockquote>
+ssh -i ~/path/my-key-pair.pem ec2-user@i-0c0072d1212832d20<br />
+......<br />
+[ec2-user@ab-0aff39d3 ~]$
+</blockquote>
+<br/>
+scp also works, use command <code>scp -i /path/my-key-pair.pem test.txt ec2-user@i-0c0072d1212832d20</code><br/><br/>
+The only difference between this way and the above is that the <code>ssm-agent</code> on EC2 communicates with the EC2 native SSH service instead of directly interacting with the local shell.<br/><br/>
+Connection Diagram<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-x1.png" data-slb-active="1" data-slb-asset="636903582" data-slb-internal="0" data-slb-group="10627"><img class="aligncenter wp-image-11012" src="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-x1-800x563.png" sizes="(max-width: 436px) 100vw, 436px" srcset="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-x1-800x563.png 800w, https://yanbin.blog/wp-content/uploads/2021/02/session-manager-x1-300x211.png 300w, https://yanbin.blog/wp-content/uploads/2021/02/session-manager-x1-768x541.png 768w, https://yanbin.blog/wp-content/uploads/2021/02/session-manager-x1.png 872w" alt="" width="436" height="307" data-attachment-id="11012" data-permalink="https://yanbin.blog/aws-session-manager-ec2-instance/session-manager-x1/" data-orig-file="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-x1.png" data-orig-size="872,614" data-comments-opened="1" data-image-meta="{&quot;aperture&quot;:&quot;0&quot;,&quot;credit&quot;:&quot;&quot;,&quot;camera&quot;:&quot;&quot;,&quot;caption&quot;:&quot;&quot;,&quot;created_timestamp&quot;:&quot;0&quot;,&quot;copyright&quot;:&quot;&quot;,&quot;focal_length&quot;:&quot;0&quot;,&quot;iso&quot;:&quot;0&quot;,&quot;shutter_speed&quot;:&quot;0&quot;,&quot;title&quot;:&quot;&quot;,&quot;orientation&quot;:&quot;0&quot;}" data-image-title="session-manager-x1" data-image-description="" data-medium-file="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-x1-300x211.png" data-large-file="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-x1-800x563.png" /></a><br/><br/>
+<h4>Port forwarding service</h4><br/><br/>
+Very similar to SSH Tunnel (ssh -A -L :56789:10.255.57.64:80), we can also leverage Session Manager for port forwarding, the command is as follows:<br/><br/>
+<blockquote>
+aws ssm start-session \<br />
+    --target instance-id \<br />
+    --document-name AWS-StartPortForwardingSession \<br />
+    --parameters '{"portNumber":["80"], "localPortNumber":["56789"]}'
+</blockquote>
+<br/>
+Visit http://localhost:56789 to access port 80 of the remote EC2.<br/><br/>
+For more details of Session Manager documents, please refer to <a href="https://docs.aws.amazon.com/systems-manager/latest/userguide/sysman-ssm-docs.html">AWS System Manager documents</a> .

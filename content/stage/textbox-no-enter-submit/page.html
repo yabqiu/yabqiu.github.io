@@ -1,0 +1,105 @@
+---
+title: Asp.Net 让文本框在按回车键时表单不提交
+url: /textbox-no-enter-submit/
+date: 2010-07-28T22:16:04-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - .Net
+  - Web/JS
+tags: 
+  - Asp.Net
+  - 表单
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 29 
+wpStatus: publish
+views: 1523
+lastmod: 2021-09-03T20:20:41-05:00
+---
+
+<span style="line-height: normal;">Asp.Net 的 WebForm 中光标在文本框时按回键默认就会提交表单，多数时候确实带来了很好的用户体验，输入数据后，手不用离开键去乱摸鼠标就能完成表单的提交。但总有例外不想要这种默认行为，一定有的，你遇到了就知道的，比如想在文本框中回车做别的事情，那就要点技巧的。</span><br/><br/>
+<p class="contents_main" style="line-height: normal;">很多人可能会告诉你对文本框加个事件，回车的时候把 keyCode 由 13 变为 9(其实 keyCode 变为 9 是使回车相当于 Tab 键的功能)，不过还未完事，你并没有阻止事态进一步蔓延，Form 还是提交了。<!--more--></p>
+<br/>
+<pre class="lang:default decode:true">$(document).ready(function() {
+    $("#txt").keypress(function(event) {
+        if (event.keyCode == 13) {
+            event.keyCode = 9;<br/><br/>
+            //do some of your things
+        }
+    });
+});
+</pre>
+<br/>
+其实你要了稍加解浏览器的冒泡的事件模型，知道怎么适时的阻止浏览器的默认行为，有一个链接 <a href="http://kb.cnblogs.com/a/1363417/">http://kb.cnblogs.com/a/1363417/</a> 值得看下，内容如下：<br/><br/>
+在前端开发工作中，由于浏览器兼容性等问题，我们会经常用到“停止事件冒泡”和“阻止浏览器默认行为”。<br/><br/>
+<p class="contents_main" style="line-height: normal;"><strong>1..停止事件冒泡</strong></p>
+<br/>
+<p class="contents_main" style="line-height: normal;">JavaScript代码</p>
+<br/>
+<pre class="lang:default decode:true">//如果提供了事件对象，则这是一个非IE浏览器
+if ( e &amp;&amp; e.stopPropagation )
+    //因此它支持W3C的stopPropagation()方法
+    e.stopPropagation();
+else
+    //否则，我们需要使用IE的方式来取消事件冒泡
+    window.event.cancelBubble = true;
+return false;</pre>
+<br/>
+<p class="contents_main" style="line-height: normal;"><strong>2.阻止浏览器的默认行为</strong></p>
+<br/>
+<p class="contents_main" style="line-height: normal;">JavaScript代码</p>
+<br/>
+<pre class="lang:default decode:true">//如果提供了事件对象，则这是一个非IE浏览器
+if ( e &amp;&amp; e.preventDefault )
+    //阻止默认浏览器动作(W3C)
+    e.preventDefault()
+else
+    //IE中阻止函数器默认动作的方式
+    window.event.returnValue = false
+return false;</pre>
+<br/>
+<div class="contents_main">
+<hr /></div>
+<br/>
+<div class="contents_main">这里就是要在文本框的键盘事件中当回车时阻止浏览器的下一步默认行为，高版本的浏览器都趋于规范化了，所以可以 IE7 及以上版本或其他的浏览器中都可以用 e.preventDefault(); 方法了。在你的网页中为文本框附加下面代码就行了：</div>
+<br/>
+<pre class="lang:default decode:true ">$(document).ready(function() {
+    $("#txt").keypress(function(event) {
+        if (event.keyCode == 13) {<br/><br/>
+            event.preventDefault();<br/><br/>
+            //do some of your things
+        }
+    });
+});
+</pre>
+<br/>
+以上代码用了最流行的 jQuery 来附加事件函数。这样可以试下，在 IE7/IE8 的兼容模式下、Opera、FireFox 文本框中按回车都不再提交表单了。<br/><br/>
+对于 IE 浏览器，用 window.event.returnValue = false; 来替代 event.preventDefault(); 也是可以的，其实不防加个浏览器判断把 window.event.returnValue = false;  也写保险些，反正用 jQuery 判断浏览器也方便，注意不是 event.returnValue = false; 哦，window 少不得。<br/><br/>
+当然若是在表单中没有放置提交按钮，文本框中任何时候按回车都不会提交，加上个提交按钮，即使是个隐藏的提交按钮后文本框才能获得这种默认行为。所以这也给了我们<strong>另一种解决回车不提表单的解决办法，把提交按钮改为普通按钮，给该普通按钮加个 onclick="this.form.submit()"</strong> 即可。<br/><br/>
+总结一下有三种办法：<br/><br/>
+<div class="contents_main">1. 给文本框加个 keydown 事件，阻止浏览器的默认提交行为<br />
+2. 提交按钮改为普通按钮，onclick 中进行表单提交<br />
+3. 给表单加个隐藏的密码框也能达到如此效果</div>
+<br/>
+<strong>另外再加一个取巧的办法，给表单加一个不可见的 &lt;input type="password" style="display:none"&gt; 也能引起按回车而不提交表单的</strong>。<br/><br/>
+附录：<br/><br/>
+其实要用 jQuery 可以随时随地，直接通过 Google CDN 来加载就行，不用担心 Google 会不会当掉，只会出现被墙掉的可能。参考：<a href="http://code.google.com/apis/libraries/devguide.html#jquery">http://code.google.com/apis/libraries/devguide.html#jquery</a>，<br/><br/>
+用 &lt;script src="<a href="http://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js">http://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js</a> "&gt;&lt;/script&gt; 加载 jquery 库<br/><br/>
+或者用：&lt;script type="text/javascript" src="<a href="http://www.google.com/jsapi?key=INSERT-YOUR-KEY&quot;&gt;&lt;/script">http://www.google.com/jsapi?key=INSERT-YOUR-KEY"&gt;&lt;/script</a>&gt;，要先到 <a href="http://code.google.com/ajaxsearch/signup.html">Google API key</a> 注册一个 Key，放到 INSERT-YOUR-KEY 位置，然后就随时用如下的某一代码加载任何你想要脚本库：<br/><br/>
+<pre class="lang:default decode:true ">google.load("chrome-frame", "1.0.2");
+google.load("dojo", "1.5");
+google.load("ext-core", "3.1.0");
+google.load("jquery", "1.4.2");
+google.load("jqueryui", "1.8.2");
+google.load("mootools", "1.2.4");
+google.load("prototype", "1.6.1.0");
+google.load("scriptaculous", "1.8.3");
+google.load("swfobject", "2.2");
+google.load("yui", "2.8.1");
+google.load("webfont", "1.0.6");
+</pre>

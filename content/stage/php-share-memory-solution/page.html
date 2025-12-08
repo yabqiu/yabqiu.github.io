@@ -1,0 +1,98 @@
+---
+title: PHP之中使用共享内存进行高速数据更新的一种方案[转]
+url: /php-share-memory-solution/
+date: 2010-04-24T15:47:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PHP
+tags: 
+  - php
+  - memory
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 191 
+wpStatus: publish
+views: 428
+lastmod: 2021-09-02T10:56:19-05:00
+---
+
+作者：<a href="http://bbs.chinaunix.net/viewpro.php?uid=32193"><span style="color: #000000; font-size: x-small;">HonestQiao</span></a></p>
+<br/>
+<div>    如果在你实际的应用之中,你确实需要高速数据更新的操作,那么我们认为你已经具备以下先决条件:<br />
+    <strong><span style="font-size: small;">能够按照实际应用的需要而调整服务器</span></strong><br />
+    关于这句话,大家自己可以明白意思的,不明白的自己想一想,如果没有达到这个要求,你是否有必要高速数据更新的操作, 或者先看看最后的附加说明.</div>
+<br/>
+&nbsp;<br/><br/>
+<div><span style="color: #008080;">    先见的参考文档:<br />
+1. <a href="http://w.yi.org/ftp/FAPM/PHP/php_manual_zh/ref.shmop.html" target="_blank" rel="noopener">http://w.yi.org/ftp/FAPM/PHP/php_manual_zh/ref.shmop.html<br />
+</a>说明: PHP功能, 共享内存功能函数, 此处用于PHP直接操作内存, 提供高速数据操作<br />
+开启: 编译PHP的时候,加上参数: -enable-shmop<br />
+附注: 这个准备工作, 非常简单<!--more--></span></div>
+<br/>
+<span style="color: #008080;">2. <a href="http://w.yi.org/ftp/FAPM/PHP/php_manual_zh/ref.sem.html" target="_blank" rel="noopener">http://w.yi.org/ftp/FAPM/PHP/php_manual_zh/ref.sem.html<br />
+</a>说明: PHP功能, IPC通信相关功能函数, 此处用于使用信号量实现互斥<br />
+开启: 编译PHP的时候,加上参数: --enable-sysvsem<br />
+附注: 这个准备工作, 同样非常简单</span><br/><br/>
+3. <a href="http://www.huihoo.com/os/process/main.htm" target="_blank" rel="noopener">http://www.huihoo.com/os/process/main.htm</a><br />
+说明: 学习资料, 进程的同步与互斥, 通俗的讲解了进程互斥的概念<br />
+附注: 学习资料,看看即可<br/><br/>
+4. <a href="http://www.huihoo.com/os/process/monitor.htm" target="_blank" rel="noopener">http://www.huihoo.com/os/process/monitor.htm</a><br />
+说明: 学习资料, 信号量, 讲解了信号量在进程互斥之中的使用<br />
+附注: 学习资料,看看即可<br/><br/>
+5. <a href="http://www.ccw.com.cn/htm/app/aprog/01_4_25_3.asp" target="_blank" rel="noopener">http://www.ccw.com.cn/htm/app/aprog/01_4_25_3.asp<br />
+</a>说明: 学习资料, 在PHP中实现进程间通讯, 讲解了如何在PHP之中利用共享内存和IPC视线进程间通讯<br />
+附注: 学习资料,看看即可<br/><br/>
+6. <a href="http://pear.php.net/package/System_SharedMemory/" target="_blank" rel="noopener">http://pear.php.net/package/System_SharedMemory/<br />
+</a>说明: PEAR库, System_SharedMemory, 一个共享内存的PEAR库<br />
+支持: 使用pear管理程序, pear install System_SharedMemory-0.1.0<br />
+附注: 这个才正是我们所需要的.<br/><br/>
+    System_SharedMemory在PEAR的说明为"common OO-style shared memory API", 也就是"使用通常面向对象的模式操作共享内存的应用程序接口", 后面我们可以看到, 使用它来操作共享内存, 确实很简单, 要操做一个变量, 就和普通的对象的属性操作(使用set和get)类似了.<br/><br/>
+    首先, System_SharedMemory可以使用如下的多种途径来进行共享内存操作:<br/><br/>
+<blockquote>
+PHP加速模块:     'eaccelerator' =&gt; 'Eaccelerator',   // Eaccelerator (Turck MMcache fork)<br />
+PHP加速模块:     'mmcache'      =&gt; 'Mmcache',        // Turck MMCache<br />
+PHP加速模块:     'Memcache'     =&gt; 'Memcached',      // Memched<br />
+共享内存模块:     'shmop_open'   =&gt; 'Shmop',          // Shmop<br />
+PHP加速模块:     'apc_fetch'    =&gt; 'Apc',            // APC<br />
+Apache功能:      'apache_note'  =&gt; 'Apachenote',     // Apache note<br />
+Systemv模块:     'shm_get_var'  =&gt; 'Systemv',        // System V<br />
+sqlite数据库模块: 'sqlite_open'  =&gt; 'Sqlite',         // SQLite<br />
+使用文件模拟:      'file'         =&gt; 'File',           // Plain text<br />
+PHP加速模块:      'fsockopen'    =&gt; 'Sharedance',     // Sharedance
+</blockquote>
+<br/>
+以上所说的PHP加速模块是认为他在某一层面对PHP进行了加速.<br/><br/>
+    我们可以根据实际的情况,选用一种途径. 如果没有指定途径, 那么System_SharedMemory会自动从上直下检测是否存在类似途径的操作函数, 而自动选择途径.<br/><br/>
+    因为我的实验环境是*nix系统, 所以我选择了其中之一 Shmop 模式, 当然其他模式也完全是可以的, 只要你加了对应的编译参数或者扩展模块.<br/><br/>
+    以下为计数的演示代码:<br/><br/>
+<pre class="lang:default decode:true ">&lt;?php
+    /// 引用System_SharedMemory库
+    include_once 'System/SharedMemory.php';<br/><br/>
+    $intUpdateValue = 255;
+    /// 数据库数据更新操作阀值, 255以内刚好一个字符<br/><br/>
+    /// 实例化System_SharedMemory对象
+    $Shared =&amp; System_SharedMemory::factory();<br/><br/>
+    /// 获取Count的值, 并+1, 如果没有初始化过, 值为0+1
+    $intCount = intval($Shared-&gt;get('Count')) + 1;<br/><br/>
+    if($intCount &gt;= 255){
+       /// 计数器自增, 每255次
+                $Shared-&gt;set('Count', '0');
+                /// 计数器清零, 开始下一计数循环<br/><br/>
+                /// 数据库操作
+                /// 数据库更新数据操作, 计数字段+=$intCount
+    } else {
+                $Shared-&gt;set('Count', strval($intCount));
+                /// 使用共享内存保存计数器值
+    }<br/><br/>
+        echo("$intCount");
+        /// 显示本次循环计数器值
+?&gt;</pre>
+<br/>
+现在把上面的这段代码演示一下子,你会看到一个高速数据更新计数器就这么简单了.<br/><br/>
+附加说明: <strong><span style="color: #ff0000;">一个小的站点也可以使用这个模块, 因为它可以自动的那个选择共享内存的操作途径, 如果没有对内存操作的函数, 他自动选择使用文件模拟.</span></strong><br/><br/>
+摘自：<a href="http://blog.csdn.net/heiyeshuwu/archive/2006/03/31/646150.aspx">http://blog.csdn.net/heiyeshuwu/archive/2006/03/31/646150.aspx</a>

@@ -1,0 +1,159 @@
+---
+title: 扩展 JUnit 4，使用定制的 Runner
+url: /extend-junit-4-customized-runner/
+date: 2013-04-17T02:59:19-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - JUnit
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5591 
+wpStatus: publish
+views: 4754
+lastmod: 2021-05-10T10:28:18-05:00
+---
+
+JUnit 的测试用例总是由 Runner 去执行，JUnit 提供了 @RunWith 这个测试类的 Annotation, 可来指定自定义的 Runner。如果未指定特别的  Runner，那么会采用默认的 Runner，可能不同的环境，如 Eclipse，控制台下会有不同的默认 Runner。</p>
+<br/>
+如果不清楚 Runner 是什么，那么可能见过 @RunWith(SpringJUnit4ClassRunner.class) 这个东西，它有助你加载 Spring 的配置文件，及与 Spring 相关的事物。<br/><br/>
+那么自定义的 Runner 有什么用呢？它可以截获到 @BeforeClass, @AfterClass, @Before, @After 这些事件，也就是能在测试类开始和结束执行前后，每个测试方法的执行前后处理点事情。<br/><br/>
+比如说从外部读取内容进行初始化测试数据，而且 JUnit 本身就提供了 @RunWith(Parameterized.class)  这个参数化 Runner，用了为带参数测试方法循环填充数据进行测试。JUnit 的参数化测试比 C# 还是要笨拙一些，C# 直接用方法注解一行行设置参数，我想 JUnit 稍加定制的话也行的。<!--more--><br/><br/>
+现在用个例子来说明定制化 Runner  的表现功力，需继承自 BlockJUnit4ClassRunner, 这又是继承自 ParentRunner。可自定义那些 with 开头的方法来截获相应的事件，如：<br/><br/>
+来自  ParentRunner  的 withBeforeClasses, withAfterClasses<br />
+和定义的 BlockJUnit4ClassRunner 中的  withBefores, withAfters, withPotentialTimeout<br/><br/>
+等等，总之祖先类中的  protected 方法一般就是给大家开的口，看例子：<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import org.junit.runners.BlockJUnit4ClassRunner;
+import org.junit.runners.model.FrameworkMethod;
+import org.junit.runners.model.InitializationError;
+import org.junit.runners.model.Statement;<br/><br/>
+/** 
+ * @author Unmi
+ * @created 2013-04-17
+ */
+@SuppressWarnings("deprecation")
+public class MyTestRunner extends BlockJUnit4ClassRunner {<br/><br/>
+    private Class&lt;?&gt; clazz;<br/><br/>
+    public MyTestRunner(Class&lt;?&gt; klass) throws InitializationError {
+        super(klass);
+        this.clazz = klass;
+    }<br/><br/>
+    // 拦截 BeforeClass 事件
+    protected Statement withBeforeClasses(final Statement statement) {
+        final Statement junitStatement = super.withBeforeClasses(statement);
+        return new Statement() {
+            @Override
+            public void evaluate() throws Throwable {
+                System.out.println("Before Class: " + clazz.getName());
+                junitStatement.evaluate();
+            }<br/><br/>
+        };
+    }<br/><br/>
+    // 拦截每一个方法的 Before 事件
+    protected Statement withBefores(final FrameworkMethod method, Object target, final Statement statement) {<br/><br/>
+        final Statement junitStatement = super.withBefores(method, target, statement);
+        return new Statement() {
+            @Override
+            public void evaluate() throws Throwable {
+                System.out.println("Before before method: " + method.getName());
+                junitStatement.evaluate();
+                System.out.println("After before method: " + method.getName());
+            }
+        };
+    }<br/><br/>
+    // 截获每一个测试方法的 after 事件
+    protected Statement withAfters(final FrameworkMethod method, Object target, final Statement statement) {
+        final Statement junitStatement = super.withAfters(method, target, statement);
+        return new Statement() {
+            @Override
+            public void evaluate() throws Throwable {
+                System.out.println("After method: " + method.getName());
+                junitStatement.evaluate();
+            }<br/><br/>
+        };
+    }<br/><br/>
+    // 截获测试类的 after 事件
+    protected Statement withAfterClasses(final Statement statement) {
+        final Statement junitStatement = super.withAfterClasses(statement);
+        return new Statement() {
+            @Override
+            public void evaluate() throws Throwable {
+                junitStatement.evaluate();
+                System.out.println("After Class: " + clazz.getName());
+            }
+        };
+    }
+}
+</pre>
+<br/>
+上面的  junitStatement.evaluate() 才是真正去执行相应的用 @Before, @After, @BeforeClass, @AfterClass 和 @Test 标的方法，所以可以在执行真正方法前面植入点什么。<br/><br/>
+看测试类：<br/><br/>
+<pre class="lang:default decode:true ">package cc.unmi;<br/><br/>
+import org.junit.After;
+import org.junit.AfterClass;
+import org.junit.Before;
+import org.junit.BeforeClass;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+  
+/** 
+ * @author Unmi
+ * @created 2013-04-17
+ */
+@RunWith(MyTestRunner.class)  
+public class MyTest {  
+  
+    @BeforeClass  
+    public static void beforeClass() {  
+        System.out.println("execute beforeClass");  
+    }  
+  
+    @Before  
+    public void before() {  
+        System.out.println("execute before");  
+    }  
+      
+    @Test  
+    public void should_return_something_if_age_equals_18() {  
+        System.out.println("execute should_return_something_if_age_equals_18");  
+    }  
+      
+    @After  
+    public void after() {  
+        System.out.println("execute after");  
+    }  
+  
+    @AfterClass  
+    public static void afterClass() {  
+        System.out.println("execute afterClass");  
+    }  
+} 
+</pre>
+<br/>
+看执行效果吧：<br/><br/>
+<span style="color: #800000;">Before Class: cc.unmi.MyTest</span><br />
+<span style="color: #800000;">execute beforeClass</span><br />
+<span style="color: #800000;">After method: should_return_something_if_age_equals_18</span><br />
+<span style="color: #800000;">Before before method: should_return_something_if_age_equals_18</span><br />
+<span style="color: #800000;">execute before</span><br />
+<span style="color: #800000;">execute should_return_something_if_age_equals_18</span><br />
+<span style="color: #800000;">After before method: should_return_something_if_age_equals_18</span><br />
+<span style="color: #800000;">execute after</span><br />
+<span style="color: #800000;">execute afterClass</span><br />
+<span style="color: #800000;">After Class: cc.unmi.MyTest</span><br/><br/>
+由于给出了的执行结果，所以就不多解释了。<br/><br/>
+应用场景探讨：因为在 “拦截” 方法中可以感知道当前执行类和方法，所以可以在 withBeforeXxx 时初始化测试数据，比如可以加入自定义的注解，根据注解，继续用反射的方式对类、实例变量进行初始化，或某些清理工作。<br/><br/>
+再学习下 JUnit 的 @RunWith(Parameterized.class) 参数化测试。除此之外，还有 @ClassRule 和  @Rule 也有异曲同功之妙，见 <a href="http://chenxu-8456.iteye.com/blog/1568754" target="_blank" rel="noopener">JUnit扩展方式（一）-使用Rule对JUnit进行扩展(JUnit4.10) </a>。<br/><br/>
+参考: 1. <a href="http://chenxu-8456.iteye.com/blog/1568852" target="_blank" rel="noopener">JUnit扩展方式（二）-使用Runner对JUnit进行扩展（基础）</a>大<br />
+          2.  <a href="http://blog.csdn.net/jadyer/article/details/6013743" target="_blank" rel="noopener">JUnit中的测试套件和参数化测试</a><br />
+          3. <a href="http://www.oschina.net/question/129540_50930" target="_blank" rel="noopener">使用 Feed4JUnit 进行数据与代码分离的 Java 单元测试</a><br />
+          4. <a href="http://blog.csdn.net/fenglibing/article/details/8584602" target="_blank" rel="noopener">使用RunWith注解改变JUnit的默认执行类，并实现自已的Listener </a><br />
+          5. <a href="http://chenxu-8456.iteye.com/blog/1568754" target="_blank" rel="noopener">JUnit扩展方式（一）-使用Rule对JUnit进行扩展(JUnit4.10) </a>

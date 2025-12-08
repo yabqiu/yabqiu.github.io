@@ -1,0 +1,77 @@
+---
+title: JDK 7 中的语法增强 -- (4) 创建泛型实例时的类型推断
+url: /jdk-7-enhance-type-inference/
+date: 2011-03-14T11:20:46-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - jdk7
+  - jdk1.7
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3314 
+wpStatus: publish
+views: 1049
+lastmod: 2021-09-03T13:13:48-05:00
+---
+
+Java 的泛型实例在声明时有点傻，比如像这样的语句 List&lt;String&gt; list = new ArrayList&lt;String&gt;(); 前明的 List&lt;String&gt; 已经提供了足够的信息让编译器知道 ArrayList 的参数类型，当然这是个简单的例子，如果复杂些，来点嵌套的话：</p>
+<br/>
+Map&lt;String, List&lt;Map&lt;String, String&gt;&gt;&gt; myMap = new HashMap&lt;String, List&lt;Map&lt;String,String&gt;&gt;&gt;();<br/><br/>
+那就够呛的，所以 Java 的这一语法要求也让 Scala 这样的语言所诟病，当然人家 Scala 是个趋近于动态性的语言，它认为上面的语句应该这么写：<br/><br/>
+val x = new HashMap[String, List[String, List[Map[String, String]]]() 或者是<br />
+val x: Map[String, List[String, List[Map[String, String]]] = new HashMap()<br/><br/>
+总之，只要一端的表态就行，其他事情交给编译器来推断。现在 JDK 也反省到了这一点，因为引入一个叫做菱形操作符(Diamond operator) 的东西，即两个尖括号 &lt;&gt;。让使得你像 Scala 一样只要在左边声明参数类型就行啦。这个操作符不免让我想起了在 perl 里有个 &lt;=&gt;  这样的操作符，好像叫做飞机，不是斗地主的飞机，它相当于 Java 里的 compareTo() 的功能。<br/><br/>
+于是泛型实例的声明就简单化成了 Map&lt;String, List&lt;Map&lt;String, String&gt;&gt;&gt; myMap = new HashMap&lt;&gt;(); 继续往下看：<!--more--><br/><br/>
+把问题拉近一点，回归得更简单一些吧，比如对于 JDK5/6 中的泛型要这么写：<br/><br/>
+<pre class="lang:default decode:true">Map&lt;String, List&lt;String&gt;&gt; myMap = new HashMap&lt;String, List&lt;String&gt;&gt;();</pre>
+<br/>
+那转换成 &lt;&gt; 菱形操作符石化后的样子就是：<br/><br/>
+<pre class="lang:default decode:true">Map&lt;String, List&lt;String&gt;&gt; myMap = new HashMap&lt;&gt;();</pre>
+<br/>
+说到底，也就是把右边 new 部分的类型掏空，只留下最外层的 &lt;&gt; 罢了，完全让编译器根据前半部分去进行类型的推断。进一步，要是把后边的 &lt;&gt; 也去掉会是怎么回事呢？<br/><br/>
+<pre class="lang:default decode:true">Map&lt;String, List&lt;String&gt;&gt; myMap = new HashMap(); // unchecked conversion warning</pre>
+<br/>
+对了，会提示类型转换的警告，这在我们从 JDK4 过渡到 JDK5 时常见的警告了，也是在原来使用 Hibernate 时不得不黯然接受的提示。<br/><br/>
+Java(可以说是 Oracle) 的文档说: Java SE7 在创建泛型实例时只支持有限的类型推断，举的例子是下面的代码无法通过编译：<br/><br/>
+<pre class="lang:default decode:true">List&lt;String&gt; list = new ArrayList&lt;&gt;();
+list.add("A");  // 这是合法的<br/><br/>
+  // The following statement should fail since addAll expects
+  // Collection&lt;? extends String&gt;<br/><br/>
+list.addAll(new ArrayList&lt;&gt;()); // 这里就编译不通过了</pre>
+<br/>
+我觉得官方在这里反而把问题弄复杂了，好懂的东西变得更糊涂，要单例看 new ArrayList&lt;&gt;()  这创建语句是无法进行类型推断的，因为最后一行的 new ArrayList&lt;&gt;() 与第一行的 List&lt;String&gt; list 声明早就挂不上关系了。肯定是要写成下面的代码才成：<br/><br/>
+<pre class="lang:default decode:true">List&lt;String&gt; newList = new ArrayList&lt;&gt;();
+list.addAll(newList);
+//要么在 new 的时候明确类型，像在 JDK5/6 中一样
+list.addAll(new ArrayList&lt;String&gt;());</pre>
+<br/>
+或者是：<br/><br/>
+<pre class="lang:default decode:true">List&lt;? extends String&gt; list2 = new ArrayList&lt;&gt;();
+list.addAll(list2);</pre>
+<br/>
+【 类型推断】 与 【泛型、非泛型类的/ 泛型构造器】，这句连在一点要知道说的是谁与谁，前面有意断一下。看下面的泛型类：<br/><br/>
+<pre class="lang:default decode:true">class MyClass&lt;X&gt; {
+  &lt;T&gt; MyClass(T t) {
+    // ...
+  }
+}</pre>
+<br/>
+在 JDK7 之前可以这么使用：<br/><br/>
+<pre class="lang:default decode:true">new MyClass&lt;Integer&gt;("")</pre>
+<br/>
+编译器聪明的知道首先把 Integer 类型作为类的形参，进而 new 的时候直接把构造函数的形参断定为字符串类型。<br/><br/>
+到了JDK 7 了呢，可以像下面那样写：<br/><br/>
+<pre class="lang:default decode:true">MyClass&lt;Integer&gt; myObject = new MyClass&lt;&gt;("");</pre>
+<br/>
+也就是右边部分的 &lt;&gt; 占位符中能够根据前面声明的对应位置进行类型的推断，相当于可以把前部分 Integer 类型填入到菱形操作符中。而构造函数的 T 参数类型完全是靠传入的参数推断出来的。<br/><br/>
+把构造函数部分的完整调用过程写出来就是：<br/><br/>
+<pre class="lang:default decode:true ">MyClass&lt;Integer&gt; myObject = new &lt;String&gt; MyClass&lt;&gt;(""); //Unmi: 我怎么就编译不过呢，写错了！</pre>
+<br/>
+参考：<a href="http://download.java.net/jdk7/docs/technotes/guides/language/type-inference-generic-instance-creation.html">http://download.java.net/jdk7/docs/technotes/guides/language/type-inference-generic-instance-creation.html</a>

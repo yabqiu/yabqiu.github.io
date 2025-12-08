@@ -1,0 +1,95 @@
+---
+title: Swift 学习笔记(@autoclosure 与 call-by-name)
+url: /swift-learning-autoclosure-call-by-name/
+date: 2015-11-24T23:24:20-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Swift
+tags: 
+  - Swift
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7071 
+wpStatus: publish
+views: 367
+lastmod: 2021-09-03T17:34:47-05:00
+---
+
+咋一眼看到 Swift @autoclosure 自动闭包便不由自主的联想到 Scala 的 Call-By-Name 求值策略。既然主要话题是关于 Swift 的，那还是 Swift 的 @autoclosure 先入为主，下面例子中的 <code>greet(name: () -&gt; String)</code> 接收一个闭包作为参数</p>
+<br/>
+<pre class="lang:default decode:true">func greet(name: () -&gt; String) {
+    print("Hello \(name())")
+}<br/><br/>
+greet({() in return "Swift"}) //标准
+greet({return "Swift"})       //简化
+greet({"Swift"})              //再简化<br/><br/>
+greet{"Swift"}  //因为 greet 只有一个参数，因而可以这样写</pre>
+<br/>
+对 <code>greet(_:)</code> 的函数调用不断简化，最后简化为 <code>greet{"Swift}</code>。总而言之大括号是甩不了了，有大括号的围绕才叫闭包。<br/><br/>
+同时我们依据闭包的简化规则倒退发现：给任何一个表达式两边加上大括号 {}，就构成了一个闭包，它是无参数的闭包，返回值可有可无。例如 {1+2}, {foo(10)+5}, {print("Hello")}, {array.removeAtIndex(0)} 等等<br/><br/>
+至此，我们还未死心，思考能不能对 greet{"Swift"} 的写法进一步简化，这就要请出 @autoclosure 隆重登场, 对 greet() 的 name 参数前加上  @autoclosure, 就是<!--more--><br/><br/>
+<pre class="lang:default decode:true">func greet(@autoclosure name: () -&gt; String) {
+    print("Hello \(name())")
+}<br/><br/>
+greet("Swift")</pre>
+<br/>
+有了 @autoclosure 修饰之后，就像调用普通函数一样调用 greet(_:) ，直接传入字符, 看起来这个函数接收的是一个字符串。实质上在 @autoclosure 的作用下参数会被自动装箱成一个闭包, 也就把表达式映射到闭包过程由函数来完成。即 greet("Swift") 相当于 greet({"Swift"}), 但这个例子中有 @autoclosure 修饰的情况下是不能写成 greet({"Swift"}), 否则产生了二次装箱变成了 greet({{"Swift"}})<br/><br/>
+若说 @autoclosure 使得传入的值被延迟估值(延迟到函数中对闭包调用时求值)是不太恰当的，其本质是闭包固有的延迟估值属性, @autoclosure 的本质是帮你完成了表达式到闭包的映射，简单来讲就是用 @autoclosure 一次性的替换了每次调用时两边的大括号。<br/><br/>
+我们来扯 @autoclosure 达成了表达式的延迟估值有点跑偏，所以我们这里说闭包的延迟估值，且看示例<br/><br/>
+<pre class="lang:default decode:true">var fruits = ["Apple", "Pear"]
+let closure = {fruits.removeAtIndex(0)}  //大括号框起来就是个闭包<br/><br/>
+print(fruits)    //["Apple", "Pear"]
+closure()
+print(fruits)    //["Pear"]<br/><br/>
+func gonogo(flag: Bool, @autoclosure value: ()-&gt; String) {
+    if flag { value() }     //闭包真正调用时才是闭包求值时
+}<br/><br/>
+print(fruits)    //["Pear"]
+gonogo(false, value: fruits.removeAtIndex(0))  //false, value 未被求值
+print(fruits)    //["Pear"]
+gonogo(true, value: fruits.removeAtIndex(0))   //true, value 被求值
+print(fruits)    //[]</pre>
+<br/>
+如果非闭包参数，我们知道求值是发生成函数调用前<br/><br/>
+<pre class="lang:default decode:true">func gonogo(flag: Bool, value: String) { //参数都是在调用前被求值
+    if flag { value }
+}<br/><br/>
+var fruits = ["Apple", "Pear"]
+print(fruits)    //["Apple", "Pear"]
+gonogo(false, value: fruits.removeAtIndex(0)) //不管 true 或 false, 先对 value 表达式求值
+print(fruits)    //["Pear"]
+gonogo(true, value: fruits.removeAtIndex(0)) //不管 true 或 false, 先对 value 表达式求值
+print(fruits)    //[]</pre>
+<br/>
+关于闭包参数和延迟求值特性, 如果闭包有条件的被执行，并且表达式求值耗资源的话可以好好利用这一特性。<br/><br/>
+Apple 官方说 @autoclosure 可能会使得代码不易于理解，应在上下文或函数名中暗示出传入的参数会被延迟求值的 . 这里的顾虑也就是延迟求值可能会带来费解与潜在的 Bug, 比如<br/><br/>
+<pre class="lang:default decode:true">let flag = false
+func foo(@autoclosure value: ()-&gt;Int) {
+    if flag { value() }
+}<br/><br/>
+var index = 0
+foo(index++)
+print(index)  //输出 0</pre>
+<br/>
+如果我们未仔细了解 foo(_:) 函数的原型，不清楚它的参数是 @autoclosure 的，我们会迷惑为什么前面 index++ 了, print(index) 输出的还是 0, 而我们在循环中经常会 foo(index++) 这么调用<br/><br/>
+顺便提一句，@autoclosure 默认为 @noescape 属性，如果想要 @autoclosure 为 escaping 属性，注解就合一块写成 @autoclosure(escaping)<br/><br/>
+既然本文标题中提到了 Scala 的 Call-By-Name 估值策略，那么还是以一个 Scala 的例子作为最生动的说明<br/><br/>
+<pre class="lang:default decode:true ">val buffer = new StringBuilder<br/><br/>
+def callByName(flag: Boolean, value: =&gt; StringBuilder) {  //与日常的 Call-By-Value 的区别就是冒号与类型之前多了一个 =&gt;
+  if(flag)  value
+}<br/><br/>
+callByName(false, buffer ++= "Hello")    //因为 value 是 =&gt;StringBuiler 类型，所以  buffer ++= "Hello" 会包装为一个闭包
+println("1: " + buffer)                  //1:<br/><br/>
+callByName(true, buffer ++= "World")     //与上同理
+println("2: " + buffer)                  //2: World</pre>
+<br/>
+执行<br/><br/>
+<span style="color: #800000;">✗ scala Test.scala</span><br />
+<span style="color: #800000;">1:</span><br />
+<span style="color: #800000;">2: World</span><br/><br/>
+Scala 不需要像 Swift 的 <code>@autoclosure</code> 那样的注解，只需要把原来的参数声明 <code>value: StringBuilder</code> 中间加个 <code>=&gt;</code> 变成 <code>value: =&gt; StringBuilder</code>，就实现了 Swift 的 <code>@autoclosure</code> 的特性

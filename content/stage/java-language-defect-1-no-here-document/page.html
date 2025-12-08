@@ -1,0 +1,176 @@
+---
+title: Java 语言的几个缺陷之一: 无 Here Document
+url: /java-language-defect-1-no-here-document/
+date: 2016-07-08T23:43:47-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - java-wanted
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7346 
+wpStatus: publish
+views: 511
+lastmod: 2021-05-04T15:35:16-05:00
+---
+
+Java  语言由于一直要保持源代码及二进制的向后兼容, 所以尽管语法上有了很大的演进, 但有些东西仍然无法触及.  不像有些新生代的语言设计时可以博采众长, 或者像 Scala 那种语言向后兼容性的要求没这么苛刻, Scala 只要保持主, 次版本相同时的兼容性. Java 则不同, 1.0 的代码或字节码放到 1.8 下还要能跑.</p>
+<br/>
+实际应用中在多个语言切换时, 很自然的会对其他语言与 Java 进行横向对比. 感觉 Java 语言有几个缺陷, 不在此篇中一一列举, 只把第一个不足之处道来.<br/><br/>
+Java 没有 Here Document 的支持, Here Document 又称 heredoc, hereis, here-string, here-script, 再通俗点讲就是多行字符串(multiline string). 在 Java 中如果要定义多行字符串, 需要连串的加号及换行符(\n), 如下<br/><br/>
+<pre class="brush:java">String content = "This is a\n"
+               + "multiline\n"
+               + "string content" </pre>
+<br/>
+曾经为了寻求 Java 对 Here Document 的支持, 尝试过 Java 的  APT(Java Annotation Processing Tool), 定义注解 @HereDocument 使用注释, 编译时带 <code>-processor</code> 参数, 但是注释中的格式很容易被 IDE 给自动格式化掉, 见 <a href="java-implement-here-document/">Java 的多行字符串 Here Document 的实现</a>. 所以这种尝试很快就放弃了, 因为项目中用 Java 和  Scala 混合编程, 真正需要 Here Document 的地方直接用 Scala 代码就行了.<!--more--><br/><br/>
+不明白为什么 Java 一直不愿意引进 Here Document 那样的语法糖, 比如也能用三引号  """ 这样的语法. 不知道这会对老的 Java 代码有什么破坏性.<br/><br/>
+下面来观赏一下几他几种语言对  Here Document 的支持, 基本分两个实现派系: 三引号(<code>"""</code>, 或 <code>'''</code>) 和 自定义边界字符串<br/><br/>
+Scala, Groovy 用 <code>"""</code>, 而 Python 由于没有字符与字符串类型的区别, 所以既可以用 <code>"""</code>, 也可以用 <code>'''</code>.<br/><br/>
+<strong>Scala</strong><br/><br/>
+<pre class="lang:default decode:true">scala&gt; val content = """This is a
+ | multiline
+ | string"""
+content: String =
+This is a
+multiline
+string<br/><br/>
+scala&gt; content.length
+res10: Int = 28<br/><br/>
+scala&gt; content(10).toInt
+res11: Int = 10</pre>
+<br/>
+上面的 <code>content</code> 长度是  28, 它包括两个 <code>\n</code>, 第 10 个字符(a 后面那个字符就是  <code>\n</code>, 即 ASCII 码为 10.<br/><br/>
+<strong>Groovy</strong><br/><br/>
+<pre class="brush:groovy">def content = """This is a
+multiline
+string content"""</pre>
+<br/>
+<strong>Python</strong><br/><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; content = '''This is a
+... multiline
+... string'''
+>&gt;&gt; print(content)
+This is a
+multiline
+string</pre>
+<br/>
+Groovy 用三个双引号也是一样的<br/><br/>
+其他用边界字符串的语言有诸如 Bash, Ruby, PHP, Perl 等<br/><br/>
+<strong>Bash</strong><br/><br/>
+<pre class="lang:default decode:true">bash-3.2$ cat &lt;&lt; EOF
+> This is a
+> multiline
+> string
+> EOF
+This is a
+multiline
+string
+bash-3.2$ cat &lt;&lt; 'EOF'
+> This is a
+> multiline string
+> EOF
+This is a
+multiline string
+bash-3.2$
+bash-3.2$ cat &lt;&lt; EOF &gt; abc.txt
+> first line
+> second line
+> EOF
+bash-3.2$ cat abc.txt
+first line
+second line
+bash-3.2$ cat &lt;&lt;- EOF &gt; def.txt
+> first line
+> second line
+> EOF
+bash-3.2$ cat def.txt
+first line
+second line
+bash-3.2$</pre>
+<br/>
+<code>EOF</code> 或 <code>'EOF'</code> 只是自找的一个边界字符串, 选用任意的只要不会在字符串内容中出现的字符都行<br/><br/>
+<strong>Ruby</strong><br/><br/>
+<pre class="lang:default decode:true">irb(main):002:0&gt; puts &lt;&lt;LINES
+irb(main):003:0" line 1
+irb(main):004:0" line 2
+irb(main):005:0" LINES
+line 1
+line 2
+=&gt; nil
+irb(main):006:0&gt; puts &lt;&lt;-EOF
+irb(main):007:0" line 3
+irb(main):008:0" line 4
+irb(main):009:0" EOF
+line 3
+line 4
+=&gt; nil</pre>
+<br/>
+Ruby 和 Bash 差不多, 但是 <code>&lt;&lt;</code> 与  <code>EOF</code> 之间不能有空格<br/><br/>
+<strong>PHP</strong><br/><br/>
+<pre class="lang:default decode:true">&lt;?php
+echo &lt;&lt;&lt; EOF
+line 1
+line 2
+EOF;<br/><br/>
+echo &lt;&lt;&lt;"END"
+line 3
+line 4
+END;<br/><br/>
+echo &lt;&lt;&lt; 'END'
+line 5
+line 6
+END;</pre>
+<br/>
+PHP 用三个小于号  <code>&lt;&lt;&lt;</code>,  它与边界符之间的空格可有可无<br/><br/>
+<strong>Perl</strong><br/><br/>
+<pre class="lang:default decode:true">print &lt;&lt; "END";
+line 1
+line 2
+END<br/><br/>
+print &lt;&lt;'END';
+line 3
+line 4
+END<br/><br/>
+print &lt;&lt;END
+line 5
+line 6
+END</pre>
+<br/>
+Perl 中的有没有单双引号都没有关系, 注意分号的用法, 如果没有第二个分号则会有语法错误.<br/><br/>
+<strong>C#</strong><br/><br/>
+<pre class="brush:c#"> var content = @"
+Hello 
+""world""";
+ Console.WriteLine(content);</pre>
+<br/>
+C# 本质是说不支持 Here Document, 但它有一种叫做 <code>Verbatim literal</code> 的语法, 用 <code>@""</code> 括起的字符串. 它与通常的 Here Document 不同的是其中的双引号必须用一个双引号进行转义, 也就是用两个双号表示一个双引号.<br/><br/>
+<strong>C++</strong><br/><br/>
+<pre class="lang:default decode:true">std::cout &lt;&lt; "line 1\n"
+"line 2\n"
+"line 3\n";<br/><br/>
+//C++11
+char* s1 = R"END(
+Hello
+World
+)END";</pre>
+<br/>
+是的, 就连 C++ 那么传统的语言都有对类似于 Here Document 的支持.<br/><br/>
+<strong>Dart</strong><br/><br/>
+<pre class="brush:java ">main() {
+ print('''Hello
+Dart
+''');<br/><br/>
+ print("""Hello
+ World""");
+}</pre>
+<br/>
+最后也还是提一下  Dart 语言, 它支持 Here Document 的方式与  Python 是一致的. Dart 语言的设计可能在以后还会被拿来与 Java 进行对比.<br/><br/>
+参考: 1. <a href="https://rosettacode.org/wiki/Here_document">Here document</a><br/><br/>
+&nbsp;

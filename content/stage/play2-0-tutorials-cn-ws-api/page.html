@@ -1,0 +1,59 @@
+---
+title: Play 2.0 中文资料 - Play WS API
+url: /play2-0-tutorials-cn-ws-api/
+date: 2013-01-16T11:43:36-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+  - PlayFramework
+tags: 
+  - 翻译
+  - Scala
+  - PlayFramework
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4911 
+wpStatus: publish
+views: 2342
+lastmod: 2021-05-19T16:25:06-05:00
+---
+
+<ul style="float: right; border-left: solid 1px green; border-bottom: solid 1px green;">
+    <li><a href="/play2-0-tutorials-cn-ws-api">Play WS API </a></li>
+    <li><a href="http://www.playframework.org/documentation/2.0.4/ScalaOpenID">Connecting to OpenID services </a></li>
+    <li><a href="http://www.playframework.org/documentation/2.0.4/ScalaOAuth">Accessing resources protected by OAuth </a></li>
+</ul><br/><br/>
+有时候我们要在 Play 应用中调用其他的 HTTP 服务. Play 是通过它的 <code>play.api.libs.ws.WS</code> 库对此支持的, 该库提供了进行异步的 HTTP 调用.<br/><br/>
+任何由 <code>play.api.libs.ws.WS</code> 发出的调用都必须返回 <code>Promise[play.api.libs.ws.Response],</code> 我们可以接着可用 Play 的异步机制来处理它.<br/><br/>
+<span style="color: #0000ff;">Unmi 注: 这里有必须挪出 Play 1 和 Play 2 的 WS 稍加对比: </span><br/><br/>
+<span style="color: #0000ff;">Play 1 中  play.libs.WS 类，Play 2 里是 play.api.libs.ws.WS，Play 2 中许多给外部调用的 API 都放在 play.api.libs 包中了。</span><br/><br/>
+<span style="color: #0000ff;"> Play 1 的 play.libs.WS.WSRequest  中有 get():HttpResponse, getAsync():Promise&lt;HttpResponse&gt;, put():HttpResponse, putAsync():Promise&lt;HttpResponse&gt;，它把同步和异步调用分得很清楚。</span><br/><br/>
+<span style="color: #0000ff;">而 Play 2 的 play.api.libs.ws.WS.WSRequestHolder 里只有 get(): Promise&lt;Response&gt;, post(): Promise&lt;Response&gt; 这样方法，在这个位置上，它不再分同步还是调用，这个任务交给 Async 方法去决定。</span><br/><br/>
+<span style="color: #0000ff;">对异步请求的数据获仍然是由 Action 处理，如 Play 1 中 Action 的各个 await() 方法; Play 2 里的 Action 用 Async 方法。<!--more--></span><br/><br/>
+<strong><span style="font-size: medium;">进行 HTTP 调用</span></strong><br/><br/>
+要发送一个 HTTP 请求你要从 <code>WS.url()</code> 指定一个 URL 开始. 然后你得到一个构建器，你能用它指定各种 HTTP 选项, 像设置请求头之类的. 最后根据你要的 HTTP method 调用相应的方法，至此一个 HTTP 调用结束. 例如:<br/><br/>
+<pre class="brush:scala">val homePage: Promise[ws.Response] = WS.url("http://mysite.com").get()</pre>
+<br/>
+或者:<br/><br/>
+<pre class="brush:scala">val result: Promise[ws.Response] = {
+  WS.url("http://localhost:9001/post").post("content")
+}</pre>
+<br/>
+<strong><span style="font-size: medium;">获取 HTTP 响应结果</span></strong><br/><br/>
+调用是异步的， 返回类型是 <code>Promise[ws.Response], 你必须操作它来得到实际的内容</code>. 你可以组成多个 Promise，最后形成一个 <code>Promise[Result]，它可由</code> Play 服务器直接处理:<br/><br/>
+<pre class="lang:default decode:true ">def feedTitle(feedUrl: String) = Action {
+  Async {
+    WS.url(feedUrl).get().map { response =&gt;
+      Ok("Feed title: " + (response.json \ "title").as[String])
+    }
+  }  
+}</pre>
+<br/>
+<h2>Post url-form-encoded 数据</h2><br/><br/>
+欲 post url-form-encoded 数据，需要构造出一个 <code>Map[String, Seq[String]]，然后传递给</code> post() 方法<br/><br/>
+<pre class="lang:default decode:true ">WS.url(url).post(Map("key" -&gt; Seq("value")))</pre>

@@ -1,0 +1,87 @@
+---
+title: JavaScript 获得代码行号和脚本文件名
+url: /javascript-get-execution-line-file/
+date: 2014-01-01T01:50:53-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Web/JS
+tags: 
+  - javascript
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5900 
+wpStatus: publish
+views: 6385
+lastmod: 2014-01-01T02:53:25-06:00
+---
+
+比如要写一个 JavaScript 的日志输出工具，在方法 log.info() 中能得到调用它所在的文件和代码行号。和众多的日志工具一样，像 log4j，都是在程序代码中主动抛出异常，然后从异常栈中去查找到调用者所在的代码行和文件名。不过也就刚刚才了解到 JavaScript V8 引擎提供了自己的 StackTrace API，Chrome 和 Node.js 可用。先来看可通用的 JavaScript &nbsp;抛异常 throw new Error() 的方式，下面的代码：<br/>
+<pre class="brush:js">var log = {<br/>
+    info: function(arg){<br/>
+        try {<br/>
+            throw new Error();<br/>
+        } catch (e) {<br/>
+            alert("Stack:" + e.stack);<br/>
+            var loc= e.stack.replace(/Error\n/).split(/\n/)[1].replace(/^\s+|\s+$/, "");<br/>
+            alert("Location: "+loc+"");<br/>
+        }<br/>
+    }<br/>
+};<br/>
+<br/>
+function foo(){<br/>
+    log.info(123);<br/>
+}<br/>
+<br/>
+foo();</pre>
+
+点击链接&nbsp;<a href="http://jsfiddle.net/Unmi/53xas/" target="_blank">http://jsfiddle.net/Unmi/53xas/</a> 执行，其中是用 document.write() 输出的，完整异常栈是：<!--more--><br/>
+<pre>Error<br/>
+    at Object.log.info (http://fiddle.jshell.net/_display/:24:19)<br/>
+    at foo (http://fiddle.jshell.net/_display/:39:9)<br/>
+    at window.onload (http://fiddle.jshell.net/_display/:42:1)</pre>
+
+并且成功定位到调用者代码行是<br/>
+<pre>Location: Object.log.info (http://fiddle.jshell.net/_display/:24:19)</pre>
+
+上面是在 Chrome 中运行的效果，在 Firefox/Safari 中有所不同，是用 @ 代替了 at，所以在 Fairfox/Safari 中输出的异常栈是<br/>
+<pre>window.onload/log.info@http://fiddle.jshell.net/_display/:24<br/>
+foo@http://fiddle.jshell.net/_display/:39<br/>
+window.onload@http://fiddle.jshell.net/_display/:42</pre>
+
+得到代码行<br/>
+<pre>Location: foo@http://fiddle.jshell.net/_display/:39</pre>
+
+注意，我都是在 fiddle.jshell.net 上测试我的 JavaScript 代码，fiddle 相当于拿到你的脚本生成一个文件来执行的，所以脚本文件都成了 fiddle 上的某个脚本文件，实际应用中就是你的文件的 URL，比如 special.js。<br/>
+<br/>
+上面可以稍加改造作为一个简单的日志工具来使用，再辅以传入参数 JSON 序列化 和 Ajax 提交消息到后台，就完整了。<br/>
+<br/>
+每次想到日志工具，不能不想到各种 log4XX，如 log4j, log4php, log4perl, log4cpp 等不一而足。那么有没有 log4javascript 呢，当然有，那就是&nbsp;<a href="http://log4javascript.org/" target="_blank">http://log4javascript.org/</a>。这个工具不错，提供了 Popup 或 In-page console 不同颜色级别来显示日志，也可以把日志用 Ajax 发送到后面记录在服务端，并能记录异常，显示出错所在行和文件。<br/>
+<br/>
+如果你使用的是 V8 引擎，Chrome 和 Node.js 所用的，那么你可以利用&nbsp;JavaScriptStackTraceApi 来获得行号信息，有两个 API:<br/>
+<br/>
+Error.captureStackTrace()<br/>
+Error.prepareStackTrace()<br/>
+<br/>
+在 Chrome 中可运行下面的代码：<br/>
+<pre class="brush:js">var getStackTrace = function() {<br/>
+  var obj = {};<br/>
+  Error.captureStackTrace(obj, getStackTrace);<br/>
+  return obj.stack;<br/>
+};<br/>
+<br/>
+function foo(){<br/>
+    return getStackTrace();<br/>
+}<br/>
+<br/>
+alert("Stack:" + foo());<br/>
+alert("Location:" + foo().split(/\n+/)[1].replace(/(^\s+|\s+$)/,""));</pre>
+
+点击链接&nbsp;<a href="http://fiddle.jshell.net/Unmi/EE9gM/" target="_blank">http://fiddle.jshell.net/Unmi/EE9gM/</a>&nbsp;在 Chrome 中运行类似的代码。在 Firefox/Safari 中得不到结果。<br/>
+<br/>
+参考：1.&nbsp;<a href="http://dracoblue.net/dev/javascript-new-exceptionnamemessage/" target="_blank">JavaScript new Exception(name,message)</a><br/>
+&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; 2.&nbsp;<a href="http://www.imkevinyang.com/2009/05/javascript%E4%B8%AD%E8%8E%B7%E5%8F%96%E5%87%BA%E9%94%99%E4%BB%A3%E7%A0%81%E6%89%80%E5%9C%A8%E6%96%87%E4%BB%B6%E5%8F%8A%E8%A1%8C%E6%95%B0.html" target="_blank">Javascript中获取出错代码所在文件及行数</a>

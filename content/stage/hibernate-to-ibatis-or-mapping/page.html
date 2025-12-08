@@ -1,0 +1,193 @@
+---
+title: 从 Hibernate 到 iBatis，初次体验 SqlMap，领略另番 OR-Mapping
+url: /hibernate-to-ibatis-or-mapping/
+date: 2007-04-28T12:20:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/04/mybatis-logo.jpeg"
+categories:
+  - iBatis
+  - Hibernate
+tags: 
+  - iBatis
+  - Hibernate
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 526 
+wpStatus: publish
+views: 1567
+lastmod: 2021-09-03T10:21:17-05:00
+---
+
+用Hibernate也有一段时间了，项目中也用过CMP以及.net的DataSet，也想体验一下iBatis的SqlMap方式的魅力了，以前总是看iBatis介绍一的文章，现在应是亲自动手心临其境的时候了。</p>
+<br/>
+<img src="https://yanbin.blog/wp-content/uploads/2010/08/to-iBatis.jpg" alt="" align="right" />做这个实验基本是遵照　<a href="http://ibatis.apache.org/docs/java/pdf/iBATIS-SqlMaps-2-Tutorial_cn.pdf">iBATIS SQL Maps 入门教程</a>　中的例子做的，只是在原来的基础上还更简化了一些。<br/><br/>
+我用的开发工具是 Eclipse，如何建立你的工程和加入相应的 iBatis 包可不详叙。<!--more--><br />
+iBatis的官网是 <a href="http://ibatis.apache.org/">http://ibatis.apache.org/</a> ，可在这个网站上下载到需要的包， 我用的是2.1.5的版本，有三个jar包，分别是：ibatis-sqlmap-2.jar, ibatis-common-2.jar, ibatis-dao-2.jar, 最后注意加上你要用到的数据库驱动包，我在这个例子中用到的是 Oracle 数据库, JDBC 驱动包是 classes12.jar。<br />
+好啦，下面分六步介绍如何构建起一个最简单的IBatis应用程序<br/><br/>
+右边是下面几步创建文件的路径图，数据库表创建脚本就没列出来。<br/><br/>
+<strong>第一步：创建一个 测试数据库表</strong>，Person，SQL脚本<br/><br/>
+<pre class="brush:sql">create table person(
+    id integer,
+    name varchar2(16),
+    passwd varchar2(16)
+)</pre>
+<br/>
+<strong>第二步：创建Java对应实体类</strong>, Person.java, 要有一个默认的构造函数，也就是符合JavaBean规范<br/><br/>
+<pre class="brush:java">package com.unmi;<br/><br/>
+public class Person
+{
+    private Integer id;
+    private String name;
+    private String passwd;<br/><br/>
+    public Person()
+    {<br/><br/>
+    }<br/><br/>
+    public Person(Integer id)
+    {
+        this.id = id;
+    }<br/><br/>
+    public Integer getId()
+    {
+        return id;
+    }
+    public void setId(Integer id)
+    {
+        this.id = id;
+    }
+    public String getName()
+    {
+        return name;
+    }
+    public void setName(String name)
+    {
+        this.name = name;
+    }
+    public String getPasswd()
+    {
+        return passwd;
+    }
+    public void setPasswd(String passwd)
+    {
+        this.passwd = passwd;
+    }<br/><br/>
+    public String toString()
+    {
+        return "Person[ID:"+id+",NAME:"+name+",PASSWD:"+passwd+"]";
+    }
+}</pre>
+<br/>
+<strong>第三步：创建SqlMap配置文件</strong>，相当于Hibernate的hibernate.cfg.xml配置文件，十分类似<br/><br/>
+<pre class="lang:default decode:true">&lt;!DOCTYPE sqlMapConfig PUBLIC "-//iBATIS.com//DTD SQL Map Config 2.0//EN"
+"http://www.ibatis.com/dtd/sql-map-config-2.dtd"&gt;
+&lt;sqlMapConfig&gt;<br/><br/>
+    &lt;!-- SqlMap的环境属性配置 --&gt;
+    &lt;settings cacheModelsEnabled="true" enhancementEnabled="true"
+        lazyLoadingEnabled="true" maxRequests="32" maxSessions="10"
+        maxTransactions="5" useStatementNamespaces="false" /&gt;<br/><br/>
+    &lt;!-- 配置SqlMap的连接池属性，默认使用SimpleDataSource实现--&gt;
+    &lt;transactionManager type="JDBC"&gt;
+        &lt;dataSource type="SIMPLE"&gt;
+            &lt;property name="JDBC.Driver" value="oracle.jdbc.driver.OracleDriver" /&gt;
+            &lt;property name="JDBC.ConnectionURL" value="jdbc:oracle:thin:@192.168.0.1:1521:test" /&gt;
+            &lt;property name="JDBC.Username" value="scott" /&gt;
+            &lt;property name="JDBC.Password" value="tiger" /&gt;
+        &lt;/dataSource&gt;
+    &lt;/transactionManager&gt;<br/><br/>
+    &lt;!-- SqlMap的映射文件 --&gt;
+    &lt;sqlMap resource="com/unmi/Person.xml" /&gt;
+&lt;/sqlMapConfig&gt;</pre>
+<br/>
+<strong>第四步：创建SqlMap映射文件</strong> Person.xml，相当于Hibernate的映射文件 *.hbm.xml，只是它的映射不靠POJO的属性到数据库字段的一一映射，靠的是Sql语句，所以谓之 SqlMap, 注意每条语句中参数的写法。<br/><br/>
+<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!DOCTYPE sqlMap PUBLIC "-//iBATIS.com//DTD SQL Map 2.0//EN"
+"http://www.ibatis.com/dtd/sql-map-2.dtd"&gt;
+&lt;sqlMap namespace="Person"&gt;
+    &lt;!-- 传入包装类型（Integer）参数，查询到结果集组装成一个Person对象返回 --&gt;
+    &lt;select id="getPerson" parameterClass="int" resultClass="com.unmi.Person"&gt;
+        SELECT ID as id, NAME as name, PASSWD as passwd
+         FROM PERSON    WHERE ID = #value#
+    &lt;/select&gt;<br/><br/>
+    &lt;!-- 插入一条Person对应的记录到数据库中 --&gt;
+    &lt;insert id="insertPerson" parameterClass="com.unmi.Person"&gt;
+        INSERT INTO PERSON (ID, NAME, PASSWD) VALUES (#id#,#name#, #passwd#)
+    &lt;/insert&gt;<br/><br/>
+    &lt;!-- 关联ID更新一条Person记录到数据库中 --&gt;
+    &lt;update id="updatePerson" parameterClass="com.unmi.Person"&gt;
+        UPDATE PERSON SET NAME = #name#, PASSWD = #passwd# WHERE ID = #id#
+    &lt;/update&gt;<br/><br/>
+    &lt;!-- 根据ID从数据库中删除一条Person记录 --&gt;
+    &lt;delete id="deletePerson" parameterClass="com.unmi.Person"&gt;
+        DELETE PERSON WHERE ID = #id#
+    &lt;/delete&gt;
+&lt;/sqlMap&gt;</pre>
+<br/>
+<strong>第五步：创建一个获取SqlMapClient的工厂类</strong>，相当于MyEclipse为Hibernate应用程序生成的HibernateSessionFactory类<br/><br/>
+<pre class="brush:java">package com.unmi;<br/><br/>
+import java.io.Reader;<br/><br/>
+import com.ibatis.common.resources.Resources;
+import com.ibatis.sqlmap.client.SqlMapClient;
+import com.ibatis.sqlmap.client.SqlMapClientBuilder;<br/><br/>
+public class SqlMapConfig
+{
+    private static final SqlMapClient sqlMap;
+    static
+    {
+        try
+        {
+            String resource = "SqlMapConfig.xml";
+            Reader reader = Resources.getResourceAsReader(resource);
+            sqlMap = SqlMapClientBuilder.buildSqlMapClient(reader);
+        }
+        catch (Exception e)
+        {
+            e.printStackTrace();
+            throw new RuntimeException("Error initializing MyAppSqlConfig class. Cause: " + e);
+        }
+    }<br/><br/>
+    public static SqlMapClient getSqlMapInstance()
+    {
+        return sqlMap;
+    }
+}</pre>
+<br/>
+<strong>第六步：终极体验</strong>，创建你的测试类 Client.java, 进行 CRUD 操作，SqlMapClient有如Hibernate的Session一般，仔细看看其中的方法吧。<br/><br/>
+<pre class="brush:java">package com.unmi;<br/><br/>
+import com.ibatis.sqlmap.client.SqlMapClient;<br/><br/>
+public class Client
+{<br/><br/>
+    /** *//**
+     * @param args
+     * @throws Exception
+     */
+    public static void main(String[] args) throws Exception
+    {
+        SqlMapClient sqlMap = SqlMapConfig.getSqlMapInstance(); // as coded above
+        Integer personPk = new Integer(1);
+        Person person = (Person) sqlMap.queryForObject("getPerson", personPk);
+        System.out.println(person);<br/><br/>
+        person.setName("Unmi");
+        sqlMap.update("updatePerson",person);<br/><br/>
+        person.setId(2);
+        sqlMap.insert("insertPerson",person);<br/><br/>
+        sqlMap.delete("deletePerson", person);
+    }
+}</pre>
+<br/>
+<hr /><br/><br/>
+补充：<br />
+2008-05-25 SqlMapClient 中有许多实用的方法。<br />
+iBatis 2.3.0 不再分 sqlmap/common/dao 多个包了，都放在一个包了<br />
+ibatis-2.3.0.677.jar<br/><br/>
+配置文件 SqlMapConfig.xml 的 DTD 是<br/><br/>
+&lt;!DOCTYPE sqlMapConfig<br />
+PUBLIC "-//ibatis.apache.org//DTD SQL Map Config 2.0//EN"<br />
+"<a href="http://ibatis.apache.org/dtd/sql-map-config-2.dtd&quot;&gt;" target="_new" rel="noopener noreferrer">http://ibatis.apache.org/dtd/sql-map-config-2.dtd"&gt;</a><br/><br/>
+Map 映射文件的 DTD 是<br/><br/>
+&lt;!DOCTYPE sqlMap<br />
+PUBLIC "-//ibatis.apache.org//DTD SQL Map 2.0//EN"<br />
+"<a href="http://ibatis.apache.org/dtd/sql-map-2.dtd&quot;&gt;" target="_new" rel="noopener noreferrer">http://ibatis.apache.org/dtd/sql-map-2.dtd"&gt;</a>

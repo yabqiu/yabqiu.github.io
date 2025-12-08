@@ -1,0 +1,119 @@
+---
+title: ADO.NET 访问数据库的性能改善方法集合 [转]
+url: /ado-net-access-db-performance/
+date: 2006-09-14T11:41:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - .Net
+tags: 
+  - Ado.Net
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 549 
+wpStatus: publish
+views: 276
+lastmod: 2010-08-28T05:54:48-05:00
+---
+
+<h3>l  总的考虑方向</h3><br/>
+    1) 根据数据使用的方式来设计数据访问层<br/>
+<br/>
+    2) 缓存数据，避免不必要的操作<br/>
+<br/>
+    3) 使用服务帐户进行连接<br/>
+<br/>
+    4) 必要时连接，尽早释放<br/>
+<br/>
+    5) 关闭可关闭的资源<!--more--><br/>
+<br/>
+    6) 减少往返<br/>
+<br/>
+    7) 仅返回需要的数据<br/>
+<br/>
+    8) 选择适当的事务类型<br/>
+<br/>
+    9) 使用存储过程<br/>
+<br/>
+根据性能、可维护性、及实现难度来决定跨层数据传递的方式<br/>
+<h4>2   具体实现</h4><br/>
+    1)选用合适的Data Provider<br/>
+应尽量使用专用的Data Provider,下面是一个性能比较表<br/>
+<br/>
+<input id="Image1" name="Image1" src="http://images.blogcn.com/2006/10/22/9/unmi,20061022173834.jpg" type="image" value="Image1" /><br/>
+<br/>
+由上图中可以看出SqlClient的速度是最快的，其主要原因是其他的数据提供者都经过的几个层次的转换，如下图<br/>
+<br/>
+<input id="Image2" name="Image2" src="http://images.blogcn.com/2006/10/22/9/unmi,20061022173746.jpg" type="image" value="Image2" /><br/>
+<br/>
+从图中可以看出，SqlClient直接访问DB Netlib而其他的数据提供者都经过了两层转换，因此，在设计多层应用的时候，并不是层次越多越好，而是应该在可扩展性与性能间取折中，增加层次是会降低性能的。<br/>
+<br/>
+    1)数据库连接<br/>
+<br/>
+           i.  在方法中打开和关闭连接，即不要在类的构造函数中打开连接，在类的析构函数中关闭连接。<br/>
+<br/>
+           ii. 使用完连接明确地关闭。因为有连接池的支持，关闭连接只是将连接放回连接池，并不是真正销毁，不会带来性能开销，而会增加连接池中可用连接，提升性能。<br/>
+<br/>
+           iii.当使用DataReaders时，指定CommandBehavior.CloseConnection<br/>
+<br/>
+           iv. 当使用Fill()与Updata()时，不要手动打开连接。因为DataAdapter会自动开启连接，但是如果是Command则需要手动开启。<br/>
+<br/>
+           v.  避免检查OleDbConnection的State属性，其性能开销相当大。<br/>
+<br/>
+           vi. 使用连接池。这种方法可以大幅度提高性能。默认的情况下，通过SqlClient连接数据库时，会使用连接池，另可以通过连接字符串来控制连接池的最大值，最小值，以及是否开启连接池。<br/>
+<br/>
+    2)SQL指令<br/>
+<br/>
+          i.   检查SQL的输入，并使用参数，直接使用字符连接容易遭受注入式攻击。<br/>
+<br/>
+          ii.  仅返回需要的行和例<br/>
+<br/>
+          iii. 对大的数据集使用分页功能<br/>
+<br/>
+          iv.  批次执行SQL，避免多次往返。<br/>
+<br/>
+          v.   如果没有数据返回则使用ExecuteNonQuery方法<br/>
+<br/>
+          vi.  当返回一个标量时，使用ExecuteScalar方法<br/>
+<br/>
+          vii. 不要在运行时间使用CommandBuilder，尽管很省事，但是开销很大。<br/>
+<br/>
+    3)存储过程<br/>
+<br/>
+          i.   尽量使用存储过程<br/>
+<br/>
+          ii.  对于OleDbCommand，指令类型为CommandType.Text<br/>
+<br/>
+          iii. 使用SqlCommand,指令类型为CommandType.StoredProcedure<br/>
+<br/>
+          iv.  尽可能使用输出参数<br/>
+<br/>
+          v.   考虑在SQL Server中SET NOCOUNT ON，即关闭SQL Server的记数功能。<br/>
+<br/>
+    4)事务<br/>
+<br/>
+    5)使用参数<br/>
+<br/>
+          i.   在存储过程上使用参数<br/>
+<br/>
+          ii.  创建参数并指定类型<br/>
+<br/>
+          iii. 可将参数对象进行缓存<br/>
+<br/>
+    6)DataReader 和 DataSet<br/>
+<br/>
+          i.   DataReader对象需要关闭<br/>
+<br/>
+          ii.  用DataReader时应，使用CommandBehavior.CloseConnection关闭连接<br/>
+<br/>
+          iii. DataReader应用在只读、只向前翻滚的数据访问场景<br/>
+<br/>
+          iv.  只想快速访问数据，不需要缓存功能应使用DataReader<br/>
+<br/>
+DataSet在需要数据缓存，并在不同层间传递时使用。它可以存放多个结果集，可以在离线的情况下自由定位，查找数据。<br/>
+<br/>
+总的来说，提高性能会降低可扩展性，以及维护难度，应在满足功能与非功能需求的情况下提高性能，另应在设计时就考虑性能，好的设计在性能上的提升比差的设计后期再修改要好得多。

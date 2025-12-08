@@ -1,0 +1,335 @@
+---
+title: Kubernetes 学习笔记(二) - 部署和访问应用
+url: /kubernetes-learning-2-run-service/
+date: 2020-04-09T22:53:07-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2020/03/kubernetes_logo.png"
+categories:
+  - Kubernetes
+tags: 
+  - Docker
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10099 
+wpStatus: publish
+views: 374
+lastmod: 2021-09-02T22:04:59-05:00
+---
+
+前边折腾了各种安装 Kubernetes 集群的操作，还跑到 AWS 上撸了一把 EKS，也在 Kubernetes 上部署过服务。继续更深一步的学习如何部署应用和怎么通过 Service 去访问 Pod 中的应用，顺带看看内部的网络是怎么流转的。<br/><br/>
+测试平台还是以本地启动的三个 Vagrant 虚拟机组成的 Kubernetes 集群，安装方法见 <a href="https://yanbin.blog/kubernetes-learning-1/">Kubernetes 学习笔记(一) - 初上手</a>。<br/><br/>
+<ol>
+    <li>k8s-master  (172.28.128.14)</li>
+    <li>k8s-node1    (172.28.128.10)</li>
+    <li>k8s-node2   (172.28.128.11)</li>
+</ol>
+<br/>
+测试应用的镜像为 <code>yanbin/python-web</code>, 代码见 github 上的 <a href="https://github.com/yabqiu/python-web-docker/blob/master/app.py">yabqiu/python-web-docker/app.py</a>, 一个默认启动在  80 端口上的 Flask Web 应用，输出为当前 hostname  和一个唯一标识符。<br/><br/>
+<h3>部署应用</h3><br/><br/>
+《每天5分玩转Kubernetes》里用的 Kubernetes 是 1.7 版本，其中还在用 <code>kubectl run</code> 的方式来部署应用(它会产生一个隐式的 deployment 对象)，该方式已在 <a href="https://github.com/kubernetes/kubernetes/blob/9d1179360cfc9fb6e905252cccd482b987d45393/CHANGELOG/CHANGELOG-1.12.md#deprecations-and-removals">Kubernetes 1.12 中不推荐使用了</a>，建议用 <code>kubectl create deployment...</code>，而实际中更应该用 <code>yaml</code> 文件编排后再 <code>kubectl apply -f &lt;your-yaml-file&gt;</code>, 这样多种对象可以编写在一起，更方便日后同样的命令更新各种对象，或者用 <code>kubectl delete -f &lt;your-yam-file&gt;</code> 批量删除所创建的对象。<!--more--><br/><br/>
+<h4>命令方式部署</h4><br/><br/>
+命令方式创建一个 deployment 对象，并让它启动 3 个 pod<br/><br/>
+<blockquote>
+$ kubectl create deployment python-web-app --image=yanbin/python-web:latest<br />
+$ kubectl scale -n default deployment python-web-app --replicas=3
+</blockquote>
+<br/>
+等它们全部就续后<br/><br/>
+<pre class="lang:default decode:true">$ kubectl get deploy -A
+NAMESPACE     NAME             READY   UP-TO-DATE   AVAILABLE   AGE
+default       python-web-app   3/3     3            3           3m47s
+kube-system   coredns          2/2     2            2           117m
+$ kubectl get pods -o wide
+NAME                              READY   STATUS    RESTARTS   AGE     IP           NODE       ...
+python-web-app-68d7bbd7f5-dzjxf   1/1     Running   0          3m43s   10.244.2.3   k8s-node2  ...
+python-web-app-68d7bbd7f5-jt54g   1/1     Running   0          3m42s   10.244.2.4   k8s-node2  ...
+python-web-app-68d7bbd7f5-l5wkb   1/1     Running   0          3m48s   10.244.1.2   k8s-node1  ...</pre>
+<br/>
+看到创建了一个 python-web-app deployment 对象，并按照要求启动了三个 pod，分配到了两个工作节点上。先不讨论怎么去访问上面启动的服务，而是应该了解用 <code>yaml</code> 文件的部署方式。在这之前我们把前面的 <code>deployment</code>  对象删掉，命令是<br/><br/>
+<blockquote>
+$ kubectl delete deploy python-web-app
+</blockquote>
+<br/>
+这会把 deployment  对象并先前的三个  <code>python-web-app-*</code> pod 全部清除掉。<br/><br/>
+<h4><code>yaml</code> 文件方式部署</h4><br/><br/>
+需创建一个描述文件, 我们命名为 <code>python-web-app.yaml</code>(也可用 yml 为文件后缀)，内容如下：<br/><br/>
+<pre class="lang:yaml decode:true">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-web-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: python-web-app
+  template:
+    metadata:
+      labels:
+        app: python-web-app
+    spec:
+      containers:
+      - name: python-web
+        image: yanbin/python-web:latest</pre>
+<br/>
+然后只要一条命令就完成了部署并启动三个 pod<br/><br/>
+<blockquote>
+$ kubectl apply -f python-web-app.yaml
+</blockquote>
+<br/>
+相应的删除都不用事先查找到 deployment 对象是什么名称，而只需<br/><br/>
+<blockquote>
+$ kubectl delete -f python-web-app.yaml
+</blockquote>
+<br/>
+以后有什么修改的话，只要改下 <code>python-web-app.yaml</code> 文件，比如把 <code>replicas</code> 调整为 4, 接着再做一遍 <code>kubectl apply -f python-web-app.yaml</code> 就行了。<br/><br/>
+所以从以上操作不难想像，使用 <code>yaml</code> 文件来管理 Kubernetes 中的对象还能把对象状态存储到版本服务器上。<br/><br/>
+<h3>通过 Service 访问 Pod 应用</h3><br/><br/>
+回到前面搁下的话题，这是个大话题，将会涉及到 LoadBalance, Cluster IP 和  NodePort 的概念。现在我们看到了启动了三个 <code>python-web-app</code> pod, 它们是运行在不同工作节点上的 docker 容器，隔着有两层，又没有暴露出端口，该如何它们呢？<br/><br/>
+<h4>Pod IP 地址访问</h4><br/><br/>
+最直接的想法是可以登陆到具体的 pod(docker 容器, 这儿一个 pod 中只运行了一个 docker 容器)，访问它的 80 端口上的 web 服务<br/><br/>
+<blockquote>
+root@k8s-master# kubectl exec -it python-web-app-68d7bbd7f5-dzjxf -- /bin/sh<br />
+/ # hostname<br />
+python-web-app-68d7bbd7f5-dzjxf<br />
+/ # ifconfig | grep 10.244<br />
+inet addr:10.244.2.3 Bcast:0.0.0.0 Mask:255.255.255.0<br />
+/ # wget -qO- 10.244.2.3:80<br />
+Served by python-web-app-68d7bbd7f5-dzjxf/4a8a9e75<br />
+/ # exit<br />
+root@k8s-master# kubectl exec -it python-web-app-68d7bbd7f5-l5wkb -- /bin/sh<br />
+/ # hostname<br />
+python-web-app-68d7bbd7f5-l5wkb<br />
+/ # wget -qO- localhost<br />
+Served by python-web-app-68d7bbd7f5-l5wkb/916a8ed9
+</blockquote>
+<br/>
+Alpine Linux 自带  wget 命令，不用安装  curl 也行<br/><br/>
+进入到 docker  容器去访问服务肯定是没什么意义的，或许通过 worker 节点稍微现实一些，可是我们启动 docker 容器时未映射端口。来到<br/><br/>
+<blockquote>
+python-web-app-68d7bbd7f5-dzjxf 1/1 Running 0 3m43s 10.244.2.3 k8s-node2
+</blockquote>
+<br/>
+所在的 worker 节点 k8s-node2 上<br/><br/>
+<pre class="lang:default decode:true">root@k8s-node2:/# docker ps
+CONTAINER ID        IMAGE                   COMMAND                  CREATED             STATUS              PORTS  ...
+10ebc5d4ecdd        yanbin/python-web       "python app.py"          11 hours ago        Up 11 hours                ...</pre>
+<br/>
+端口未映射没法通过节点访问<br/><br/>
+<blockquote>
+root@k8s-node1:/# curl 10.244.2.3<br />
+Served by python-web-app-68d7bbd7f5-dzjxf/4a8a9e75
+</blockquote>
+<br/>
+发现不需要在  python-web-app.yaml 中加<br/><br/>
+<blockquote>
+ports:<br />
+- containerPort: 80
+</blockquote>
+<br/>
+也能在各工作节点上访问到所运行的容器的 80 端口<br/><br/>
+<h4>ClusterIP 访问服务</h4><br/><br/>
+我们进一步修改部署文件为<br/><br/>
+<pre class="lang:default mark:20-31 decode:true">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-web-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: python-web-app
+  template:
+    metadata:
+      labels:
+        app: python-web-app
+    spec:
+      containers:
+      - name: python-web
+        image: yanbin/python-web:latest
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: python-web-svc
+spec:
+  selector:
+    app: python-web-app
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80</pre>
+<br/>
+再次 <code>kubectl apply -f python-web-app.yaml</code>, 查看 service 的 CLUSTER-IP<br/><br/>
+<code>---</code> 可以把多个对象的配置放在同一个文件中，其实上面的 Service 等价于下面的命令(中括号中内容可选)<br/><br/>
+<blockquote>
+# kubectl expose deployment python-web-app --name=python-web-svc --port 80 [--target-port 80 --protocol TCP]
+</blockquote>
+<br/>
+<pre class="lang:default decode:true">root@k8s-master:/# kubectl get svc
+NAME             TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+kubernetes       ClusterIP   10.96.0.1        &lt;none&gt;        443/TCP   6h19m
+python-web-svc   ClusterIP   10.110.181.172   &lt;none&gt;        80/TCP    6h15m</pre>
+<br/>
+现在可以在任意工作节点上用上面的 CLUSTER-IP 来访问容器内的服务<br/><br/>
+<blockquote>
+root@k8s-master:/# curl 10.110.181.172<br />
+Served by python-web-app-78b9d9d7f-f2gxt/c5413dba<br />
+root@k8s-master:/# curl 10.244.2.7<br />
+Served by python-web-app-78b9d9d7f-m478c/32c2f2bd<br />
+root@k8s-master:/# curl 10.244.2.8<br />
+Served by python-web-app-78b9d9d7f-tzqml/98e656a6
+</blockquote>
+<br/>
+这里的  ClusterIP 10.110.181.172 实质是一个 iptables 实现的虚拟 IP，同样是由 iptables 实现了负载均衡<br/><br/>
+<h4>域名访问 Service</h4><br/><br/>
+这里的域名是 Service 的  ClientIP 地址对应有一个域名，所以它仍然是局限于内部访问服务。Kubernetes 集群有自己的 DNS 服务(kube-dns)<br/><br/>
+<pre class="lang:default decode:true crayon-selected">root@k8s-master:/# k get deploy -n kube-system
+NAME      READY   UP-TO-DATE   AVAILABLE   AGE
+coredns   2/2     2            2           6h39m
+root@k8s-master:/home/vagrant# k get pods -n kube-system -o wide | grep dns
+coredns-66bff467f8-2m26v             1/1     Running   0          6h39m   10.244.2.2      k8s-node2
+coredns-66bff467f8-5gvf9             1/1     Running   0          6h39m   10.244.1.2      k8s-node1</pre>
+<br/>
+DNS 是给 Pod 用的，所以只要工作节点上有。<br/><br/>
+Kubernetes 中每一个服务都有自己的名称，完整名称为 &lt;SERVICE_NAME&gt;.&lt;NAMESPACE_NAME&gt;。所以我们进到某一个 Pod<br/><br/>
+<pre class="lang:default decode:true">root@k8s-master:/# kubectl get svc
+NAME             TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+kubernetes       ClusterIP   10.96.0.1        &lt;none&gt;        443/TCP   6h43m
+python-web-svc   ClusterIP   10.104.132.106   &lt;none&gt;        80/TCP    11m
+root@k8s-master:/# kubectl exec -it python-web-app-68d7bbd7f5-dzjxf -- sh
+/ # cat /etc/resolv.conf
+nameserver 10.96.0.10
+search default.svc.cluster.local svc.cluster.local
+options ndots:5
+/ # wget -qO- python-web-svc
+Served by python-web-app-78b9d9d7f-f2gxt/c5413dba
+/ # wget -qO- python-web-svc.default
+Served by python-web-app-78b9d9d7f-m478c/32c2f2bd
+/ # ping python-web-svc
+PING python-web-svc (10.104.132.106): 56 data bytes</pre>
+<br/>
+虽然在 Pod 内部，对 <code>python-web-svc</code> 和 <code>python-web-svc.default</code> 都会解析到  ClusterIP 10.104.132.106 上，因此与访问 ClusterIP  一样是通 iptables 实现的负载均衡。<br/><br/>
+这里有点绕，要进到 Pod 容器内部才能使用域名来访问 Service 对应的 ClusterIP，显然不是为外部提供服务的，它的关键用途是让 Pod(容器) 之间用 Service 名称互相访问。<br/><br/>
+下边是两种可由外部访问 Service<br/><br/>
+对于需向外提供服务的应用，这个才是 Kubernetes 的关键。可以通过 NodePort 或 LoadBalancer 的方式。<br/><br/>
+<h4>NodePort 方式</h4><br/><br/>
+修改前面的 python-web.app.yaml 文件中的 Service 部分如下：<br/><br/>
+<pre class="lang:default mark:6 decode:true">apiVersion: v1
+kind: Service
+metadata:
+  name: python-web-svc
+spec:
+  type: NodePort
+  selector:
+    app: python-web-app
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80</pre>
+<br/>
+应用它 <code>kubectl apply -f python-web-app.yaml</code>，默认时每个节点上会分配一个 3000~32767 之间的端口与服务端口映射，我们也可以在 yaml 文件中指定 nodePort 的值。<br/><br/>
+<pre class="lang:default decode:true">root@k8s-master:/# kubectl get svc
+NAME             TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)        AGE
+kubernetes       ClusterIP   10.96.0.1        &lt;none&gt;        443/TCP        7h13m
+python-web-svc   NodePort    10.104.132.106   &lt;none&gt;        80:32592/TCP   41m
+root@k8s-master:/# k get nodes -o wide
+NAME         STATUS   ROLES    AGE     VERSION   INTERNAL-IP 
+k8s-master   Ready    master   7h13m   v1.18.1   172.28.128.10
+k8s-node1    Ready    &lt;none&gt;   7h13m   v1.18.1   172.28.128.11
+k8s-node2    Ready    &lt;none&gt;   7h13m   v1.18.1   172.28.128.12<br/><br/>
+root@k8s-master:/# curl 172.28.128.11:32592
+Served by python-web-app-78b9d9d7f-f2gxt/c5413dba
+root@k8s-master:/# curl 172.28.128.12:32592
+Served by python-web-app-78b9d9d7f-m478c/32c2f2bd</pre>
+<br/>
+通过 Kubernetes 集群中任意节点的 IP 就可以访问容器内部的应用。工作节点的机器从架构上虽然是可以让外部进行访问，但这样做是不安全的。通过 NodePort 访问服务并非只是访问内部实现依然是借助于 iptables。<br/><br/>
+<h4>LoadBalancer 方式</h4><br/><br/>
+需像 NodePort 一样，把 Service 部分的 type 改为  LoadBalancer<br/><br/>
+<pre class="lang:default mark:6 decode:true crayon-selected">apiVersion: v1
+kind: Service
+metadata:
+  name: python-web-svc
+spec:
+  type: LoadBalancer
+  selector:
+    app: python-web-app
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 80</pre>
+<br/>
+type 为 LoadBalancer 时会请求云服务提供商给它一个 EXTERAL-IP, 由此来向外提供服务。目前支持提供 LoadBalancer 的有 GCP, AWS, Azure 等。下面以  AWS 为例<br/><br/>
+<pre class="lang:default decode:true">➜  $ kubectl get svc
+NAME             TYPE           CLUSTER-IP     EXTERNAL-IP                                 PORT(S)        AGE
+kubernetes       ClusterIP      10.100.0.1     &lt;none&gt;                                      443/TCP        45m
+python-web-svc   LoadBalancer   10.100.87.28   af611e...2083.us-east-1.elb.amazonaws.com   80:32624/TCP   36m</pre>
+<br/>
+这样通过那个 ELB 域名就能连接到节点的 32624 端口，像 NodePort 一样访问到了每一个 Pod 的服务。<br/><br/>
+<h3>集群内部的 LoadBalance</h3><br/><br/>
+前面列出各种访问 Kubernetes 内服务的方式：<br/><br/>
+<ol>
+    <li><span style="color: #808080;">Pod IP 地址访问：确切来讲，直接用 Pod IP 访问的是容器内应用而非 Kubernetes 服务，只宜用于诊断容器内程序</span></li>
+    <li>Cluster IP 访问 Service</li>
+    <li>域名访问 Service：在 Pod 容器内部用域名方式解析到 Cluster IP 上</li>
+    <li>NodePort 访问 Service</li>
+    <li>LoadBalancer 访问 Service</li>
+</ol>
+<br/>
+以上除第一种方式外，只要发起了请求或者是外部的请求进入了集群，Kubernetes 自己的负载均衡(请求分布)便介入了工作。请求首先会被引到 ClusterIP 上来，这是一个 iptables 实现的虚拟 IP。在集群内部协助它实现的是节点之间的网络服务，如 flannel 网络，它是运行在每一个节点上的 Daemon Pod。<br/><br/>
+<pre class="lang:default decode:true">root@k8s-master:~# kubectl get pod -n kube-system -o wide
+NAME                                 READY   STATUS    RESTARTS   AGE   IP              NODE     
+kube-flannel-ds-amd64-jfn2s          1/1     Running   0          9h    172.28.128.12   k8s-node2  
+kube-flannel-ds-amd64-sqh42          1/1     Running   0          9h    172.28.128.10   k8s-master 
+kube-flannel-ds-amd64-zzgsr          1/1     Running   0          9h    172.28.128.11   k8s-node1  </pre>
+<br/>
+查看某一个 kube-flannel 上的日志如下：<br/><br/>
+<pre class="lang:default decode:true ">root@k8s-master:~# kubectl logs kube-flannel-ds-amd64-jfn2s -n kube-system | tail -15
+I0409 17:42:14.180010       1 vxlan_network.go:60] watching for new subnet leases
+I0409 17:42:14.182489       1 iptables.go:145] Some iptables rules are missing; deleting and recreating rules
+I0409 17:42:14.182506       1 iptables.go:167] Deleting iptables rule: -s 10.244.0.0/16 -j ACCEPT
+I0409 17:42:14.182891       1 iptables.go:145] Some iptables rules are missing; deleting and recreating rules
+I0409 17:42:14.183330       1 iptables.go:167] Deleting iptables rule: -s 10.244.0.0/16 -d 10.244.0.0/16 -j RETURN
+I0409 17:42:14.185017       1 iptables.go:167] Deleting iptables rule: -d 10.244.0.0/16 -j ACCEPT
+I0409 17:42:14.279752       1 iptables.go:167] Deleting iptables rule: -s 10.244.0.0/16 ! -d 224.0.0.0/4 -j MASQUERADE --random-fully
+I0409 17:42:14.280162       1 iptables.go:155] Adding iptables rule: -s 10.244.0.0/16 -j ACCEPT
+I0409 17:42:14.282071       1 iptables.go:167] Deleting iptables rule: ! -s 10.244.0.0/16 -d 10.244.2.0/24 -j RETURN
+I0409 17:42:14.383168       1 iptables.go:155] Adding iptables rule: -d 10.244.0.0/16 -j ACCEPT
+I0409 17:42:14.384063       1 iptables.go:167] Deleting iptables rule: ! -s 10.244.0.0/16 -d 10.244.0.0/16 -j MASQUERADE --random-fully
+I0409 17:42:14.386864       1 iptables.go:155] Adding iptables rule: -s 10.244.0.0/16 -d 10.244.0.0/16 -j RETURN
+I0409 17:42:14.389205       1 iptables.go:155] Adding iptables rule: -s 10.244.0.0/16 ! -d 224.0.0.0/4 -j MASQUERADE --random-fully
+I0409 17:42:14.484011       1 iptables.go:155] Adding iptables rule: ! -s 10.244.0.0/16 -d 10.244.2.0/24 -j RETURN
+I0409 17:42:14.488072       1 iptables.go:155] Adding iptables rule: ! -s 10.244.0.0/16 -d 10.244.0.0/16 -j MASQUERADE --random-fully</pre>
+<br/>
+在任意节点上也可以用 <code>iptables-save</code> 查看当前节点的 iptables 怎么去按比例分发请求到相应的服务对应的 Pod 上去的。每次新建一个 Kubernetes 服务，或者 Deployment 发生更新后都会有一系列的 iptables 规则的变更。<br/><br/>
+我们可以查看一个服务的描述<br/><br/>
+<pre class="lang:default decode:true">root@k8s-master:~# kubectl describe svc  python-web-svc
+Name:                     python-web-svc
+Namespace:                default
+Labels:                   &lt;none&gt;
+Annotations:              Selector:  app=python-web-app
+Type:                     NodePort
+IP:                       10.104.132.106
+LoadBalancer Ingress:     af611e.....082083.us-east-1.elb.amazonaws.com
+Port:                     &lt;unset&gt;  80/TCP
+TargetPort:               80/TCP
+NodePort:                 &lt;unset&gt;  32592/TCP
+Endpoints:                10.244.1.6:80,10.244.2.7:80,10.244.2.8:80
+Session Affinity:         None
+External Traffic Policy:  Cluster
+Events:                   &lt;none&gt;</pre>
+<br/>
+上面服务显示出各种可能的访问方式，包括：ClusterIP(IP), LoadBalancer Ingress, NodePort, 以及请求会被分发到的 Pod 容器(即 Endpoints)<br/><br/>
+以下图片来自于 《Kubernetes in Action》(Second Edition) 一书，它有助于我们理解 Kubernetes 集群请求分发的逻辑。<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/04/kubernetes-loadbalancer.png"><img class="aligncenter wp-image-10114" src="https://yanbin.blog/wp-content/uploads/2020/04/kubernetes-loadbalancer-800x349.png" alt="" width="772" height="337" /></a>从外部的 Load balancer 不管连接到哪个节点的 NodePort(30838), 进一步经由节点上 <code>iptables</code> 规则的转发，请求最终有可能被任意一个 Pod 容器进行处理。<br/><br/>
+最后应该还有一种 kube-proxy 的方式可以访问到 Service 的，下次用到时再细究。 还是官方的关于 <a href="https://kubernetes.io/zh/docs/concepts/services-networking/service/">Services</a> 的文档非常详细，根本没必要看我前面乱七八糟写的什么东西啊。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://blog.fleeto.us/post/intro-metallb/">Metallb - 贫苦 K8S 用户的负载均衡支持</a></li>
+</ol>

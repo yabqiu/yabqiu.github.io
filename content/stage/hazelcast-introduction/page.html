@@ -1,0 +1,127 @@
+---
+title: Hazelcast 介绍与使用(整理)
+url: /hazelcast-introduction/
+date: 2016-09-26T22:51:14-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/09/HazelcastLogo-Orange.png"
+categories:
+  - Java/JEE
+tags: 
+  - Memcache
+  - Hazelcast
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7430 
+wpStatus: publish
+views: 5570
+lastmod: 2021-09-03T17:14:43-05:00
+---
+
+要用到 Hazelcast 这个东西用作分布式缓存, 网上搜索了下发现这篇文章对我理解 Hazelcast 那种无主从之分, 避免了单点故障很有帮助, Hazelcast 的数据分布方式很有点像磁盘阵列 RAID 1, RAID0+1 的影子. 基本上在一个节点出现故障的情况下是不会影响数据访问的.<br/><br/>
+下面这个系列讲的很详细:<br/><br/>
+<ol>
+    <li><strong><a href="https://my.oschina.net/chkui/blog/729698">Hazelcast集群服务(1)——Hazelcast介绍</a></strong></li>
+    <li><strong><a href="https://my.oschina.net/chkui/blog/732408">Hazelcast集群服务(2)——Hazelcast基本配置</a></strong></li>
+    <li><strong><a href="https://my.oschina.net/chkui/blog/736892">Hazelcast集群服务(3)——集群功能详解</a></strong></li>
+    <li><strong><a href="https://my.oschina.net/chkui/blog/746496">Hazelcast集群服务(4)——分布式Map</a></strong></li>
+</ol>
+<br/>
+<hr /><br/><br/>
+Hazelcast 是一个开源的可嵌入式数据网格（社区版免费，企业版收费）。你可以把它看做是内存数据库，不过它与 Redis 等内存数据库又有些不同。项目地址：<a title="http://hazelcast.org/" href="http://hazelcast.org/">http://hazelcast.org/</a><br/><br/>
+Hazelcast 使得 Java 程序员更容易开发分布式计算系统，提供了很多 Java 接口的分布式实现，如：Map, Queue, Topic, ExecutorService, Lock, 以及 JCache 等。它以一个 JAR 包的形式提供服务，只依赖于 Java，并且提供 Java, C/C++, .NET 以及 REST 客户端，因此十分容易使用。<br/><br/>
+<h2>如何存储数据</h2><br/><br/>
+Hazelcast 服务之间是端对端的，没有主从之分，因此也不存在单点故障。集群中所有的节点都存储等量的数据以及进行等量的计算。<br/><br/>
+Hazelcast 缺省情况下把数据分为 271 个区。这个值可配置于系统属性<em> <code>hazelcast.partition.count。</code></em> 对于一个给定的键，在经过序列号、哈希并对分区总数取模之后能得到此键对应的分区号。所有的分区等量的分布与集群中所有的节点中，每个分区对应的备份也同样分布在集群中。<!--more--><br/><br/>
+下例是拥有2个节点的 Hazelcast 集群：<br/><br/>
+<img class="alignnone" title="2个节点" src="/wp-content/uploads/2016/09/967765-20160602101544196-1914505419.png" alt="2个节点" width="214" height="259" /><br/><br/>
+黑色字体表示分区，蓝色字体表示备份。节点1存储了1到135分区，这些分区同时备份在节点2中。节点2存储了136到271分区，并备份在节点1中。<br/><br/>
+此时如果添加2个节点到集群中，Hazelcast 一个一个的移动分区和备份到新的节点，使得集群数据分布平衡。<br/><br/>
+<img class="alignnone" title="4个节点" src="/wp-content/uploads/2016/09/967765-20160602101545524-1950319795.png" alt="4个节点" width="445" height="258" /><br/><br/>
+注意实际中分区并不是有顺序的分布，而是随机分布，上面的示例只是为了方便理解。重要的是理解 Hazelcast 平均分布分区以及备份。<br/><br/>
+Hazelcast 使用哈希算法进行数据分区。对于一个给定的键（如Map）或者对象名称（如topic和list）：<br/><br/>
+<ul>
+    <li>序列化此键或对象名称，得到一个byte数组。</li>
+    <li>对byte数组进行哈希。 </li>
+    <li>取模后的值即为分区号。</li>
+</ul><br/><br/>
+每个节点维护一个分区表，存储着分区号与节点之间的对应关系。这样每个节点都知道如何获取数据。<br/><br/>
+<h2>重分区</h2><br/><br/>
+集群中最老的节点（或者说最先启动）负责定时发送分区表到其他节点。这样如果有节点加入或者离开集群，所有的节点也能更新分区表。<br/><br/>
+ <strong><em>注意:</em></strong> <em>如果最老的节点挂了，次老节点会接手这个任务。</em><br/><br/>
+这个定时任务时间间隔可配置系统属性 <code>hazelcast.partition.table.send.interval。</code> 缺省值为15秒。<br/><br/>
+重分区发生在：<br/><br/>
+<ul>
+    <li>节点加入集群。</li>
+    <li>节点离开集群。</li>
+</ul><br/><br/>
+此时最老节点会更新分区表，分发，接着集群开始移动分区，或者从备份恢复分区。<br/><br/>
+<h2>使用方式</h2><br/><br/>
+有两种方式：嵌入式和客户端服务器。<br/><br/>
+<ul>
+    <li>嵌入式，Hazelcast 服务器的 jar 包被导入宿主应用程序，服务器启动并存在于各个宿主应用中。优点是可以更低延迟的数据访问。</li>
+</ul><br/><br/>
+<img class="alignnone" title="嵌入式" src="/wp-content/uploads/2016/09/967765-20160602101547727-1040727788.png" alt="嵌入式" width="334" height="249" /><br/><br/>
+<ul>
+    <li>客户端服务器，Hazelcast 客户端的 jar 包被导入宿主应用程序，服务器 jar 包独立运行于 JVM 中。优点是更容易调试以及更可靠的性能，最重要的是更好的扩展性。</li>
+</ul><br/><br/>
+<img class="alignnone" title="客户端服务器" src="/wp-content/uploads/2016/09/967765-20160602101548946-1321578379.png" alt="客户端服务器" width="507" height="257" /><br/><br/>
+摘自: <a href="http://www.cnblogs.com/seasonsluo/p/hazelcast-intro.html">http://www.cnblogs.com/seasonsluo/p/hazelcast-intro.html</a><br/><br/>
+<hr /><br/><br/>
+以下是两段使用 Hazelcast 作为分布式 Map 和 Topic 的例子<br/><br/>
+<pre class="lang:default decode:true">import com.hazelcast.config.Config;
+import com.hazelcast.core.Hazelcast;
+import com.hazelcast.core.HazelcastInstance;<br/><br/>
+import java.util.concurrent.ConcurrentMap;<br/><br/>
+public class DistributedMap {
+  public static void main(String[] args) {
+    Config config = new Config();
+    HazelcastInstance h = Hazelcast.newHazelcastInstance(config);
+    ConcurrentMap&lt;String, String&gt; map = h.getMap("my-distributed-map");
+    map.put("key", "value");<br/><br/>
+    //Concurrent Map methods
+    map.putIfAbsent("somekey", "somevalue");
+    map.replace("key", "value", "newvalue");<br/><br/>
+    map.forEach((k, v) -&gt; System.out.println(k + " =&gt; " + v));<br/><br/>
+    h.shutdown();
+  }
+}</pre>
+<br/>
+<pre class="lang:default decode:true">import com.hazelcast.config.Config;
+import com.hazelcast.core.*;<br/><br/>
+public class DistributedTopic implements MessageListener&lt;String&gt; {<br/><br/>
+ static HazelcastInstance h;<br/><br/>
+  public static void main(String[] args) {
+    Config config = new Config();
+    h = Hazelcast.newHazelcastInstance(config);
+    ITopic&lt;String&gt; topic = h.getTopic("my-distributed-topic");
+    topic.addMessageListener(new DistributedTopic());
+    topic.publish("Hello to distributed world");
+  }<br/><br/>
+  @Override
+  public void onMessage(Message&lt;String&gt; message) {
+    System.out.println("Got message " + message.getMessageObject());<br/><br/>
+    h.shutdown();
+  }
+}</pre>
+<br/>
+启动后会看到输出<br/><br/>
+<blockquote>
+Members [2] {<br />
+  Member [192.168.2.106]:5702 - 274180a0-f05e-467d-bd84-13249f9db491<br />
+  Member [192.168.2.106]:5703 - 16de21f2-3c5c-477f-aec6-0a33d6d02aba this<br />
+}
+</blockquote>
+<br/>
+即使是本地的启动方式也会打开 Socket 端口, 默认在本机启动两个不同的端口号. 其他 Hazelcast 的应用例子可参考 <a href="https://hazelcast.org/">https://hazelcast.org/</a>.<br/><br/>
+<h3>其他相关链接:</h3><br/><br/>
+<ol>
+    <li><a href="http://blog.csdn.net/wangyangzhizhou/article/details/52529067">如何使用分布式缓存 Hazelcast</a></li>
+    <li><a href="http://blog.csdn.net/wangyangzhizhou/article/details/52677826">Hazelcast 集群原理分析</a></li>
+    <li><a href="http://blog.csdn.net/wangyangzhizhou/article/details/52511101">分布式缓存组件 Hazelcast</a></li>
+    <li><a href="http://blog.csdn.net/wangyangzhizhou/article/details/47258457">内存数据网格 Hazelcast 的一些机制原理</a></li>
+</ol>

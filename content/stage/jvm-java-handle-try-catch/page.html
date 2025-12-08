@@ -1,0 +1,143 @@
+---
+title: JVM 对 Java 异常的处理原理（try.catch 子句）
+url: /jvm-java-handle-try-catch/
+date: 2009-04-07T09:38:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - JVM
+tags: 
+  - Java
+  - Exception
+  - JVM
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 284 
+wpStatus: publish
+views: 1672
+lastmod: 2010-08-10T10:16:42-05:00
+---
+
+最初我们用 Java 写 JSP 的时候，几乎可以不触及异常，因为 Servlet 容器会把 API 抛出的异常包装成 ServletException 丢给容器去处理。再后来应用分层，代码中要处理的异常便多了，一般会转换成自定义的业务异常类，用 try-catch-throw customerException-finally。再到如今各种框架日臻成熟，代码中显式的异常处理又渐渐少了些，借助于 AOP 横行，异常对业务的影响描述被移入到了配置文件中了，例如，事物处理、权限的控制等。<br/>
+<br/>
+这颇有些像手机的发展，当通信技术不甚发达的时候，手里抓的是砖头，信号是模拟的。后来慢慢瘦身成两三根手指大小，甚至是就一支笔似的，可如今信息量大了，屏幕要大，再配上 QWERT 键盘，机身自然就肥硕了。<br/>
+<br/>
+当然与手机的个头变迁略有不同的是，任凭你怎么对待 Java 中异常，切入 AOP 也好，在 JVM 中处理异常的内在机制始终未变。<!--more--><br/>
+<br/>
+说到 Java 异常，无外乎就是 try、catch、finally、throw、throws 这么几个关键字，这些个的用法是没必要在这里讲了。我们这里主要关键一下 catch 和 finally 是如何在编译后的 class 字节码中的。<br/>
+<br/>
+异常的抛出与捕获，Catch 子句的表现，来看看一段 Java 代码及生成的相应字节码指令。<br/>
+<pre class="brush:java">package com.unmi;<br/>
+<br/>
+import java.io.UnsupportedEncodingException;<br/>
+<br/>
+public class AboutCatch {<br/>
+<br/>
+	public static void main(String[] args){<br/>
+		try {<br/>
+			transfer("JVM 对 Java 异常的处理","gbk");<br/>
+		} catch (Exception e) {<br/>
+			//e.printStackTrace();<br/>
+		}<br/>
+	}<br/>
+<br/>
+	//字符集转换的方法<br/>
+	public static void transfer(String src, String charset)<br/>
+			throws Exception{<br/>
+		String result = "";<br/>
+		try{<br/>
+			//这行代码可能会抛出空指针，不支持的字符集，数组越界的异常<br/>
+			result = new String(src.getBytes(),0,10,charset);<br/>
+		}catch(NullPointerException ne){<br/>
+			System.out.println("捕获到异常 ArithemticExcetipn");<br/>
+			throw ne;<br/>
+		}catch(UnsupportedEncodingException uee){<br/>
+			System.out.println("捕获到异常 UnsupportedEncodingException");<br/>
+			throw uee;<br/>
+		}catch(Exception ex){ //比如数组越界时在这里可捕获到<br/>
+			System.out.println("捕获到异常 Exception");<br/>
+			throw ex;<br/>
+		}<br/>
+		System.out.println(result);<br/>
+	}<br/>
+}</pre>
+
+来看看上面代码中的 transfer() 方法相应的字节码指令，编译器是 Eclipse 3.3.2 的，它所用的 JDK 是 1.6.0_06，编译兼容级别设置为 6.0。用命令 javap -c com.unmi.AboutCatch 在 Dos 窗口中就能输出：<br/>
+<br/>
+public static void transfer(java.lang.String, java.lang.String)   throws java.lang.Exception;<br/>
+  Code:<br/>
+   0:   ldc     #30; //String<br/>
+   2:   astore_2<br/>
+   <span style="background-color: #ee82ee; color: #0000ff;">3</span>:   new     #32; //class java/lang/String<br/>
+   6:   dup<br/>
+   7:   aload_0<br/>
+   8:   invokevirtual   #34; //Method java/lang/String.getBytes:()[B<br/>
+   11:  iconst_0<br/>
+   12:  bipush  10<br/>
+   14:  aload_1<br/>
+   15:  invokespecial   #38; //Method java/lang/String."&lt;init&gt;":([BIILjava/lang/String;)V<br/>
+   18:  astore_2<br/>
+   <span style="background-color: #ee82ee; color: #0000ff;">19</span>:  goto    <span style="background-color: #ee82ee; color: #0000ff;">55</span>  <span style="color: #ff0000;">//依据异常表执行完异常处理块后，再回到这里，然后 goto 到 55 号指令继续执行</span><br/>
+   <span style="background-color: #ee82ee; color: #0000ff;">22</span>:  astore_3<br/>
+   23:  getstatic       #41; //Field java/lang/System.out:Ljava/io/PrintStream;<br/>
+   26:  ldc     #47; //String 捕获到异常 ArithemticExcetipn<br/>
+   28:  invokevirtual   #49; //Method java/io/PrintStream.println:(Ljava/lang/String;)V<br/>
+   31:  aload_3<br/>
+   32:  athrow    <span style="color: #ff0000;">//抛出 ArthemticException 异常</span><br/>
+   <span style="background-color: #ee82ee; color: #0000ff;">33</span>:  astore_3<br/>
+   34:  getstatic       #41; //Field java/lang/System.out:Ljava/io/PrintStream;<br/>
+   37:  ldc     #55; //String 捕获到异常 UnsupportedEncodingException<br/>
+   39:  invokevirtual   #49; //Method java/io/PrintStream.println:(Ljava/lang/String;)V<br/>
+   42:  aload_3<br/>
+   43:  athrow    <span style="color: #ff0000;">//抛出 UnsupportedEncodingException 异常</span><br/>
+   <span style="background-color: #ee82ee; color: #0000ff;">44</span>:  astore_3<br/>
+   45:  getstatic       #41; //Field java/lang/System.out:Ljava/io/PrintStream;<br/>
+   48:  ldc     #57; //String 捕获到异常 Exception<br/>
+   50:  invokevirtual   #49; //Method java/io/PrintStream.println:(Ljava/lang/String;)V<br/>
+   53:  aload_3<br/>
+   54:  athrow   <span style="color: #ff0000;">//抛出 Exception 异常</span><br/>
+   <span style="background-color: #ee82ee; color: #0000ff;">55</span>:  getstatic       #41; //Field java/lang/System.out:Ljava/io/PrintStream;<br/>
+   58:  aload_2<br/>
+   59:  invokevirtual   #49; //Method java/io/PrintStream.println:(Ljava/lang/String;)V<br/>
+   62:  return<br/>
+  Exception table:  <span style="color: #ff0000;">//这下面是一个异常表，所以异常不像普通代码那样是靠 goto 语句来跳转的</span><br/>
+   from   to  target type<br/>
+     <span style="color: #ff0000;">//0-19 号指令中，碰到 NullPointerException时，跳到 22 号指令</span><br/>
+     <span style="background-color: #ee82ee; color: #0000ff;">3</span>    <span style="background-color: #ee82ee; color: #0000ff;">19</span>    <span style="background-color: #ee82ee; color: #0000ff;">22</span>   Class java/lang/NullPointerException<br/>
+<br/>
+     <span style="color: #ff0000;">//0-19 号指令中，碰到 UnsupportedEncodingException 时，跳到 33 号指令</span> <br/>
+     <span style="background-color: #ee82ee; color: #0000ff;">3</span>    <span style="background-color: #ee82ee; color: #0000ff;">19</span>    <span style="background-color: #ee82ee; color: #0000ff;">33</span>   Class java/io/UnsupportedEncodingException<br/>
+<br/>
+     <span style="color: #ff0000;">//0-19 号指令中，碰到 NullPointerException时，跳到 44 号指令</span><br/>
+     <span style="background-color: #ee82ee; color: #0000ff;">3</span>    <span style="background-color: #ee82ee; color: #0000ff;">19</span>    <span style="background-color: #ee82ee; color: #0000ff;">44</span>   Class java/lang/Exception<br/>
+<br/>
+说明：<br/>
+<br/>
+对于上面的程序，我们可以用下面代码来调用看看输出<br/>
+<br/>
+1) transfer("JVM 对 Java 异常的处理","gbk");  //正常<br/>
+2) transfer(null, "gbk");                                         //空指针异常<br/>
+3) transfer("JVM 对","gbk");                               //数组越界异常<br/>
+4) transfer("JVM 对","gbk-1");                            //不支持的字符集异常<br/>
+<br/>
+最后可以把代码中的<br/>
+catch(Exception ex){ //比如数组越界时在这里可捕获到<br/>
+   System.out.println("捕获到异常 Exception");<br/>
+   throw ex;<br/>
+  }<br/>
+<br/>
+或是 main() 方法写成<br/>
+<br/>
+ public static void main(String[] args) throws Exception{<br/>
+  transfer("JVM 对 Java 异常的处理","gbk");<br/>
+ }<br/>
+<br/>
+来试试，异常一直未得到处理对 JVM 的影响<br/>
+<br/>
+字节码中，红色部分是我加上去的注释，着重描了要关注的地方，其他的出入栈、方法调用的指令可不予以理会，关键是只要知晓有一个异常表的存在，try 的范围就是体现在异常表行记录的起点和终点。JVM 在 try 住的代码区间内如有异常抛出的话，就会在当前栈桢的异常表中，找到匹配类型的异常记录的入口指令号，然后跳到该指令处执行。异常指令块执行完后，再回来继续执行后面的代码。JVM 按照每个入口在表中出现的顺序进行检索，如果没有发现匹配的项，JVM 将当前栈帧从栈中弹出，再次抛出同样的异常。当 JVM 弹出当前栈帧时，JVM 马上终止当前方法的执行，并且返回到调用本方法的方法中，但是并非继续正常执行该方法，而是在该方法中抛出同样的异常，这就使得 JVM 在该方法中再次执行同样的搜寻异常表的操作。<br/>
+<br/>
+上面那样的内层方法无法处理异常的层层向外抛，层层压栈，这样就形成一个异常栈。异常栈十分有利于我们透析问题之所在，例如 e.printStackTrace(); 或者带参数的 e.printStackTrace(); 方法可将异常栈信息定向输出到他处，还有 log4j 的 log.error(Throwable) 也有此功效。若是在行径的哪层有能力处理该异常则已，否则直至 JVM，直接造成 JVM 崩溃掉。例如当 main() 方法也把异常抛了出去，JVM 此刻也就到了生命的尽头。

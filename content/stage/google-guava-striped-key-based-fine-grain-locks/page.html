@@ -1,0 +1,188 @@
+---
+title: 使用 Google Guava Striped 实现基于 Key 的并发锁
+url: /google-guava-striped-key-based-fine-grain-locks/
+date: 2019-06-02T12:13:44-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Concurreent
+  - Striped
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9394 
+wpStatus: publish
+views: 4713
+lastmod: 2020-01-04T11:38:40-06:00
+---
+
+写 Java 代码至今，在应对可能冲突的共享资源操作时会尽量用 JDK 1.5 开始引入的并发锁(如 Lock 的各类实现类, ReentrantLock 等) 进行锁定，而不是原来的 <code>synchronized</code> 关键字强硬低性能锁。<br/><br/>
+这里是应用 JDK 1.5  的 <code>Lock</code> 的基本操作步骤<br/><br/>
+<blockquote>
+private Lock lock = new ReentrantLock();
+private void operate() {<br />
+    // 安全操作 ....<br />
+    lock.lock();<br />
+    try {<br />
+        // 对共享资源的操作 ...<br />
+    } finally {<br />
+        lock.unlock();<br />
+    }<br />
+}
+</blockquote>
+<br/>
+如此，<code>operate()</code> 就是一个线程安全的方法，任何对它的调用都安排到了一个队列里等着。但有时候上锁需要考虑更细的粒度，下面是一个演示案例，引出第一个问题<br/><br/>
+<!--more--><br/><br/>
+<h3>为何需要细粒度锁</h3><br/><br/>
+<pre class="lang:default decode:true">private void merge(String filePath, List&lt;String&gt; deltaLines) {
+    lock.lock();
+    try {
+        Path path = Paths.get(filePath);
+        List&lt;String&gt; fileLines = Files.exists(path) ? Files.readAllLines(path) : new ArrayList&lt;&gt;();
+        fileLines.addAll(deltaLines);
+        fileLines.sort(Comparator.naturalOrder());
+        Files.write(path, fileLines);
+    } catch (Exception ex) {
+        ex.printStackTrace();
+    } finally {
+        lock.unlock();
+    }
+}</pre>
+<br/>
+被保护的操作序列是读取原文件内容，合并新行并排序，再回写文件; 如果原文件不存在则生成新文件，并含有已排序的新行。如果不保护该系列操作，文件内容将会被不同线程相互覆盖，因为两个线程可能读入相同的内容再加上各自不同的新行写回，而不是全部内容叠加。<br/><br/>
+<h3>用 ConcurrentHashMap 改进的细粒度锁</h3><br/><br/>
+如果继承采用与前面一样保证整个方法绝对安全的方式，效率上就会变得很差，因为无论是操作相同还是不同的文件，统统得排着队进行。而实际上只有是操作不同的文件(filePath 不同), 是允许并发的。这就引出了要对锁的粒度进一步细化，只在文件路径相同时才需要获取锁。有一种实现方式是为不一样的 <code>filePath</code> 创建各自的锁，用 <code>ConcurrentHashMap</code> 缓存起来，看接来的改进<br/><br/>
+<pre class="lang:default decode:true  ">private Map&lt;String, Lock&gt; cachedLocks = new ConcurrentHashMap&lt;&gt;();<br/><br/>
+private void merge(String filePath, List&lt;String&gt; deltaLines) {
+    Lock lock = cachedLocks.computeIfAbsent(filePath, key -&gt; new ReentrantLock());
+    lock.lock();
+    try {
+        Path path = Paths.get(filePath);
+        // ... 以下省略
+    } finally {
+        lock.unlock();
+    }
+}</pre>
+<br/>
+改进后的代码在应对并发性的性能是大大提高了，有一个问题是如果应用中要操作百万，千万个不同的文件，那么势必在内存中创建相应数量的锁实例，对内存将是个不小的负担。即使线程池大小只有几个的时候锁实例的数量也与文件个数相同，并且长时间不再使用的锁实例都无法被回收。进一步的优化也许可以采用弱引用，或定时清理长时间不使用的锁实例，而且要兼顾到避免瞬间高并发时生成大量锁实例耗用内存的情形。<br/><br/>
+<h3>采用 Guava Striped 实现细粒度锁</h3><br/><br/>
+这儿提及到了锁实例量与线程池大小关系，所以可以考虑把创建的锁实例放到一个固定大小(如使用它的线程池大小)的 <code>ConcurrentHashMap</code> 中，比如创建锁时清除缓存中最早未使用的锁，这样做对内存不会产生负担，就是清理工作必须做到高效。其实这一思考惯性正好引出了今天的主角: Google Guava 库的 <a href="https://google.github.io/guava/releases/27.0-jre/api/docs/com/google/common/util/concurrent/Striped.html">Striped</a> 类，Guava 当前版本是 27.1, 在 Guava 库中 Striped 类仍然被标记为 <code>@Beta</code> 不稳定版本，所以使用它的一起后果自负(可能造成死锁：<a href="https://www.iflym.com/index.php/code/201611190001.html">使用guava Striped中的lock导致线程死锁的问题分析</a>，该文发表于 2016-11-19)。<br/><br/>
+Guava 对 <code>@Beta</code> 的解释见 https://github.com/google/guava#important-warnings， 标记为 <code>@Beta</code> 的类或方法会被随时修改甚至是移除，如果使用它再次作为类库发布的话强烈建议用 <a href="https://github.com/google/guava-beta-checker">Guava Beta Checker</a> 检测并确保不要用 <code>@Beta</code> 的类。可怜 Striped 自从 13.0 加入后直至今天的 27.1 都未转正。<br/><br/>
+还继续往下阅读吗？<br/><br/>
+先来感受一下怎么用 <code>Striped</code>，而后再来了解它的 API 和实现原理<br/><br/>
+<pre class="lang:default decode:true">private Striped&lt;Lock&gt; stripedLocks = Striped.lock(20);<br/><br/>
+private void merge(String filePath, List&lt;String&gt; deltaLines) {
+    Lock lock = stripedLocks.get(filePath) ;
+    lock.lock();
+    try {
+        Path path = Paths.get(filePath);
+        // ... 以下省略
+   } finally {
+        lock.unlock();
+    }
+ }</pre>
+<br/>
+看上去就是替代了我们用 <code>ConcurrentHashMap</code> 部分的代码，代码方法并没什么简洁，但是它省内存啊，不管不同的文件名有多少个就只要预建 20 个锁，当然 20 这个数字也是基于 <code>merge</code> 方法可能被多少个线程并发执行(如线程池的大小) 来设置的。<br/><br/>
+Striped 比用 ConcurrentHashMap 缓存的锁实例的好处是锁可被重用，Striped 中同一个锁第一次由 key1 引用，第二次还能被 key2 引用，ConcurrentHashMap 中的锁呢, key 1 用过的就不再被 key2 再次使用。<br/><br/>
+Striped 实现细粒度锁是基于它自己在 <a href="https://google.github.io/guava/releases/27.0-jre/api/docs/com/google/common/util/concurrent/Striped.html">Striped Javadoc</a> 中提出的一个真理，简单说来就以下三条<br/><br/>
+<ol>
+    <li>相同的 key (hashCode()/equals()) 时, striped.get(key) 总会得到相同的锁实例</li>
+    <li>但是不同的 key 却可能调用 striped.get(key) 获得相同的锁实例</li>
+    <li>基于上一条，预建更多的锁实例数量能减低锁碰撞的可能性</li>
+</ol>
+<br/>
+第一条保证被保护的代码是线程安全的，第二条会出现不同 key 的两个任务会排在同一个队列上，性能上会有所降低，但能够在锁数量(内存)与并发规模之间平衡。比如线程池大小为 20，预建 80 个锁对内存来说毫无压力，比瞬间百万，千万个锁好多了。Guava 建议是，对于计算密集型的任务创建 4 倍于可用处理器数目的锁。<br/><br/>
+紧接着来看下 Striped 提供的 API，它支持创建 Lock, Semaphore 和 ReadWriteLock，并且提供创建 eager 和 lazyWeak 两个版本<br/><br/>
+<ol>
+    <li>public static Striped&lt;Lock&gt; lock(int strips)</li>
+    <li>public static Striped&lt;Lock&gt; lazyWeakLock(int stripes)</li>
+    <li>public static Striped&lt;Semaphore&gt; semaphore(int stripes, int permits)</li>
+    <li>public static Striped&lt;Semaphore&gt; lazyWeakSemaphore(int stripes, int permits)</li>
+    <li>public static Striped&lt;ReadWriteLock&gt; readWriteLock(int stripes)</li>
+    <li>public static Striped&lt;ReadWriteLock&gt; lazyWeakReadWriteLock(int stripes)</li>
+</ol>
+<br/>
+以上返回的 Lock 或 ReadWriteLock 都是可重入锁，lazyWeakXxx() 版本的选择也是基于节约内存的考虑，如果并发大小是可控且不大的情况不一定需要 lazyWeekXxx() 的版本，比如前面说的线程池大小为 20 的情况初始化 80 个锁直接用 Striped.lock(80) 就行。<br/><br/>
+对于 Striped 的使用也就差不多了，如果用 semaphore(...) 的话需要了解 JDK 中 Semaphore 信号量的使用，其实是在同一把锁的情况下次一层次的控制。举个例子，Lock 控制了同一个帐号只能同时一个地方登陆，Semaphore(信号量) 放宽一些，可以控制同一个帐号最多在几个地方同时登陆。<br/><br/>
+<h3>对 Guava Striped 的增进了解</h3><br/><br/>
+最后，我们来体验一下 Striped 怎么分配和共享锁<br/><br/>
+<pre class="lang:default decode:true">private static void test(int strips, int tasks) {
+    Striped&lt;Lock&gt; stripedLocks = Striped.lock(strips);
+    Set&lt;Lock&gt; used = IntStream.rangeClosed(1, tasks).boxed().map(v -&gt; stripedLocks.get(v + ""))
+        .collect(Collectors.toSet());
+    System.out.println("total locks: " + strips + ", tasks: " + tasks + ", used locks: " + used.size());
+}<br/><br/>
+public static void main(String[] args) {
+    test(20, 20);
+    test(20, 40);
+    test(20, 60);
+    test(20, 80);
+}</pre>
+<br/>
+输出的结果如下：<br/><br/>
+<blockquote>
+total locks: 20, tasks: 20, used locks: 18<br />
+total locks: 20, tasks: 40, used locks: 18<br />
+total locks: 20, tasks: 60, used locks: 28<br />
+total locks: 20, tasks: 80, used locks: 31
+</blockquote>
+<br/>
+说好的预建 20 个锁实例，为什么使用到了 31 个不同的实例呢？原来 <code>Striped.lock(20)</code> 中的 20 并不就是创建 20 个实例，Striped  会创建不小于 20 的 2 <sup>n</sup> 的实例数，也就是 2 <sup>5</sup> = 32 个实例。比如参数值与实际锁实例个数为 1 -&gt; 1(2<sup>0</sup>), 2 -&gt; 2(2<sup>1</sup>), 3 -&gt; 4(2<sup>2</sup>), 5 -&gt; 8(2<sup>3</sup>), 20 -&gt; 32(2<sup>5</sup>), 33 -&gt; 64(2<sup>6</sup>), 6<sup>5</sup> -&gt; 128(27) ....., 到后面参数一点小抖动，实例数就要翻倍。相应的实现源代码如下<br/><br/>
+<pre class="lang:default decode:true ">PowerOfTwoStriped(int stripes) {
+  Preconditions.checkArgument(stripes &gt; 0, "Stripes must be positive");
+  this.mask = stripes &gt; Ints.MAX_POWER_OF_TWO ? ALL_SET : ceilToPowerOfTwo(stripes) - 1;
+}</pre>
+<br/>
+从上面的输出结果同时也看到，key 的数目多余初始锁实例数也不一定会用到所有的锁，而是有多个 key 获得同一把锁的情况，一定程度上降低了并发度。比如 "1" 和 "15" 两个不相关的 key 可能得到同一把锁。<br/><br/>
+我们再作几组测试，把 strips  参数逐步调大，即分别用 test(40, x), test(80, x) 这样去测试看每次的输出结果<br/><br/>
+<strong>strips = 40  -- 实际 locks = 64</strong><br/><br/>
+<blockquote>
+total locks: 40, tasks: 20, used locks: 19   --- 有足够 64 个可用锁的情况下，仍有两个不同的 key 获得了同一把锁<br />
+total locks: 40, tasks: 40, used locks: 29<br />
+total locks: 40, tasks: 60, used locks: 46<br />
+total locks: 40, tasks: 80, used locks: 58
+</blockquote>
+<br/>
+<strong>strips = 80 -- 实际 locks = 128</strong><br/><br/>
+<blockquote>
+total locks: 80, tasks: 20, used locks: 20  --- 初始 128 把锁才能让 20 个 key 获得独立的锁<br />
+total locks: 80, tasks: 40, used locks: 37  --- 仍有 6 个 key(3 组) 获得了相同的锁<br />
+total locks: 80, tasks: 60, used locks: 56<br />
+total locks: 80, tasks: 80, used locks: 74
+</blockquote>
+<br/>
+<strong>strips = 160 -- 实际 locks = 256</strong><br/><br/>
+<blockquote>
+total locks: 160, tasks: 20, used locks: 20<br />
+total locks: 160, tasks: 40, used locks: 37<br />
+total locks: 160, tasks: 60, used locks: 57<br />
+total locks: 160, tasks: 80, used locks: 77
+</blockquote>
+<br/>
+<strong>strips = 320 -- 实际 locks = 512</strong><br/><br/>
+<blockquote>
+total locks: 320, tasks: 20, used locks: 20<br />
+total locks: 320, tasks: 40, used locks: 37<br />
+total locks: 320, tasks: 60, used locks: 57<br />
+total locks: 320, tasks: 80, used locks: 77
+</blockquote>
+<br/>
+<strong>strips = 1000 -- 实际 locks = 1024</strong><br/><br/>
+<blockquote>
+total locks: 1000, tasks: 20, used locks: 20<br />
+total locks: 1000, tasks: 40, used locks: 40  --- 预置 1024 个锁才能让 40 个任务获得不同的锁<br />
+total locks: 1000, tasks: 60, used locks: 60<br />
+total locks: 1000, tasks: 80, used locks: 80  --- 要近 13 倍于线程池大小才做到无障碍的基于 key 并发
+</blockquote>
+<br/>
+不同的 key 获得同一把锁的概率还是很高的，4 倍于线程池大小的初始锁数目都不够，也就是初始的锁得不到充分的使用。从 key 的 hashCode 到 index 的算法还有待于加强。<br/><br/>
+这难怪于 Striped 从 Guava 13 到 27 的版本足有 7 年时间一直处于 <code>@Beta</code> 状态，也许在某些情况下真需要自己用 <code>ConcurrentHashMap</code> 来实现细粒度的锁控制，<code>ConcurrentHashMap</code> 缓存锁能达到到目标是相同的 key 获得相同的锁，不同的 key 必须获得不同的锁，锁的最大数目是由线程池大小决定的。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="http://codingjunkie.net/striped-concurrency/">Fine-Grained Concurrency With the Guava Striped Class</a></li>
+</ol>

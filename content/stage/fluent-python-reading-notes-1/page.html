@@ -1,0 +1,349 @@
+---
+title: 流畅的 Python 读书笔记(一)
+url: /fluent-python-reading-notes-1/
+date: 2022-01-23T17:53:16-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+  - ReadingNotes
+tags: 
+  - list
+  - tuple
+  - bisect
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12211 
+wpStatus: publish
+views: 408
+lastmod: 2022-01-27T18:00:58-06:00
+---
+
+用了一段时间的 Python, 觉得还是有必要读一下《流畅的Python》这本书，它虽然是基于 Python 3.4 的，但 Python 自身的很多特性希望了解的更多，更深，或巩固，或扫扫死角。</p>
+<br/>
+对于少量属性的对象可以用 collections.namedtuple 快速构建一个类  Card = collections.namedtuple('Card', ['rank', 'suit']), 用 type(Card) 看到的就是一个  class, 第一个参数 Card 是类名，第二个参数列表里是属性名，然后用 card = Card('7', 'diamonds') 创建一个实例。PyCharm 也能正确识别出 Card 构建与使用对象时的属性 rank 和 suit.<br/><br/>
+现代从 Python 3.7 开始引入了 @dataclasses.dataclass 比 namedtuple 要方便些<br/><br/>
+<blockquote>
+@dataclasses.dataclass<br />
+class Card:<br />
+    rank: str<br />
+    suit: str = None
+</blockquote>
+<br/>
+card = Card(rank='7', suit='diamonds')<br/><br/>
+或者用 pydantic 的 BaseModel 都比先前的 namedtuple 好用<!--more--><br/><br/>
+<pre class="lang:default decode:true">class Card(pydantic.BaseModel):
+    rank: str
+    suit: Optional[str] = None
+</pre>
+<br/>
+pydantic 的 BaseModel 还自带校验功能(Python 3.7 的 @dataclass 是具备的)，如果声明的 <code>suit: str</code>, 那么 Card(rand='8', suit=None) 也通不过。pydantic 也提供了 @pydantic.dataclasses.dataclass, 与 BaseModel 的效果差不多<br/><br/>
+以上三种方式(严格说四种), 都能为指定的属性生成相应的构造函数和 __repr__ 等函数<br/><br/>
+<h3>Python 的 dunder 函数</h3><br/><br/>
+Python 的 dunder 方法与语法上的写法对应，如 abc[0] 对应  <code>__getitem__</code> 方法，可用 <code>len(abc)</code> 的对象必须是实现了 <code>__len__</code> 方法。<br/><br/>
+Python 的 random.choice(xyz) 也会调用 xyz 的 <code>__len__(self)</code> 和 <code>__getitem__(self, position)</code> 函数, 相当于是 <code>xyz[random.randint(0, len(xyz)-1)]</code>。<br/><br/>
+切片操作 xyz[1:] 也会找到 <code>__get_item__(self, position)</code> 函数。还有其他的一些函数，如 reversed, sorted() 也是依赖于由置的 dunder 函数，这也是 Python 鸭子类型的好处。<code>if 3 in xyz</code> 的判断对应调用 __contains__ 方法。<br/><br/>
+可被  <code>for i in xzy</code> 迭代的对象，它的类叫做可迭代类, 必须是实现了 <code>__getitem__</code> 或 <code>__iter__</code> 函数，以下用 <code>__iter__</code> 和 <code>__next__</code> 实现一个迭代类<br/><br/>
+<pre class="lang:default decode:true">import random<br/><br/>
+class Xyz:
+    def __iter__(self):
+        return self<br/><br/>
+    def __next__(self):
+        x = random.randint(1, 100)
+        if x &gt; 80:
+            raise StopIteration()
+        return x<br/><br/>
+
+for i in Xyz():
+    print(i)
+</pre>
+<br/>
+这个 Xyz 用 <code>isinstance(Xyz(), collections.Iterable)</code> 判断是 True，然而只实现了 <code>__getitem__</code> 也可用 <code>for i in xyz</code> 迭代，但是却不 collections.Iterable 实例<br/><br/>
+自定义的类中不要去写 dunder 函数，dunder 函数约订是不直接调用，而是通过特殊函数或形式，如 len() 或 <code>for in</code> 来调用。<br/><br/>
+通过 dunder 函数，实现运算符的重载变得简单，如 +, -, *, / 都有相应的 dunder 函数，用 dir 查看一个可支持四则运算的对象就能列出那些 dunder 函数来，如 dir(1) 就会看到它们<br/><br/>
+<blockquote>
+&gt;&gt;&gt; dir(1)<br />
+['__abs__', '__add__', '__and__', '__bool__', '__ceil__', '__class__', '__delattr__', '__dir__', '__divmod__', '__doc__', '__eq__', '__float__', '__floor__', '__floordiv__', '__format__', '__ge__', '__getattribute__', '__getnewargs__', '__gt__', '__hash__', '__index__', '__init__', '__init_subclass__', '__int__', '__invert__', '__le__', '__lshift__', '__lt__', '__mod__', '__mul__', '__ne__', '__neg__', '__new__', '__or__', '__pos__', '__pow__', '__radd__', '__rand__', '__rdivmod__', '__reduce__', '__reduce_ex__', '__repr__', '__rfloordiv__', '__rlshift__', '__rmod__', '__rmul__', '__ror__', '__round__', '__rpow__', '__rrshift__', '__rshift__', '__rsub__', '__rtruediv__', '__rxor__', '__setattr__', '__sizeof__', '__str__', '__sub__', '__subclasshook__', '__truediv__', '__trunc__', '__xor__', 'as_integer_ratio', 'bit_length', 'conjugate', 'denominator', 'from_bytes', 'imag', 'numerator', 'real', 'to_bytes']
+</blockquote>
+<br/>
+上面还包括了更多的奥秘, 时常用 <code>dir(x)</code> 查看实例的 dunder 函数很实用, 比如<code>dir(函数)</code> 就能看到 <code>__call__</code> 函数，所以一个类实现了该函数就能把实现以函数的形式来调 -- <code>Xyz()()</code>。 或者想用自定义的类实现某种 Python 内置类型的行为，就用 dir 查看它显著的 dunder 函数。<br/><br/>
+<strong>Python 是支持鸭子类型的，一个 Python 实例有没有什么特性，或能不能支持某种操作不是由它实现了什么接口或继承了什么类决定的，而是取决于它有没有实现某些 dunder 函数。</strong><br/><br/>
+<code>__repr__</code> 和 <code>__str__</code> 两函数在之前一篇博客中有讨论，再回顾一下，<code>__repr__</code> 在 <code>'%s or %r' % (xyz, xyz)</code> 调用，print  或 str() 时会先尝试调用 <code>__str__</code>, 但找不到 <code>__str__</code> 时还是会调用 <code>__repr__</code>, 所以 <code>__repr__</code> 守住最后一关，只要 <code>__repr__</code> 就足够。<br/><br/>
+布尔类型值的判断，bool(x) 先判断 <code>x.__bool__()</code> 的结果，如果它不存在，再尝试调用 <code>x.__len__()</code>, 返回 0 则为 False, 这也是为什么空字符串，空集合是 False.<br/><br/>
+x += 1 之类增量赋运算对应的函数分别是 __iadd__, __isub__, __imul__, itruediv__, __ifloordiv__, __imod__, __ipow__, 实现一个能进行增量运算的类<br/><br/>
+<pre class="lang:default decode:true ">class Xyz:
+    _n = 1
+    def __iadd__(self, other):
+        self._n = self._n + other
+        return self<br/><br/>
+xyz = Xyz()
+xyz += 10
+print(xyz._n)  # 11</pre>
+<br/>
+其实 Python 内部普遍使用 dunder 函数的方式在其他语言里也常见，比如 Ruby, Groovy, Scala 通常会叫做 Magic 函数。<br/><br/>
+<table style="border-collapse: collapse; width: 100%;">
+<tbody>
+<tr>
+<td style="width: 22.8228%;"><strong>Category</strong></td>
+<td style="width: 77.1772%;"><strong>Method names</strong></td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">String/bytes representation</td>
+<td style="width: 77.1772%;">__repr__, __str__, __format__, __bytes__</td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">Conversion to number</td>
+<td style="width: 77.1772%;"> __abs__, __bool__, __complex__, __int__, __float__, __hash__, __index__</td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">Emulating collections</td>
+<td style="width: 77.1772%;">__len__, __getitem__, __setitem__, __delitem__, __contains__</td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">Iteration</td>
+<td style="width: 77.1772%;"> __iter__,  __reversed__, __next__</td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">Emulating callables</td>
+<td style="width: 77.1772%;">__call__</td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">Context management</td>
+<td style="width: 77.1772%;">__enter__, __exit__</td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">Instance creation and destruction</td>
+<td style="width: 77.1772%;">__new__, __init__, __del__</td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">Attribute management</td>
+<td style="width: 77.1772%;">__getattr__, __getattribute__, __setattr__, __delattr__, __dir__</td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">Attribute descriptors</td>
+<td style="width: 77.1772%;">__get__, __set__, __delete__</td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">Class services</td>
+<td style="width: 77.1772%;">__prepare__,__instancecheck__,__subclasscheck__</td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">Unary numeric operators</td>
+<td style="width: 77.1772%;">__neg__-,  __pos__+,  __abs__abs()</td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">Rich comparison operators</td>
+<td style="width: 77.1772%;">__lt__&gt;, __le__&lt;=, __eq__==, __ne__!=, __gt__&gt;, __ge__&gt;=</td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">Arithmetic operators</td>
+<td style="width: 77.1772%;">__add__+, __sub__-, __mul__*, __truediv__/, __floordiv__//, __mod__ %, __divmod__divmod(), __pow__** orpow(), __round__round()</td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">Reversed arithmetic operators</td>
+<td style="width: 77.1772%;">__radd__, __rsub__, __rmul__, __rtruediv__, __rfloordiv__, __rmod__, __rdivmod__, __rpow__</td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">Augmented assignment arithmetic operators</td>
+<td style="width: 77.1772%;">__iadd__, __isub__,__imul__,__itruediv__,__ifloordiv__,__imod__, __ipow__</td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">Bitwise operators</td>
+<td style="width: 77.1772%;">__invert__~, __lshift__&lt;&lt;, __rshift__&gt;&gt;, __and__&amp;, __or__|, __xor__ ^</td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">Reversed bitwise operators</td>
+<td style="width: 77.1772%;">__rlshift__, __rrshift__, __rand__, __rxor__, __ror__</td>
+</tr>
+<tr>
+<td style="width: 22.8228%;">Augmented assignment bitwise operators</td>
+<td style="width: 77.1772%;">__ilshift__,__irshift__,__iand__,__ixor__,__ior__</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<div class="page" title="Page 39">
+<div class="layoutArea">
+<div class="column"> </div>
+</div>
+</div>
+<br/>
+<h3>关于 Python 中的序列类型</h3><br/><br/>
+序列有几种方式的分类，<br/><br/>
+<ol>
+    <li>容器序列：list, tuple 和 collections.deque, 可以放不同的类型</li>
+    <li>扁平序列: str, bytes, bytearray, memoryview 和 array.array， 只能放同一种类型数据本身，而非引用，所以它是连续的内存空间</li>
+    <li>可变序列：list, bytearray, array.array, collection.deque 和 memoryview</li>
+    <li>不可变序列：tuple, str 和 bytes</li>
+</ol>
+<br/>
+本人平时基本还没用过 deque, bytearray, array.array, 以及  memoryview. 要用内存字节时都是用的 io.BytesIO。以后应该适当的考虑用其他的类型<br/><br/>
+<a href="https://docs.python.org/3/library/stdtypes.html#bytearray-objects">bytearray</a><br/><br/>
+<pre class="lang:default decode:true ">byte_array = bytearray([2,3,5,7])
+byte_array.append(11)
+print(byte_array)  # bytearray(b'\x02\x03\x05\x07\x0b')</pre>
+<br/>
+<a href="https://docs.python.org/3/library/array.html">array.array</a><br/><br/>
+<pre class="lang:default decode:true ">from array import array<br/><br/>
+ff = array('u', 'hello') # type, b, B, u, h, H, i, I, l, L, q, Q, f, d
+for c in ' world':
+    ff.append(c)
+print(ff.tolist()) # ['h', 'e', 'l', 'l', 'o', ' ', 'w', 'o', 'r', 'l', 'd']</pre>
+<br/>
+array.array 使用起来很奇怪，创建一个 array 时必须指定一个类型码，所以它比 Python 的 list 更高效。它像 C 语言的数组一样精简。<br/><br/>
+memoryview<br/><br/>
+<pre class="lang:default decode:true ">mv = memoryview(bytearray('hello'.encode()))
+mv[1] = 2
+print(mv.tolist()) # [104, 2, 108, 108, 111]<br/><br/>
+mv1 = memoryview('hello'.encode())
+mv1[1] = 2  # TypeError: cannot modify read-only memory</pre>
+<br/>
+以上这三种类型，bytearray, array.array 和 memoryview 还真的不怎么好用，难怪少见<br/><br/>
+Python 中用 <code>ord()</code> 和 <code>chr</code> 在 ASCII 码与字符间转换，相应的用 unichr()<br/><br/>
+<h4>推导与生成器</h4><br/><br/>
+Python 的列表推导很快捷，但复杂的多行的推导用 for 循环可能又更合适，自己把握度。Python 会忽略 [], {} 和 () 的换行，所以在那里面不需要续行符 <code>\</code><br/><br/>
+推导中加入条件表达式就有了 map/filter 的功能 <code>[x for x in [1,2,3] if x &gt;=2]</code>。 还有同时对多个列表的推导<br/><br/>
+<pre class="lang:default decode:true ">abc = [(a, b, c) for a in [1, 2, 3] for b in ['a', 'b', 'c'] for c in ['x', 'y']]
+for i in abc:
+    print(i)</pre>
+<br/>
+<blockquote>
+(1, 'a', 'x')<br />
+(1, 'a', 'y')<br />
+(1, 'b', 'x')<br />
+(1, 'b', 'y')<br />
+(1, 'c', 'x')<br />
+(1, 'c', 'y')<br />
+(2, 'a', 'x')<br />
+(2, 'a', 'y')<br />
+(2, 'b', 'x')<br />
+(2, 'b', 'y')<br />
+(2, 'c', 'x')<br />
+(2, 'c', 'y')<br />
+(3, 'a', 'x')<br />
+(3, 'a', 'y')<br />
+(3, 'b', 'x')<br />
+(3, 'b', 'y')<br />
+(3, 'c', 'x')<br />
+(3, 'c', 'y')
+</blockquote>
+<br/>
+这就是迪卡尔乘积<br/><br/>
+推导的作用只有一个，就是生成列表，它会立即建立一个完整的列表，而生成器表达式遵循了迭代器协议，只有在迭代生成器的时候才逐个的产出元素，所以它省内存。<br/><br/>
+生成器表达式与推导的语法差不多，只是把方括号换成圆括号, 下面是生成器的一些例子<br/><br/>
+<pre class="lang:default decode:true">abc = (x+1 for x in [1, 3, 5])
+print(abc) # &lt;generator object &lt;genexpr&gt; at 0x106486820&gt;
+for i in abc:
+    print(i)  # 2\n\4\n6\n<br/><br/>
+print([i for i in abc])  # []
+print(list(abc)) # []<br/><br/>
+abc = (x+1 for x in [1, 3, 5])
+print([i for i in abc])  # [2, 4, 6]<br/><br/>
+abc = (x+1 for x in [1, 3, 5])
+print(list(abc)) # [2, 4, 6]<br/><br/>
+def foo(gen):
+    for i in gen:
+        print(i) # 2\n\4\n6\n<br/><br/>
+foo(x+1 for x in [1, 3, 5])</pre>
+<br/>
+生成器被用完后不能被再次使用，当函数只有一个参数时，传入的生成器可以省略两边的圆括号<br/><br/>
+<h4>温习元组(tuple)拆包</h4><br/><br/>
+元组拆包用的很频繁，也是 Python 带给编程简明快捷的一个特性<br/><br/>
+<pre class="lang:default decode:true ">print('%s %s' % (1, 2)) # 1 2<br/><br/>
+x = (2, 4)
+a, b = x   # a=2, b=4<br/><br/>
+a, b = b, a  # a=4, b=2<br/><br/>
+pow(*x)  # 16<br/><br/>
+_, filename = os.path.split('/Users/yanbin/.ssh/idrsa.pub') # filename=idrsa.pu<br/><br/>
+a, b, *rest = [0, 1, 2, 3] # a=0, b=1, rest=[2,3]
+a, *body, b = [0, 1, 2, 3] # a=0, body=[1,2], b=3<br/><br/>
+a, (b, c), d = [0, (1, 2), 3] # a=0, b=1, c=2, d=3 嵌套元组拆包</pre>
+<br/>
+具名元组(namedtuple) 的两种写法<br/><br/>
+<pre class="lang:default decode:true "># City = namedtuple('City', ['name', 'country'])
+City = namedtuple('City', 'name country')
+tokyo = City('Tokyo', 'JP')
+</pre>
+<br/>
+它的实例比普通的类例要小一些。<br/><br/>
+<h4>切片</h4><br/><br/>
+Python 切片是按下标进行的，abc[2:4], 从下标的左边算，[1,2<span style="color: #ff0000;">,</span>3,4<span style="color: #ff0000;">,</span>5,6]，不包含右端的数字所在的索引，所以说 Python 的切片忽略最后一个元素，除非不指定右端的值，如  abc[2:]。<br/><br/>
+s[a:b:c] 形式的切片，a 与 b 之间以 c 为间隔取值<br/><br/>
+<pre class="lang:default decode:true">s='bicycle'
+s[::3] # bye
+s[::-1] # elcycib
+s[1:5:-2] #ic
+s.__getitem__(slick(1, 5, -2)) # 和上面是一样的<br/><br/>
+s[slice(2, None))
+s[slice(2,5)]</pre>
+<br/>
+负值意味着反向取值，s[::-1] 完成了字符串的倒转。切片实际调用的时 <code>__getitem__(slice(start, stop, step))</code>, 也可以直接使用 s[slice(2,5)] 的形式。<br/><br/>
+numpy 中使用多维切片与 ellipsis(<code>...</code>), numpy.ndarray 的二维切片 a[n:n, k:l], 省略号作为函数参数 f(a, ..., z),  切片中  a[i:...]<br/><br/>
+切片的赋值，s[2:5] = [20, 30] 会把原列表中 2:5 区间的三个值换成 [20, 30] 两个值<br/><br/>
+ a += b 首先试图调用 <code>__iadd__</code> 函数，没有的话调用 <code>__add__</code> 函数<br/><br/>
+<pre class="lang:default decode:true ">class Xyz:
+    def __init__(self, i):
+        self.i = i<br/><br/>
+    # def __iadd__(self, other):
+    #     print('__iadd__')
+    #     self.i += other.i
+    #     return self<br/><br/>
+    def __add__(self, other):
+        print('__add__')
+        return Xyz(self.i + other.i)<br/><br/>
+a = Xyz(1)
+b = Xyz(2)
+a += b
+print(a.i)</pre>
+<br/>
+<code>__iadd__</code> 和 <code>__add__</code> 都启用的话，<code>a += b</code> 调用的是 <code>__iadd__</code> 方法，注释掉 <code>__iadd__</code> 方法就调用 <code>__add__</code> 方法，全注释，会提示 <span style="color: #800000;">TypeError: unsupported operand type(s) for +=: 'Xyz' and 'Xyz'</span>.<br/><br/>
+Python 中对字符串的 += 操作可能得到的是同一个地址，有点像 Redis 的字符串实现，但 Python 的字符串仍然是不可变的，因为不能 s[1] = 'c' 改变其中的值。<br/><br/>
+list 的 sort() 方法返回值是 None, 是为了提醒该方法不会新建一个列表，而是就地修改的元素，许多其他的函数也遵循了这一惯例。相应的 sorted() 函数返回了排序后的值，也意味着内部未修改。<br/><br/>
+二分查找和插入的类 bisect(binary section)<br/><br/>
+ 相应的方法有，bisect(), bisect_left(), bisect_right()： 查找值要被插入的位置， insort(), insort_left(), insort_right() 插入值到正确的位置，要求被操作的列表必须是有序的<br/><br/>
+<pre class="lang:default decode:true ">import bisect<br/><br/>
+a = [0, 1, 2, 5, 5, 8, 10]<br/><br/>
+bisect.bisect(a, 5)  # 5
+bisect.bisect_left(a, 5) # 3
+bisect.bisect_right(a, 5) # 5
+bisect.bisect(a, 11) # None<br/><br/>
+bisect.bisect(a, 9) # 6<br/><br/>
+bisect.insort(a, 9)  # [0, 1, 2, 5, 5, 8, 9, 10]
+bisect.insort_left(a, 5) # [0, 1, 2, 5, 5, 8, 9, 10]
+bisect.insort_right(a, 5) # [0, 1, 2, 5, 5, 5, 8, 9, 10]
+bisect.insort(a, 11) # [0, 1, 2, 5, 5, 5, 5, 8, 9, 10, 11]</pre>
+<br/>
+left, right 是确定位置是在找到值的左边还是右边，不带 left, right 的 bisect()  和 insort() 默认是在右边。上面插入的 5 分不出是左边还是右边，必须把 <code>__repr__</code>, 和比较函数区分开来，比如下面的代码就能看出 insort_left() 和 insort_right() 的区别<br/><br/>
+<pre class="lang:default decode:true">import bisect<br/><br/>
+
+class Xyz:
+    def __init__(self, i, desc):
+        self.i = i
+        self.desc = desc<br/><br/>
+    def __repr__(self):
+        return f'{self.i}:{self.desc}'<br/><br/>
+    def __lt__(self, other):
+        return self.i &lt; other.i<br/><br/>
+
+abc = [Xyz(1, '11'), Xyz(2, '22')]
+bisect.insort_left(abc, Xyz(2, '22-1'))
+print(abc) # [1:11, 2:22-1, 2:22]<br/><br/>
+abc = [Xyz(1, '11'), Xyz(2, '22')]
+bisect.insort_right(abc, Xyz(2, '22-1'))
+print(abc) # [1:11, 2:22, 2:22-1]</pre>
+<br/>
+bisect() 和 insort() 及它们的 left, right 的变种方法的完全参数是(以 bisect 为例)<br/><br/>
+<blockquote>
+bisect(a, x, lo, hi)   # lo, hi 用来控制查询范围
+</blockquote>
+<br/>
+列表很方便，何时不用列表，当存放 1000 万个浮点数，array 效率就高多了，因为它不是存 float 对象而是字节表述，因为 array 是有类型的。频繁的先进先出，用 deque。经常 contains 比较操作用 set, 这和 Java 是一样的。<br/><br/>
+创建一个 array 时需要指定元素的类型，所以就它就 C 里的数组，如 char[], int[], float[] 等，存储的不在是有额外元数据信息的对象，所以也就节省空间。array.tofile() 和 array.fromfile() 能非常高效的处理数组到文件和从文件序列化出数组.<br/><br/>
+NumPy, 以 NumPy 为基础的 SciPy, Pandas 和 Blaze  又是以 NumPy 和 SciPy 为基石。<br/><br/>
+利用 list 的  append  和 pop 可以模拟出栈或队列来，但它们操作的效率很低，有队列需求就可以考虑用 collections.deque, 并且它是线程安全的。利用 deque 的 maxlen, rotate 可试着做一个环形队列, deque 在插入时队列满后会清除另一端的元素腾出空间。Python  还提供其他几种 queue.Queue, queue.LifoQueue, queue.PriorityQueue 线程安全的专用队列, 它们都支持 maxsize 参数，在队列满了后不会自动删除旧元素，而是阻塞直到另外的线程移除了元素。<br/><br/>
+专用的 multiprocessing.JoinableQueue, asyncio 中有自己的 Queue, LifoQueue, PriorityQueue。 特殊的 heapq 尚未遇到有什么具体的应用场景。

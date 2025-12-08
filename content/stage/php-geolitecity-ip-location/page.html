@@ -1,0 +1,132 @@
+---
+title: PHP 使用 GeoLiteCity 库解析 IP 为地理位置
+url: /php-geolitecity-ip-location/
+date: 2011-02-21T07:47:28-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PHP
+tags: 
+  - php
+  - ip
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3205 
+wpStatus: publish
+views: 3233
+lastmod: 2021-09-03T13:05:22-05:00
+---
+
+关于把 IP 地址转换为地理位置可以使用网络上很多的 API，好处就是不用在本地存储一个 IP 数据库，而且一般网络上的 IP 库会自动更新，不利的地方就是太依赖于网络，性能表现也可能会弱些。比如像下面的 API:</p>
+<br/>
+<a href="http://api.hostip.info/get_html.php?ip=58.63.236.31">http://api.hostip.info/get_html.php?ip=58.63.236.31</a><br />
+<a href="http://api.hostip.info/flag.php?ip=58.63.236.31">http://api.hostip.info/flag.php?ip=58.63.236.31</a><br/><br/>
+这里介绍 PHP 如何使用 GeoLiteCity.dat 库把 IP 转换为地理位置，GeoLiteCity.dat 可以在 <a href="http://geolite.maxmind.com/download/geoip/database/GeoLiteCity.dat.gz">http://geolite.maxmind.com/download/geoip/database/GeoLiteCity.dat.gz</a> 下，解压出 GeoLiteCity.dat，即可，我们可以手动去更新新的 IP 库。<br/><br/>
+下面 PHP 解析 IP 的过程参考自 WordPress 插件 <a href="http://wordpress.org/extend/plugins/visitor-maps/" target="_blank" rel="noopener">Visitor Maps and Who's Online</a> 的实现。可以找到该插件的两个文件 <a href="http://unmi.cc/wp-content/uploads/2011/02/include-whos-online-geoip.php_.txt" target="_blank" rel="noopener">include-whos-online-geoip.php</a> 和 <a href="http://unmi.cc/wp-content/uploads/2011/02/visitor-maps.php_.txt" target="_blank" rel="noopener">visitor-maps.php</a> 告诉了我们怎么做。你可以点击这里的链接下载到这两个文件<!--more-->，我这里把 include-whos-online-geoip.php 改名为 geoipcity.inc.php，然后参考 visitor-maps.php 中的 get_location_info($user_ip) 函数，那么我们可以写出自己的解析 IP 地址的程序 resolve_ip.php:<br/><br/>
+<pre class="lang:default decode:true">&lt;?php
+require_once("geoipcity.inc.php");
+//ini_set("memory_limit","96M");<br/><br/>
+//最简单的函数只要这一个
+function get_ip_record($user_ip) {<br/><br/>
+    global $path_visitor_maps;<br/><br/>
+    //假定 GeoLiteCity.data 放在与此文件同一目录下
+    $gi = geoip_open_VMWO('GeoLiteCity.dat', VMWO_GEOIP_STANDARD);<br/><br/>
+    $record = geoip_record_by_addr_VMWO($gi, "$user_ip");
+    geoip_close_VMWO($gi);<br/><br/>
+    //你可以直接使用上面取出的 $record 数据
+    return $record;
+}<br/><br/>
+function get_location_info($user_ip) {<br/><br/>
+    $record = get_ip_record($user_ip);<br/><br/>
+    //或者使用下面加工后的 $location_info
+    global $GEOIP_REGION_NAME;
+    $location_info = array();    // Create Result Array<br/><br/>
+    $location_info['city_name']    = (isset($record-&gt;city)) ? $record-&gt;city : '';  //城市
+    $location_info['state_name']   = (isset($record-&gt;country_code) &amp;&amp; isset($record-&gt;region)) //州名
+          ? $GEOIP_REGION_NAME[$record-&gt;country_code][$record-&gt;region] : '';
+    $location_info['state_code']   = (isset($record-&gt;region)) ? strtoupper($record-&gt;region) : ''; //州代号
+    $location_info['country_name'] = (isset($record-&gt;country_name)) ? $record-&gt;country_name : '--'; //国家名
+    $location_info['country_code'] = (isset($record-&gt;country_code)) ? strtoupper($record-&gt;country_code) : '--'; //国家代号
+    $location_info['latitude']     = (isset($record-&gt;latitude)) ? $record-&gt;latitude : '0';   //维度
+    $location_info['longitude']    = (isset($record-&gt;longitude)) ? $record-&gt;longitude : '0'; //经度<br/><br/>
+    //php 站点设置了 utf-8 字符集必要时进行转码
+    $charset = 'utf-8';
+    // this fixes accent characters on UTF-8, only when the blog charset is set to UTF-8
+    if ( strtolower($charset) == 'utf-8' &amp;&amp; function_exists('utf8_encode') ) {
+        if ($location_info['city_name'] != '' ) {
+            $location_info['city_name'] = utf8_encode($location_info['city_name']);
+        }
+        if ($location_info['state_name'] != '') {
+            $location_info['state_name'] = utf8_encode($location_info['state_name']);
+        }
+        if ($location_info['country_name'] != '') {
+            $location_info['country_name'] = utf8_encode($location_info['country_name']);
+        }
+    }<br/><br/>
+    return $location_info;
+}<br/><br/>
+//查询一个 IP 测试下
+$record = get_ip_record("206.19.49.154");
+var_dump($record);<br/><br/>
+$location = get_location_info("206.19.49.154");
+var_dump($location);
+?&gt;</pre>
+<br/>
+执行后输出如下(可以作为系统脚本直接用 php resolve_ip.php 来执行)：<br/><br/>
+<pre class="lang:default decode:true">object(geoiprecord_VMWO)#2 (10) {
+  ["country_code"]=&gt;
+  string(2) "US"
+  ["country_code3"]=&gt;
+  string(3) "USA"
+  ["country_name"]=&gt;
+  string(13) "United States"
+  ["region"]=&gt;
+  string(2) "TX"
+  ["city"]=&gt;
+  string(10) "Richardson"
+  ["postal_code"]=&gt;
+  string(5) "75080"
+  ["latitude"]=&gt;
+  float(32.9722)
+  ["longitude"]=&gt;
+  float(-96.7376)
+  ["area_code"]=&gt;
+  int(972)
+  ["dma_code"]=&gt;
+  float(623)
+}
+array(7) {
+  ["city_name"]=&gt;
+  string(10) "Richardson"
+  ["state_name"]=&gt;
+  string(5) "Texas"
+  ["state_code"]=&gt;
+  string(2) "TX"
+  ["country_name"]=&gt;
+  string(13) "United States"
+  ["country_code"]=&gt;
+  string(2) "US"
+  ["latitude"]=&gt;
+  float(32.9722)
+  ["longitude"]=&gt;
+  float(-96.7376)
+}</pre>
+<br/>
+只要取你想要的数据就是了，里面还有诸如区号，邮编等数所，GeoLiteCity.dat 是个二进制文件，比普通文本要紧凑省空间。<br/><br/>
+不知道您有没有多留一份心，有无浏览链接：<a href="http://geolite.maxmind.com/download/geoip/api/php/">http://geolite.maxmind.com/download/geoip/api/php/</a>，是这样的：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter" src="/wp-content/uploads/2011/02/geopi_1.png" alt="Geoip" width="670" height="575" /></p>
+<br/>
+看到 GeoIp 给我们提供了不少的例子，那么多 sample.php，而实际上前面用到的 geoipcity.inc.php，就是 geopip.inc、geoipcity.inc 和 geoipregionvars.php 三个程序的内容合体。<br/><br/>
+再往上看：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter" src="/wp-content/uploads/2011/02/geopi_2.png" alt="GeoIp" width="670" height="628" /></p>
+<br/>
+官方提供的 API 何止 PHP 啊，几乎能全线满足您的实际需求了，c、java、perl、python、vb、ruby、tcl 等......，放其他程序里以后也不用愁了。<br/><br/>
+再进到 <a href="http://geolite.maxmind.com/download/geoip/database/">http://geolite.maxmind.com/download/geoip/database/</a> 瞧瞧：<br/><br/>
+<p style="text-align: center;"><img class="aligncenter" src="/wp-content/uploads/2011/02/geopi_3.png" alt="GeoIP" width="670" height="576" /></p>
+<br/>
+正考虑着呢，不是说 IPv4 快用净了吗？IPv6 的数据也正为我们准备着呢？当然，天朝的 IPv9 恐怕永远不会有的。<br/><br/>
+本只是把 <a href="http://wordpress.org/extend/plugins/visitor-maps/" target="_blank" rel="noopener">Visitor Maps and Who's Online</a> 里的解析 IP 的做法抽出来用用，可总能不断 深入再深入，不知道可喜还是可怕了。

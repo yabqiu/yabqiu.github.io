@@ -1,0 +1,130 @@
+---
+title: 针对接口编程及敏捷编程
+url: /program-to-interface-and-agile/
+date: 2017-06-06T10:00:57-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Programming
+tags: 
+  - Agile
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7987 
+wpStatus: publish
+views: 559
+lastmod: 2017-06-06T10:00:57-05:00
+---
+
+<p>本文发自于对平时编程习惯上的一些个人见解，还不至于牵扯到方法学的层面，尽管如此，也可能会招来许多不同的看法，只要是觉得经世致用就行。首先从耳熟能详的针对接口编程说起</p>
+
+<h3>是否总是针对接口编程</h3><br/>
+<p>在初通软件设计时，针对接口编程这一理念似乎是宇宙真理(软件世界里并没有真理部)，而且对它的解释是</p>
+
+<blockquote><br/>
+<p>具体类包含实现细节，而抽象类则只呈现概念</p>
+
+</blockquote>
+
+<p>当然很在理，也很权威。</p>
+
+<p>但针对接口的前提是什么呢？是在设计一个与外部系统交互的 API 情况下。比如要提供一个用户注册接口给外部，可以共同约定好接口为</p>
+
+<blockquote><br/>
+<p>void register(String username, String password) throws RegistrationException;</p>
+
+</blockquote>
+
+<p>  并且这个接口应该是稳固的，然后各自去实现或完成调用细节，即使实现未完成调用端也可以通过 Mock 来进行单元测试。</p>
+
+<p>然而实际中对针对接口编程的理解很容易变为凡是非工具类，数据类都先声明一个接口挂单一实现类，类结构中就类似下面那样<!--more--></p>
+
+<blockquote><br/>
+<p>.<br /><br/>
+ ├── dao<br /><br/>
+ │       ├── UserDao.java<br /><br/>
+ │       └── UserDaoImpl.java<br /><br/>
+ └── service<br /><br/>
+          ├── UserService.java<br /><br/>
+          └── UserServiceImpl.java</p>
+
+</blockquote>
+
+<p>在使用 Java 时硬生生把针对接口编程中的接口与 Java 的 interface 划上了等号，其实此接口非彼 interface。原因有三</p>
+
+<ol>
+
+	<li>这个 UserDao interface 其实并不与外部交互，与外部交互的可能是一个 RESTful API, 而这个 RESTful API 才是针对接口编程的接口</li>
+
+	<li>通常接口或抽象类意味着存在多种实现，而把实现类写成 UserDaoImpl 这样的命名方式基本就坦白了它是独一无二的实现。从语义上讲 UserDao 与 UserDaoImpl 没什么分别，那是不是要把 UserDao 写成 IUserDao 或 UserDaoIf, 那更丑不堪言。假如 UserDao 下的两个实现是 DbUserDao 和 FileUserDao，那还说的过去</li>
+
+	<li>由于 UserDao, UserService 并不与外部交互，所以它们的定义也就不稳固。比如在 UserDao 中预先定义了一个方法<br/>
+<br/>
+<blockquote>List&lt;User&gt; findUsersByFirstName(String firstName);</blockquote>
+
+<br/>
+UserDaoImpl 中也实现了它。后来发现实现中需要再加一个方法<br/>
+<br/>
+<blockquote>List&lt;User&gt; findUsersByLastName(String lastName);</blockquote>
+
+<br/>
+于是又在 UserDao interface 中补上这一新的方法，后来实现上要更多的方法，进而不断的往 UserDao interface 中补方法。这种情况下就算是把 UserDao 当成接口，我们所做的也不是定义好接口，然后实现细节; 而是让接口跟随着实现上的需要任意演变，久而久之，也就势必造成  UserDao 中的方法定义不够清晰，混乱不堪，也就不成其接口。</li>
+
+</ol>
+
+<p>因此既然 UserDao 不是一个外部接口，并且只有一种实现，何不只创建一个具体类 UserDao 即可。对于 UserDao 的实现要写好充足的测试用例。要是 UserDao 和 UserService 都只有一种实现的话，它们可以放在同一包当中，用不着分 dao 和 service 包，类名就暗示了它们的行为。</p>
+
+<p>待到将来 UserDao 需要不同的实现的时候，比如原来的 UserDao 是以数据库的方式，则可更改为 DbUserDao, 再创建 FileUserDao, 这时候就才去考虑抽象出它们俩公共接口或基类 UserDao。记住，有了充分的测试，对于这样的重构操作便能随心所欲。同时随着类关系得复杂了，再酌情把 Dao 和 Service 类组织到 dao 和 service 包中。</p>
+
+<p>为何 Spring 衷爱于总是 UserDao + UserDaoImpl 的形式，大约是 Spring 大肆提倡的针对接口编程的，于是口号中的接口变映射为 Java 的 interface, 即使只存在一个实现的类也要摆个接口，成为一种固定模式。这样也使得在 IDE 中方法不易导航，点击方法直接跑到了接口方法上去了，需多按一个键。可能还有一层原因是 Spring 针对 Java interface 可以使用动态代理去实现切面，效率会高些; 如果直接是类的话要用到 CGLib 来修改字节码实现切面，其实又何妨，反正是启动时一次性的行为。</p>
+
+<h3>关于包的命名标准</h3><br/>
+<p>Java 中包的命名标准推荐反转域名后接项目相关的层次，如  peoplesoft 公司的 dataservice 部门下有一个 erp 项目，项目中某个 dao 实现类的包名就应该为</p>
+
+<blockquote><br/>
+<p>com.peoplesoft.dataservice.erp.dao</p>
+
+</blockquote>
+
+<p>可能原本是一个很小的只有几个类的项目，每个类都悬挂在这个长长的包名之下，不仅 IDE 或 VCS 中导航很怪异，更是有种头重脚轻的感觉。所以包名中越往前越显多余，譬如像下面那样，包的前缀通常就是个累赘。</p>
+
+<blockquote><br/>
+<p>─ com.peopsoft.dataservice.erp<br /><br/>
+                                              ├── Main<br /><br/>
+                                              ├── UserDao<br /><br/>
+                                              └── UserService</p>
+
+</blockquote>
+
+<p>Java 包命名标准是考虑到了这个类可能会在互联网上传播，所以有了域名部分就基本能保证你的类的全限名称是唯一的。但是绝大多数是什么情况呢？你的类只在本项目中用，或是被本部门中别的项目引用，或是被本公司的其他部门引用。参考 PlayFramework 创建的项目包命名直截了当，就是 app{controllers, models, service} 这么简单的只有一个层次的包名。所以我们也应该根本类可能被引用的范围定义下面的包名即可</p>
+
+<blockquote><br/>
+<p>dao                                 只是本项目用<br /><br/>
+ erp.dao                          本部门其他项目中可能用到<br /><br/>
+ dataservice.erp           本公司其他部门可能用到</p>
+
+</blockquote>
+
+<p>类似于变量可见性由小(private) 及大(public) 一样, 而且随时可以重构。大可不必只是个搬砖的硬是要说成是在建世界上最伟大的大楼。</p>
+
+<h3>关于多余代码</h3><br/>
+<p>"这段代码先留着(先注释掉), 以后可能会用到"，这已经不是一个保留无用代码的理由了，否则要版本控制系统何用。这就类似于意图支持所有类型数据库的过度设计一样，一般系统没事换什么数据库啊。代码就应该显得干净，用不着的代码就必须马上，立即删除它，如果以后真有用向 VCS 讨要就是了，大不济，事先打个 tag 以后方便检索。</p>
+
+<p>编程当中能够有机会大量删除之前写的东西其实是件很快乐的事情，一般来说意味着我们已经找到了一个更简单的解决方案才能行这种大刀阔斧之事。</p>
+
+<p>IntelliJ IDEA 能够帮我们标识出未被使用的变量，或是从未被调用的方法，对于这种灰色地带(IntelliJ IDEA 发现未被使用的变量或方法显示为灰色)皆可杀。而尤以数据类最为甚，秉承 JavaBean 最初的规范，声明一个字段后马上就是生成 getter/setter 方法，而很可能就是很多 getter/setter 方法, 甚至是某些属性自身根本无人问津，那还有存在的必要吗？JavaBean 是一个制造样板代码的坏地方，而且 JavaBean 的规范早已不适用于函数式编程的不可变性要求了。</p>
+
+<p>至今最令人讨厌的一个 IntelliJ IDEA 的默认模板配置是，它会自动给创建的文件加上头注释</p>
+
+<blockquote><br/>
+<p>/**<br /><br/>
+ * Created by Xxx on 6/6/17.<br /><br/>
+ */</p>
+
+</blockquote>
+
+<p>IntelliJ IDEA 本是一个擅长重构，注重敏捷的 IDEA 却默认摆上这么一出。每次我看到这样的文件头注释就有点哭笑不得，这难道不是 VCS 管理的事情吗。写上这个创建者是要声明对该代码负责，还是警示他人别乱动我的代码？而实际上代码为团队所有，直接删除这个头注释似乎显得过于粗鲁，反正一般代码改来改去最后与这个创建者可能半毛钱关系都没有。反正我每次安装了新的 IDEA 后第一件事我就把这个 File Header 模板去掉。</p>

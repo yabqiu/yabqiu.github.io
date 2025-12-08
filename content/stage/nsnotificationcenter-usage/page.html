@@ -1,0 +1,87 @@
+---
+title: NSNotificationCenter 的使用详解
+url: /nsnotificationcenter-usage/
+date: 2012-01-06T12:22:24-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - ios
+  - notification
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4163 
+wpStatus: publish
+views: 5139
+lastmod: 2021-09-03T15:03:00-05:00
+---
+
+通常我们在 iOS 中发生什么事件时该做什么是由 Delegate 实现的，例如 View 加载完后会触发 viewDidLoad。  Apple 还为我们提供了另一种通知响应方式，那就是 NSNotification，系统中(UIKeyboardDidShowNotification 等) 以及某些第三方组件(例如 ASIHTTPRequest 的 kReachabilityChangedNotification 等)。</p>
+<br/>
+<a href="http://developer.apple.com/library/mac/#documentation/Cocoa/Reference/Foundation/Classes/NSNotificationCenter_Class/Reference/Reference.html" target="_blank" rel="noopener">NSNotificationCenter</a> 较之于 Delegate 可以实现更大的跨度的通信机制，可以为两个无引用关系的两个对象进行通信。NSNotificationCenter 的通信原理使用了观察者模式：<br/><br/>
+1. NSNotificationCenter 注册观察者对某个事件(以字符串命名)感兴趣，及该事件触发时该执行的 Selector 或 Block<br />
+2. NSNotificationCenter 在某个时机激发事件(以字符串命名)<br />
+3. 观察者在收到感兴趣的事件时，执行相应的 Selector 或 Block<!--more--><br/><br/>
+<p style="text-align: center;"><a href="http://unmi.cc/nsnotificationcenter-usage/notificationcenter" rel="attachment wp-att-4164"><img class="aligncenter wp-image-4164" style="border: 1px solid pink;" title="notificationcenter" src="http://unmi.cc/wp-content/uploads/2012/01/notificationcenter.jpg" alt="" /></a></p>
+<br/>
+使用 NSNotificationCenter 的步骤示例代码：<br/><br/>
+<strong>1. 定义一个事件到来时该执行的方法：</strong><br/><br/>
+<pre class="lang:default decode:true">- (void)execute:(NSNotification *)notification {
+    //do something when received notification
+    //notification.name is @"NOTIFICATION_NAME"
+    if(notification.object &amp;&amp; [notification.object isKindOfClass:[Test class]]){
+        //do something
+    }
+}</pre>
+<br/>
+<strong>2. 注册观察者：</strong><br/><br/>
+<pre class="lang:default decode:true">[[NSNotificationCenter defaultCenter] addObserver:self
+                                         selector:@selector(execute:)
+                                             name:@"NOTIFICATION_NAME"
+                                           object:nil];</pre>
+<br/>
+使用默认的通知中心，上面代码的意义的，观察者 self   在收到名为 @"NOTIFICATION_NAME" 的事件是执行 @selector(execute:)，最后一个参数是表示会对哪个发送者对象发出的事件作出响应，nil 时表示接受所有发送者的事件。<br/><br/>
+还有一种注册观察者的方式是用方法：<br/><br/>
+- (id)addObserverForName:(<a href="http://developer.apple.com/library/mac/documentation/Cocoa/Reference/Foundation/Classes/NSString_Class/Reference/NSString.html#//apple_ref/doc/c_ref/NSString">NSString</a> *)<em>name</em> object:(id)<em>obj</em> queue:(<a href="http://developer.apple.com/library/mac/documentation/Cocoa/Reference/NSOperationQueue_class/Reference/Reference.html#//apple_ref/doc/c_ref/NSOperationQueue">NSOperationQueue</a> *)<em>queue</em> usingBlock:(void (^)(NSNotification *))<em>block</em><br/><br/>
+<strong>3. 激发事件，即通知相应的观察者</strong><br/><br/>
+<pre class="lang:default decode:true">[[NSNotificationCenter defaultCenter] postNotificationName:@"NOTIFICATION_NAME"
+                                                    object:nil];
+//或者用下面几行代码，明确的 notification 示例
+Test *test = [[Test alloc] init];
+NSNotification *notification = [NSNotification notificationWithName:@"NOTIFICATION_NAME"
+                                                             object:test];
+[[NSNotificationCenter defaultCenter] postNotification:notification];</pre>
+<br/>
+这里的 object 参数对应到方法 <span style="color: #800000;">- (void)execute:(NSNotification *)notification</span> 里的 <span style="color: #800000;">notification.object</span>, name 就是 <span style="color: #800000;">notification.name</span>。<br/><br/>
+代码到这里，方法 <span style="color: #800000;">- (void)execute:(NSNotification *)notification</span> 就会得到执行了。<br/><br/>
+说明：我们上面用的  <span style="color: #800000;">[NSNotificationCenter defaultCenter]</span> 同一个实例，你也可以使用自己的 <span style="color: #800000;">NSNotificationCenter</span>，如：<br/><br/>
+<span style="color: #800000;">NSNotificationCenter *notificationCenter = [[NSNotificationCenter alloc]init];</span><br/><br/>
+事件只会在当前的 NotificationCenter 中广播，不同的 NotificationCenter 之间的事件通知互不相干。<br/><br/>
+NSNotificationCenter 比之 Delegate 的好处就是事件发出者与响应者可以完全不认识，例如你在某个类中注册了 A 观察者某 E 事件的响应，你可以在程序的任何代码 X 中激发 E，A 的相应选择器即被触发，对象 A 与 X 完全是松散的。<br/><br/>
+最后，你的观察者如果对一些事件没兴趣了，应该从 NotificationCenter 中移除掉：<br/><br/>
+<pre class="lang:default decode:true">[[NSNotificationCenter defaultCenter] removeObserver:self name:@"NOTIFICATION_NAME"
+                                              object:test];//object 与注册时相同
+//或[[NSNotificationCenter defaultCenter] removeObserver:self];</pre>
+<br/>
+系统里定义了许多的 XxxNotification 名称，其实只要 Cmd+Shift+O 打开 Open Quickly，输入 nsnotification 或者 uinotification 可以看到许多以 Notification 结尾的变量定义，由变量名称也能理解在什么时候会激发什么事件，一般都是向 [NSNotificationCenter defaultCenter] 通知的。<br/><br/>
+<p style="text-align: center;"><a href="http://unmi.cc/nsnotificationcenter-usage/built-in_notifications" rel="attachment wp-att-4167"><img class="aligncenter wp-image-4167" title="built-in_notifications" src="http://unmi.cc/wp-content/uploads/2012/01/built-in_notifications.png" alt="" /></a></p>
+<br/>
+比如你想对系统的某些事件时作出响应只要注册一个观察者即可，想要在每次键盘显示后得到通知就得关心 UIKeyboardDidShowNotification 事件:<br/><br/>
+<pre class="lang:default decode:true ">[[NSNotificationCenter defaultCenter] addObserver:self
+                                         selector:@selector(keyboardDidShow:)
+                                             name:UIKeyboardDidShowNotification
+                                           object:nil];</pre>
+<br/>
+键盘显示后就会执行 self 的 keyboardDidShow 方法。<br/><br/>
+我们可以多看看第三方 Objective-C 库是怎么运用的 NSNotificationCenter。<br/><br/>
+Cocoa 给我们另一种事件通知模型就是 KVO(Key-Value Obsering)，基于 NSKeyValueObserving 非正式协议。<br/><br/>
+参考：1. <a href="http://developer.apple.com/library/mac/#documentation/Cocoa/Reference/Foundation/Classes/NSNotificationCenter_Class/Reference/Reference.html" target="_blank" rel="noopener">NSNotification Class Reference</a><br />
+            2. <a href="http://blog.csdn.net/flyhawk007j2me/article/details/5924799" target="_blank" rel="noopener">NSNotificationCenter 的使用</a><br />
+            3. <a href="http://www.codeios.com/thread-84-1-1.html" target="_blank" rel="noopener">iPhone之NSNotificationCenter使用方法</a><br />
+            4. <a href="http://developer.apple.com/library/mac/#documentation/Cocoa/Conceptual/KeyValueObserving/KeyValueObserving.html" target="_blank" rel="noopener">Key-Value Observing Programming Guide</a><br />
+            5. <a href="http://www.slideshare.net/360conferences/nsnotificationcenter-vs-appdelegate" target="_blank" rel="noopener">AppDelegate VS. NSNotificationCenter</a>

@@ -1,0 +1,210 @@
+---
+title: 如何向 Docker 容器传递参数
+url: /pass-arguments-to-docker-container/
+date: 2018-03-31T04:15:03-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2014/05/homepage-docker-logo.png"
+categories:
+  - Docker
+tags: 
+  - Docker
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8608 
+wpStatus: publish
+views: 10451
+lastmod: 2021-09-10T13:04:51-05:00
+---
+
+我们在运行 docker 镜像时希望能用下面的命令向容器传递命令行参数</p>
+<br/>
+<blockquote>
+docker run &lt;image-name&gt; &lt;command&gt; arg1 arg2<br />
+docker run &lt;image-name&gt; arg1 arg2
+</blockquote>
+<br/>
+其实只有第一种形式，紧随镜像名后那个总是一个命令，其后才是参数。如果要向 docker 容器传递参数时，Dockerfile 该如何写，这就有必要稍稍了解一下 Dockerfile 中  CMD 和 ENTRYPOINT 这两个指令，并且它们有 exec 和 shell 两种格式的写法。详情请见上篇 <a href="/dockerfile-difference-between-shell-exec-forms/">Dockerfile 中命令的两种书写方式的区别</a>。<br/><br/>
+对于一个 docker 镜像，我们可以这么来理解  ENTRYPOINT 与 CMD 的关系<br/><br/>
+<ol>
+    <li>如果没有定义 ENTRYPOINT， CMD 将作为它的 ENTRYPOINT</li>
+    <li>定义了 ENTRYPOINT 的话，CMD 只为 ENTRYPOINT 提供参数</li>
+    <li>CMD 可由 <code>docker run &lt;image&gt;</code> 后的命令覆盖，同时覆盖参数</li>
+</ol>
+<br/>
+对于 #1 和  #2 更精致的理解是<span style="color: #ff0000;">容器运行的最终入口由 ENTRYPOINT 和实际的 CMD 拼接而成</span>。ENTRYPOINT 和 CMD 需转换为实际镜像中的 exec 格式来拼接，合并后的第一个元素是命令，其余是它的参数。<!--more--><br/><br/>
+<h3>举四个例子进行说明</h3><br/><br/>
+<strong>一, 未定义 ENTRYPOINT, 定义了 CMD</strong><br/><br/>
+<blockquote>
+#ENTRYPOINT []<br />
+CMD ["echo", "hello"]
+</blockquote>
+<br/>
+实际入口是它们拼接后还是 CMD 本身，<code>["echo", "hello"]</code><br/><br/>
+<strong>二, 定义了 ENTRYPOINT 和 CMD</strong><br/><br/>
+<blockquote>
+ENTRYPOINT ["echo", "hello"]<br />
+CMD ["echo", "world"]
+</blockquote>
+<br/>
+实际入口是它们拼接起来，形成 <code>["echo", "hello", "echo", "world"]</code>, 执行 <code>docker run test</code> 显示为 <code>hello echo world</code><br/><br/>
+<strong>三, 定义了 ENTRYPOINT, CMD 由 <code>docker run</code> 提供</strong><br/><br/>
+<blockquote>
+ENTRYPOINT  ["echo", "hello"]
+</blockquote>
+<br/>
+执行命令 <code>docker run &lt;image&gt; rm -rf /</code>, 实际入口是由 <code>["echo", "hello"]</code> 与 <code>["rm", "-rf", "/"]</code> 拼接而成的 <code>["echo", "hello", "rm", "-rf", "/"]</code>, 输出为 <code>hello rm -rf /</code>。看到 <code>rm -rf /</code> 也不用担心，用 ENTRYPOINT 就是让人放心<br/><br/>
+注：ENTRYPOINT 同样可以被覆盖，如 <code>docker run --entrypoint ls test -l /</code>，将会执行 <code>ls -l /</code> 命令。<br/><br/>
+<strong>四, 如果 ENTRYPOINT 用 shell 格式定义的</strong><br/><br/>
+<blockquote>
+ENTRYPOINT java -jar /app.jar<br />
+CMD ["hello", "world"]
+</blockquote>
+<br/>
+通过 <code>docker inspect</code> 命令看到镜像中实际的 ENTRYPOINT 是<br/><br/>
+<blockquote>
+ENTRYPOINT ["/bin/sh", "-c", "java -jar /app.jar"]
+</blockquote>
+<br/>
+所以与 CMD 连接起来的入口就是 <code>["/bin/sh", "-c", "java -jar /app.jar", "hello", "world"]</code>, "bin/sh" 直接忽略掉后面的 "hello" 与 "world"，这就是为什么  shell 命令方式无法获取参数。<br/><br/>
+有了以上几点概念，以及四个实例作为感观认识后，想要怎么往容器传递参数应该很容易确定了。<br/><br/>
+<h3>未定义 ENTRYPOINT</h3><br/><br/>
+没有定义 ENTRYPOINT 的镜像想怎么来就怎么来，<code>docker run &lt;image&gt;</code> 后面的输入你自己作主。<br/><br/>
+<h3>有定义 ENTRYPOINT</h3><br/><br/>
+定义了 ENTRYPOINT 的镜像，则是 CMD 或 <code>docker run &lt;image&gt;</code> 后的输入作为  ENTRYPOINT 中命令的附加参数。再次提醒 shell 格式的 ENTRYPOINT 和 CMD  务必要转换为相应 exec  格式来理解。<br/><br/>
+<h3>shell 格式的 ENTRYPOINT</h3><br/><br/>
+如果是复杂的 shell 命令不容易拆解出一个个参数，而希望用  shell 格式来定义 ENTRYPOINT 的话，也有办法。shell 格式的 ENTRYPOINT 是由 "/bin/sh -c" 启动的，而它是可以解析变量的。另一方面 CMD 或 <code>docker run &lt;image&gt;</code> 的输入第一个元素存成了 <code>$0</code>，其他剩余元素存为 <code>$@</code>, 所以 shell 格式的 ENTRYPOINT 可以这么写<br/><br/>
+<blockquote>
+ENTRYPOINT echo hello $0 $@
+</blockquote>
+<br/>
+注：shell 中 <code>$0</code> 表示命令本身，<code>$@</code> 为所有参数<br/><br/>
+这样执行下面 docker 命令将可获得所有的参数输入<br/><br/>
+<blockquote>
+$ docker run test world and China<br />
+hello world and China
+</blockquote>
+<br/>
+如果只是按常规 shell 脚本来对待，想当然的写成<br/><br/>
+<blockquote>
+ENTRYPOINT echo hello $@
+</blockquote>
+<br/>
+效果将是<br/><br/>
+<blockquote>
+$ docker run test world and China<br />
+hello and China
+</blockquote>
+<br/>
+第一个参数将被丢失，<code>docker run &lt;image&gt;</code> 后第一个输入通常是一个命令，所以是 <code>$0</code>, 而 ENTRYPOINT 又希望它是一个普通参数，因此<code>$0 $@</code> 要同时写上。<br/><br/>
+<h3>直接用 <code>docker inspect &lt;container-id&gt;</code> 查看</h3><br/><br/>
+最简单且准确的方式就是直接用 <code>docker inspect &lt;container-id&gt;</code> 查看实际启动的命令及参数，不用猜测，<code>docker inspect</code> 也不会撒谎。对于如下 Dockerfile 定义<br/><br/>
+<blockquote>
+ENTRYPOINT java -Xmx256M -jar /app.jar<br />
+CMD ["echo", "hello"]
+</blockquote>
+<br/>
+运行容器后，<code>docker inspect &lt;container-id&gt;</code>, 注意是容器 ID 而非镜像 ID。在显示的 inspect JSON 结果的最顶端我们可以看到<br/><br/>
+<pre class="lang:default decode:true ">    "Path": "/bin/sh",
+    "Args": [
+        "-c",
+        "java -Xmx256M -jar /app.jar",
+        "echo",
+        "hello"
+    ],</pre>
+<br/>
+ENTRYPOINT 和 CMD 如何组成实际入口，从这里的 <code>Path</code> 和 <code>Args</code> 是一目了然，也不用诧异为何 CMD 中的命令部分也变成了 ENTRYPOINT 命令的参数。<br/><br/>
+<h3>环境变量方式</h3><br/><br/>
+对于 shell 格式的 ENTRYPOINT, 或者显式由 "/bin/sh -c" 来启动的命令，可以通过环境变量传入参数<br/><br/>
+<blockquote>
+ENTRYPOINT java $JAVA_OPTS -jar app.jar $0 $@<br />
+#或显式的 ENTRYPOINT ["/bin/sh", "-c", "java $JAVA_OPTS -jar /app.jar $0 $@"]
+</blockquote>
+<br/>
+启动容器时的命令用<br/><br/>
+<blockquote>
+docker run -e JAVA_OPTS="-Xmx5G -Xms2G" &lt;image-name&gt; aa bb
+</blockquote>
+<br/>
+那么实际执行  java 的完整命令就是<br/><br/>
+<blockquote>
+java -Xmx5G -Xms2G -jar /app.jar aa bb
+</blockquote>
+<br/>
+此例结合了环境变更与 <code>$0 $@</code> 的方式。<br/><br/>
+<h3>总结</h3><br/><br/>
+最好再重复一遍容器参数传递及 Dockerfile 配置的要领<br/><br/>
+<ol>
+    <li>容器运行的最终入口由 ENTRYPOINT 和实际的 CMD 拼接而成。</li>
+    <li>ENTRYPOINT 和 CMD 合并前需转换为 exec 格式(用 docker inspect &lt;image&gt; 查看)，合并后(相当于数组) 第一个元素是命令，其他都为参数</li>
+    <li>CMD 可在 Dockerfile 中配置，在启动容器时会被  <code>docker run &lt;image&gt;</code> 后的参数覆盖</li>
+    <li>CMD 的 exec 格式中，第一个元素是 shell 的 $0, 其余元素是 shell 的 $@。当 ENTRYPOINT 中用 shell 格式或显式的 sh(bash等)就可以引用 $0, $@</li>
+    <li>环境变量的解析是通过 sh(bash 等) 来解析的，所以 <code>ENTRYPOINT ["echo", "$name"]</code> 中的 <code>$name</code> 是不被解析的</li>
+    <li>最能说明问题的是 <code>docker inspect &lt;container-id&gt;</code> 看个究竟，<code>Path</code> 和 <code>Args</code> 说明了一切</li>
+</ol>
+<br/>
+<!--more--><br/><br/>
+<h3 id="h32sjfoux11b1rd72fi17si5nmem9szt"><a href="#h32sjfoux11b1rd72fi17si5nmem9szt">补充(2018-04-06)</a>：</h3><br/><br/>
+为了准确获取输入参数，对于 <code>$0</code> 和 <code>$@</code> 需要用引号括起来，像下面那样<br/><br/>
+<blockquote>
+ENTRYPOINT java $JAVA_OPTS -jar app.jar "$0" "$@"<br />
+#或 ENTRYPOINT ["/bin/sh", "-c", "java $JAVA_OPTS -jar /app.jar \"$0\" \"$@\""]<br />
+#更时髦一点的 shell exec 方式<br />
+# ENTRYPOINT exec java $JAVA_OPTS /-jar app.jar "$0" "$@"
+</blockquote>
+<br/>
+下面解析为何 <code>$0</code> 和 <code>$@</code>  要用引号括起来，比如下面的 ENTRYPOINT<br/><br/>
+<blockquote>
+ENTRYPOINT java -jar /app.jar $0 $@
+</blockquote>
+<br/>
+并且 /app.jar 中的 java main 方法如下：<br/><br/>
+<pre class="lang:default decode:true ">    public static void main(String[] args) {
+        System.out.println("Arguments: " + String.join(", ", args));
+    }</pre>
+<br/>
+看下面的执行<br/><br/>
+<blockquote>
+$ docker run test "aa bb" cc "dd ee"<br />
+Arguments: [aa, bb, cc, dd, ee]
+</blockquote>
+<br/>
+原本希望的是输入的三个参数 <code>aa bb</code>, <code>cc</code> 和 <code>dd ee</code>, 可是在 java 里被认为是 5 个参数。通过 inspect 启动的容器<br/><br/>
+<blockquote>
+"Path": "/bin/sh",<br />
+"Args": [<br />
+    "-c",<br />
+    "java -jar /app.jar $0 $@",<br />
+    "aa bb",<br />
+    "cc",<br />
+    "dd ee"<br />
+],
+</blockquote>
+<br/>
+说明参数的传入是没有问题，问题出在 $0 $@ 处，对 <code>java -jar /app.jar $0 $@</code> 展开后的效果是<br/><br/>
+<blockquote>
+java -jar /app.jar aa bb cc dd ee
+</blockquote>
+<br/>
+所以被打散后失去原有的组织关系，变为 5 个参数了.<br/><br/>
+而如果给 <code>$0</code>, <code>$@</code> 加上引号后<br/><br/>
+<blockquote>
+ENTRYPOINT java $JAVA_OPTS -jar /app.jar "$0" "$@"
+</blockquote>
+<br/>
+构建镜像，重新执行<br/><br/>
+<blockquote>
+docker run test "aa bb" cc "dd ee"<br />
+Arguments: [aa bb, cc, dd ee]
+</blockquote>
+<br/>
+这次参数的接收也没问题，加引号的方式可以让 java 接收到的参数保持原本的输入格式，即相当于<br/><br/>
+<blockquote>
+java -jar /app.jar "aa bb" cc "dd ee"
+</blockquote>
+<br/>
+当然如果你的参数中不含有空格的话加不加引号都不会有事。

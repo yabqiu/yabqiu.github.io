@@ -1,0 +1,107 @@
+---
+title: Objective-C 中一些代码记录
+url: /objective-c-snippets/
+date: 2011-07-28T22:03:57-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - ios
+  - objective-c
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3707 
+wpStatus: publish
+views: 768
+lastmod: 2021-09-03T14:21:01-05:00
+---
+
+<strong>1. 初始化一个空的数组</strong></p>
+<br/>
+    NSMutableArray *array = [NSMutableArray arrayWithObjects:nil];<br />
+    <br />
+    //或者，这里的 Capacity 像 java 的 ArrayList 中的 Capacity<br />
+    //NSMutableArray ×array = [NSMutableArray arrayWithCapacity:5];<br />
+   <br />
+    MSLog(@"%i", [array count]);<br/><br/>
+如果用到了 alloc 的话，就必须自己处理好相应的 release 操作了，像：<br/><br/>
+    NSMutableArray *array = [[NSMutableArray alloc] init];<br />
+    NSMutableArray *array1 = [[NSMutableArray alloc] initWithCapacity:5];<br />
+    NSMutableArray *array2 = [[NSMutableArray alloc]initWithObjects:nil];<br/><br/>
+<!--more--><br/><br/>
+其实要初始化某种类型集合的空集合，下面的那些方式应该是更为合适的：<br/><br/>
+    NSArray *array = [NSArray array];<br/><br/>
+    NSMutableArray *array1 = [NSMutableArray array];<br/><br/>
+    NSMutableDictionary *dict = [NSMutableDictionary dictionary];<br/><br/>
+    NSSet *set = [NSSet set];<br/><br/>
+<strong>2. 类的初始化方法：</strong><br/><br/>
+<pre class="lang:default decode:true">NSInteger globalVar = 5;<br/><br/>
+@interface TestClass : NSObject
+- (void) foo;
+@end<br/><br/>
+@implementation TestClass<br/><br/>
+//在第一次加载 TestClass 时被自动调用
++ (void) initialize {
+    extern NSInteger globalVar;
+    globalVar += 5;
+}<br/><br/>
+- (void) foo {
+    NSLog(@"globalVar: %i", globalVar);
+}<br/><br/>
+@end<br/><br/>
+    //应用上面的代码
+    TestClass *test = [[TestClass alloc] init];
+    [test foo]; //输出为 10
+    TestClass *test1 = [[TestClass alloc] init];
+    [test1 foo]; //输出也是 10</pre>
+<br/>
+Objective-C 的 + (void) initialize 就相当于 Java 中的 static {}  静态块一样，+ (void) initialize 类初始方法也只会被调用一次。在 Objective-C 和 Java 它们各自反应为：<br/><br/>
+Objective-C 的   + (void) initialize   ------------    _class_initialize<br />
+Java 的                static  {}                   ------------   &lt;cinit&gt;,  现在看到的是 static{}<br/><br/>
+3. 多线程相关的代码<br/><br/>
+Obj-C 中与多线程相关的类有 NSOperation、NSOperationQueue 和 NSThread。NSOperation 类似与 Java 的 Runnable 接口，只是要实现的 NSOperation 的方法是 -(void) main; 当把 NSOperation 加到 NSOperationQueue 后，队列就会为每个 NSOperation 实例分配一个 NSThread 去启动它。NSOperation 执行完后会被 release 掉。<br/><br/>
+下面是使用 NSOperation 和 NSOperationQueue 的一段完整代码：<br/><br/>
+<pre class="lang:default decode:true ">#import &lt;Foundation/Foundation.h&gt;<br/><br/>
+@interface MyOperation : NSOperation{
+    NSString *name;
+}<br/><br/>
+@end
+    
+@implementation MyOperation<br/><br/>
+- (id) initWithName: (NSString *) theName {
+    self = [super init];
+    name = theName;
+    return self;
+}<br/><br/>
+- (void) main {
+    NSLog(@"Thread %@ Start run: %@", name, [NSDate date]);
+}<br/><br/>
+@end<br/><br/>
+int main (int argc, const char * argv[])
+{<br/><br/>
+    NSAutoreleasePool * pool = [[NSAutoreleasePool alloc] init];<br/><br/>
+    NSOperationQueue *queue = [[NSOperationQueue alloc] init];
+    NSOperation *operation1 = [[[MyOperation alloc] initWithName:@"One"] autorelease];
+    NSOperation *operation2 = [[[MyOperation alloc] initWithName:@"Two"] autorelease];
+    NSOperation *operation3 = [[[MyOperation alloc] initWithName:@"Three"] autorelease];
+    [queue addOperation:operation1];
+    [queue addOperation:operation2];
+    [queue addOperation:operation3];
+    
+    [queue setMaxConcurrentOperationCount:2];//可设置同时并发数
+    
+    sleep(50000);
+    [pool drain];
+    return 0;
+}</pre>
+<br/>
+执行结果输出中顺序是不定的，像：<br/><br/>
+011-08-09 14:20:54.144 TestObjC[3602:1c03] Thread Two Start run: 2011-08-09 06:20:54 +0000<br />
+2011-08-09 14:20:54.144 TestObjC[3602:1e03] Thread One Start run: 2011-08-09 06:20:54 +0000<br />
+2011-08-09 14:20:54.146 TestObjC[3602:1e03] Thread Three Start run: 2011-08-09 06:20:54 +0000<br/><br/>
+NSOperation 还有一个子类是  NSInvocationOperation，它与  NSOperation 的区别是可以指定线程要执行的实例的某个方法，而不只限制是 main 方法。

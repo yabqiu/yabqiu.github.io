@@ -1,0 +1,164 @@
+---
+title: Java 直接插入 CLOB/BLOB 数据到 Oracle 数据库
+url: /java-insert-clob-blob-into-oracle-table/
+date: 2021-12-21T23:15:15-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2006/01/oracle-logo.png"
+categories:
+  - Java/JEE
+  - Database
+tags: 
+  - JDBC
+  - Oracle
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12073 
+wpStatus: publish
+views: 1413
+lastmod: 2021-12-22T09:43:08-06:00
+---
+
+向数据库中插入 CLOB 或 BLOB 类型的数据，Oracle 总是比其他类型的数据库操作上要麻烦多了。当然，对于不大于 4K 长度的 CLOB 字符串在 JDBC 中可简单的用 <code>PreparedStatement.setString(idx, "short string")</code> 。如果要插入大于 4K 长度的内容，网上找来的例子许多都是分两步走<br/><br/>
+<ol>
+    <li>先插入 EMPTY_CLOB() 或 EMPTY_BLOB()</li>
+    <li>然后 SELECT 原来的记录 <code>FOR UPDATE</code>, 再更新先前插入的记录</li>
+</ol>
+<br/>
+这就存在两个问题，含 CLOB/BLOB 的表必需要有主键，还有因为 <code>FOR UPDATE</code> 的使用我们需要开启事物，不能采用自动提交。<br/><br/>
+其实还有更简单的方法可直接插入大的 CLOB/BLOB 数据，要用到 Oracle JDBC 驱动的 setStringForClob(),  CLOB.createTemporary(), 或 BLOB.createTemporary() 方法。来看下面的例子，例子中只演示 CLOB, 类似的方法可应用于 BLOB, NCLOB。<br/><br/>
+本文中所使用的 Oracle JDBC 驱动比较老，是 ojdbc:ojdbc:5。Docker 启动一个本地的 Oracle 11G 作为测试数据库<br/><br/>
+<blockquote>
+$ docker run -d -p 1521:1521 -p 8080:8080 wnameless/oracle-xe-11g-r2
+</blockquote>
+<br/>
+默认的 SID 是 xe, 数据库用户名和密码分别是 system/oracle<!--more--><br/><br/>
+首先来创建一个含有 CLOB 类型字段的表<br/><br/>
+<pre class="lang:default decode:true">CREATE TABLE item(
+    id INTEGER,
+    description CLOB
+)</pre>
+<br/>
+最简单的一步插入 CLOB 类型数据的代码如下<br/><br/>
+<h3>调用 setStringForClob()</h3><br/><br/>
+<pre class="lang:default decode:true">Connection conn = DriverManager.getConnection("jdbc:oracle:thin:@localhost:1521:xe", "system", "oracle");
+PreparedStatement pstmt = conn.prepareStatement("insert into item(id, description) values(?, ?)");<br/><br/>
+CLOB clob = CLOB.createTemporary(conn, false, CLOB.DURATION_SESSION);
+String longStr = String.join(", ", Collections.nCopies(5000, "Hello World!"));
+clob.setString(1, longStr);<br/><br/>
+pstmt.setInt(1, 1);
+((OraclePreparedStatement)pstmt).setStringForClob(2, longStr);<br/><br/>
+int update = pstmt.executeUpdate();<br/><br/>
+System.out.println(update);
+System.out.println("string length " + longStr.length());</pre>
+<br/>
+执行后输出为<br/><br/>
+<blockquote>
+1<br />
+string length 69998
+</blockquote>
+<br/>
+成功插入一个大 BLOB 类型数据到数据库<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/12/oracle-java-clob.png"><img class="aligncenter wp-image-12075" src="https://yanbin.blog/wp-content/uploads/2021/12/oracle-java-clob-800x230.png" alt="" width="560" height="161" /></a><br/><br/>
+或者另一种方法稍稍多两行代码<br/><br/>
+<h3>用 CLOB.createTemporary() 方法</h3><br/><br/>
+<pre class="lang:default decode:true">PreparedStatement pstmt = conn.prepareStatement("insert into item(id, description) values(?, ?)");<br/><br/>
+CLOB clob = CLOB.createTemporary(conn, false, CLOB.DURATION_SESSION);
+String longStr = String.join(", ", Collections.nCopies(5000, "Hello World!"));
+clob.setString(1, longStr);<br/><br/>
+pstmt.setClob(2, clob);</pre>
+<br/>
+与前一种方法相比较，自然是推荐使用 setStringForClob() 方法<br/><br/>
+<h3>其他的一些尝试</h3><br/><br/>
+<pre class="lang:default decode:true ">pstmt.setClob(2, new OracleSerialClob("hello".toCharArray()));</pre>
+<br/>
+会报错<br/><br/>
+<blockquote>
+Exception in thread "main" java.lang.ClassCastException: oracle.jdbc.rowset.OracleSerialClob cannot be cast to oracle.sql.CLOB<br />
+    at oracle.jdbc.driver.OraclePreparedStatement.setClob(OraclePreparedStatement.java:6544)
+</blockquote>
+<br/>
+因为 Oracle 驱动的 oracle.jdbc.driver.OraclePreparedStatement.setClob() 会把传入的参数转换为 oracle.sql.CLOB<br/><br/>
+<pre class="lang:default decode:true ">((OraclePreparedStatement)pstmt).setCLOB(2, new CLOB((OracleConnection) conn, "hello".getBytes()));</pre>
+<br/>
+出错<br/><br/>
+<blockquote>
+Exception in thread "main" java.lang.ArrayIndexOutOfBoundsException: 5<br />
+    at oracle.sql.CLOB.&lt;init&gt;(CLOB.java:133)
+</blockquote>
+<br/>
+没有 ojdbc 的源代码，没细究下去<br/><br/>
+用 SQL 语句，并且字符串长度小于 4K  的话可以用<br/><br/>
+<pre class="lang:default decode:true">INSERT INTO item(id, description) values(1, 'abc');   -- 或者
+INSERT INTO item(id, description) values(2, to_clob('abc'));</pre>
+<br/>
+如果要插入到 CLOB 的字符串超过 4K，用 to_clob() 函数就会报错<br/><br/>
+<blockquote>
+SQL Error [1704] [42000]: ORA-01704: string literal too long
+</blockquote>
+<br/>
+对于如果字符串不超过 4K，JDBC 中可直接用 <code>setString(2, "string value")</code> 赋值<br/><br/>
+<pre class="lang:default decode:true">PreparedStatement pstmt = conn.prepareStatement("insert into item(id, description) values(?, ?)");
+pstmt.setString(2, "string whose length is not larger then 4000");</pre>
+<br/>
+<h3>常见的两步操作法</h3><br/><br/>
+附带一下网上搜索到的很多使用的两步插入大 CLOB 数据的方法<br/><br/>
+<pre class="lang:default mark:3,16 decode:true">Connection conn = DriverManager.getConnection("jdbc:oracle:thin:@localhost:1521:xe", "system", "oracle");<br/><br/>
+conn.setAutoCommit(false);<br/><br/>
+Statement stmt = conn.createStatement();
+stmt.executeUpdate("insert into item(id, description) values(1, EMPTY_CLOB())");<br/><br/>
+ResultSet rs = stmt.executeQuery("select description from item where id=1 for update");
+rs.next();
+oracle.sql.CLOB clob = (oracle.sql.CLOB)rs.getClob(1);
+OutputStream out = clob.getAsciiOutputStream();
+String longStr = String.join(", ", Collections.nCopies(5000, "Hello World!"));
+out.write(longStr.getBytes());
+out.close();<br/><br/>
+conn.commit();</pre>
+<br/>
+上面的操作会把 description 字段值覆盖为 longStr 的内容，无论它是否为 EMPTY。但是在 for update 之前  description 字段不能为 null, 否则 clob.getAsciiOutputStream()  会抛出 NullPointerException 异常，所以为什么先要放一个 EMPTY_CLOB()。<br/><br/>
+这种方式必须启用事物，autoComit 要设置为 false，并手动 commit。 如果去掉上面的高亮的两行代码，则只会插入一条 description 为空, id 为 1 的记录，后面对 clob 的操作无效果。<br/><br/>
+如果把 <code>for update</code> 去掉，第二个查询只写成<br/><br/>
+<blockquote>
+select description from item where id=1
+</blockquote>
+<br/>
+则报类似下面的错误<br/><br/>
+<blockquote>
+Exception in thread "main" java.io.IOException: ORA-22920: row containing the LOB value is not locked
+    at oracle.jdbc.driver.OracleClobOutputStream.write(OracleClobOutputStream.java:137)<br />
+    at java.io.OutputStream.write(OutputStream.java:75)<br />
+    at com.ibbotson.services.cas.dataaccess.ConfigDataAccessImpl.main(ConfigDataAccessImpl.java:717)<br />
+Caused by: java.sql.SQLException: ORA-22920: row containing the LOB value is not locked
+</blockquote>
+<br/>
+再就是 <code>CLOB.getAsciiOutputStream()</code> 早已不推荐使用，因此从这方面来讲更不应试使用两步走的方式来插入 CLOB 类型的数据了。<br/><br/>
+<h3>存储过程/函数参数是 CLOB</h3><br/><br/>
+如果存储过程或函数的参数是 CLOB, 完全一样的传参数的方式，比如存储过程为<br/><br/>
+<pre class="lang:default decode:true">CREATE OR REPLACE PROCEDURE sp_insert_item (
+  v_id IN Integer,
+  v_desc IN CLOB 
+)
+AS
+BEGIN
+    INSERT INTO item(id, description) values(v_id, v_desc);
+END; </pre>
+<br/>
+调用该存储过程的 Java 代如为<br/><br/>
+<pre class="lang:default decode:true">Connection conn = DriverManager.getConnection("jdbc:oracle:thin:@localhost:1521:xe", "system", "oracle");<br/><br/>
+CallableStatement call = conn.prepareCall("{call insert_item(?, ?)}");
+call.setInt(1, 1);<br/><br/>
+String longStr = String.join(", ", Collections.nCopies(5000, "Hello World!"));
+((OraclePreparedStatement)call).setStringForClob(2, longStr);<br/><br/>
+call.executeUpdate();</pre>
+<br/>
+或者愿意的话也能用 CLOB.createTemporary() 的方式来赋值。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://newbedev.com/java-how-to-insert-clob-into-oracle-database">Java: How to insert CLOB into oracle database</a></li>
+    <li><a href="https://blog.jooq.org/lets-review-how-to-insert-clob-or-blob-via-jdbc/">Let's Review How to Insert Clob or Blob via JDBC</a></li>
+</ol>

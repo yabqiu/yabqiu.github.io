@@ -1,0 +1,92 @@
+---
+title: 让 WordPress 的 Rss 显示更多或所有的日志
+url: /wordpress-show-all-rss-data/
+date: 2010-08-03T07:27:45-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - WordPress
+tags: 
+  - wordpress
+  - rss
+  - php
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 23 
+wpStatus: publish
+views: 628
+lastmod: 2021-09-02T10:27:01-05:00
+---
+
+默认 WordPress 提供的 RSS 链接只能获得最近的十篇日志，如果想得到更多，或是用于某种目的而想通过 RSS 获得所有的日志，那恐怕就得做些手脚了，或许还有更简单的办法，只是我这里改了下源代码中的 limit 查询参数。</p>
+<br/>
+关于 WordPress 的 Feed 请参考：<a href="http://codex.wordpress.org/WordPress_Feeds">http://codex.wordpress.org/WordPress_Feeds</a>，用以下代码可以输出你实际的 RSS 的 URL:<br/><br/>
+URL for RDF/RSS 1.0 feed      &lt;?php bloginfo('rdf_url'); ?&gt;<br />
+URL for RSS 0.92 feed         &lt;?php bloginfo('rss_url'); ?&gt;<br />
+URL for RSS 2.0 feed          &lt;?php bloginfo('rss2_url'); ?&gt;<br />
+URL for Atom feed             &lt;?php bloginfo('atom_url'); ?&gt;<br />
+URL for comments RSS 2.0 feed &lt;?php bloginfo('comments_rss2_url'); ?&gt;<br/><br/>
+在我的机器上永久链接后是用 <a href="http://unmi/feed/">http://unmi/feed/</a> 来访问 rss2，模板将会用 wp-includes/feed-rss2.php 文件。要说定位到这段代码还真不简单。<!--more--><br />
+index.php 中 require('./wp-blog-header.php');<br/><br/>
+wp-blog-header.php 里<br/><br/>
+<pre class="brush:php">wp();<br/><br/>
+require_once( ABSPATH . WPINC . '/template-loader.php' );
+</pre>
+<br/>
+再到 wp-includes/templte-loader.php 中<br/><br/>
+<pre class="brush:php">elseif ( is_feed() ) :<br/><br/>
+    do_feed();
+return;
+</pre>
+<br/>
+在执行 do_feed() 之前，$wp_query 中早已有了我们想要的数据，所以还应回溯到 wp-blog-header.php 中的 wp() 函数去。wp() 去调用 wp-includes/functions.php 中的<br/><br/>
+<pre class="lang:default decode:true">function wp( $query_vars = '' ) {
+    global $wp, $wp_query, $wp_the_query;
+    $wp-&gt;main( $query_vars );<br/><br/>
+    if ( !isset($wp_the_query) )
+        $wp_the_query = $wp_query;
+}
+</pre>
+<br/>
+再由 $wp-&gt;main($query_vars) 进到 wp-includes/classes.php 中的 main($query_qrgs = '') 函数，其中的<br/><br/>
+$this-&gt;query_posts();<br/><br/>
+去查询记录，看该 wp-includes/classes.php 的 query_posts() 函数：<br/><br/>
+<pre class="lang:default decode:true">function query_posts() {
+    global $wp_the_query;
+    $this-&gt;build_query_string();
+    $wp_the_query-&gt;query($this-&gt;query_vars);
+}</pre>
+<br/>
+再进到 wp-includes/query.php 中的 query($query) 函数<br/><br/>
+<pre class="lang:default decode:true ">function &amp;query($query) {
+    $this-&gt;parse_query($query);<br/><br/>
+    return $this-&gt;get_posts();
+}
+</pre>
+<br/>
+就是这个关键的 wp-includes/query.php 的 &amp;get_posts() 函数，在里面可以看到怎样获得 $limits 参数的，在大约第 2412 行处可以看到：<br/><br/>
+<pre class="lang:default decode:true">$this-&gt;request = " SELECT $found_rows $distinct $fields FROM $wpdb-&gt;posts $join WHERE 1=1 $where $groupby $orderby $limits";<br/><br/>
+if ( !$q['suppress_filters'] )
+    $this-&gt;request = apply_filters_ref_array('posts_request', array( $this-&gt;request, &amp;$this ) );<br/><br/>
+$this-&gt;posts = $wpdb-&gt;get_results($this-&gt;request);
+</pre>
+<br/>
+对，在执行它之前，把 $limits 改了就是，比如<br/><br/>
+<span style="color: #800080;"><strong>$limits = "limit 0,50";<br />
+</strong></span><br />
+或者要查询出全部日志的话就让 $limits 为空。实际上，你可能更应该去发掘 $limits 是怎么获得的，比如 step into 到这行代码：<br/><br/>
+$limits  = apply_filters_ref_array( 'post_limits_request',  array( $limits, &amp;$this ) );<br/><br/>
+说不定能找到更简单的办法来解决现在的问题。<br/><br/>
+而追踪代码的同时也发现，全局变量 $wp_query 中有些配置，如：$wp_the_query-&gt;query_vars["posts_per_page"]，它的默认值是 10，$wp_the_query-&gt;query_vars["comments_per_page"] 为 50，还应注意 nopaging 和 paged 这两个参数，它们都为false。不过那些好像不会影响到 RSS 数据的显示，仍然是查询到多数记录输出多少。<br/><br/>
+对于 WordPress 的 php 代码真不好怎么单步调试，因为 UrlRewrite 之后，浏览器地址栏里的 URL 与文件系统中的 PHP 代码无法匹配到的，所以一路上只能用类似 echo 的办法，具体用的是下面的代码块：<br/><br/>
+<pre class="lang:default decode:true ">ob_start();
+var_dump($wp_query);
+$out = ob_get_contents();
+ob_end_clean();
+error_log($out, 3, "d:\\error_log.txt");</pre>
+<br/>
+用 log4php 也应该可行的，要放哪声明出一个全局的 $logger，然后四处 global $logger, $logger-&gt;debug() 了，但信息还不如 var_dump() 好看。

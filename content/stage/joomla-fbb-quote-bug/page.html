@@ -1,0 +1,58 @@
+---
+title: Joomla 扩展使用手记：F!BB 论坛引用回贴时的 Bug 解决
+url: /joomla-fbb-quote-bug/
+date: 2009-10-09T10:28:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Joomla
+tags: 
+  - Joomla
+  - F!BB
+  - quote
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 226 
+wpStatus: publish
+views: 351
+lastmod: 2010-08-10T05:40:23-05:00
+---
+
+安装了 Joomla 1.5 的论坛组件 F!BB(Frenzy Bulletin Board) 1.5.96 RC，前台在针对贴子点击 Quote 按钮引用回贴时会出现错误<br/>
+<br/>
+<strong>Fatal error</strong>: Call to a member function defaultPermCheck() on a non-object in <strong>E:\xampp\htdocs\joomla\components\com_fbb\template\default\post.php</strong> on line <strong>1904</strong><br/>
+<br/>
+这是 F!BB  的一个 Bug，还好错误提示告诉了是哪段代码出问题(注：不同的版本可能指示的行号不一样)。打开那个 post.php 文件，找到错误是发生在方法 quote() 中<br/>
+<br/>
+$can_reply  = $FbCatPermissions-&gt;defaultPermCheck($canpost,$permsArray['post_own'],$this-&gt;firstPostUid,$this-&gt;my_id,$permsArray['post_any'])?1:0;<!--more--><br/>
+<br/>
+行，比较显然的是 $FbCatPermissions 会是一个 null，把方法 quote() 对照着其他的像 doPost() 方法，就该发现，在上面的 defaultPermCheck() 方法之前必须加上两行：<br/>
+<br/>
+$FbCatPermissions = $this-&gt;FbCatPermissions;<br/>
+$permsArray = $this-&gt;permsArray;<br/>
+<br/>
+用来初始化 $FbCatPermissions 和 $permsArray，不然在用 defaultPermCheck() 检查权限时它们都为 null。<br/>
+<br/>
+还有，根据语义，能引用回贴的话应该是要有回复的权限，所以参考 reply() 方法，我们把上面的<br/>
+<br/>
+$can_reply  = $FbCatPermissions-&gt;defaultPermCheck($canpost,$permsArray['post_own'],$this-&gt;firstPostUid,$this-&gt;my_id,$permsArray['post_any'])?1:0;<br/>
+<br/>
+改为<br/>
+<br/>
+$can_reply  = $FbCatPermissions-&gt;defaultPermCheck($canpost,$permsArray['<strong>post_reply_own</strong>'],$this-&gt;firstPostUid,$this-&gt;my_id,$permsArray['<strong>post_reply_any</strong>'])?1:0;<br/>
+<br/>
+此时就可以正常引用回贴了。<br/>
+<br/>
+另外，要看看关联数组 $permsArray 有些什么值可以用如下代码：<br/>
+<br/>
+while(list($k,$v)=each($permsArray)){<br/>
+       echo "$k=&gt;$v&lt;br&gt;";<br/>
+}<br/>
+<br/>
+遍历。<br/>
+<br/>
+OK 啦，F!BB 还有几个 Bug 要瞧瞧，如提示中的换行、图片的自适应等等。

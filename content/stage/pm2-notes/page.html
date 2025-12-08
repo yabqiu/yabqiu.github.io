@@ -1,0 +1,288 @@
+---
+title: pm2 使用笔记
+url: /pm2-notes/
+date: 2021-08-12T10:20:08-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2021/08/nodejs-logo.png"
+categories:
+  - NodeJS
+tags: 
+  - npm
+  - NodeJS
+  - pm2
+  - Yarn
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11076 
+wpStatus: publish
+views: 1980
+lastmod: 2021-08-12T10:23:44-05:00
+---
+
+PM 2 是什么，官网上 <a href="https://pm2.keymetrics.io/">https://pm2.keymetrics.io/</a> 是说 PM2(Process Manager 2) 是 Node JS 的高级的，产品级的进程管理工具。为什么叫做 PM2，那有没有 PM 或 PM 1 呢，没有，它起步就是 2. PM2 相对于 Node JS 有点类似于 <a href="https://gunicorn.org/">Gunicorn</a> 和 Python Web 应用的关系。但 PM2 比 Gunicorn 功能更强大, 其实 PM2 还能用来管理其他任何进程，不局限于 Node JS 的。<br/><br/>
+最好的入门学习教程是官方的 <a href="https://pm2.keymetrics.io/docs/usage/quick-start/">Quick Start</a>。从中我们可以大概看到 PM2 的主要应用：<br/><br/>
+<ol>
+    <li>对进程的管理与监控</li>
+    <li>多种进程重启策略</li>
+    <li>日志的管理</li>
+    <li>使用配置文件</li>
+    <li>集群模式</li>
+    <li>用作静态 Web 服务</li>
+    <li>进行应用部署</li>
+    <li>使用环境变量</li>
+</ol>
+<br/>
+PM2 是 Node JS 应用，所以它是跨平台的。<!--more--><br/><br/>
+下面来逐步体验 PM2<br/><br/>
+<h3>PM2 的安装</h3><br/><br/>
+<blockquote>
+$ npm install pm2 -g<br />
+# 或者<br />
+$ yarn global add pm2
+</blockquote>
+<br/>
+安装 pm2 之前需先安装好 nodejs 和 npm. pm2 安装后可用的命令有 pm2, pm2-dev, pm2-docker 和 pm2-runtime。<br/><br/>
+<h3>管理一个 Node JS 应用</h3><br/><br/>
+先写一个简单的 app.js，内容为<br/><br/>
+<pre class="lang:default decode:true ">var http = require('http');
+var process = require('process');<br/><br/>
+function sleep(time) {
+    return new Promise((resolve) =&gt; setTimeout(resolve, time));
+}<br/><br/>
+http.createServer(function(request, response) {
+    console.log(`received request @${new Date().toLocaleString()}`);
+    response.writeHead(200, {'Content-Type': 'text/plain'});
+    response.end('Hello World\n');
+}).listen(3000);<br/><br/>
+console.log('Server running at http://127.0.0.1:3000/');</pre>
+<br/>
+<blockquote>
+$ pm2 start app.js
+</blockquote>
+<br/>
+看到<a href="https://yanbin.blog/wp-content/uploads/2021/08/pm2-1.png"><img class="aligncenter wp-image-11077" src="https://yanbin.blog/wp-content/uploads/2021/08/pm2-1-800x110.png" alt="" width="552" height="76" /></a><br/><br/>
+上图中显示了应用的 id 是 0, 名称为 app, 并且 mode 为 <code>fork</code>. 后面的如果使用了 <code>-i</code> 指定进程数目(即使指定为 1) 的话模式将变为 <code>cluster</code>。 其中 id 和 name, 我们可以用下面系列的命令来管理该进程了<br/><br/>
+<blockquote>
+$ pm2 stop &lt;id|name&gt;<br />
+$ pm2 delete &lt;id|name&gt;<br />
+$ pm2 start &lt;id|name&gt;<br />
+$ pm2 restart &lt;id|name&gt;<br />
+$ pm2 reload &lt;id|name&gt;
+</blockquote>
+<br/>
+用 <code>all</code> 可代表所有的进程，如 <code>pm2 stop all</code>。<br/><br/>
+pm2 启动进程时还有更丰富的参数，像<br/><br/>
+<ol>
+    <li>--name &lt;app_name&gt;: 指定进程名，而不是取 <code>app.js</code> 的 <code>app</code> 部分作为进程名</li>
+    <li>-i --instances &lt;number: 起动应用的实例数</li>
+    <li>--watch: 当有代码文件更改时自动重启应用，这对开发时很有用</li>
+    <li>--max-memory-restart &lt;200MB&gt;: 应用内存达到一个阈值时重启</li>
+    <li>--log &lt;log_path&gt;: 指定 log 文件位置，默认在  ～/.pm2/logs 目录下</li>
+    <li>-- arg1 arg2 arg3: 指定应用的参数</li>
+    <li>--no-autorestart: 不重新启动</li>
+    <li>--cron &lt;cron_pattern&gt;: 以 cron 表达式来指定应用的重启</li>
+    <li>--no-daemon: 不进入后台模式</li>
+</ol>
+<br/>
+<h3>查看进程</h3><br/><br/>
+我们在用 pm2 start 后会列出进程状态，以后可以随时用命令<br/><br/>
+<blockquote>
+$ pm2 [ls|list|status]
+</blockquote>
+<br/>
+列出上面的表格。<br/><br/>
+来看下 <code>pm2 start app.js</code> 起动的什么进程，先用 netstat 命令找到 3000 端口号上的进程 id<br/><br/>
+<blockquote>
+$ netstat -nap |grep 3000<br />
+tcp6 0 0 :::3000 :::* LISTEN 15559/node /home/va
+</blockquote>
+<br/>
+进程 id 是 15559, 再用 ps 列出相关的命令<br/><br/>
+<blockquote>
+<pre class="lang:default decode:true">vagrant@ubuntu2004:~$ ps -ef|grep 15559 | grep -v color
+vagrant    15559   13384  0 05:11 ?        00:00:00 node /home/vagrant/app.js
+vagrant@ubuntu2004:~$ ps -ef|grep pm2 | grep -v color
+vagrant    13384       1  0 02:24 ?        00:00:08 PM2 v5.1.0: God Daemon (/home/vagrant/.pm2)</pre>
+</blockquote>
+<br/>
+注意到的是 3000 端口号是由 node app.js 直接启动的。我们将在后面测试 pm2 进行负载均衡时启动的进程情况。<br/><br/>
+<h3>显示日志</h3><br/><br/>
+如果我们启动应用时没有加 --no-daemon, 那么 pm2 启动的应用进入了后台模式，可查看日志可以用命令<br/><br/>
+<blockquote>
+$ pm2 logs                       显示所有应用的日志<br />
+# 或<br />
+$ pm2 logs &lt;id|name&gt; 显示特定 id 或 name 所指示的日志
+</blockquote>
+<br/>
+运行 <code>pm2 logs</code>，并进行两次 <code>curl http://localhost:3000/</code> 请求看下日志显示<br/><br/>
+<blockquote>
+$ pm2 logs<br />
+[TAILING] Tailing last 15 lines for [all] processes (change the value with --lines option)<br />
+/home/vagrant/.pm2/logs/app-error.log last 15 lines:<br />
+/home/vagrant/.pm2/logs/app-out.log last 15 lines:<br />
+0|app | Server running at http://127.0.0.1:3000/
+0|app | received request @8/12/2021, 5:23:56 AM<br />
+0|app | received request @8/12/2021, 5:23:57 AM
+</blockquote>
+<br/>
+打开 <code>pm2 logs</code> 后会实时显示打印的日志。<br/><br/>
+<h3>用作静态 Web 服务</h3><br/><br/>
+<blockquote>
+$ pm2 serve &lt;path&gt; &lt;port&gt;
+</blockquote>
+<br/>
+默认 path 为当前目录，port 默认为 8080， 所以光运行<br/><br/>
+<blockquote>
+$ pm2 serve<br />
+# 相当于是<br />
+$ pm2 serve . 8080
+</blockquote>
+<br/>
+这就启动了 Web 服务，主目录为当前目录，pm2 还能结合  --watch 参数在文件改动时自动重启。<code>pm2 serve --spa</code> 会把 index.html 作为入口。<br/><br/>
+<h3>集群模式(负载均衡)</h3><br/><br/>
+在 pm2 start 启动应用时可用 -i &lt;number&gt; 来指定进程实例数目，或可为 &lt;number&gt;指定特殊的值<br/><br/>
+<ol>
+    <li>0/max: 与 CPU 数目相同</li>
+    <li>-1: CPU 数目减 1</li>
+</ol>
+<br/>
+测试下面的命令<br/><br/>
+<blockquote>
+$ pm2 start -i 3 app.js
+</blockquote>
+<br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/08/pm2-2.png"><img class="aligncenter wp-image-11078" src="https://yanbin.blog/wp-content/uploads/2021/08/pm2-2-800x160.png" alt="" width="550" height="110" /></a><br/><br/>
+mode 为 <code>cluster</code>，即使用 <code>pm2 start -i 1 app.js</code> 指定为 1 也是 <code>cluster</code> 模式。<br/><br/>
+启动了三个 node js 就用，现在打开 <code>pm2 logs</code>, 进行多次的 <code>curl http://localhost:3000/</code> 请求，看下请求分发的情形<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/08/pm2-3.png"><img class="aligncenter wp-image-11079" src="https://yanbin.blog/wp-content/uploads/2021/08/pm2-3-800x469.png" alt="" width="640" height="375" /></a><br/><br/>
+负载均衡的策略基本上就是 round-robin<br/><br/>
+再来看下进程与端口的关系<br/><br/>
+<blockquote>
+<pre class="lang:default decode:true">vagrant@ubuntu2004:~$ netstat -nap |grep 3000
+(Not all processes could be identified, non-owned process info
+ will not be shown, you would have to be root to see it all.)
+tcp6       0      0 :::3000                 :::*                    LISTEN      13384/PM2 v5.1.0: G
+vagrant@ubuntu2004:~$ ps -ef|grep 13384 | grep -v color
+vagrant    13384       1  0 02:24 ?        00:00:10 PM2 v5.1.0: God Daemon (/home/vagrant/.pm2)
+vagrant    15966   13384  0 05:31 ?        00:00:00 node /home/vagrant/app.js
+vagrant    15973   13384  0 05:31 ?        00:00:00 node /home/vagrant/app.js
+vagrant    15984   13384  0 05:31 ?        00:00:00 node /home/vagrant/app.js
+vagrant@ubuntu2004:~$ ps -ef|grep pm2 | grep -v color
+vagrant    13384       1  0 02:24 ?        00:00:10 PM2 v5.1.0: God Daemon (/home/vagrant/.pm2)</pre>
+</blockquote>
+<br/>
+与 <code>pm2 start app.js</code> 有点不一样了，<code>node app.js</code> 不再直接接收请求了，而是由  <code>PM2 v5.1.0: God Daemon</code> 这个进程来监听端口 3000 了，它也是三个 <code>node app.js</code> 进程的父进程。<br/><br/>
+<h3>进程的监控</h3><br/><br/>
+能够对进程的实时监控可有效的保证应用的稳定性，主要有两个命令<br/><br/>
+<blockquote>
+$ pm2 monit<br />
+$ pm2 &lt;monitor|plus&gt;
+</blockquote>
+<br/>
+不明白为什么要把  monit 和 monitor 搞成不一样<br/><br/>
+<code>pm2 monit</code> 会在本地打开一个全屏控制台窗口 PM2 Dashboard，为了进一步展示监控的效果，再用 <code>pm2 start app1.js</code> 多启动一个应用，于是 <code>pm2 monit</code> 就是下面这样子的<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/08/pm2-4.png"><img class="aligncenter wp-image-11080" src="https://yanbin.blog/wp-content/uploads/2021/08/pm2-4-800x589.png" alt="" width="778" height="573" /></a><br/><br/>
+运行 pm2 &lt;monitor|plus&gt; 来监控会要求先在 app.pm2.io 上创建一个帐户，进新建一个 Bucket，然后在命令行下输入用户和密码连接到前面建立好的 Bucket。运行的机制是本地的 pm2 会启动一个 `PM2 Agent` 进程把运行状况数据上报到  app.pm2.io. 于是打开 Web 窗口就是下面这样的<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/08/pm2-5.png"><img class="aligncenter wp-image-11081" src="https://yanbin.blog/wp-content/uploads/2021/08/pm2-5-800x620.png" alt="" width="900" height="698" /></a><br/><br/>
+这个界面好是好，看到的信息非常直观，只是大部的 PM2 Plus 的功能都要交钱。<br/><br/>
+不想继续用这个 Web 界面来监控的话，用下面命令断开链接<br/><br/>
+<blockquote>
+$ pm2 link delete
+</blockquote>
+<br/>
+<h3>使用配置文件</h3><br/><br/>
+pm2 命令有众多的参数，前面所做都可以用一个配置文件来描述，然后启动时只需要 <code>pm2 start ecosystem.config.js</code>，其他的 pm2 命令，如 stop, restart, reload, delete 等也支持配置文件。<br/><br/>
+<blockquote>
+$ pm2 init simple       # 产生一个简单的配置文件样例<br />
+# pm2 init|ecosystem  将会生成稍复杂一点的配置文件样例
+</blockquote>
+<br/>
+比如我们前面启动的进程用配置文件 ecosystem.config.js 来描述就是<br/><br/>
+<pre class="lang:default decode:true ">module.exports = {
+  apps : [{
+    script : "./app.js",
+    instances: 3
+  },{
+    script: "./app1.js"
+  }, {
+    name: "static-page-server-8080",
+    script: "serve"
+  }]
+}</pre>
+<br/>
+接下来就只要用<br/><br/>
+<blockquote>
+$ pm2 start ecosystem.config.js
+</blockquote>
+<br/>
+会启动相应的任务<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/08/pm2-6.png"><img class="aligncenter wp-image-11084" src="https://yanbin.blog/wp-content/uploads/2021/08/pm2-6-800x175.png" alt="" width="900" height="197" /></a><br/><br/>
+更多的配置属性参见 <a href="https://pm2.keymetrics.io/docs/usage/application-declaration/">https://pm2.keymetrics.io/docs/usage/application-declaration/</a>。<br/><br/>
+<h3>环境变量的设定</h3><br/><br/>
+如果通过命令<br/><br/>
+<blockquote>
+foo=BAR pm2 start app.js
+</blockquote>
+<br/>
+那我们在 app.js 中可用如下代码获得该环境变量<br/><br/>
+<pre class="lang:default decode:true ">var process = require('process');
+console.log(process.env.foo);</pre>
+<br/>
+现在来看用配置文件如何声明环境变量，我们把 ecosystem.config.js 改为<br/><br/>
+<pre class="lang:default decode:true">module.exports = {
+  apps : [
+      {
+        script: "./app.js",
+        env: {
+            "PORT": 3000,
+            "NODE_ENV": "development"
+        },
+        env_qa: {
+            "PORT": 8080,
+            "NODE_ENV": "qa"
+        },
+        env_prod: {
+            "PORT": 80,
+            "NODE_ENV": "production",
+        }
+      }
+  ]
+}</pre>
+<br/>
+app.js 中把 listen() 调用代码改为<br/><br/>
+<pre class="lang:default decode:true ">.listen(process.env.PORT)</pre>
+<br/>
+那么可以尝试如下的命令<br/><br/>
+<blockquote>
+$ pm2 start ecosystem.config.js                              # 默认时监听端口为 3000<br />
+$ pm2 restart ecosystem.config.js --env qa          # 选择  qa 环境变量，即 env_qa 对应的声明，监听端口变为 8080<br />
+$ pm2 restart ecosystem.config.js --env prod      # 监听端口就变成为 80
+</blockquote>
+<br/>
+<h3>其他内容</h3><br/><br/>
+pm2-dev: 该命令给开发者用的，它相当于 pm2 启动时加了 <code>--watch</code>, <code>--no-daemon</code> 参数，并且 <code>autorestart: true</code>。pm2 启动时 <code>autorestart</code> 默认为 true, 除非使用 <code>--no-autorestart</code> 参数。<br/><br/>
+pm2-docker 和 pm2-runtime 是同一个东西，我查看<br/><br/>
+<blockquote>
+$ cat /usr/local/bin/pm2-docker<br />
+$ cat /usr/local/bin/pm2-runtime
+</blockquote>
+<br/>
+看到的都是<br/><br/>
+<pre class="lang:default decode:true ">#!/usr/bin/env node<br/><br/>
+require('../lib/binaries/Runtime4Docker.js');</pre>
+<br/>
+但在网上却没看到什么介绍，如果在 docker 中使用 pm2, pm2-docker 是以 no-daemon 的方式运行，这样就不会被认为 pm2 执行完成而结束 docker 任务。<br/><br/>
+pm2 deploy: pm2 还支持部署到本地或 ssh 远程，还能进行版本的回滚，这里不详叙。<br/><br/>
+pm2 update: 更新 pm2 自身<br/><br/>
+pm2 startup, pm2 unstartup: 支持 pm2 开机自动运行。需事先 <code>pm2 save</code> 保存进程状态。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://echizen.github.io/tech/2018/12-22-pm2-code">pm2源码学习</a></li>
+    <li><a href="https://www.jianshu.com/p/5f808762a71a">pm2 使用教程</a></li>
+    <li><a href="https://blog.csdn.net/qq_36850813/article/details/98967807">pm2安装与使用 (生产环境部署)</a></li>
+</ol>

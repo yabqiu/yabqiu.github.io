@@ -1,0 +1,109 @@
+---
+title: 升级到 Spring Boot 3 后 javax.inject.Named 不可用
+url: /upgrade-to-spring-boot-3-javax-inject-named-unvailable/
+date: 2023-01-12T12:03:48-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - jakarta
+  - javax
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12894 
+wpStatus: publish
+views: 1279
+lastmod: 2023-01-12T12:03:48-06:00
+---
+
+为了紧跟 Spring 6 的步伐，Spring Boot 在 2022 年 11 月 24 日释放了 3.0.0. 当前版本是 3.0.1(2022-12-23)。Spring 6 要求用 JDK 17+, Spring Boot 3 自然也要上 JDK 17+ 才能使用，对于一直死死抱住 JDK 8 不放的要升级到 Spring Boot 3 就是个比较大的挑战。</p>
+<br/>
+Spring Boot 到底带来了什么显著的特性呢？<br/><br/>
+<ol>
+    <li>依赖于 Spring 6, 最低 Java 17, 兼容 Java 19</li>
+    <li>支持生成 GraalVM 本地映像，取代实验性的 Spring Native 项目</li>
+    <li>最低 Java EE 9 和支持 Jakarta EE 10</li>
+    <li>依赖从 Java EE 迁移到 Jakarta EE API</li>
+    <li>升级到 Tomcat 10</li>
+</ol>
+<br/>
+从 Spring Boot 2.x 升级到 Spring Boot 3 的指南请阅官方的文档 <a href="https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-3.0-Migration-Guide">Spring Boot 3.0 Migration Guide</a>。Spring Boot 1 的项目还得老老实实的先升级到 Spring Boot 2，如果是早期的 Spring Boot 2，第一步是升级到 Spring Boot 2.7.x， 一步步来，免得步子大了扯到X。再到是把 JDK 换成  17 或更新的版本，编译，运行，有问题就改代码。<!--more--><br/><br/>
+最主要的 API 改动就是 <code>javax</code> 到 <code>jakarta.servlet</code>，比如<br/><br/>
+<ul>
+    <li>javax.servlet -&gt; jakarta.servlet</li>
+    <li>javax.annotations -&gt; jakarta.annotations</li>
+    <li>javax.persistence -&gt; jakarta.persistence</li>
+    <li>javax.tansaction -&gt; jakarta.transaction</li>
+</ul><br/><br/>
+本人有一个项目是 Spring Boot 2.7.6 + JDK 17，升级时直接到 Spring Boot 的依赖改成  3.0.1，然后试着 <code>mvn compile</code>, 以上那些 API 因为包名更改，之前的引用如<br/><br/>
+<ul>
+    <li>javax.annotation.PostConstruct</li>
+    <li>javax.servlet.http.HttpServletRequest</li>
+</ul><br/><br/>
+等由于编译不过，直接替换 javax 为 jakarta，改成相应的 jakarta.annotations.PostConstruct,  jakarta.servlet.http.HttpServletRequest 就行<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2023/01/springboot3-up-1-1.png"><img class="aligncenter wp-image-12897" src="https://yanbin.blog/wp-content/uploads/2023/01/springboot3-up-1-1-800x294.png" alt="" width="700" height="257" /></a><br/><br/>
+最后是通过 <code>mvn compile</code> 编译，可以一运行 Spring 应用，就报某个 Bean 找不到<br/><br/>
+<blockquote>
+Parameter 2 of constructor in yanbin.blog.testweb.controllers.ManagementController required a bean of type 'yanbin.blog.testweb.service.CalcEngineFactory' that could not be found.
+</blockquote>
+<br/>
+来到 CalcEngineFactory 代码，明明有注解 <code>@Named</code>, 为什么就不再注册为一个 Spring Bean 了呢？如果把注解 <code>@Named</code> 换成 Spring 的 <code>@Component</code> 就没问题了。问题是解决了，找原因吧，断点，调试，来到<br/><br/>
+<a href="https://github.com/spring-projects/spring-framework/blob/v6.0.4/spring-context/src/main/java/org/springframework/context/annotation/ClassPathBeanDefinitionScanner.java#L276">org.springframework.context.annotation.ClassPathBeanDefinitionScanner</a>.doScan(String... basePackages) 方法<br/><br/>
+用 <code>@Named</code> 注解的类不被 <code>findCandidateComponents(basePackage)</code> 认为是 SpringBean，而用 <code>@Component</code> 注解的就是。继续跟随到方法 <code>scanCandidateComponents(basePackage)</code>, 看到<br/><br/>
+<pre class="lang:default decode:true">MetadataReader metadataReader = getMetadataReaderFactory().getMetadataReader(resource);
+if (isCandidateComponent(metadataReader)) {</pre>
+<br/>
+用 <code>@Named</code> 注解的类 <code>isCandidateComponent(metadataReader)</code> 返回 false, <code>@Component</code> 注解的类返回的是 true。<br/><br/>
+在 <code>isCandidateComponent()</code> 方法中用到了 <code>excludeFilters</code> 和 <code>includedFilters</code> 来判断 true 或 false。<br/><br/>
+关注这个 <code>includedFilters</code>，在 Spring Boot 3 中它包含了三个 AnnotationTypeFilter，分别是<br/><br/>
+<ol>
+    <li>annotationType: interface org.springframework.stereotype.Component</li>
+    <li>annotationType: interface jakarta.annotation.ManagedBean</li>
+    <li>annotationType: interface jakarta.inject.Named</li>
+</ol>
+<br/>
+确实是有 <code>@Named</code>, 但它不是我们先前用的 <code>javax.inject.Named</code>, 而是 <code>jakarta.inject.Named</code>。由于 <code>javax.inject.Named</code> 来自于依赖 <code>javax.inject:javax.inject</code>，升级了 Spring Boot 3 后并不妨碍编译，产生了一个运行期才能被发现的异常。<br/><br/>
+这就是为什么用 <code>@Component</code> 注解就能解决这个问题，当然用 <code>@Component</code> 的子接口 <code>@Service</code>, <code>@Controller</code> 等也是能被注册为 Spring Bean 的。<br/><br/>
+如果依然执着于 <code>@Named</code>，那就去掉 <code>javax.inject:javax.inject</code> 依赖，换成 <code>@jakarta.inject.Named</code> 注解。在升级到 Spring Boot 3 后，头脑中要有是否该 <code>javax</code> 换成 <code>jakarta</code> 的想法。<br/><br/>
+如果对比 Spring 5 和 6 ClassPathBeanDefinitionScanner 类的注释，也说明了从 <code>@javax.inject.Named</code> 到 <code>@jakarta.inject.Named</code> 的变成。<br/><br/>
+<a href="https://github.com/spring-projects/spring-framework/blob/v5.3.25/spring-context/src/main/java/org/springframework/context/annotation/ClassPathBeanDefinitionScanner.java#L50">v5.3.24 ClassPathBeanDefinitionScanner</a><br/><br/>
+<blockquote>
+* &lt;p&gt;Also supports Java EE 6's {@link javax.annotation.ManagedBean} and <br />
+* JSR-330's {@link javax.inject.Named} annotations, if available.
+</blockquote>
+<br/>
+<a href="https://github.com/spring-projects/spring-framework/blob/v6.0.4/spring-context/src/main/java/org/springframework/context/annotation/ClassPathBeanDefinitionScanner.java#L50">v6.0.4 ClassPathBeanDefinitionScanner</a><br/><br/>
+<blockquote>
+* &lt;p&gt;Also supports Jakarta EE's {@link jakarta.annotation.ManagedBean} and <br />
+* JSR-330's {@link jakarta.inject.Named} annotations, if available.
+</blockquote>
+<br/>
+假如仍然希望 Spring 把 <code>@javax.inject.Named</code> 注解的类当作 Spring Bean 的话，那就要看是否能影响 org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider 中 includeFilters: List&lt;TypeFilter&gt; 的变量值。我们读到 ComponentScanAnnotationParser 类中相关的代码<br/><br/>
+<pre class="lang:default decode:true ">public Set&lt;BeanDefinitionHolder&gt; parse(AnnotationAttributes componentScan, String declaringClass) {
+    ClassPathBeanDefinitionScanner scanner = new ClassPathBeanDefinitionScanner(this.registry,
+            componentScan.getBoolean("useDefaultFilters"), this.environment, this.resourceLoader);
+    ......................<br/><br/>
+    else {
+        Class&lt;? extends ScopeMetadataResolver&gt; resolverClass = componentScan.getClass("scopeResolver");
+        scanner.setScopeMetadataResolver(BeanUtils.instantiateClass(resolverClass));
+    }</pre>
+<br/>
+那就是用 <code>@ComponentScan</code>  注解的<br/><br/>
+<pre class="lang:default decode:true ">boolean useDefaultFilters() default true;
+Filter[] includeFilters() default {};</pre>
+<br/>
+这两个属性，于是我们在 Spring Boot 的 Java 配置或启动类中加上<br/><br/>
+<pre class="lang:default decode:true ">@ComponentScan(includeFilters = @ComponentScan.Filter(classes = javax.inject.Named.class))</pre>
+<br/>
+这样的话就会在默认的 includeFilters 中再加上<br/><br/>
+<ul>
+    <li>annotationType: interface javax.inject.Named</li>
+</ul><br/><br/>
+如此用 <code>@javax.inject.Named</code> 注解的类也会被当作 Spring Bean 来对待。不过，这种方式本人不推荐使用，尽量用符合 Spring Boot 3(Spring 6) 规范的方式，改成 <code>@jakarta.inject.Named</code>。<br/><br/>
+最后，除 javax.inject:javax.inject 中的 <code>@Named</code> 注解外，其他的注解类也可能工作不正常<a href="https://yanbin.blog/wp-content/uploads/2023/01/springboot3-up-2-1.png"><img class="aligncenter wp-image-12899" src="https://yanbin.blog/wp-content/uploads/2023/01/springboot3-up-2-1.png" alt="" width="147" height="159" /></a>需请注意。

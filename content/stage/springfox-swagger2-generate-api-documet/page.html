@@ -1,0 +1,116 @@
+---
+title: Spring MVC 项目中用 SpringFox 生成 Swagger2 API 文档
+url: /springfox-swagger2-generate-api-documet/
+date: 2018-05-01T01:29:42-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/swagger-logo.png"
+categories:
+  - Spring
+tags: 
+  - Swagger
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8665 
+wpStatus: publish
+views: 1209
+lastmod: 2021-10-18T16:36:16-05:00
+---
+
+前面写过一篇如何建立 <a href="/basic-spring-4-mvc-maven-project/">一个最基础的 Spring 4 MVC Maven 项目</a>，现在是要在此基础上使用 SpringFox 来生成 <a href="https://swagger.io/">Swagger</a> 文档以及 SwaggerUI。Swagger 2 是基于 OpenAPI3.0 的实现，SpringFox 是用于在 Spring 项目中生成 Swagger 文档及 UI, 主要包括两个组件 <code>springfox-swagger2</code> 和  <code>springfox-swagger-ui</code>。</p>
+<br/>
+本文是基于普通的 Spring MVC 项目的实例，而非针对 SpringBoot 项目，实际运用应该大同小异，无外乎 SpringBoot 中有许多自动配置项。并且本文也不涉及到 Swagger 众多注解的具体用法，具体请查看源代码或相关文档。<br/><br/>
+开始本文的示例，首先需要搭建起 Spring MVC 项目，具体做法请参考  <a href="/basic-spring-4-mvc-maven-project/">一个最基础的 Spring 4 MVC Maven 项目</a>。<br/><br/>
+对应于两个组件 <code>springfox-swagger2</code> 和 <code>springfox-swaager-ui</code> 的应用，从大尺度上讲有两方面的内容，分别是<br/><br/>
+<h2>一：生成 Swagger 2 的 JSON API 文档</h2><br/><br/>
+使用第一个组件 <code>springfox-swagger2</code> 能够让项目运行期自动生成 Swagger 2 的 JSON API 文档，分两步走<br/><br/>
+<h3>添加 springfox-swagger2 依赖</h3><br/><br/>
+在项目的 pom.xml 文件中加入依赖配置<br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;io.springfox&lt;/groupId&gt;
+    &lt;artifactId&gt;springfox-swagger2&lt;/artifactId&gt;
+    &lt;version&gt;2.8.0&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+截止目前，springfox 官方已释放出 springfox-swagger2:2.9.0, 但是在 Maven 的中央仓库中只有 2.8.0 版，所就采用 2.8.0 版本<!--more--><br/><br/>
+<h3>Spring  的 Java Config 中启用 @EnableSwagger2</h3><br/><br/>
+如今多用 Java 代码作为 Spring 的配置，在 Java Config 中类上面加上注解 @EnableSwagger2, 如下<br/><br/>
+<pre class="lang:default mark:2 decode:true">@EnableWebMvc
+@EnableSwagger2
+@ComponentScan(basePackages= "controller")
+public class WebAppConfig {
+}</pre>
+<br/>
+假设项目中已创建有 UserController，并且应用的上下文是 "swagger-test", 这时候用 <code>mvn tomcat7:run</code> 启动 Tomcat，我们就可以访问 URL http://localhost:8080/swagger-test/v2/api-docs<br/><br/>
+<a href="/wp-content/uploads/2018/05/springfox-swagger2-1.png"><img class="aligncenter wp-image-8667" src="/wp-content/uploads/2018/05/springfox-swagger2-1-800x597.png" alt="" width="750" height="560" /></a><br/><br/>
+这就是一个符合 OpenAPI3 的 Swagger2 的 API 描述文档，我们可以通过第三方的 SwaggerUI 来引入该文档进行展示，比如官方的 SwaggerUI 可以从这里下载 <a href="https://swagger.io/download-swagger-ui/">https://swagger.io/download-swagger-ui/</a>。<br/><br/>
+如果是多个系统的 API 描述文件要集中一个中心 UI 去显示的话，那么我们让 springfox-swagger2 在运行期产生 <code>/v2/api-docs</code> 内容就足够了。<br/><br/>
+要是仍然觉得要更多担当，当前应用中还想把 SwaggerUI 也托管起来的话，我们还有 springfox-swagger-ui 值得一试，就是接下来的任务<br/><br/>
+<h2>二：启动 SwaggerUI 展示前面生成的 JSON 文档</h2><br/><br/>
+这里要用到第二个组件 <code>springfox-swagger-ui</code>, 当然 <code>springfox-swagger2</code>  是它的前提。这个 SwaggerUI 不仅漂亮的归类显示了所有的 API, 关键它还非常实用，你可以通过该 UI 发送实实在在的 HTTP 请求，对每一个 API 进行在线测试，这是非开发人员喜爱的功能。<br/><br/>
+有两个步骤<br/><br/>
+<h3>添加 springfox-swagger-ui 依赖</h3><br/><br/>
+在 pom.xml 文件中加上<br/><br/>
+<pre class="lang:default decode:true ">&lt;dependency&gt;
+    &lt;groupId&gt;io.springfox&lt;/groupId&gt;
+    &lt;artifactId&gt;springfox-swagger-ui&lt;/artifactId&gt;
+    &lt;version&gt;2.8.0&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+同样的原因，采用 2.8.0 版本<br/><br/>
+<h3>暴露 <code>/swagger-ui.html</code> 页面</h3><br/><br/>
+为了使得 <code>/swagger-ui.html</code> 页面有效，必须完善前面的  <code>WebAppConfig</code> 配置类，完整代码如下<br/><br/>
+<pre class="lang:default mark:21-28 decode:true">@EnableWebMvc
+@EnableSwagger2   //   v2/api-docs
+@ComponentScan(basePackages = {"controller"})
+public class WebAppConfig extends WebMvcConfigurerAdapter {<br/><br/>
+    @Bean
+    public Docket api() {
+        return new Docket(DocumentationType.SWAGGER_2)
+            .apiInfo(apiInfo())
+            .select()
+            .apis(RequestHandlerSelectors.any())
+            .paths(PathSelectors.any())
+            .build();
+    }<br/><br/>
+    private ApiInfo apiInfo() {
+        return new ApiInfoBuilder().title("RESTful API document").version("2.0")
+            .contact(new Contact("Yanbin", "http://localhost:8080/", "fantasia@sina.com")).build();
+    }<br/><br/>
+    @Override
+    public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        registry.addResourceHandler("swagger-ui.html")
+            .addResourceLocations("classpath:/META-INF/resources/");<br/><br/>
+        registry.addResourceHandler("/webjars/**")
+            .addResourceLocations("classpath:/META-INF/resources/webjars/");
+    }
+}</pre>
+<br/>
+其中上面加亮的方法 <code>addResourceHandlers(...)</code> 将会激活 <code>/swagger-ui.html</code> 页面。其余两个方法只是润色 Swagger JSON 文件内容的，是可选的，当然也会展示在 UI 上的。<br/><br/>
+为了让 <code>/swagger-ui.html</code> 获得更诱人的显示效果，将创建两个 Controller 类 -- UserController 和 OrderController。由于本例重点不在代码本身，因而以图片方式显示代码<br/><br/>
+<a href="/wp-content/uploads/2018/05/springfox-swagger2-2.png"><img class="aligncenter size-large wp-image-8673" src="/wp-content/uploads/2018/05/springfox-swagger2-2-800x824.png" alt="" width="800" height="824" /></a><br/><br/>
+有了这两个 Controller 类，以及足够覆盖常见的 HTTP method 之后，再来浏览一下 http://localhost:8080/swagger-ui.html<br/><br/>
+<a href="/wp-content/uploads/2018/05/springfox-swagger2-3.png"><img class="aligncenter wp-image-8672" src="/wp-content/uploads/2018/05/springfox-swagger2-3.png" alt="" width="900" height="622" /></a><br/><br/>
+非常写意的不同颜色表现了 HTTP 的各种不同操作的准确含义。想当年我还是在没听说过 Swagger 的情况下在网络上千辛万苦找啊找，记录了这篇 <a href="/restful-colors-for-http-methods/">如果要给 RESTful 每种 HTTP Method 类型指示一种颜色</a>。2014 年写的，这算是与 Swagger 的首回合交上运。对比前后两张图，现在的颜色比之从前更显圆润了。<br/><br/>
+上面的 swagger-ui, 点击每一个条目，可以展开，可以看到参数的具体描述，样例，填入参数，发送请求，可以看到完整的请求响应数据。另外关于 Swagger 的注解，如 @Api, @ApiImplicitParam, @ApiModel, @ApiOperation, @ApiParam, @ApiResponse, @Tag 等不在本文讨论之列。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="http://www.baeldung.com/swagger-2-documentation-for-spring-rest-api">Setting Up Swagger 2 with a Spring REST API</a></li>
+    <li><a href="https://springfox.github.io/springfox/docs/current/">Springfox Reference Documentation</a></li>
+    <li><a href="https://blog.csdn.net/u012476983/article/details/54090423">使用springfox+swagger2书写API文档</a></li>
+</ol>
+<br/>
+<hr /><br/><br/>
+[2018-05-03]: 目前想要使用 springfox-swagger2:2.9.0 或 springfox-swagger-ui:2.9.0, 需在 pom.xml 文件中加上第三方的 Maven 仓库<br/><br/>
+<pre class="lang:default decode:true ">&lt;repositories&gt;
+    &lt;repository&gt;
+        &lt;id&gt;springfox-repo&lt;/id&gt;
+        &lt;url&gt;https://dl.bintray.com/springfox/maven-repo/&lt;/url&gt;
+    &lt;/repository&gt;
+&lt;/repositories&gt;</pre>
+<br/>
+[2021-10-18]: <code>WebMvcConfigurerAdapter</code> 已被 Deprecated, 请使用接口 <code>WebMvcConfigurer</code> 替代，因为接口中有默认实现方法，它与原来的类效果是一样的。

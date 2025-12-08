@@ -1,0 +1,229 @@
+---
+title: Terraform 的变量使用及赋值规则
+url: /terraform-variables-input-priority/
+date: 2021-11-30T23:52:49-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2017/08/terraform_logo.png"
+categories:
+  - AWS
+tags: 
+  - AWS
+  - Terraform
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11992 
+wpStatus: publish
+views: 1798
+lastmod: 2021-12-21T23:29:35-06:00
+---
+
+<p>本人在 AWS 上建立基础架构的时候倾向于用 Terraform, 而不是 AWS 自家的 CloudFormation。倒不是因为 Terraform 支持多种类型的 Provider，而是它能模块化，不同项目共享 AWS 资源时也更方便。而使用 CloudFormation 的话，一不小心就会写出一个超大的 YAML 文件来，要使用共同的 AWS 资源时，谁来创建是个不小的问题。CloudFormation 稍值得称道的地方也就是有一个可视化的  Stack，但把  Terraform 执行的 state 存到 S3 也不差。使用 Terraform 还有一个最享受的地方就是它的官方文档组织的非常清晰。</p>
+
+<p>出品 Terraform 的公司 HashiCorp 秉持着 Infrastructure as Code，近日在忙着 <a href="https://www.barrons.com/articles/cloud-software-provider-hashicorp-targets-13-billion-valuation-with-ipo-51638231582">IPO</a>, 估值在 $13B, Ticker 将为 <a href="https://finance.yahoo.com/quote/HCP">HCP</a>(该链接直接可用时便以上市)，介时也值得关注一下。扯远了，回到日常使用 Terraform 的变量上来。</p>
+
+<p>本文直接参考自 Terraform 官网的 <a href="https://www.terraform.io/docs/language/values/variables.html">Input Variables</a>。不管英文好不好都应该读原文去理解 Terraform 变量的详细使用方法。这里主要是了解各种输入变量的方式，以及验证一下当同时用多种方式输入重复的变量时，以谁为最终的结果。<!--more--></p>
+
+<h3>Terraform 变量的声明</h3><br/>
+<p>借用函数的概念，在 Terraform 中，variable 为函数参数，output 为返回值，locals 就是局部变量。变量用 <code>variable</code> 块来声明，它有五个参数，格式如下</p>
+
+<pre class="lang:default decode:true">variable var_name {<br/>
+  type = ...<br/>
+  default = ...<br/>
+  description = ...<br/>
+  validation = ...<br/>
+  sensitive = true|false<br/>
+}</pre>
+
+<p><code>validation</code> 用于校验输入，应该挺有用的，本人还未用过，每次都相信自己的输入，用法见 <a href="https://www.terraform.io/docs/language/values/variables.html#custom-validation-rules">Custom Validation Rules</a>. <code>description</code> 没什么好说的，<code>sensitive</code> 标记的值不会输出到 output 中，但会记录到 state 文件中，且作为变量使用时也不能确保它的隐私性。</p>
+
+<p>我们经常有初始值的变量只需要指定 <code>default</code>，像</p>
+
+<pre class="lang:default decode:true ">variable version_number {<br/>
+  default = 1<br/>
+}<br/>
+</pre>
+
+<p>那么变量 <code>version_number</code> 的类型会自动推断为 number。没有 default 值的变量需要指明 type, 并在我们执行 terraform 命令时可以各种方式提供变量值，不然还是会要求逐个输入</p>
+
+<blockquote><br/>
+<p>$ terraform plan<br /><br/>
+var.version_number<br /><br/>
+    Enter a value:</p>
+
+</blockquote>
+
+<p>Terraform 当前支持的 type 有 <code>string</code>, <code>number</code>, <code>bool</code>, 复合类型 <code>list(&lt;TYPE&gt;)</code>, <code>set(&lt;TYPE&gt;)</code>, <code>map(&lt;TYPE&gt;)</code>, <code>object({ATTR NAME&gt;=&lt;TYPE&gt;, ...})</code>, <code>tuple([&lt;TYPE&gt;, ...])</code>.</p>
+
+<p>Terraform  会依照类型声明对 default 值, <code>*.tfvars</code>, 或 <code>*.json</code> 文件中提供的值进行相应的转换, 看下面的例子</p>
+
+<pre class="lang:default decode:true">variable var1 {<br/>
+  type = string<br/>
+  default = 100<br/>
+}<br/>
+<br/>
+variable var2 {<br/>
+  type = object({<br/>
+    name = string<br/>
+    age = number<br/>
+  })<br/>
+  <br/>
+  default = {<br/>
+    name = true<br/>
+    age = "50"<br/>
+  }<br/>
+}<br/>
+<br/>
+output all_vars {<br/>
+  value = {<br/>
+    var1 = var.var1<br/>
+    var2 = var.var2<br/>
+  }<br/>
+}</pre>
+
+<p>执行 <code>terraform plan</code> 后看到的是</p>
+
+<p><a href="https://yanbin.blog/wp-content/uploads/2021/11/terraform-variable-1.png"><img class="aligncenter wp-image-11997" src="https://yanbin.blog/wp-content/uploads/2021/11/terraform-variable-1.png" alt="" width="186" height="175" /></a></p>
+
+<p>&nbsp;</p>
+
+<p>但声明为 number 就不能用 <code>terraform plan -var var1="234"</code>，这样认为 var1 是含双引号的整体 '<code>"234"</code>'。</p>
+
+<p>上面也看到了 object 类型的使用，稍加说明一下 map 类型。map 的 key 总是 string 类型，<code>map(&lt;TYPE&gt;)</code>  中的 &lt;TYPE&gt; 是值的类型，可以是 map(string), map(object({...}), map(any)，any 为任意类型。</p>
+
+<p>Terraform 变量的类型是可以随意嵌套，如</p>
+
+<pre class="lang:default decode:true">type = object({<br/>
+  instance = map(any)<br/>
+  volume = map(object({<br/>
+    storage_type = string<br/>
+    size = number<br/>
+  }))<br/>
+})</pre>
+
+<p>相关的变量组织到一个 object 中是一个较好的习惯。</p>
+
+<h3>Terraform 变量的使用</h3><br/>
+<p>用 <code>var</code> 前缀来引用，比如要使用前面定义的 <code>var1</code> 变量，用 <code>var.var1</code> 就是了。</p>
+
+<h3>Terraform 变量的输入</h3><br/>
+<p>在 *.tf 文件中声明的无默认值的 variable 在执行 terraform 时需以任意一种或多种形式输入，一谈到各种输入方式立即就面对重复赋值时以谁为准的问题。下面同时列出 Terraform 搜寻变量的输入的方式及顺序，并后面变量赋值的覆盖前面的，即最后为赢</p>
+
+<ol>
+
+	<li>环境变量： <code>TF_VAR_</code>image_id='ami-abc123', 以 <code>TF_VAR_</code> 为前缀的环境变量值将会应用到相应的变量上去</li>
+
+	<li><code>terraform.tfvars</code> 文件中的变量赋值, tf 的格式</li>
+
+	<li><code>terraform.tfvars.json</code> 文件中的变量赋值，JSON 语法格式</li>
+
+	<li><code>*.auto.tfvars</code> 或 <code>*.auto.tfvars.json</code> 文件中的变量赋值，文件加载顺序以文件名按字符串升序</li>
+
+	<li><code>-var</code> 和 <code>-var-file</code> 的命令行选项指定的变量或文件中的变量赋值，<strong><code>-var</code><span style="color: #ff0000;"> 和 <code>-var-file</code> 可出现多次</span></strong>，顺序为参数出现的顺序。<code>-var-file</code> 可以支持 <code>*.tfvars</code> 和 <code>*.json</code> 两种文件格式</li>
+
+</ol>
+
+<p><span style="color: #0000ff;">用种通俗的理解，这种最后为赢的规则相当于是创建一个 Map，前面的 1-5 的顺序，以及每一步内部的顺序都是在往 Map 中 put 值，有重复 Key 的话后面的覆盖前面的，最终的 Map 交给 Terraform 去对相应的变量赋值。</span></p>
+
+<p><code>*.tfvars</code> 文件中的格式为</p>
+
+<pre class="lang:default decode:true">var1 = "Hello"<br/>
+var2 = {<br/>
+ name = "Kitty"<br/>
+ age =  2<br/>
+}</pre>
+
+<p><code>*.tfvars.json</code> 中的格式则为</p>
+
+<pre class="lang:default decode:true">{<br/>
+  "var1": "Hello",<br/>
+  "var2": {<br/>
+    "name": "Kitty",<br/>
+    "age": 2<br/>
+  }<br/>
+}<br/>
+</pre>
+
+<h4><code>-var</code> 的复杂变量输入</h4><br/>
+<p>使用 <code>-var</code> 参数输入简单变量容易，<code>-var a=123 -var b=hello</code>, 如果 type 为 map 为 object, list 等类型时，<code>-var</code> 应该如何输入呢？ 很简单，用 JSON 的格式应对就是了，比如上面的 var2</p>
+
+<blockquote><br/>
+<p>$ terraform plan -var 'var2={"name": "Kitty", "age": 2}'</p>
+
+</blockquote>
+
+<p>如果是一个数组变量就用</p>
+
+<blockquote><br/>
+<p>$ terraform plan -var 'zone_ids=["zone-a", "zone-b", "zone-c"]' </p>
+
+</blockquote>
+
+<p>因为复杂类型都以 JSON 的形式输入，所以 Terraform 中的 list, set, tuple 变量都表现为 JSON 数组。而 Terraform 的 map 和 object 输入时也都是 JSON 对象。</p>
+
+<h3>变量输入时的错误与警告</h3><br/>
+<p>当执行 <code>terraform</code> 命令未提供足够的变量时会逐个提示补全，当类型不匹配(无法正确转型)时会报错，或是当提供了未声明的变量也会有警告或错误。</p>
+
+<h4>类型不匹配时</h4><br/>
+<p>比如声明的变量为</p>
+
+<pre class="lang:default decode:true ">variable var1 {<br/>
+  type = number<br/>
+}</pre>
+
+<p>执行时给的是无法转换为数字的字符串</p>
+
+<blockquote><br/>
+<p>$ terraform plan -var var1=hello<a href="https://yanbin.blog/wp-content/uploads/2021/11/terraform-variable-2.png"><img class="aligncenter wp-image-12000" src="https://yanbin.blog/wp-content/uploads/2021/11/terraform-variable-2-800x141.png" alt="" width="668" height="118" /></a></p>
+
+</blockquote>
+
+<p>terraform plan -var var1="100" 也不行，应为它相应于是 terraform plan -var 'var1="100"'</p>
+
+<p>如果是用 *.tfvars 来提供该变量值，可以写成</p>
+
+<pre class="lang:default decode:true ">var1="100"</pre>
+
+<p>或写在  *.json 中，用</p>
+
+<pre class="lang:default decode:true ">{"var1": "100"}</pre>
+
+<h4>重复赋值时使用了不同的类型</h4><br/>
+<p>依照前面最后为赢的 Map 规则，也很好理解，以最后的类型为准。还以前面 number 类型的 var1 为例</p>
+
+<blockquote><br/>
+<p>$ terraform plan -var var1=hello -var var1=200</p>
+
+</blockquote>
+
+<p>最后 Terraform 收到的是 var1=200, 所以执行无误</p>
+
+<h4>提供了未声明的变量</h4><br/>
+<p>有下面几种情况</p>
+
+<ol>
+
+	<li>环境变量中有 TF_VAR_image_id, 但未声明 <code>image_id</code> 变量，不会任何抱怨。大约是不能限制用户创建任何的环境变量</li>
+
+	<li><code>.tfvars</code> 或 <code>.json</code> 文件中提供了未声明的变量，会有警告<br /><br/>
+如在 <code>.tfvars</code> 文件中有 <code>image_id="ami-abc"</code>, 但在 tf 文件中未声明 <code>image_id</code> 变量，警告为<br /><br/>
+<span style="color: #ff9900;">Warning:</span> Value for undeclared variable<br /><br/>
+...........<br /><br/>
+此时用 <code>-compact-warnings</code> 只能使得警告信息短一些，没有消除</li>
+
+	<li>用 <code>-var</code> 参数提供了未声明的变量，直接报错，无法继续执行<br /><br/>
+<span style="color: #ff0000;">Error:</span> Value for undeclared variable </li>
+
+</ol>
+
+<p>&nbsp;</p>
+
+<p>Terraform 变量相关的内容差不多就这些了，variable 的 validation 真需要用到时再回过头来参考 <a href="https://www.terraform.io/docs/language/values/variables.html#custom-validation-rules">Custom Validation Rules</a>。这里面还说到一个变量还可从 Terraform 的一个自家服务 <a href="https://www.terraform.io/cloud">Terraform Cloud</a> workspace 中来，目前来说会用到它的可能性不到，它更像是 Docker 的 swarm 一样，远远敌不过 Kubernetes。</p>
+
+<p>最后，等到 Hashicorp 公司上市时值得关注一下，预计发行价会在 $68 和 $72 之间，到时看 <a href="https://finance.yahoo.com/lookup?s=HCP">HCP</a> 的表现。</p>
+
+<!-- wp:paragraph --><!-- /wp:paragraph -->

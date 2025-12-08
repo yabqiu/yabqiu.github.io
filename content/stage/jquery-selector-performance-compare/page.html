@@ -1,0 +1,82 @@
+---
+title: 关于jQuery 不同选择器的性能比较[翻译]
+url: /jquery-selector-performance-compare/
+date: 2009-11-24T03:38:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Web/JS
+tags: 
+  - jQuery
+  - web
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 220 
+wpStatus: publish
+views: 280
+lastmod: 2018-06-29T19:13:30-05:00
+---
+
+<p>原文：<a href="http://blog.dynatrace.com/2009/11/09/101-on-jquery-selector-performance/" target="_blank" rel="noopener">101 on jQuery Selector Performance</a>  by Andreas Grabner, Nov 09, 09</p>
+
+<p>上周我认真分析了一个 Web 页面，它在 onLoad 事件中处理一段定制脚本文件用了 4.8 秒。结果是其中 2.8 秒消耗在动态菜单库上(将会在博客中单独记录)，剩下的 2 秒花费在 jQuery 的选择器上。分析显示多数选择器不返回任何对象，而那些会返回对象的选择器可考虑用不同的选择器来改善性能。</p>
+
+<p><strong>关于 jQuery 选择器</strong></p>
+
+<p>有大量的日志文章论述了 <a href="http://docs.jquery.com/Selectors" target="_blank" rel="noopener">jQuery 选择器</a>及它们的<a href="http://www.artzstudio.com/2009/04/jquery-performance-rules/" target="_blank" rel="noopener">性能影响</a>。正如你所知，可以通过 ID, TagName 或 ClassName 选择元素。依赖于不同的选择器， jQuery 会使用浏览器本地方法，如 通过 ID 或标签来选择元素，或者在使用类名选择时须手工从 DOM 中遍历获得元素(因为在 IE  中不存在相应的 <a href="http://ejohn.org/blog/getelementsbyclassname-speed-comparison/" target="_blank" rel="noopener">getElementsByClssName</a>).</p>
+
+<p><strong>分析我的页面时间中这 2 秒</strong></p>
+
+<p>在 onLoad 处理器中对页面中某些特定的元素使用 jQuery 设置为隐藏，显示或改变样式表...。这里是一个代码片断：<!--more--></p>
+
+<div><img src="/wp-content/uploads/2009/11/samplescript.png" alt="" border="0" /></div>
+
+<p>onLoad 中的 jQuery 脚本样例</p>
+
+<p>在 onLoad 事件处理器中充满着这样的调用。通过使用免费的 <a href="http://ajax.dynatrace.com/" target="_blank" rel="noopener">dynaTrace AJAX Edition</a>, 你会看到被解析为选择器的 $ 调用，并跟随着那些方法调用，选择器至少都能获取到一个对象。下面通过 <a href="http://ajax.dynatrace.com/pages/learn/feature-tour.aspx" target="_blank" rel="noopener">PurePath</a> 对 onLoad 事件处理器的观察，不仅给我们展示了每次选择器调用所耗费的时间，还包括在不只一个对象时实际找到的对象数(下面还没有哪个方法调用是连一个对象都找不到的).</p>
+
+<div><img src="/wp-content/uploads/2009/11/unusedselectorcalls-556x600.png" alt="" border="0" /></div>
+
+<p>非必要的 jQuery 选择器调用导致无谓的开销</p>
+
+<p>所有红色标记的调用都未返回一个元素，因为不存在直接基于查询条件的 DOM 元素。JS 列显示了每一次单独方法调用的执行时间--范围在 1ms 到大于 100 ms。Size 列告诉了我们每次单独的调用产生了多少次的 JavaScript/DOM 的方法调用(译者注：指浏览器本地的调用)。这里我们也能明白，为什么某些 $ 调用花费了那么长时间，是因为它们实际进行了许多的调用来完成请求。Invocation 列告诉了我们该方法被它的父级所调用的频度。这里我们可看出一些对象实际被解析了多次，比如: ".pop-cart"。最好的做法应该是只解析一次得到对象并缓存起来。</p>
+
+<p>这里我们学到的第一课是上面多数调用是非必要的，只会产生过量的消耗。如果你明确知道你需要解析出哪些页面元素，那就不要试图去解析其他的对象。我知道，用全局的脚本文件来处理不同页面中的不同内容会导致出现这样的情况--但是--你是否真愿意在这种无谓的开销中生活呢？</p>
+
+<p><strong>分析 jQuery 选择器的差异</strong></p>
+
+<p>在分析页面上的第一个问题是致使了太多的非必要 $ 调用。继而带来的另一个疑问就是为何某些 $ 方法响应很快(几微秒)，而有些却用了相当长的时间(超过 100ms)。理论上的答案可以参看 <a href="http://www.artzstudio.com/2009/04/jquery-performance-rules/" target="_blank" rel="noopener">jQuery Best Prtice Blog</a>. 回到我的页面中来，它向我提示了如下的结论：</p>
+
+<p><strong>ID 选择器，也就是使用了 getElementById，是最快的</strong></p>
+
+<p>下图展示了一个使用 ID 的选择器。它使用了 getElementById，因此很快就返回了。</p>
+
+<div><img src="/wp-content/uploads/2009/11/selector_by_id.png" alt="" /></div>
+
+<p>jQuery ID 选择器</p>
+
+<p><strong><br /><br/>
+TagName 选择器使用的是 getElementsByTagName</strong></p>
+
+<p>下面的例子是通过 TagName 搭配 ClassName 来选择元素。jQuery 首先使用本地实现 getElementsByTagName 来获得所有指定标签的元素。接着遍历它们针对 ClssName 进行过滤。</p>
+
+<div><img src="/wp-content/uploads/2009/11/selector_by_tag_class.png" alt="" /></div>
+
+<p>jQuery 的 Tag 和 ClassName 选择器</p>
+
+<p><strong><br /><br/>
+ClassName 选择器需要遍历所有的 DOM 元素</strong></p>
+
+<p>如果你只用 ClassName 选择器 -  jQuery 需要遍历 DOM 中的每一个元素，因为在 Internet Explorer(对于 FireFox 是另一番情景) 中没有对应于 getElementsByClassName 的本地实现。下图显示了在一直有着 3460 个 DOM 元素的页面中选择器使用开销的情况。</p>
+
+<div><img src="/wp-content/uploads/2009/11/selector_by_classname.png" alt="" /></div>
+
+<p>jQuery ClassName 选择器</p>
+
+<p><strong>小结</strong></p>
+
+<p>依赖于你的 Web 站点的大小(指 DOM 元素的数量 ), 你需要考虑每个单独的选择器方法的开销。相比于通过 ClassName 来选择，你应该优先考虑用 TagName 搭配 ClassName 来选择，或是在你的页面只有少量对象时用唯一性的 ID 来选择。而且- 确保缓存了已解析获得的对象，以避免再次解析调用时的开始。还有 - 最后也是应该予以重视的一点 - 避免不必要的调用。如前面页面我所分析的 - 2 秒中有超过 1.5 秒是可以规避那些调用来省去的。</p>

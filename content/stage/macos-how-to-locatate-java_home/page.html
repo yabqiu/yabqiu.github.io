@@ -1,0 +1,296 @@
+---
+title: macOS 如何定位 JAVA_HOME
+url: /macos-how-to-locatate-java_home/
+date: 2022-03-18T13:03:31-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Jdk
+  - macOS
+  - JAVA_HOME
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12362 
+wpStatus: publish
+views: 1139
+lastmod: 2022-03-24T10:34:57-05:00
+---
+
+多数的 Java 入门教程都是要求同时设置 JAVA_HOME 和 PATH(包含 $JAVA_HOME/bin) 两个环境变量，反正两个都有了就保险。其实一般情况下系统能在 PATH 中找到 java 程序时就知道 JAVA_HOME, 基本上只要配置 PATH 就行，而 JAVA_HOME 环境变量是可选的。但也有例外，比如 TOMCAT 就可能要求有 JAVA_HOME 环境变量。<br/><br/>
+在 macOS 下，JAVA_HOME 与 PATH 的关系又显得有点微妙了。一个新的 macOS 系统，它自带有 java 命令<br/><br/>
+<blockquote>
+$ which java<br />
+/usr/bin/java
+</blockquote>
+<br/>
+你要直接执行它的话<br/><br/>
+<blockquote>
+$ java<br />
+The operation couldn’t be completed. Unable to locate a Java Runtime.<br />
+Please visit http://www.java.com for information on installing Java.
+</blockquote>
+<br/>
+所以它实际上只是执行 java 的辅助入口，没有实际的 JDK 或 JRE 是没用的。<!--more--><br/><br/>
+<h3>用 PATH 覆盖 /usr/bin/java</h3><br/><br/>
+当我们把 JDK 安装在非默认目录，如 /Users/yanbin/amazon-corretto-11.jdk，我们可以配置 PATH 来使用这个 JDK<br/><br/>
+<blockquote>
+export PATH=/Users/yanbin/amazon-correto-11.jdk/Contents/Home/bin:$PATH
+</blockquote>
+<br/>
+然后可以执行<br/><br/>
+<blockquote>
+$ java -version<br />
+openjdk version "11.0.14.1" 2022-02-08 LTS
+</blockquote>
+<br/>
+注意自己的路径要放在 $PATH 之前，否则仍然会执行 /usr/bin/java, 从而找不到 Java<br/><br/>
+macOS 定位 JAVA_HOME 有一个自己的命令 <code>/usr/libexec/java_home</code>, /usr/bin/java 就是仰赖于它来定位 JAVA_HOME 的。如果  JDK 在非默认目录中，/usr/libexec/java_home 是不知道的<br/><br/>
+<blockquote>
+$ /usr/libexec/java_home<br />
+The operation couldn’t be completed. Unable to locate a Java Runtime.<br />
+Please visit http://www.java.com for information on installing Java.
+</blockquote>
+<br/>
+虽然依据 PATH 是可以执行 java 程序的。<br/><br/>
+<h3>/usr/libexec/java_home 定位</h3><br/><br/>
+前面提到 macOS 的 JDK 安装默认目录，那就是 <code>/Library/Java/JavaVirtualMachines</code>, JDK 安装程序会安装 JDK 到该目录中，如<br/><br/>
+<blockquote>
+/Library/Java/JavaVirtualMachines/amazon-corretto-11.jdk
+</blockquote>
+<br/>
+这时候我们不需要配置 PATH 环境变量(把 PATH 环境变量恢复成默认，或打开一个新的终端)，再执行 /usr/libexec/java_home 就能找到该默认位置下的 JDK11<br/><br/>
+<blockquote>
+$ /usr/libexec/java_home<br />
+/Library/Java/JavaVirtualMachines/amazon-corretto-11.jdk/Contents/Home
+</blockquote>
+<br/>
+执行 java<br/><br/>
+<blockquote>
+$ java -version<br />
+openjdk version "11.0.14.1" 2022-02-08 LTS
+</blockquote>
+<br/>
+不光是执行 JDK 安装程序的方式，就是我们直接解压 JDK 到目录也行。例如我们解压 JDK 8 到该目录中<br/><br/>
+<blockquote>
+$ ls /Library/Java/JavaVirtualMachines<br />
+amazon-corretto-11.jdk amazon-corretto-8.jdk
+</blockquote>
+<br/>
+看看此时 macOS 会选择哪个 JDK<br/><br/>
+<pre class="lang:default decode:true">$ /usr/libexec/java_home
+/Library/Java/JavaVirtualMachines/amazon-corretto-11.jdk/Contents/Home
+$
+$ /usr/libexec/java_home -V
+Matching Java Virtual Machines (2):
+11.0.14.1 (x86_64) "Amazon.com Inc." - "Amazon Corretto 11" /Library/Java/JavaVirtualMachines/amazon-corretto-11.jdk/Contents/Home
+1.8.0_322 (x86_64) "Amazon" - "Amazon Corretto 8" /Library/Java/JavaVirtualMachines/amazon-corretto-8.jdk/Contents/Home
+/Library/Java/JavaVirtualMachines/amazon-corretto-11.jdk/Contents/Home
+$
+$java -version
+openjdk version "11.0.14.1" 2022-02-08 LTS</pre>
+<br/>
+列出来两个 JDK, 但选择了 JDK 11<br/><br/>
+再来一个 JDk<br/><br/>
+<blockquote>
+$ ls /Library/Java/JavaVirtualMachines<br />
+amazon-corretto-11.jdk amazon-corretto-17.jdk amazon-corretto-8.jdk
+</blockquote>
+<br/>
+<pre class="lang:default decode:true">$ /usr/libexec/java_home -V
+Matching Java Virtual Machines (3):
+    17.0.2 (x86_64) "Amazon.com Inc." - "Amazon Corretto 17" /Library/Java/JavaVirtualMachines/amazon-corretto-17.jdk/Contents/Home
+    11.0.14.1 (x86_64) "Amazon.com Inc." - "Amazon Corretto 11" /Library/Java/JavaVirtualMachines/amazon-corretto-11.jdk/Contents/Home
+    1.8.0_322 (x86_64) "Amazon" - "Amazon Corretto 8" /Library/Java/JavaVirtualMachines/amazon-corretto-8.jdk/Contents/Home
+/Library/Java/JavaVirtualMachines/amazon-corretto-17.jdk/Contents/Home<br/><br/>
+$ java -version
+openjdk version "17.0.2" 2022-01-18 LTS</pre>
+<br/>
+看来在 /Library/Java/JavaVirtualMachines 中有多个 JDK 版本时，/usr/libexec/java_home 会选择最高版本。<br/><br/>
+<h3>用 JAVA_HOME 选择 JDK 版本</h3><br/><br/>
+那么如何让 /usr/bin/java 选择自己想要的 JDK 版本呢，设定 JAVA_HOME, 而不是让 /usr/libexec/java_home 自主选择最高的版本。<br/><br/>
+比如我们在 /Library/Java/JavaVirtualMachines 中有三个 JDK 版本时，想用 JDK 8<br/><br/>
+<blockquote>
+export JAVA_HOME=/Library/Java/JavaVirtualMachines/amazon-corretto-8.jdk/Contents/Home<br />
+$ java -version<br />
+openjdk version "1.8.0_322"
+</blockquote>
+<br/>
+<h4>/usr/libexec/java_home 的高级用法</h4><br/><br/>
+命令帮助<br/><br/>
+<pre class="lang:default decode:true ">$ /usr/libexec/java_home --help
+Usage: java_home [options...]
+    Returns the path to a Java home directory from the current user's settings.<br/><br/>
+Options:
+    [-v/--version   &lt;version&gt;]       Filter versions (as if JAVA_VERSION had been set in the environment).
+    [-a/--arch      &lt;architecture&gt;]  Filter architecture (as if JAVA_ARCH had been set in the environment).
+    [-F/--failfast]                  Fail when filters return no JVMs, do not continue with default.
+    [   --exec      &lt;command&gt; ...]   Execute the $JAVA_HOME/bin/&lt;command&gt; with the remaining arguments.
+    [-X/--xml]                       Print full JVM list and additional data as XML plist.
+    [-V/--verbose]                   Print full JVM list with architectures.
+    [-h/--help]                      This usage information.</pre>
+<br/>
+除了 /usr/libexec/java_home -V 可列出 /Library/Java/JavaVirtualMachines 中的所有 JDK 版本及路径，以及首选的 JDK 外，用 /usr/libexec/java_home -X 能以 plist XML 格式展示所有 JDK<br/><br/>
+<blockquote>
+$ /usr/libexec/java_home -X
+</blockquote>
+<br/>
+<pre class="height-set:true lang:default decode:true ">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"&gt;
+&lt;plist version="1.0"&gt;
+&lt;array&gt;
+    &lt;dict&gt;
+        &lt;key&gt;JVMArch&lt;/key&gt;
+        &lt;string&gt;x86_64&lt;/string&gt;
+        &lt;key&gt;JVMBundleID&lt;/key&gt;
+        &lt;string&gt;com.amazon.corretto.18&lt;/string&gt;
+        &lt;key&gt;JVMEnabled&lt;/key&gt;
+        &lt;true/&gt;
+        &lt;key&gt;JVMHomePath&lt;/key&gt;
+        &lt;string&gt;/Library/Java/JavaVirtualMachines/amazon-corretto-18.jdk/Contents/Home&lt;/string&gt;
+        &lt;key&gt;JVMName&lt;/key&gt;
+        &lt;string&gt;Amazon Corretto 18&lt;/string&gt;
+        &lt;key&gt;JVMPlatformVersion&lt;/key&gt;
+        &lt;string&gt;18.0.0&lt;/string&gt;
+        &lt;key&gt;JVMVendor&lt;/key&gt;
+        &lt;string&gt;Amazon.com Inc.&lt;/string&gt;
+        &lt;key&gt;JVMVersion&lt;/key&gt;
+        &lt;string&gt;18.0.0&lt;/string&gt;
+    &lt;/dict&gt;
+    &lt;dict&gt;
+        &lt;key&gt;JVMArch&lt;/key&gt;
+        &lt;string&gt;x86_64&lt;/string&gt;
+        &lt;key&gt;JVMBundleID&lt;/key&gt;
+        &lt;string&gt;com.amazon.corretto.17&lt;/string&gt;
+        &lt;key&gt;JVMEnabled&lt;/key&gt;
+        &lt;true/&gt;
+        &lt;key&gt;JVMHomePath&lt;/key&gt;
+        &lt;string&gt;/Library/Java/JavaVirtualMachines/amazon-corretto-17.jdk/Contents/Home&lt;/string&gt;
+        &lt;key&gt;JVMName&lt;/key&gt;
+        &lt;string&gt;Amazon Corretto 17&lt;/string&gt;
+        &lt;key&gt;JVMPlatformVersion&lt;/key&gt;
+        &lt;string&gt;17.0.2&lt;/string&gt;
+        &lt;key&gt;JVMVendor&lt;/key&gt;
+        &lt;string&gt;Amazon.com Inc.&lt;/string&gt;
+        &lt;key&gt;JVMVersion&lt;/key&gt;
+        &lt;string&gt;17.0.2&lt;/string&gt;
+    &lt;/dict&gt;
+    &lt;dict&gt;
+        &lt;key&gt;JVMArch&lt;/key&gt;
+        &lt;string&gt;x86_64&lt;/string&gt;
+        &lt;key&gt;JVMBundleID&lt;/key&gt;
+        &lt;string&gt;com.amazon.corretto.11&lt;/string&gt;
+        &lt;key&gt;JVMEnabled&lt;/key&gt;
+        &lt;true/&gt;
+        &lt;key&gt;JVMHomePath&lt;/key&gt;
+        &lt;string&gt;/Library/Java/JavaVirtualMachines/amazon-corretto-11.jdk/Contents/Home&lt;/string&gt;
+        &lt;key&gt;JVMName&lt;/key&gt;
+        &lt;string&gt;Amazon Corretto 11&lt;/string&gt;
+        &lt;key&gt;JVMPlatformVersion&lt;/key&gt;
+        &lt;string&gt;11.0.14&lt;/string&gt;
+        &lt;key&gt;JVMVendor&lt;/key&gt;
+        &lt;string&gt;Amazon.com Inc.&lt;/string&gt;
+        &lt;key&gt;JVMVersion&lt;/key&gt;
+        &lt;string&gt;11.0.14.1&lt;/string&gt;
+    &lt;/dict&gt;
+    &lt;dict&gt;
+        &lt;key&gt;JVMArch&lt;/key&gt;
+        &lt;string&gt;x86_64&lt;/string&gt;
+        &lt;key&gt;JVMBundleID&lt;/key&gt;
+        &lt;string&gt;com.amazon.corretto.8&lt;/string&gt;
+        &lt;key&gt;JVMEnabled&lt;/key&gt;
+        &lt;true/&gt;
+        &lt;key&gt;JVMHomePath&lt;/key&gt;
+        &lt;string&gt;/Library/Java/JavaVirtualMachines/amazon-corretto-8.jdk/Contents/Home&lt;/string&gt;
+        &lt;key&gt;JVMName&lt;/key&gt;
+        &lt;string&gt;Amazon Corretto 8&lt;/string&gt;
+        &lt;key&gt;JVMPlatformVersion&lt;/key&gt;
+        &lt;string&gt;1.8&lt;/string&gt;
+        &lt;key&gt;JVMVendor&lt;/key&gt;
+        &lt;string&gt;Amazon&lt;/string&gt;
+        &lt;key&gt;JVMVersion&lt;/key&gt;
+        &lt;string&gt;1.8.0_322&lt;/string&gt;
+    &lt;/dict&gt;
+&lt;/array&gt;
+&lt;/plist&gt;</pre>
+<br/>
+还能用 /usr/libexec/java_home -v xxx 智能的显示所对应版本的 JAVA_HOME<br/><br/>
+<blockquote>
+$ /usr/libexec/java_home -v 1.8<br />
+/Library/Java/JavaVirtualMachines/amazon-corretto-8.jdk/Contents/Home<br />
+$ /usr/libexec/java_home -v 11<br />
+/Library/Java/JavaVirtualMachines/amazon-corretto-11.jdk/Contents/Home<br />
+$ /usr/libexec/java_home -v 8<br />
+/Library/Java/JavaVirtualMachines/amazon-corretto-18.jdk/Contents/Home
+</blockquote>
+<br/>
+结合 /usr/libexec/java_home -v xxx 选项，我们就可以用一个脚本来切换 JAVA_HOME，核心就是<br/><br/>
+<blockquote>
+export JAVA_HOME=$(/usr/libexec/java_home -v $1)
+</blockquote>
+<br/>
+根据所使用 shell 的不同，比如我们可以在 ~/.bashrc 或 ~/.zshrc 文件中定义一个函数<br/><br/>
+<pre class="lang:default decode:true">switch_java() {
+  JAVA_HOME=$(/usr/libexec/java_home -v $1)
+  if [ -z $2 ]; then
+    echo "switch JAVA_HOME to $JAVA_HOME"
+  fi
+  export JAVA_HOME
+}<br/><br/>
+# set default JAVA_HOME
+switch_java 11 XX</pre>
+<br/>
+然后执行 switch_java 来切换<br/><br/>
+<blockquote>
+$ switch_java 11<br />
+$ switch_java 1.8<br />
+$ switch_java 17
+</blockquote>
+<br/>
+Demo<br/><br/>
+<blockquote>
+$  java -version<br />
+openjdk version "11.0.14.1" 2022-02-08 LTS<br />
+OpenJDK Runtime Environment Corretto-11.0.14.10.1 (build 11.0.14.1+10-LTS)<br />
+OpenJDK 64-Bit Server VM Corretto-11.0.14.10.1 (build 11.0.14.1+10-LTS, mixed mode)<br />
+$  switch_java 1.8<br />
+switch JAVA_HOME to /Library/Java/JavaVirtualMachines/amazon-corretto-8.jdk/Contents/Home<br />
+$  java -version<br />
+openjdk version "1.8.0_322"<br />
+OpenJDK Runtime Environment Corretto-8.322.06.1 (build 1.8.0_322-b06)<br />
+OpenJDK 64-Bit Server VM Corretto-8.322.06.1 (build 25.322-b06, mixed mode)
+</blockquote>
+<br/>
+如果把 export JAVA_HOME=$(/usr/libexec/java_home -v $1) 定义在别的脚本文件中要用 source switch_java.sh 1.8 来切换<br/><br/>
+最后注意在用 /usr/libexec/java_home 定位 JAVA_HOME 时不需要为 JAVA 定制 PATH，要以 /usr/bin/java 作为入口。<br/><br/>
+javac 也一样<br/><br/>
+<blockquote>
+$ which javac<br />
+/usr/bin/javac
+</blockquote>
+<br/>
+更多 /usr/bin 下的 java 命令<br/><br/>
+<pre class="lang:default decode:true ">$ ls /usr/bin/j*
+/usr/bin/jar          /usr/bin/javah        /usr/bin/jconsole     /usr/bin/jhsdb        /usr/bin/jmap         /usr/bin/jpackage     /usr/bin/json_pp      /usr/bin/jstack
+/usr/bin/jarsigner    /usr/bin/javap        /usr/bin/jcontrol     /usr/bin/jimage       /usr/bin/jmc          /usr/bin/jps          /usr/bin/json_pp5.18  /usr/bin/jstat
+/usr/bin/java         /usr/bin/javapackager /usr/bin/jdb          /usr/bin/jinfo        /usr/bin/jobs         /usr/bin/jrunscript   /usr/bin/json_pp5.30  /usr/bin/jstatd
+/usr/bin/javac        /usr/bin/javaws       /usr/bin/jdeps        /usr/bin/jjs          /usr/bin/join         /usr/bin/jsadebugd    /usr/bin/json_xs      /usr/bin/jvisualvm
+/usr/bin/javadoc      /usr/bin/jcmd         /usr/bin/jhat         /usr/bin/jlink        /usr/bin/jot          /usr/bin/jshell       /usr/bin/json_xs5.30</pre>
+<br/>
+如果有 JDK 中无法被 /usr/bin 下 j* 覆盖的命令，就要从 $JAVA_HOME/bin 中找，所以必要时在修改 JAVA_HOME 环境变量后，也应更新 PATH 环境变量。<br/><br/>
+关于 Linux 下如何找到 JAVA_HOME, 有两个命令<br/><br/>
+<pre class="lang:default mark:1,3 decode:true ">sh-4.2# dirname $(dirname $(readlink -f $(which javac)))
+/usr/lib/jvm/java-11-openjdk-11.0.14.1.1-1.el7_9.x86_64
+sh-4.2# java -XshowSettings:properties -version 2&gt;&amp;1 &gt; /dev/null | grep 'java.home'
+    java.home = /usr/lib/jvm/java-11-openjdk-11.0.14.1.1-1.el7_9.x86_64</pre>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://www.baeldung.com/find-java-home">How to Find JAVA_HOME</a></li>
+</ol>

@@ -1,0 +1,79 @@
+---
+title: 在 WordPress 插件管理页面中引入样式或脚本文件
+url: /wordpress-admin-import-css-js/
+date: 2010-07-12T02:48:08-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - WordPress
+tags: 
+  - wordpress
+  - js
+  - css
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 64 
+wpStatus: publish
+views: 1009
+lastmod: 2021-09-02T10:37:29-05:00
+---
+
+在开发 WordPress 插件时，你当然可以在每一个你需要用到样式或脚本文件的页面像传统方式那样把它们引入，比如：</p>
+<br/>
+有个插件 hello-unmi, 要在管理页面中引入插件目录的 include 文件夹里的 admin-style.css 和 admin-core.js 文件，可以在每个要用到它们的页面都写上：<br/><br/>
+<pre class="lang:default decode:true">&lt;link rel="stylesheet" href="/wp-content/plugins/hello-unmi/include/admin-style.css" type="text/css" /&gt;
+&lt;script type="text/javascript" src="/wp-content/plugins/hello-unmi/include/admin-core.js"&gt;&lt;/script&gt;</pre>
+<br/>
+页面多了会是个麻烦，要说问题也不大，不过我们既然在 WordPress 的插件体系中，应该考虑好利用上下文给我们带来的便利。可以在 'admin_enqueue_scripts' 的 action 扩展中去引入，这样我们就只要写一次就能为所有(或特定)的管理页面引入想要的样式和脚本文件.<!--more--><br/><br/>
+比如在你的主插件文件中加上以下代码行：<br/><br/>
+<pre class="lang:default decode:true">//为管理页引入样式文件
+add_action('admin_enqueue_scripts', 'unmi_stylesheets_admin');
+function unmi_stylesheets_admin($hook_suffix) {
+    $unmi_admin_pages = array('hello-unmi/list.php', 'hello-unmi/options.php');//页面筛选
+        if(in_array($hook_suffix, $unmi_admin_pages)) {
+            wp_enqueue_style('admin-css', plugins_url('hello-unmi/include/style-admin.css'), false, '1.1', 'all');
+    }
+}</pre>
+<br/>
+<pre class="lang:default decode:true">//为管理页面引入脚本文件
+add_action('admin_enqueue_scripts', 'unmi_scripts_admin');
+function unmi_scripts_admin($hook_suffix) {
+    wp_enqueue_script('admin-script', plugins_url('hello-unmi/include/core-admin.js'), false, '1.2', true);
+}</pre>
+<br/>
+说明一下 wp_enqueue_style 和 wp_enqueue_script 这两个函数的参数，它们分别定义在 wp-includes/functions.wp-styles.php 和 function.wp-scripts.php 中，<br/><br/>
+<pre class="lang:default decode:true">function wp_enqueue_style( $handle, $src = false, $deps = array(), $ver = false, $media = false )
+function wp_enqueue_script( $handle, $src = false, $deps = array(), $ver = false, $in_footer = false )</pre>
+<br/>
+再对比看一下生成的页面源文件的相应代码：<br/><br/>
+<pre class="lang:default decode:true">&lt;link rel='stylesheet' id='admin-css-css'  href='http://unmi/wp-content/plugins/hello-unmi/include/style-admin.css?ver=1.1' type='text/css' media='all' /&gt;<br/><br/>
+&lt;script type='text/javascript' src='/wp-content/plugins/hello-unmi/include/core.js?ver=1.2'&gt;&lt;/script&gt;</pre>
+<br/>
+抛砖引玉，在我看生成的页面的源文件同时，也注意到了 WordPress 还用别的方式来引入样式或脚本文件，如：<br/><br/>
+<pre class="lang:default decode:true">&lt;link rel='stylesheet' href='/wp-admin/load-styles.php?c=1&amp;dir=ltr&amp;load=global,wp-admin&amp;ver=4198bec071152ccaf39ba26fd81dcd63' type='text/css' media='all' /&gt;
+&lt;script type='text/javascript' src='/wp-admin/load-scripts.php?c=1&amp;load=jquery,utils&amp;ver=d24248fe4b0cd62086633fd42ef1019b'&gt;&lt;/script&gt;
+&lt;script type='text/javascript' src='/wp-admin/load-scripts.php?c=1&amp;load=hoverIntent,common,jquery-color&amp;ver=975a66473369e28f12fa81a4deb3836d'&gt;&lt;/script&gt;</pre>
+<br/>
+它们加载的是 load 参数代表的一个或多个文件内容，对应的 php 脚本分别是：<br/><br/>
+wp-admin/load-scripts.php 和 wp-admin/load-styles.php,  这两个脚本都会执行到 wp-includes/script-loader.php 中，<br/><br/>
+从 function wp_default_scripts(&amp;$scripts) 函数内容中就能看到你可以在 load-scripts.php?c=1&amp;load= 后接什么参数来引入什么脚本文件<br />
+从 function wp_default_styles( &amp;$styles ) 函数内容中也能看到你可以在 load-styles.php?c=1&amp;dir=ltr&amp;load= 后接什么参数来引入什么样式文件<br/><br/>
+再看下 &lt;body class="wp-admin no-js hello-unmi-options-php"&gt;，说明 WordPress 会为每一个后台页面引入一个默认的样式名，插件名-页面文件名-php。<br/><br/>
+在尾部的<br/><br/>
+<pre class="lang:default decode:true">&lt;script type="text/javascript"&gt;if(typeof wpOnload=='function')wpOnload();&lt;/script&gt;</pre>
+<br/>
+说明你声明的 wpOnload() 函数会被自动执行，不过我们应该习惯了用 jQuery 的方式，就像页面前面出现的:<br/><br/>
+<pre class="lang:default decode:true ">//&lt;![CDATA[
+addLoadEvent = function(func){if(typeof jQuery!="undefined")jQuery(document).ready(func);else if(typeof wpOnload!='function'){wpOnload=func;}else{var oldonload=wpOnload;wpOnload=function(){oldonload();func();}}};
+var userSettings = {'url':'/','uid':'232','time':'1278917888'};
+var ajaxurl = '/wp-admin/admin-ajax.php', pagenow = 'admin', adminpage = 'fn-subscription-tracking-logs-php',  thousandsSeparator = ',', decimalPoint = '.';
+//]]&gt;</pre>
+<br/>
+新的自动执行的函数是 func，并且交于 jQuery 来调用，有了 func() 就不会执行 wpOnload() 了。<br/><br/>
+对于 load-scripts.php 和 load-styles.php 值得进一步深入的。<br/><br/>
+在用 wp_enqueue_style 和 wp_enqueue_script 引入样式或脚本文件时，最好是判断一下哪些页面需要加载所需要的样式或脚本文件，因为 WordPress 的插件系统 add_action() 方法会波及到所有的 apply_action() 该 Action 的页面，也就是会为所有的后台页面加载样式或脚本文件。<br/><br/>
+参考：1. <a href="http://kan.willin.org/?p=1325" target="_blank" rel="noopener">WordPress 標準的 script 掛法</a>

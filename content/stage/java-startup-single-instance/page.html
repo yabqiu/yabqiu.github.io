@@ -1,0 +1,67 @@
+---
+title: JAVA程序启动单一实例妙招[转]
+url: /java-startup-single-instance/
+date: 2008-03-24T06:54:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - Single
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 428 
+wpStatus: publish
+views: 633
+lastmod: 2019-12-11T18:55:33-06:00
+---
+
+每日E读,间隔几天,显的每日E读不每了,新闻过后,精彩继续!</p>
+<br/>
+今儿,想起来昨儿,解决的一问题,贴出来大家学习下,由于工作需要,学习,哈哈~!<br/><br/>
+手头的一个任务,是个java的SWT做的桌面应用程序,有一需求是,程序只能启动一个实例,二次启动会提示启动失败!网上转了一大圈几天也没找到比较理想的解决方法,在CSND等专业程序员网站上查找过,也没有找到!我正要放弃的时候,哈哈,被我找到了!<br/><br/>
+找了一写方案，总结起来就是，系统单一实例，就是查看共用资源，如果被占用，说明已经启动！有人说用单例模式，那是没有作用的！<br/><br/>
+网上找到的几种解决方案:<!--more--><br />
+方案1：程序启动创建一临时文件，程序关闭删除文件，当第二次被启动的时候发现文件存在，说明程序正在运行，文件不存在说明程序没有启动！<br />
+问题：当程序非法关闭，没有执行到删除文件代码，文件就会一直存在，程序就永远启动不起来，只能手动删除，方法很好，但考虑问题不周全，容易出问题<br />
+推荐等级：★☆☆<br/><br/>
+方案2：程序启动监听端口，因为端口在一台计算机上一个端口号，只能同时被一个应用程序使用，利用了这个方法，当第二次启动程序时，发现端口被占用，说明程序正在运行！<br />
+问题：方法固然好，不过容易出现端口抢占的问题，与其他应用程序共用一个端口号，这样会影响其他的应用程序运行，解决方法也是有的，可以在配置文件里设置端口号，出现问题我就换，我换我换我换换换，所以使用此方案要选好端口哦！而且程序占用端口，而不使用端口，这也算是一种资源浪费，杀鸡何用宰牛刀！<br />
+推荐等级：★★☆<br/><br/>
+方案3：此方案就是我选择的终极方案拉，哈哈~！类似方案1，还解决了方案1遗留下来的问题，启动程序锁定指定文件，而不是创建和删除，当程序二次启动时要锁定文件时，无法访问该文件，说名程序正在运行！（为什么不直接使用文件而是使用文件锁来判断呢？即：在程序启动的时候生成一个文件而在程序退出时删除这个文件，只要判断该文件的存在与否就可以判断实例的运行情况。这是因为我们不能确保删除文件的操作一定能被执行到，程序是可能被强制关闭或异常退出的，而文件锁不同，它是作为系统资源分配给JVM的，一旦JVM当掉，其资源会一并被操作系统回收，因此对文件的锁定也会被消除。）这样不会干扰下次应用，还限制了只有一个实例！不得不说此方法妙啊！<br />
+问题：当锁定文件被删除时，找不到锁定文件，程序会抛出异常，解决方法可以在查找锁定文件时发现文件不存在，可以自动创建文件（另外，要注意，锁定文件千万不要锁定相应的资源文件，如程序相关的配置文件xml和一些properties，可能会发生意外事故，会把锁定的文件置空，里面的内容就飞拉，我是身有体会啊，我的log4j的配置文件啊！呜呜~~）<br />
+推荐等级：★★★★★<br/><br/>
+方案1、方案2方法可用单不好用，所以不提供相关代码，下面是方案3的demo代码，仅供参考！<br/><br/>
+<p class="MsoNormal" style="margin: 0cm 0cm 0pt; text-align: left; mso-layout-grid-align: none;"><span style="font-size: 10pt; color: black;"> </span></p>
+<br/>
+<pre class="brush:java">    public static boolean isLocking(){     
+        try{
+            FileLock lock = null;
+            File flagFile = new File("config/lockInstance");           
+    
+            if(!flagFile.exists())
+                flagFile.createNewFile();
+        
+            lock = new FileOutputStream("config/lockInstance").getChannel().tryLock();
+             
+            if(lock == null)
+                return    true;
+         
+        }catch(Exception ex) {
+            logger.warn("程序正在运行中……");
+        }<br/><br/>
+        return false;   
+    }
+</pre>
+<br/>
+***********************************************************************************************<br/><br/>
+[10月30日补充]<br/><br/>
+经过几天应用发现,第三种解决方案还是有问题会出现,如果应用被复制两份,那样程序就不能在次避免启动多例,考虑了下,如果想要避免这种情况,可以在指定位置创建锁定文件如:c:\windows\system32当然,这样做不是很道德,哈哈!<br/><br/>
+原文地址：<a href="http://hi.baidu.com/zonk518/blog/item/856c204b4c920af382025cd0.html">http://hi.baidu.com/zonk518/blog/item/856c204b4c920af382025cd0.html</a><br/><br/>
+另：<a href="http://www.128kj.com/article/article1/57EA6D25F66C32269ADD179FB21290D1.htm?id=269">控制运行中的application进程实例的个数</a>

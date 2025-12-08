@@ -1,0 +1,109 @@
+---
+title: jQuery ajax 在 IE 中碰到 parsererror 异常的分析与应对
+url: /jquery-ajax-ie-parsererror/
+date: 2011-01-12T22:50:02-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Web/JS
+tags: 
+  - jQuery
+  - javascript
+  - ajax
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3053 
+wpStatus: publish
+views: 7410
+lastmod: 2021-09-03T12:11:16-05:00
+---
+
+在用 jquery 1.4.2 的 $.ajax() 时：</p>
+<br/>
+<pre class="lang:default decode:true ">$.ajax({
+    url: "updateRoles.action",
+    data: form.serialize(),
+    dataType: "json",
+    success: function(msg){<br/><br/>
+    },
+    complete: function(xhr,msg){
+        alert(msg);    
+    }
+});</pre>
+<br/>
+在其他浏览器中表现的很好，但是在 IE（7/8） 下总报 parsererror 错误。在 jquery 中找到 parsererror，定位在 5989 行：<!--more--><br/><br/>
+<pre class="lang:default decode:true">if ( status === "success" ) {
+    // Watch for, and catch, XML document parse errors
+    try {
+        // process the data (runs the xml through httpData regardless of callback)
+        data = jQuery.httpData( xhr, s.dataType, s );
+    } catch( parserError ) {
+        status = "parsererror";
+        errMsg = parserError;
+    }
+}</pre>
+<br/>
+那应该是在执行 data = jQuery.httpData( xhr, s.dataType, s ); 时报的异常，来看 httpData 函数的局部代码：<br/><br/>
+<pre class="lang:default decode:true">httpData: function( xhr, type, s ) {
+    var ct = xhr.getResponseHeader("content-type") || "",
+        xml = type === "xml" || !type &amp;&amp; ct.indexOf("xml") &gt;= 0,
+        data = xml ? xhr.responseXML : xhr.responseText;<br/><br/>
+    if ( xml &amp;&amp; data.documentElement.nodeName === "parsererror" ) {
+        jQuery.error( "parsererror" );
+    }</pre>
+<br/>
+如果在 IE 中加入 alert() 来诊断的话，你会发现在第一行 var ct = xhr.getResponseHeader("content-type") || "" 处就抛出异常了。原因是在 IE 中的 XMLHttpRequest(jquery 1.4.4 在 IE 中使用 new window.XMLHttpRequest() 构造出 XHR 对象的) 是不存在 getResponseHeader() 方法的，所以不能调用它。而 FireFox 等其他浏览器是存在 getResponseHeader() 函数的。<br/><br/>
+在 IE 中的 XMLHttpRequest 对象拥有的属性和方法有：<br/><br/>
+status<br />
+timeout<br />
+ontimeout<br />
+responseXML<br />
+responseBody<br />
+onreadystatechange<br />
+readyState<br />
+responseText<br />
+statusText<br/><br/>
+XMLHttpRequest 对象在 FireFox 中拥有的属性和方法有：<br/><br/>
+abort<br />
+dispatchEvent<br />
+removeEventListener<br />
+open<br />
+setRequestHeader<br />
+onreadystatechange<br />
+send<br />
+readyState<br />
+status<br />
+channel<br />
+responseXML<br />
+responseText<br />
+statusText<br />
+getAllResponseHeaders<br />
+getResponseHeader<br />
+sendAsBinary<br />
+overrideMimeType<br />
+multipart<br />
+mozBackgroundRequest<br />
+withCredentials<br />
+upload<br />
+onuploadprogress<br />
+onabort<br />
+onerror<br />
+onload<br />
+onloadstart<br />
+onprogress<br />
+getInterface<br/><br/>
+所以一个临时的解决办法是修改 jquery.js 里的一行源代码，把 6229 行处的：<br/><br/>
+<pre class="brush:js">var ct = xhr.getResponseHeader("content-type") || "",</pre>
+<br/>
+改为：<br/><br/>
+<pre class="brush:js">var ct = xhr.getResponseHeader ? xhr.getResponseHeader("content-type") || "":"",
+</pre>
+<br/>
+先判断一下是否存在 getResponseHeader() 方法。问题暂时是能解决了，只是决得事情有些蹊跷，堂堂一个举世闻名的 jquery 组件不太可能犯下如此低级的错误，而且它以前在我的 IE 中也好像是正常的。<br/><br/>
+想知道更优美的解决方案，不能动到 jquery 的核心代码，或者出现这一情况的真正原因是什么呢？<br/><br/>
+或许可以在 complete 回调函数中判断到第二个参数 textStatus 是 parsererror 时按正常情况进行处理。<br/><br/>
+有人说后台 header('Content-type: text/html; charset=utf8'); 的 charset=utf8 应写成 charset=utf-8，可实际 FireFox 里看到的 charset 是 utf-8 也是不行的。

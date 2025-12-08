@@ -1,0 +1,121 @@
+---
+title: Java中类C/C++的sizeof()操作，知晓实例大小
+url: /java-sizeof/
+date: 2007-09-28T10:35:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - sizeof
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 484 
+wpStatus: publish
+views: 919
+lastmod: 2012-03-09T09:16:00-06:00
+---
+
+在C/C++中有sizeof()操作，可轻易获知某个类型或实例占用内存大小，sizeof(int) 或者 sizeof(new TestClass)。可是Java中可没有这么直观的方法可用。<br/>
+<br/>
+因本人看过不少人写代码总爱写成<br/>
+<br/>
+List userList = new ArrayList();   //注：声明时即初始化一个空 ArrayList<br/>
+userList = userDao.getAllUsers();  //注：方法getAllUsers()中会生成一个ArrayList的<br/>
+<br/>
+上面就造成平白多了一个空的 ArrayList(),创建完后即刻就推向GC处置，我就在想这样一个空的 ArrayList 会占用多少内存，于是找来了 Optimizeit 观察后发现一个空的 ArrayList 要占去 24b 内存。那 Java 中有没有更便的捷的方法呢，于是在网上 google "java sizeof"，引出不少话题。<!--more--><br/>
+<br/>
+但我觉得比较好的一段代码是 <a href="http://sourceforge.net/projects/sizeof/">java.sizeOf</a>(<a href="http://sourceforge.net/projects/sizeof/">http://sourceforge.net/projects/sizeof/</a>),需要JDK1.5以上的版本支持，由它测定的空 ArrayList 所占内存确也是 24b。下载到 SizeOf_0_2_src.zip(其中含SizeOf.jar，其实就一个类 SizeOf)，假设解压到 F:\Component Library\java\javasizeof。<br/>
+<br/>
+用法很简单，直接看它的 README.txt 文件就行，因为只有一个类，方法也不多，全是静态方法，可以使用静态引入，看看就明白，只是现在的 0.2 版本推荐的方法是 sizeOf() 和 deepSizeOf()，而不再是 iterativeSizeOf() 的。<br/>
+<br/>
+它还提供了一个测试代码 TestSizeOf（可从中学习 SizeOf 的用法），在命令行下，进入到 F:\Component Library\java\javasizeof目录，然后执行<br/>
+<span style="color: #3333ff;">F:\Component Library\java\javasizeof&gt;</span><span style="color: #ff0000;">java -javaagent:SizeOf.jar net.sourceforge.sizeof.test.TestSizeOf</span><br/>
+<br/>
+显示结果是：<br/>
+JAVAGENT: call premain instrumentation for class SizeOf<br/>
+Starting test...<br/>
+simple obj:     40.0b<br/>
+int:            0.0b<br/>
+long:           0.0b<br/>
+char:           0.0b<br/>
+double:                 16.0b<br/>
+boolean:                0.0b<br/>
+Integer:                0.0b<br/>
+empty string:   0.0b<br/>
+not empty string:       0.0b<br/>
+not empty string:       0.0b<br/>
+simple obj:     24.0b<br/>
+simple obj:     40.0b<br/>
+empty list:     24.0b<br/>
+10 list:        24.0b<br/>
+20 list no static:      24.0b<br/>
+1000 o arr:     816.0b<br/>
+<br/>
+应该会惊讶一下，为什么会出现那么多 0.0b？为什么要用1.5以上版本的jdk,为什么不是用 -classpath 参数，而是 -javaagent 参数？<br/>
+<br/>
+我们不妨把 javasizeof 的src目录中源代码导入到 eclipse中（相信大多数人都用这个的），可以看到源代码 TestSizeOf，把 SizeOf.skipFlyweightObject(true) 行注释掉，运行 TestSizeOf。<br/>
+<br/>
+不小心的话，你应该收到 java.lang.IllegalStateException: Instrumentation is null 的异常，没错这个 SizeOf 用到了 JDK1.5 后新加入的 java.lang.instrument.Instrumentation 接口，所以您需要为 TestSizeOf 设置 VM arguments<br/>
+<span style="color: #ff0000;">-javaagent:"F:\Component Library\java\javasizeof\SizeOf.jar"</span><br/>
+<br/>
+（注意到在 SizeOf.jar包中的 META-INF\MANIFEST.MF中有 Premain-Class: net.sourceforge.sizeof.SizeOf，这就是 -javaagent: 所在意的。指向SizeOf.jar的路径中有空格的话一定要用双引号引起来）<br/>
+<br/>
+运行后结果就是：<br/>
+JAVAGENT: call premain instrumentation for class SizeOf<br/>
+Starting test...<br/>
+simple obj:  40.0b<br/>
+int:   16.0b<br/>
+long:   16.0b<br/>
+char:   16.0b<br/>
+double:   16.0b<br/>
+boolean:   16.0b<br/>
+Integer:   16.0b<br/>
+empty string:  24.0b<br/>
+not empty string:  24.0b<br/>
+not empty string:  24.0b<br/>
+simple obj:  24.0b<br/>
+simple obj:  40.0b<br/>
+empty list:  24.0b<br/>
+10 list:  24.0b<br/>
+20 list no static:  24.0b<br/>
+1000 o arr:  816.0b<br/>
+<br/>
+对于现在的输出值细细去体会吧，也许不符合您早已形成的较为稳固的想法，或许你发现确实存在出入。<br/>
+<br/>
+SizeOf_0_2_src.zip包中的 README.txt 中部分内容：<br/>
+<br/>
+java.SizeOf is a simple java agent what can be used to calculate the memory size<br/>
+of java objects.<br/>
+The agent is implemented with the java.lang.instrument introduced with java 5.<br/>
+Here is a simple howto:<br/>
+<br/>
+1) use the class SizeOf in your code to test the size of your java object:<br/>
+<br/>
+ //configuration steps<br/>
+ SizeOf.skipStaticField(true);<br/>
+ SizeOf.setMinSizeToLog(10);<br/>
+ <br/>
+ //calculate object size<br/>
+ SizeOf.iterativeSizeOf(&lt;your object&gt;)<br/>
+ <br/>
+2) start the jvm with the argument: -javaagent:&lt;path to&gt;/SizeOf.jar<br/>
+<br/>
+To avoid the dependencies of your code to SizeOf the best use of the agent is in<br/>
+conjunction with aspect.<br/>
+<br/>
+参考资料：1. <a href="http://blog.csdn.net/dkarthas/archive/2007/04/19/1570469.aspx">java中模拟c中对sizeof的实现</a>(用强制GC的后对比所有内存的方法) <br/>
+          2. <a href="http://www.javaworld.com/javaworld/javaqa/2003-12/02-qa-1226-sizeof.html">Sizeof for Java (JavaWorld.com)</a> <br/>
+          3. <a href="http://www.javaworld.com/javaworld/javatips/jw-javatip130.html">Java Tip 130: Do you know your data size?</a> <br/>
+          4. <a href="http://martin.nobilitas.com/java/sizeof.html">Martin's Java Notes - Java sizeof()</a> <br/>
+          5. <a href="http://www.glenmccl.com/tip_038.htm">Sizeof For Java(tm)</a> (虽带个tm,但未见高明之处) <br/>
+          6. <a href="http://www.linuxpk.com/47079.html">Java中类似于C语言中Sizeof功能实现(一)</a> <br/>
+          7. <a href="http://www.linuxpk.com/47078.html">Java中类似于C语言中Sizeof功能实现(二)</a> <br/>
+          8. <a href="http://www.ibm.com/developerworks/cn/java/j-lo-instrumentation/">Java 5 特性 Instrumentation 实践</a> 虚拟机级别支持的 AOP 实现方式,Java 具有了更强的动态控制、解释能力 <br/>
+          9. <a href="http://www.ibm.com/developerworks/cn/java/j-lo-jse61/index.html">Java SE 6 新特性: Instrumentation 新功能</a> <br/>
+          10. <a href="http://www.ibm.com/developerworks/cn/java/j-cwt06075/">Classworking 工具箱: 注释（Annotation）与 ASM</a>

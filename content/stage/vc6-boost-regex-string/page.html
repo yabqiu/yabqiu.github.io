@@ -1,0 +1,81 @@
+---
+title: 在VC6中使用正则表达式解析字符串
+url: /vc6-boost-regex-string/
+date: 2007-06-23T11:53:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - C++/VB
+tags: 
+  - Regex
+  - vc6
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 507 
+wpStatus: publish
+views: 557
+lastmod: 2021-05-02T22:34:28-05:00
+---
+
+接前面一篇日志，当用 CInternetSession 抓到网页内容之后，就要从中按某种模式截取自己想要的东西，比如其中的电话区号，对于这种事情最擅长的莫过于正则表达式了，以及它的分组/后向引用功能。</p>
+<br/>
+VC.net 倒是提供了一个很好的正则表达式类库 CATLRegExp (据说是全世界效率最高的正则表达式库)，可是却不能在VC6上使用，VC6可以使用VBS(Microsoft VBScript Regular Expression 5.5)这个 COM 来处理正则表达式，或者引入 vbscript.dll 的方式，最好的办法还是借助于第三方库来处理正则表达式，如 boost，更何况若是使用 COM 就不太值（COM给人的感觉总有些笨拙）。<!--more--><br/><br/>
+微软件研究院也荣誉出品了一个既能在VC7也能在VC6下用的正则表达式库，叫做 GRETA，详情请点击链接 <a href="http://research.microsoft.com/projects/greta/">The GRETA Regular Expression Template Archive for C++</a>。<br/><br/>
+下面就介绍 boost 正则表达式的使用，从 boost 库的下载安装开始<br/><br/>
+boost下载地址是:<a href="http://www.boost.org ">http://www.boost.org</a>，当前版本是1.34.0，下载时会把你导向到 sourceforge.net 上，它也是 sourceforge 上的一个开源项目<br/><br/>
+boost 库安装其实并不麻烦,只是需要自己编译源文件,如果只需要用到它的正则表达式库,按下面步骤做就行了<br />
+首先执行 cmd 进入到命令行下<br />
+执行 <strong>cd C:\boost_1_34_0\libs\regex\build</strong> 进入目录(假设你下载的 boost 是解压这 C:\boost_1_34_0目录下)<br />
+执行 <strong>vcvars32.bat</strong> (设置编译时的环境变量，如头/库文件目录等)<br />
+执行 <strong>nmake -fvc6.mak</strong> (耐心等待一下，编译生成 lib、pdb 和 dll 文件在目录C:\boost_1_34_0\libs\regex\build\vc6中)<br />
+执行 <strong>nmake -fvc6.mak install</strong> (其实就是把前一步生成的 lib/pdb 文件拷到 ~VC98/lib 目录下；把 dll 文件拷到 ~VC98/bin 目录下，当然，你想手工拷贝来完成这一步也行)<br/><br/>
+注意,别看下载下来的数据包没有多大,因为是源文件，压缩比可高啦，尤其是编译完更大,占用100多M,所以安装时一定注意空出足够的空间。记得发布程序的时候要把刚那些 dll 文件带上。<br/><br/>
+使用前准备，在VC6中集成:<strong>Tools-&gt;Options-&gt;Directories-&gt;Include files</strong> 中加入目录: <strong>C:\boost_1_34_0<br />
+</strong><br />
+最后是在 VC6 中写段代码来测试一下：<br/><br/>
+<pre class="lang:default decode:true ">#include &lt;cstdlib&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;boost/regex.hpp&gt;
+#include &lt;string&gt;
+#include &lt;iostream&gt;<br/><br/>
+using namespace std;
+using namespace boost;<br/><br/>
+int main(int argc, char* argv[])
+{
+    regex expression("(\\d+)-(\\d+)-(\\d+)"); //注意转义方式
+    string in("Today: 2007-06-23");
+    cmatch what;
+    
+    //如果用 regex_match 方法将需要完全匹配，
+    //不能在字符串中找寻模式，可用于验证输入<br/><br/>
+    if(regex_search(in.c_str(), what, expression)) 
+    {
+        for(int i=0;i&lt;what.size();i++)
+        {
+            cout&lt;&lt;"str :"&lt;&lt;what[i].str()&lt;&lt;endl;
+        }
+    }<br/><br/>
+    return 0;
+} </pre>
+<br/>
+执行后的输出结果如下：<br />
+<strong>str :2007-06-23<br />
+str :2007<br />
+str :06<br />
+str :23<br />
+</strong><br />
+表达式所匹配的字符串，以及年月日非常简单的成功分离。<br/><br/>
+参考资料： 1. <a href="http://www.farproc.com/Article/ShowArticle.asp?ArticleID=155">VC利用boost库解析正则表达式</a><br />
+           2. <a href="http://www.vckbase.com/document/viewdoc/?id=1636">教你使用正则表达式</a><br />
+           3. <a href="http://www.prosky.org/top_63621_cat_21/">Learning boost sp 2 regex语法规范（翻译）</a><br />
+           4. <a href="http://topic.csdn.net/t/20030301/15/1480624.html">在 vc 中 引用 vbscript.dll 做正则表达式 IMatchCollection 类的问题？</a><br />
+           5. <a href="http://www.vckbase.com/document/viewdoc/?id=1455">在MFC中用正则表达式对窗体进行有效性验证</a><br />
+           6. <a href="http://research.microsoft.com/projects/greta/">The GRETA Regular Expression Template Archive for C++</a><br />
+           7. <a href="http://www.ixpub.net/archiver/tid-626629.html">C++ Boost regex 文档（翻译）</a><br />
+           8. <a href="http://www.stlchina.org/twiki/bin/view.pl/Main/BoostChina">C++ Boost 中文站</a><br/><br/>
+下面是更确切的据说：（请看有人对 <a href="http://www.vckbase.com/document/viewdoc/?id=1636">教你使用正则表达式</a> 的评论）<br />
+不同的正则表达式匹配引擎擅长于不同匹配模式。作为一个基准，当用模式："^([0-9]+)(&#45;| |$)(.*)$" 匹配字符串"100- this is a line of ftp response which contains a message string"时，GRETA的匹配速度比boost(<a href="http://www.boost.org">http://www.boost.org</a>)正则表达式库大约快7倍，比ATL7的CATLRegExp快10倍之多! Boost Regex 的说明文档带有一个很多模式的匹配测试Performance结果。比较这个结果后，GRETA在大部分情况下和Boost Regex性能差不多，但是在用Visual Studio.Net 2003编译的情况下，GRETA还略胜一筹。

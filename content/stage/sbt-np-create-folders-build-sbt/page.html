@@ -1,0 +1,77 @@
+---
+title: 使用 sbt 的 np 插件自动创建目录结构和 build.sbt 文件
+url: /sbt-np-create-folders-build-sbt/
+date: 2013-01-26T09:55:49-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Scala
+tags: 
+  - Scala
+  - sbt
+  - np
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5473 
+wpStatus: publish
+views: 2276
+lastmod: 2021-05-19T16:12:57-05:00
+---
+
+通常我们要创建一个 sbt 项目需要经历以下几步：</p>
+<br/>
+<blockquote>
+<span style="color: #800000;"><span style="color: #0000ff;">$</span> mkdir testscala &amp;&amp; cd testscala      #创建项目目录 testscala，并进入该目录</span><br />
+<span style="color: #800000;"><span style="color: #0000ff;">testscala $</span>  mkdir -p src/{main,test}/scala   #创建源文件目录结构，可能还需要 mkdir -p src/{main,test}/resources</span><br />
+<span style="color: #800000;"><span style="color: #0000ff;">$</span> vi build.sbt # 填入基本的信息 (name, organization, version)</span><br />
+<span style="color: #800000;"><span style="color: #0000ff;">$</span> sbt</span>
+</blockquote>
+<br/>
+这一看怎么这么复杂啊，特别是习惯了 Maven 的同学们更会这么觉得。Maven 不仅可应用各种模板来创建不同类型的工程，完整的工程目录结构都有了。<br/><br/>
+那么 sbt 能不能做到自动创建目录和配置文件呢，答案是: 本身不能。你可以基于一个项目模板目录结构拷来拷去。前面说是 sbt 本身不能，要知道 sbt 是一个插件化更彻底的玩意，如今的 0.12.2 的 sbt.zip 才 1M 大小，其余全赖插件帮你插来插去了。<br/><br/>
+因此，我们找来的 np(New Project) 插件 <a href="https://github.com/softprops/np" target="_blank" rel="noopener">https://github.com/softprops/np</a> 帮我们创建工程的目录结构和 build.sbt 文件。它能让我们创建项目的过程简化为以下两步操作：<br/><br/>
+<blockquote>
+<span style="color: #800000;"><span style="color: #0000ff;">$</span> mkdir testscala &amp;&amp; cd testscala   #这一步还是不能少</span><br />
+<span style="color: #0000ff;">$</span> <span style="color: #800000;">sbt</span><br />
+<span style="color: #800000;"><span style="color: #0000ff;">&gt;</span> np name:testscala org:cc.unmi   #这样 testscala 下 {main.test}/{scala,resources} 和  build.sbt 文件都有了<br />
+</span>
+</blockquote>
+<br/>
+np 的安装及使用可以参考：<a href="https://github.com/softprops/np" target="_blank" rel="noopener">https://github.com/softprops/np</a>，就是下面的步骤：<!--more--><br/><br/>
+<span style="color: #0000ff;"><strong>np 的安装</strong></span><br/><br/>
+第一步：运行过 sbt 后，一般会有目录 ~/.sbt，你要在  ~/.sbt/plugins/build.sbt 文件中添加(如果没有该文件则创建它)：<br/><br/>
+<pre class="lang:default decode:true">addSbtPlugin("me.lessis" % "np" % "0.2.0")<br/><br/>
+resolvers += Resolver.url("sbt-plugin-releases",
+  url("http://scalasbt.artifactoryonline.com/scalasbt/sbt-plugin-releases/"))(
+    Resolver.ivyStylePatterns)</pre>
+<br/>
+第二步：为了让 sbt 构建系统认识 np 指令，你还需要在全局的  .sbt 文件中，比如可以创建文件 ~/.sbt/np.sbt，内容如下：<br/><br/>
+<pre class="brush:scala">seq(npSettings: _*)</pre>
+<br/>
+<strong><span style="color: #0000ff;">使用 np 插件</span></strong><br/><br/>
+在就可以用前面介绍的命令来创建 sbt 项目了：<br/><br/>
+<blockquote>
+<span style="color: #800000;"><span style="color: #0000ff;">$</span> mkdir testscala &amp;&amp; cd testscala   #这一步还是不能少</span><br />
+<span style="color: #0000ff;">$</span> <span style="color: #800000;">sbt</span><br />
+<span style="color: #800000;"><span style="color: #0000ff;"> &gt;</span> np name:testscala org:cc.unmi   #这样 testscala 下 {main.test}/{scala,resources} 和  build.sbt 文件都有了<br />
+</span>
+</blockquote>
+<br/>
+<p style="text-align: center;">在 testscala 目录中的文件夹结构如下：<br />
+<a href="/wp-content/uploads/2013/01/scala-sbt-np-plugin.png"><img class="aligncenter wp-image-5475" src="/wp-content/uploads/2013/01/scala-sbt-np-plugin.png" alt="scala-sbt-np-plugin" /></a></p>
+<br/>
+<hr /><br/><br/>
+在对于第二步，如果你想给 np 指定默认的参数，比如 org, version，以后命令可更简单化为  np name:testscala，可以在 ~/.sbt/np.sbt 中代之以如下的如容：<br/><br/>
+<pre class="lang:default decode:true">seq(npSettings:_*)<br/><br/>
+(NpKeys.defaults in (Compile, NpKeys.np)) ~= {
+  _.copy(org="cc.unmi", version="0.1.0-SNAPSHOT")
+}</pre>
+<br/>
+用  np 生成子项目，也没问题：<br/><br/>
+<span style="color: #800000;">np name:my-sub-project dir:sub-project-dir</span><br/><br/>
+np 可用的选项有 name, org, version, plugin 和 dir，它们用 key:value  的方式来指定选项值。<br/><br/>
+最后，别忘了看看官方的权威帮助，就在 <a href="https://github.com/softprops/np" target="_blank" rel="noopener">https://github.com/softprops/np</a>, 不要怕英文。

@@ -1,0 +1,384 @@
+---
+title: Python Flask 框架的并发能力及线,进程模型
+url: /python-flask-concurrency-thread-process/
+date: 2023-02-18T15:07:07-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2020/07/flask-logo.png"
+categories:
+  - Flask
+tags: 
+  - web
+  - concurrent
+  - Python
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12989 
+wpStatus: publish
+views: 4232
+lastmod: 2023-02-18T18:21:39-06:00
+---
+
+本文旨在测试 Python Flask 框架的默认并发能力，即同时能处理多少个请求，以及请求等待队列大致有多大; 并找到如何改变默认并发数。虽然网上或许很容易找到它们的默认并发数，但通过实验的方式可以得到更感性的认识。</p>
+<br/>
+本文写作时使用的环境为<br/><br/>
+<ol>
+    <li>测试机器为 MacBook Pro, CPU 6 核超线程，内存 16 Gb</li>
+    <li>JMeter 5.5 -- 连续发送请或压力测试</li>
+    <li>Python 3.10.9</li>
+    <li>Flask 2.2.2</li>
+</ol>
+<br/>
+从 JMeter 每半秒发送一个请求，连续发送 1000 个，程序中 API 方法接受到请求后 sleep 800 秒，保证在全部 1000 个请求送出之前一直占着连接，以此来找到同时被处理的请求数目，并且有足够的时间统计当前的 TCP 连接数。在测试极端规模的并发数时，由于在 Mac OS X 很难突破 5000 个线程的限制，这时就让 JMeter 分布到远程 Linux(Docker 或虚拟机) 上执行。<br/><br/>
+请求的 URL 是 http://localhost:8080/?id=${count}, 带一个自增序列用以识别不同的请求， JMeter 的 Thread Group 配置为 Number of Threads (users): 1000, Ramp-up period (seconds): 500<!--more--><br/><br/>
+安装 flask 依赖<br/><br/>
+<blockquote>
+pip install flask
+</blockquote>
+<br/>
+当前安装的 Flask 版本是 2.2.2<br/><br/>
+创建 app.py 文件，代码如下<br/><br/>
+<pre class="lang:default decode:true">from flask import Flask, request
+import threading
+import time
+from datetime import datetime<br/><br/>
+app = Flask(__name__)
+global_request_counter = 0<br/><br/>
+
+@app.get("/")
+def index():
+    global global_request_counter
+    global_request_counter += 1
+    request_id = request.args['id']
+    thread_name = threading.current_thread().name
+    print(f"{datetime.now()} - {thread_name}: #{global_request_counter} processing request id[{request_id}], sleeping...")
+    time.sleep(800)
+    print(f"{datetime.now()} - {thread_name}: done request id[{request_id}]")
+    return "hello"<br/><br/>
+
+if __name__ == '__main__':
+    app.run(port=8080)</pre>
+<br/>
+<h3>测试 threaded=True</h3><br/><br/>
+启动服务，命令为 python app.py<br/><br/>
+app.run(port=8080), 默认 **options 的 threaded 是 true<br/><br/>
+尝试连续发送 1000 请求，间隔为半秒<br/><br/>
+Flask 每次接收到请求后都新建一个线程来处理，控制台输出如下<br/><br/>
+<blockquote>
+2023-02-10 10:30:16.222266 - Thread-1 (process_request_thread): #1 processing request id[1], sleeping...<br />
+2023-02-10 10:30:16.726188 - Thread-2 (process_request_thread): #2 processing request id[2], sleeping...<br />
+2023-02-10 10:30:17.224591 - Thread-3 (process_request_thread): #3 processing request id[3], sleeping...<br />
+.............................<br />
+2023-02-10 10:32:20.725438 - Thread-250 (process_request_thread): #250 processing request id[250], sleeping...<br />
+2023-02-10 10:32:21.223442 - Thread-251 (process_request_thread): #251 processing request id[251], sleeping...
+</blockquote>
+<br/>
+一直到接收到第 251 个请求之后无法接收新的请求， JMeter 再发的请求都无法建立连接直接返回错误<br/><br/>
+<blockquote>
+Response code:Non HTTP response code: org.apache.http.NoHttpResponseException<br />
+Response message:Non HTTP response message: localhost:8080 failed to respond
+</blockquote>
+<br/>
+这时候用  curl 发送请求的话，得到如下的错误<br/><br/>
+<blockquote>
+curl http://localhost:8080/<br />
+curl: (56) Recv failure: Connection reset by peer
+</blockquote>
+<br/>
+用  netstat 也能看到建立了 251 个 到 127.0.0.1:8080 的连接<br/><br/>
+<blockquote>
+netstat -na|grep "0 127.0.0.1.8080" | grep ESTABLISHED | wc -l<br />
+251
+</blockquote>
+<br/>
+这个 <code>251</code> 是在哪里设置的限制，也许是 250？<br/><br/>
+要继续等第一个请求过了 800/60 = 13.3 分钟后才能接收新的请求, 之后用 curl 发送两个请求试下<br/><br/>
+<blockquote>
+curl http://localhost:8080/?id=1001<br />
+curl http://localhost:8080/?id=1001
+</blockquote>
+<br/>
+应用程序控制台输出是<br/><br/>
+<blockquote>
+2023-02-10 10:48:05.297825 - Thread-252 (process_request_thread): #252 processing request id[1000], sleeping...<br />
+2023-02-10 10:48:18.641826 - Thread-253 (process_request_thread): #253 processing request id[1001], sleeping...
+</blockquote>
+<br/>
+说明 Flask 总是创建新的线程来处理每一个请求，不存在线程共享的概念。Flask 并不在乎创建线程的成本<br/><br/>
+threaded=True 时 Flask 创建的是 werkzeug.serving.ThreadedWSGIServer<br/><br/>
+经过了研究一番，目前还未找到哪里控制同时能处理请求的数目，但还有一种方式可以控制，不直接用 app.run() 启动的(Flask 官方就不建议在正式环境下这么用的)，而借助用 uwsgi 来启动 Flask 应用是能够指定同时处理的请求数目，如<br/><br/>
+<blockquote>
+uwsgi --http :8080 --wsgi-file app.py --<span class="hljs-built_in">callable</span> app --threads 10
+</blockquote>
+<br/>
+持续发送 4000 个请求，这样则同时只能处理 10 个请求<br/><br/>
+<blockquote>
+*** uWSGI is running in multiple interpreter mode ***<br />
+spawned uWSGI worker 1 (and the only) (pid: 54588, cores: 10)<br />
+2023-02-18 14:20:11.473975 - 54588-uWSGIWorker1Core0: #1 processing request id[1], sleeping...<br />
+2023-02-18 14:20:11.574451 - 54588-uWSGIWorker1Core1: #2 processing request id[2], sleeping...<br />
+2023-02-18 14:20:11.672717 - 54588-uWSGIWorker1Core8: #3 processing request id[3], sleeping...<br />
+......<br />
+2023-02-18 14:20:12.273575 - 54588-uWSGIWorker1Core3: #9 processing request id[9], sleeping...<br />
+2023-02-18 14:20:12.376756 - 54588-uWSGIWorker1Core9: #10 processing request id[10], sleeping...
+</blockquote>
+<br/>
+其余的请求被放置到等待队列中<br/><br/>
+<blockquote>
+ netstat -na|grep "0 127.0.0.1.8080" |grep ESTABLISHED | wc -l<br />
+3890
+</blockquote>
+<br/>
+10 正被处理，其余有 3880 个在等待中。<br/><br/>
+考虑到服务器实际的处理能力，我们可选择一个合适的数字，如 --threads 200<br/><br/>
+<h4>测试 uwsgi 的线程重用</h4><br/><br/>
+<blockquote>
+uwsgi --http :8080 --wsgi-file app.py --callable app --threads 2
+</blockquote>
+<br/>
+输出<br/><br/>
+<blockquote>
+2023-02-18 14:53:00.732409 - 60633-uWSGIWorker1Core0: #1 processing request id[1], sleeping...<br />
+2023-02-18 14:53:00.979532 - 60633-uWSGIWorker1Core1: #2 processing request id[2], sleeping...<br />
+2023-02-18 14:53:10.737865 - 60633-uWSGIWorker1Core0: done request id[1]<br />
+[pid: 60633|app: 0|req: 2/1] 127.0.0.1 () {28 vars in 344 bytes} [Sat Feb 18 14:53:00 2023] GET /?id=1 =&gt; generated 5 bytes in 10007 msecs (HTTP/1.1 200) 2 headers in 78 bytes (2 switches on core 0)<br />
+2023-02-18 14:53:10.739350 - 60633-uWSGIWorker1Core0: #3 processing request id[3], sleeping...<br />
+2023-02-18 14:53:10.981976 - 60633-uWSGIWorker1Core1: done request id[2]<br />
+[pid: 60633|app: 0|req: 3/2] 127.0.0.1 () {28 vars in 344 bytes} [Sat Feb 18 14:53:00 2023] GET /?id=2 =&gt; generated 5 bytes in 10003 msecs (HTTP/1.1 200) 2 headers in 78 bytes (2 switches on core 1)<br />
+2023-02-18 14:53:10.982902 - 60633-uWSGIWorker1Core1: #4 processing request id[4], sleeping...
+</blockquote>
+<br/>
+线程 60633-uWSGIWorker1Core0, 60633-uWSGIWorker1Core1 可被重用，所以使用 Flask 正式环境中一定不要直接用 Flask.run() 来启动服务。<br/><br/>
+<h3>测试 threaded=False</h3><br/><br/>
+启动 Flask 时用<br/><br/>
+<pre class="lang:default decode:true ">app.run(port=8080, threaded=False)</pre>
+<br/>
+再次做连续 1000 次请求的测试<br/><br/>
+一个请求即阻塞掉了后续的请求，停在了<br/><br/>
+<blockquote>
+2023-02-10 11:02:36.475851 - MainThread: #1 processing request id[1], sleeping...
+</blockquote>
+<br/>
+因为当  threaded=False 时，默认的 processes=1<br/><br/>
+如果用<br/><br/>
+<pre class="lang:default decode:true">app.run(port=8080, threaded=False, processes=100)</pre>
+<br/>
+这样会启动多个进程来处理请求，所以日志输出中把 pid 也加进来<br/><br/>
+<pre class="lang:default decode:true">print(f"{datetime.now()} - {os.getpid()}-{thread_name}: #{global_request_counter} processing request id[{request_id}], sleeping...")</pre>
+<br/>
+用 <code>python app.py</code> 启动后重新用 JMeter  发请求，在控制台看到的就是<br/><br/>
+<blockquote>
+2023-02-10 11:25:28.843054 - 7095-MainThread: #1 processing request id[1], sleeping...<br />
+2023-02-10 11:25:29.343824 - 7097-MainThread: #1 processing request id[2], sleeping...<br />
+2023-02-10 11:25:29.841227 - 7098-MainThread: #1 processing request id[3], sleeping...<br />
+.........................<br />
+2023-02-10 11:26:17.843883 - 7218-MainThread: #1 processing request id[99], sleeping...<br />
+2023-02-10 11:26:18.342206 - 7219-MainThread: #1 processing request id[100], sleeping...
+</blockquote>
+<br/>
+停在了第 100 个请求上。输出中可以看到每个请求都由不同的进程来处理，用 ps 命令查看<br/><br/>
+<blockquote>
+ps -ef|grep -i "python app.py" |grep -v grep | wc -l<br />
+101 
+</blockquote>
+<br/>
+101 个进程，进程 id 在 7095 ~ 7219 之间(非连续的)，其中一个是主进程，用 ps 看到 id 为 7092 的 <code>python app.py</code> 进程未处理请求，应该就是主进程<br/><br/>
+此时查看到 172.0.0.1:8080 的连接数<br/><br/>
+<blockquote>
+netstat -na|grep "0 127.0.0.1.8080" | grep ESTABLISHED | wc -l<br />
+228
+</blockquote>
+<br/>
+228 个，并不是满了 100 个请求就不再接收新的请求，所以每个进程还一个连接队列，100 个请求正在处理当中，其余 128 个在请求等待队列中。<br/><br/>
+这时再继续发送请求<br/><br/>
+<blockquote>
+curl http://localhost:8080/?id=1001<br />
+..... 此处等待一会<br />
+curl: (7) Failed to connect to localhost port 8080: Operation timed out
+</blockquote>
+<br/>
+curl 执行过程中查看的到 127.0.0.1:8080 的连接数仍然是 228<br/><br/>
+如果启动时指定用 10 个进程的话，即<br/><br/>
+<blockquote>
+app.run(port=8080, threaded=False, process=10)
+</blockquote>
+<br/>
+持续发请求至饱满后，再用命令 netstat 查看到  127.0.0.1.8080 的连接数为 138，同样是 128 个请求在等待，说明等待队列是为所有进程所共享的。<br/><br/>
+继续等某些请求结束之后再测试新的请求 - 此次测试中我们可以缩短 sleep 的时间<br/><br/>
+待到有新的请求释放之后，即使关掉了 JMeter ，先前发送的请求还会继续处理，所以会马上看到<br/><br/>
+<blockquote>
+2023-02-10 11:38:48.850494 - 7095-MainThread: done request id[1]<br />
+127.0.0.1 - - [10/Feb/2023 11:38:48] "GET /?id=1 HTTP/1.1" 200 -<br />
+2023-02-10 11:38:48.871455 - 7754-MainThread: #1 processing request id[101], sleeping...<br />
+2023-02-10 11:38:49.328885 - 7097-MainThread: done request id[2]<br />
+127.0.0.1 - - [10/Feb/2023 11:38:49] "GET /?id=2 HTTP/1.1" 200 -<br />
+2023-02-10 11:38:49.346187 - 7755-MainThread: #1 processing request id[102], sleeping...
+</blockquote>
+<br/>
+注意到 Flask 每次创建新的进程来处理一个请求，不像其他的 Web 服务器那样某个进程处理完特定数量的请求后重启新的进程<br/><br/>
+threaded=False 时，Flask 创建的是 werkzeug.serving.ForkingWSGIServer<br/><br/>
+进程方式需要消耗更多的资源，更不便于进程之间共享资源。<br/><br/>
+<h3>测试 Flask 的 async 接口</h3><br/><br/>
+安装 Flask 依赖时用<br/><br/>
+<blockquote>
+pip install flask[async]
+</blockquote>
+<br/>
+然后在上面的 index() 函数前加上 <code>async</code> 关键字，<br/><br/>
+<pre class="lang:default decode:true">async def index():
+    ......<br/><br/>
+# 启动时用
+app.run(port=8080)</pre>
+<br/>
+用 JMeter 连续发送请求 1000 个请求<br/><br/>
+<blockquote>
+2023-02-10 11:47:40.867429 - 8285-ThreadPoolExecutor-1_0: #1 processing request id[1], sleeping...<br />
+2023-02-10 11:47:41.215497 - 8285-ThreadPoolExecutor-2_0: #2 processing request id[2], sleeping...<br />
+2023-02-10 11:47:41.713010 - 8285-ThreadPoolExecutor-3_0: #3 processing request id[3], sleeping...<br />
+.......................................<br />
+2023-02-10 11:55:59.714631 - 8285-ThreadPoolExecutor-999_0: #999 processing request id[999], sleeping...<br />
+2023-02-10 11:56:00.213364 - 8285-ThreadPoolExecutor-1000_0: #1000 processing request id[1000], sleeping...
+</blockquote>
+<br/>
+500 秒成功发送完所有的请求，再继续发送请求都能被 Flask 接收，用 <code>async</code> 后 Flask 每次创建一个单线程的 ThreadPoolExecutor 线程池来处理请求，而且线程池的数量只受限于内存或系统参数的配置，难怪会提示 Too many open files, 在执行了  ulmit -n 10240 后才能处理那么多的请求<br/><br/>
+等前面的请求都完成后，续发请求<br/><br/>
+<blockquote>
+2023-02-10 12:01:34.240028 - 9180-ThreadPoolExecutor-1001_0: #1001 processing request id[1001], sleeping...<br />
+2023-02-10 12:02:47.588885 - 9180-ThreadPoolExecutor-1002_0: #1002 processing request id[1001], sleeping...<br />
+2023-02-10 12:03:49.088614 - 9180-ThreadPoolExecutor-1003_0: #1003 processing request id[1001], sleeping...
+</blockquote>
+<br/>
+为什么不用重要线程池中的线程，而每次创建新线程池呢，那用这个 ThreadPoolExecutor 有什么意义呢？<br/><br/>
+通过调试代码，Flask 在创建 ThreadPoolExecutor 时 max_workers =1，也就是线程池中只有一个线程。注意 async 一不小心就会把服务器撑暴掉。<br/><br/>
+最后来个更暴力的测试，1000 请求不够，那就试着用 10 秒发 10000 个请求，Flask 的极限就在能不能打开更多的文件(Too many open files) 和能否创建更多的线程(RuntimeError: can't start new thread)，这么看来 async 是个很危险的方式。<br/><br/>
+在 Mac OS 下使尽了浑身解数(增加 JVM 堆内存) 用 JAVA_TOOL_OPTIONS, JVM_ARGS, 或者 HEAP  环境变量调整堆内存大小，试图去影响可创建的线程数，不过能创建的线程始终未能达到 5000 个，在 JMeter 的控制台总是报 OutOfMemoryError。<br/><br/>
+<blockquote>
+[59.788s][warning][os,thread] Failed to start thread - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 4k, detached.<br />
+Uncaught Exception java.lang.OutOfMemoryError: unable to create native thread: possibly out of memory or process/resource limits reached in thread Thread[StandardJMeterEngine,6,main]. See log file for details.
+</blockquote>
+<br/>
+最后只能用 Linux 容器作为 JMeter Server 来执行 10000 个并发的测试，关于如何分布式执行 JMeter 测试请参见本人的另一篇 <a href="https://yanbin.blog/execute-jmeter-test-remotely/">远程方式执行 JMeter 测试</a><br/><br/>
+JMeter 远程测试的话，Flask 启动时需要绑定到 host="0.0.0.0" 或某个特定的从 JMeter 远程机器能访问的 IP 上。<br/><br/>
+在 Flask  大概创建第 2049 个进程的时候失败了<br/><br/>
+<blockquote>
+File "/usr/local/Cellar/python@3.10/3.10.9/Frameworks/Python.framework/Versions/3.10/lib/python3.10/concurrent/futures/thread.py", line 199, in _adjust_thread_count<br />
+    t.start()<br />
+File "/usr/local/Cellar/python@3.10/3.10.9/Frameworks/Python.framework/Versions/3.10/lib/python3.10/threading.py", line 935, in start<br />
+    _start_new_thread(self._bootstrap, ())<br />
+RuntimeError: can't start new thread<br />
+192.168.86.141 - - [18/Feb/2023 03:33:21] "GET /?id=2049 HTTP/1.1" 500 -<br />
+/usr/local/Cellar/python@3.10/3.10.9/Frameworks/Python.framework/Versions/3.10/lib/python3.10/threading.py:881: RuntimeWarning: coroutine 'AsyncToSync.main_wrap' was never awaited<br />
+    self._invoke_excepthook = _make_invoke_excepthook()<br />
+RuntimeWarning: Enable tracemalloc to get the object allocation traceback<br />
+----------------------------------------<br />
+[2023-02-18 03:33:21,607] ERROR in app: Exception on / [GET]<br />
+Traceback (most recent call last):
+</blockquote>
+<br/>
+创建进程数目与本机的 <code>ulimit -u</code> 是有关的，在本机 Mac OS X 系统中 <code>ulimit -u</code> 只有 <code>2784</code>，也就是系统最多能创建 2784 个进程。调大该参数可让 Flask 创建出更多的进程，这不是本文的话题，只要知道 Flask 在使用 <code>async</code> 时受 <code>ulimit -u</code> 的限制就足够了。<br/><br/>
+<h4>使用 uwsgi 与 async</h4><br/><br/>
+<blockquote>
+uwsgi --http :8080 --wsgi-file app.py --callable app --threads 2
+</blockquote>
+<br/>
+持续发送请求，不会一味的创建新线程池，而是只用两个，但线程池不重用<br/><br/>
+<blockquote>
+2023-02-18 15:01:16.188992 - 61506-ThreadPoolExecutor-1_0: #1 processing request id[1], sleeping...<br />
+2023-02-18 15:01:16.432800 - 61506-ThreadPoolExecutor-2_0: #2 processing request id[2], sleeping...<br />
+2023-02-18 15:01:26.190355 - 61506-ThreadPoolExecutor-1_0: done request id[1]<br />
+[pid: 61506|app: 0|req: 2/1] 127.0.0.1 () {28 vars in 344 bytes} [Sat Feb 18 15:01:16 2023] GET /?id=1 =&gt; generated 8 bytes in 10009 msecs (HTTP/1.1 200) 2 headers in 78 bytes (1 switches on core 0)<br />
+2023-02-18 15:01:26.191616 - 61506-ThreadPoolExecutor-3_0: #3 processing request id[3], sleeping...<br />
+2023-02-18 15:01:26.434234 - 61506-ThreadPoolExecutor-2_0: done request id[2]<br />
+[pid: 61506|app: 0|req: 3/2] 127.0.0.1 () {28 vars in 344 bytes} [Sat Feb 18 15:01:16 2023] GET /?id=2 =&gt; generated 8 bytes in 10003 msecs (HTTP/1.1 200) 2 headers in 78 bytes (2 switches on core 1)<br />
+2023-02-18 15:01:26.435778 - 61506-ThreadPoolExecutor-4_0: #4 processing request id[4], sleeping...
+</blockquote>
+<br/>
+<h3>async 与 await 的搭配</h3><br/><br/>
+在 Flask 中在 API 接口方法前加上 async, 而其调用的却是非 async 方法的话，这种使用方法是不科学的，根本不是 async 的初衷。那我们在 async 中调用 await 其他的 async 方法试下<br/><br/>
+<pre class="lang:default decode:true">from flask import Flask, request
+import threading
+from datetime import datetime
+import os
+import asyncio<br/><br/>
+app = Flask(__name__)
+global_request_counter = 0<br/><br/>
+
+async def foo(request_id):
+    value = await asyncio.sleep(60, result=f'hello #{request_id}')
+    return value<br/><br/>
+
+@app.get("/")
+async def index():
+    global global_request_counter
+    global_request_counter += 1
+    request_id = request.args['id']
+    thread_name = threading.current_thread().name
+    print(f"{datetime.now()} - {os.getpid()}-{thread_name}: #{global_request_counter} processing request id[{request_id}], sleeping...")
+    res = await foo(request_id)
+    print(f"{datetime.now()} - {os.getpid()}-{thread_name}: done request id[{request_id}]")
+    return res<br/><br/>
+
+if __name__ == '__main__':
+    app.run(port=8080, host="0.0.0.0")
+</pre>
+<br/>
+连续发送请求<br/><br/>
+<blockquote>
+2023-02-18 13:19:49.982932 - 48307-ThreadPoolExecutor-1_0: #1 processing request id[2], sleeping...<br />
+2023-02-18 13:19:49.983335 - 48307-ThreadPoolExecutor-2_0: #2 processing request id[1], sleeping...<br />
+2023-02-18 13:19:50.003453 - 48307-ThreadPoolExecutor-3_0: #3 processing request id[3], sleeping...<br />
+2023-02-18 13:19:50.032933 - 48307-ThreadPoolExecutor-4_0: #4 processing request id[4], sleeping...<br />
+2023-02-18 13:19:50.061635 - 48307-ThreadPoolExecutor-5_0: #5 processing request id[5], sleeping..<br />
+...............................<br />
+2023-02-18 13:19:59.904729 - 48307-ThreadPoolExecutor-333_0: #333 processing request id[333], sleeping...<br />
+2023-02-18 13:19:59.936835 - 48307-ThreadPoolExecutor-334_0: #334 processing request id[334], sleeping...<br />
+2023-02-18 13:19:59.963572 - 48307-ThreadPoolExecutor-335_0: #335 processing request id[335], sleeping...<br />
+2023-02-18 13:19:59.984088 - 48307-ThreadPoolExecutor-2_0: done request id[1]<br />
+2023-02-18 13:19:59.984195 - 48307-ThreadPoolExecutor-1_0: done request id[2]<br />
+192.168.86.141 - - [18/Feb/2023 13:19:59] "GET /?id=1 HTTP/1.1" 200 -<br />
+192.168.86.141 - - [18/Feb/2023 13:19:59] "GET /?id=2 HTTP/1.1" 200 -<br />
+2023-02-18 13:20:00.003966 - 48307-ThreadPoolExecutor-3_0: done request id[3]<br />
+192.168.86.141 - - [18/Feb/2023 13:20:00] "GET /?id=3 HTTP/1.1" 200 -<br />
+2023-02-18 13:20:00.034112 - 48307-ThreadPoolExecutor-4_0: done request id[4]<br />
+2023-02-18 13:20:00.035375 - 48307-ThreadPoolExecutor-336_0: #336 processing request id[336], sleeping...<br />
+192.168.86.141 - - [18/Feb/2023 13:20:00] "GET /?id=4 HTTP/1.1" 200 -<br />
+2023-02-18 13:20:00.062603 - 48307-ThreadPoolExecutor-5_0: done request id[5]<br />
+192.168.86.141 - - [18/Feb/2023 13:20:00] "GET /?id=5 HTTP/1.1" 200 -<br />
+2023-02-18 13:20:00.095940 - 48307-ThreadPoolExecutor-6_0: done request id[6]<br />
+192.168.86.141 - - [18/Feb/2023 13:20:00] "GET /?id=6 HTTP/1.1" 200 -<br />
+2023-02-18 13:20:00.113173 - 48307-ThreadPoolExecutor-337_0: #337 processing request id[337], sleeping...
+</blockquote>
+<br/>
+与调用非 async 方法并没有什么区别。目前的 Flask 版本，async 关键字好像并没有带来多么明显的好处，它与非 async 接口的区别是<br/><br/>
+非 async 接口方法：<br/><br/>
+<ol>
+    <li>只能同时处理最多 251 个请求，多则不予接收，排除等也不行，线程不重用(Flask.run() 启动的应用)</li>
+    <li>用 uwsgi 启动的 Flask 应用，线程是会被重用的</li>
+</ol>
+<br/>
+async 接口方法<br/><br/>
+<ol>
+    <li>每次创建一个单线程的线程池处理请求，无同时处理请求数目的限制，线程池不重用</li>
+    <li>async 调用的其他方法是否是 async 并没有区别</li>
+</ol>
+<br/>
+Flask 的 async 接口方法用 await 调用其他的 async 方法，即使采用 uwsgi 来启动，行为也没有变，和调用非 async 方法一样的等待。<br/><br/>
+总结：<br/><br/>
+前面花了非常大的功夫去测试用 Flask.run() 启动的服务，自从用了 uwsgi 后才感觉真是浪费了大把的时间，Flask.run() 与 uwsgi 启动的服务线程模型迥异。一直以来对 Flask.run() 启动时的那句话不怎么重视<br/><br/>
+<blockquote>
+<span style="color: #ff0000;">WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.</span>
+</blockquote>
+<br/>
+Flask.run() 只开发用，不必关注它的性能表现或，线程模型。<br/><br/>
+但在本文当中仍然保留 Flask.run() 的测试结果，以勉励自己的一番苦辛。<br/><br/>
+<ol>
+    <li>Flask 应用在正式环境中一定不要调用它的 run() 方法直接启动，而应该使用 uwsgi 之类的工具来启动</li>
+    <li>使用 uwsgi  来启动 Flask 应用的话，可指定同时能处理的请求数，并且线程可被重用</li>
+    <li>Flask 的 async 接口除了每次创建一个新的单线程线程池，似乎没有多大帮助，而且线程池不重用</li>
+</ol>
+<br/>
+&nbsp;

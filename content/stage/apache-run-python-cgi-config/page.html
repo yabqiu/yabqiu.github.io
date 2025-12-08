@@ -1,0 +1,187 @@
+---
+title: Apache 中运行 Python CGI 程序
+url: /apache-run-python-cgi-config/
+date: 2018-11-10T02:16:10-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - web
+  - cgi
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9096 
+wpStatus: publish
+views: 1050
+lastmod: 2018-11-10T02:35:25-06:00
+---
+
+<p>Web 程序我还是喜欢用 Apache 来作为入口，因为我用的系统是 Mac OS, Apache 它就静静的躺上那儿了。最好是都像 PHP 那样的程序，无需启动额外的服务，这种使用方式的缺陷是不太适合于做微服务。</p>
+
+<p>这儿呢，我也是来探索如何在 Apache 中运行 Python 的 CGI 程序，这主要是涉及了 Apache 与 Python 的集成。集成方式有直接集成(mod_python)，CGI，FastCGI, WSGI 和 uWSGI。本文主要是讲如何运行一个简单的 Python CGI。</p>
+
+<h3>直接集成(mod_python)</h3><br/>
+<p>虽然由于多方面的安全因素，这已经成为历史了，但还是提一下。参见</p>
+
+<ol>
+
+	<li><a href="https://wiki.archlinux.org/index.php/Apache_HTTP_Server/mod_python">Apache HTTP Server/mod_python</a>(它推荐使用 <a href="https://wiki.archlinux.org/index.php/Apache_HTTP_Server/mod_wsgi">mod_wsgi</a>, 以下该节相关内容摘在本链接，没有亲自尝试)</li>
+
+	<li><a href="http://modpython.org/">mod_python 官网</a>(最后的更新是 2013-11-13)</li>
+
+</ol>
+
+<p>需要安装模块 mod_python.so，并在 <code>httpd.conf</code> 加上相关的配置<!--more--></p>
+
+<pre class="lang:default decode:true">LoadModule python_module modules/mod_python.so<br/>
+<br/>
+&lt;Directory /home/www/html&gt; <br/>
+   AddHandler mod_python .py<br/>
+   PythonHandler mod_python.publisher <br/>
+   PythonDebug On <br/>
+&lt;/Directory&gt;</pre>
+
+<p>程序代码示例(创建在 /home/www/html/mptest.py)</p>
+
+<pre class="lang:default decode:true ">from mod_python import apache<br/>
+def handler(req):<br/>
+    req.content_type = 'text/plain'<br/>
+    req.send_http_header()<br/>
+    req.write("Hello World!")<br/>
+    return apache.OK</pre>
+
+<p>通过 <code>http://localhost/mptest.py/handler</code> 来访问，内空肯定是 <code>Hello World</code> 了。相信 mod_python 也提供了不少处理请求参数的函数。</p>
+
+<h3>CGI</h3><br/>
+<p>这是本文希望重点强调的部份。本人所使用的系统是 mac OS High Sierra, 自带的 Apache 是</p>
+
+<blockquote><br/>
+<p>httpd -v<br /><br/>
+Server version: Apache/2.4.33 (Unix)<br /><br/>
+Server built: Apr 3 2018 23:45:11</p>
+
+</blockquote>
+
+<p>不同版本的 Apache 配置上会略有不同，随后稍有提及，Linux 发行版下的 Apache 请作参考。</p>
+
+<p>最简单的配置方式是，打开 <code>/etc/apache2/httpd.conf</code> 文件，找到下行并移除起始的注释符号 <code>#</code>, 最终是</p>
+
+<pre class="lang:default decode:true ">LoadModule cgi_module libexec/apache2/mod_cgi.so</pre>
+
+<p>Mac 下的 <code>libexec/apache2</code> 的绝对目录是 <code>/usr/libexec/apache2</code>。</p>
+
+<p>不同系统下可能要启用的模块是 <code>mod_cgid.so</code>, 它与 <code>mod_cgi.so</code> 在配置上没什么差别，<code>d</code> 代表 <code>Daemon</code>。不启用该模块的话，访问的脚本文件将不被解释器执行，而是直接显示源代码去客户端。</p>
+
+<p><code>mod_cgi</code> 或 <code>mod_cgid</code> 可以支持系统任意的脚本，如 <code>sh</code>, <code>perl</code>, <code>ruby</code> 等，反正都是根据第一行的指示交给相应的脚本解释器，最后获得输出。</p>
+
+<h4>默认目录放置 Python 脚本</h4><br/>
+<p>在 Mac 下的只需要在目录 <code>/Library/WebServer/CGI-Executables</code> 目录下创建文件 <code>hello.py</code>, 内容如下</p>
+
+<pre class="lang:default decode:true">#!/usr/local/bin/python3<br/>
+<br/>
+print("Context-type:text/html")<br/>
+print("")<br/>
+<br/>
+print("&lt;h2&gt;Hello Python CGI&lt;/h2&gt;")</pre>
+
+<p>这是依照 HTTP 的标准响应格式，头与体之间空行分隔。注意 Shebang 注释行(第一行)，要指定 python3 解释器的路径，爱用 python 2 也无妨。但是用 <code>#!/usr/bin/env python3</code> 却不行，只适于运行为 shell。</p>
+
+<p>hello.py 文件必须是可执行，用以下命令修改</p>
+
+<pre class="lang:default decode:true">sudo chown +r /Library/WebServer/CGI-Executables/hello.py</pre>
+
+<p>重启 Apache</p>
+
+<pre class="lang:default decode:true">sudo apachectl -k restart    #-k 可检查配置中的语法错误</pre>
+
+<p>测试</p>
+
+<blockquote><br/>
+<p>curl -i http://localhost/cgi-bin/hello.py<br /><br/>
+HTTP/1.1 200 OK<br /><br/>
+Date: Sat, 10 Nov 2018 07:21:38 GMT<br /><br/>
+Server: Apache/2.4.33 (Unix)<br /><br/>
+Context-type: text/html<br /><br/>
+Transfer-Encoding: chunked</p>
+
+<p>&lt;h2&gt;Hello Python CGI&lt;/h2&gt;</p>
+
+</blockquote>
+
+<p>为什么把可执行的 <code>hello.py</code> 丢到目录 <code>/Library/WebServer/CGI-Executables</code> 中就行了呢？因为在 <code>/etc/apache2/httpd.conf</code> 有这样的配置</p>
+
+<pre class="lang:default decode:true ">ScriptAliasMatch ^/cgi-bin/((?!(?i:webobjects)).*$) "/Library/WebServer/CGI-Executables/$1"<br/>
+<br/>
+&lt;Directory "/Library/WebServer/CGI-Executables"&gt;<br/>
+    AllowOverride None<br/>
+    Options None<br/>
+    Require all granted<br/>
+&lt;/Directory&gt;</pre>
+
+<h4>配置自己的 Python 脚本目录</h4><br/>
+<p>前面是把 <code>hello.py</code> 放置在默认的目录中，我们也可以在自定义的目录中安装 Python CGI 脚本。比如用下面的配置</p>
+
+<pre class="lang:default decode:true">ScriptAlias /py-cgi/ "/Users/yanbin/python/cgi-bin/"<br/>
+&lt;Directory "/Users/yanbin/python/cgi-bin/"&gt;<br/>
+    AllowOverride None<br/>
+    Options +ExecCGI<br/>
+    Require all granted<br/>
+&lt;/Directory&gt;<br/>
+AddHandler cgi-script .py   # Mac 下这一行不是必须的</pre>
+
+<p>需要事先创建好目录 <code>/Users/yanbin/python/cgi-bin</code>，然后把先前的 <code>hello.py</code> 放到该目录中。对于 Apache 2.4 之前的版本</p>
+
+<pre class="lang:default decode:true ">Require all granted</pre>
+
+<p>要替换成 </p>
+
+<pre class="lang:default decode:true">Order allow,deny  # 逗号后不能用空格<br/>
+Allow from all</pre>
+
+<p>然后重启 Apache 后，访问 <code>http://localhost/py-cgi/hello.py</code> 得到相同的结果。</p>
+
+<p>注：任何 Apache 的访问错误请一定要查看它的错误日志文件， Mac 下的日志文件位置是 <code>/var/log/apache2/error_log</code>, 这个比 Google 都更好使。</p>
+
+<h3>FastCGI</h3><br/>
+<p>这个在 Mac 下现在不好用了，以下命令都失效了</p>
+
+<pre class="lang:default decode:true ">brew install homebrew/apache/mod_fcgid</pre>
+
+<p>说是</p>
+
+<blockquote><br/>
+<p>Error: homebrew/apache was deprecated. This tap is now empty as all its formulae were migrated.</p>
+
+</blockquote>
+
+<pre class="lang:default decode:true">brew install mod_fastcgi <br/>
+brew install --with-homebrew-httpd24 mod_fastcgi</pre>
+
+<p>上面两个命令都找不到想要安装的组件，倒是有一个<code>fcgi</code> 不知道是什么</p>
+
+<pre class="lang:default decode:true "> brew install fcgi</pre>
+
+<p>安装之后找不到想要的 <code>mod_fcgid.so</code> 或 <code>mod_fcgi.so</code>，有一个 cgi-fcgi 可执行文件, 以及其他的如 fastcgi.h 和 .a, .dylib 静态，动态库。</p>
+
+<p>Linux 下也许能轻易找到 <code>mod_fcgi</code> 模块，这儿一个链接 <a href="https://blogs.oracle.com/oswald/good-idea:-python-with-fastcgi-modfcgid">Good Idea: Python with FastCGI (mod_fcgid)</a></p>
+
+<p>像 <a href="https://www.electricmonk.nl/docs/apache_fastcgi_python/apache_fastcgi_python.html">Apache, FastCGI and Python</a> 中介绍的, Debian 系列的 Linux 可以用如下命令安装和启用</p>
+
+<pre class="lang:default decode:true"># apt-get install libapache2-mod-fastcgi<br/>
+# a2enmod fastcgi</pre>
+
+<p>根据 https://github.com/Homebrew/homebrew-core/issues/18732，说是 <code>mod_fastcgi</code> 和 <code>mod_fcgi</code> 已经被 <code>mod_proxy_fcgi</code> 替代了，而 Mac 中的  Apache 是带有这个模块的</p>
+
+<pre class="lang:default decode:true ">#LoadModule proxy_fcgi_module libexec/apache2/mod_proxy_fcgi.so</pre>
+
+<p>只需要取消注释就能用了。并且提到 <code>mod_wsgi</code> 的安装可以用命令</p>
+
+<pre class="lang:default decode:true  ">APXS=/usr/local/bin/apxs pip install mod_wsgi</pre>
+
+<p>关于 FastCGI 结合 Python 的方式就不再深入了。接下来会关注 WSGI，以及集成 Flask。从上面看来搭建服务器使用 Mac 比 Linux 更具有挑战性，谁让 Mac Server 版基本没有份额。</p>

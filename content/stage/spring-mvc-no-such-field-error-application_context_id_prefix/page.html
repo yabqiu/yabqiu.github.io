@@ -1,0 +1,93 @@
+---
+title: Spring MVC 碰到 java.lang.NoSuchFieldError: APPLICATION_CONTEXT_ID_PREFIX
+url: /spring-mvc-no-such-field-error-application_context_id_prefix/
+date: 2011-05-23T10:02:31-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Spring
+tags: 
+  - web
+  - mvc
+  - Spring
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3600 
+wpStatus: publish
+views: 5465
+lastmod: 2021-09-03T14:18:14-05:00
+---
+
+Spring MVC 应用在 Tomcat 启动的时候出现了下面的错误：</p>
+<br/>
+<span style="color: #ff0000;">java.lang.NoSuchFieldError: APPLICATION_CONTEXT_ID_PREFIX</span><br />
+<span style="color: #ff0000;"> at org.springframework.web.servlet.FrameworkServlet.createWebApplicationContext(FrameworkServlet.java:430)</span><br />
+<span style="color: #ff0000;"> at org.springframework.web.servlet.FrameworkServlet.createWebApplicationContext(FrameworkServlet.java:458)</span><br />
+<span style="color: #ff0000;"> at org.springframework.web.servlet.FrameworkServlet.initWebApplicationContext(FrameworkServlet.java:339)</span><br />
+<span style="color: #ff0000;"> at org.springframework.web.servlet.FrameworkServlet.initServletBean(FrameworkServlet.java:306)</span><br />
+<span style="color: #ff0000;"> at org.springframework.web.servlet.HttpServletBean.init(HttpServletBean.java:127)</span><br />
+<span style="color: #ff0000;"> at javax.servlet.GenericServlet.init(GenericServlet.java:212)</span><br />
+<span style="color: #ff0000;"> at org.apache.catalina.core.StandardWrapper.loadServlet(StandardWrapper.java:1173)</span><br />
+<span style="color: #ff0000;"> at org.apache.catalina.core.StandardWrapper.load(StandardWrapper.java:993)</span><br />
+<span style="color: #ff0000;"> at org.apache.catalina.core.StandardContext.loadOnStartup(StandardContext.java:4350)</span><br />
+<span style="color: #ff0000;"> at org.apache.catalina.core.StandardContext.start(StandardContext.java:4659)</span><br />
+<span style="color: #ff0000;"> at org.apache.catalina.core.ContainerBase.start(ContainerBase.java:1045)<!--more--></span><br />
+<span style="color: #ff0000;"> at org.apache.catalina.core.StandardHost.start(StandardHost.java:785)</span><br />
+<span style="color: #ff0000;"> at org.apache.catalina.core.ContainerBase.start(ContainerBase.java:1045)</span><br />
+<span style="color: #ff0000;"> at org.apache.catalina.core.StandardEngine.start(StandardEngine.java:445)</span><br />
+<span style="color: #ff0000;"> at org.apache.catalina.core.StandardService.start(StandardService.java:519)</span><br />
+<span style="color: #ff0000;"> at org.apache.catalina.core.StandardServer.start(StandardServer.java:710)</span><br />
+<span style="color: #ff0000;"> at org.apache.catalina.startup.Catalina.start(Catalina.java:581)</span><br />
+<span style="color: #ff0000;"> at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)</span><br />
+<span style="color: #ff0000;"> at sun.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:39)</span><br />
+<span style="color: #ff0000;"> at sun.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:25)</span><br />
+<span style="color: #ff0000;"> at java.lang.reflect.Method.invoke(Method.java:597)</span><br />
+<span style="color: #ff0000;"> at org.apache.catalina.startup.Bootstrap.start(Bootstrap.java:289)</span><br />
+<span style="color: #ff0000;"> at org.apache.catalina.startup.Bootstrap.main(Bootstrap.java:414)</span><br />
+<span style="color: #ff0000;">2011-5-23 22:39:21 org.apache.coyote.http11.Http11Protocol start</span><br/><br/>
+查到网上 <a href="http://www.kissrain.org/2011-03-21-246.html">http://www.kissrain.org/2011-03-21-246.html</a> 别人是说“依赖的Spring jar包有问题，解决方案：清空M2_REPO目录下的Spring jar包，重新mvn eclipse:eclipse当前工程即可。”<br/><br/>
+不过我清掉了目录 \repository\org\springframework\spring 下的文件，让 m2eclipse 重新下载，里面又是只有 2.5.6 的 spring jar 文件，这就有点奇怪了，明明我在 pom.xml 中是引入的 spring 3.0.5 的 spring 包。于是找找这个 2.5.6  版本是谁引进来，想起来了：<br/><br/>
+之前所做了的事情是在项目的 pom.xml 文件中加了：<br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+   &lt;groupId&gt;net.sf.spring-json&lt;/groupId&gt;
+   &lt;artifactId&gt;spring-json&lt;/artifactId&gt;
+   &lt;version&gt;1.3.1&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+ 因为要用 JsonView，即在 spring-servlet.xml 文件里配置了：<br/><br/>
+<pre class="lang:default decode:true">&lt;beans:bean name="jsonView"&gt;
+    &lt;beans:property name="jsonWriter"&gt;
+         &lt;beans:ref bean="jsonlibJsonWriter"/&gt;
+    &lt;/beans:property&gt;
+&lt;/beans:bean&gt;
+        
+&lt;beans:bean name="jsonlibJsonWriter" 
+     class="org.springframework.web.servlet.view.json.writer.jsonlib.JsonlibJsonStringWriter"/&gt;
+</pre>
+<br/>
+这个2.5.6 的 spring jar 文件是由 spring-json 引进来的，这时必须用 &lt;excludes&gt; 把它所依赖的 spring 2.5.6 的排除掉。因为存在 spring 2.5.6 的时候，这个版本的 spring 相关类被悲剧的先加载了。把 spring-json 的 &lt;dependency&gt; 部分改成如下：<br/><br/>
+<pre class="lang:default decode:true ">&lt;dependency&gt;
+    &lt;groupId&gt;net.sf.spring-json&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-json&lt;/artifactId&gt;
+    &lt;version&gt;1.3.1&lt;/version&gt;
+    &lt;exclusions&gt;
+        &lt;exclusion&gt;
+            &lt;groupId&gt;org.springframework&lt;/groupId&gt;
+            &lt;artifactId&gt;spring&lt;/artifactId&gt;
+        &lt;/exclusion&gt;
+    &lt;/exclusions&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+ 完了之后再启动 Tomcat，这个问题可以解决了。<br/><br/>
+只是我又碰上问题，跟上面是无关的：<br/><br/>
+org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'viewResolver' defined in class path resource [spring-servlet.xml]: Invocation of init method failed; nested exception is org.springframework.beans.factory.BeanDefinitionStoreException: IOException parsing XML document from ServletContext resource [/WEB-INF/views.xml]; nested exception is java.io.FileNotFoundException: Could not open ServletContext resource [/WEB-INF/views.xml]<br />
+ at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.initializeBean(AbstractAutowireCapableBeanFactory.java:1420)<br />
+ at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.doCreateBean(AbstractAutowireCapableBeanFactory.java:519)<br />
+ at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.createBean(AbstractAutowireCapableBeanFactory.java:456)<br/><br/>
+原因是在 spring-servlet.xml  中配置了：<br/><br/>
+&lt;beans:bean name="viewResolver"  class="org.springframework.web.servlet.view.XmlViewResolver"/&gt;<br/><br/>
+就是说要一个 /WEB-INF/views.xml 文件，应该可以配置使用别的 views.xml 文件吧，算了先注释掉这行配置，需要时再解决它。

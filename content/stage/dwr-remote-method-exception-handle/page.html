@@ -1,0 +1,73 @@
+---
+title: DWR 调用远程方法的错误和异常处理
+url: /dwr-remote-method-exception-handle/
+date: 2009-06-15T03:00:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - DWR
+  - remote
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 262 
+wpStatus: publish
+views: 1018
+lastmod: 2012-03-09T22:54:04-06:00
+---
+
+记得以前通常我们在调用 DWR 的远程方法是这样写<br/>
+<pre class="brush:js">Remote.method(params,function(data){<br/>
+    //服务端执行后客户端的逻辑，如<br/>
+    alert("服务端执行后返回的数据："+data);<br/>
+});</pre>
+
+第一个至倒数第二个参数为客户端传向服务端的数据，最后一个参数直接就是一个回调函数。因为服务端根据 Java 对象生成的 js 代码就是：<br/>
+<br/>
+<span style="color: #800080;">Remote.method = function(p0, callback) {<br/>
+    dwr.engine._execute(Remote._path, 'Remote', 'method', p0, callback);<br/>
+}<br/>
+</span><br/>
+<!--more-->所以很直观的把第二个参数理解为就是一个回调函数。当然要注意了，上面说的远程方法都是一个参数，如果为多个参数的话，callback 总是最后一个参数，如：<br/>
+<br/>
+<span style="color: #800080;">Remote.method= function(p0, p1, callback) {<br/>
+  dwr.engine._execute(Remote._path, 'Remote', 'method', p0, p1, callback);<br/>
+}<br/>
+</span><br/>
+你的 DWR 程序要是一切顺利，那都好说，算你幸运；而要是碰到了远程方法在处理你的请求时抛出了异常，你将会看到 DWR 只会给你一个 alert("Error") 简单显示错了，而这是不够的。所以你需要去琢磨如何主动捕获种这一错误，更友好的展示给用户。所以若碰到远程调用的异常，你同样是幸运的，因为又可以思考来学到一着。<br/>
+ <br/>
+那个 alert("Error") 其实是 DWR 的全局错误处理，可通过 dwr.engine.setErrorHandler(errorHandler) 来改变它的默认行为的，如<br/>
+<br/>
+<span style="color: #800080;">function errh(errorString, exception) {<br/>
+    alert("提示你自定义的全局出错信息。");<br/>
+}</span><br/>
+<br/>
+<span style="color: #800080;">dwr.engine.setErrorHandler(errh);</span><br/>
+<br/>
+也许我们很少这么做，因为全局性的错误处理满足不了个性化的远程调用。我们可以把错误处理  errorHandler 写在远程调用的函数参数中。回头看前面那个 callback，当它是一个函数时，就是个成功调用后的处理函数，它也可以是个包含几个函数的对象，此时远程调用就要这么写：<br/>
+<pre class="brush:js">Remote.method(params,{<br/>
+		callback:function(data){ //调用成功时的处理函数<br/>
+			//服务端执行后客户端的逻辑，如<br/>
+			alert("服务端执行后返回的数据："+data);<br/>
+		},<br/>
+		errorHandler:function(errorString, exception) {//执行异常时<br/>
+			alert('修改 XXX 时出错，请检查 XXX 云云：'+ errorString)<br/>
+		}<br/>
+	}<br/>
+);</pre>
+
+更深入的，callback 中不可以包括另外两个函数属性：exceptionHandler、warningHandler 和 textHtmlHandler。没有 exceptionHandler 处理函数就会去应用 errorHandler 函数，并且如果在 callback 函数中的 js 出错也会跑到 errorHandler 去执行的。详细的用法请见：<a href="http://directwebremoting.org/dwr/other/errors.html">http://directwebremoting.org/dwr/other/errors.html</a>。<br/>
+<br/>
+再，还能在 dwr.xml 中配置有关异常的 convert，如：<br/>
+<br/>
+<span style="color: #800080;">&lt;convert match="java.lang.Exception" converter="exception"/&gt;</span><br/>
+<br/>
+这样你就能通过 errorHandler 的 errorString、exception 获取更详细的信息。有进一步的实际需求时再来深入。<br/>
+<br/>
+参考：1. <a href="http://directwebremoting.org/dwr/other/errors.html" target="_blank">Error and Exception Handling</a><br/>
+        2. <a href="http://blog.csdn.net/tfnew21/archive/2009/02/20/3914856.aspx" target="_blank">dwr engine.js属性的调用</a>

@@ -1,0 +1,72 @@
+---
+title: Oracle中的Java存储过程的操作权限
+url: /oracle-java-permissions/
+date: 2006-01-16T00:47:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2006/01/oracle-logo.png"
+categories:
+  - Java/JEE
+  - Database
+tags: 
+  - Java
+  - Oracle
+  - sp
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 590 
+wpStatus: publish
+views: 1312
+lastmod: 2021-09-03T10:46:13-05:00
+---
+
+当我们在Oracle中用Java写的存储过程方法中，如果访问了本地文件系统、连接了网络、或者运行系统命令，就必须为执行该过程的模式赋予相应的权限。不然执行该存储过程就会报无该操作权限的异常。</p>
+<br/>
+本文所面对的是哪些会用Java写存储过程的朋友，可能你们在用Java写Oracle的存储过程也遇到过类似问题。希望对他们能有所帮助。关于如何用Java写Oracle的存储过程请参考我前面的一篇文章：<a href="http://www.blogcn.com/user82/unmi/blog/28017992.html">Oracle8i中使用Java语言来开发存储过程</a>，其中有相应的代码。<!--more--><br/><br/>
+因为Oracle中可以用Java写存储过程，而Java可以用来做许多事情，这就有必要来规范一下其中Java程序的权限，给它一点约束。Java写的存储过程的默认权限和网页中的Applet差不多，比如不能操作文件系统、不能随便访问网络，也不能获取机器的Runtime。其实安全机制几乎是一样的，都是基于沙箱模型，加载字节码之前需要进行权限检验。<br/><br/>
+Java 2安全性的目标就是提供细粒度的访问控制、易于配置的安全策略、易于扩展的访问控制结构以及安全性扩展。OracleJVM完全符合Java 2安全性规范要求，但它的实现过程与JDK VM存在以下几点不同：<br/><br/>
+1. 与JDK不同，OracleJVM的安全性是基于定义模式的。也就是说，许可是授予定义模式的，而不是授予Java代码库。<br/><br/>
+2. 每个Java 2许可都由存储在PolicyTable中的许可对象来表示的，而且由行关键字来标识。在一个安全的、带有访问限制的模式中定义PolicyTable。（相反，JDK在一个策略文件（policy file）中保存各种许可。）你必须在PolicyTable中指定所有的安全策略，PolicyTable可以通过DBMS_JAVA包或PolicyTableManager方法来扩展和更新，如下例所示：<br/><br/>
+Call dbms_java.grant_permission(grantee, permission_type, permission_name, permission_action);<br/><br/>
+oracle.aurora.rdbms.security.PolicyTableManager.grant(grantee, permission_type, permission_name, permission_action);<br/><br/>
+参数意义：grantee代表模式表名(注意必须全为大写，如SCOTT，SYSTEM)，permission_type权限类型(如java.io.FilePermisson、java.net.SocketPermission)，权限名(也就是操作对象，如&lt;&lt;ALL FILE&gt;&gt;，c:/a.txt，java.sun.com:80)，permission_action也就是具体的操作(如对文件的read、write，对地址端口的connect、accept)。也就ACL的权限控制方式。<br/><br/>
+3. 与JDK不同，OracleJVM支持授予和撤销或限制许可。只有JAVA_ADMIN用户(比如System用户)才能向其他用户授予访问和更新 PolicyTable的许可。OracleJVM支持所有Java 2许可以及Oracle定义的许可。另外，具有适当权限的最终用户可以定义和存储他们自己的许可。SecurityManager总是在能执行Java的会话中被初始化和激活。<br/><br/>
+OracleJVM安全性比JDK多一个模式外，其余项所表达的意义与JDK的安全模型还是一致的，也是参考着JDK的安全策略来设置的。看到上面您也应该想起了JAVA的安全策略文件的格式了吧。<br/><br/>
+下面具体讲讲实际应如何操作<br/><br/>
+例如：Java存储过程中的代码有：(假设调用下面代码的存储过程名为 JavaProcedure，在sqlplus环境下执行命令 )<br/><br/>
+            URL url = new URL("http://www.sina.com");   //访问网络<br />
+            InputStream is = url.openStream("c:/a.txt");                <br/><br/>
+            InputStream is = new FileInputStream();     //访问文件系统<br/><br/>
+存储过程中访问了主机www.sina.com的80端口，和文件系统，那么就必须给执行这个存储过程的模式这两个权限，否则将会出现相应的异常。<br/><br/>
+如果用户scott要执行上在存储过程中的代码，就必须以System用户给scott添加访问www.sina.com:80的和文件c:/a.txt的权限，应执行如下的命令。<br/><br/>
+<pre class="lang:default decode:true ">1. connect system/manager@orcl;             ---- 以system身份登录到数据库<br/><br/>
+----调用包dbms_java中的存储过程grant_permission来对scott授权，对域名应该 resolve 的权限，
+----读数据要有connect的权限，当然这里的accept可以不需要，加上也无妨。
+2. call dbms_java.grant_permission('SCOTT','java.net.SocketPermission', 'www.sina.com:80', 'resolve,connect, accept');   <br/><br/>
+----设置scott对文件c:/a.txt有读写的权限，如果把"c:/a.txt"换成"&lt;&lt;ALL FILE&gt;&gt;"，就表明拥有了对所有文件读写的权限
+3.call dbms_java.grant_permission('SCOTT','java.io.FilePermission','c:/a.txt','read,write');  <br/><br/>
+4. connect scott/tiger@orcl;    ---- 切换回到scott模式来执行过程<br/><br/>
+5. call JavaProcedure;     ---- 这下用scott来执行JavaProcedure过程中的操作就没有问题了</pre>
+<br/>
+注意：注意这里SCOTT要写成全大写的，否则会出现scott既不是用户也不是角色的错误。执行Java写的存储过程以后遇到提示说没有什么的权限就该分配置什么权限给操作模式。JDK有些什么权限类型、权限名、可进行的操作，以及书写格式可以参考 <a href="http://java.sun.com/j2se/1.5.0/docs/guide/security/permissions.html">Permissions in the JavaTM 2 Standard Edition Development Kit (JDK)</a>。其中有下面一些主要可能经常会用到的权限：<br/><br/>
+<a href="http://java.sun.com/j2se/1.5.0/docs/guide/security/permissions.html#FilePermission">java.io.FilePermission</a><br/><br/>
+<a href="http://java.sun.com/j2se/1.5.0/docs/guide/security/permissions.html#SerializablePermission">java.io.SerializablePermission </a><br/><br/>
+<a href="http://java.sun.com/j2se/1.5.0/docs/guide/security/permissions.html#RuntimePermission">java.lang.RuntimePermission </a><br/><br/>
+<a href="http://java.sun.com/j2se/1.5.0/docs/guide/security/permissions.html#NetPermission">java.net.NetPermission</a><br/><br/>
+<a href="http://java.sun.com/j2se/1.5.0/docs/guide/security/permissions.html#SocketPermission">java.net.SocketPermission</a><br/><br/>
+<a href="http://java.sun.com/j2se/1.5.0/docs/guide/security/permissions.html#SQLPermission">java.sql.SQLPermission</a><br/><br/>
+<a href="http://java.sun.com/j2se/1.5.0/docs/guide/security/permissions.html#PropertyPermission">java.util.PropertyPermission</a><br/><br/>
+<a href="http://java.sun.com/j2se/1.5.0/docs/guide/security/permissions.html#LoggingPermission">java.util.logging.LoggingPermission</a><br/><br/>
+<a href="http://java.sun.com/j2se/1.5.0/docs/guide/security/permissions.html#SSLPermission">javax.net.ssl.SSLPermission</a><br/><br/>
+参考文档：<br />
+        1. <a href="http://www.oracle.com/global/cn/oramag/oracle/03-jul/o43devjvm.html">保证执行Java的安全</a><br />
+        2. <a href="http://java.sun.com/j2se/1.5.0/docs/guide/security/permissions.html">Permissions in the JavaTM 2 Standard Edition Development Kit (JDK)</a><br />
+        3. <a href="http://www.cnoug.org/index.php">ORACLE技术中国用户讨论组</a> » <a href="http://www.cnoug.org/forumdisplay.php?fid=1">Oracle常见问题集</a> » <a href="http://www.cnoug.org/viewthread.php?tid=19232">如何利用java过程执行操作系统命令</a><br/><br/>
+加一段不大相关的到这里来：<br />
+    Oracle 8.1.6 可是一个非常经典的版本，现在还有一些项目用这个版本。Oracle 8.1.6 所带的JDK版本是1.1.7，安装之后会把注册表中的Software\JavaSoft\Java Runtime Environment\CurrentVersion键值改为1.1，这样让原来安装的JRE不能用、Java程序不能用，所以你需要把这个键值改回成正确的版号，如1.4或1.5。但Oralce还是在用它哪个老东西，所以写Java代码时记得不要用太新的API，&gt;1.1.7的。<br/><br/>
+    利用企业JavaBean和CORBA，可以用Java开发多层、面向组件的应用程序；也可以用Java开发传统的数据库存储过程。Oracle8i 可以容易地把二种语言编写的应用程序组合起来。<br/><br/>
+感觉也是写得不是很清淅，如果同行朋友们看过有什么问题，请对本文进行过激的评论，谢谢！以后有空再看看用Java写的Oracle存储过程应如何处理异常。在我的示例代码中catch块都是只捕获不处理，catch(exception e){    }。

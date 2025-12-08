@@ -1,0 +1,229 @@
+---
+title: Lombok @With 的纯弊端及如何避免
+url: /lombok-with-evil-and-how-avoid/
+date: 2023-09-10T11:52:38-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2023/09/lombok-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - lombok
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13257 
+wpStatus: publish
+views: 431
+lastmod: 2023-09-10T22:23:07-05:00
+---
+
+由于是第一篇写关于 Lombok 的日志，所以有些不情愿去开门见山直接触及 @With, 而要先提一提本人对 Lombok 的接触过程。</p>
+<br/>
+两三年之前写 Java 代码一直都是全手工打造。一个数据类，所有必须的 setter/getter, toString, hashcode() 等全体现在源代码中，当然是在 IDE 中自动生成的。听说过 Lombok，但觉得它用了会影响到对源代码的阅读，因为造成代码的行为与源代码所展示的不一致，还可能依赖于特定的 IDE 或构建工具插件，所以一直未真正应用。<br/><br/>
+然而现代语言一直在避免不断书写象 JavaBean 里那一大片样本代码，同时解决试图提高覆盖率写出毫无意义单元测试的烦恼。比如 Scala 发展出了 case class, Kotlin 的 data class, Python 的 @dataclass，还有 JDK 14 引入的及至 JDK 16 转正的  record, 都是为了自动生成 Java 类的 setter/getter/toSring/hashcode/equals 等方法。 所以源代码中看不到实际可调用方法不该再是问题，况且在 JDK 5 加入的 enum 类型本质上也是在源代码的背后生成了一系列的方法和类型声明的。<!--more--><br/><br/>
+Lombok 不只是为了写 JavaBean 而生的，它的能耐可比生成数据类强大的多，它由一系列 RetentionPolicy.SOURCE 的注解为指令，在编译器依赖于 JDK 6 引入的 <a href="https://jcp.org/en/jsr/detail?id=269">JSR 269: Pluggable Annotation Processing API</a> 对 Lombok 注解生成相应的指节代码。生成的代码反编译后可看个究竟，虽然 Lombok 的 JavaDoc 会解释每一个注解的效果，但查看生成的 class 反编译后的源代码最能真切其背后发生了什么。<br/><br/>
+对 Lombok 的 @With 注解抱怨自然是在打开相应的 class 文件后产生的，现在终于切入主题了。Lombok 最早在 v0.11.4 中实验性的加入 @Wither, 后来在 v1.18.10 中正式转正并更名为 @With。@With 很容易给人以美好的愿景，比如下面的代码<br/><br/>
+<pre class="lang:default decode:true">@Data
+@AllArgsConstructor
+@With
+public class Mountain {
+    private  String name;
+    private double latitude;
+    private double longitude;
+    private String country;
+}</pre>
+<br/>
+编译后我们就能在代码中使用 withXxx() 方法了<br/><br/>
+<pre class="lang:default decode:true ">Mountain mountain1 = new Mountain("", 1, 2, "");
+Mountain mountain2 = mountain1
+                         .withName("newName")
+                         .withCountry("newCountry")
+                         .withLatitude(101)
+                         .withLongitude(102);</pre>
+<br/>
+如果不仔细阅读 @With 的文档很难理解每次 withXxx() 方法调用会发生什么, 会直接修改原对象属性，还是总是生成新对象？<br/><br/>
+读读反编译 Mountain.class 后的源代码，胜过看十遍文档，那就看到 Mountain.class 由 @With 生成的相应源码吧<br/><br/>
+<pre class="lang:default decode:true">    public Mountain withName(String name) {
+        return this.name == name ? this : new Mountain(name, this.latitude, this.longitude, this.country);
+    }<br/><br/>
+    public Mountain withLatitude(double latitude) {
+        return this.latitude == latitude ? this : new Mountain(this.name, latitude, this.longitude, this.country);
+    }<br/><br/>
+    public Mountain withLongitude(double longitude) {
+        return this.longitude == longitude ? this : new Mountain(this.name, this.latitude, longitude, this.country);
+    }<br/><br/>
+    public Mountain withCountry(String country) {
+        return this.country == country ? this : new Mountain(this.name, this.latitude, this.longitude, country);
+    }</pre>
+<br/>
+一看吓一跳，问题来了<br/><br/>
+<ol>
+    <li>withXxx() 方法中一律用 <code>==</code> 来比较新旧值，这是不准确的。比如相同的两个字符串或 Integer 可能相等也可能不等</li>
+    <li>withXxx() 是链式调用，中间过程会产生大量的临时对象(浅拷贝)，虽然是被快速回收，仍然会增加内存回收与碎片整理的负担</li>
+    <li>withXxx() 调用可能会生成新对象，也可能返回无修改的原对象，给调用者增添不确定性。它仿佛是为了在多线程环境下避免竞争，细究又不像</li>
+</ol>
+<br/>
+为什么 Lombok 的 @With 会让我产生迷惑，主要是在要不要创建新对象的问题上不明确。withXxx() 方法语义上一 般是暗含了可支持链式调用，比如直接属性修改或用在 Builder 模式上在最终构建对象之前逐个准备必须的属性。比如业界典型的用例有 aws-java-sdk 中的 AmazonWebServiceRequest 实现类和 Apache AVRO 生成的 domain object。<br/><br/>
+AWS 列举 S3 Bucket 中对象的请求  ListObjectRequest<br/><br/>
+<pre class="lang:default decode:true">ListObjectsRequest listObjectsRequest = new ListObjectsRequest()
+                                               .withBucketName("foo")
+                                               .withPrefix("bar")
+                                               .withMaxKeys(100);</pre>
+<br/>
+Apache AVRO 自动生成的 builder 方法使用<br/><br/>
+<pre class="lang:default decode:true">User user = User.newBuilder()
+    .setUserId(123)
+    .setUserName("Anna")
+    .setAddresses(Arrays.asList("foo", bar"))
+    .build();<br/><br/>
+// 或对现有对象进行深拷贝创建新对象, 再修改某些属性
+User newUser = User.newBuilder(user)
+    .setUserId(456)
+    .setUserName("Scott")
+    .build()</pre>
+<br/>
+以上两个用例中非常清楚是否要创建新对象，而且 Apache AVRO 基于现有对象创建新对象时采用的是深拷贝。<br/><br/>
+基于以上理由，这就是为什么本人如标题所说的那般，认为 @With 纯粹就是个弊端，不值得 Lombok 拥有。<br/><br/>
+如果不使用 @With, 那么有什么 Lombok 替代方案还实现链式调用或修改现有对象的多个属性，或明确创建新对象来逐个修改属性呢？答案是<br/><br/>
+<ol>
+    <li>直接修改现有对象属性，用 @Setter 或 @Data 搭配 @Accessors(chain = true) </li>
+    <li>基于现有对象创建新对象(浅拷贝), 用 @Builder(toBuilder = true)</li>
+</ol>
+<br/>
+<h3>@Setter 或 @Data + @Accessors(chain = true)</h3><br/><br/>
+如果需求是只要链式方法调用修改现有对象的属性<br/><br/>
+@Setter 和 @Data 都能为我们生成 setter 方法，所以下面以 @Setter 为例<br/><br/>
+如果仅用 @Setter 或 @Data, 生成的 setter 方法返回 void，比如<br/><br/>
+<pre class="lang:default decode:true">@Setter
+public class User {
+    private String name;
+    private List&lt;String&gt; addresses;
+}</pre>
+<br/>
+生成的代码如下<br/><br/>
+<pre class="lang:default decode:true">public class User {
+    private String name;
+    private List&lt;String&gt; addresses;<br/><br/>
+    public User() {
+    }<br/><br/>
+    public void setName(String name) {
+        this.name = name;
+    }<br/><br/>
+    public void setAddresses(List&lt;String&gt; addresses) {
+        this.addresses = addresses;
+    }
+}</pre>
+<br/>
+这就无法使用链式方法调用，书写上不够流畅。不得不<br/><br/>
+<pre class="lang:default decode:true">User user = new User();
+user.setName("Scott");
+user.setAddresses(Arrays.asList("foo", "bar"));</pre>
+<br/>
+在需设置大量属性时带来不便。不过加上 @Accessors(charin = true) 就不一样了，我们来看加上它后生成的字节码<br/><br/>
+<pre class="lang:default decode:true">@Setter
+@Accessors(chain = true)
+public class User {
+    private String name;
+    private List&lt;String&gt; addresses;
+}</pre>
+<br/>
+生成的代码为<br/><br/>
+<pre class="lang:default decode:true">public class User {
+    private String name;
+    private List&lt;String&gt; addresses;<br/><br/>
+    public User() {
+    }<br/><br/>
+    public User setName(String name) {
+        this.name = name;
+        return this;
+    }<br/><br/>
+    public User setAddresses(List&lt;String&gt; addresses) {
+        this.addresses = addresses;
+        return this;
+    }
+}</pre>
+<br/>
+唯一的区别只在每个 setter 方法返回了 this, 方便下一次调用，于是我们就可以<br/><br/>
+<pre class="lang:default decode:true">User user = new User();
+user.setName("Tigger")
+     .setAddresses(Arrays.asList("baz"));</pre>
+<br/>
+<h3>@Builder(toBuilder = true)</h3><br/><br/>
+基于现有对象浅拷贝生成新对象，再修改其中若干属性<br/><br/>
+@Builder 注解是生成构建类的，它自身就支持链式方法调用，但它默认时 toBuilder = false, 所以下面的代码<br/><br/>
+<pre class="lang:default decode:true ">@Builder
+public class User {
+    private String name;
+    private List&lt;String&gt; addresses;
+}</pre>
+<br/>
+生成的字节码是<br/><br/>
+<pre class="lang:default decode:true">public class User {
+    private String name;
+    private List&lt;String&gt; addresses;<br/><br/>
+    User(String name, List&lt;String&gt; addresses) {
+        this.name = name;
+        this.addresses = addresses;
+    }<br/><br/>
+    public static UserBuilder builder() {
+        return new UserBuilder();
+    }<br/><br/>
+    public static class UserBuilder {
+        private String name;
+        private List&lt;String&gt; addresses;<br/><br/>
+        UserBuilder() {
+        }<br/><br/>
+        public UserBuilder name(String name) {
+            this.name = name;
+            return this;
+        }<br/><br/>
+        public UserBuilder addresses(List&lt;String&gt; addresses) {
+            this.addresses = addresses;
+            return this;
+        }<br/><br/>
+        public User build() {
+            return new User(this.name, this.addresses);
+        }<br/><br/>
+        public String toString() {
+            return "User.UserBuilder(name=" + this.name + ", addresses=" + this.addresses + ")";
+        }
+    }
+}
+</pre>
+<br/>
+只能从零创建一个新对象<br/><br/>
+<pre class="lang:default decode:true">User.builder()
+    .setName("Anna")
+    .setAddresses(Arrays.asList("baz", "qux"))
+    .build()</pre>
+<br/>
+如果需基于现有对象创建新的，再修改个别属性的话就给 @Builder 加上 toBuilder = true 属性<br/><br/>
+<pre class="lang:default decode:true ">@Builder(toBuilder = true)
+public class User {
+    private String name;
+    private List&lt;String&gt; addresses;
+}</pre>
+<br/>
+那么它会在没有 toBuilder = true 是生成的代码中加上一个额外的方法<br/><br/>
+<pre class="lang:default decode:true ">    public UserBuilder toBuilder() {
+        return (new UserBuilder()).name(this.name).addresses(this.addresses);
+    }</pre>
+<br/>
+现在想基于已有对象创建新的对象并修改某些属性时<br/><br/>
+<pre class="lang:default decode:true">User existingUser = ...
+User newUser = existingUser.toBuilder()
+                   .setName("newName")
+                   // .setOtherAttributes(...)
+                   .build();</pre>
+<br/>
+它与 Apache AVRO 的 Builder 不同之处是现有对象不再作为方法参数来创建 Builder，而是作为创建 Builder 的调用者，更主要的区别是 Apache AVRO 是深拷贝，@Builder(toBuilder = true) 是浅拷贝。<br/><br/>
+<h3>小结</h3><br/><br/>
+虽然 @With 是一个新晋注解，但本人建议把它放入到黑名单中，有相关需求时请使用 @Setter/@Data + @Accessors(chain = true) 和 @Builder(toBuilder = true)。<br/><br/>
+直接对现有对象链式修改其中多个属性时要为 @Setter 或 @Data 配置上 @Accessors(chain = true)，这样产生的所有 setter 方法就会返回 <code>this</code><br/><br/>
+如果要基于现有对象创建新对象，然后修改其中若干属性时就用 @Builder(toBuilder = true)，记住创建新对象时采用的时浅拷贝，基本类型(int, double 等)及它们的包装类型(Integer, Double 等) 或其他 Immutable(String 等) 类型都无妨，无所谓深浅拷贝。但对像集合等 Mutable 类型就要多留点心。<br/><br/>
+对于生成式的代码想要清晰理解背后发生了什么最好的办法是看它生成的真正的源代码。使用开源框架(如 Spring 等), 有问题时阅读源代码才能得到彻底的解决方案。<br/><br/>
+但目前生成式 AI 给的答案，有时候只能令其胡说八道了，因为不可能总有条件去查看它的原始文档，也许原始文档本身就是被别有用心杜撰的。

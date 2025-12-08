@@ -1,0 +1,93 @@
+---
+title: Unmi 学习 Groovy 之数据库操作一
+url: /unmi-study-groovy-database1/
+date: 2008-09-22T04:44:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Groovy
+tags: 
+  - Groovy
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 329 
+wpStatus: publish
+views: 1394
+lastmod: 2021-09-02T14:16:39-05:00
+---
+
+不夸张的说，Groovy 在使用 JDBC 对数据库的操作上是简化到了极致。Groovy 中的 SQL 支持在 groovy.sql 包中，而其中最耀眼的明星就数 groovy.sql.Sql 了。</p>
+<br/>
+现在我们就来体验一下 GroovySQL 给我们带来的快感。这里所用的示例数据库是 derbyDB, JDK 1.6 中附带了这个数据库(叫做 JavaDB)，MyEclipse 6.X 也带了 DerbyDB。假设我们把它安装在 C:\Java\JavaDB，那么在 C:\Java\JavaDB\demo\databases 下有一个 toursdb(目录) 数据库。我们就用这个，当然你可以使用你手边已有的或最拿手的数据库。<!--more--><br/><br/>
+我们将以嵌入方式(文件形式) 来使用 toursdb，所以你需要把驱动包 derby.jar 加到 classpath 中。toursdb 中有一个表是：<br/><br/>
+CITIES(CITY_ID,CITY_NAME,COUNTRY,AIRPORT,LANGUAGE,COUNTRY_ISO); //CITY_ID,COUNTRY_ISO 是数字，其他它段为字符串类型<br/><br/>
+要查询 CITIES 表，并输出记录的 Groovy 代码如下：<br/><br/>
+<pre class="lang:default decode:true">import groovy.sql.Sql;<br/><br/>
+url = "jdbc:derby:C:/Java/JavaDB/demo/databases/toursdb;create=false";
+sql = Sql.newInstance(url,"org.apache.derby.jdbc.EmbeddedDriver");<br/><br/>
+//调用的方法原型是：eachRow(String sql, Closure closure),留心一下参数传递的写法
+sql.eachRow ("select * from cities where city_id&lt;=5") { row-&gt;
+    println "ID:${row[0]}, Name:${row.city_name}";  //可用索引也可以用字段名
+}</pre>
+<br/>
+上面的代码很容易理解，不需要多加解释。<br/><br/>
+脚本语的优势也是其易让人倍感迷乱的地方就是做一件事情的方式过于多样性。就如为创建上面那个 Sql 实例，Sql 提供了六个 newInstance() 工厂方法，三个 Sql() 构造方法。具体参见 <a href="http://groovy.codehaus.org/gapi/">http://groovy.codehaus.org/gapi/</a> 的 groovy.sql.Sql(<a href="http://groovy.codehaus.org/gapi/groovy/sql/Sql.html">http://groovy.codehaus.org/gapi/groovy/sql/Sql.html</a>) 部份。<br/><br/>
+下面看看 Sql 实例的各种创建方式，伪代码表示，要替换成实际的参数：<br/><br/>
+<pre class="brush:groovy">sql1 = Sql.newInstance(url,driver);
+sql2 = Sql.newInstance(url,user,pass,driver);<br/><br/>
+Properties props = new Properties();
+props.put("username","Unmi");
+props.put("password","");
+sql3 = Sql.newInstance(url,props,driver)<br/><br/>
+//如果事先用 loadDriver() 加载了驱动
+Sql.loadDriver(driver);  //相当于 DriverManager.registerDriver(Driver)
+//那么前面的 sql1, sql2, sql3 在 newInstance() 时就可以省去最后那个 driver 参数<br/><br/>
+//此外还可以使用已有连接
+sql4 = new Sql(connection);<br/><br/>
+//或利用 Datasource 来创建 Sql 实例，这种方式在容器很有用
+InitialContext ctx = new InitialContext();
+DataSource ds = (DataSource) ctx.lookup("jdbc/derbyDB");
+sql5 = new Sql(ds);</pre>
+<br/>
+三重引号字符串批量执行 SQL 语句<br/><br/>
+<pre class="lang:default decode:true">sql.execute '''
+   DELETE FROM cities where 1&lt;&gt;1;
+   DELETE FROM cities where 1&lt;&gt;1;
+'''</pre>
+<br/>
+批量执行分号分隔开来的多行语句，本来为不损坏 toursdb 库中原有的记录，作了一个消极删除操作。可是 derbyDB 的这个驱动不支持执行分号分隔的语句，可以换个别的数据库来试验一下。<br/><br/>
+使用 GString 查询参数，如：<br/><br/>
+<pre class="lang:default decode:true">param = 5;<br/><br/>
+sql.eachRow ("select * from cities where city_id&lt;=${param}") {
+    println "ID:${it[0]}, Name:${it.city_name}";
+}</pre>
+<br/>
+使用 List 查询参数，如：<br/><br/>
+<pre class="brush:groovy">params = [5,10];<br/><br/>
+sql.eachRow ("select * from cities where city_id between ? and ?", params) {
+    println "ID:${it[0]}, Name:${it.city_name}";
+}</pre>
+<br/>
+传入的参数由左至右依次分配给每个 ? 问号。这种方式能促使 Sql 语句预编译，可防止 SQL 注入攻击。<br/><br/>
+executeUpdate()，更新、删除或插入操作<br/><br/>
+<pre class="lang:default decode:true ">new File("foo.csv").splitEachLine(",") { params -&gt;
+    result = sql.executeUpdate("INSERT INTO cities(CITY_ID,CITY_NAME,\
+            COUNTRY,COUNTRY_ISO_CODE) values(?,?,?,?)",params);
+    println "${result} line has been added.";
+}</pre>
+<br/>
+foo.csv 文件的内容如下：<br/><br/>
+88,ShenZhen,China,CN<br />
+89,Ji'an,China,CN<br/><br/>
+executeUpdate() 返回受影响的行数，每次 insert 只影会一行，所以执行后控制台输出为：<br/><br/>
+1 lines has been added<br />
+1 lines has been added<br/><br/>
+execute()，可用来执行所有的 Sql 语句。它用来执行更新、删除或插入语句后，可用 sql.getUpdateCount() 得到受影响的行数。可惜的是执行查询时没法直接获得查得记录的行数。<br/><br/>
+最后，对 GroovySQL 使用的延伸还是必须去看 groovy.sql.Sql 的 API 说明(<a href="http://groovy.codehaus.org/gapi/groovy/sql/Sql.html">http://groovy.codehaus.org/gapi/groovy/sql/Sql.html</a>)，还需去关注其他一些方法如：<br/><br/>
+executeInsert()、firstRow()、query()、queryEach()、rows()、等各方法的使用，还有 GroovySQL 是如何处理 Blob 类型的。<br/><br/>
+参考：1. 《Java 脚本编程语言、框架与模式》第 5 章<br />
+        2. 《Groovy in Action》(2007.1) 第 10 章，Database programming with Groovy

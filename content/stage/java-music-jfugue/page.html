@@ -1,0 +1,100 @@
+---
+title: 让 Java 轻松乐动起来，使用 JFugue 制作自己的音乐
+url: /java-music-jfugue/
+date: 2008-09-19T04:53:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - Music
+  - jfugue
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 331 
+wpStatus: publish
+views: 1667
+lastmod: 2010-08-19T07:51:59-05:00
+---
+
+学过或用过 Basic 的朋友大约还会记得，在 Basic 里要演奏(当时还是从 PC 喇叭里发出的，现在也能走声卡了)一段 <span style="color: #0000ff;">哆来咪发唆拉西哆</span> 可以写成：<br/>
+<pre class="brush:vb">PLAY "C D E F G A B O6C"</pre>
+
+直接用 JDK 可没有这么简单，虽然 JDK 1.3 开始就引入了 Java Sound API 处理 MIDI(Musical Instrument Digital Interface)，可是它的接口很难使用，另外，Sun 也专为视、音频的捕获、回放、格式转换提供了 <a href="http://java.sun.com/javase/technologies/desktop/media/jmf/" target="_blank">Java Media Framework API </a>(JMF)，但不能用来创作。有一个开源的组件 JFugue(<a href="http://www.jfugue.org/">http://www.jfugue.org/</a>)，它能让你尽显音乐方面的天赋，给你一个高级易用的接口来操作 Java Sound，制作自己的 MIDI 音乐。<!--more--><br/>
+<br/>
+<span style="color: #ff0000;"><strong><br/>
+一：JFugue Hello World<br/>
+</strong></span><br/>
+JFugue 使用字符串来描述音乐表现，然后将其转换成 MIDI 指令并通过 Java Sound 接口对其进行处理。JFugue 可以播放音乐本身，或是保存为一个 MIDI 文件。使用它的 API 非常的容易，比如完成上面 Basic 代码的功能，只要写成<br/>
+<pre class="brush:java">Player player = new Player();<br/>
+player.play("C D E F G A B C6W");</pre>
+
+其中的 "C D E F G A B C6W" 就是一个 MIDI 指令集，字符串描述不区分大小写，对音乐有所了解的朋友一眼就能看明白。每一项是一个音符，音符由三部分组成，分别是：<br/>
+<br/>
+1. <span style="color: #0000ff;">音符名</span> －－ 即唱名，如 CDEFGAB<br/>
+2. <span style="color: #0000ff;">音高</span> －－ 默认为 5(表示第五个八度－中央 C 所在的八度)，如 C7 就是简谱的 ⅰ。您能够用#和b字符分别表示升半音和降半音。<br/>
+3. <span style="color: #0000ff;">音长</span> －－ 默认为 Q(quartar)，表示四分之一符，还有 W(whole)，全音符，H(half)，半音符。其他如：1/8("i")、1/16("s")、1/32("t")、1/64("x")和1/128音值("n")。您能够通过在音值字符后面加上一个点(".")来表示一个点音值。<br/>
+<br/>
+除了用音符字母来指定音符名之外，还可直接使用“音符值（note value）”，同时表达音符名和音高。MIDI 有128个音符，编号是从0到127，以半音为间距。第60号音符是Middle-C。要指定音符值，就要在一个方括号里加上数值，比如 [60]。例如前面的 <span style="color: #0000ff;">哆来咪发唆拉西哆</span> 可以写成:<br/>
+<pre class="brush:java">player.play("T120 I[24] [60] D [64] F I[Piccolo] G A B C6W");</pre>
+
+所以前面的 C 其实是 C5Q 的缩写，音符名为 C，音高 5 表示第五个八度，音长为 Q，表示四分之一符。<br/>
+<br/>
+<strong><span style="color: #ff0000;">二：音色与节拍<br/>
+</span></strong><br/>
+此外，MIDI 可以指定音色(即乐器) 和节拍，JFugue 也当仁不让的支持，例如我们依次用吉他和短笛以每分钟 120 拍演奏上面的序列：<br/>
+<pre class="brush:java">player.play("T120 I[Guitar] C D E F I[Piccolo] G A B C6W");</pre>
+
+上面的 T 是 Tempo 拍子的缩写，I 是 Instrument 乐器的缩写。General Midi(GM) 音色表里有 128 种乐器(名称和编号)可选，参见<a href="http://forum.midifan.com/viewthread.php?tid=154458" target="_blank">：★GM 音色表★常用MIDI控制器一览表★专业术语字典★常用术语</a>。I[] 中括号里可以用乐器名，也可以用编号，如 I[Guitar] 可用 i[24] 替换。只是对于中国民族乐器，如二胡、琵琶的支持还得研究一下。<br/>
+<br/>
+<strong><span style="color: #ff0000;">三：和弦支持</span></strong><br/>
+<br/>
+用字符串来描述音乐的另一个优良特性是能够制作和弦。例如用下面的代码方便时创建一个和弦编组（使用了 Pattern 的写法）：<br/>
+<pre class="brush:java">Pattern progression = new Pattern();<br/>
+progression.add("T160 I[Guitar] c5majw g5majw a5minw f5majw g5majw c5majw");<br/>
+Player jukebox = new Player();<br/>
+jukebox.play(progression);</pre>
+
+关于和弦的命名可参考：<a href="http://orchestra.elephantbase.net/appendix_2.htm" target="_blank">常用和弦的分类和命名</a>，针对 JFugue 的准确命名还得看 JFugue 提供的文档。说明一下，c5majw 中的 c5 表示根音为中央 C，maj 表示大三和弦，w 为全音符。上面执行后发出来的是和弦齐奏的声音，还要研究一下和弦如何进行分解。<br/>
+<br/>
+可用 Player 来保存成一个 Midi 文件：<br/>
+<pre class="brush:java">jukebox.save(progression,"c:/music/chord.mid");</pre>
+
+<strong><span style="color: #ff0000;"><br/>
+四：请您欣赏</span></strong><br/>
+<br/>
+最后来欣赏一段用 JFugue 演奏的节奏感很强的鼓点的音乐(<a href="http://www.jfugue.org/beat16.mid">beat16.mid</a>)，这段音乐的代码如下：<br/>
+<pre class="brush:java">Rhythm rhythm = new Rhythm();<br/>
+<br/>
+//Bang out your drum beat<br/>
+rhythm.setLayer(1, "O..oO...O..oOO..");<br/>
+rhythm.setLayer(2, "..*...*...*...*.");<br/>
+rhythm.setLayer(3, "^^^^^^^^^^^^^^^^");<br/>
+rhythm.setLayer(4, "...............!");<br/>
+<br/>
+//Associate percussion notes with your beat<br/>
+rhythm.addSubstitution('O', "[BASS_DRUM]i");<br/>
+rhythm.addSubstitution('o', "Rs [BASS_DRUM]s");<br/>
+rhythm.addSubstitution('*', "[ACOUSTIC_SNARE]i");<br/>
+rhythm.addSubstitution('^', "[PEDAL_HI_HAT]s Rs");<br/>
+rhythm.addSubstitution('!', "[CRASH_CYMBAL_1]s Rs");<br/>
+rhythm.addSubstitution('.', "Ri");  <br/>
+<br/>
+//Play the rhythm!<br/>
+Pattern pattern = rhythm.getPattern();<br/>
+pattern.repeat(4);<br/>
+Player player = new Player();<br/>
+player.play(pattern);</pre>
+
+接下来就是研究一下的是如何把多音乐进行合成，得到更发烧一级的效果。更详细的 JFugue 使用请浏览它的官网 <a href="http://www.jfugue.org/index.html">http://www.jfugue.org/index.html</a>。<br/>
+<br/>
+参考：1. <a href="http://www.sudu.cn/info/html/edu/java/20060912/304274.html" target="_blank">用Java JFugue进行快速音乐编程</a> 英文原文：<a href="http://www.zdnetasia.com/techguide/java/0,39044898,39393475,00.htm" target="_blank">Rapid music programming with Java JFugue</a><br/>
+2. <a href="http://codetojoy.blogspot.com/2008/01/mytunes-groovy-and-jfugue.html" target="_blank">Code To Joy: myTunes: Groovy and JFugue</a><br/>
+3. <a href="http://java.dzone.com/news/interview-jfugue-goes-hip-hop" target="_blank">Interview: JFugue Goes Hip Hop</a><br/>
+4. <a href="https://nbjfuguesupport.dev.java.net/" target="_blank">Swing application that uses JFugue API for MIDI files</a><br/>
+5. <a href="http://www.cs.cofc.edu/~manaris/spring04/cs220-handouts/JFugue/JFugue-UserGuide.html" target="_blank">JFugue User's Guide</a>

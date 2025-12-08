@@ -1,0 +1,56 @@
+---
+title: Java 8 的泛型增强
+url: /java-8-generic-enhance/
+date: 2015-11-11T22:16:36-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java8
+tags: 
+  - java8
+  - 泛型
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7025 
+wpStatus: publish
+views: 791
+lastmod: 2021-09-03T17:45:03-05:00
+---
+
+Java 5 引入了泛型，这是一次重大的改进，从此集合中的东西不需要每次显式的去转型。不过 Java 5 还不具备类型推断的能力，所以声明泛型必须写成</p>
+<br/>
+List&lt;String&gt; list = new ArrayList&lt;String&gt;();<br/><br/>
+一直到 Java 6 也是如此。自 Java 7 起泛型增强为可根据声明类型进行推断，所以 Java 7 中可以这么写<br/><br/>
+List&lt;String&gt; list = new ArrayList&lt;&gt;();  //&lt;&gt; 中的参数可省略，如果类型参数多, 或多层嵌套时很省事<br />
+或<br />
+List&lt;String&gt; list = Collections.emptyList(); //见  <a href="http://unmi.cc/java-generic-auto-infer-by-declare-type/">Java 泛型 -- 依据声明的变量类型自动推断</a><br/><br/>
+Java 8 开始对泛型类型推断又进一步增强：可根据方法上下文进行推断，例如下面的代码在 Java 7 下编译不过<br/><br/>
+<pre class="lang:default decode:true">List&lt;String&gt; list = new ArrayList&lt;&gt;();
+list.addAll(new ArrayList&lt;&gt;()); //根据 list.addAll() 上下文推断要创建的类型是 new ArrayList&lt;String&gt;()</pre>
+<br/>
+<!--more-->报编译错误：<br/><br/>
+<span style="color: #800000;">Test.java:10: error: no suitable method found for addAll(ArrayList&lt;Object&gt;)</span><br />
+<span style="color: #800000;">    list.addAll(new ArrayList&lt;&gt;());</span><br />
+<span style="color: #800000;">        ^</span><br />
+<span style="color: #800000;">    method List.addAll(int,Collection&lt;? extends Integer&gt;) is not applicable</span><br />
+<span style="color: #800000;">      (actual and formal argument lists differ in length)</span><br />
+<span style="color: #800000;">    method List.addAll(Collection&lt;? extends Integer&gt;) is not applicable</span><br />
+<span style="color: #800000;">      (actual argument ArrayList&lt;Object&gt; cannot be converted to Collection&lt;? extends Integer&gt; by method invocation conversion)</span><br />
+<span style="color: #800000;">    method Collection.addAll(Collection&lt;? extends Integer&gt;) is not applicable</span><br />
+<span style="color: #800000;">      (actual argument ArrayList&lt;Object&gt; cannot be converted to Collection&lt;? extends Integer&gt; by method invocation conversion)</span><br />
+<span style="color: #800000;">1 error</span><br/><br/>
+也就 addAll() 的参数 new ArrayList&lt;&gt;() 无法推断出类型，被假定类型为默认的 Object, 所以无法把 ArrayList&lt;Object&gt; 加到 List&lt;String&gt; 中去。<br/><br/>
+但是用 Java 8 编译上面的代码是没问题的，也就是 Java 8 在编译 list.addAll(new ArrayList&lt;&gt;()) 推断为 list.addAll(new ArrayList&lt;String&gt;())，即通过方法参数上下文推断出实际创建的类型。<br/><br/>
+上面的代码有还一种很怪异的写法<br/><br/>
+<pre class="lang:default decode:true">List&lt;String&gt; list = new ArrayList&lt;&gt;();
+list.addAll(new &lt;String&gt;ArrayList()); //不能写成 new &lt;String&gt;ArrayList&lt;&gt;()</pre>
+<br/>
+不过不管是 Java 7 还是 Java 8 编译这段代码都会有警告<br/><br/>
+<span style="color: #800000;">Note: Test.java uses unchecked or unsafe operations.</span><br />
+<span style="color: #800000;">Note: Recompile with -Xlint:unchecked for details.</span><br/><br/>
+就像是写成 List&lt;String&gt; list = new ArrayList() 省略了 &lt;&gt; 一样的编译警告。但基本可以保证我们没有机会搞出 new &lt;String&gt;ArrayList() 这种玩法。<br/><br/>
+最后一句，其实可别忽视了 Java 8 对类型推断的增强，它的主要工作重点是在如何根据上下文, 把一个 Lambda 表达式经由 SAM 的映射关系, 推断出对就的对象类型来。

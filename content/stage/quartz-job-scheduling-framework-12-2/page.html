@@ -1,0 +1,190 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第十二章. Quartz Cookbook (第二部分)
+url: /quartz-job-scheduling-framework-12-2/
+date: 2008-04-05T02:02:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/10/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 420 
+wpStatus: publish
+views: 525
+lastmod: 2021-09-02T20:49:44-05:00
+---
+
+<strong>二. 与 Job 一同工作</strong></p>
+<br/>
+本节为使用 Quartz 的 Job 提供了一些例子。<br/><br/>
+<strong>·创建一个新的 Job 类</strong><br/><br/>
+创建一个新的 Job 类很简单。仅需创建一个类，让它实现 <span style="color: #800080;">org.quartz.Job</span> 接口即可。这个接口需要你实现 <span style="color: #800080;">execute()</span> 方法，它会在 Scheduler 决定 Job 要执行时被调用。<br/><br/>
+代码 12.4 演示了一个简单的 Job，它会为某个用户检查邮件服务器上是否有新的邮件。当 Scheduler 执行这个 Job 时，方法 <span style="color: #800080;">execute()</span> 被调用，然后其中的代码就会连接到邮件服务器并获取任何邮件消息。这一 Job 只简单的打印邮件是谁发的和邮件的主题。<!--more--><br/><br/>
+<strong>代码 12.4. 一个检查邮件服务器上的邮件的 Quartz Job</strong><br/><br/>
+<pre class="lang:default decode:true">package org.cavaness.quartzbook.chapter12;<br/><br/>
+import java.security.NoSuchProviderException;
+import java.util.Properties;<br/><br/>
+import javax.mail.Folder;
+import javax.mail.Message;
+import javax.mail.MessagingException;
+import javax.mail.Session;
+import javax.mail.Store;<br/><br/>
+import org.quartz.Job;
+import org.quartz.JobExecutionContext;
+import org.quartz.JobExecutionException;<br/><br/>
+public class CheckEmailJob implements Job {<br/><br/>
+  String mailHost = "some.mail.host";
+  String username = "aUsername";
+  String password = "aPassword";<br/><br/>
+  // Default Constructor
+  public CheckEmailJob() {
+    super();
+  }<br/><br/>
+  public void execute(JobExecutionContext context) throws JobExecutionException {
+    checkMail();
+  }<br/><br/>
+  protected void checkMail() {<br/><br/>
+    // Get session
+    Session session = null;<br/><br/>
+    try {<br/><br/>
+      // Get system properties
+      Properties props = System.getProperties();<br/><br/>
+      session = Session.getDefaultInstance(props, null);
+    // Get the store
+    Store store = session.getStore("pop3");
+    store.connect(mailHost, username, password);<br/><br/>
+    // Get folder
+    Folder folder = store.getFolder("INBOX");
+    folder.open(Folder.READ_ONLY);<br/><br/>
+    // Get directory
+    Message message[] = folder.getMessages();
+    int numOfMsgs = message.length;<br/><br/>
+    if (numOfMsgs &gt; 0) {
+      for (int i = 0, n = numOfMsgs; i &lt; n; i++) {
+        System.out.println("(" + i + "  of "  + numOfMsgs + "): "
+            + message[i].getFrom()[0] + "\t"
+            + message[i].getSubject());
+      }
+    } else {
+      System.out.println("No Messages for user");
+    }<br/><br/>
+    // Close connection
+    folder.close(false);
+    store.close();
+  } catch (NoSuchProviderException e) {
+    // TODO Auto-generated catch block
+    e.printStackTrace();
+  } catch (MessagingException e) {
+    // TODO Auto-generated catch block
+    e.printStackTrace();
+  }
+ }
+ public static void main(String[] args) {
+   CheckEmailJob job = new CheckEmailJob();
+   job.checkMail();
+ }
+}</pre>
+<br/>
+代码 12.4 中大部分内部是使用 JavaMail API 访问邮件服务器的。就实现一个新的 Quartz Job 类来说，只有很少的事情要做。究其本质，就是要实现 Job 接口和 <span style="color: #800080;">execute()</span> 方法，然后为被部署准备就绪。这在下一个例子中有所显示。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>硬编码之于向 Job 传参<br />
+</strong><br />
+在代码 12.4 中，邮件属性，如主机、用户名和密码是硬编码在 Job 类本身中。这称不上是个好主意。在本章后面部份，我们把 Job 修改为传参到 <span style="color: #800080;">JobDataMap</span> 中。</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<strong>·部署 Quartz Job</strong><br/><br/>
+如上个例子所演示的，要创建一个 Quartz Job 确实很直截的。幸运的是，通过 Scheduler 配置一个 Job 也不是很难。代码 12.5 展示的就是部署前面的 <span style="color: #800080;">CheckEmailJob</span>。<br/><br/>
+<strong>代码 12.5. 显示了如何部署 CheckEmailJob 的例子</strong><br/><br/>
+<pre class="brush:java">package org.cavaness.quartzbook.chapter12;<br/><br/>
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.quartz.JobDetail;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.Trigger;
+import org.quartz.TriggerUtils;
+import org.quartz.impl.StdSchedulerFactory;<br/><br/>
+public class Listing_12_5 {
+  static Log logger = LogFactory.getLog(Listing_12_5.class);<br/><br/>
+  public static void main(String[] args) {
+    Listing_12_5 example = new Listing_12_5();
+    example.runScheduler();
+  }<br/><br/>
+  public void runScheduler() {
+    Scheduler scheduler = null;<br/><br/>
+    try {
+      // Get a Scheduler instance from the Factory
+      scheduler = StdSchedulerFactory.getDefaultScheduler();<br/><br/>
+      // Start the scheduler
+      scheduler.start();<br/><br/>
+      // Create a JobDetail for the Job
+      JobDetail jobDetail = new JobDetail("CheckEmailJob",
+          Scheduler.DEFAULT_GROUP, CheckEmailJob.class);<br/><br/>
+      // Create a trigger that fires every 1 hour
+      Trigger trigger = TriggerUtils.makeHourlyTrigger();<br/><br/>
+      trigger.setName("emailJobTrigger");<br/><br/>
+      // Start the trigger firing from now
+      // trigger.setStartTime(new Date());<br/><br/>
+      // Associate the trigger with the job in the scheduler
+      scheduler.scheduleJob(jobDetail, trigger);
+    } catch (SchedulerException ex) {
+      // deal with any exceptions
+      logger.error(ex);
+    }
+  }<br/><br/>
+}</pre>
+<br/>
+代码 12.5 中的内容先是从 <span style="color: #800080;">StdSchedulerFactory</span> 获得 Scheduler，然后启动它。接着为 <span style="color: #800080;">CheckEmailJob</span> 创建一个 <span style="color: #800080;">JobDetail</span> 和一个立即开始、每小时触发的 Trigger。<br/><br/>
+<strong>·触发 Job 一次</strong><br/><br/>
+<span style="color: #800080;">org.quartz.TriggerUtils</span> 类是很方便的，包含有许多有用的方法。其中一个最有用的方法是能部署一个只立即触发一次的 Trigger。代码 12.6 演示了如何仅仅触发 <span style="color: #800080;">CheckEmailJob</span> 一次。<br/><br/>
+<strong>代码 12.6. 为 <span style="color: #800080;">CheckEmailJob</span> 使用仅触发一次的 Trigger</strong><br/><br/>
+<pre class="brush:java">package org.cavaness.quartzbook.chapter12;<br/><br/>
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.quartz.JobDetail;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.Trigger;
+import org.quartz.TriggerUtils;
+import org.quartz.impl.StdSchedulerFactory;<br/><br/>
+public class Listing_12_6 {
+  static Log logger = LogFactory.getLog(Listing_12_6.class);<br/><br/>
+  public static void main(String[] args) {
+    Listing_12_6 example = new Listing_12_6();
+    example.runScheduler();
+  }<br/><br/>
+  public void runScheduler() {
+    Scheduler scheduler = null;<br/><br/>
+    try {
+      // Get a Scheduler instance from the Factory
+      scheduler = StdSchedulerFactory.getDefaultScheduler();<br/><br/>
+      // Start the scheduler
+      scheduler.start();
+      // Create a JobDetail for the Job
+      JobDetail jobDetail = new JobDetail("CheckEmailJob",
+          Scheduler.DEFAULT_GROUP, CheckEmailJob.class);<br/><br/>
+      // Create a trigger that fire-once only
+      Trigger trigger = TriggerUtils.makeImmediateTrigger(0, 0);
+      trigger.setName("emailJobTrigger");<br/><br/>
+      // Associate the trigger with the job in the scheduler
+      scheduler.scheduleJob(jobDetail, trigger);<br/><br/>
+    } catch (SchedulerException ex) {
+      // deal with any exceptions
+      logger.error(ex);
+    }
+  }
+}</pre>
+<br/>
+代码 12.6 中使用了 <span style="color: #800080;">TriggerUtils</span> 类的静态方法 <span style="color: #800080;">makeImmediateTrigger()</span>，并传递给　<span style="color: #800080;">repeatCount</span> 和 <span style="color: #800080;">repeatInterval</span> 这两个参数的值都是 0，也就使得这个 Trigger 仅触发一次。

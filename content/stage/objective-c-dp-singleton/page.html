@@ -1,0 +1,105 @@
+---
+title: Objective-C 设计模式之单例
+url: /objective-c-dp-singleton/
+date: 2011-08-25T06:22:20-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - ios
+  - objective-c
+  - design pattern
+  - singleton
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3776 
+wpStatus: publish
+views: 1822
+lastmod: 2021-09-03T14:24:42-05:00
+---
+
+作为设计模式中最简单的一个，单例模式还是在很多系统中都会用到，总有那么一些实例，从始至终只需要它的一个实例，而且任何时候都要总方便的得到，像 Application 对象啦，环境对像啊。</p>
+<br/>
+要保持你设计的类别人只会初始出一个实例来，像 Java/C++/C# 中的做法一般希望能保证以下那些：<br/><br/>
+1. 构造方法藏起来，private 修饰，这样只能通过统一的工厂方法获得实例，因为 new 出来的总是新对象<br />
+2. 克隆方法出来的对象仍然是原来的对象<br />
+3. 反序列化出的对象也仍然是原来那个唯一的对象(这好像有点难)<br />
+4. 一般程序运行期间，该单实例不被释放<br />
+5. 一般要求工厂方法是原子性的，也是避免返回了不同的实例<br />
+6. 等等................. 是否还有些补充？<br/><br/>
+不一定每一点都真正考虑到，因为不是每个使用都都那么变态或不存在某些使用场景。<br/><br/>
+而我们这里的 Objective-C 有其语言的较大特殊性，是通过 alloc 来创建实例的，无法把构造方法 alloc 隐藏起来，但我们总是有办法的，可以做到：<br/><br/>
+1. 工厂方法返回唯一的实例<br />
+2. 多次调用 alloc 构造出的实例与 工厂方法得到的是同一个<br />
+3. 让你释放不掉这个实例，引用计数不让归零<!--more-->现在来看看 Objective-C 中的单例模式的代码实现吧：<br/><br/>
+<pre class="lang:default decode:true">//singleton.h<br/><br/>
+#import &lt;Foundation/Foundation.h&gt;<br/><br/>
+@interface Singleton : NSObject 
+{<br/><br/>
+}<br/><br/>
++ (Singleton *) sharedInstance;<br/><br/>
+- (void) operation;<br/><br/>
+@end<br/><br/>
+//singleton.m
+#import "Singleton.h"<br/><br/>
+@implementation Singleton<br/><br/>
+static Singleton *_sharedInstance = nil;<br/><br/>
+- (void) operation
+{
+  // do something
+  NSLog(@"Singleton");
+}<br/><br/>
++ (Singleton *) sharedInstance
+{
+  if (_sharedInstance == nil)
+  {
+    _sharedInstance = [NSAllocateObject([self class], 0, NULL) init];
+  }
+  
+  return _sharedInstance;
+}<br/><br/>
++ (id) allocWithZone:(NSZone *)zone
+{
+  return [[self sharedInstance] retain];
+}<br/><br/>
+- (id) copyWithZone:(NSZone*)zone
+{
+  return self;
+}<br/><br/>
+- (id) retain
+{
+  return self;
+}<br/><br/>
+- (NSUInteger) retainCount
+{
+  return NSUIntegerMax; // denotes an object that cannot be released
+}<br/><br/>
+- (oneway void) release
+{
+  // do nothing
+}<br/><br/>
+- (id) autorelease
+{
+  return self;
+}<br/><br/>
+@end</pre>
+<br/>
+马上来看看效果，用下面的代码来分别得到 Singleton 的三个实例，s1, s2, s3:<br/><br/>
+<pre class="lang:default decode:true ">Singleton *s1 = [Singleton alloc];
+Singleton *s2 = [Singleton sharedInstance];
+Singleton *s3 = [Singleton alloc];
+    
+NSLog(@"s1:%@, s2%@, s3%@", s1, s2, s3);</pre>
+<br/>
+执行后打印出来的三个实例的地址是一样的：<br/><br/>
+s1:&lt;Singleton: 0x100114890&gt;, s2&lt;Singleton: 0x100114890&gt;, s3&lt;Singleton: 0x100114890&gt;<br/><br/>
+说明它们是同一个实例，无论是 alloc 还是 sharedInstance，好了现在对照着成功的案例可以放心的解释一下了：<br/><br/>
+1. 每一次 alloc 都得经过 allocWithZone: 方法，然后进到 sharedInstance 方法，这就统一了入口<br />
+2. release/autorelease/retainCount 方法保证了实例不被释放<br />
+3. copyWithZone: 和 retain 用以确保克隆还是保留的仍然是原来那个唯一的实例<br/><br/>
+再有更苛刻的条件就暂不考虑了，比如应该可以加上 @synchronized 来原子性一下。

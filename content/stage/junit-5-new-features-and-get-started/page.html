@@ -1,0 +1,207 @@
+---
+title: JUnit 5 快速上手(从 JUnit 4 到 JUnit 5)
+url: /junit-5-new-features-and-get-started/
+date: 2017-09-18T02:57:34-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2017/09/junit5_logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - JUnit5
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8259 
+wpStatus: publish
+views: 4880
+lastmod: 2018-11-27T01:37:09-06:00
+---
+
+<p>一直在关注 JUnit 5 的演进，自两年前首个 ALPHA 版后，经历了 6 的 Milestone, 3 个 RC 终于在 2017/09/10 正式发布了。其实还从未对其深究过，今天算是正式开始体验。</p>
+
+<p>不像以往的版本，JUnit 5 现在是三个模块的合体 JUnit 5 = JUnit Platform + JUnit Jupiter + JUnit Vintage</p>
+
+<ol>
+
+	<li>JUnit Platform: 运行测试的基础平台。还定义了开发测试框架的 <a href="http://junit.org/junit5/docs/snapshot/api/org/junit/platform/engine/TestEngine.html">TestEngine</a> API。并提供了命令行执行测试以及与 Gradle, Maven, JUnit4 Runner 的集成</li>
+
+	<li>JUnit Jupiter: 包含了新的编程和扩展模型。它还提供了一个运行新型测试的 TestEngine 实现</li>
+
+	<li>JUnit Vintage: 提供了一个让 JUnit Platform 运行 JUnit 3 和 JUnit 4 的 TestEngine 实现</li>
+
+</ol>
+
+<p>以上三个模块分工还是很明确，因此</p>
+
+<ol>
+
+	<li>从现有的 JUnit 4 项目步入到 JUnit 5 至少两 JUnit Platform 和  JUnit Vintage 两个</li>
+
+	<li>建立全新项目可以只引入  JUnit Platform 和 JUnit Jupiter</li>
+
+	<li>混合型当然是三个全部引入</li>
+
+</ol>
+
+<p>但是由于 jar 包之间本身存在某种依赖关系，所以实际上 pom.xml 可以比想像的更简单<!--more--></p>
+
+<p>JUnit 5 要求 Java 8 及以上的版本，甚至与 Java 9 也有所展望，这个对于怕出乱子的领导是很难的。</p>
+
+<p>关于 Maven 中如何使用 JUnit 5，可以参考 junit5-maven-consumer 这个 <a href="https://github.com/junit-team/junit5-samples/blob/master/junit5-maven-consumer/pom.xml">pom.xml</a> 配置; 还可以酌情对该配置进行裁剪。</p>
+
+<p>举例说明：</p>
+
+<ol>
+
+	<li>全新项目，只有 JUnit 5 新型编程/扩展模型，pom.xml 中只需要依赖<br /><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;<br/>
+    &lt;groupId&gt;org.junit.jupiter&lt;/groupId&gt;<br/>
+    &lt;artifactId&gt;junit-jupiter-engine&lt;/artifactId&gt;<br/>
+    &lt;version&gt;5.0.0&lt;/version&gt;<br/>
+    &lt;scope&gt;test&lt;/scope&gt;<br/>
+&lt;/dependency&gt;<br/>
+</pre>
+
+</li>
+
+	<li>只需让原来的 JUnit 4 在 JUnit 5 平台上运行的话，pom.xml 中只需要依赖<br /><br/>
+<pre class="lang:default decode:true ">&lt;dependency&gt;<br/>
+    &lt;groupId&gt;org.junit.vintage&lt;/groupId&gt;<br/>
+    &lt;artifactId&gt;junit-vintage-engine&lt;/artifactId&gt;<br/>
+    &lt;version&gt;4.12.0&lt;/version&gt;<br/>
+    &lt;scope&gt;test&lt;/scope&gt;<br/>
+&lt;/dependency&gt;</pre>
+
+<p>junit-vintage-engine 会自动引入相应版本的 JUnit。当然，如果只是这种需求话，真是吃饱了撑着</p>
+
+</li>
+
+	<li>从 JUnit 4 迁移到 JUnit 5, 这是最贴合实际的需求，此时 pom.xml 只的依赖就是同时需要以上两个</li>
+
+</ol>
+
+<p>依赖配置好了，在目前最新的 IntelliJ IDEA 2017.2.4 中可以正常同时执行 JUnit 4 和 JUnit 5 的测试用例了。但目前为止 <code>mvn test</code> 命令只会测试 JUnit 4 的测试用例，若要让 Maven 识别出所有的测试用例还得加上一个构建插件配置</p>
+
+<pre class="lang:default decode:true">&lt;build&gt;<br/>
+    &lt;plugins&gt;<br/>
+        &lt;plugin&gt;<br/>
+            &lt;artifactId&gt;maven-surefire-plugin&lt;/artifactId&gt;<br/>
+            &lt;version&gt;2.19.1&lt;/version&gt;<br/>
+            &lt;configuration&gt;<br/>
+                &lt;includes&gt;<br/>
+                    &lt;include&gt;**/Test*.java&lt;/include&gt;<br/>
+                    &lt;include&gt;**/*Test.java&lt;/include&gt;<br/>
+                &lt;/includes&gt;<br/>
+                &lt;properties&gt;<br/>
+                    &lt;!-- &lt;includeTags&gt;fast&lt;/includeTags&gt; --&gt;<br/>
+                    &lt;excludeTags&gt;slow&lt;/excludeTags&gt;<br/>
+                    &lt;!--<br/>
+                    &lt;configurationParameters&gt;<br/>
+                        junit.jupiter.conditions.deactivate = *<br/>
+                    &lt;/configurationParameters&gt;<br/>
+                    --&gt;<br/>
+                &lt;/properties&gt;<br/>
+            &lt;/configuration&gt;<br/>
+            &lt;dependencies&gt;<br/>
+                &lt;dependency&gt;<br/>
+                    &lt;groupId&gt;org.junit.platform&lt;/groupId&gt;<br/>
+                    &lt;artifactId&gt;junit-platform-surefire-provider&lt;/artifactId&gt;<br/>
+                    &lt;version&gt;1.0.0&lt;/version&gt;<br/>
+                &lt;/dependency&gt;<br/>
+            &lt;/dependencies&gt;<br/>
+        &lt;/plugin&gt;<br/>
+    &lt;/plugins&gt;<br/>
+&lt;/build&gt;</pre>
+
+<p>关键是 <code>junit-platform-surefire-provider</code> 的配置，其他部分只需注意 JUnit 5 可用  <code>@Tag</code> 来标识，包含或排除测试用例。现在 Maven 上也没问题了。</p>
+
+<p>现在可以来个兼具 JUnit 4 和 JUnit 5 具体来个例子，pom.xml 中需要加上前面提到了三块配置。下面开始列出代码</p>
+
+<h4>待测试类 Calculation</h4><br/>
+<pre class="lang:default decode:true ">package cc.unmi;<br/>
+<br/>
+public class Calculation {<br/>
+<br/>
+    public int add(int first, int second) {<br/>
+        return first + second;<br/>
+    }<br/>
+}</pre>
+
+<h4>JUnit 4 测试类</h4><br/>
+<pre class="lang:default decode:true ">package cc.unmi;<br/>
+<br/>
+import org.junit.Test;<br/>
+<br/>
+import static org.junit.Assert.assertEquals;<br/>
+<br/>
+public class CalculationTest {<br/>
+<br/>
+    @Test<br/>
+    public void onePlugTwoShouldBeThree() {<br/>
+        Calculation calc = new Calculation();<br/>
+        assertEquals(3, calc.add(1, 2));<br/>
+    }<br/>
+}</pre>
+
+<h4>JUnit 5 测试类</h4><br/>
+<pre class="lang:default decode:true ">package cc.unmi;<br/>
+<br/>
+import org.junit.jupiter.api.DisplayName;<br/>
+import org.junit.jupiter.api.Tag;<br/>
+import org.junit.jupiter.api.Test;<br/>
+<br/>
+import static org.junit.jupiter.api.Assertions.assertEquals;<br/>
+<br/>
+public class CalculationJunit5Test {<br/>
+<br/>
+    @Test<br/>
+    @DisplayName("1 plus 2 should be 3")<br/>
+    public void onePlugTwoShouldBeThree() {<br/>
+        Calculation calc = new Calculation();<br/>
+        assertEquals(3, calc.add(1, 2));<br/>
+    }<br/>
+<br/>
+    @Test<br/>
+    @Tag("slow")<br/>
+    public void slow(){<br/>
+<br/>
+    }<br/>
+}</pre>
+
+<p>注意：是 JUnit 4 测试类还是 JUnit 5 测试类，关键看注解 <code>@Test</code> 是来自于哪个包，比如说</p>
+
+<ol>
+
+	<li>@Test 是 org.junit.Test，那么它是老的 JUnit 4 的测试类(也可能是 JUnit 3 的)</li>
+
+	<li>@Test 是 org.junit.jpiter.api.Test, 那么它是 JUnit 5 的测试类</li>
+
+</ol>
+
+<p><code>@Test</code> 注解的出处会影响其他标签的行为，例如用 <code>@org.junit.Test</code> 搭配 JUnit 5 特有注解(像 <code>@DisplayName</code>) 就是来到捣乱的，那么这时候 <code>@DisplayName</code> 不会有任何效果。但 JUnit 4  的 @Test 与新的断言方法是可以工作的。</p>
+
+<p>如果我们不得不在一个项目中混合 JUnit 4 和  JUnit 5 的话，我们必须保持使用的  API 是版本一致的。</p>
+
+<p>现在我们可以开始运行测试用例了，分别是在 IDE 和控制台下</p>
+
+<h4>Intellij IDEA 2017.2.4</h4><br/>
+<p><a href="https://yanbin.blog/wp-content/uploads/2017/09/junit5-example-1.png"><img class="aligncenter size-full wp-image-8261" src="https://yanbin.blog/wp-content/uploads/2017/09/junit5-example-1.png" alt="" width="535" height="185" /></a></p>
+
+<p>IDEA 可以正确处理 @DisplayName 标签，但是对 @Tag 视而不见</p>
+
+<h4>Maven 控制台</h4><br/>
+<p><a href="https://yanbin.blog/wp-content/uploads/2017/09/junit5-example-2.png"><img class="aligncenter size-full wp-image-8262" src="https://yanbin.blog/wp-content/uploads/2017/09/junit5-example-2.png" alt="" width="759" height="257" /></a></p>
+
+<p>Maven 能够根据 @Tag 进行排除用例，但是它在一切正常时原本就不会显示测试用类名，所以也就不知道 @DisplayName 是什么，除非自定义 RunListener.</p>
+
+<p>那么 Maven 在有用例失败时，以往都是显示失败的方法名称，那么 JUnit 5 是怎么显示失败的测试用例呢？还是照旧</p>
+
+<p><a href="https://yanbin.blog/wp-content/uploads/2017/09/junit5-example-3.png"><img class="aligncenter wp-image-8263 size-full" src="https://yanbin.blog/wp-content/uploads/2017/09/junit5-example-3.png" alt="" width="848" height="372" /></a></p>
+
+<p>或许 JUnit 5 还是认为显示失败的实际方法名更有助于定位错误。因此，基本上认为 @DisplayName 是给 IDE 用的。要不就自定义 <a href="https://github.com/junit-team/junit/blob/master/src/main/java/org/junit/runner/notification/RunListener.java">RunListener</a> 吧。</p>
+
+<p>本来想在此了解一下 JUnit 5 的新特性，思考之后还是觉得目前最紧要的可能是如何从 JUnit 4 迁移到  JUnit 5, 所以才有了上面的内容。我们完全可以先让两个版本的 JUnit 测试用例并行，然后逐步替换掉  JUnit 4 测试用例。官方的迁移文档是 <a href="http://junit.org/junit5/docs/snapshot/user-guide/#migrating-from-junit4">Migrating from JUnit 4</a>. 迁移不光是 API 的替换，还有 JUnit 5 不再支持 Rule 了，还要验证 JUnit 5 是否能与 Mock 框架 Mockito, JMockit 等正常工作。</p>

@@ -1,0 +1,160 @@
+---
+title: Python 调用动态库时 Segmentation fault (core dumped) 问题
+url: /python-call-shared-object-segmentation-fault-core-dumped/
+date: 2021-08-23T22:07:33-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - Shared Library
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11167 
+wpStatus: publish
+views: 5123
+lastmod: 2022-05-31T11:50:17-05:00
+---
+
+这几天一直纠缠在如何调用动态库的问题上，先是 Go 语言，而后迁移到 Python 语言。在测试 Python 调用动态库时，出现过 "Segmentation fault (core dumped)" 的问题，本文记录下怎么去寻找线索，找到并解决问题的。<br/><br/>
+出现 "Segmentation fault (core dumped)" 的原因是多方面的，比如在 C/C++ 语言中<br/><br/>
+<ol>
+    <li>内存访问越界(数组越界，strcpy, strcat, sprintf, strcmp 等字符串函数读写越界)</li>
+    <li>多线程使用了线程不安全的函数</li>
+    <li>多线程读写的数据未加锁保护</li>
+    <li>非法指针(NULL 指针，随意的指针类型转换</li>
+    <li>堆栈溢出(如大的分配在栈上的局部变量)</li>
+</ol>
+<br/>
+用 Python 来调用动态库很大的可能性会是内存访问越界<!--more--><br/><br/>
+下面来回顾并重现 "Segmentation fault (core dumped)" 这个问题，以 Linux 平台为例，首先在准备一个 C 动态库 testsf.c 文件，内容如<br/><br/>
+<pre class="lang:default decode:true">#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;<br/><br/>
+void foo (char* output)
+{
+    char* h = "hello";
+    strncpy(output, h, 5);
+}</pre>
+<br/>
+用 gcc 编译得到动态库文件 <code>libtestsf.so</code><br/><br/>
+<blockquote>
+$ gcc -fPIC -shared -o libtestsf.so testsf.c
+</blockquote>
+<br/>
+试着写下面的 Python 调用代码 testsf.py<br/><br/>
+<pre class="lang:default decode:true">from ctypes import *<br/><br/>
+foo = cdll.LoadLibrary("./libtestsf.so").foo
+foo.argtypes = (c_char_p,)<br/><br/>
+buf = c_char_p(10)
+foo(buf)
+print(buf.value.decode())</pre>
+<br/>
+执行 <code>python testsf.py</code><br/><br/>
+<blockquote>
+$ python testsf.py<br />
+Segmentation fault (core dumped)
+</blockquote>
+<br/>
+没有更多的信息了，虽然提示说 <code>core dumped</code>,  但当前目录中没有发现 dumped 的 core 文件。原因是 <code>ulimit</code> 设置，默认时 <code>ulimit -a</code> 看到的<br/><br/>
+<blockquote>
+$ ulimit -a<br />
+core file size (blocks, -c) 0<br />
+......
+</blockquote>
+<br/>
+core file size 为 0, 所以上面的 <code>core dumped</code> 是在撒谎，并没有生成 core 文件，我们可以用 <code>ulimit -c unlimited</code>(或设置一个具体数值) 打开 dump core 的选项<br/><br/>
+<blockquote>
+$ ulimit -c unlimited<br />
+$ ulimit -a<br />
+core file size (blocks, -c) unlimited
+</blockquote>
+<br/>
+ulimit 是会话参数，所以重新连接终端后需要时又得重新执行 <code>ulimit -c unlimited</code><br/><br/>
+这时再次执行 <code>python testsf.py</code>, 在当前目录中就会产生一个 core 文件<br/><br/>
+<blockquote>
+$ python testsf.py<br />
+Segmentation fault (core dumped)<br />
+$ ls -l core<br />
+-rw------- 1 vagrant vagrant 3235840 Aug 24 02:29 core
+</blockquote>
+<br/>
+接下来要做的就是用 <code>gdb</code> 定位出问题的地方，没有 <code>gdb</code> 的用 yum 或 apt 自行安装<br/><br/>
+<blockquote>
+$ gdb python core           # gdb 执行程序(python) core文件
+</blockquote>
+<br/>
+这时进到 gdb 的控制台，输入 bt, 就能看到哪里出问题了<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/08/python-so-sf-1.png"><img class="aligncenter wp-image-11168" src="https://yanbin.blog/wp-content/uploads/2021/08/python-so-sf-1-800x384.png" alt="" width="750" height="360" /></a><br/><br/>
+问题就出在对 strcpy 的函数调用上，越界了。原因是 <code>c_char_p(10)</code> 并非我们想要的 buffer, 它是不可访问的<br/><br/>
+<blockquote>
+<pre class="lang:default decode:true">aa = c_char_p(10)
+print(aa.value)</pre>
+</blockquote>
+<br/>
+上面的 Python 一执行立即会被非正常终止<br/><br/>
+<blockquote>
+Process finished with exit code 139 (interrupted by signal 11: SIGSEGV)
+</blockquote>
+<br/>
+我们应该使用 ctypes 的  <code>create_string_buffer(size)</code>  函数来创建一个缓冲，所以正确的 Python 使用前面动态库的代码如下<br/><br/>
+<pre class="lang:default decode:true ">from ctypes import *<br/><br/>
+foo = cdll.LoadLibrary("./libtestsf.so").foo
+foo.argtypes = (c_char_p,)<br/><br/>
+buf = create_string_buffer(10)
+foo(buf)
+print(buf.value.decode())</pre>
+<br/>
+再执行 <code>python testsf.py</code><br/><br/>
+<blockquote>
+$ python testsf.py<br />
+hello
+</blockquote>
+<br/>
+一切正常，以后碰到这种  segment fault 的错误，就可以尝试着用 gdb 来寻求问题的解决办法。<br/><br/>
+&nbsp;<br/><br/>
+<hr /><br/><br/>
+2022-05-31: Ubuntu 会把 crash 的文件记录在 /var/crash 目录中，如<br/><br/>
+<blockquote>
+$ ls -l /var/crash/<br />
+total 45292<br />
+-rw-r----- 1 vagrant vagrant 46378197 May 31 16:23 _usr_bin_python3.9.1000.crash
+</blockquote>
+<br/>
+需要用 apport-unpack 工具解开来<br/><br/>
+<blockquote>
+$ apport-unpack /var/crash/_usr_bin_python3.9.1000.crash ./coredump
+$ ls -l coredump/<br />
+total 216168<br />
+-rw-r--r-- 1 vagrant vagrant 5 May 31 16:36 Architecture<br />
+-rw-r--r-- 1 vagrant vagrant 209625088 May 31 16:36 CoreDump<br />
+-rw-r--r-- 1 vagrant vagrant 24 May 31 16:36 Date<br />
+-rw-r--r-- 1 vagrant vagrant 12 May 31 16:36 DistroRelease<br />
+-rw-r--r-- 1 vagrant vagrant 18 May 31 16:36 ExecutablePath<br />
+-rw-r--r-- 1 vagrant vagrant 10 May 31 16:36 ExecutableTimestamp<br />
+-rw-r--r-- 1 vagrant vagrant 5 May 31 16:36 ProblemType<br />
+-rw-r--r-- 1 vagrant vagrant 22 May 31 16:36 ProcCmdline<br />
+-rw-r--r-- 1 vagrant vagrant 27 May 31 16:36 ProcCwd<br />
+-rw-r--r-- 1 vagrant vagrant 110 May 31 16:36 ProcEnviron<br />
+-rw-r--r-- 1 vagrant vagrant 67423 May 31 16:36 ProcMaps<br />
+-rw-r--r-- 1 vagrant vagrant 1358 May 31 16:36 ProcStatus<br />
+-rw-r--r-- 1 vagrant vagrant 2 May 31 16:36 Signal<br />
+-rw-r--r-- 1 vagrant vagrant 30 May 31 16:36 Uname<br />
+-rw-r--r-- 1 vagrant vagrant 44 May 31 16:36 UserGroups
+</blockquote>
+<br/>
+分析 CoreDump 文件<br/><br/>
+<blockquote>
+$ gdb python coredump/CoreDump
+</blockquote>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://www.jianshu.com/p/45378162e4d8">gdb 查看coredump文件</a></li>
+    <li><a href="https://www.daimajiaoliu.com/daima/5696af9c83c8800">Segmentation fault (core dumped) -llinux系统内存错误报错信息</a></li>
+    <li><a href="https://www.pianshen.com/article/11501313210/">Linux程序运行出现Segmentation fault (core dumped)的通用解决方法</a></li>
+</ol>

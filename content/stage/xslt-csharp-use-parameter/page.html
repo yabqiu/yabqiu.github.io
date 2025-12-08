@@ -1,0 +1,140 @@
+---
+title: XSLT 中使用参数和变量以及 C# 向 XSLT 传入参数
+url: /xslt-csharp-use-parameter/
+date: 2010-06-13T15:39:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - .Net
+tags: 
+  - xslt
+  - parameter
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 172 
+wpStatus: publish
+views: 1114
+lastmod: 2021-09-02T10:45:49-05:00
+---
+
+有时候我们需要向 XSLT 中设定或传入参数或变量，比如用 XSLT 从 RSS <a href="http://www.blogjava.net/Unmi/rss">http://www.blogjava.net/Unmi/rss</a> 取出前面若干条记录，那么这个记录数就应该作声明为参数。</p>
+<br/>
+<a href="http://www.blogjava.net/Unmi/rss">http://www.blogjava.net/Unmi/rss</a> 的文档结构如下：<br/><br/>
+<span style="color: #800080;">&lt;rss&gt;<br />
+    &lt;channel&gt;<br />
+        &lt;item&gt;<br />
+        &lt;title&gt;写第一个 Wordpress 插件程序&lt;/title&gt;<br />
+        &lt;link&gt;http://www.blogjava.net/Unmi/archive/2010/04/27/319398.html&lt;/link&gt;<br />
+        &lt;dc:creator&gt;隔叶黄莺&lt;/dc:creator&gt;<br />
+        &lt;author&gt;隔叶黄莺&lt;/author&gt;<br />
+        &lt;pubDate&gt;Mon, 26 Apr 2010 17:06:00 GMT&lt;/pubDate&gt;<br />
+         ..............................................<br />
+        &lt;/item&gt;<br />
+        &lt;item&gt;<br />
+         .................................................</span><br/><br/>
+基于上面的需求，假定要前 5 条记录，XSLT 可以写成如下(c:\\Unmi_Rss_List.xslt):<!--more--><br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="utf-8"?&gt;
+&lt;xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform"&gt;<br/><br/>
+  &lt;xsl:output method="html" indent="yes"/&gt;&lt;!--output html--&gt;
+  &lt;xsl:param name="rows" select="5"/&gt;&lt;!--定义参数 rows, 并赋值为 5--&gt;
+  &lt;xsl:template match="/rss/channel"&gt;
+    &lt;table align="center" style="border-collapse:collapse;border-color:black" border="1" &gt;
+      &lt;tr style="font-weight:bold"&gt;&lt;td&gt;标题&lt;/td&gt;&lt;td&gt;月份&lt;/td&gt;&lt;/tr&gt;
+        &lt;xsl:for-each select="item"&gt;
+          &lt;xsl:if test="position() &amp;lt;= $rows"&gt;&lt;!--使用 rows 参数，取前五条记录--&gt;
+          &lt;tr&gt;
+            &lt;td&gt;&lt;xsl:value-of select="title"/&gt;&lt;/td&gt;
+            &lt;!--定义变量 month，用函数结果赋值--&gt;
+            &lt;xsl:variable name="month" select="substring(pubDate,0,4)"/&gt;
+            &lt;td&gt;&lt;xsl:value-of select="$month"/&gt;&lt;/td&gt;&lt;!--使用变量 month--&gt;
+          &lt;/tr&gt;
+          &lt;/xsl:if&gt;
+        &lt;/xsl:for-each&gt;
+      &lt;/table&gt;
+    &lt;/xsl:template&gt;
+&lt;/xsl:stylesheet&gt;</pre>
+<br/>
+上面我们用 &lt;xsl:param name="rows" select="5"/&gt; 定义了一个参数 rows，值为 5，在后面通过 $rows 来使用。<br />
+还用 &lt;xsl:variable name="month" select="substring(pubDate,0,4)"/&gt;  定义了一个变量 month，是用表达式(xslt 内置函数)赋的值，其实也可以赋为固定值，如 &lt;xsl:variable name="month" select="Jul&gt; ，然后也是用 $month 来引用。<br/><br/>
+使用代码输出转换后的结果，为方便起见还是放在 TestXslt.aspx 的 Page_Load() 中执行，因为可以直接把内容输出用网页浏览。<br/><br/>
+<pre class="lang:default decode:true">using System;
+using System.Xml.Xsl;
+using System.Xml;<br/><br/>
+public partial class TestXslt : System.Web.UI.Page
+{
+    protected void Page_Load(object sender, EventArgs e)
+    {
+        XslCompiledTransform xslTrans = new XslCompiledTransform();<br/><br/>
+        //enableDocumentFunction and enable script
+        XsltSettings settings = new XsltSettings(false, true);
+        xslTrans.Load("c:\\Unmi_Rss_List.xslt",settings, null);<br/><br/>
+        //Write to Response directly
+        XmlTextWriter responseWriter = new XmlTextWriter(Response.Output);
+        xslTrans.Transform("http://www.blogjava.net/Unmi/rss", responseWriter);
+    }
+}</pre>
+<br/>
+浏览页面 TestXslt.aspx，你会看到只输出了前面五条记录。<br/><br/>
+<table style="border-collapse: collapse; border-color: black;" border="1" align="center">
+<tbody>
+<tr style="font-weight: bold;">
+<td>标题</td>
+<td>月份</td>
+</tr>
+<tr>
+<td>XSLT 文件中使用 C#/JScript/VB 自定义函数</td>
+<td>Sat</td>
+</tr>
+<tr>
+<td>VS 2008中的jQuery Intellisense[转]</td>
+<td>Wed</td>
+</tr>
+<tr>
+<td>使用 NAnt 构建 asp.net 项目并生成一个固定名字的动态库</td>
+<td>Sun</td>
+</tr>
+<tr>
+<td>C# 使用 iTextSharp(5.0.2) 生成 PDF 文档</td>
+<td>Sat</td>
+</tr>
+<tr>
+<td>C# 使用 iTextSharp(4.1.2) 生成 PDF 文档</td>
+<td>Sat</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<em>把上面 XSLT 中的 &lt;xsl:param name="rows" select="5"/&gt; 替换为 &lt;xsl:varibale name="rows" select="5"/&gt; 你也能得到同样的结果。好像 &lt;xsl:param&gt; 和 &lt;xsl:varible&gt; 差不多似的，其实他们是有区别的。</em><br/><br/>
+这样做法是在 XSLT 中自我实现了参数或变量定义，不同时候要修改 XSLT 中参数或变量的赋值。然而通常，我们要等到运行时才能确定参数值，所以需要能够在程序中向 XSLT 传入这个 rows 参数值，否则这样的 XSLT 也太不灵活了。OK，没问题，我们的 C# 代码应该带上 XsltArgumentList 来传入值：<br/><br/>
+<pre class="lang:default decode:true">using System;
+using System.Xml.Xsl;
+using System.Xml;<br/><br/>
+public partial class TestXslt : System.Web.UI.Page
+{
+    protected void Page_Load(object sender, EventArgs e)
+    {
+        XslCompiledTransform xslTrans = new XslCompiledTransform();<br/><br/>
+        //enableDocumentFunction and enable script
+        XsltSettings settings = new XsltSettings(false, true);
+        xslTrans.Load("c:\\Unmi_Rss_List.xslt",settings, null);<br/><br/>
+        //Write to Response directly
+        XmlTextWriter responseWriter = new XmlTextWriter(Response.Output);
+        XsltArgumentList argList = new XsltArgumentList();
+        argList.AddParam("rows","",3);//改变主意了，只想要前三条
+        xslTrans.Transform("http://www.blogjava.net/Unmi/rss", responseWriter);
+    }
+}</pre>
+<br/>
+XsltArgumentList 可以用 AddParam() 方法加入任何所需要的参数值。<br/><br/>
+执行下看看，没错，只显示了三条记录，而 XSLT 还是原来那个 XSLT，其中的 $rows=5 的值在运行时被代换为 $rows=3。<br/><br/>
+假如前面的 &lt;xsl:param name="rows" select="5"/&gt; 换成 &lt;xsl:variable name="rows" select="5"/&gt;，你再运行前一段代码，总是会显示 5 条记录，程序中传入的参数不管用了。<br/><br/>
+也就是 &lt;xsl:variable name="rows" select="5"/&gt; 像个局部变量定义，外部是无法撼动其值的。而 &lt;xsl:param name="rows" select="5"/&gt; 是个方法参数说明，5 只是 rows 的默认值。说到底，我们向 XSLT 中传入的是参数，而不是变量。<br/><br/>
+参考：1. <a href="http://www.xml.com/pub/a/2001/02/07/trxml9.html?page=1" target="_blank" rel="noopener">Setting and Using Variables and Parameters</a><br />
+        2. <a href="http://dpawson.co.uk/xsl/rev2/dates.html" target="_blank" rel="noopener">Date and time processing</a><br />
+        3. <a href="http://xsltsl.sourceforge.net/date-time.html" target="_blank" rel="noopener">Date/Time Processing</a><br />
+        4. <a href="http://blog.sina.com.cn/s/blog_4aa9df3001000b5n.html" target="_blank" rel="noopener">xsl:variable和xsl:param的区别</a><br/><br/>
+2 和 3 讲述了在 XSLT 中如何用内置或第三方定义的函数来处理日期，格式化输出等。

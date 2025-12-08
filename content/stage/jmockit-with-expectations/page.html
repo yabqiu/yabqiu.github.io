@@ -1,0 +1,144 @@
+---
+title: JMockit 之 Expectations
+url: /jmockit-with-expectations/
+date: 2014-01-30T02:39:31-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Unit Test
+  - JUnit
+  - jMockit
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4718 
+wpStatus: publish
+views: 10552
+lastmod: 2021-05-02T22:24:38-05:00
+---
+
+TDD 推求测试先行，不光在自己代码未实现时可以先做好测试，即使平台依赖或第三方接口未准备好我们也能先行一步的，这就要对接口依赖进行 Mock。同时 Mock 也使得我们的测试代码在运行当中不至于随着第三方接口的沦陷而坠入深渊。</p>
+<br/>
+Java 中 Mock 工具也不少，像通用 <a href="http://easymock.org/" target="_blank" rel="noopener">EasyMock</a>, <a href="http://jmock.org/" target="_blank" rel="noopener">jMock</a>, <a href="http://code.google.com/p/mockito" target="_blank" rel="noopener">Mockito</a>, <a href="http://www.unitils.org/summary.html" target="_blank" rel="noopener">Unitils Mock</a>, <a href="http://code.google.com/p/powermock" target="_blank" rel="noopener">PowerMock</a>, 再比如偏专业的 HttpMock, StrutsMock 等。但 <a href="http://code.google.com/p/jmockit" target="_blank" rel="noopener">JMock</a> 与前面各位相比简直是全能选手，对 final/static/native/private 方法都能 Mock，功能上还远不止这些了，可以看看一个对比图 <a href="https://code.google.com/p/jmockit/wiki/MockingToolkitComparisonMatrix" target="_blank" rel="noopener">https://code.google.com/p/jmockit/wiki/MockingToolkitComparisonMatrix</a>。<br/><br/>
+JMockit 是基于 Java5 的 java.lang.instrument 包开发的，所以它才能夺得先机，也可陷得更深。自然它要求 JDK5 及以上，JUnit 4.8 及以上版本。命令行下原来用 -javaagent:/.../lib/jmockit.jar 加载 JMockit，现在发现把 jmockit.jar 放在 classpath 下就 OK 的，但是必须放在 junit.jar 包之前，否则你会看到这个 <span style="color: #800000;">java.lang.IllegalStateException: JMockit wasn't properly initialized; check that jmockit.jar precedes junit.jar in the classpath</span>。 JMockit 有两种 Mock 方式：<br/><br/>
+1. Behavior-oriented(Expectations &amp; Verifications)  --- 基于代码执行行为的模仿，象黑盒测试<br />
+2. State-oriented(MockUp&lt;GenericType&gt;)   --- 侵入类内部，随意模仿，似白盒，可以说是能为所欲为<br/><br/>
+此篇体验下第一种 Mock 方式，在测试代码中最直观就是那个 <code>new Expectations(...){{result = some;}}</code>，下面来看个实际的例子。应用场景是<!--more--><br/><br/>
+MyService.testFetchData() 方法要调用 ExternalService.fetchDataFor() 方法来获得数据，那么我们在 ExternalService.fetchDataFor() 尚未实现之前怎么去测试 MyService.testFetchData() 方法呢，JMockit 要做的就是对 ExternalService.fetchDataFor() 的返回进行 Mock。<br/><br/>
+具体实现代码如下：<br/><br/>
+<strong>1. ExternalService.java</strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+public class ExternalService {
+    public static String fetchDataFor(String name){
+        System.out.println("call ExternalService.fetchDataFor");
+        throw new RuntimeException("Not implemented yet!");
+    }
+}</pre>
+<br/>
+方法 fetchDataFor 并未真正实现，如果测试代码真的进入到这个方法来总是会导致测试用例失败的，除非你就是想要来测试异常的，那没活说。<br/><br/>
+<strong>2. MyService.java</strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+public class MyService {
+    public static String fetchData(String name){
+        System.out.println("call MyService.fetchData");
+        return ExternalService.fetchDataFor(name);
+    }
+}
+</pre>
+<br/>
+<strong>3. MyServiceTest.java</strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import mockit.Expectations;<br/><br/>
+import org.junit.*;<br/><br/>
+public class MyServiceTest {<br/><br/>
+    @Test
+    public void testFetchData() {
+        new Expectations(ExternalService.class){
+            {
+                ExternalService.fetchDataFor("Unmi");
+                result = "blog: http://unmi.cc";
+                //上行或者用 returns("blog: http://unmi.cc")
+            }
+        };
+        
+        String actual = MyService.fetchData("Unmi");
+        Assert.assertEquals("blog: http://unmi.cc", actual);
+    }<br/><br/>
+}
+</pre>
+<br/>
+上面的代码能给予我们的想像空间很大<br/><br/>
+new Expectations(...){{}} 产生了一个匿名子类和它的实例<br />
+对该实例的 result 属性的赋值就是预设的 ExternalService.fetchDataFor("Unmi") 的返回值<br />
+运行时参数的匹配的讲究，如果匹配不上也不会调用被 Mock 的方法，参数选择上可以有 anyString, withAny(obj) 等方式来忽略某个位置上的参数匹配<br />
+<a href="http://jmockit.googlecode.com/svn/trunk/www/javadoc/mockit/Expectations.html" target="_blank" rel="noopener">Expectations</a> 是严格的，即被 Mock 方法必须被精确命中; 同时还有一个 <a href="http://jmockit.googlecode.com/svn/trunk/www/javadoc/mockit/NonStrictExpectations.html" target="_blank" rel="noopener">NonStrictExpectations</a>, 就是说我们 Mock 的方法只作壁上观也无妨<br />
+怎么同时 Mock 多个类，多个方法呢？<br />
+还有这里怎么 Mock 私有方法，怎么 Mock 实例方法呢？<br/><br/>
+为控制篇幅，有些问题其他地方再探讨吧。<br/><br/>
+我们在命令行下执行并看到输出：<br/><br/>
+<blockquote>
+unmi@localhost$ java -classpath lib/jmockit.jar:lib/junit-4.11.jar:lib/hamcrest-core-1.3.jar:bin org.junit.runner.JUnitCore cc.unmi.MyServiceTest<br />
+JUnit version 4.11<br />
+.call MyService.fetchData
+Time: 0.029
+OK (1 test)
+</blockquote>
+<br/>
+测试通过，并未实际去调用 ExternalService.fetchDataFor("Unmi")，这个被 JMockit 接管了。<br/><br/>
+如果把 MyServiceTest.java 中 MyService.fetchData("Unmi") 改成 MyService.fetchData("Hello Unmi"), 再次跑下测试就失败了<br/><br/>
+<blockquote>
+.call MyService.fetchData<br />
+call ExternalService.fetchDataFor<br />
+E<br />
+Time: 0.031<br />
+There was 1 failure:<br />
+1) testFetchData(cc.unmi.MyServiceTest)<br />
+java.lang.RuntimeException: Not implemented yet!<br />
+    at cc.unmi.ExternalService.fetchDataFor(ExternalService.java:6)<br />
+    at cc.unmi.MyService.fetchData(MyService.java:6)<br />
+    at cc.unmi.MyServiceTest.testFetchData(MyServiceTest.java:18)<br />
+    at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)<br />
+    at java.lang.reflect.Method.invoke(Method.java:606)<br />
+    at sun.reflect.NativeMethodAccessorImpl.invoke0(Native Method)<br />
+    at java.lang.reflect.Method.invoke(Method.java:606)
+FAILURES!!!<br />
+Tests run: 1,  Failures: 1
+</blockquote>
+<br/>
+参数匹配不上就跑实际方法实现去了，现在把 MyServiceTest.java 中的 ExternalService.fetchDataFor("Unmi"); 改为 ExternalService.fetchDataFor(anyString); 测试用例又可以通过。<br/><br/>
+略加延伸<br/><br/>
+Mock 实例方法时， Expectations 可以这么写：<br/><br/>
+<pre class="lang:default decode:true">new Expectations(){
+    @Mocked ExternalService service;
+    {
+        service.fetchDataFor("Unmi");
+        result = "all right";
+    }
+};
+</pre>
+<br/>
+因 为 Java 不强制调用 static 方法要用 Class，也可以用实例来调用 static 方法，所以上面的方式同样也适用于对 static 方法的 Mock，只是平白多出 service 实例来。基于对 new Expectations(){{...}} 的理解，MyServiceTest.java 可这么写：<br/><br/>
+<pre class="lang:default decode:true ">public class MyServiceTest {<br/><br/>
+    @Mocked  ExternalService service;<br/><br/>
+    @Test
+    public void testFetchData() {
+        new Expectations(service) {
+            {
+                service.fetchDataFor("Unmi");
+                result = "all right";
+            }
+        };<br/><br/>
+        String actual = MyService.fetchData("Unmi");
+        Assert.assertEquals("all right", actual);
+    }<br/><br/>
+}
+</pre>
+<br/>
+参考： 1. <a href="http://www.taobaotest.com/blogs/2277" target="_blank" rel="noopener">单元测试中mock的使用及mock神器jmockit实践<br />
+</a>          2. <a href="http://code.google.com/p/jmockit/" target="_blank" rel="noopener">http://code.google.com/p/jmockit/</a><br />
+          3. <a href="http://jmockit.googlecode.com/svn/trunk/www/" target="_blank" rel="noopener">http://jmockit.googlecode.com/svn/trunk/www/</a>

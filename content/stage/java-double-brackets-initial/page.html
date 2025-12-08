@@ -1,0 +1,85 @@
+---
+title: 也说 Java 的双括符初始化, 其实就是令人费解的不规范代码
+url: /java-double-brackets-initial/
+date: 2009-08-12T03:33:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 238 
+wpStatus: publish
+views: 596
+lastmod: 2021-09-02T11:22:38-05:00
+---
+
+初看 cgaolei 翻译的 <a href="http://www.javaeye.com/topic/418542" target="_blank" rel="noopener">Java技巧之双括弧初始化</a> 一文，走马观花，只知用法，未细看后面的解释。蔚为惊艳，心里想 Java 竟然有这么神奇的语法而一直未得知。因为在初始化集合时确实方便不少。原来做某些测试要初始化集合时会用到 commons-lang 包和 JDK 的 Arrays 工具类，现在知道可以这么用了：</p>
+<br/>
+<pre class="lang:default decode:true">Map map = new HashMap() {{
+        put("Name", "Unmi");
+        put("QQ", "1125535");
+}};<br/><br/>
+List stooges = new ArrayList() {{
+        add("Larry");
+        add("Moe");
+        add("Curly");
+}};</pre>
+<br/>
+看起来都是在一条语句里完成，而不需要分步骤写成:<!--more--><br/><br/>
+<pre class="brush:java">Map map = new HashMap();
+map.put("Name","Unmi");
+map.put("QQ","1125535");</pre>
+<br/>
+一不小心没好好理解的人可能以为它是什么特别的语法，关键是大括号连一块了，原作者也是在故作姿态，美其名曰：双括弧语法(double-brace syntax)。真是乱花渐欲迷人眼，其实就是匿名类加初始块。该文有解释：第一层括弧 实际是定义了一个内部匿名类 (Anonymous Inner Class)，第二层括弧 实际上是一个实例初始化块 (instance initializer block)，这个块在内部匿名类构造时被执行。<br/><br/>
+那怎么去更好理解它呢？如果我们写成如下的方式应该会更好理解吧，提个技巧，在 Eclipse 中对第一段代码按下 Ctrl + Shift + F 就如下了：<br/><br/>
+<pre class="lang:default decode:true">Map map = new HashMap() {
+    {
+        put("Name", "Unmi");
+        put("QQ", "1125535");
+    }
+};</pre>
+<br/>
+其实就是匿名类啊，会创建出一个 HashMap 的子类来，匿名类中一个 {} 括起来的初始化块，里面自然可放置初始化代码。{} 块中的代码编译后会放到 &lt;init&gt;()，也就是构造方法中去，所以可用来初始化实例。如果是写在 TestDoubleBrace 类中，编译后你会看到会生成 TestDoubleBrace$1.class 文件，反编译该文件内容是：<br/><br/>
+<pre class="lang:default decode:true ">final class com.unmi.TestDoubleBrace$1 extends java.util.HashMap{ //创建了一个 HashMap 的子类 TestDoubleBracke$1
+com.unmi.TestDoubleBrace$1();
+  Code:
+   0:   aload_0
+   1:   invokespecial   #8; //Method java/util/HashMap."&lt;init&gt;":()V   //{} 中的代码放到了构造方法中去了
+   4:   aload_0
+   5:   ldc     #10; //String Name
+   7:   ldc     #12; //String Unmi
+   9:   invokevirtual   #14; //Method put:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+   12:  pop
+   13:  aload_0
+   14:  ldc     #18; //String QQ
+   16:  ldc     #20; //String 1125535
+   18:  invokevirtual   #14; //Method put:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+   21:  pop
+   22:  return<br/><br/>
+}</pre>
+<br/>
+所以说白了，什么双括弧语法啊，就是代码写得不规范，才使得那么的令人费解。如果还不能理解，再列两个惯用代码来：<br/><br/>
+<pre class="lang:default decode:true ">JFrame frame = new JFrame();
+frame.addMouseListener(new MouseAdapter() {
+    public void mouseClicked(MouseEvent e) {
+        // do womething here.
+    }
+});<br/><br/>
+Thread thread = new Thread() {{ // 也学着样把大括号也连一块写了
+        this.setName("作业处理线程");
+    }// 如果不重新定义 run() 方法,那么后面那个大括号也能与这个并一块<br/><br/>
+    public void run() {
+        // do something here.
+    }
+};
+thread.start();</pre>
+<br/>
+应该没问题了吧，上面是事件监听器和多线程常用的写法，如果他不把大括号连在一起，而是规范的写代码，相信您一开始也不会对所谓的 Double Brace Syntax 有太多的困惑。要说这种初始化方法运用到集合中还挺方便的，只是无端的多了些匿名类。<br/><br/>
+刚开始我看到这种双括符写法也是把它奉若圣经，对它只一知半解，昨天在用 XStream 把一个对象生成 XML 文件时，其中有一个 List 属性，我就借用了这种双括符法来初始化元素，结果生成的 XML 文件走了样，原因是 XStream 的 Converter 能处理 ArrayList，但无法很好的处理生成的 ArrayList 的匿名子类。因此才回头认真的重新审视了一番这个所谓的双括符初始化语法。

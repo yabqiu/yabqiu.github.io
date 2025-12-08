@@ -1,0 +1,183 @@
+---
+title: 有一种方法给 XSLT 中变量进行赋值，是保持状态的那种
+url: /xslt-assign-variables/
+date: 2011-05-03T13:55:11-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - XML/DOM
+  - Java/JEE
+tags: 
+  - Java
+  - xstl
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3538 
+wpStatus: publish
+views: 5093
+lastmod: 2021-09-03T14:16:15-05:00
+---
+
+在 XSLT 中声明变量可以用 &lt;xsl:variable&gt; 和 &lt;xsl:param&gt;，它们的区别是可以通过 &lt;xsl:param&gt; 从外部向 XSLT 文件传参数，除此之外，在 xslt 内部使用时这两者的用法基本是一样的。下面只以 &lt;xsl:variable&gt; 为例子，例子中的 xsl:variable 替换成 xsl:param 也是能 run 的。</p>
+<br/>
+&lt;xsl:variable&gt; 的基本用法是：<br/><br/>
+<pre class="lang:default decode:true">&lt;xsl:variable name="username" select="'Initial'"/&gt; &lt;!-- 不写 select 则默认为 '' --&gt;<br/><br/>
+&lt;xsl:variable name="username" select="'New Value'"/&gt; &lt;!-- 赋值 --&gt;<br/><br/>
+&lt;xsl:value-of select="$username"/&gt; &lt;!-- 显示变量值，变量名前加上 $ 符号 --&gt;</pre>
+<br/>
+<!--more-->上面三行同时写在一个 &lt;xsl:template/&gt; 里是没问题的，最后显示出新的值为 'New Value'，但是跨了多次模板调用就有问题了，即使是把第一行写在最外层看起来像个全局变量。等会例子会揭示出现像来，先记住一点，在 XSLT 中每次应用模板就像是一次方法调用一样，那好，看个例子吧，有三部分组成，XML、XSLT、XsltTransformer 类，这三个文件都放在 cc/unmi/xslt 包中：<br/><br/>
+1. test.xml 文件：<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;users&gt;
+    &lt;user&gt;
+        &lt;name&gt;Unmi&lt;/name&gt;
+        &lt;email&gt;fantasia@sina.com&lt;/email&gt;
+    &lt;/user&gt;
+    &lt;user&gt;
+        &lt;name&gt;Any&lt;/name&gt;
+        &lt;email&gt;master@unmi.cc&lt;/email&gt;
+    &lt;/user&gt;
+&lt;/users&gt;</pre>
+<br/>
+2. XsltTransformer.java 文件：<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.xslt;<br/><br/>
+import javax.xml.transform.Result;
+import javax.xml.transform.Source;
+import javax.xml.transform.Transformer;
+import javax.xml.transform.TransformerException;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.stream.StreamResult;
+import javax.xml.transform.stream.StreamSource;<br/><br/>
+/**
+ *
+ * @author Unmi
+ *
+ */
+public class XsltTransformer {<br/><br/>
+    /**
+     * @param args
+     * @throws TransformerException
+     */
+    public static void main(String[] args) throws TransformerException {
+        TransformerFactory transformerFactory = TransformerFactory.newInstance();<br/><br/>
+        Source xsltSource = new StreamSource(ClassLoader.getSystemResourceAsStream("cc/unmi/xslt/test_vars.xslt"));
+        Transformer transformer = transformerFactory.newTransformer(xsltSource);<br/><br/>
+        Source xmlSource = new StreamSource(ClassLoader.getSystemResourceAsStream("cc/unmi/xslt/test.xml"));<br/><br/>
+        Result outputResult = new StreamResult(System.out);<br/><br/>
+        transformer.transform(xmlSource,outputResult);
+    }
+}</pre>
+<br/>
+3. test_vars.xml 文件：<br/><br/>
+<pre class="lang:default decode:true">&lt;xsl:stylesheet version="2.0"
+    xmlns:xsl="http://www.w3.org/1999/XSL/Transform"&gt;<br/><br/>
+  &lt;xsl:output encoding="utf-8" method="text"/&gt;<br/><br/>
+  &lt;!-- define global variable --&gt;
+  &lt;xsl:variable name="username" select="'Initial'"/&gt;<br/><br/>
+    &lt;xsl:template match="/users" &gt;
+        &lt;xsl:apply-templates select="user"/&gt; <br/><br/>
+        &lt;!-- show the last username after traversing user nodes --&gt;
+        1, Last username: &lt;xsl:value-of select="$username"/&gt;  
+    &lt;/xsl:template&gt;<br/><br/>
+    &lt;xsl:template match="user"&gt;
+        &lt;!-- show the last username --&gt;
+        2, Last username: &lt;xsl:value-of select="$username"/&gt;<br/><br/>
+        &lt;!-- assign name to username --&gt;
+        &lt;xsl:variable name="username" select="name"/&gt;
+        3, Current username: &lt;xsl:value-of select="$username"/&gt;
+    &lt;/xsl:template&gt;<br/><br/>
+&lt;/xsl:stylesheet&gt;</pre>
+<br/>
+执行 XsltTransformer 的输出结果是：<br/><br/>
+        2, Last username: Initial<br />
+     3, Current username: Unmi<br/><br/>
+        2, Last username: Initial<br />
+     3, Current username: Any <br/><br/>
+        1, Last username: Initial<br/><br/>
+分析结果想原因：从 &lt;xsl:apply-templates select="user"/&gt;  到应用模板 &lt;xsl:template match="user"&gt;，相当于是一次方法调用，username 像是方法参数，在模板中可以改变 username 的值，但是再次进入时又是初始值，当然在全部遍历完之后，username 还是它的初始值。也就是，尽管 username 声明在最外层，看起来像个全局变量，但是却无法在模板中改变它的值。所以你不能像写通常的 Java 程序那样，设个全局标志，在某个方法中进行赋值，最后作为条件来判断。<br/><br/>
+看著名的 W3 Schooll 中关于 <a href="http://www.w3school.com.cn/xsl/el_variable.asp" target="_blank" rel="noopener">XSLT &lt;xsl:variable&gt; 元素</a> 的注释:  一旦您设置了变量的值，就无法改变或修改该值！<br/><br/>
+比如我们有碰到下面应用场景的时候：<br/><br/>
+<pre class="lang:default decode:true">&lt;!-- 标识 'Unmi' 是否存在来做些什么 --&gt;
+&lt;xsl:variable name="exists" select="false()"/&gt;<br/><br/>
+  &lt;xsl:template match="/users" &gt;
+      &lt;xsl:apply-templates select="user"/&gt; <br/><br/>
+      &lt;xsl:if test="$exists"&gt;
+          &lt;!-- do something here --&gt;
+      &lt;/xsl:if&gt;  
+  &lt;/xsl:template&gt;<br/><br/>
+  &lt;xsl:template match="user"&gt;
+      &lt;xsl:if test="name='Unmi' and not($exists)"&gt;
+          &lt;xsl:variable name="exists" select="true()"/&gt;
+      &lt;/xsl:if&gt;
+  &lt;/xsl:template&gt;</pre>
+<br/>
+显然，通过 &lt;xsl:variable&gt; 是做不到的，因为从模板中出来之后变量又变回去了。<br/><br/>
+要实现上面的功能，我们需要走别的路子了，试图找到一个真正全局的地方，能保存执行过程中的状态。想啊想啊，我们知道在 XSLT 中可以调用 JS/C#/Java 的方法，最简单的是调用静态方法，那么是否可以调用实例方法呢？如果可行的话，就可以在每次执行 XSLT 时绑定一个 Java 实例(JS/C# 的情况用到时再研究)，以此 Java 实例作为数据容器，那么对它其中变量的改变就能够记录下来了。<br/><br/>
+这种方法确实是可行的，关于 XSLT 中调用 Java 方法的方式有好几种，具体步骤请参考：<a href="http://www.ibm.com/developerworks/cn/xml/x-xalanextensions.html" target="_blank" rel="noopener">简单的 Xalan 扩展函数</a>，这里直接用例子说明，<strong>如何用 Java 实例来保存 XSLT 所需的变量</strong>。<br/><br/>
+这里我们仍然使用前面的 test.xml 和 XsltTransformer.java 文件，但是需要修改 test_vars.xstl 文件，以及创建一个 StatusHolder 来存放 XSLT 中的变量值。<br/><br/>
+StatusHolder.java:<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.xslt;<br/><br/>
+/**
+ * a variabe container
+ * @author Unmi
+ */
+public class StatusHolder {<br/><br/>
+    private String param1;
+    private String param2;<br/><br/>
+    public String getParam1() {
+        return param1;
+    }
+    public void setParam1(String param1) {
+        this.param1 = param1;
+    }
+    public String getParam2() {
+        return param2;
+    }
+    public void setParam2(String param2) {
+        this.param2 = param2;
+    }
+}</pre>
+<br/>
+修改后的 test_vars.xslt 文件：<br/><br/>
+<pre class="lang:default decode:true ">&lt;xsl:stylesheet version="1.0"
+    xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+    xmlns:holder="xalan://cc.unmi.xslt.StatusHolder"
+    extension-element-prefixes="holder"&gt;<br/><br/>
+  &lt;xsl:output encoding="utf-8" method="text"/&gt;<br/><br/>
+  &lt;xsl:variable name="statusHolder" select="holder:new()"/&gt;<br/><br/>
+  &lt;!-- define global variable --&gt;
+  &lt;xsl:variable name="username" select="holder:getParam1($statusHolder)"/&gt;<br/><br/>
+    &lt;xsl:template match="/users" &gt;
+        &lt;xsl:apply-templates select="user"/&gt; <br/><br/>
+        &lt;!-- show the last username after traversing user nodes --&gt;
+        1, Last username: &lt;xsl:value-of select="holder:getParam1($statusHolder)"/&gt;  
+    &lt;/xsl:template&gt;<br/><br/>
+    &lt;xsl:template match="user"&gt;
+        &lt;!-- show the last username --&gt;
+        2, Last username: &lt;xsl:value-of select="holder:getParam1($statusHolder)"/&gt;<br/><br/>
+     &lt;!-- use xsl:value-of to call method setParam1() --&gt;
+     &lt;xsl:value-of select="holder:setParam1($statusHolder,name)"/&gt;
+     3, Current username: &lt;xsl:value-of select="holder:getParam1($statusHolder)"/&gt;
+    &lt;/xsl:template&gt;<br/><br/>
+&lt;/xsl:stylesheet&gt;</pre>
+<br/>
+再次执行 XsltTransformer，控制台输出是：<br/><br/>
+        2, Last username:<br />
+     3, Current username: Unmi<br/><br/>
+        2, Last username: Unmi<br />
+     3, Current username: Any <br/><br/>
+        1, Last username: Any<br/><br/>
+我想这应该是我们所期待的结局。<br/><br/>
+关键性说明：<br/><br/>
+1. TransformerFactory.newInstance().newTransformer() 默认使用的就是 Xalan 的转换器<br />
+2. 调用 new() 来创建实例的，也可以 new('a', 'b') 来调用相应的有参构造函数<br />
+3. 调用实例方法时，第一个参数是实例本身，像调用谢方法一样<br />
+4. 可用 &lt;xsl:value-of select="holder:setParam1($statusHolder,'abc')"/&gt; 来调用 setParam1() 方法，尽管该方法的输出为 void。<br />
+5. 参数支持 4 种基本类型：数字（Java 双精度）、字符串、布尔和节点集（node-set）；如 foo(2) 时，Xalan 倾向于调用方法的顺序是 foo(double)、foo(float)、foo(long) foo(int)、foo(short)、foo(char) 和 foo(byte)。<br />
+6. 当被调用方法产生异常时，直接引起 Xalan 的关闭，而且异常栈里有时很难发现问题，所以应该在被调用方法中处理好异常，如有异常时输出信息，不要往外抛。<br />
+7. 最后，可以设计一个更好的状态容器，或叫做变量容器，比如用 Map 来保存状态值，而不是一味的罗列 param1 ... paramN。<br/><br/>
+参考：1. <a href="http://www.ibm.com/developerworks/cn/xml/x-xalanextensions.html" target="_blank" rel="noopener">简单的 Xalan 扩展函数</a>

@@ -1,0 +1,80 @@
+---
+title: iPhone中Png图片格式的研究
+url: /iphone-png-format/
+date: 2012-01-09T20:11:18-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - ios
+  - png
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4195 
+wpStatus: publish
+views: 1324
+lastmod: 2012-01-09T20:15:39-06:00
+---
+
+有时候我们看到一个App，想看看他的一些界面是如何实现的，这个时候需要查看一下它的图片资源，不过iOS的png图片编译后一般的图片阅读器都是没法查看的，本文将告诉的原因和转换出原图的方法（得安装XCode）。<br/>
+<blockquote>ipa 解压，将png相关文件夹拷贝出来，在命令行下使用/Developer/Platforms/iPhoneOS.platform/Developer /usr/bin/pngcrush -revert-iphone-optimizations xxx.png yyy.png</blockquote>
+
+我们都知道一个编译好的iPhone app 其中的png图片一般普通的图片阅读器是无法直接读取的，这是因为XCode在编译的过程中，将图片进行了优化，实际上它已经不是一个png图片了。<br/>
+这边有一些apple iPhone png自己格式的一些说明<br/>
+<a href="http://iphonedevwiki.net/index.php/CgBI_file_format">http://iphonedevwiki.net/index.php/CgBI_file_format</a><!--more--><br/>
+<br/>
+在Png数据中，我们最关心的莫过于png的数据块，其中包含了png每一个像素的信息，当然了为了减少存储空间，这些像素信息都是压缩保存的。而且是使用zlib进行压缩的，压缩后 包含zlib header 信息，还有由于解压验证的crc信息。<br/>
+而iPhone的CgBI格式的png则将原始的png图片作如下变化:<br/>
+<blockquote><br/>
+<ol>
+
+	<li>增加一个新的关键块 CgBI Chunk 四个字节</li>
+
+	<li>zlib的header和CRC信息全部从IDAT中移除</li>
+
+	<li>红蓝交换，每一个像素（RGBA）中的R和B进行调换变成BGRA ，解压后每一个像素有四个字节组成，也就是将每一个像素的 第一个字节和第三个字节调换</li>
+
+	<li>透明像素处理 Premultiplied Alpha ，这个的意思是为了图像加载变得更快，预先将Alpha的信息乘到像素的颜色信息中去，这样后期计算的时候就可以减少CPU或者GPU计算了</li>
+
+</ol>
+
+</blockquote>
+
+把一个正常的PNG图片优化成iPhone 的png图片格式可以使用XCode自带的工具 /Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/pngcrush -iphone<br/>
+还有一个第三方的开源工具也可以<br/>
+<a href="https://github.com/DHowett/pincrush">https://github.com/DHowett/pincrush</a><br/>
+<br/>
+如果你想把一个经过优化后的图片还原成普通图片阅读器可以查看的png图片，就是对上面的过程进行反向处理。<br/>
+现在可以找到的第三方的转换的一般有如下几个<br/>
+ipin.py(Python版本) <a href="http://www.axelbrz.com.ar/?mod=iphone-png-images-normalizer">http://www.axelbrz.com.ar/?mod=iphone-png-images-normalizer</a><br/>
+iPhonePNG（C版本） <a href="http://www.newsfirerss.com/blog/?p=176">http://www.newsfirerss.com/blog/?p=176</a><br/>
+<br/>
+经过本人测试，上面的这种第三方的额转换工具都没有对alpha相关的做任何处理，也可以是别的原因，有一些图片转换后的结果和原始图片还是有些出入的。<br/>
+原图(Flip Board中的一个按钮背景图):<br/>
+<img title="paperbutton-back111" src="/wp-content/uploads/2012/01/ios-png-format1.png" alt="" width="19" height="42" /><br/>
+编译后如果使用第三方的python或者C版本的代码来转换，转换后的图片都是这样的，感觉边角的像素有点问题，不过大部分情况下 ，图片都是ok的<br/>
+<img title="paperbutton-back 21-57-54-512" src="/wp-content/uploads/2012/01/ios-png-format2.png" alt="" width="19" height="42" /><br/>
+<br/>
+我尝试通过修改第三方的代码，想将Premultiplied Alpha 还原过去，但是还是存在各种问题，最终没有结果。<br/>
+只能最终采用XCode自带的工具进行转换 /Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/pngcrush -revert-iphone-optimizations 1.png 2.png<br/>
+这个<a href="http://pmt.sourceforge.net/pngcrush/">pngcrush</a>是apple改自开源的pngcrush 只可惜苹果修改后的版本却没有开源出来。<br/>
+<br/>
+为了避免每次都需要在命令行中进行操作，你可以通过automator新建一个shell的service<br/>
+<p style="text-align: center;"><img class="aligncenter" title="ios-png-format" src="/wp-content/uploads/2012/01/ios-png-format3.png" alt="" width="569" height="506" /></p>
+
+<br/>
+<pre class="brush:bash">for path in "$@"<br/>
+do<br/>
+mv "$path" "$path".tmp<br/>
+/Developer/Platforms/iPhoneOS.platform/Developer/usr/bin/pngcrush -revert-iphone-optimizations "$path".tmp "$path"<br/>
+rm "$path".tmp<br/>
+done</pre>
+
+当然你可以修改脚本，并可以作用于文件和文件夹，对目标进行判断，文件夹则递归文件夹中的png文件进行逐个处理。<br/>
+<br/>
+摘自：http://geeklu.com/2011/10/iphone-cgbi-png-format/

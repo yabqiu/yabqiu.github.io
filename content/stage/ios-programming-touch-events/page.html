@@ -1,0 +1,134 @@
+---
+title: iOS Programming – 触摸事件处理
+url: /ios-programming-touch-events/
+date: 2011-11-04T03:04:36-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - ios
+  - objective-c
+  - touch event
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4071 
+wpStatus: publish
+views: 1374
+lastmod: 2021-09-03T16:37:03-05:00
+---
+
+iphone/ipad无键盘的设计是为屏幕争取更多的显示空间，大屏幕在观看图片、文字、视频等方面为用户带来了更好的用户体验。而触摸屏幕是iOS设备接受用户输入的主要方式，包括单击、双击、拨动以及多点触摸等，这些操作都会产生触摸事件。</p>
+<br/>
+在Cocoa中，代表触摸对象的类是<span style="color: #ff0000;">UITouch</span>。当用户触摸屏幕后，就会产生相应的事件，所有相关的UITouch对象都被包装在事件中，被程序交由特定的对象来处理。UITouch对象直接包括触摸的详细信息。<br/><br/>
+UITouch类中包含5个属性：<br/><br/>
+             <span style="color: #99cc00;">window</span>：触摸产生时所处的窗口。由于窗口可能发生变化，当前所在的窗口不一定是最开始的窗口。<br />
+             <span style="color: #99cc00;">view</span>:触摸产生时所处的视图。由于视图可能发生变化，当前视图也不一定时最初的视图。<br />
+             <span style="color: #99cc00;">tapCount</span>：轻击（Tap）操作和鼠标的单击操作类似，tapCount表示短时间内轻击屏幕的次数。因此可以根据tapCount判断单击、双击或更多的轻击。<!--more--><br />
+             <span style="color: #99cc00;">timestamp</span>：时间戳记录了触摸事件产生或变化时的时间。单位是秒。<br />
+             <span style="color: #99cc00;">phase</span>：触摸事件在屏幕上有一个周期，即触摸开始、触摸点移动、触摸结束，还有中途取消。而通过phase可以查看当前触摸事件在一个周期中所处的状态。phase是<span style="color: #cc99ff;">UITouchPhase</span>类型的，这是一个枚举配型，包含了<br/><br/>
+·      UITouchPhaseBegan（触摸开始）<br/><br/>
+·      UITouchPhaseMoved（接触点移动）<br/><br/>
+·      UITouchPhaseStationary（接触点无移动）<br/><br/>
+·      UITouchPhaseEnded（触摸结束）<br/><br/>
+·      UITouchPhaseCancelled（触摸取消）<br/><br/>
+UITouch类中包含如下成员函数：<br/><br/>
+<span style="color: #3366ff;">- (CGPoint)locationInView:(UIView *)view：</span>函数返回一个CGPoint类型的值，表示触摸在view这个视图上的位置，这里返回的位置是针对view的坐标系的。调用时传入的view参数为空的话，返回的时触摸点在整个窗口的位置。<br/><br/>
+<span style="color: #3366ff;">- (CGPoint)previousLocationInView:(UIView *)view：</span>该方法记录了前一个坐标值，函数返回也是一个CGPoint类型的值， 表示触摸在view这个视图上的位置，这里返回的位置是针对view的坐标系的。调用时传入的view参数为空的话，返回的时触摸点在整个窗口的位置。<br/><br/>
+当手指接触到屏幕，不管是单点触摸还是多点触摸，事件都会开始，直到用户所有的手指都离开屏幕。期间所有的UITouch对象都被包含在<span style="color: #ff0000;">UIEvent</span>事件对象中，由程序分发给处理者。事件记录了这个周期中所有触摸对象状态的变化。<br/><br/>
+只要屏幕被触摸，系统就会报若干个触摸的信息封装到UIEvent对象中发送给程序，由管理程序UIApplication对象将事件分发。一般来说，事件将被发给主窗口，然后传给第一响应者对象(FirstResponder)处理。<br/><br/>
+关于响应者的概念，通过以下几点说明：<br/><br/>
+<span style="color: #3366ff;">响应者对象（Response object）</span><br/><br/>
+响应者对象就是可以响应事件并对事件作出处理。在iOS中，存在UIResponder类，它定义了响应者对象的所有方法。UIApplication、UIView等类都继承了UIResponder类，UIWindow和UIKit中的控件因为继承了UIView，所以也间接继承了UIResponder类，这些类的实例都可以当作响应者。<br/><br/>
+<span style="color: #3366ff;">第一响应者（First responder）</span><br/><br/>
+当前接受触摸的响应者对象被称为第一响应者，即表示当前该对象正在与用户交互，它是响应者链的开端。<br/><br/>
+<span style="color: #3366ff;"> 响应者链（Responder chain）</span><br/><br/>
+响应者链表示一系列的响应者对象。事件被交由第一响应者对象处理，如果第一响应者不处理，事件被沿着响应者链向上传递，交给下一个响应者（next responder）。一般来说，第一响应者是个视图对象或者其子类对象，当其被触摸后事件被交由它处理，如果它不处理，事件就会被传递给它的视图控制器对象（如果存在），然后是它的父视图（superview）对象（如果存在），以此类推，直到顶层视图。接下来会沿着顶层视图（top view）到窗口（UIWindow对象）再到程序（UIApplication对象）。如果整个过程都没有响应这个事件，该事件就被丢弃。一般情况下，在响应者链中只要由对象处理事件，事件就停止传递。但有时候可以在视图的响应方法中根据一些条件判断来决定是否需要继续传递事件。<br/><br/>
+<span style="color: #3366ff;">管理事件分发</span><br/><br/>
+视图对触摸事件是否需要作处回应可以通过设置视图的userInteractionEnabled属性。默认状态为YES，如果设置为NO，可以阻止视图接收和分发触摸事件。除此之外，当视图被隐藏（setHidden：YES）或者透明（alpha值为0）也不会收事件。不过这个属性只对视图有效，如果想要整个程序都步响应事件，可以调用UIApplication的beginIngnoringInteractionEvents方法来完全停止事件接收和分发。通过endIngnoringInteractionEvents方法来恢复让程序接收和分发事件。<br/><br/>
+如果要让视图接收多点触摸，需要设置它的multipleTouchEnabled属性为YES，默认状态下这个属性值为NO，即视图默认不接收多点触摸。<br/><br/>
+接下去学习如何处理用户的触摸事件。首先触摸的对象是视图，而视图的类UIView继承了UIRespnder类，但是要对事件作出处理，还需要重写UIResponder类中定义的事件处理函数。根据不通的触摸状态，程序会调用相应的处理函数，这些函数包括以下几个：<br/><br/>
+<span style="color: #3366ff;">            -(void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event;</span><br/><br/>
+<span style="color: #3366ff;">            -(void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event;</span><br/><br/>
+<span style="color: #3366ff;">            -(void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event;</span><br/><br/>
+<span style="color: #3366ff;">            -(void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event;</span><br/><br/>
+            当手指接触屏幕时，就会调用touchesBegan:withEvent方法；<br/><br/>
+            当手指在屏幕上移时，动就会调用touchesMoved:withEvent方法；<br/><br/>
+            当手指离开屏幕时，就会调用touchesEnded:withEvent方法；<br/><br/>
+            当触摸被取消（比如触摸过程中被来电打断），就会调用touchesCancelled:withEvent方法。而这几个方法被调用时，正好对应了UITouch类中phase属性的4个枚举值。<br/><br/>
+            上面的四个事件方法，在开发过程中并不要求全部实现，可以根据需要重写特定的方法。对于这4个方法，都有两个相同的参数：NSSet类型的touches和UIEvent类型的event。其中touches表示触摸产生的所有UITouch对象，而event表示特定的事件。因为UIEvent包含了整个触摸过程中所有的触摸对象，因此可以调用<span style="color: #3366ff;">allTouches</span>方法获取该事件内所有的触摸对象，也可以调用<span style="color: #3366ff;">touchesForVIew：</span>或者<span style="color: #3366ff;">touchesForWindows：</span>取出特定视图或者窗口上的触摸对象。在这几个事件中，都可以拿到触摸对象，然后根据其位置，状态，时间属性做逻辑处理。<br/><br/>
+            例如：<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">-(void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event
+{
+    UITouch *touch =  [touches anyObject];
+    if(touch.tapCount == 2)
+    {
+        self.view.backgroundColor = [UIColor redColor];
+    }
+}</pre>
+</div>
+</div>
+<br/>
+            上面的例子说明在触摸手指离开后，根据tapCount点击的次数来设置当前视图的背景色。不管时一个手指还是多个手指，轻击操作都会使每个触摸对象的tapCount加1，由于上面的例子不需要知道具体触摸对象的位置或时间等，因此可以直接调用touches的anyObject方法来获取任意一个触摸对象然后判断其tapCount的值即可。<br/><br/>
+            检测tapCount可以放在touchesBegan也可以touchesEnded，不过一般后者跟准确，因为touchesEnded可以保证所有的手指都已经离开屏幕，这样就不会把轻击动作和按下拖动等动作混淆。<br/><br/>
+            轻击操作很容易引起歧义，比如当用户点了一次之后，并不知道用户是想单击还是只是双击的一部分，或者点了两次之后并不知道用户是想双击还是继续点击。为了解决这个问题，一般可以使用“延迟调用”函数。<br/><br/>
+            例如：<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true">-(void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event
+{
+    UITouch *touch =  [touches anyObject];
+    if(touch.tapCount == 1)
+    {
+        [self performSelector:@selector(setBackground:) withObject:[UIColor blueColor] afterDelay:2];
+        self.view.backgroundColor = [UIColor redColor];
+    }
+}</pre>
+</div>
+</div>
+<br/>
+            上面代码表示在第一次轻击之后，没有直接更改视图的背景属性，而是通过performSelector：withObject：afterDelay：方法设置2秒中后更改。<br/><br/>
+<div>
+<pre class="lang:default decode:true">-(void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event
+{
+    UITouch *touch =  [touches anyObject];
+    if(touch.tapCount == 2)
+    {
+        [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(setBackground:) object:[UIColor redColor]];
+        self.view.backgroundColor = [UIColor redColor];
+    }
+}</pre>
+</div>
+<br/>
+<div>        双击就是两次单击的组合，因此在第一次点击的时候，设置背景色的方法已经启动，在检测到双击的时候先要把先前对应的方法取消掉，可以通过调用NSObject类的<span style="color: #3366ff;">cancelPreviousPerformRequestWithTarget:selector:object</span>方法取消指定对象的方法调用，然后调用双击对应的方法设置背景色为红色。</div>
+<br/>
+            下面举个例子创建可以拖动的视图，这个主要通过触摸对象的位置坐标来实现。因此调用触摸对象的<span style="color: #3366ff;">locationInView：</span>方法即可。<br/><br/>
+            例如：<br/><br/>
+<div>
+<div>
+<pre class="lang:default decode:true ">CGPoint originalLocation;
+-(void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event
+{
+    UITouch *touch = [touches anyObject];
+    originalLocation = [touch locationInView:self.view];
+}<br/><br/>
+-(void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event
+{
+    UITouch *touch = [touches anyObject];
+    CGPoint currentLocation = [touch locationInView:self.view];
+    CGRect frame = self.view.frame;
+    frame.origin.x += currentLocation.x-originalLocation.x;
+    frame.origin.y += currentLocation.y-originalLocation.y;   
+    self.view.frame = frame;
+}</pre>
+</div>
+</div>
+<br/>
+            这里先在touchesBegan中通过<span style="color: #800000;">[touch locationInView:self.view]</span>获取手指触摸在当前视图上的位置，用CGPoint变量记录，然后在手指移动事件touchesMoved方法中获取触摸对象当前位置，并通过于与原始位置的差值计算出移动偏移量，再设置当前视图的位置。<br/><br/>
+摘自：<a href="http://www.cnblogs.com/spiritstudio/archive/2011/05/24/2054907.html">http://www.cnblogs.com/spiritstudio/archive/2011/05/24/2054907.html</a>

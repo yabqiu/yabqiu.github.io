@@ -1,0 +1,160 @@
+---
+title: Python 版的 try-with-resources -- with 上下文管理器
+url: /python-try-with-resources-with-context-manager/
+date: 2018-12-04T00:42:36-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - Python
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9146 
+wpStatus: publish
+views: 942
+lastmod: 2019-02-06T23:43:49-06:00
+---
+
+<p>作为一个  Java 为母语的程序员来讲，学习起其他新的语言就难免任何事都与 Java 进行横向对比。Java 7 引入了能省去许多重复代码的 <code>try-with-resources</code> 特性，不用每回 try/finally 来释放资源(不便之处有局部变量必须声明在  try 之前，finally 里还要嵌套 try/catch 来处理异常)。比如下面的  Java 代码</p>
+
+<blockquote><br/>
+<p>try(InputStream inputStream = new FileInputStream("abc.txt")) {<br /><br/>
+    System.out.println(inputStream.read());<br /><br/>
+} catch (Exception ex) {<br /><br/>
+}</p>
+
+</blockquote>
+
+<p>它相应的不使用 try-with-resources 语法的代码就是<!--more--></p>
+
+<pre class="lang:default decode:true">InputStream inputStream = null;<br/>
+try {<br/>
+    inputStream = new FileInputStream("abc.txt");<br/>
+} catch (Exception ex) {<br/>
+} finally {<br/>
+    if(inputStream != null) {<br/>
+        try {<br/>
+            inputStream.close();<br/>
+        } catch (Exception ex) {<br/>
+        }<br/>
+    }<br/>
+}</pre>
+
+<p>类似的  Python 也有自己的  try-with-resources 写法，就是 with 关键字，它的概念叫做上下文管理器(Context Manager)。</p>
+
+<h3><code>with</code> 关键字的使用</h3><br/>
+<pre class="lang:default decode:true ">with open('some_file', 'w') as opened_file:<br/>
+    opened_file.write('Hola!')</pre>
+
+<p>以上的代码相当于</p>
+
+<pre class="lang:default decode:true ">opened_file = open('some_file', 'w')<br/>
+try:<br/>
+    opened_file.write('Hola!')<br/>
+finally:<br/>
+    opened_file.close()</pre>
+
+<p>也就是 <code>with</code> 关键字打开的资源会在 <code>with</code> 语句块结束后自动调用相应的方法自动释放(无论 <code>with</code> 中操作是否有异常)。</p>
+
+<p><code>with</code> 用起来是很方便的，但是什么样的资源可以用 <code>with</code> 关键字？Python 是怎么知道要调用哪个方法来关闭资源的？进而如何实现自己的支持上下文管理器的 Python 类。</p>
+
+<p>再次回顾 Java 的  <code>try-with-resources</code> 语法，<code>try(...)</code> 括号支持的类必须是实现了 <code>AutoCloseable</code> 接口，它的接口方法是</p>
+
+<blockquote><br/>
+<p>public void close() throws IOException</p>
+
+</blockquote>
+
+<p>也就是 Java 的  <code>try-with-resources</code> 语法会自动调用以上方法来释放资源，要实现可被自动释放的 Java 就只须遵照这一规则就行。</p>
+
+<p>而在 Python 中，能被 <code>with</code> 的类有两种实现方式</p>
+
+<h3>实现基本方法以支持上下文管理器的类</h3><br/>
+<p>一个 Python 类要能被用于 <code>with</code> 上下文，必须实现至少 <code>__enter__</code> 和 <code>__exit__</code> 方法。这两个方法的意思好理解，一个是创建资源后，后者是退出 <code>with</code> 语句块后。请看下面的例子</p>
+
+<pre class="lang:default decode:true">class File(object):<br/>
+    def __init__(self, file_name, method):<br/>
+        self.file_obj = open(file_name, method)<br/>
+<br/>
+    def __enter__(self):<br/>
+        print("---enter")<br/>
+        return self.file_obj<br/>
+<br/>
+    def __exit__(self, type, value, traceback):<br/>
+        print("---exit")<br/>
+        self.file_obj.close()<br/>
+<br/>
+<br/>
+with File('data.txt', 'r') as data_file:<br/>
+    print(data_file.read())</pre>
+
+<p>假设 data.txt 文件中的内容是</p>
+
+<blockquote><br/>
+<p>hello<br /><br/>
+world</p>
+
+</blockquote>
+
+<p>那么以上程序执行后的输出就是</p>
+
+<blockquote><br/>
+<p>--enter<br /><br/>
+hello<br /><br/>
+world<br /><br/>
+---exit</p>
+
+</blockquote>
+
+<ol>
+
+	<li><code>__enter__</code> 返回的值作为  <code>with ... as data_file</code> 中的  <code>data_file</code> 变量的值，如果  <code>__enter__</code> 没有返回，<code>data_file</code> 得到的就是 <code>NoneType</code> object 了。</li>
+
+	<li><code>__exit__</code> 可利用来释放资源</li>
+
+	<li>没有  <code>__enter__</code> 方法试图用  <code>with</code> 的写法执行时会得到  <code>AttributeErro: __enter__</code>  异常</li>
+
+	<li>同样，没有  <code>__exit__</code> 方法试图用  <code>with</code> 的写法执行时会得到  <code>AttributeErro: __exit__</code>  异常</li>
+
+	<li><code>__exit__</code> 有其他额外的三个参数，可获得资源的值，以及能处理 <code>with</code> 块中执行出现异常的情况</li>
+
+	<li><code>__exit__</code> 的返回值也有用途，如果它返回 <code>True</code> 则出现的异常不再向外传播，其他值的话直接向外抛</li>
+
+</ol>
+
+<h3>利用生成器(Generator) 和装饰器创建支持上下文管理器的方法</h3><br/>
+<p>此种方式比较简单，不过逻辑控制上没有这么强。</p>
+
+<pre class="lang:default decode:true">from contextlib import contextmanager<br/>
+<br/>
+@contextmanager<br/>
+def open_file(name, method):<br/>
+    f = open(name, method)<br/>
+    yield f<br/>
+    f.close()</pre>
+
+<p>使用 <code>f</code> 的执行代码将被放置在  <code>yield f</code> 所处的位置，<code>with</code> 使用以上方法。<code>yield</code> 后的 <code>f</code> 变量将是  <code>with...as</code> 后的变量值</p>
+
+<pre class="lang:default decode:true">with open_file('some_file', 'w') as file_object:<br/>
+    file_object.write('hola!')</pre>
+
+<p>这里也要注意异常处理的情况，比如把上面代码打开文件的模式换作  <code>r</code>, 仍然试图去写文件，这样在  <code>open_file</code> 方法的  <code>yield f</code> 位置将产生异常，会造成 <code>f.close()</code> 得不到执行，不能正确释放该资源。</p>
+
+<p>欲更具防御性，前面的 <code>yield f</code> 可以扩展也如下的形式</p>
+
+<pre class="lang:default decode:true">try:<br/>
+    yield f<br/>
+except Exception as ex:<br/>
+    pass  #处理异常，或继续向外抛<br/>
+finally:<br/>
+    f.close()</pre>
+
+<p><code>@contextmanager</code> 装饰器内部也是封装为一个实现了 <code>__enter__</code> 和 <code>__exit__</code> 方法的对象。</p>
+
+<p>参考链接：<a href="http://book.pythontips.com/en/latest/context_managers.html">Context Managers</a></p>

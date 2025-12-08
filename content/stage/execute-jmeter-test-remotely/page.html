@@ -1,0 +1,340 @@
+---
+title: 远程方式执行 JMeter 测试
+url: /execute-jmeter-test-remotely/
+date: 2023-02-18T02:58:56-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2023/02/jmeter_logo.png"
+categories:
+  - Java/JEE
+  - Web/JS
+tags: 
+  - Rmi
+  - Thread
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12948 
+wpStatus: publish
+views: 887
+lastmod: 2023-03-18T14:15:59-05:00
+---
+
+JMeter 是一个极好的测试 Web API 及压力测试的工具，另一个的话就是 Python 版的 <a href="https://locust.io/">LOCUST</a>(它也能远程运行测试)。JMeter 的测试可以在本地模拟并发用户，那么为什么要远程执行 JMeter 测试呢？因为一台机器能模拟的并发用户数受限，一个用户就是对应着一个 Java 线程。比如我在 MacBook Pro(内存 16Gb) 上无论如何调整 <code>ulimit -n</code>, <code>ulimit -u</code>, 或用 JAVA_TOOL_OPTIONS, HEAP, JVM_ARGS 设置 <code>-Xmx</code>, 调大到 10 G, 或用 -Xss 调小栈大小，都无法让 JMeter 模拟的用户数达到 5000。<br/><br/>
+文后有本人亲自测试 Java/Python 在 Mac OS X 和 Linux 下可创建多少个线程<br/><br/>
+如果能够远程运行 JMeter 的测试就能突破单机上的线程限制了，比如 Mac OS X 不行，找个 Linux 远程机器(可以是虚拟机)来执行，一台机器不够，找多个。想要模拟 15000 个并发用户，测试可分配到 5 台机器上执行，每个节点跑 3000 个用户并发就行，有点操控肉机的感觉。<!--more--><br/><br/>
+现在我们来看如何配置 JMeter 远程执行节点，远程节点最好保持所使用的 Java, JMeter 与本地的版本一致，启动测试的机器与远程机器使用 RMI 通信，所以默认端口号为 1099。JMeter 进行远程测试时，发起测试的机器为主制节点，执行测试的机器为工作节点，本文测试中都用 <code>-Jserver.rmi.ssl.disable=true</code> 跳过 SSL 通信加密。<br/><br/>
+<h3>本机模拟远程</h3><br/><br/>
+先以本机假装是一个远程机器，这和直接使用本机运行测试是没什么分别的，只就此了解一下 JMeter 远程测试是怎么工作的。在本机的一个终端下先启动 JMeter Server(或称 Slave, 对应工作节点)<br/><br/>
+<blockquote>
+./jmeter-server -Jserver.rmi.ssl.disable=true<br />
+WARNING: package sun.awt.X11 not in java.desktop<br />
+Created remote object: UnicastServerRef2 [liveRef: [endpoint:[192.168.86.141:65215](local),objID:[-4bc326f9:186628ad133:-7fff, 6729766565006705877]]]
+</blockquote>
+<br/>
+它会打开两个端口，RMI 端口 1099 和一个随机的端口号，如上面的 65215<br/><br/>
+然后在另一个终端启动 JMeter 测试<br/><br/>
+<blockquote>
+./jmeter -t ~/test.jmx -Jremote_hosts=192.168.86.141 -Jserver.rmi.ssl.disable=true
+</blockquote>
+<br/>
+这时候从 JMeter 的主菜单 Run 中就能看到远程机器 192.168.86.141<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2023/02/jmeter-2.png"><img class="wp-image-12960 aligncenter" src="https://yanbin.blog/wp-content/uploads/2023/02/jmeter-2.png" alt="" width="357" height="307" /></a><br/><br/>
+如果我们这时候 Remote Start 选择这个节点来运行测试的话，在 JMeter Server 的终端中就能看到输出<br/><br/>
+<blockquote>
+Starting the test on host 192.168.86.141 @ 2023 Feb 17 21:33:14 CST (1676691194213)<br />
+Finished the test on host 192.168.86.141 @ 2023 Feb 17 21:33:19 CST (1676691199391)
+</blockquote>
+<br/>
+在 JMeter 的测试报告中看到的线程名儿是下面这样子<br/><br/>
+<blockquote>
+Thread Name:192.168.86.141-Thread Group 1-4
+</blockquote>
+<br/>
+也表明了测试是在远程执行的。<br/><br/>
+现在一个 JMeter 远程测试是有了模样，在真正问题来临之前先作个小节<br/><br/>
+<ol>
+    <li>启动 JMeter Server 或测试时的 -Jserver.rmi.ssl.disable, -Jremote_hosts 都可以配置在 $JMETER_HOME/bin/jmeter.properties 文件中</li>
+    <li>默认 JMeter Server 启动的 RMI  端口号是 1099，若要使用不同的端口，则可设置环境变量 SERVER_PORT=1100, 或启动参数 -Jserver_port=1100</li>
+    <li>JMeter Server 使用了不同的 RMI 端口的话，指定 remote_hosts 时用 -Jremote_hosts=192.168.86.141:1100</li>
+    <li>如果有多个 JMeter Server, 测试时可用 remote_hosts 用逗号分隔的列表指定，如 -Jremote_hosts=192.168.86.141:1100,192.168.86.142。那么在 JMeter 界面的 Run 菜单下可以看到工作节点列表</li>
+</ol>
+<br/>
+<h3>虚拟机中启动 JMeter Server</h3><br/><br/>
+第二个试验，在虚拟机中启动 JMeter Server，这应该更接近远程机器的意义了。<br/><br/>
+在一个用 Vagrant 启动的 Ubuntu 虚拟机中，启动 JMeter Server<br/><br/>
+<blockquote>
+./jmeter-server -Jserver.rmi.ssl.disable=true<br />
+Created remote object: UnicastServerRef2 [liveRef: [endpoint:[10.0.2.15:42933](local),objID:[-1387182b:18662a01b6f:-7fff, 3746144968063272340]]]
+</blockquote>
+<br/>
+上面看到的 endpoint 是 10.0.2.15，实际从宿主机到 10.0.2.15:1099 是不通的，该虚拟机用 <code>ifconfig</code> 显示出多个 IP 地址，第一个就是 10.0.2.15，另两个是 192.168.56.4 和 192.168.56.5。从宿主机到 192.168.56.4:1099 和 192.168.56.5:1099 是通畅的，但这时候启动 jmeter 测试窗口时，尝试过以下三个 -Jremote_hosts 参数<br/><br/>
+<ul>
+    <li>-Jremote_hosts=10.0.2.15</li>
+    <li>-Jremote_hosts=192.168.56.4</li>
+    <li>-Jremote_hosts=192.168.56.5</li>
+</ul><br/><br/>
+只要在 JMeter 菜单中选择 Remote Start 后界面都会僵住很长一段时间，然后显示<br/><br/>
+<blockquote>
+Connection refused to host: 10.0.2.15; nested exception is: <br />
+                             java.net.ConnectException: Operation timed out
+</blockquote>
+<br/>
+而用 netstat 查看监听端口是 :::1099，只是 JMeter Server 不管从哪里接收到的请求都往诱使客户端往 10.0.2.15 接口上发数据。解决办法是用系统属性 java.rmi.server.host 明确指定接口，当有多个网络接口而不是使用第一个接口时必须这样启动 JMeter Server<br/><br/>
+<blockquote>
+./jmeter-server -Jserver.rmi.ssl.disable=true -Djava.rmi.server.hostname=192.168.56.4<br />
+Created remote object: UnicastServerRef2 [liveRef: [endpoint:[192.168.56.4:45821](local),objID:[-48bb975b:18662adef4d:-7fff, -9215884997496489309]]]
+</blockquote>
+<br/>
+这时启动 JMeter 测试时就用 -Jremote_hosts=192.168.56.4 参数<br/><br/>
+这个问题是怎么发现的呢？既然是 RMI，所以又重新温习了一下十几年前写的一篇 <a href="https://yanbin.blog/java-rmi-get-started/">JAVA RMI 快速入门实例</a>, 尝试在虚拟中启动 RMI 服务时用<br/><br/>
+<blockquote>
+Naming.rebind("//192.168.56.4:1099/Hello",hello);
+</blockquote>
+<br/>
+来注册服务，然后在 RMI 客户端用 <br/><br/>
+<blockquote>
+HelloInterface hello = (HelloInterface)Naming.lookup("//192.168.56.4:1099/Hello");
+</blockquote>
+<br/>
+查找服务，查找服务花了很长时间，得到远程对象调用 hello.say() 也很费时，最后报告出了同样的错误信息<br/><br/>
+<blockquote>
+HelloClient exception: java.rmi.ConnectException: Connection refused to host: 10.0.2.15; nested exception is: <br />
+    java.net.ConnectException: Operation timed out
+</blockquote>
+<br/>
+看到 IP 地址的错乱才意识到这和系统有多个网卡有关，据此才搜索到需要 -Djava.rmi.server.hostname 系统属性<br/><br/>
+<h3>关于 JMeter 服务端与客户端之时的防火墙配置</h3><br/><br/>
+除了主控制节点要访问工作节点的 RMI 注册端口(默认 1099)外，在它们之间还需要用到两个端口进行数据通信，例如从工作节点要把测试结果回送到主控节点。它们都是随机的端口号，防火墙需要知道明确的端口号，在工作节点和主控节点上分别要涉及到 <code>server.rmi.localport</code> 和 <code>client.rmi.localport</code> 两个参数<br/><br/>
+启动 JMeter Server 的命令要用<br/><br/>
+<blockquote>
+./jmeter-server -Jserver.rmi.ssl.disable=true -Jserver.rmi.localport=4000 -Djava.rmi.server.hostname=192.168.56.4
+</blockquote>
+<br/>
+启用 JMeter 测试的命令用<br/><br/>
+<blockquote>
+./jmeter -Jremote_hosts=192.168.56.4 -Jserver.rmi.ssl.disable=true -Jclient.rmi.localport=5000
+</blockquote>
+<br/>
+防火墙只要打开端口号  1099, 4000, 5000  的单向通信就行<br/><br/>
+<h3>Docker 方式启动 JMeter Server</h3><br/><br/>
+最后一个试验是用 Docker 容器作为远程节点，在 Docker Hub 上虽然可以找到现成的 JMeter 镜像，如 justb4/jmeter，但我还是自己创建 Docker 镜像，因为要力图保持与本机的 Java, JMeter 版本一致。以下是用到的 Dockerfile<br/><br/>
+<pre class="lang:default decode:true ">FROM amazoncorretto:17<br/><br/>
+WORKDIR /opt
+RUN yum install -y wget unzip &amp;&amp; \
+    wget https://dlcdn.apache.org//jmeter/binaries/apache-jmeter-5.5.zip &amp;&amp; \
+    unzip apache-jmeter-5.5.zip<br/><br/>
+ENTRYPOINT  /opt/apache-jmeter-5.5/bin/jmeter-server \
+    -Jserver.rmi.ssl.disable=true \
+    -Jserver.rmi.localport=${SERVER_RMI_LOCALPORT} \
+    -Djava.rmi.server.hostname=localhost</pre>
+<br/>
+构建镜像<br/><br/>
+<blockquote>
+docker build -t jmeter:5.5-java17 .
+</blockquote>
+<br/>
+启动两个容器，命令分别是<br/><br/>
+<blockquote>
+docker run -e SERVER_PORT=1100 -e SERVER_RMI_LOCALPORT=4000 -p 1100:1100 -p4000:4000 jmeter:5.5-java17
+docker run -e SERVER_PORT=1101 -e SERVER_RMI_LOCALPORT=4001 -p 1101:1101 -p4001:4001 jmeter:5.5-java17
+</blockquote>
+<br/>
+启动 JMeter 测试命令<br/><br/>
+<blockquote>
+./jmeter -t ~/test.jmx -Jremote_hosts=localhost:1100,localhost:1101 -Jserver.rmi.ssl.disable=true
+</blockquote>
+<br/>
+<a href="https://yanbin.blog/wp-content/uploads/2023/02/jmeter-3.png"><img class="aligncenter wp-image-12964" src="https://yanbin.blog/wp-content/uploads/2023/02/jmeter-3.png" alt="" width="396" height="194" /></a><br/><br/>
+现在有两个远程节点可先来运行测试，也可以 Remote Start All, 运行后有来自不同节点上的结果<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2023/02/jmeter-4.png"><img class="aligncenter wp-image-12965" src="https://yanbin.blog/wp-content/uploads/2023/02/jmeter-4-800x148.png" alt="" width="400" height="74" /></a><br/><br/>
+&nbsp;<br/><br/>
+<hr /><br/><br/>
+附本人在 Mac OS X 和 Docker 容器中创建线程数的测试<br/><br/>
+Mac OS X 下 <code>ulimit -a</code> 显示的是<br/><br/>
+<pre class="lang:default decode:true">ulimit -a
+-t: cpu time (seconds)              unlimited
+-f: file size (blocks)              unlimited
+-d: data seg size (kbytes)          unlimited
+-s: stack size (kbytes)             8192
+-c: core file size (blocks)         0
+-v: address space (kbytes)          unlimited
+-l: locked-in-memory size (kbytes)  unlimited
+-u: processes                       2784
+-n: file descriptors                256</pre>
+<br/>
+打开文件数可以用命令 <code>ulimit -n unlimited</code>， ulimit -u 最大只能是 2784, ulimit -s 也可以调小，如 <code>ulimit -s 1024</code>, 但都不影响以下在 Mac OS X 下的测试结果 <br/><br/>
+实际测试中只 Java 只能启动 4065 个线程，测试代码如下<br/><br/>
+App.java<br/><br/>
+<pre class="lang:default decode:true">import java.util.stream.IntStream;<br/><br/>
+public class App {
+    public static void main(String[] args) {
+        IntStream.rangeClosed(1, Integer.parseInt(args[0])).forEach(i -&gt;
+                new Thread(() -&gt; {
+                    System.out.println("thread: " + i);
+                    try {
+                        Thread.sleep(120 * 1000);
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
+                }).start());
+    }
+}
+</pre>
+<br/>
+线程启动后坚持 30 秒，Java 版本为 17, 执行命令无论是用 <code>java App.java 10000</code>, 或 <code>java -Xms10g -Xmx10 App.java 10000</code> , 甚至是 <code>java -Xmx100m App.java 10000</code>出来的效果都是一样的<br/><br/>
+<blockquote>
+thread: 4065<br />
+[1.116s][warning][os,thread] Failed to start thread - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 4k, detached.<br />
+Exception in thread "main" java.lang.OutOfMemoryError: unable to create native thread: possibly out of memory or process/resource limits reached<br />
+at java.base/java.lang.Thread.start0(Native Method)<br />
+at java.base/java.lang.Thread.start(Thread.java:802)
+</blockquote>
+<br/>
+OutOfMemoryError 有点像假象。用 Python 稍强一些<br/><br/>
+app.py<br/><br/>
+<pre class="lang:default decode:true">import time
+from threading import Thread<br/><br/>
+def task(num):
+    print(num + 1)
+    time.sleep(30)<br/><br/>
+for i in range(10000):
+    Thread(target=task, args=(i,)).start()</pre>
+<br/>
+执行 python3.10 test.py<br/><br/>
+<blockquote>
+4094<br />
+4095<br />
+Traceback (most recent call last):<br />
+File "/Users/yanbin/tests/test.py", line 9, in &lt;module&gt;<br />
+Thread(target=task, args=(i,)).start()<br />
+File "/usr/local/Cellar/python@3.10/3.10.9/Frameworks/Python.framework/Versions/3.10/lib/python3.10/threading.py", line 935, in start<br />
+_start_new_thread(self._bootstrap, ())<br />
+RuntimeError: can't start new thread
+</blockquote>
+<br/>
+多 30 个线程<br/><br/>
+在 Docker 容器中的测试，启动容器的代码是<br/><br/>
+<blockquote>
+$ docker run -it amazoncorretto:17 bash
+</blockquote>
+<br/>
+在容器中用 <code>ulimit -a</code> 是<br/><br/>
+<pre class="lang:default decode:true">bash-4.2# ulimit -a
+core file size          (blocks, -c) 0
+data seg size           (kbytes, -d) unlimited
+scheduling priority             (-e) 0
+file size               (blocks, -f) unlimited
+pending signals                 (-i) 30961
+max locked memory       (kbytes, -l) 64
+max memory size         (kbytes, -m) unlimited
+open files                      (-n) 1048576
+pipe size            (512 bytes, -p) 8
+POSIX message queues     (bytes, -q) 819200
+real-time priority              (-r) 0
+stack size              (kbytes, -s) 8192
+cpu time               (seconds, -t) unlimited
+max user processes              (-u) unlimited
+virtual memory          (kbytes, -v) unlimited
+file locks                      (-x) unlimited</pre>
+<br/>
+在该容器执行上面的 App.java 代码<br/><br/>
+<blockquote>
+bash-4.2# java App.java 10000<br />
+thread:1<br />
+.........<br />
+thread: 9999<br />
+thread: 10000<br />
+bash-4.2#
+</blockquote>
+<br/>
+成功创建下 10000 个线程<br/><br/>
+尝试一下 50000 个线程，<code>java App.java 50000</code>, 也没问题，这可能只受限于内存的限制。从这一点来讲在 Mac 下运行 JMeter，要测试 4000 以上的并发，就应该考虑用 Linux 容器来远程执行。<br/><br/>
+那么试着找一下它的极限在哪里，容器中看到的内存是 8G，所以默认 JVM 堆内存最大为 8/4 = 2G。增加到 500000<br/><br/>
+<blockquote>
+bash-4.2# java App.java 500000<br />
+.......<br />
+thread: 61312<br />
+thread: 61313<br />
+[95.141s][warning][os,thread] Failed to start thread "Unknown thread" - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 0k, detached.<br />
+[95.143s][warning][os,thread] Failed to start the native thread for java.lang.Thread "Thread-61313"<br />
+Exception in thread "main" java.lang.OutOfMemoryError: unable to create native thread: possibly out of memory or process/resource limits reached<br />
+        at java.base/java.lang.Thread.start0(Native Method)<br />
+        at java.base/java.lang.Thread.start(Thread.java:802)<br />
+        at App.lambda$main$1(App.java:13)<br />
+        at java.base/java.util.stream.Streams$RangeIntSpliterator.forEachRemaining(Streams.java:104)<br />
+        at java.base/java.util.stream.IntPipeline$Head.forEach(IntPipeline.java:617)<br />
+        at App.main(App.java:5)<br />
+bash-4.2#
+</blockquote>
+<br/>
+得到的成绩是可以创建 61313 个线程，这时候 Ctrl + C 还能退出 Java 进程回到容器的 Bash 进行别的操作<br/><br/>
+那么把 JVM 的 Xmx 调大到 4G<br/><br/>
+<blockquote>
+bash-4.2# java -Xmx4g App.java 500000<br />
+thread: 61314<br />
+thread: 61315<br />
+[97.999s][warning][os,thread] Failed to start thread "Unknown thread" - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 0k, detached.<br />
+[98.003s][warning][os,thread] Failed to start the native thread for java.lang.Thread "Thread-61315"<br />
+Exception in thread "main" java.lang.OutOfMemoryError: unable to create native thread: possibly out of memory or process/resource limits reached<br />
+        at java.base/java.lang.Thread.start0(Native Method)<br />
+        at java.base/java.lang.Thread.start(Thread.java:802)<br />
+        at App.lambda$main$1(App.java:13)<br />
+        at java.base/java.util.stream.Streams$RangeIntSpliterator.forEachRemaining(Streams.java:104)<br />
+        at java.base/java.util.stream.IntPipeline$Head.forEach(IntPipeline.java:617)<br />
+        at App.main(App.java:5)<br />
+^C[110.566s][warning][os,thread] Failed to start thread "Unknown thread" - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 0k, detached.<br />
+[110.566s][warning][os,thread] Failed to start the native thread for java.lang.Thread "SIGINT handler"<br />
+OpenJDK 64-Bit Server VM warning: Exception java.lang.OutOfMemoryError occurred dispatching signal SIGINT to handler- the VM may need to be forcibly terminated<br />
+^C[113.269s][warning][os,thread] Failed to start thread "Unknown thread" - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 0k, detached.<br />
+[113.269s][warning][os,thread] Failed to start the native thread for java.lang.Thread "SIGINT handler"<br />
+OpenJDK 64-Bit Server VM warning: Exception java.lang.OutOfMemoryError occurred dispatching signal SIGINT to handler- the VM may need to be forcibly terminated<br />
+^C[114.048s][warning][os,thread] Failed to start thread "Unknown thread" - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 0k, detached.<br />
+[114.048s][warning][os,thread] Failed to start the native thread for java.lang.Thread "SIGINT handler"<br />
+OpenJDK 64-Bit Server VM warning: Exception java.lang.OutOfMemoryError occurred dispatching signal SIGINT to handler- the VM may need to be forcibly terminated<br />
+^Z<br />
+[1]+ Stopped java -Xmx4g App.java 500000<br />
+bash-4.2#<br />
+bash-4.2# ls<br />
+bash: fork: retry: Resource temporarily unavailable<br />
+bash: fork: retry: Resource temporarily unavailable
+</blockquote>
+<br/>
+和 -Xmx2g 差不多，运气稍好点，创建了 61315 个线程，这说明创建线程数的上限还和操作系统的其他参数有关。<br/><br/>
+Ctrl + C 还能回到 Bash 命令行，但无法再进行其他的操作了，不得不在另一个终端把该 Docker 容器 kill 掉。<br/><br/>
+这都算不错，下面的测试就惨了<br/><br/>
+最后是在 Linux 容器中用 <code>java -Xmx10G App.java 500000</code> 把虚拟机跑死，<br/><br/>
+<blockquote>
+bash-4.2# java -Xmx10G App.java 500000<br />
+thread: 61365<br />
+[89.492s][warning][os,thread] Failed to start thread "Unknown thread" - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 0k, detached.<br />
+[89.505s][warning][os,thread] Failed to start the native thread for java.lang.Thread "Thread-61365"<br />
+Exception in thread "main" java.lang.OutOfMemoryError: unable to create native thread: possibly out of memory or process/resource limits reached<br />
+        at java.base/java.lang.Thread.start0(Native Method)<br />
+        at java.base/java.lang.Thread.start(Thread.java:802)<br />
+.<br />
+[105.074s][warning][os,thread] Failed to start the native thread for java.lang.Thread "SIGINT handler"<br />
+OpenJDK 64-Bit Server VM warning: Exception java.lang.OutOfMemoryError occurred dispatching signal SIGINT to handler- the VM may need to be forcibly terminated<br />
+^Z<br />
+[1]+ Stopped java -Xmx10G App.java 500000<br />
+bash-4.2#<br />
+bash-4.2# ls<br />
+bash: fork: retry: Resource temporarily unavailable<br />
+bash: fork: retry: Resource temporarily unavailable
+</blockquote>
+<br/>
+而且 Docker Desktop 崩溃掉了(stopping)，再次启动的时候提示选择  Reset Docker to factory defaults，几番 Reset 也都无济于事<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2023/02/jmeter-5.png"><img class="aligncenter wp-image-12968" src="https://yanbin.blog/wp-content/uploads/2023/02/jmeter-5-800x238.png" alt="" width="698" height="208" /></a><br/><br/>
+只得卸载了重新安装 Docker Desktop 作罢。<br/><br/>
+这也难怪，因为 10G 已超出 Mac OS X 分配给 Docker Desktop 虚拟机的总内存  8 G。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://jmeter.apache.org/usermanual/remote-test.html">13. Remote Testing</a></li>
+    <li><a href="https://mmahato.medium.com/distributed-load-testing-using-jmeter-without-disabling-firewall-e5dc92ce27b2">Jmeter Distributed Load Testing with an Active Firewall.</a></li>
+    <li><a href="https://johnny1952.github.io/2021/09/16/%E6%90%AD%E5%BB%BAJMeter%E5%88%86%E5%B8%83%E5%BC%8F%E6%B5%8B%E8%AF%95%E7%8E%AF%E5%A2%83/">搭建JMeter分布式测试环境</a></li>
+    <li><a href="https://jmeter.apache.org/usermanual/properties_reference.html#remote">19.7 Remote hosts and RMI configuration</a></li>
+    <li><a href="https://www.blazemeter.com/blog/jmeter-distributed-testing-with-docker">JMeter Distributed Testing with Docker</a></li>
+</ol>

@@ -1,0 +1,654 @@
+---
+title: 理解 Spring Boot Security + JWT Token 的简单应用
+url: /springboot-security-jwt-token-how-to-abcs/
+date: 2022-07-02T09:08:51-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - Spring Boot
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12444 
+wpStatus: publish
+views: 2192
+lastmod: 2023-03-16T00:54:13-05:00
+---
+
+项目中有用到 Spring Security 来控制 API 的访问权限，但对于配置应用它基本上是照葫芦画瓢。至于为什么要调用方法</p>
+<br/>
+<blockquote>
+SecurityContextHolder.getContext().setAuthentication()
+</blockquote>
+<br/>
+并且能从 HttpServletRequest 中得到 Authentication。还有，只要在 Controller 的方法中添加一个带 @AuthenticationPrincipal 注解的参数<br/><br/>
+<blockquote>
+public String sampleApi(@AuthenticationPrincipal DecodedJWT decodedJWT) {...}
+</blockquote>
+<br/>
+之后，decodedJWT 便自动有了值，诸如此类的，此前一概模糊不清。<br/><br/>
+早先配置 spring-security-config 是通过继承 WebSecurityConfigurerAdapter, 覆盖它的 configure(HttpSecurity http) 来配置访问规则等。在 spring-security-config 5.7.x 开始不建议用 WebSecurityConfigurerAdapter, 而是借由 SecurityFilterChain 来配置 HttpSecurity 中的规则 ，或者通过 WebSecurityCustomizer 完成定制。<!--more--><br/><br/>
+因此，本文就来记述个最简单的 Spring Security 配置，从基本的 Spring boot RestAPI 项目起步，层层加上 Spring Security 依赖，相关配置，最后集成 JWT。旨在理清 Spring Security  的基本实现原理。实例所实现的基本功能是：SpringBoot 项目中创建两个 HTTP API, 一个可任意访问，另一个用 Spring Security 来控制，需要带上 JWT Token 才能访问。<br/><br/>
+本文所选用的 Spring Boot 版本是 2.7.1, Spring 版本为 5.3.21, spring-security-xxx 的版本是 5.7.2<br/><br/>
+SpringBoot RestAPI 项目只要一个 Maven 依赖<br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-boot-starter-web&lt;/artifactId&gt;
+    &lt;version&gt;2.7.1&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+然后加上一个 WebController 类<br/><br/>
+<pre class="lang:default decode:true">package yanbin.blog;<br/><br/>
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;<br/><br/>
+
+@SpringBootApplication
+@RestController
+public class WebController {<br/><br/>
+    public static void main(String[] args) {
+        SpringApplication.run(WebController.class, args);
+    }<br/><br/>
+    @GetMapping("/public-api")
+    public String publicApi() {
+        return "this is a public api";
+    }
+}
+</pre>
+<br/>
+main 方法也加在这个类中了，现在启动它，就可以访问该 API 了<br/><br/>
+<blockquote>
+$ curl -i http://localhost:8080/public-api<br />
+HTTP/1.1 200<br />
+Content-Type: text/plain;charset=UTF-8<br />
+Content-Length: 20<br />
+Date: Fri, 01 Jul 2022 17:47:13 GMT
+this is a public api
+</blockquote>
+<br/>
+<h3>引入 spring-boot-starter-security 依赖</h3><br/><br/>
+到目前为止，一切都很自然。现在给项目引入 spring-boot-starter-security 依赖<br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-boot-starter-security&lt;/artifactId&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+然后什么也不做，重新启动应用，再来访问该 /public-api<br/><br/>
+<blockquote>
+curl -i http://localhost:8080/public-api<br />
+HTTP/1.1 401<br />
+Set-Cookie: JSESSIONID=19E76B7D8843CC59D11B3E9764176CB8; Path=/; HttpOnly<br />
+WWW-Authenticate: Basic realm="Realm"<br />
+X-Content-Type-Options: nosniff<br />
+X-XSS-Protection: 1; mode=block<br />
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate<br />
+Pragma: no-cache<br />
+Expires: 0<br />
+X-Frame-Options: DENY<br />
+Content-Length: 0<br />
+Date: Fri, 01 Jul 2022 17:47:58 GMT
+</blockquote>
+<br/>
+我们表面上看只不过引入了一个依赖而已，然而事情正在起变化，这才使得现有的 API 都不能访问了<br/><br/>
+为了 Spring Security 立马就介入了呢？原来是 spring-boot 核心包中的 <code>org.springframework.boot.context.annotation.ImportCandidates</code> (更早的源头可追溯到 @EnableAutoConfiguration 中引入的 AutoConfigurationImportSelector)读取到了 <code>spring-boot-autoconfigure</code> 包中文件 <code>META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports</code>， 其中有关于 security 的 AutoConfiguration 条目<br/><br/>
+<pre class="lang:default decode:true">org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
+org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+org.springframework.boot.autoconfigure.security.servlet.SecurityFilterAutoConfiguration
+....</pre>
+<br/>
+而 SecurityAutoConfiguration 是被加了 @AutoConfiguration 注解的，并引入了 SpringBootWebSecurityConfiguration 类<br/><br/>
+<pre class="lang:default decode:true ">@AutoConfiguration
+@ConditionalOnClass(DefaultAuthenticationEventPublisher.class)
+@EnableConfigurationProperties(SecurityProperties.class)
+@Import({ SpringBootWebSecurityConfiguration.class, SecurityDataConfiguration.class })
+public class SecurityAutoConfiguration {
+......</pre>
+<br/>
+而在 SpringBootWebSecurityConfiguration 中有<br/><br/>
+<pre class="lang:default decode:true ">@EnableWebSecurity
+static class WebSecurityEnablerConfiguration {
+}</pre>
+<br/>
+所以只要引入了 spring-boot-starter-security 依赖，无论写不写 @EnableWebSecurity, 它都是自动启用的。<br/><br/>
+我们看到自己写的 API 被保护了起来，但默认时对静态资源如 /css/**, /js/**, /images/**, /webjars/**, /**/favicon.ico 和错误页面是直接放行的。<br/><br/>
+<h3>加上 Spring Security 配置文件</h3><br/><br/>
+要想让现有的 /public-api 能被自由的访问，需要添加一个配置来告诉 Spring Security，所以创建一个 Java 类 SecurityConfig<br/><br/>
+<pre class="lang:default decode:true">package yanbin.blog;<br/><br/>
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.SecurityFilterChain;<br/><br/>
+
+@Configuration
+public class SecurityConfig {<br/><br/>
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity httpSecurity) throws Exception{
+        httpSecurity.authorizeHttpRequests().antMatchers("/public-api").permitAll()
+                .anyRequest().authenticated();
+        return httpSecurity.build();
+    }
+} </pre>
+<br/>
+<span style="color: #800000;">注[2023-03-16]: 在  Spring Security 5.8 之后，没有了 antMatchers() 方法，代之为 requestMatchers() 方法，所以上面 filterChain() 中的代码要改为</span><br/><br/>
+<pre class="lang:default decode:true">httpSecurity.authorizeHttpRequests().requestMatchers("/public-api").permitAll()
+        .anyRequest().authenticated();
+return httpSecurity.build();</pre>
+<br/>
+对于 <code>/public-api</code> 允许任意的访问，其余的  API 需要验证, 这里只要求 Authentication 是 authenticated。<br/><br/>
+重启 Springboot 应用，再来检查 /public-api<br/><br/>
+<blockquote>
+$ curl -i http://localhost:8080/public-api<br />
+HTTP/1.1 200<br />
+X-Content-Type-Options: nosniff<br />
+X-XSS-Protection: 1; mode=block<br />
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate<br />
+Pragma: no-cache<br />
+Expires: 0<br />
+X-Frame-Options: DENY<br />
+Content-Type: text/plain;charset=UTF-8<br />
+Content-Length: 20<br />
+Date: Fri, 01 Jul 2022 18:41:38 GMT
+this is a public api
+</blockquote>
+<br/>
+现在可以访问了，同时也注意到与没有引入 Spring Security 依赖前相比，响应头里还是被塞进了不少东西<br/><br/>
+假如我们还有另一个 API <code>/private-api</code>, 那么访问它时也会得到 401 Unauthorized 的响应<br/><br/>
+如果在 WebController 方法中加上两行输出 Request, SecurityContext 的语句<br/><br/>
+<pre class="lang:default decode:true ">@GetMapping("/public-api")
+public String publicApi(HttpServletRequest request) {
+    System.out.println("publicApi: " + request);
+    System.out.println("publicApi: " + SecurityContextHolder.getContext().getAuthentication());
+    return "this is a public api";
+}</pre>
+<br/>
+这时候它的输出为<br/><br/>
+<blockquote>
+publicApi: SecurityContextHolderAwareRequestWrapper[ org.springframework.security.web.header.HeaderWriterFilter$HeaderWriterRequest@a90747a]<br />
+publicApi: AnonymousAuthenticationToken [Principal=anonymousUser, Credentials=[PROTECTED], Authenticated=true, Details=WebAuthenticationDetails [RemoteIpAddress=0:0:0:0:0:0:0:1, SessionId=null], Granted Authorities=[ROLE_ANONYMOUS]]
+</blockquote>
+<br/>
+Spring Security 会把 Request 的实例换了. 对比未引入 Spring Security 依赖前的 request<br/><br/>
+<blockquote>
+publicApi: org.apache.catalina.connector.RequestFacade@2658d732
+</blockquote>
+<br/>
+SecurityContextHolder 是来自 Spring Security 依赖中的类，所以只有引入了才有。对于 permitAll() 的 API, 在 SecurityContextHolder 中会包含一个 Authenticated=true 的 AnonymousAuthenticationToken。这时候我们有两种方式可获得 AuthenticationToken<br/><br/>
+<ol>
+    <li>SecurityContextHolderAwareRequestWrapper.getAuthentication()</li>
+    <li>SecurityContextHolder.getContext().getAuthentication()</li>
+</ol>
+<br/>
+<h3>访问受 Spring Security 保护的 API</h3><br/><br/>
+我们一旦引入 Spring Security 依赖后不在 permitAll() 中的 API 就不能正常访问了，那我们怎么才能访问被 Spring Security 保护的 API 呢？先透露 Spring Security 检查的条件是要求在进入受保护 API 前 <code>SecurityContextHolder.getContext().getAuthentication().isAuthenticated()</code>是返回 true。这就要求我们在进入到 Controller 方法之前往 SecurityContextHolder 中放一个 authenticated 为 true 的 Authentication。那么怎么才能实现该操作呢，可以在进行验证前的一个 Filter 里，所以我们要加一个 Filter，为注册 Filter 先要改一下 SecurityConfig 类<br/><br/>
+SecurityConfig.java<br/><br/>
+<pre class="lang:default decode:true">@Configuration
+public class SecurityConfig {<br/><br/>
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity httpSecurity) throws Exception{
+        httpSecurity.authorizeHttpRequests().antMatchers("/public-api").permitAll()
+                .anyRequest().authenticated();<br/><br/>
+        // 未提供 token 是返回 401 而不是 403
+        httpSecurity.exceptionHandling().authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED));
+        
+        httpSecurity.addFilterBefore(new JwtTokenFilter(), AuthorizationFilter.class);
+        return httpSecurity.build();
+    }
+}</pre>
+<br/>
+<span style="color: #800000;">注[2023-03-16]: 同样的在 Spring Security 5.8 后要把  antMatchers() 改为 requestMatchers()</span><br/><br/>
+注：我们通常把这个自定义的 Filter 注册到 UsernamePasswordAuthenticationFilter 之前，特别是我们后面在 JwtTokenFilter 中直接创建 UsernamePasswordAuthentication 实例，放到 SecurityContextHolder 中的情况。如<br/><br/>
+<pre class="lang:default decode:true">httpSecurity.addFilterBefore(new JwtTokenFilter(), UsernamePasswordAuthenticationFilter.class);</pre>
+<br/>
+如果不希望 Spring 帮我们管理 Session 的话，在其中再加上<br/><br/>
+<pre class="lang:default decode:true ">httpSecurity.sessionManagement().sessionCreationPolicy(SessionCreationPolicy.STATELESS);</pre>
+<br/>
+再创建一个 JwtTokenFilter, 这一步只是往 SecurityContextHolder 中放一个 authenticated 为 true 的 Authentication, 随意找一个 Authentication 的实现类就行<br/><br/>
+<pre class="lang:default decode:true">public class JwtTokenFilter extends OncePerRequestFilter {<br/><br/>
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+            throws ServletException, IOException {<br/><br/>
+        Authentication authentication = new TestingAuthenticationToken("principal", "credentials");
+        authentication.setAuthenticated(true);
+        SecurityContextHolder.getContext().setAuthentication(authentication);<br/><br/>
+        filterChain.doFilter(request, response);
+    }
+}</pre>
+<br/>
+下一步，为测试受保护的 API, 在 WebController 中再添加一个 <code>/private-api</code>, 由于它不在 permitAll() 列表中，也不是默认开放的，所以它要受到 Spring Security 的保护。<br/><br/>
+<pre class="lang:default decode:true">@SpringBootApplication
+@RestController
+public class WebController {<br/><br/>
+    public static void main(String[] args) {
+        SpringApplication.run(WebController.class, args);
+    }<br/><br/>
+    @GetMapping("/private-api")
+    public String privateApi(HttpServletRequest request) {
+        System.out.println("privateApi:" + request);
+        System.out.println("privateApi:" + SecurityContextHolder.getContext().getAuthentication());
+        return "this is a private api";
+    }<br/><br/>
+    @GetMapping("/public-api")
+    public String publicApi(HttpServletRequest request) {
+        System.out.println("publicApi: " + request);
+        System.out.println("publicApi: " + SecurityContextHolder.getContext().getAuthentication().isAuthenticated());
+        return "this is a public api";
+    }
+}</pre>
+<br/>
+重启 Springboot 应用，访问 /private-api<br/><br/>
+<blockquote>
+$ curl -i http://localhost:8080/private-api<br />
+HTTP/1.1 200<br />
+X-Content-Type-Options: nosniff<br />
+X-XSS-Protection: 1; mode=block<br />
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate<br />
+Pragma: no-cache<br />
+Expires: 0<br />
+X-Frame-Options: DENY<br />
+Set-Cookie: JSESSIONID=AE55AE261A75908E8413CE9B82608FCE; Path=/; HttpOnly<br />
+Content-Type: text/plain;charset=UTF-8<br />
+Content-Length: 21<br />
+Date: Fri, 01 Jul 2022 21:33:29 GMT
+this is a private api
+</blockquote>
+<br/>
+没问题，只要有 authenticated=true 的 Authentication 实例就行。那现在来测试一下 authenticated=false 的 Authentication 实例是怎么样，在 JwtTokenFilter 中调用 setAuthenticated(false)<br/><br/>
+<pre class="lang:default mark:2 decode:true">Authentication authentication = new TestingAuthenticationToken("principal", "credentials");
+authentication.setAuthenticated(false);
+SecurityContextHolder.getContext().setAuthentication(authentication); </pre>
+<br/>
+重启应用再测试 /private-api<br/><br/>
+<blockquote>
+$ curl -i http://localhost:8080/private-api<br />
+HTTP/1.1 401<br />
+X-Content-Type-Options: nosniff<br />
+X-XSS-Protection: 1; mode=block<br />
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate<br />
+Pragma: no-cache<br />
+Expires: 0<br />
+X-Frame-Options: DENY<br />
+Set-Cookie: JSESSIONID=DFCC7E18ADE4C8D105FEF73AD1B3E25C; Path=/; HttpOnly<br />
+Content-Length: 0<br />
+Date: Fri, 01 Jul 2022 21:36:37 GMT
+</blockquote>
+<br/>
+现在我们找到了控制 API 是否能访问的开关，就是 SecurityContextHolder 中的 Authentication.isAuthenticated() 是否为 true， true 则允许，返之则禁止访问。当然对当前 API 的具体权限还要借助于 Authentication 的 List&lt;GrantedAuthority&gt; authorities 来控制，这是另一个话题。<br/><br/>
+<h3>集成 JWT token 验证</h3><br/><br/>
+前面的 JwtTokenFilter 中我们用了 TestingAuthenticationToken 来示范 authenticated 的 true/false 对请求的影响，我们可以使用其他的实现了 Authentication 的子类，如 UsernamePasswordAuthenticationToken。但作为 JWT token 专用，我们创建一个自己的 JwtAuthentication 类<br/><br/>
+<pre class="lang:default decode:true ">package yanbin.blog;<br/><br/>
+import org.springframework.security.authentication.AbstractAuthenticationToken;<br/><br/>
+public class JwtAuthentication extends AbstractAuthenticationToken {<br/><br/>
+    private final DecodedJWT decodedJWT;<br/><br/>
+    public JwtAuthentication(DecodedJWT decodedJWT) {
+        super(null);
+        this.decodedJWT = decodedJWT;
+        setAuthenticated(decodedJWT.getExpiresAt().after(new Date()));
+    }<br/><br/>
+    @Override
+    public Object getCredentials() {
+        return null;
+    }<br/><br/>
+    @Override
+    public Object getPrincipal() {
+        return decodedJWT;
+    }
+}
+</pre>
+<br/>
+然后再回到 JwtTokenFilter 中去按条件构建 JwtAuthentication 实例，设置它的 authenticated 属性，并放到  SecurityContextHolder 中<br/><br/>
+修改 JwtTokenFilter<br/><br/>
+<pre class="lang:default decode:true">public class JwtTokenFilter extends OncePerRequestFilter {<br/><br/>
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+            throws ServletException, IOException {
+        Optional&lt;DecodedJWT&gt; optionalDecodedJWT = Optional.ofNullable(request.getHeader("authorization"))
+                .filter(s -&gt; s.startsWith("Bearer ")).map(s -&gt; s.substring(7)).map(s -&gt; {
+                    try {
+                        return JWT.decode(s);
+                    } catch (JWTDecodeException ex) {
+                        return null;
+                    }
+                });<br/><br/>
+        if (optionalDecodedJWT.isPresent()) {
+            Authentication authentication = new JwtAuthentication(optionalDecodedJWT.get());<br/><br/>
+            // 这里可以检查 JWT token 是否过期，issuer 等来设置 setAuthenticated(true/false)<br/><br/>
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+        } else {
+            SecurityContextHolder.clearContext();
+        }<br/><br/>
+        filterChain.doFilter(request, response);
+    }
+}</pre>
+<br/>
+注：JWT 的处理库是用的 com.auth0.java-jwt 包，依赖配置<br/><br/>
+<pre class="lang:default decode:true">&lt;dependency&gt;
+    &lt;groupId&gt;com.auth0&lt;/groupId&gt;
+    &lt;artifactId&gt;java-jwt&lt;/artifactId&gt;
+    &lt;version&gt;3.19.2&lt;/version&gt;
+&lt;/dependency&gt;</pre>
+<br/>
+测试(当然别忘了重启应用)<br/><br/>
+注：为节省篇幅，后面的 curl 命令输出我们其他省略响应头，只标名状态代码<br/><br/>
+JWT token 可用 <a href="https://jwt.io/">https://jwt.io/</a> 进行生成，PAYLOAD 中 <code>exp</code> 为 token 过期日期<br/><br/>
+有效 JWT token<br/><br/>
+<blockquote>
+$ curl -i -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiSm9obiBEb2UiLCJleHAiOjI1MTYyMzkwMjJ9.nxLE4nlE-HatyNWNsGkXWbBTpXo0pYUsfJvzeePTDR8" -i http://localhost:8080/private-api<br />
+HTTP/1.1 200
+this is a private api
+</blockquote>
+<br/>
+无效 JWT token(已过期)<br/><br/>
+<blockquote>
+$ curl -i -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiSm9obiBEb2UiLCJleHAiOjEwMTYyMzkwMjJ9._SH20hSVSJoc8HZcbjAABoajiULb6-3taaMp6oHc2Dk" -i http://localhost:8080/private-api<br />
+HTTP/1.1 403<br />
+<br /><br/><br/>
+</blockquote>
+<br/>
+或者无 token<br/><br/>
+<blockquote>
+$ curl -i http://localhost:8080/private-api<br />
+HTTP/1.1 401<br />
+<br /><br/><br/>
+</blockquote>
+<br/>
+<h3>在 Controller 方法中获 Authentication</h3><br/><br/>
+由前面知道，在  Controller 方法有两种方法能获得当前的 Authentication<br/><br/>
+<ol>
+    <li>SecurityContextHolderAwareRequestWrapper.getAuthentication()</li>
+    <li>SecurityContextHolder.getContext().getAuthentication()</li>
+</ol>
+<br/>
+还有另一种方式，通过 <code>@AuthenticationPrincipal DecodedJWT decodedJWT</code> 注解的方法参数，能够直接得到 Authentication 中的 principal 信息。我们再次改造 WebController 中的 API 方法<br/><br/>
+<pre class="lang:default decode:true ">@SpringBootApplication(exclude = UserDetailsServiceAutoConfiguration.class)
+@RestController
+public class WebController {<br/><br/>
+    public static void main(String[] args) {
+        SpringApplication.run(WebController.class, args);
+    }<br/><br/>
+    @GetMapping("/private-api")
+    public String privateApi(HttpServletRequest request, @AuthenticationPrincipal DecodedJWT decodedJWT) {
+        System.out.println("privateApi decodeJWT:" + decodedJWT);
+        System.out.println("privateApi request:" + request);
+        System.out.println("privateApi authentication:" + SecurityContextHolder.getContext().getAuthentication());
+        return "this is a private api";
+    }<br/><br/>
+    @GetMapping("/public-api")
+    public String publicApi(HttpServletRequest request, @AuthenticationPrincipal DecodedJWT decodedJWT) {
+        System.out.println("publicApi decodedJWT:" + decodedJWT);
+        System.out.println("publicApi request: " + request);
+        System.out.println("publicApi authentication: " + SecurityContextHolder.getContext().getAuthentication());
+        return "this is a public api";
+    }
+}</pre>
+<br/>
+进行三个测试，看客户端和服务端各自的输出<br/><br/>
+有效 token 访问保护 API<br/><br/>
+<blockquote>
+$ curl -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiSm9obiBEb2UiLCJpYXQiOjE1MTYyMzkwMjJ9.hqWGSaFpvbrXkOWc6lrnffhNWR19W_S1YKFBx2arWBka234" -i http://localhost:8080/private-api<br />
+HTTP/1.1 200
+this is a private api
+</blockquote>
+<br/>
+服务端输出<br/><br/>
+<blockquote>
+privateApi decodeJWT:com.auth0.jwt.JWTDecoder@130c8ea9<br />
+privateApi request:SecurityContextHolderAwareRequestWrapper[ org.springframework.security.web.header.HeaderWriterFilter$HeaderWriterRequest@17331810]<br />
+privateApi authentication:JwtAuthentication [Principal=com.auth0.jwt.JWTDecoder@130c8ea9, Credentials=[PROTECTED], Authenticated=true, Details=null, Granted Authorities=[]]
+</blockquote>
+<br/>
+有效 token 访问 public API<br/><br/>
+<blockquote>
+$ curl -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoiSm9obiBEb2UiLCJpYXQiOjE1MTYyMzkwMjJ9.hqWGSaFpvbrXkOWc6lrnffhNWR19W_S1YKFBx2arWBka234" -i http://localhost:8080/public-api<br />
+HTTP/1.1 200
+this is a public api
+</blockquote>
+<br/>
+服务端输出<br/><br/>
+<blockquote>
+publicApi decodedJWT:com.auth0.jwt.JWTDecoder@641811fe<br />
+publicApi request: SecurityContextHolderAwareRequestWrapper[ org.springframework.security.web.header.HeaderWriterFilter$HeaderWriterRequest@6adfe30d]<br />
+publicApi authentication: JwtAuthentication [Principal=com.auth0.jwt.JWTDecoder@641811fe, Credentials=[PROTECTED], Authenticated=true, Details=null, Granted Authorities=[]]
+</blockquote>
+<br/>
+无效 token 访问 public API<br/><br/>
+<blockquote>
+$ curl -H "Authorization: Bearer invalid.jwt.token" -i http://localhost:8080/public-api<br />
+HTTP/1.1 200
+this is a public api
+</blockquote>
+<br/>
+服务端输出<br/><br/>
+<blockquote>
+publicApi decodedJWT:null<br />
+publicApi request: SecurityContextHolderAwareRequestWrapper[ org.springframework.security.web.header.HeaderWriterFilter$HeaderWriterRequest@6e396cf8]<br />
+publicApi authentication: null
+</blockquote>
+<br/>
+不带 token 访问 public API<br/><br/>
+<blockquote>
+$ curl -i http://localhost:8080/public-api<br />
+HTTP/1.1 200
+this is a public api
+</blockquote>
+<br/>
+服务端输出<br/><br/>
+<blockquote>
+publicApi decodedJWT:null<br />
+publicApi request: SecurityContextHolderAwareRequestWrapper[ org.springframework.security.web.header.HeaderWriterFilter$HeaderWriterRequest@2e31962f]<br />
+publicApi authentication: null
+</blockquote>
+<br/>
+从上面看出，只要 JwtTokerFiler 中往 SecurityContextHolder 放了什么就能直接取到，而不管 API 是否受 Spring Security 的保护。<br/><br/>
+<h3>更深入理解 Spring Security 的工作原理</h3><br/><br/>
+当 spring-boot-starter-security 引入后<br/><br/>
+<ol>
+    <li>在 spring-boot-autoconfigure 包中的 SecurityAutoConfiguration(@AutoConfiguration 注解的类) import 了  SpringBootWebSecurityConfiguration(同样是 spring-boot-autoconfigure 包中的类)</li>
+    <li>在 SpringBootWebSecurityConfiguration 中，因为发现存在 EnableWebSecurity 类且 Spring Bean "springSecurityFilterChain" 还 没有，就会启用 @EnableWebSecurity<br />
+<pre class="lang:default decode:true">@Configuration(proxyBeanMethods = false)
+@ConditionalOnMissingBean(name = BeanIds.SPRING_SECURITY_FILTER_CHAIN)
+@ConditionalOnClass(EnableWebSecurity.class)
+@EnableWebSecurity
+static class WebSecurityEnablerConfiguration {<br/><br/>
+}</pre>
+这就是为什么只要引入 spring-boot-autoconfigure, 而无须手工加上 @EnableWebSecurity
+</li>
+    <li>在 @EnableWebSecurity 中会 import 类 { WebSecurityConfiguration.class, SpringWebMvcImportSelector.class, OAuth2ImportSelector.class, HttpSecurityConfiguration.class }) 和 @EnableGlobalAuthentication</li>
+    <li>在 WebSecurityConfiguration 会注册上 springSecurityFilterChain</li>
+    <li>在 HttpSecurityConfiguration 中会配置基本的 httpSecurity, 如, AuthenticationManager, csrf, exceptionHandling, headers, sessionManagement, login, logout 等的配置</li>
+    <li>在 Spring 配置中获得 Spring Bean <code>HttpSecurity</code> 实例，并配置哪些 API 受保护，哪些不用。然后把自己的 Filter(如上面的 JwtTokenFilter) 实例加到 springSecurityFilterChain 中 AuthorizationFilter 前面。关于 Spring Security 可能注册的 Filter 及顺序请参考类FilterOrderRegistration</li>
+    <li>在自己的 Filter 类实现(如上面的 JwtTokenFilter), 因请求状况是否往 SecurityContextHolder 放一个 Authentication(authenticated=true) 的实例</li>
+    <li>在 AuthorizationFilter 的 AuthorizationManager 会综合当前的配置，SecurityContextHolder 中的 Authentication 进行裁决当前 API 是否准许当前请求访问。这一步也包括验证 Authentication 所携带的 Collection&lt;GrantedAuthority&gt; 是否可访问当前 API。也就是说包含 Authentication 和 Authorization 两个校验。</li>
+    <li>最后由 ExceptionTranslationFilter 依照 AuthorizationFilter 的鉴权结果，针对 Authentication 和 Authorization 的失败分别抛出 AuthenticationException 和 AccessDeniedException, 对应为 401(Unauthorized -- 通常为没有或无效的 Authentication), 403(Forbidden -- 有 Authentication, 但 Authentication 无相应的权限)<br />
+401 状态码更应该是 Unauthenticated, 403 状态码叫做 Unauthorized 才更匹配</li>
+</ol>
+<br/>
+Spring 启动的时候，在 DefaultSecurityFilterChain 类中有 logger.info 输出当前已注册可用的所有 filter, 类似如下输出(为阅读方便，对输出进行换行显示)<br/><br/>
+<blockquote>
+Will secure any request with [<br />
+    org.springframework.security.web.session.DisableEncodeUrlFilter@3f5f79d8, <br />
+    org.springframework.security.web.context.request.async.WebAsyncManagerIntegrationFilter@5dc1597f,<br />
+    org.springframework.security.web.context.SecurityContextPersistenceFilter@28b4b10e, <br />
+    org.springframework.security.web.header.HeaderWriterFilter@3ecbfba1, <br />
+    org.springframework.security.web.authentication.logout.LogoutFilter@628f0936, <br />
+    org.springframework.security.web.savedrequest.RequestCacheAwareFilter@5c945ee7, <br />
+    org.springframework.security.web.servletapi.SecurityContextHolderAwareRequestFilter@3ed87b6e,<br />
+    org.springframework.security.web.authentication.AnonymousAuthenticationFilter@11896af6, <br />
+    org.springframework.security.web.session.SessionManagementFilter@1185b0b7, <br />
+    org.springframework.security.web.access.ExceptionTranslationFilter@da4c5cb, <br />
+    com.mstar.ade.wfeweb.config.JwtTokenFilter@6b6e2c83, <br />
+    org.springframework.security.web.access.intercept.AuthorizationFilter@530d40b4]
+</blockquote>
+<br/>
+<h3>Authentication + Authorization</h3><br/><br/>
+Authentication 和 Authorization 分别代表着用户有效用户和权限鉴定。就个人理解而言，无 token, authenticated=false 的 token 都应该返回 401(<del>Unauthorized</del>Unauthenticated), 而 token 有效但无相应角色返回 403(Forbidden)<br/><br/>
+前面的 SecurityConfig 中配置的 httpSecurity 只是要求 authenticated<br/><br/>
+<pre class="lang:default decode:true">httpSecurity.authorizeHttpRequests().antMatchers("/public-api").permitAll()
+            .anyRequest().authenticated();</pre>
+<br/>
+除了 authenticated 以外，我们还可以进一步要求 JWT 中应有指定的 role 才能访问，即进行 Authorization 的验证。那么在 SecurityConfig 中的配置为<br/><br/>
+<pre class="lang:default decode:true">@Configuration
+public class SecurityConfig {<br/><br/>
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity httpSecurity) throws Exception{
+        httpSecurity.authorizeHttpRequests().antMatchers("/public-api").permitAll()
+                .anyRequest().hasRole("contributors");<br/><br/>
+        // 未提供 token 是返回 401 而不是 403
+        httpSecurity.exceptionHandling().authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED));
+        
+        httpSecurity.addFilterBefore(new JwtTokenFilter(), AuthorizationFilter.class);
+        return httpSecurity.build();
+    }
+}</pre>
+<br/>
+<span style="color: #800000;">注[2023-03-16]: 同样的在 Spring Security 5.8 后要把  antMatchers() 改为 requestMatchers()</span><br/><br/>
+<code>hasRole("contributor")</code> 其实是检验的 <code>hashAuthority("ROLE_contributor")</code>。上面也可以用 hashAuthority("xxx") 方式来配置<br/><br/>
+<pre class="lang:default decode:true">anyRequest().hasAuthority("xxx")</pre>
+<br/>
+多个 role 中的一个可调用方法 <code>hasAnyRole("role1", "role2", ...)</code> 或 <code>hashAnyAuthority("role1", "role2", ...)</code><br/><br/>
+在 JwtAuthentication 中我们需要覆盖 getAuthorities() 方法<br/><br/>
+<pre class="lang:default decode:true">@Override
+public Collection&lt;GrantedAuthority&gt; getAuthorities() {
+    return Optional.ofNullable(decodedJWT.getClaim("roles").asList(String.class))
+            .map(roles -&gt; roles.stream().map(role -&gt; (GrantedAuthority) new SimpleGrantedAuthority(role))
+                    .collect(toList()))
+            .orElse(emptyList());
+} </pre>
+<br/>
+用页面 <a href="https://jwt.io/">https://jwt.io/</a> 在 PAYLOAD 中加上<br/><br/>
+<pre class="lang:default decode:true">"roles" ["ROLE_contributors"]</pre>
+<br/>
+后生成 JWT token 来访问<br/><br/>
+<blockquote>
+$ curl -i -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMTYyMzkwMjIsInJvbGVzIjpbIlJPTEVfY29udHJpYnV0b3JzIl19.uLGZ8UoLpMjCaVFUYEMpK1gFbSLyF5hEEBKTgYEJpos" -i http://localhost:8080/private-api<br />
+HTTP/1.1 200
+</blockquote>
+<br/>
+换一个 roles<br/><br/>
+<pre class="lang:default decode:true ">"roles": ["ROLES_users"]</pre>
+<br/>
+<blockquote>
+$ curl -i -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjIwMTYyMzkwMjIsInJvbGVzIjpbIlJPTEVfdXNlcnMiXX0.hv7GmocUdqvLJc7t42MPDCPSELcv3fMpQU5lm-W4csg" -i http://localhost:8080/private-api<br />
+HTTP/1.1 403
+</blockquote>
+<br/>
+以上产生的两个 Authentication 的  authenticated 都是 true, 但后一个无相应的 role <code>ROLE_contributors</code>, 所以是返回的是 403。<br/><br/>
+再加一个测试，如果转一个已过期，但含有 ROLE_contributors 的 token<br/><br/>
+<blockquote>
+$ curl -i -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjEwMTYyMzkwMjIsInJvbGVzIjpbIlJPTEVfY29udHJpYnV0b3JzIl19.j7ZrmNykVmWX1n0SXJiY7Y7HkCv0pjWa1ju3mxYQWFk" -i http://localhost:8080/private-api<br />
+HTTP/1.1 403
+</blockquote>
+<br/>
+也是 403<br/><br/>
+如果希望在有 token 但 token 的 authenticated=false 时返回 403 就需要定制 AuthorizationFilter, 或它的 AuthorizationManager(RequestMatcherDelegatingAuthorizationManager), 在 AuthorityAuthorizationManager 类中<br/><br/>
+<pre class="lang:default decode:true "> @Override
+    public AuthorizationDecision check(Supplier&lt;Authentication&gt; authentication, T object) {
+        boolean granted = isGranted(authentication.get());
+        return new AuthorityAuthorizationDecision(granted, this.authorities);
+    }<br/><br/>
+    private boolean isGranted(Authentication authentication) {
+        return authentication != null &amp;&amp; authentication.isAuthenticated() &amp;&amp; isAuthorized(authentication);
+    }</pre>
+<br/>
+当 isAuthenticated() 为 false 时抛出 <code>AuthenticationException</code>, 继而在 <code>ExceptionTranslationFilter</code> 中能送出 401 状态码而不是 403。或者在 JwtTokenFilter 中也可检验 Token 是否过期，来源 issuer 是否合法，是否合法的客户端等来决定是否往 SecurityContextHolder 中放置 Authentication 实例，而不是设置它的 authenticated 为 false，如此也能获得预期的 401。<br/><br/>
+<h3>几种配置 Spring Security 的方式</h3><br/><br/>
+<h4>WebSecurityConfigurerAdapter(spring-security 5.7.x 开始不推荐使用)</h4><br/><br/>
+建议使用后面两种方式<br/><br/>
+示例<br/><br/>
+<pre class="lang:default decode:true">@Configuration
+public class AuthConfig extends WebSecurityConfigurerAdapter {<br/><br/>
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http.csrf().disable();
+        http
+          .authorizeRequests()
+          .antMatchers("/callback", "/login", "/").permitAll()
+          .anyRequest().authenticated()
+          .and()
+          .formLogin()
+          .loginPage("/login")
+          .and()
+          .logout().logoutSuccessHandler(logoutSuccessHandler()).permitAll();
+    }
+}</pre>
+<br/>
+<span style="color: #800000;">注[2023-03-16]: 同样的在 Spring Security 5.8 后要把  antMatchers() 改为 requestMatchers()</span><br/><br/>
+<h4>SecurityFilterBean</h4><br/><br/>
+<pre class="lang:default decode:true">@Bean
+public SecurityFilterChain filterChain(HttpSecurity httpSecurity) throws Exception{
+    httpSecurity.authorizeHttpRequests().antMatchers("/public-api").permitAll()
+            .anyRequest().authenticated();<br/><br/>
+    httpSecurity.addFilterBefore(new JwtTokenFilter(), AuthorizationFilter.class);
+    return httpSecurity.build();
+}
+</pre>
+<br/>
+<span style="color: #800000;">注[2023-03-16]: 同样的在 Spring Security 5.8 后要把  antMatchers() 改为 requestMatchers()</span><br/><br/>
+<h4>WebSecurityCustomizer</h4><br/><br/>
+<pre class="lang:default decode:true">@Bean
+public WebSecurityCustomizer ignoringCustomizer() {
+    return (webSecurity) -&gt; webSecurity.ignoring().antMatchers("/ignore1", "/ignore2");
+}</pre>
+<br/>
+<h3>最后总结</h3><br/><br/>
+完整演示项目代码已上传至 <a href="https://github.com/yabqiu/spring-security-jwt">https://github.com/yabqiu/spring-security-jwt</a>. 实现中的三个步骤<br/><br/>
+<ol>
+    <li>Spring Security config 配置访问规则，并加上一个 JwtTokenFilter 放到正确的位置上</li>
+    <li>JwtTokenFilter 根据请求头决定往 SecurityContextHolder 中放一个 Authentication 对象。如果是  authenticated() 留心 isAuthenticate() 是否为 true; 如果是 hasRole(), hashAuthority() 等就要看 getAuthorities() 的值是否包含相应的 ROLE_&lt;role_name&gt; 或 authority 名称。</li>
+    <li>在 Controller 方法中通过 @AuthenticationPrincipal 注解的参数可以获得 Authentication 对象中的 principal 备用</li>
+</ol>
+<br/>
+当前 Spring Security 直接能实现的是对受保护 API 的访问，不含 Token 返回 401， 有 Token 但 authenticated() 为 false, 或无相应的 role/authority 权限时都返回 403。可覆盖 AuthorizationManager 实现或修改 JwtTokenFilter 来获得过期 token 返回 401。 <br/><br/>
+其余剩下的就是 Spring Security 的事情了，能作更多扩展的地方大约就是在自定义的 Filter 中。如果在 Controller 中不需要关心 Authentication 的话就只需上面两步就应用上了 Spring Security。<br/><br/>
+自定义的 JwtTokenFilter 可以加在 SecurityContextPersistenceFilter 之后<br/><br/>
+<pre class="lang:default decode:true ">httpSecurity.addFilterAfter(new JwtTokenFilter(), SecurityContextPersistenceFilter.class);</pre>
+<br/>
+编译器可能会提示 SecurityContextPersistenceFilter 不推荐使用，请用 <code>SecurityContextHolderFilter</code>， 别理它。如果你真老老实实听它的话的话，上面换成 <code>SecurityContextHolderFilter</code>, 事情就坏了，有效有权限的 token 都会得到 401 了。Spring Security 只是建议你不要用 SecurityContextPersistenceFilter, 但它自己还在偷偷的使用。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://www.baeldung.com/spring-boot-security-autoconfiguration">Spring Boot Security Auto-Configuration</a></li>
+    <li><a href="https://www.baeldung.com/spring-security-auth0">Spring Security With Auth0</a></li>
+    <li><a href="https://www.bezkoder.com/spring-boot-jwt-mysql-spring-security-architecture/">Spring Boot 2 JWT Authentication with Spring Security</a></li>
+    <li><a href="https://spring.io/guides/gs/securing-web/">Securing a Web Application</a></li>
+</ol>
+<br/>
+<hr /><br/><br/>
+补充[2023-03-16]: 当启用了 SpringSecurity 之后，在访问不存在的 API 或资源时不再是返回 404 NotFound, 而是 403 Forbidden 或 401 Unauthorized(如果配置了 httpSecurity.exceptionHandling().authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)); 的话) 错误响应。这也是合理的，反正是没权限访问，没必要明确告诉你 API 或资源是否真的不存在，不想给你看的东西别乱看就对了。<br/><br/>
+如果仍然想准确区分不存在的 API 或资源返回 404 NotFound, 存在但没权限访问的返回 403 Forbidden(或 401 Unauthorized) 就在 authenticationEntryPoint 和 accessDeniedHandler 中先检查资源不存在 response.sendError(404), 存在的资源执行默认行为。<br/><br/>
+<pre class="lang:default decode:true">httpSecurity.exceptionHandling()
+    .authenticationEntryPoint(new MyAuthenticationEntryPoint())
+    .accessDeniedHandler(new MyAccessDeniedHandler());</pre>
+<br/>
+MyAuthencationEntryPoint 的代码大意是<br/><br/>
+<pre class="lang:default decode:true">public class MyAuthenticationEntryPoint extends Http403ForbiddenEntryPoint {<br/><br/>
+    @Override
+    public void commence(HttpServletRequest request, HttpServletResponse response,
+            AuthenticationException authException) throws IOException {
+        if (endpointNotExist(request)) {
+            response.sendError(HttpServletResponse.SC_NOT_FOUND, "Resource not found");
+        } else {
+            super.commence(request, response, authException);
+        }
+    }
+}</pre>
+<br/>
+MyAccessDeniedHandler 的代码大致是<br/><br/>
+<pre class="lang:default decode:true">public  class MyAccessDeniedHandler extends AccessDeniedHandlerImpl {<br/><br/>
+    @Override
+    public void handle(HttpServletRequest request, HttpServletResponse response,
+            AccessDeniedException accessDeniedException) throws IOException, ServletException {<br/><br/>
+        if (endpointNotExist(request)) {
+            response.sendError(HttpServletResponse.SC_NOT_FOUND, "Resource not found");
+        } else {
+            super.handle(request, response, accessDeniedException);
+        }
+    }
+}</pre>
+<br/>
+而我们要实现的就是方法 endpointNotExist(request), 如何确定 endpoint 是不存的。参考：<a href="https://stackoverflow.com/questions/70054528/receiving-403-instead-of-404-when-calling-non-existing-endpoint">Receiving 403 instead of 404 when calling non existing endpoint</a>

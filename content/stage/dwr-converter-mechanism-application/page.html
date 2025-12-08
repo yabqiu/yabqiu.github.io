@@ -1,0 +1,350 @@
+---
+title: DWR 的 Converter 实现原理简单分析及应用
+url: /dwr-converter-mechanism-application/
+date: 2009-06-23T04:43:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - Web/JS
+tags: 
+  - DWR
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 258 
+wpStatus: publish
+views: 1703
+lastmod: 2013-12-31T23:51:13-06:00
+---
+
+我们在应用 DWR 调用远程方法时涉及到 JS 与 JAVA 之间参数和返回值的数据转换，例如：<br/>
+<br/>
+JS 的 123 与 Java 的 int  或 Integer、long 间的转换<br/>
+JS 的 "2009-06-23" 与 Java 的 java.util.Date 之间的转换<br/>
+JS 的 "[1,2,3]" 与 Java 的 int[] 间的转换<br/>
+JS 的 "{id:123, name: 'Unmi'}" 与 Java 的 Class Person{int id; String name} 间的转换<br/>
+<br/>
+或者更复杂的嵌套类型( "{id:123, name: 'Unmi', blogs:['http://unmi.blogjava.net','http://blog.csdn.net/kypfos']}" ) 与 Java 类型间的转换，等等。那么这一切是怎么进行的呢？其实我们见识过很多组件的类型映射，如 Java 的 PropertyEditor、Hibernate(UserType)、iBatis(TypeHandler) 的类型映射，Struts1/2 中 Form/Model 用的 Converter 等。<!--more--><br/>
+<br/>
+这里我来稍稍分析 DWR 的 Converter 实现，以及说明如何定制自己的 Converter。本文所用 DWR 是 2.0.5 版。<br/>
+<br/>
+<strong>1. DWR 内置的 Converter 及应用类型</strong><br/>
+<table style="border-collapse: collapse;" border="1" cellspacing="0" cellpadding="5" width="700" align="center" bordercolor="black">
+
+<tbody>
+
+<tr>
+
+<td><strong>名称</strong></td>
+
+<td><strong>应用类型</strong></td>
+
+<td><strong>转换器</strong></td>
+
+</tr>
+
+<tr>
+
+<td>null</td>
+
+<td>void，java.lang.Void</td>
+
+<td>NullConverter</td>
+
+</tr>
+
+<tr>
+
+<td>enum</td>
+
+<td> </td>
+
+<td>EnumConverter</td>
+
+</tr>
+
+<tr>
+
+<td>primitive</td>
+
+<td>boolean,byte,short,int,long,float,double,char,<br/>
+java.lang.Boolean,java.lang.Byte,java.lang.Short,<br/>
+java.lang.Integer,java.lang.Long,java.lang.Float,<br/>
+java.lang.Double,java.lang.Character</td>
+
+<td>PrimitiveConverter</td>
+
+</tr>
+
+<tr>
+
+<td>bignumber</td>
+
+<td>java.math.BigInteger,java.math.BigDecimal</td>
+
+<td>BigNumberConverter</td>
+
+</tr>
+
+<tr>
+
+<td>string</td>
+
+<td>java.lang.String</td>
+
+<td>StringConverter</td>
+
+</tr>
+
+<tr>
+
+<td>array</td>
+
+<td>[Z,[B,[S,[I,[J,[F,[D,[C,[L*</td>
+
+<td>ArrayConverter</td>
+
+</tr>
+
+<tr>
+
+<td>map</td>
+
+<td>java.util.Map</td>
+
+<td>MapConverter</td>
+
+</tr>
+
+<tr>
+
+<td>collection</td>
+
+<td>java.util.Collection</td>
+
+<td>CollectionConverter</td>
+
+</tr>
+
+<tr>
+
+<td>date</td>
+
+<td>java.util.Date,java.sql.Date,java.sql.Time,<br/>
+java.sql.Timestamp,java.util.Calendar</td>
+
+<td>DateConverter</td>
+
+</tr>
+
+<tr>
+
+<td>dom</td>
+
+<td>org.w3c.dom.Node,org.w3c.dom.Element,org.w3c.dom.Document</td>
+
+<td>DOMConverter</td>
+
+</tr>
+
+<tr>
+
+<td>dom4j</td>
+
+<td>org.dom4j.Document,org.dom4j.Element,org.dom4j.Node</td>
+
+<td>DOM4JConverter</td>
+
+</tr>
+
+<tr>
+
+<td>jdom</td>
+
+<td>org.jdom.Document,org.jdom.Element</td>
+
+<td>JDOMConverter</td>
+
+</tr>
+
+<tr>
+
+<td>xom</td>
+
+<td>nu.xom.Document,nu.xom.Element,nu.xom.Node</td>
+
+<td>XOMConverter</td>
+
+</tr>
+
+<tr>
+
+<td>servlet</td>
+
+<td>javax.servlet.ServletConfig,javax.servlet.ServletContext,<br/>
+javax.servlet.http.HttpServletRequest,<br/>
+javax.servlet.http.HttpServletResponse,<br/>
+javax.servlet.http.HttpSession</td>
+
+<td>ServletConverter</td>
+
+</tr>
+
+<tr>
+
+<td>bean</td>
+
+<td> </td>
+
+<td>BeanConverter</td>
+
+</tr>
+
+<tr>
+
+<td>object</td>
+
+<td> </td>
+
+<td>ObjectConverter</td>
+
+</tr>
+
+<tr>
+
+<td>hibernate2</td>
+
+<td> </td>
+
+<td>H2BeanConverter</td>
+
+</tr>
+
+<tr>
+
+<td>hibernate3</td>
+
+<td> </td>
+
+<td>H3BeanConverter</td>
+
+</tr>
+
+<tr>
+
+<td>url</td>
+
+<td>java.net.URL</td>
+
+<td>URLConverter</td>
+
+</tr>
+
+<tr>
+
+<td>exception</td>
+
+<td> </td>
+
+<td>ExceptionConverter</td>
+
+</tr>
+
+<tr>
+
+<td>miniException</td>
+
+<td>java.lang.Throwable</td>
+
+<td>MinimalistExceptionConverter</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+它们是应用启动的时候，通过 org.directwebremoting.servlet.DwrServlet 初始化 dwr-2.0.5.jar!/org/directwebremoting/dwr.xml 文件加载进来的。例如：<br/>
+<br/>
+&lt;converter id="date" class="org.directwebremoting.convert.DateConverter"/&gt;　注册了 date 转换器<br/>
+&lt;convert converter="date" match="java.util.Date"/&gt;　应用注册的 date 转换器应用到 java.util.Date 类型<br/>
+<br/>
+看到上面，你也许会惊讶一下，我们平时可能也就用下 bean 转换器，其他用内置就行。然而 DWR 确为我们考虑的很周到的，包括 hibernate 相关的，URL、Servlet、Dom 等相关类型的转换器。<br/>
+<br/>
+<strong>2. DWR 如何确定用哪个 Converter?<br/>
+</strong><br/>
+DWR 是根据方法参数来确定入口参数的 Converter、根据返回值类型确定传向 JS 的出口参数的 Converter。总之是以 Java 方法原型为基准来决定每一参数或返回值各自用哪个 Converter 来转换数据。<br/>
+<br/>
+在 BaseCallMarshaller.marshallInbound(HttpServletRequest request, HttpServletResponse response) 方法中，使用<br/>
+<br/>
+Class paramType = method.getParameterTypes()[j] 来获得参数的类型，然后从已加载的 Converter Map 中找到 Converter 名称，进而确定 Converter 类名。<br/>
+<br/>
+而确定返回值类型就不是直接用反射的 method.getReturnType()。而是以反射方式调用方法后，根据具体返回值的类型来确定的。见：<br/>
+<br/>
+Replay DefaultRemoter.execute(Call) 方法中的<br/>
+Object reply = chain.doFilter(object, method, call.getParameters());　再进入到<br/>
+Object ExecuteAjaxFilter.doFilter(Object obj, Method method, Object[] params Ajax FilterChain){<br/>
+      return method.invoke(obj, params);<br/>
+}<br/>
+<br/>
+就是根据上面的返回值，然后在<br/>
+<br/>
+DefaultConverterManager.convertOutbound(Object, OutboundContext) 方法中的<br/>
+<br/>
+Converter converter = getConverter(object); 　//根据返回值 object  确定该用的 Converter。<br/>
+<br/>
+<strong>3. DWR Converter 的调用</strong><br/>
+<br/>
+多留意下 DWR 自带的 Converter，可以看到所有的 Converter 直接或简接的 extends BaseV20Converter implements Converter，其实 BaseV20Converter(DWR 1.x 中对应为 BaseV10Converter) 本身就实现了 Converter。在 BaseV20Converter 抽象类中默认实现了 Converter 的方法<br/>
+<br/>
+public void setConverterManager(ConverterManager config)  {  }<br/>
+<br/>
+具体的 Converter 只要专心去实现接口 Converter 中的另两个方法:<br/>
+<br/>
+Object convertInbound(Class paramType, InboundVariable data, InboundContext inctx) throws MarshallException;<br/>
+OutboundVariable convertOutbound(Object data, OutboundContext outctx) throws MarshallException;<br/>
+<br/>
+运行时，它们相应的被 ConvertManager(默认为 DefaultConvertManager) 的<br/>
+Object convertInbound(Class paramType, InboundVariable iv, InboundContext inctx, TypeHintContext incc) throws MarshallException<br/>
+OutboundVariable convertOutbound(Object object, OutboundContext outctx) throws MarshallException<br/>
+来调用。<br/>
+<br/>
+DWR 对每个参数或返回值至少会应用一次 Converter，但对于复杂的类型会递归的调用 Converter，比如，要完成<br/>
+<br/>
+JS "{id:123, name: 'Unmi', blogs:['http://unmi.blogjava.net','http://blog.csdn.net/kypfos']}"  到 Java 的 Person{int id, String name, String[] blogs;} 的转换，就会使用到 bean-&gt;primitive-&gt;array 三个 Converter。<br/>
+<br/>
+<strong>4. 定制自己的 Converter</strong><br/>
+<br/>
+基本上 DWR  内置的 Converter 就够用的，但也有可能需要定定自己的 Converter。从 DWR 的 Converter 实现来看，一般会用两种方式：<br/>
+<br/>
+1) extends BaseV20Converter implements Converter，实现 Converter 的 converterInbound() 和 converterOutbound() 方法<br/>
+2) extends BasicObjectConverter implements Converter，或继承 BeanConverter，实现 BasicObjectConverter 的 getPropertyMapFromObject()，getPropertyMapFromObject() 和 createTypeHintContext() 方法。<br/>
+<br/>
+前一种方式，请参照 org.directwebremoting.convert.DateConverter 的源码实现：<br/>
+<br/>
+convertInbound() 由 JS 的字符串转换成要求的 Date、Time、Timestamp 或 Calender 对像。<br/>
+convertOubound() 把 Java 的类型转换成 JS 的 new Date() 类型，注意返回值的写法：<br/>
+                             return new SimpleOutboundVariable("new Date(" + millis + ")", outctx, true);<br/>
+<br/>
+第二种继承 BasicObjectConverter 或是 BeanConverter 的做法，可参考 BeanConverter  的源码实现。表现在 JSON 和 Java 对象间的转换，要是引入解析 JSON 的 JAR 包或许能有不少帮助。<br/>
+<br/>
+定制 Converter 的内容讲的很少，主要是真有这方面的需要的时候请参考 DWR  的相关源码，实际中理解各个接口方法参数的意义，及返回值的要求。对待开源组件还是要保持阅读源码的好习惯。<br/>
+<br/>
+好啦，自己的 Converter 写好，需要注册，需要应用。我们还是参考 DWR 的做法，写在自己的 dwr.xml 中。例如定制了 com.unmi.dwr.converter.SpecialConverter，要对 com.unmi.model.SpecialObject 进行出入类型的转换，就这么写：<br/>
+<br/>
+&lt;converter id="special" class="com.unmi.dwr.converter.SpecialConverter"/&gt;　注册了 special 转换器<br/>
+&lt;convert converter="special" match="com.unmi.model.SpecialObject"/&gt;　应用注册的 special 转换器应用到 com.unmi.model.SpecialObject  类型<br/>
+<br/>
+<strong>5. 小结</strong><br/>
+<br/>
+用 DWR 其实也有段时日了，未曾系统的学，总是遇一问题、扫除一个，不免也会去找找相关更系统的资料。然而着下此篇的动机是上周六在书城翻了下 《 DWR 实战》，它实际讲 DWR 本身的较少。最后我第一个想了解了是 DWR 能完成 JS 与 Java 间什么类型的转换，第一手的资料网上也没搜索到，于是进到源码中去，亲身历练，也更加深了印象。<br/>
+<br/>
+读者也许和我一样目的，只想看看内置的转换器有哪些，能转换哪些类型，那就只需看最为抢眼的那张表格吧。需要定制 Converter 应该很少，就像我们很少定制 Struts 的 Converter、Hibernate 的 UserType 和 iBatis 的 TypeHandler 一样。因此也就对定制 DWR 的 Converter 所用篇幅不多。<br/>
+<br/>
+对待开源，自己总有个习惯就是必须有相关的源代码伴随在它身边。开源组件的使用一般不难，碰到问题，既然源码都掌握了，我想总能从源码中找出原因来。尚且，对这样的知名组件越发深入，就更能嚼出许多味多。<br/>
+<br/>
+参考：DWR 2.0.5 的源代码，对 DWR 项目进行单步调试

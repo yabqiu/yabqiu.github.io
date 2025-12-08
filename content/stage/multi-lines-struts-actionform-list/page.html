@@ -1,0 +1,186 @@
+---
+title: 提交多行数据到Struts的ActionForm的List属性中
+url: /multi-lines-struts-actionform-list/
+date: 2007-05-22T10:29:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/05/struts-logo.jpeg"
+categories:
+  - Struts
+tags: 
+  - Struts
+  - list
+  - actionform
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 522 
+wpStatus: publish
+views: 1089
+lastmod: 2021-09-03T21:54:52-05:00
+---
+
+WEB 应用中一般都会处理主从表的信息, 或者称之为头层与行层的一对多的关系数据,如订单头/订单明细. 对于这种关系数据提交到后台的 Struts 的 ActionForm 的话, 这个 ActionForm 就要好好的设计一下, 不然会给自已带来许多额外的代码. 比如有的人的处理方法就是把页面提交到后台的毫无关系的散装数据非常吃力的拼凑一对多的关系对象出来.</p>
+<br/>
+下面举一个如今非常现实的关于股票的例子, 简单的应用场景是: 记录某个帐户所持有的股票信息,提交到后台,然后显示出来. 输入页面如下图<br/><br/>
+帐户信息包括帐户名和资金帐号;持有股票的每一行信息包括股票代码, 股票名称, 成本价, 股票数量. 股票行可以动态增删.<!--more--><br/><br/>
+<div><img class=" aligncenter" src="/wp-content/uploads/2007/05/StrutsInput.jpg" alt="" align="absMiddle" border="1" /><br />
+输入页面 input.jsp</div>
+<br/>
+<div><img class=" aligncenter" src="/wp-content/uploads/2007/05/classes.png" alt="" /><br />
+后台处理类图</div>
+<br/>
+为了简化不必要的代码, 我们要实现的终及目标是: 在输入页面上点击 "保存数据" 按钮, 由 Struts 的 RequestProcessor.processPopulate() 方法把页面提交的基本信息组装到 AccountStockForm 的 account 的对应属性中,股票行信息对应生成一个 Stock 实例加到 AccountStockForm的 List 属性 stocks 中, 后续在 AccountStockAction 中直接处理account和stocks属性就非常简单了. AccountStockForm在这里只作为一个壳.<br/><br/>
+下面从前台到后台说明关键性的代码, 完整的 MyEclipse 工程包可以点击 <del><a href="http://www.blog.com.cn/user86/unmi/upload/523417378.zip">TestStruts135.zip</a></del>下载到.<br/><br/>
+<strong>一</strong>: <strong>struts-config.xml</strong> 配置<br />
+ <br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;!DOCTYPE struts-config PUBLIC
+          "-//Apache Software Foundation//DTD Struts Configuration 1.3//EN"
+          "http://struts.apache.org/dtds/struts-config_1_3.dtd"&gt;
+&lt;struts-config&gt;
+    &lt;form-beans&gt;
+        &lt;form-bean name="accountStockForm"
+          type="com.unmi.form.AccountStockForm"/&gt;
+    &lt;/form-beans&gt;
+    &lt;action-mappings&gt;
+        &lt;action path="/showStock" name="accountStockForm"
+         type="com.unmi.action.AccountStockAction" scope="request"&gt;
+            &lt;forward name="show" path="/show.jsp"/&gt;
+        &lt;/action&gt;
+    &lt;/action-mappings&gt;
+&lt;/struts-config&gt;</pre>
+<br/>
+<strong>二</strong>: 输入页面 <strong>input.jsp</strong>, 注意表单域命名<br />
+ <br/><br/>
+<pre class="lang:default decode:true">&lt;html:form action="/showStock"&gt;
+    &lt;h3&gt;记录持有的股票&lt;br&gt;&lt;/h3&gt;
+    &lt;fieldset&gt;s&lt;legend&gt;基本信息&lt;/legend&gt;
+    &lt;table width="100%" border=0&gt;&lt;tr&gt;
+        &lt;td&gt;帐户名:&lt;html:text property="account.name"/&gt;&lt;/td&gt;
+        &lt;td&gt;资金帐号:&lt;html:text property="account.number"/&gt;&lt;/td&gt;
+    &lt;/tr&gt;&lt;/table&gt;
+    &lt;/fieldset&gt;
+    &lt;br&gt;
+    &lt;fieldset&gt;&lt;legend&gt;持有股票&lt;/legend&gt;
+    &lt;table width=100% border=0 id="stockTable"&gt;
+    &lt;tr&gt;
+        &lt;td&gt;&lt;input type="checkbox" onclick="checkAll(this)"&gt;&lt;/td&gt;
+        &lt;td&gt;股票代码&lt;/td&gt;
+        &lt;td&gt;股票名称&lt;/td&gt;
+        &lt;td&gt;成本价&lt;/td&gt;
+        &lt;td&gt;股票数量&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+        &lt;td&gt;&lt;input type="checkbox" name="check"&gt;&lt;/td&gt;
+        &lt;td&gt;&lt;input name="stocks[0].code" size="15"&gt;&lt;/td&gt;
+        &lt;td&gt;&lt;input name="stocks[0].name" size="15"&gt;&lt;/td&gt;
+        &lt;td&gt;&lt;input name="stocks[0].price" size="15"&gt;&lt;/td&gt;
+        &lt;td&gt;&lt;input name="stocks[0].quantity" size="15"&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;/table&gt;
+&lt;/html:form&gt;</pre>
+<br/>
+例如输入框名 account.name 提交后能设置到 accountStockForm 的account的name属性<br />
+输入框名为 stocks[0].code 提交后会设置到 accountStockForm 的 List stocks的第一个元素的code属性.以此类推<br />
+在提交表单前要重排行层的索引,从 0 起, 否则到后右的 Form 会一些空数据.<br/><br/>
+三: <strong>AccountStockForm </strong>的关键代码<br />
+ <br/><br/>
+<pre class="brush:java">private Account account = new Account();
+private List stocks = new AutoArrayList(Stock.class);<br/><br/>
+public void setStocks(List stocks)
+{
+    this.stocks.clear();
+    this.stocks.addAll(stocks);
+}</pre>
+<br/>
+定义了两个属性,分别是一个bean(Account,接受基本信息)和一个List(stocks,接受股票行信息),注意这两个属性必须初始化,不然在表单提交后会出现空指针错误. setStocks方法是让stocks属性永远保有持是一个 AutoArrayList 实例. 这样在表单提交后设置值是总能调用 AutoArrayList 的 get(int index) 方法.<br/><br/>
+<strong>四</strong>: 自定义的 <strong>AutoArrayList<br />
+</strong> <br/><br/>
+<pre class="lang:default decode:true">public class AutoArrayList extends ArrayList {<br/><br/>
+    private Class itemClass;<br/><br/>
+    public AutoArrayList(Class itemClass) {
+        this.itemClass = itemClass;
+    }<br/><br/>
+    public Object get(int index) {
+        try {
+            while (index &gt;= size()) {
+                add(itemClass.newInstance());
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return super.get(index);
+    }
+}</pre>
+<br/>
+理解为什么要继承一个ArrayList, 覆写get(int index)方法要简单了解 Struts 处理提交数据的工作原理: 大致如下: 页面提交后, 由 ActionServlet交给RequestProcessor的processPopulate()方法,由processPopulate()方法收集请求数据,放在map中,key为表单域的name属性,如 name, account.name, stocks[0].code. 然后借助于 Common-beanutils 工具包设置到 ActionForm 的相应属性中<br />
+如果key是简单的'name',直接form.setName(map.get('name'));<br />
+如果key是'account.name', 执行的操作是 form.getAccount().setName(map.get('account.name');<br />
+如果key是'stocks[0].code', 它可以对应到数据或集合中,如对于数组 form.stocks[0].code=map.get('stocks[0].code'); 对于集合((List)form.getStocks()).get(0).setCode(map.get('stocks[0].code'))<br />
+从上也能理解为什么 form 中的那两个属性必须实始化,不然会出现空指针错. 而且为什么 stocks 要用 AutoArrayList 实例化, 避免出现索引越界的错误.<br/><br/>
+<strong>五</strong>: 在 <strong>AccountStockAction</strong> 中可以打印出提交的数据<br />
+ <br/><br/>
+<pre class="lang:default decode:true">AccountStockForm asForm = (AccountStockForm)form;<br/><br/>
+Account account = asForm.getAccount();
+System.out.println("Account Name:"+account.getName()+
+        " Number:"+account.getNumber());<br/><br/>
+List stocks = asForm.getStocks();
+for (int i=0; i&lt;stocks.size() ;i++)
+{
+    Stock stock = (Stock)stocks.get(i);
+    System.out.println("Stock["+i+"]Code:"+stock.getCode()+
+            " Name:"+stock.getName()+
+            " Price:"+stock.getPrice()+
+            " Quantity:"+stock.getQuantity());
+}<br/><br/>
+return mapping.findForward("show");</pre>
+<br/>
+在Action中就能直接取用提交来的数据了,不需要 getParameterValues()了.<br/><br/>
+<strong>六</strong>: 最后一步, 对于这样的 ActionForm 我们应该如何显示出来呢,我们用了 nested 标签 (<strong>show.jsp</strong>)<br />
+ <br/><br/>
+<pre class="lang:default decode:true ">&lt;html:form action="/showStock"&gt;
+    &lt;h3&gt;修改持有的股票&lt;br&gt;&lt;/h3&gt;
+    &lt;fieldset&gt;&lt;legend&gt;基本信息&lt;/legend&gt;
+    &lt;table width="100%" border=0&gt;&lt;tr&gt;
+    &lt;nested:nest property="account"&gt;
+        &lt;td&gt;帐户名:&lt;nested:text property="name" readonly="true"/&gt;&lt;/td&gt;
+        &lt;td&gt;资金帐号:&lt;nested:text property="number" readonly="true"/&gt;&lt;/td&gt;
+    &lt;/nested:nest&gt;
+    &lt;/tr&gt;&lt;/table&gt;
+    &lt;/fieldset&gt;
+    &lt;br&gt;
+    &lt;fieldset&gt;&lt;legend&gt;持有股票&lt;/legend&gt;
+    &lt;table width=100% border=0  id="stockTable"&gt;
+    &lt;tr&gt;
+        &lt;td&gt;&lt;input type="checkbox" onclick="checkAll(this)"&gt;&lt;/td&gt;
+        &lt;td&gt;股票代码&lt;/td&gt;
+        &lt;td&gt;股票名称&lt;/td&gt;
+        &lt;td&gt;成本价&lt;/td&gt;
+        &lt;td&gt;股票数量&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;nested:iterate id="stock" property="stocks"&gt;
+    &lt;tr&gt;
+        &lt;td&gt;&lt;input type="checkbox" name="check"&gt;&lt;/td&gt;
+        &lt;td&gt;&lt;nested:text property="code" size="15"/&gt;&lt;/td&gt;
+        &lt;td&gt;&lt;nested:text property="name" size="15"/&gt;&lt;/td&gt;
+        &lt;td&gt;&lt;nested:text property="price" size="15"/&gt;&lt;/td&gt;
+        &lt;td&gt;&lt;nested:text property="quantity" size="15"/&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;/nested:iterate&gt;
+    &lt;/table&gt;
+&lt;/html:form&gt;</pre>
+<br/>
+可以查看生成的HTML源文件, 你就能更好理解 input.jsp 中的表单域为什么要那么命名了.<br/><br/>
+小结的内容是请注意以下几个重点:<br />
+1. 输入信息的页面 input.jsp 没有使用 Struts 标签,目的是让大家理解,表单域应如何命名才能对应上 ActionForm 中的哪一个属性<br />
+2. 显示数据的页面是用的 Struts 标签,并留意 nested 标签的应用. 可以从生成的 HTML 源文件中体会出什么<br />
+3. 提交数据前要重新编排行层中输入框 Name 属性的下标植.<br />
+4. 回味为什么要引入 ArrayList 的子类 AutoArrayList, 关键在 get(int index) 方法的覆写<br />
+5. 最后是 ActionForm 中 List 属性 stocks 的 setter 方法的实现, 保持那个 List 的运行时具体类型不变<br/><br/>
+参考:<br />
+    1. <a href="http://bookmark.blogcn.com/wz/pages/goto.aspx?uid=22254178&amp;addressid=503580">移：使用Struts提交多行数据 - kent的专栏 - CSDNBlog</a><br/><br/>
+完整 MyEclipse 工程文件下载 <a href="/Files/Unmi/TestStruts135.zip">TestStruts135.zip </a>, 不包含 Struts1.35 的jar.

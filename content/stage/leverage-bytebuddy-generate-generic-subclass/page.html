@@ -1,0 +1,143 @@
+---
+title: 使用 Byte Buddy 运行时生成泛型子类
+url: /leverage-bytebuddy-generate-generic-subclass/
+date: 2017-02-01T22:59:54-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/02/bytebuddy-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - bytecode
+  - ByteBuddy
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7792 
+wpStatus: publish
+views: 2588
+lastmod: 2021-06-22T15:21:11-05:00
+---
+
+在上一篇中尝试了 <a href="http://unmi.cc/leverage-javassist-generate-generic-subclass/">使用 Javassist 运行时生成泛型子类</a>，这里要用另一个更方便的字节码增加组件 <a href="http://bytebuddy.net/#/">Byte Buddy</a> 来实现类似的功能, 但代码上要直白一些。就是运用 Byte Buddy 在运行时生成一个类的子类，带泛型的，给类加上一个注解，可生成类文件或 Class 实例，不过这里更进一步，实现的方法是带参数的。<br/><br/>
+用 Byte Buddy 操作起来更简单，根本不需要接触任何字节码相关的，诸如常量池等概念。与 Javassist 相比，Byte Buddy 更为先进的是能生成的类文件都是可加载运行的，不像 Javassist 生成的类文件反编译出来是看起来是正常的，但一加载执行却不那回事。<br/><br/>
+本例所使用的 Byte Buddy 的版本是当前最新的 1.6.7，在 Maven 项目中用下面的方式引入依赖<br/><br/>
+<blockquote>
+&lt;dependency&gt;<br />
+    &lt;groupId&gt;net.bytebuddy&lt;/groupId&gt;<br />
+    &lt;artifactId&gt;byte-buddy&lt;/artifactId&gt;<br />
+    &lt;version&gt;1.6.7&lt;/version&gt;<br />
+&lt;/dependency&gt;
+</blockquote>
+<br/>
+下面是几个需要在本例中用到的类定义<!--more--><br/><br/>
+<strong>泛型的 Repository 类</strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+public abstract class Repository&lt;T&gt; {
+    abstract T findOne(int id);
+}</pre>
+<br/>
+与前面有所不同的是上面的抽象方法带有一个参数<br/><br/>
+<strong>注解 Scope</strong><br/><br/>
+<pre class="brush:java">package cc.unmi;<br/><br/>
+import java.lang.annotation.Retention;
+import static java.lang.annotation.RetentionPolicy.RUNTIME;<br/><br/>
+@Retention(RUNTIME)
+public @interface Scope {
+    String value();
+}</pre>
+<br/>
+<strong>测试代码如下</strong><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import net.bytebuddy.ByteBuddy;
+import net.bytebuddy.description.annotation.AnnotationDescription;
+import net.bytebuddy.description.type.TypeDescription;
+import net.bytebuddy.dynamic.DynamicType;
+import net.bytebuddy.implementation.MethodDelegation;
+import net.bytebuddy.implementation.bind.annotation.AllArguments;
+import net.bytebuddy.implementation.bind.annotation.Origin;
+import net.bytebuddy.matcher.ElementMatchers;<br/><br/>
+import java.io.File;
+import java.lang.reflect.Method;<br/><br/>
+public class Main {<br/><br/>
+    @SuppressWarnings("unchecked")
+    public static void main(String[] args) throws Exception {
+        //泛型类型需要这么声明参数类型
+        TypeDescription.Generic genericSuperClass =
+            TypeDescription.Generic.Builder.parameterizedType(Repository.class, String.class).build();<br/><br/>
+        //new ByteBuddy().subclass(Repository.class) //简单非泛型类可以这么做
+        DynamicType.Unloaded&lt;?&gt; unloadedType = new ByteBuddy().subclass(genericSuperClass)
+            .name(Repository.class.getPackage().getName().concat(".").concat("UserRepository"))
+            .method(ElementMatchers.named("findOne"))  //ElementMatchers 提供了多种方式找到方法
+          //.intercept(FixedValue.value("Yanbin"))   //最简单的方式就是返回一个固定值
+            .intercept(MethodDelegation.to(FindOneInterceptor.class)) //使用 FindOneInterCeptor 中的实现，定义在下方
+            .annotateType(AnnotationDescription.Builder.ofType(Scope.class).define("value", "Session").build())
+            .make();
+        
+        // 在 Maven 项目中，写类文件在 target/classes/cc/unmi/UserRepository.class 中
+        unloadedType.saveIn(new File("target/classes"));<br/><br/>
+        //可以这样生成字节码得到 Class 实例来加载使用
+        //Class&lt;?&gt; subClass = unloadedType.load(Main.class.getClassLoader(),
+        //    ClassLoadingStrategy.Default.WRAPPER).getLoaded();<br/><br/>
+        Class&lt;Repository&lt;String&gt;&gt; repositoryClass = (Class&lt;Repository&lt;String&gt;&gt;) Class.forName("cc.unmi.UserRepository");
+        System.out.println(repositoryClass.getAnnotation(Scope.class).value()); //输出 Session<br/><br/>
+        Repository&lt;String&gt; repository = repositoryClass.newInstance();
+        System.out.println(repository.findOne(7792));  //输出 http://unmi.cc/?p=7792
+    }<br/><br/>
+    private static class FindOneInterceptor {
+        //通过 method 和 arguments 可获得原方法引用与实际传入参数
+        //如果不关心它们或其中某个，可在声明 intercept() 方法时省略。也能加更多参数，如 @SuperCall Callable&lt;?&gt; call
+        static String intercept(@Origin Method method, @AllArguments Object[] arguments) {
+            return "http://unmi.cc/?p=" + arguments[0];
+        }
+    }
+}</pre>
+<br/>
+请从运行输出结果与上面的注释中去理解操作过程。<br/><br/>
+上面的实现与 <a href="http://unmi.cc/leverage-javassist-generate-generic-subclass/">使用 Javassist 运行时生成泛型子类</a> 相比要简洁了许多:<br/><br/>
+<ol>
+    <li>其中子类中默认构造调用父类默认构造的情况不需要特别说明</li>
+    <li>给泛型指定参数类型也不容易产生问题</li>
+    <li>给类加个注解也无需涉到了常量池的概念</li>
+    <li>并且泛型方法无须关心类型擦除的机制, 这一点可对比两篇中生成的字节码反编译出的 findOne() 方法返回类型， Object v.s. String</li>
+</ol>
+<br/>
+<strong>控制台的输出为</strong><br/><br/>
+<blockquote>
+Feb 01, 2017 10:32:30 PM net.bytebuddy.dynamic.DynamicType$Default saveIn<br />
+INFO: Writing file to existing folder structure: target/classes/cc/unmi<br />
+Session<br />
+http://unmi.cc/?p=7792
+</blockquote>
+<br/>
+不妨看看生成的 <code>target/classes/cc/unmi/UserRepository.class</code> 文件在 IntelliJ IDEA 中反编译后的样子<br/><br/>
+<pre class="lang:default decode:true ">//
+// Source code recreated from a .class file by IntelliJ IDEA
+// (powered by Fernflower decompiler)
+//<br/><br/>
+package cc.unmi;<br/><br/>
+import cc.unmi.Repository;
+import cc.unmi.Scope;
+import cc.unmi.Main.FindOneInterceptor;<br/><br/>
+@Scope("Session")
+public class UserRepository extends Repository&lt;String&gt; {
+    String findOne(int var1) {
+        return FindOneInterceptor.intercept(cachedValue$kkUnaNUd$e1iccd2, new Object[]{Integer.valueOf(var1)});
+    }<br/><br/>
+    public UserRepository() {
+    }<br/><br/>
+    static {
+        cachedValue$kkUnaNUd$e1iccd2 = Repository.class.getDeclaredMethod("findOne", new Class[]{Integer.TYPE});
+    }
+}</pre>
+<br/>
+应用拓展可参考前一篇 <a href="http://unmi.cc/leverage-javassist-generate-generic-subclass/">使用 Javassist 运行时生成泛型子类</a> 的末尾部分<br/><br/>
+在搜索关于 Byte Buddy 使用疑问时常常可以看到作者 <a href="http://stackoverflow.com/users/1237575/rafael-winterhalter">Rafael Winterhalter</a> 本人热心解答。<br/><br/>
+相关链接:<br/><br/>
+<ol>
+    <li><a href="http://bytebuddy.net/#/tutorial">Byte Buddy 官方指南</a></li>
+    <li><a href="https://www.infoq.com/articles/Easily-Create-Java-Agents-with-ByteBuddy">Easily Create Java Agents with Byte Buddy</a></li>
+</ol>

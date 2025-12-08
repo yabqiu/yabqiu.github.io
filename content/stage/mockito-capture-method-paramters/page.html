@@ -1,0 +1,219 @@
+---
+title: Mockito 中捕获 mock 对象方法的调用参数
+url: /mockito-capture-method-paramters/
+date: 2017-01-15T01:57:46-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/01/rsz_mockito_logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - mockito
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7737 
+wpStatus: publish
+views: 11058
+lastmod: 2021-09-03T16:57:03-05:00
+---
+
+Mockito 可以帮助我们创建 Mock 对象，mock 被调用的方法，断言调用次数，在方法参数不易确定的情况下还能帮我们捕获参数。下面是我们第一个问题:<br/><br/>
+<h2>为什么要捕获调用参数</h2><br/><br/>
+在被 mocker 方法调用参数明确的情况下可无需捕获参数，例如，下面的情景：<br/><br/>
+<pre class="brush:java">@Test
+public void dontCaptureArgument() {
+  UserDao userDao = Mockito.mock(UserDao.class);
+  UserService userService = new UserService(userDao);<br/><br/>
+  User user = new User(1, "Yanbin");
+  userService.saveUser(user); //假如它的实现是 userDao.save(user)<br/><br/>
+  verify(userDao, times(1)).save(user); //断言了 userDao.save(user) 操作的还是 user 对象
+}</pre>
+<br/>
+如果 UserService 的 save(user) 最终操作的不是同一个对象，它的实现稍加变化如下<!--more--><br/><br/>
+<pre class="brush:java">public class UserService {
+  private UserDao userDao;<br/><br/>
+  public void save(User user) {
+    User revisedUser = new User(SequenceGenerator.next(), user.name);
+    userDao.save(revisedUser);
+  }
+}  </pre>
+<br/>
+由于在调用 <code>userDao.save(revisedUser)</code> 时的参数已不是传入 `userService.saveUser(user)` 的那个 user 对象了，所以继续用<br/><br/>
+<blockquote>
+verify(userDao, times(1)).save(user);
+</blockquote>
+<br/>
+断言就要失败了，出现类似下面的信息<br/><br/>
+<blockquote>
+Argument(s) are different! Wanted:<br />
+userDao.save(cc.unmi.User@6a2bcfcb);<br />
+-&gt; at cc.unmi.UserServiceTest.captureNonGenericeArgument(UserServiceTest.java:25)<br />
+Actual invocation has different arguments:<br />
+userDao.save(cc.unmi.User@4de8b406);<br />
+-&gt; at cc.unmi.UserService.saveUser(UserService.java:16)<br />
+<br />
+Comparison Failure: <br />
+Expected :userDao.save(cc.unmi.User@6a2bcfcb);<br />
+Actual   :userDao.save(cc.unmi.User@4de8b406);
+</blockquote>
+<br/>
+就是断言的 user 实现与 userDao 实际接受到的实例是不一样的。这时候我们可以选择懒堕一点，忽略参数的因数，只关心是否仅被调用一次，可写成<br/><br/>
+<pre class="brush:java">verify(userDao, times(1)).save(any(User.class));
+verify(userDao, times(1)).save(any());  //或懒到极致一点</pre>
+<br/>
+但用 any() 的话我们会有些缺乏安全感，太含糊，可能实际传递给 <code>userDao</code> 的的 user  对象根本不是我们想期望的。<br/><br/>
+当然如果我们清楚知道 <code>user.name</code> 不会变的，我们可以用 `ArgumentMatcher` 来匹配参数<br/><br/>
+<pre class="lang:default decode:true">verify(userDao, times(1)).save(argThat(user1 -&gt; user1.name.equals(user.name)));</pre>
+<br/>
+如果你所用的 mockito 版本不够高的话，`ArgumentMatcher` 可能还不是个 FunctionalInterface, 就得老老实实的用匿名类，<code>new ArgumentMatcher(){...}</code>.<br/><br/>
+注: 在写在此文时用的 mockito-core-2.6.2. 有些项目中或许仍在用 mockito-all 引入 mockito 依赖，这种方式无法引入 Mockito 2.*. 见 mockito 官方的说明 <a href="https://github.com/mockito/mockito/wiki/Declaring-mockito-dependency" target="_blank" rel="nofollow noopener">Declaring mockito dependency</a>.<br/><br/>
+使用 <code>argThat(ArgumentMatcher)</code> 进行参数特征匹配也算是不错的方案，除此之外我们还有另一种办法，捕获参数后作事后断言。或是我们在给方法打桩时用 any() 参数，然后事后断言<br/><br/>
+<pre class="brush:java">when(userDao.findUserLike(any()).thenReturn(Mockito.mock(User.class)); //我们在后面的 verify() 中捕获 any() 所对应的的实际参数</pre>
+<br/>
+至此，对于为什么要捕获调用参数我都觉得未完全叙述清楚。没关系可跳到下一节中从实现中进一步体会。<br/><br/>
+<h2>如何捕获 mock 方法的调用参数</h2><br/><br/>
+下面是一个简单的例子，只捕获一次调用的参数<br/><br/>
+<pre class="lang:default decode:true">@Test
+public void captureNonGenericArgument() {
+  UserDao userDao = Mockito.mock(UserDao.class);
+  UserService  userService = new UserService(userDao);<br/><br/>
+  userService.saveUser(new User(null, "Yanbin"));
+  
+  ArgumentCaptor&lt;User&gt; argumentCaptor = ArgumentCaptor.forClass(User.class);
+  verify(userDao, times(1)).save(argumentCaptor.capture());<br/><br/>
+   assertEquals("Yanbin", argumentCaptor.getValue().name);
+   assertEquals("Chicago", argumentCator.getValue().city); //可断言捕获参数的更多特征
+}</pre>
+<br/>
+从面对被捕获参数 <code>argumentCaptor.getValue()</code> 的断言可看出它比 <code>argThat()</code> 的优势，argThat() 无法告诉我们不匹配的细节，下面是 argThat() 代码的测试失败信息<br/><br/>
+<pre class="lang:default decode:true">verify(userDao, times(1)).save(argThat(user -&gt; user.name.equals("error")));</pre>
+<br/>
+<blockquote>
+Argument(s) are different! Wanted:<br />
+userDao.save(<br />
+    &lt;User service test$$ lambda$ 1/ 2 0 8 7 8 8 5 3 9 7&gt;<br />
+);<br />
+-&gt; at cc.unmi.UserServiceTest.captureNonGenericeArgument(UserServiceTest.java:27)<br />
+Actual invocation has different arguments:<br />
+userDao.save(<br />
+    cc.unmi.User@6c64cb25<br />
+);<br />
+-&gt; at cc.unmi.UserService.saveUser(UserService.java:16)
+</blockquote>
+<br/>
+而针对被捕获到的参数进行断言就自由多了，是 name 还是 city 属性不对从失败信息中会显示得清清楚楚。<br/><br/>
+<strong>我们同样可以在打桩的时候捕获参数</strong>，如<br/><br/>
+<pre class="lang:default decode:true">ArgumentCaptor&lt;User&gt; argumentCaptor = argumentCaptor.forClass(User.class);
+when(userDao.findUserLike(argumentCaptor.capture)).thenReturn(Mockito.mock(User.class));<br/><br/>
+assertEquals("Yanbin", argumentCaptor.getValue().name);</pre>
+<br/>
+<h2>捕获多次调用的参数</h2><br/><br/>
+假如被 mock 方法会被调用多次，该如何知道每次调用时的参数呢？argumentCaptor.getValue() 只会返回最后一次调用的参数值<br/><br/>
+<pre class="lang:default decode:true">@Test
+public void captureNonGenericeArgument() {
+    UserDao userDao = Mockito.mock(UserDao.class);
+    UserService  userService = new UserService(userDao);<br/><br/>
+    userService.saveUser(new User(null, "Yanbin"));
+    userService.saveUser(new User(null, "Unmi"));  //这里手工模拟产生两次对 userDao.save(user) 的调用<br/><br/>
+    ArgumentCaptor&lt;User&gt; argumentCaptor = ArgumentCaptor.forClass(User.class);
+    verify(userDao, times(2)).save(argumentCaptor.capture());<br/><br/>
+    assertEquals("Yanbin", argumentCaptor.getValue().name);
+}</pre>
+<br/>
+上面代码得到错误信息<br/><br/>
+<blockquote>
+org.junit.ComparisonFailure: <br />
+Expected :Yanbin<br />
+Actual   :Unmi
+</blockquote>
+<br/>
+说明 <code>argumentCaptor.getValue()</code> 仍然在工作，只是保存最近一次调用的参数值，而想要获得所有调用的参数值必须用  <code>argumentCaptor.getAllValues()</code>, 它返回一个 List&lt;T&gt;.<br/><br/>
+<pre class="lang:default decode:true">@Test
+public void captureNonGenericeArgument() {
+    UserDao userDao = Mockito.mock(UserDao.class);
+    UserService userService = new UserService(userDao);<br/><br/>
+    userService.saveUser(new User(null, "Yanbin"));
+    userService.saveUser(new User(null, "Unmi"));<br/><br/>
+    ArgumentCaptor&lt;User&gt; argumentCaptor = ArgumentCaptor.forClass(User.class);
+    verify(userDao, times(2)).save(argumentCaptor.capture());<br/><br/>
+    List&lt;User&gt; inputUsers = argumentCaptor.getAllValues();<br/><br/>
+    assertEquals(2, inputUsers.size());
+    assertTrue(inputUsers.stream().allMatch(user -&gt;
+        Arrays.asList("Yanbin", "Unmi").contains(user.name))
+    );
+}</pre>
+<br/>
+对于 <code>argumentCaptor.getAllValues()</code> 得到的 List&lt;T&gt; 可以按需进行断言，比如 mock 方法是异步无序调用的，则可以用 Stream 的  <code>allMatch()</code> 或 <code>anyMatch()</code> 去匹配断言。<br/><br/>
+<h2>捕获带泛型的参数</h2><br/><br/>
+原本写作此文的目的只作研究如何捕获带泛型的参数，没想从头至此说了那么内容才进入到初衷。<br/><br/>
+JDK 自从 1.5 加入了泛型那已经是很多年前的事了，可如今 Mockito 的官方网站 <a href="http://site.mockito.org/" target="_blank" rel="nofollow noopener">http://site.mockito.org</a> 的 <code>How</code> 里例子还是不为 List 声明具体类型的<br/><br/>
+<pre class="brush:java">List mockedList = mock(List.class);
+mockedList.add("one");
+verify(mockedList).add("one");</pre>
+<br/>
+以上代码放到现代 IDE 都会被警告的，虽然 <code>List</code> 是 List&lt;Object&gt; 的意思, 但 IDE 不希望你把 List&lt;Object&gt; 简化为 <code>List</code>。<br/><br/>
+给 UserService 增加一个方法 saveUsers(List&lt;User&gt; users)<br/><br/>
+<pre class="lang:default decode:true">public void saveUsers(List&lt;User&gt; users) {
+    userDao.save(users); //UserDao 中增加相应的 save(List&lt;User&gt; users) 方法
+}</pre>
+<br/>
+下面的测试方法的确是可以工作<br/><br/>
+<pre class="lang:default decode:true">@Test
+public void captureGenericeArgument() {
+    UserDao userDao = Mockito.mock(UserDao.class);
+    UserService userService = new UserService(userDao);<br/><br/>
+    userService.saveUsers(Collections.singletonList(new User(null, "Yanbin")));<br/><br/>
+    ArgumentCaptor&lt;List&lt;User&gt;&gt; argumentCaptor = ArgumentCaptor.forClass(List.class);
+    verify(userDao, times(1)).save(argumentCaptor.capture());<br/><br/>
+    assertEquals(1, argumentCaptor.getValue().size());
+    assertEquals("Yanbin", argumentCaptor.getValue().get(0).name);
+}</pre>
+<br/>
+但是无法给 <code>ArgumentCaptor.forClass(List.class) </code>指定更内层的类型 User, 它的方法原型参数是 <code>forClass(Class<s> clazz)</s></code>, 所以代码行<br/><br/>
+<blockquote>
+ArgumentCaptor&lt;List&lt;User&gt;&gt; argumentCaptor = ArgumentCaptor.forClass(List.class);
+</blockquote>
+<br/>
+有一个不安全类型赋值<br/><br/>
+<img class="aligncenter size-large wp-image-7738" src="/wp-content/uploads/2017/01/mockito-argument-captor-unchecked-800x83.png" alt="" width="800" height="83" /><br/><br/>
+如果代码规范或 Maven 要求严格就必须给该测试方法加上 <code>@SuppressWarnings("unchecked")</code> 注解来消除警告。还有别的办法呢？<br/><br/>
+因为 Java 的泛型擦除的实现方式，所以从语法上下面的写法也是不合法的<br/><br/>
+<pre class="lang:default decode:true">ArgumentCaptor&lt;List&lt;User&gt;&gt; argumentCaptor = ArgumentCaptor.forClass(List&lt;User&gt;.class); //这是错的</pre>
+<br/>
+好在 Mockito 也为我们考虑到了，还有 <a href="https://static.javadoc.io/org.mockito/mockito-core/2.6.2/org/mockito/Captor.html" target="_blank" rel="nofollow noopener">@Captor</a> (Since 1.8.3) 注解，它像用 <a href="https://static.javadoc.io/org.mockito/mockito-core/2.6.2/org/mockito/Mock.html" target="_blank" rel="nofollow noopener">@Mock</a> 声明 mock  对象一样声明捕获参数, 使用方法如下<br/><br/>
+<pre class="lang:default decode:true">@RunWith(MockitoJUnitRunner.class)
+public class UserServiceTest {<br/><br/>
+    @Captor
+    private ArgumentCaptor&lt;List&lt;User&gt;&gt; argumentCaptor;<br/><br/>
+    @Test
+    public void captureGenericeArgument() {
+        UserDao userDao = Mockito.mock(UserDao.class);
+        UserService userService = new UserService(userDao);<br/><br/>
+        userService.saveUsers(Collections.singletonList(new User(null, "Yanbin")));<br/><br/>
+        verify(userDao, times(1)).save(argumentCaptor.capture());<br/><br/>
+        assertEquals(1, argumentCaptor.getValue().size());
+        assertEquals("Yanbin", argumentCaptor.getValue().get(0).name);
+    }
+}</pre>
+<br/>
+和使用 Mockito 的其他注解一样，需要<br/><br/>
+<blockquote>
+@RunWith(MockitoJUnitRunner.class)
+</blockquote>
+<br/>
+指定 Junit Runner，或者是在运行测试前手工初始化，像<br/><br/>
+<pre class="brush:java ">@Before
+public void setup() {
+    MockitoAnnotations.initMocks(this);
+}</pre>
+<br/>
+相对来说用 <code>@RunWith(MockitoJUnitRunner.class)</code> 简单些，但 @RunWith 是独占的，比如在指定了其他 JUnit Runner(例如 <code>@RunWith(SpringJUnit4ClassRunner.class)</code>) 时，又要使用 Mockito 的注解，那我们就必须手工调用 <code>MockitoAnnotations.initMocks(this)</code> 了。<br/><br/>
+相关链接：<br/><br/>
+<ol>
+    <li> <a href="https://static.javadoc.io/org.mockito/mockito-core/2.6.2/org/mockito/Mockito.html">Mockito 的 JavaDoc 文档，不仅仅是 API 文档</a></li>
+    <li><a href="https://gold.xitu.io/entry/578f11aec4c971005e0caf82">[译] 使用强大的 Mockito 测试框架来测试你的代码</a></li>
+</ol>

@@ -1,0 +1,153 @@
+---
+title: 如何快乐的使用 Java 8 的 Lambda
+url: /happy-with-java8-lambda/
+date: 2018-08-08T23:45:05-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/12/Java8-Logo.png"
+categories:
+  - Java8
+tags: 
+  - lambda
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8917 
+wpStatus: publish
+views: 621
+lastmod: 2018-08-09T09:56:19-05:00
+---
+
+<p>Java 8 的 Lambda 特性较之于先前的泛型加入更能鼓舞人心的，我对 Lambda 的理解是它得以让 Java 以函数式思维的方式来写代码。而写出的代码是否是函数式，并不单纯在包含了多少 Lambda 表达式，而在思维，要神似。</p>
+
+<p>实际中看过一些代码，为了 Lambda 表达式而 Lambda(函数式)，有一种少年不识愁滋味，为赋新词强说愁的味道。从而致使原本一个简单的方调用硬生生的要显式的用类如 <code>apply()</code>, <code>accept(obj)</code> 等形式。不仅造成代码可读性差，且可测试性也变坏了。</p>
+
+<p>为什么说的是快乐的使用 Java 8 的 Lambda 呢？我窃以为第一个念头声明 Lambda 表达式为实例/类变量(像本文第一段代码那样)，而不是方法的，一定会觉得如此使用方式很快乐的。所谓独乐乐，不如众乐乐；独乐乐，众不乐定然是更大的快乐; 更极致一些，不管什么时候必须是：我快乐，所以你也快乐。</p>
+
+<p>一方面也在于 Java 还没有进化到 JavaScript 或  Scala 那样的水平，JavaScript 的函数类型变量，不一定要用 <code>apply</code> 或 <code>call</code>, 直接括号就能实现方法调用。Scala 的函数类型用括号调用也会自动匹配到 <code>apply</code> 或 <code>update</code> 等方法上去。<!--more--></p>
+
+<p>看下面的样本代码</p>
+
+<pre class="lang:default decode:true">public class Account {<br/>
+<br/>
+    public BiFunction&lt;String, String, String&gt; fullName = (firstName, lastName) -&gt; {<br/>
+        //some logic, i.e. logics of fullName in different countries <br/>
+        return firstName + " " + lastName;<br/>
+    };<br/>
+<br/>
+    public String getName() {<br/>
+        String firstName = "Speaker";<br/>
+        String lastName = "Wolf";<br/>
+        return fullName.apply(firstName, lastName);<br/>
+    }<br/>
+}</pre>
+
+<p>上面的 fullName Lambda 表达式看起来就有点别扭，完全可以写成一个普通方法</p>
+
+<pre class="lang:default decode:true">    public String makeFullName(String firstName, String lastName) {<br/>
+        //return something with logics<br/>
+    }</pre>
+
+<p>那么调用起来只需要简单的</p>
+
+<blockquote><br/>
+<p>makeFullName(firstName, lastName)</p>
+
+</blockquote>
+
+<p>那么此例中把简单方法写成一个 Lambda 表达式来调用有什么不友好之处呢？</p>
+
+<ol>
+
+	<li>不利于理解，Lambda 表达式的类型充斥着 <code>Consumer</code>, <code>Function</code>, <code>BiFunction</code> 等太宽泛的声明</li>
+
+	<li>参数类型与形参分离在表达式等号两边，不利于一一对应(右方重复一遍参数类型更不可取)，真正的返回值也不明了</li>
+
+	<li>调用时更得多余的 <code>get()</code>, <code>accept(obj)</code>, <code>apply(obj1, obj2)</code> 那样的方法</li>
+
+	<li>既然有逻辑，就应该有测试，Lambda 表达式虽是一个变量也不例如，测试时也不得用 <code>apply</code> 那样的调用</li>
+
+	<li>Lambda 表达式为变量的形式，可能会随每一个对象实例有一单独的拷贝。当然声明为静态可以避免。</li>
+
+	<li>重构时更需大动干戈，比如前面的例子还要考虑 middleName 的情况，表达式要更动为</li>
+
+</ol>
+
+<pre class="lang:default decode:true">public TriFunction&lt;String, String, String, String&gt; fullName = (firstName, middleName, lastName) -&gt; {<br/>
+    //.......<br/>
+}</pre>
+
+<p>JDK 中还没有 <code>TriFunction</code>, 还得自己创造，不同数量的参数都得更新 Lambda 表达式的类型。如果是一个普通方法重构起来就方便多了，跟多一个人多一副碗筷一样。</p>
+
+<p> 解释上面第 #5 条，对于方法，实现代码在 JVM 中只有一份，而 Lambda 实例变量如果不捕获外部变量的话，与方法是一样的，例如前面的 Account 为例</p>
+
+<pre class="lang:default decode:true">Account account1 = new Account();<br/>
+Account account2 = new Account();<br/>
+System.out.println(account1.fullName == account2.fullName); //true</pre>
+
+<p>但是 Lambda 表达式需捕获外部变量时，例如</p>
+
+<pre class="lang:default decode:true">private String suffix = "Sir";<br/>
+public BiFunction&lt;String, String, String&gt; fullName = (firstName, lastName) -&gt; {<br/>
+    return firstName + " " + lastName + " " + suffix;<br/>
+};<br/>
+<br/>
+.......<br/>
+Account account1 = new Account();<br/>
+Account account2 = new Account();<br/>
+account1.fullName == account2.fullName;  //就是 false 了, 而如果 suffix 是一个静态的变量时这个等式又是 true 了</pre>
+
+<p>那么新建的两个 Account 对象的 fullName 属性就不是同一个了。因为 Lambda 需要捕获外部一个不确定的值，所以它也随宿主实例也变。</p>
+
+<p>难道不应该用 Lambda 表达式变量，那倒不是，如果一个方法接受的是一个函数，如</p>
+
+<pre class="lang:default decode:true">public String getName(BiFunction&lt;String, String, String&gt; builder) {<br/>
+    return builder.apply(firstName, lastName);<br/>
+}</pre>
+
+<p>那么是可以声明一个 Lambda 表达式变量，来传入。不过这种情况下用方法引用还是更方便些，方法的测试总是比 Lambda 表达式的测试容易。</p>
+
+<pre class="lang:default decode:true">String name = getName(this::makeFullName);</pre>
+
+<p>个人习惯，一般需要 Lambda 表达式变量时基本是声明为局部变量，或是调用接受函数参数的方法时以内联的方法书写，像</p>
+
+<pre class="lang:default decode:true">String name = getName((firstName, lastName) -&gt; {<br/>
+    //logics<br/>
+    return ......<br/>
+});</pre>
+
+<p>对于使用方法引用方式的重构也不难，<code>getName()</code> 的参数类型变为 <code>TriFunction</code>, <code>makeFullName()</code> 方法再加一个参数就行, 调用形式仍然不变，还是</p>
+
+<pre class="lang:default decode:true">String name = getName(this::makeFullName);</pre>
+
+<p>如果引用的方法是别人写的也不用慌，无须总去创建一样的方法签名来强型上方法引用，也可以和改 Lambda 实现代码一样的方式比改动，如下</p>
+
+<pre class="lang:default decode:true">String name = getName((firstName, lastName) -&gt; <br/>
+    makeFullName(firstName, lastName) + " " + suffix<br/>
+)</pre>
+
+<p>本人希望的是，对函数的 <code>apply()</code>, <code>accept(obj)</code> 这样的显式调用应该是框架设计实现的职责，对框架使用者应该透明，或者说是隐藏背后的细节，只管传入需要的函数类型或方法引用。如果函数实现需要共享的话，写成方法更优于一个 Lambda 表达式，方法容易单独测试。特别是用 Mockito 捕获到了一个传入某个方法的 Lambda  表达式实例时，不那么好验证它的内部实现。</p>
+
+<p>小结一下：</p>
+
+<ol>
+
+	<li>函数式思维最关键应该是 <code>Data In, Data Out</code>, 编程语言 Lambda 特性可以促使我们达成这一目的; 但不是代码中有了  Lambda 表达就是函数式风格。</li>
+
+	<li>其次代码的首先是人阅读，其次才是机器，所以它应该表达直截，明了，很强的可读性与可测试性。</li>
+
+	<li>具体讲如何快乐使用 Java 8 的 Lambda 呢，仅代表本人想法，可以用内联式，或方法引用，或局部的 Lambda 表达式变量，最后才是实例/类的 Lambda 表达式变量。</li>
+
+</ol>
+
+<hr /><br/>
+<p>补充一个例子，在方法体中重复声明完全相同的不捕获任何外部变量的 Lambda 表达式都是新的实例</p>
+
+<pre class="lang:default decode:true">    Consumer&lt;String&gt; f1 = a -&gt; System.out.println(a);<br/>
+    Consumer&lt;String&gt; f2 = a -&gt; System.out.println(a);<br/>
+    System.out.println(f1 == f2);  //false</pre>
+
+<p>以上测试在 Java 8 平台上进行的。</p>

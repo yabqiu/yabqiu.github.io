@@ -1,0 +1,121 @@
+---
+title: logback.xml 给变量指定默认值
+url: /logback-xml-variable-with-default-value/
+date: 2014-05-19T20:15:07-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Logback
+  - 默认值
+  - 缺省值
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6492 
+wpStatus: publish
+views: 8850
+lastmod: 2021-09-03T18:09:21-05:00
+---
+
+随着通用日志组件转入 Slf4j，logback 也变成了默认的日志实现，像 log4j 一样，logback.xml 中也可以使用系统属性或环境变量，如 ${catalina.home}。在 log4j.properties 中，如果变量在系统属性和环境变量中找不到的话默认为 "" 空字符串，而到了 logback.xml 中如果某个变量找不到默认就是 "变量名_IS_UNDEFINED" 了，这样就比较奇怪了。<br/><br/>
+那如何在没有配置 catalina.home 系统属性或环境变量时设置一个默认值呢，例如，没有 catalina.home  时取值为 "."，这时值日志文件的路径就是<br/><br/>
+./logs/unmi-%d{yyyy-MM-dd}.log<br/><br/>
+了，也就是生成中当前目录下的 logs 子目录中，这样算是很友好的方式。下面就来分析怎么一步步找到答案的，没耐心或是只求结果的话，直接滚屏到下面就行。<br/><br/>
+我们的问题是，对于下面那样的 logback.xml 配置：<!--more--><br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;<br/><br/>
+&lt;configuration&gt;<br/><br/>
+    &lt;appender name="stdout" class="ch.qos.logback.core.ConsoleAppender"&gt;
+        &lt;encoder charset="UTF-8"&gt;
+            &lt;pattern&gt;%d{HH:mm:ss.SSS} [%thread] %-5level %logger - %msg%n&lt;/pattern&gt;
+        &lt;/encoder&gt;
+    &lt;/appender&gt;<br/><br/>
+    &lt;appender name="RollingFile" class="ch.qos.logback.core.rolling.RollingFileAppender"&gt;
+        &lt;rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy"&gt;
+            &lt;fileNamePattern&gt;${catalina.home}/logs/unmi-%d{yyyy-MM-dd}.log&lt;/fileNamePattern&gt;
+            &lt;maxHistory&gt;10&lt;/maxHistory&gt;
+        &lt;/rollingPolicy&gt;<br/><br/>
+        &lt;encoder&gt;
+            &lt;pattern&gt;%d{HH:mm:ss.SSS} [%thread] %-5level %logger - %msg%n&lt;/pattern&gt;
+        &lt;/encoder&gt;
+    &lt;/appender&gt;<br/><br/>
+    &lt;root level="DEBUG"&gt;
+        &lt;appender-ref ref="stdout" /&gt;
+        &lt;appender-ref ref="RollingFile" /&gt;
+    &lt;/root&gt;
+&lt;/configuration&gt;</pre>
+<br/>
+因为测试时直接在 Eclipse 或控制台下执行，在未定义 <span style="color: #800000;">catalina.home</span> 的情况下，一运行就会在当前目录下生成 <span style="color: #800000;">catalina.home_IS_UNDEFINED</span> 目录，其中有 logs 子目录，再才是 unmi-2014-05-19.log 这个日志文件。<br/><br/>
+<img class="aligncenter wp-image-6497 size-full" src="/wp-content/uploads/2014/05/logback-variable-default-value.png" alt="logback-variable-default-value" width="277" height="160" /><br/><br/>
+搜索了网上关于默认值的解决方案，有说在 logback.xml 中写条件表达式，例如：<br/><br/>
+<pre class="lang:default decode:true">&lt;if condition="property('catalina.home')==null"&gt;
+    &lt;then&gt;
+        &lt;fileNamePattern&gt;logs/unmi-%d{yyyy-MM-dd}.log&lt;/fileNamePattern&gt;
+    &lt;/then&gt;
+    &lt;else&gt;
+        &lt;fileNamePattern&gt;${catalina.home}/logs/unmi-%d{yyyy-MM-dd}.log&lt;/fileNamePattern&gt;
+    &lt;/else&gt;
+&lt;/if&gt;</pre>
+<br/>
+参考： <a href="http://logback.qos.ch/manual/configuration.html#conditional" target="_blank" rel="noopener">http://logback.qos.ch/manual/configuration.html#conditional</a> 和 <a href="http://stackoverflow.com/questions/15911303/how-can-i-configure-logback-conditionally-based-on-context-name" target="_blank" rel="noopener">http://stackoverflow.com/questions/15911303/how-can-i-configure-logback-conditionally-based-on-context-name</a>。<br/><br/>
+上面的 if-then-else 是有问题的 The FileNamePattern option must be set before using TimeBasedRollingPolicy，需要把 if 的覆盖范围扩大，不过试了也不怎么爽。<br/><br/>
+回到  IS_UNDEFINED， 它总是有来头的，搜索源代码可找到它出现在 <a href="https://github.com/qos-ch/logback/blob/master/logback-core/src/main/java/ch/qos/logback/core/util/OptionHelper.java#L103" target="_blank" rel="noopener">https://github.com/qos-ch/logback/blob/master/logback-core/src/main/java/ch/qos/logback/core/util/OptionHelper.java#L103</a>:<br/><br/>
+<blockquote>
+final static String _IS_UNDEFINED = "_IS_UNDEFINED";
+</blockquote>
+<br/>
+还有一处未被使用，这样就有突破口了，再跟踪代码，找到 logback 是怎么取到相对应变量值的 <a href="https://github.com/qos-ch/logback/blob/master/logback-core/src/main/java/ch/qos/logback/core/subst/NodeToStringTransformer.java#L102" target="_blank" rel="noopener">https://github.com/qos-ch/logback/blob/master/logback-core/src/main/java/ch/qos/logback/core/subst/NodeToStringTransformer.java#L102</a>，handleVariable 方法代码片断：<br/><br/>
+<pre class="lang:default decode:true"> if (n.defaultPart == null) {
+  stringBuilder.append(key + CoreConstants.UNDEFINED_PROPERTY_SUFFIX);
+  cycleCheckStack.pop();
+  return;
+}<br/><br/>
+Node defaultPart = (Node) n.defaultPart;
+StringBuilder defaultPartBuffer = new StringBuilder();
+compileNode(defaultPart, defaultPartBuffer, cycleCheckStack);
+cycleCheckStack.pop();
+String defaultVal = defaultPartBuffer.toString();
+stringBuilder.append(defaultVal);</pre>
+<br/>
+<blockquote>
+注：从这个类的 lookupKey(String key) 方法中可以知道  logback 从四个地方取变量值，分别是 propertyContainer0, propertyContrainer1, System, Evn，前两不知道没关系，后两个我们明白先从 System 属性，没有再从环境变量中取。
+</blockquote>
+<br/>
+上面我们会想到 <a href="https://github.com/qos-ch/logback/blob/master/logback-core/src/main/java/ch/qos/logback/core/subst/Node.java" target="_blank" rel="noopener">Node</a> 除了有 payload 还有一个 defaultPart 用了设定默认值部分。至于默认值怎么设置，猜测试是 ${catalina.home:abc}，没用，不过别急，logback  的测试用例告诉了我们表达式的写法。<br/><br/>
+见 <a href="https://github.com/qos-ch/logback/blob/master/logback-core/src/test/java/ch/qos/logback/core/util/OptionHelperTest.java#L99" target="_blank" rel="noopener">https://github.com/qos-ch/logback/blob/master/logback-core/src/test/java/ch/qos/logback/core/util/OptionHelperTest.java#L99</a>, 看到这样写代默认值的表达式<br/><br/>
+${v2:-toto}        //格式是 ${变量名:-默认值}，光有冒号还不够，再加条短线后面才是默认值<br/><br/>
+所以学习它后，前面的日志文件名配置部分就写成<br/><br/>
+<pre class="lang:default decode:true">&lt;!-- 如果没有定义  catalina.home  系统属性或环境变量时，生成的日志文件在 ./logs 目录下 --&gt;
+&lt;fileNamePattern&gt;${catalina.home:-.}/logs/unmi-%d{yyyy-MM-dd}.log&lt;/fileNamePattern&gt;</pre>
+<br/>
+完整的 logback.xml 内容如下：<br/><br/>
+<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="UTF-8"?&gt;<br/><br/>
+&lt;configuration&gt;<br/><br/>
+    &lt;appender name="stdout" class="ch.qos.logback.core.ConsoleAppender"&gt;
+        &lt;encoder charset="UTF-8"&gt;
+            &lt;pattern&gt;%d{HH:mm:ss.SSS} [%thread] %-5level %logger - %msg%n&lt;/pattern&gt;
+        &lt;/encoder&gt;
+    &lt;/appender&gt;<br/><br/>
+    &lt;appender name="RollingFile" class="ch.qos.logback.core.rolling.RollingFileAppender"&gt;
+        &lt;rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy"&gt;
+            &lt;fileNamePattern&gt;${catalina.home:-.}/logs/unmi-%d{yyyy-MM-dd}.log&lt;/fileNamePattern&gt;
+            &lt;maxHistory&gt;10&lt;/maxHistory&gt;
+        &lt;/rollingPolicy&gt;<br/><br/>
+        &lt;encoder&gt;
+            &lt;pattern&gt;%d{HH:mm:ss.SSS} [%thread] %-5level %logger - %msg%n&lt;/pattern&gt;
+        &lt;/encoder&gt;
+    &lt;/appender&gt;<br/><br/>
+    &lt;root level="DEBUG"&gt;
+        &lt;appender-ref ref="stdout" /&gt;
+        &lt;appender-ref ref="RollingFile" /&gt;
+    &lt;/root&gt;
+&lt;/configuration&gt;</pre>
+<br/>
+多看看这 OptionHelperTest 测试用例，还能发现默认值也能用变量，如<br/><br/>
+<blockquote>
+${B:-${A}}
+</blockquote>

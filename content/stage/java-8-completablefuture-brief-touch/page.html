@@ -1,0 +1,179 @@
+---
+title: Java 8 CompletableFuture 浅入
+url: /java-8-completablefuture-brief-touch/
+date: 2016-12-23T01:50:09-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/12/Java8-Logo.png"
+categories:
+  - Java/JEE
+  - Java8
+tags: 
+  - java8
+  - Future
+  - CompletableFuture
+  - CompletionStage
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7649 
+wpStatus: publish
+views: 3406
+lastmod: 2021-06-22T15:20:21-05:00
+---
+
+Java 1.5 有了 <a href="https://docs.oracle.com/javase/7/docs/api/java/util/concurrent/Future.html">Future</a>, 可谓是跨了一大步，继而 Java 1.8 新加入一个 Future 的实现<a href="https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/CompletableFuture.html"> CompletableFuture</a>, 从此线程与线程之间可以愉快的对话了。最初两个线程间的协调我采用过 Object 的  <code>wait()</code> 和 <code>notify()</code> , Thread 的 <code>join()</code> 方法，那可算是很低级的 API 了，是否很多 Java 程序都不知道它们的存在，或根本没用过它们。</p>
+<br/>
+如果是简单的等待所有线程完成可使用 Java 1.5 的 <a href="https://docs.oracle.com/javase/7/docs/api/java/util/concurrent/CountDownLatch.html">CountDownLatch</a>, 这里有一篇介绍 <a href="http://unmi.cc/countdownlatch-threads/">CountDownLatch 协调线程</a>, 就是实现的 waitAll(threads) 功能。而 Java 8 的 <code>CompletableFuture</code> 的功能就多去，可简单使用它实现异步方法。虽说 <code>CompletableFuture</code> 实现了 <code>Future</code> 接口，但它多数方法源自于 <code>CompletionStage</code>, 所以还里氏代换，用 <code>Future</code> 来引用 <code>CompletableFuture</code> 实例就很牵强了; 这也是为什么 PlayFramework 自 2.5 开始直接暴露的类型是 <code>CompletionStage</code> 而非其他两个。<br/><br/>
+顾名思义，CompletableFuture 代表着一个 Future 完成后该干点什么，具体大致有：<br/><br/>
+<ol>
+    <li>Future 完成后执行动作，或求取下一个 Future 的值。then...</li>
+    <li>多个 Future 的协调; 同时完成该怎么，其中一个完成该如何。allOf, anyOf</li>
+</ol>
+<br/>
+有时候可以把 Future 想像成与线程是一一对应的。<!--more--><br/><br/>
+<code>CompletableFuture</code> 有太多太多的方法，并伴有 <code>async</code> 与 非 <code>async</code> 两个版本。本文之标题所谓 <code>浅入</code>, 确不敢说是深入浅出，而且要达到对 <code>CompletableFuture</code> 的基本了解亦非本文的目的。看完之后只能知道何以谓之 <code>Completable</code>, 不触及线程间的交互。<br/><br/>
+试想一下，如过不用 <code>Future</code> 或  <code>CompletableFuture</code>, 想要实现等待某个线程完成之后才做后续的事，可以预设一段时间 <code>Thread.sleep(xxx)</code> 停下来等待，这很不可靠，时间短了线程没完，长了浪费时间; 或者采用来自于 <a href="http://unmi.cc/consolidate-use-of-java-future/">巩固 Java Future 的使用</a> 最后一段代码的方式<br/><br/>
+<pre class="lang:default decode:true">AtomicReference&lt;String&gt; reference = new AtomicReference&lt;&gt;();<br/><br/>
+new Thread(() -&gt; {
+  //do something that is time-consuming
+  reference.set("I'm done");  //任务完成完设置 reference 的值
+}).start();<br/><br/>
+while(reference.get() == null) { //耐心的等待，直到 reference.get() 有值为止
+}<br/><br/>
+System.out.println("Finally, " + reference.get());</pre>
+<br/>
+当然，上面的代码改用 <code>Future</code> 来写会简单些，但仍然是调用 <code>get()</code> 来阻塞当前线程来等待，还每次要捕获 InterruptedException, ExecutionException 或 TimeoutException 异常。要是换作 <code>CompletableFuture</code> 来表述的话就更为直观，并且通过回调函数来处理后续操作，让代码行文更为流畅。<br/><br/>
+请看用 <code>CompletableFuture</code> 稍加润色的代码<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import java.util.concurrent.CompletableFuture;<br/><br/>
+public class Main {<br/><br/>
+    public static void main(String[] args) {
+        CompletableFuture&lt;Double&gt; futurePrice = getPriceAsync();<br/><br/>
+        //do anything you want, 当前线程不被阻塞
+        System.out.println(111);<br/><br/>
+        //线程任务完成的话，执行回调函数，不阻塞后续操作
+        futurePrice.whenComplete((aDouble, throwable) -&gt; {
+            System.out.println(aDouble);
+            //do something else
+        });<br/><br/>
+        System.out.println(222);
+    }<br/><br/>
+    static CompletableFuture&lt;Double&gt; getPriceAsync() {
+        CompletableFuture&lt;Double&gt; futurePrice = new CompletableFuture&lt;&gt;();
+        new Thread(() -&gt; {
+            try {
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            futurePrice.complete(23.55);
+        }).start();
+        return futurePrice;
+    }
+}</pre>
+<br/>
+<code>getPriceAsync()</code> 就是一个异步方法，调用后马上返回得到一个 futurePrice, 用 <code>Thread.sleep(5000)</code> 模拟成一个耗时操作，线程执行完才设置 futurePrice 为完成状态并赋予结果。<br/><br/>
+<code>CompletableFuture</code> 的 <code>whenComplete()</code> 也是异步的，所以我们能看到输出结果如下<br/><br/>
+<blockquote>
+111<br />
+222<br />
+23.55
+</blockquote>
+<br/>
+如果我们实际使用 <code>CompletableFuture</code> 时不调用 <code>Future</code> 接口的 <code>get()</code> 等方法，上面的引用类型可以改成 <code>CompletationStage</code>, 以免受 <code>get()</code> 等方法的干扰。<br/><br/>
+<span style="color: #0000ff;"><strong>CompletableFuture 的异常处理</strong></span><br/><br/>
+如果在设置 CompletableFuture.complete(value) 之前出现了异常，那么 <code>get()</code> 或其他回调函数像 <code>whenComplete()</code> 都会无限期的等待下去。例如下面的代码：<br/><br/>
+<pre class="lang:default decode:true">public static void main(string[] args) throws ExecutionException, InterruptedException {
+    CompletableFuture&lt;Double&gt; futurePrice = new CompletableFuture&lt;&gt;();
+    new Thread(() -&gt; {
+        if(true) {
+            throw new RuntimeExeption("");
+        }
+        futurePrice.complete(23.5);
+    }).start();<br/><br/>
+    System.out.println(futurePrice.get());
+}</pre>
+<br/>
+上面代码执行后可以在控制台看到异常输出 <code>java.lang.RuntimExeption()</code>, 但是异常并不会在线程间传播，所以 <code>futurePrice.get()</code> 一直在等待。<br/><br/>
+<img class="aligncenter size-full wp-image-7664" src="/wp-content/uploads/2016/12/CompletableFuture_Exception1.png" alt="" width="631" height="108" /><br/><br/>
+办法一是调用 <code>get(timeout)</code> 时给定一个超时时间，如果指定时间内还没有获得结果则得到 <code>TimeoutException</code>。另一种办法是要在线程中通过 <code>completeExceptionally(ex)</code> 来传播异常<br/><br/>
+<pre class="lang:default decode:true ">public static void main(String[] args) throws ExecutionException, InterruptedException {
+    CompletableFuture&lt;Double&gt; futurePrice = new CompletableFuture&lt;&gt;();
+    new Thread(() -&gt; {
+        try {
+            if (true) {
+                throw new RuntimeException("Something wrong");
+            }
+            futurePrice.complete(23.5);
+        } catch (Exception ex) {
+            futurePrice.completeExceptionally(ex); //捕获的异常还会由 ExecutionException 包裹一下
+        }
+    }).start();<br/><br/>
+     System.out.println(futurePrice.get());
+}</pre>
+<br/>
+这时候在 <code>futurePrice.get()</code> 马上就能收到 `java.util.concurrent.ExecutionException: java.lang.Exception: Something wrong` 异常<br/><br/>
+<img class="aligncenter wp-image-7665 size-full" src="/wp-content/uploads/2016/12/CompletableFuture_Exception2.png" width="864" height="183" /><br/><br/>
+程序在捕获到异常到终止，异常类型是 ExecutionException, 而不是原始的 RuntimeExeption。<br/><br/>
+现实中我们不会这么去构造并管理 <code>CompletableFuture</code>, 但上面对我们理解它还是有帮助的。我们多用 <code>supplyAsync(...)</code> 静态方法来获得 <code>CompletableFuture</code> 实例，因为它同时给我们处理了 <code>completeExceptionally(ex)</code> 的细节，所以上面的代码效果等同于下面的写法，执行后的效果也是一致的。<br/><br/>
+<pre class="lang:default decode:true">public static void main(String[] args) throws ExecutionException, InterruptedException {
+    CompletableFuture&lt;Double&gt; futurePrice = CompletableFuture.supplyAsync(() -&gt; {
+        if (true) {
+            throw new RuntimeException("Something wrong");
+        }
+        return 23.5;
+    }, runnable -&gt; new Thread(runnable).start());<br/><br/>
+    System.out.println(futurePrice.get());
+}    </pre>
+<br/>
+<span style="text-decoration: underline;">因此，只要调用方法 <code>CompletableFuture.supplyAsync(job)</code>, 这个 job 便会在在分配到了线程后立即执行，无须等待后面的 <code>thenAccept()</code> 等操作。</span><br/><br/>
+前面的代码都是显式的用 <code>new Thread(...).start()</code> 来启动线程，如今我会尽量避免用这种方式来启动线程，而是用 Java 1.5 的 ExecutorService, 所以再加以改造：<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;<br/><br/>
+public class Main {<br/><br/>
+    public static void main(String[] args) throws IOException {
+        CompletionStage&lt;Double&gt; futurePrice = CompletableFuture.supplyAsync(() -&gt; {
+            try {
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            return 23.55;
+        });
+        System.out.println(111);
+        futurePrice.thenAccept(System.out::println);
+        System.out.println(222);<br/><br/>
+        System.in.read();
+    }
+}</pre>
+<br/>
+同样的输出结果。但如果把上面的 <code>System.in.read()</code> 移除掉，将看不到 <code>23.55</code> 的输出程序就直接退出了，为什么了呢？因为 <code>CompletableFuture.supplyAsync()</code> 方法默认把任务提交到 <code>ForkJoinPool</code> 线程池中执行，而它的线程设置了 <code>daemon</code> 属性为 <code>true</code>, 所以它阻止不了主线程的退出，才用 <code>System.in.read()</code> 维持主线程的执行。如果换成别的线程池类型就可不需要代码 <code>System.in.read()</code>,  再变<br/><br/>
+<pre class="lang:default decode:true ">package cc.unmi;<br/><br/>
+import java.io.IOException;
+import java.util.concurrent.*;<br/><br/>
+public class Main {<br/><br/>
+    public static void main(String[] args) throws IOException {
+        ExecutorService executor = Executors.newCachedThreadPool();
+        CompletionStage&lt;Double&gt; futurePrice = CompletableFuture.supplyAsync(() -&gt; {
+            try {
+                Thread.sleep(5000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            return 23.55;
+        }, executor);<br/><br/>
+        System.out.println(111);
+        futurePrice.thenAccept(System.out::println);
+        System.out.println(222);<br/><br/>
+        executor.shutdown();
+    }
+}</pre>
+<br/>
+<code>executor.shutdown()</code> 并不是立即关掉线程池，而是采取更温柔, 安全的方式，等线程池中没有正在执行的任务时才关闭，从而结束主程序。<br/><br/>
+如果要深入了解 <code>CompletableFuture</code> 的用法更应该关注它的几个静态方法，以及 <a href="https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/CompletionStage.html">CompletionStage</a> 接口中定义的所有法。

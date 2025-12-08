@@ -1,0 +1,112 @@
+---
+title: Java 9 线程栈遍历 API
+url: /java-stack-walking-api/
+date: 2018-05-30T01:29:39-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/java9-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Java 9
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8813 
+wpStatus: publish
+views: 490
+lastmod: 2021-09-10T12:30:55-05:00
+---
+
+<h3>什么是线程栈</h3><br/><br/>
+继续纠缠 Java 9 的新特性，仍然是一个边角料，即 Java 9 增加了对线程栈遍历的 API。那么什么是线程栈，JVM 在创建每一个线程的同时都会创建一个私有的虚拟机栈，每一桢代表着一个方法调用，每次方法的调用与退出意味着压栈与出栈。每一桢上有局部变量，操作数常量引用等信息，这也是为什么局部变量是能最快被销毁的对象。过深的栈(比如过多的递归调用) 会出现我们程序员赖以生存的 StackOverflow。</p>
+<br/>
+浅显些说，线程栈就是通常我们捕获到异常后，用 <code>e.printStackTrace()</code> 看到自 main 方法追溯到当前方法的调用。例如：<br/><br/>
+<blockquote>
+java.lang.RuntimeException: stack<br />
+    at cc.unmi.TestStackWalking.m2(TestStackWalking.java:15)<br />
+    at cc.unmi.TestStackWalking.m1(TestStackWalking.java:10)<br />
+    at cc.unmi.TestStackWalking.main(TestStackWalking.java:6)
+</blockquote>
+<br/>
+调用层次是 main() 调用 m1(), m1() 调用 m2(), m2() 中的代码如下<br/><br/>
+<pre class="lang:default decode:true">try {
+    throw new RuntimeException("stack");
+} catch (Exception ex) {
+    ex.printStackTrace();
+}</pre>
+<br/>
+上面输出的每一行就是一个栈桢，输出了当前类名，方法名，代码行号。<!--more--><br/><br/>
+<h3>Java 9 之前如何获得线程栈信息</h3><br/><br/>
+我们这儿要说的线程栈就是这个东西，先不交代 Java 9 遍历它的新 API，那么在 Java 9 之前要如何得到如上的信息呢？其实前面就是一个例子，<code>printStackTrace()</code> 是出自于 <code>Throwable</code> 的方法，上面是输出到了控制台，Log4J 1.2.13 只是把栈信息保存到了字符串了<br/><br/>
+<pre class="lang:default decode:true">StringWriter sw = new StringWriter();
+PrintWriter pw = new PrintWriter(sw);
+printStackTrace(pw);
+s = sw.toString();</pre>
+<br/>
+参见许多年前对 Log4J 如何定位代码信息的研究 <a href="/log4j-get-line-number-method/">Log4J 输出日志时是如何获知当前方法、行号的</a>，Log4J 1.2.13 后的代码实现可能略有不同。<br/><br/>
+实质上，在 Java 9 之前有两种方法来获得线程栈信息<br/><br/>
+<blockquote>
+Throwable.getStackTrace():   StackTraceElement[]   @Since 1.4<br />
+Thread.getStackTrace(): StackTraceElement[]   @Since 1.5
+</blockquote>
+<br/>
+StackTraceElement[] 就是自顶向下的线程栈，我们能获得的每一桢的信息就是 StackTraceElement，它能给予我们的是<br/><br/>
+<blockquote>
+getClassName(): String<br />
+getFileName(): String<br />
+getLineNumber(): int<br />
+getMethodName(): String<br />
+isNativeMethod(): boolean
+</blockquote>
+<br/>
+当了，到了 Java 9 之后还外加两个模块相关的信息和类加载器名<br/><br/>
+<blockquote>
+getModuleName(): String<br />
+getModuleVersion(): String<br />
+getClassLoaderName(): String
+</blockquote>
+<br/>
+getStackTrace() 的几个弊端：注意到从 StackTraceElement 中不能直接拿到类引用(Class&lt;?&gt;), 或者可以用当前线程加载器来加载 <code>getClassName()</code> 来获得类引用。getStackTrace() 总是返回整个线程栈的快照，即使是只关注上面几桢。为性能考虑，某些桢可能被 JVM 实现隐藏。<br/><br/>
+<h3>Java 9 如何获得线程栈信息</h3><br/><br/>
+Java 9 为我们提供了 <code>StackWalker</code> ，<code>StackWalker.Option</code> 和 <code>StackWalker.StackFrame</code> 类<br/><br/>
+<a href="/wp-content/uploads/2018/05/StackWalker-1.png"><img class="aligncenter size-full wp-image-8819" src="/wp-content/uploads/2018/05/StackWalker-1.png" alt="" width="557" height="148" /></a><br/><br/>
+<code>StackWalker</code> 有四个工厂方法 <code>getInstance(...)</code>, 再通过 <code>StackWalker</code> 的 <code>forEach(...)</code> 或 <code>walk(...)</code> 来遍历其中的 <code>StackFrame</code>，<br/><br/>
+<a href="/wp-content/uploads/2018/05/StackWalker-2.png"><img class="aligncenter size-full wp-image-8820" src="/wp-content/uploads/2018/05/StackWalker-2.png" alt="" width="562" height="90" /></a><br/><br/>
+看下 <a href="https://docs.oracle.com/javase/9/docs/api/java/lang/StackWalker.StackFrame.html"><code>StackFrame</code></a> 有什么内容，<br/><br/>
+<blockquote>
+getByteCodeIndex(): int<br />
+getClassName(): String<br />
+getDeclaringClass(): Class&lt;?&gt;<br />
+getFileName(): String<br />
+getLineNumber(): int<br />
+getMethodName(): String<br />
+isNativeMethod(): boolean<br />
+toStackTraceElement(): StackTraceElement
+</blockquote>
+<br/>
+与 <code>StackTrackElement</code> 有很多相同的东西，多的是 <code>getByteCodeIndex()</code> 和 <code>getDeclaringClass()</code>, 前者一般不太关心，后者有时候还是有用的。看来想要获得模块名和版本还是调用 <code>toStackTraceElement()</code> 才行。<br/><br/>
+<code>StackWalker.getInstance(...)</code> 接收的几个 <code>StackWalker.Option</code><br/><br/>
+<blockquote>
+RETAIN_CLASS_REFERENCE:  遍历时调用 <code>getDeclaringClass()</code> 需要指名该选项，否则出现 <code>UnsupportedOperationException</code><br />
+SHOW_HIDDEN_FRAMES: 显示所有的隐藏桢<br />
+SHOW_REFLECT_FRAMES: 当用反射方式调用时把反射过程的方法调用桢也显示，通过反射来调用方法的话需留意它。可能它要与 SHOW_HIDDEN_FRAMES 一同使用。Java 9 之前的 <code>getStackTrace(): StackTraceElement[]</code> 返回的调用栈总是包含反射方法桢，这一点 Java 9 就聪明一些。
+</blockquote>
+<br/>
+关于 <code>StackWalker</code> 的两个遍历方法，<code>forEach(...)</code> 没什么说的，<code>walk(..)</code> 方法让我们让进 <code>StackFrame</code> 进行过滤，映射等操作。如<br/><br/>
+<pre class="lang:default decode:true">List&lt;String&gt; list = StackWalker.getInstance(RETAIN_CLASS_REFERENCE)
+    .walk(s -&gt; s.filter(f -&gt; !f.getDeclaringClass().getName().endsWith("Test")))
+    .filter(f -&gt; f.getMethodName().startsWith("foo"))
+    .map(Object::toString).collect(toList());</pre>
+<br/>
+由于 <code>walk(...)</code> 方法操作的是一个 Stream，因此它有管道和延迟评估的特性<br/><br/>
+<h3>想知道方法的调用者是谁</h3><br/><br/>
+从前面的 <code>StackWalker</code> API 中看到有一个方法是 <code>getCallerClass()</code>, Java 9 想要知道谁是调用者就这么简单，记得在获得 <code>StackWalker</code> 实例时需指定 <code>RETAIN_CLASS_REFERENCE</code>， 否则也是 <code>UnsupportedOperationException</code>。如果已是 main 方法，没有 caller 是，就会报出 <code>IllegalStateException</code> 异常。<br/><br/>
+借助于 <code>Caller's Class</code>, 我们可基本调用关系(control flow) 来控制实现逻辑，比如 A 调用我干这事，B 调用我的话就干那事。<br/><br/>
+类似的，在 Java 9 之前想要知道谁是调用者，可以在 <code>StackTraceElement[]</code> 中往前推，或用 JDK 内部方法 <code>sun.reflect.Reflection.getCallerClass()</code>, 或者调用 <code>SecurityManager.getClassContext(): Class&lt;?&gt;[]</code>, 这是一个本地方法，它是受保护的，想调用还得创建 <code>SecurityManager</code> 的子类，未曾尝试过。<br/><br/>
+注意：<code>StackWalker.getCallerClass()</code> 总是会跳过隐藏的和反射调用桢，不管你的 <code>StackWalker.Option</code> 指定的是什么。<br/><br/>
+<hr /><br/><br/>
+随着 Java 9 的 StackWalker API 的加入，也许以后的日志框架，Log4J， Logback 等能用上这些新的 API 来输出日志所在代码位置信息，在一定程度上兴许对性能有点改善。

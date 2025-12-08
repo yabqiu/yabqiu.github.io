@@ -1,0 +1,66 @@
+---
+title: 用 Windows 脚本启停和监视应用程序
+url: /windows-script-mornitor-app/
+date: 2006-10-23T00:12:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Windows
+tags: 
+  - Windows
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 541 
+wpStatus: publish
+views: 741
+lastmod: 2021-09-03T22:06:42-05:00
+---
+
+如果一个程序运行后不会出现在任务管理的进程列表中，那么判断这个程序是否在运行当中该如何做呢？要是直接调用 Windows API 来获取当然是一点问题都没有，只不过需要用编译语言来写，动作大了点。下面介绍直接写 Windows 脚本的方法，据你熟悉而言可以用JS或VBS脚本，在脚本中须用到 WMI 查询。同时也顺带一下用 WMI 创建进程启动后台程序的脚本。</p>
+<br/>
+1. 判断后台进程是否在运行，假设应用程序的名称为 UnmiProgram.exe，VBS脚本如下：<!--more--><br/><br/>
+<pre class="lang:default decode:true">strComputer = "."    '判断本机用点号表示
+Set objWMIService = GetObject("winmgmts:" _
+   &amp; "{impersonationLevel=impersonate}!\\" &amp; strComputer &amp; "\root\cimv2")<br/><br/>
+'用 WMI 的查询语言 WQL 查找　MyProgram.exe　应用程序名
+Set colProcessList = objWMIService.ExecQuery _
+   ("Select * from Win32_Process Where Name = 'UnmiProgram.exe'")
+If colProcessList.Count = 0 Then　'Count为零说明 MyProgram.exe 没有在运行
+   wscript.echo "UnmiProgram.exe is not running"
+else 'Count不为零说明 MyProgram.exe 在运行
+   wscript.echo "UnmiProgram.exe is running, count = " &amp; colProcessList.Count
+End If</pre>
+<br/>
+没有 UnmiProgram.exe 进程在运行就弹出窗口提示："UnmiProgram.exe is not running"<br />
+有 UnmiProgram.exe 进程在运则弹出窗口并提示程序产生了多少个进程：UnmiProgram.exe is running, count = x"<br/><br/>
+2. 启动一个后台程序的 VBS 脚本<br/><br/>
+<pre class="lang:default decode:true">Const HIDDEN_WINDOW = 12   '隐藏窗口
+strComputer = "."    '判断本机用点号表示
+Set objWMIService = GetObject("winmgmts:" _
+   &amp; "{impersonationLevel=impersonate}!\\" &amp; strComputer &amp; "\root\cimv2")
+Set objStartup = objWMIService.Get("Win32_ProcessStartup")
+Set objConfig = objStartup.SpawnInstance_
+objConfig.ShowWindow = HIDDEN_WINDOW
+Set objProcess = GetObject("winmgmts:root\cimv2:Win32_Process")<br/><br/>
+'创建 C:\\UnmiProagem.exe 并启动它
+errReturn = objProcess.Create("C:\\UnmiProgram.exe", null, objConfig, intProcessID)</pre>
+<br/>
+你也可以用下面简单的 WSH 脚本来启动应用程序<br/><br/>
+<pre class="brush:vb ">Set shell = createobject("wscript.shell")
+shell.run "C:\\UnmiProgram.exe",12</pre>
+<br/>
+查找并终止指定进程的 VBS 脚本：<br/><br/>
+<pre class="lang:default decode:true ">strComputer = "."  '判断本机用点号表示
+Set objWMIService = GetObject("winmgmts:" _
+   &amp; "{impersonationLevel=impersonate}!\\" &amp; strComputer &amp; "\root\cimv2")
+Set colProcessList = objWMIService.ExecQuery _
+   ("Select * from Win32_Process Where Name = 'UnmiProgram.exe'")
+For Each objProcess in colProcessList
+   objProcess.Terminate()
+Next</pre>
+<br/>
+以上脚本存成 VBS 文件，一般都能直接双击执行，系统已建立好关联，或都用命令 wscript file.vbs 或者 cscript file.vbs。

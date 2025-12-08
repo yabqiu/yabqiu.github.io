@@ -1,0 +1,78 @@
+---
+title: 终于在SuSe10上成功安装上了VMware 5.5
+url: /install-suse10-under-vmware55/
+date: 2006-12-04T09:31:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/linux-logo.png"
+categories:
+  - Linux/Unix
+tags: 
+  - Linux
+  - VMware
+  - SuSe
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 538 
+wpStatus: publish
+views: 304
+lastmod: 2019-11-10T15:48:44-06:00
+---
+
+原来在 RedHat AS3 下安装VMware 4 还是 5 都能非常顺利的安装，可是前几天安装了 SuSe 10，安装 VMware 5 却出了些岔子。</p>
+<br/>
+我用的是 VMware Workstation 5.5.0 build-18463 for Linux RPM包来进行安装，安装完成后，敲入命令 vmware 执行后，提示<br/><br/>
+unmi:/usr # vmware<br />
+vmware is installed, but it has not been (correctly) configured<!--more--><br />
+for this system. To (re-)configure it, invoke the following command:<br />
+/usr/bin/vmware-config.pl.<br/><br/>
+照着指示，执行 vmware-config.pl<br/><br/>
+unmi:/usr # vmware-config.pl<br />
+Making sure services for VMware Workstation are stopped.<br/><br/>
+Stopping VMware services:<br />
+   Virtual machine monitor                                             done<br/><br/>
+You must read and accept the End User License Agreement to continue.<br />
+Press enter to display it.<br/><br/>
+一直按回车键阅读，看完了所有的内容，也没见它提示我是否接受某某协议，不能进行下去了。<br />
+于是试着把 vmware-config.pl 中的内容直接改一下，用 vi /usr/bin/vmware-config.pl 打开这个 pl 脚本文件，找到 accept 处，在 2350 行，把所在函数 sub show_EULA 除以下语句<br/><br/>
+    if (get_persistent_answer('Do you accept? (yes/no)', 'EULA_AGREED',<br />
+                              'yesno', ') eq 'no') {<br />
+      print wrap('Please try again when you are ready to accept.' . "\n\n", 0);<br />
+      exit 0;<br />
+    }<br/><br/>
+    print wrap('Thank you.' . "\n\n", 0);<br />
+外的其他行全部注释掉，再执行 vmware-config.pl 脚本，这次会提示<br />
+Do you accept? (yes/no) yes<br />
+输入 yes 后，可以进行一段配置，可是进行到<br />
+Building the vmmon module.<br/><br/>
+Using 2.6.x kernel build system.<br />
+又出现错误了，说的是<br />
+.......................................................<br />
+make[1]: Leaving directory `/usr/src/linux-2.6.16.13-4-obj/i386/default'<br />
+make: *** [vmmon.ko] Error 2<br />
+make: Leaving directory `/tmp/vmware-config0/vmmon-only'<br />
+Unable to build the vmmon module.<br/><br/>
+到网上去找找资料说的是当前Linux的内核版本太高，SuSe 10 的内核是 2.6.16 的，需要打上补丁才能顺利配置，到 <a href="http://ftp.cvut.cz/vmware/">http://ftp.cvut.cz/vmware/</a> 下载到 vmware-any-any-update105.tar.gz 解压后，执行其中的 runme.pl 脚本，<br/><br/>
+Updating /usr/bin/vmware-config.pl ... now patched<br />
+...........................................<br/><br/>
+接着构建，然后会自动调用 vmware-config.pl 进行配置，其间有许多警告信息，不要紧，成功后会显示<br />
+The module loads perfectly in the running kernel.<br/><br/>
+Starting VMware services:<br />
+   Virtual machine monitor                                             done<br />
+   Virtual ethernet                                                    done<br />
+   Bridged networking on /dev/vmnet0                                   done<br/><br/>
+The configuration of VMware Workstation 5.5.0 build-18463 for Linux for this<br />
+running kernel completed successfully.<br/><br/>
+You can now run VMware Workstation by invoking the following command:<br />
+"/usr/bin/vmware".<br/><br/>
+Enjoy,<br/><br/>
+--the VMware team<br />
+恭喜，成功安装，现在可以执行 vmware 命令进入到 vmware 窗口安装你的客户操作系统了。<br />
+我第一次运行 runme.pl 都没有成功，也是到了一个按回车不能的地方。再次运行 runme.pl 才成。<br />
+而且上一次也是在 SuSe 10 下安装 vmware 5 时，即使安装了vmware-any-any-update105 也不行，说是找不到什么源代码,我想安装 SuSe 时最好把某些源代码也装上。<br/><br/>
+参考：1. <a href="http://www.linuxsir.org/bbs/showthread.php?p=1425206">FC5 无法安装 vmware - LinuxSir.Org</a><br />
+      2. <a href="http://www.linuxsir.org/bbs/showthread.php?t=252740">FC5安装VMware全过程(已完成)</a>

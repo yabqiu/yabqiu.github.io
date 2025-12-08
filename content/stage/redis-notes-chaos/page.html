@@ -1,0 +1,601 @@
+---
+title: Redis 知识点乱记
+url: /redis-notes-chaos/
+date: 2019-10-14T21:39:02-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2019/09/redis-logo.png"
+categories:
+  - Redis
+tags: 
+  - Redis
+  - 笔记
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9621 
+wpStatus: publish
+views: 682
+lastmod: 2021-06-15T12:19:21-05:00
+---
+
+以下内容完全毫无章序，是阅读 《redis设计与实现(第二版)》一书所划的一些自己助记用的重点。本不访放到博客上来，只称放在个人 Evernote 当中，于此纯粹为了自己往后查阅，所以请不要读它。<br/><br/>
+<div>
+<div>OBJECT ENCODING key    可以查数据存储的底层结构类型</div>
+<div>如</div>
+<div> </div>
+<div>redis&gt; SADD numbers 1 3 5 7 9</div>
+<div>redis&gt; OBJECT ENCODING numbers</div>
+<div>"intset"</div>
+<div> </div>
+<div>redis&gt; ZADD fruit-price 5 banana</div>
+<div>redis&gt; OBJECT ENCODING fruit-price</div>
+<div>"quicklist"</div>
+<div> </div>
+<div>Redis 的对象带有访问时间记录信息，该信息可用于计算数据库键的空转时长</div>
+<div> </div>
+<div>redis&gt; type msg    返回值对象的类型</div>
+<div> </div>
+<div>字符串对象编码可用 int，raw 或者 embstr</div>
+<!--more-->
+<div> </div>
+<div>redis&gt; set number 10086   能表示为整数值，用 long 类型表示</div>
+<div>小于等于 32 字节用 embstr</div>
+<div>大于 32 字节用 raw</div>
+<div>double 类型会保存为 embstr 或 raw</div>
+<div>int 能转换到  raw，embstr 与 int 和 raw 不会进行转换</div>
+<div> </div>
+<div>redis&gt; set number 10086                 //object encoding number 是  int</div>
+<div>redis&gt; append number " is good"    //是 raw, 虽然小于 32 长度，也不会用 embstr, embstr 编码的字符串对象是只读的</div>
+<div> </div>
+<div>redis&gt; set number 1</div>
+<div>redis&gt; append number "2"</div>
+<div>redis&gt; get number                 得到  "12", 但它的编码变成了 raw</div>
+<div>redis&gt; incrby number 3          //这是可以的，虽然 number 是 raw，但值是 12</div>
+<div> </div>
+<div>获得列表中的所有值</div>
+<div>redis&gt; rpush numbers 1 "three" 5    // 用 pop 相关的命令会从列表中移除值</div>
+<div>redis&gt; lrange numbers 0 -1              // 取出所有，还保留原来的值</div>
+<div>redis&gt; sort numbers                     // 也能达到类似的效果，但 sort 的时间复杂度要高</div>
+<div> </div>
+<div>现在列表对象用 quicklist 来编码，或有 ziplist? 或 linkedlist?</div>
+<div> </div>
+<div> 哈稀对象可以是 ziplist 或 hashtable, 如果哈稀列表是 ziplist, 保存的格式为 k1,v1,k2,v2,k3,v3,....kn,vn 键值挨在一起组成 ziplist</div>
+<div>当哈稀对象的键或值长度大于 64 字节，或键值对数量大于 512 个，将用  hashtable 编码</div>
+<div> </div>
+<div>集合(Set) 对象，sadd numbers 1 3 5, 理解为 Java 的 set，用 intset 或 hashtable 编码, 所有的值可转换为 int 并且数量不超过 512 个用用 intset, 否则用 hashtable. 当用 hashtable 编码时与 Java 的 hashset 一样，值保存在 key 上，而字典的 value 为 null</div>
+<div> </div>
+<div>有序集(Sorted Set) 用  ziplist 或 skiplist 编码，用 ziplist 时，前节点为成员值，后节点为对应分值。如果编码为 skiplist, 它的底层用 zset 下 dict 字典，字典的键为值，值为分数.</div>
+<div>Sorted Set 从 ziplist 到 skiplist 选择的临界条件是: 元素数量不超过 128 和所有成员长度不超过 64 字节</div>
+<div> </div>
+<div>redis 3 下, 默认为共享字符串为整数的  0 - 9999，redis 5.0.5 不一样了</div>
+<div>redis&gt; set a 100</div>
+<div>redis&gt; object refcount a   // 1</div>
+<div>redis&gt; set b 100</div>
+<div>redis&gt; object refcount a   // 2</div>
+<div> </div>
+<div>但在 redis 5.0.5 下 得到  object refcount a //2147483647</div>
+<div> </div>
+<div>对象空转时长</div>
+<div> </div>
+<div>redis&gt; object idletime key            多久没被访问过的秒数</div>
+<div> </div>
+<div>Redis 可用于 lru 进行自动清除，也可以帮助我们找出哪些僵尸对象予以清除</div>
+<div>比如</div>
+<div> </div>
+<div>redis&gt; eval "local keys=redis.call('keys', 'SEC:*') redis.call('sadd', 'this_sec_keys', unpack(keys))" 0</div>
+<div> </div>
+<div>把所有的 SEC:* keys 放到  this_sec_keys  键中</div>
+<div>可能键太多无法  unpack     //too many results to unpack</div>
+<div>可以换成如下操作</div>
+<div> </div>
+<div>redis&gt; eval "local keys=redis.call('keys', 'SEC:*') for k, v in pairs(keys) do redis.call('sadd', 'this_sec_keys', v) end" 0</div>
+<div> </div>
+<div>如果不是数值，还是不能用  sort 排序，所以再来</div>
+<div> </div>
+<div>redis&gt; eval "local keys=redis.call('keys', 'SEC:*') for k, v in pairs(keys) do redis.call('sadd', 'this_sec_keys', redis.call('object', 'idletime', v)) end"</div>
+<div> </div>
+<div>数据库</div>
+<div>Redis 服务器启动时默认创建 16 个数据库，Redis 客户端连上号默认为 0 号数据库，可用 select 2 这样来切换数据库，不同库间是隔离的。对于在一个数据库中用 DEV:*, QA:* 的方式来区分环境的情况，我们可以采用不同的数据库来存储不同环境的数据，如 1 号 DB 为 DEV, 2 号 DB 为 QA，等</div>
+<div> </div>
+<div>flushdb 是清空当前库，flushall 清空所有库</div>
+<div> </div>
+<div>Redis 设置过期时间的命令 expire, pexpire 和 expireat 最终都会转换成 pexpireat 命令来执行.</div>
+<div>persist 命令可以移除过期时间，即使得 ttl msg 得到的值为 -1，也就是没有设置过期时间的键的 ttl 值. ttl 值为 -1 的 key 不会在过期字典中</div>
+<div> </div>
+<div>过期键的删除</div>
+<div> </div>
+<div>Redis 是采用定期删除和惰性删除两种策略，</div>
+<div>定期删除：每秒 20 秒，每次从一个数据库中随机找 20 个过期键，如果 25% 的键都过期了，立即下一轮</div>
+<div>惰性删除：读性键的操作在读写时判断过期的删除，</div>
+<div> </div>
+<div>RDB 文件和 AOF</div>
+<div> </div>
+<div>redis&gt; save  或</div>
+<div>redis&gt; bgsave 会创建一个 rdb 文件，如 dump.rdb, 过期与未过期的键都在里面</div>
+<div>redis&gt; save 60 1000  # 60 秒内如果有超过 1000 个键被修改则用 bgsave 保存快照</div>
+<div> </div>
+<div>Mac OS 下会在当前目录下生成  dump.rdb 文件。</div>
+<div>redis&gt; config get dir  查看 redis 的工作目录</div>
+<div> </div>
+<div> 恢复 rdb 快照很简单，只要把快照文件如 dump.rdb 放到 redis-server 的工作目录，redis-server 启动就行了</div>
+<div> </div>
+<div>主从复制模式下，主服务器加载 rdb 文件时会淘汰过期键，从服务器不检查过期键而全部加载。服务器用 save 或 bgsave 时过期键会被过滤掉，不生成到 rdb 文件中。运行时主服务器删除过期键后会通知所有从服务器删除相应的键，而从服务器碰到过期键不判断，当未过期处理。从服务器上的过期键只等主服务器的通知才去删除</div>
+<div> </div>
+<div>执行 bgrewriteaof 命令产生的重写 AOF 文件也不会包含过期键</div>
+<div> </div>
+<div>Redis 发布/订阅  Redis 2.8 新功能</div>
+<div> </div>
+<div>redis-cli 终端 1</div>
+<div>redis&gt; subscribe test1 test2    # 订阅了两个 channel test1 和 test2</div>
+<div>subscribe test1 test2</div>
+<div>Reading messages... (press Ctrl-C to quit)</div>
+<div>1) "subscribe"</div>
+<div>2) "test1"</div>
+<div>3) (integer) 1</div>
+<div>1) "subscribe"</div>
+<div>2) "test2"</div>
+<div>3) (integer) 2</div>
+<div> </div>
+<div>这样就在订阅消息</div>
+<div> </div>
+<div>再开个 redis-cli 终端 2</div>
+<div>redis&gt; info stats     # 可看到有多少个  pubsub_channels: 2</div>
+<div>redis&gt; publish test1 "Hello, World!"   # 就向 chennel test1 发送了消息</div>
+<div> </div>
+<div>这时候可看终端 1 的输出</div>
+<div>127.0.0.1:6379&gt; subscribe test1 test2</div>
+<div>Reading messages... (press Ctrl-C to quit)</div>
+<div>1) "subscribe"</div>
+<div>2) "test1"</div>
+<div>3) (integer) 1</div>
+<div>1) "subscribe"</div>
+<div>2) "test2"</div>
+<div>3) (integer) 2</div>
+<div>1) "message"</div>
+<div>2) "test1"</div>
+<div>3) "Hello, World!"</div>
+<div>1) "message"</div>
+<div> </div>
+<div>订阅可以用模式匹配   pattern subscribe，所以它不仅是通配符，如 psubscribe news.[ie]t    news.it 或 news.et </div>
+<div>redis&gt; psubscribe *  订阅所有 channel</div>
+<div>redis&gt; psubscribe r*  订阅所有 r 开头的 channel</div>
+<div> </div>
+<div>keyspace 和  keyevent</div>
+<div>redis-cli config set notify-keyspace-events KEA    //开启 keyspace, keyevent 通知， KEA 事件类型的表示见 <a href="https://redis.io/topics/notifications">https://redis.io/topics/notifications</a></div>
+<div> </div>
+<div>redis&gt; subscribe __keyspace@0__:message     # 0 为数据库编号</div>
+<div>Reading messages... (press Ctrl-C to quit)</div>
+<div>1) "subscribe"</div>
+<div>2) "__keyspace@0__:message"</div>
+<div>3) (integer) 1</div>
+<div>1) "message"</div>
+<div>2) "__keyspace@0__:message"</div>
+<div>3) "set"</div>
+<div> </div>
+<div>其他终端操作了</div>
+<div>redis&gt; set message a     就看到上面的通知消息，del 也能看到</div>
+<div> </div>
+<div>对 del 命令的订阅</div>
+<div>redis&gt; subscribe __keyevent@0__:del</div>
+<div>Reading messages... (press Ctrl-C to quit)</div>
+<div>1) "subscribe"</div>
+<div>2) "__keyevent@0__:del"</div>
+<div>3) (integer) 1</div>
+<div>1) "message"</div>
+<div>2) "__keyevent@0__:del"</div>
+<div>3) "message"</div>
+<div> </div>
+<div>再次 RDB 与 AOF</div>
+<div> </div>
+<div>redis&gt; save 会阻塞 Redis 服务进程，bgsave 产生一个子进程来创建 rdb 文件。服务器在启动时检测到工作目录下的 rdb 文件的存在就会自动载入。生成或加载哪个 rdb 文件的名称由 redic.conf 中的  "dbfilename dump.rdb" 指定，默认为 dump.rdb</div>
+<div>如果开启了 AOF 持久化功能就优先用 AOF, 且启动时也不会读取 RDB 来还原状态</div>
+<div> </div>
+<div>redis.conf 文件中用 "rdbcompression yes" 开启了 RDB 文件压缩功能的话，RDB 文件中字符串未超过 20 个字节原样保存，否则压缩后保存; 未开启压缩的话总是原样保存字符串</div>
+<div> </div>
+<div>可用系统的 od 命令来分析文件, od 命令就像一个二进制文件查看器，Mac 自带了它，如</div>
+<div>$ od -c dump.rdb                 // 输入为 ASCII</div>
+<div>$ od -cx dump.rdb               // 输入为 ASCII, 输出为十六进制</div>
+<div> </div>
+<div>redis-check-rdb 命令可校验 rdb 文件, 早期的命令是 redis-check-dump</div>
+<div>$ redis-check-rdb dump.rdb</div>
+<div>[offset 0] Checking RDB file dump.rdb</div>
+<div>[offset 26] AUX FIELD redis-ver = '5.0.5'</div>
+<div>[offset 40] AUX FIELD redis-bits = '64'</div>
+<div>[offset 52] AUX FIELD ctime = '1570074555'</div>
+<div>[offset 67] AUX FIELD used-mem = '1051344'</div>
+<div>[offset 83] AUX FIELD aof-preamble = '0'</div>
+<div>[offset 85] Selecting DB ID 0</div>
+<div>[offset 229] Checksum OK</div>
+<div>[offset 229] \o/ RDB looks OK! \o/</div>
+<div>[info] 4 keys read</div>
+<div>[info] 1 expires</div>
+<div>[info] 0 already expired</div>
+<div> </div>
+<div>除了 RDB 全快照的方式来持久化 Redis 外，Redis 还提供了 AOF(Append Only File) 日志方式来持久化，按序记录有副作用的 Redis 操作，如 set, del, sadd 等。appendonly 打开后将不会写  rdb 文件了，save/bgsave 执行后会把原应在 rdb 文件中的内容写在 appendonly.aof 文件的前头</div>
+<div> </div>
+<div>redis.conf 中配置了 appendonly yes 就会采用 AOF 方式持久化，aof 文件默认为 appendonly.aof, 用 appendfilename 指定 aof 文件名，或者</div>
+<div>redis&gt; config set appendonly yes</div>
+<div>appendonly.aof 文件中记录了所有写操作的流水</div>
+<div> </div>
+<div>Mac OS X 用  brew install redis 命令安装了 redis 之后，配置文件在 /usr/local/etc/redis.conf. 但是直接用</div>
+<div>$ redis-server   //启动时并不会去加载 /usr/local/etc/redis.conf 文件，而需要指定配置文件</div>
+<div>$ redis-server /usr/local/etc/redis.conf      //info server 可以看到用了哪个配置文件</div>
+<div>把 redis.conf 放在当前目录用 redis-server 启动也不会加载它</div>
+<div> </div>
+<div>bgrewriteaof 文件可以重写 aof 文件，解决 aof 文件臃肿的问题，一条日志替换多条日志的效果，不用读原始 appendonly.aof 文件来重写，而是读取数据库实际的内容来重写.  appendonly.aof 文件的位置要用</div>
+<div>redis&gt; config get dir</div>
+<div>1)"dir"</div>
+<div>2)"/usr/local/var/db/redis"                         //aof 文件就是  /usr/local/var/db/redis/appendonly.aof</div>
+<div> </div>
+<div>redis-server 启动时，如果 appendonly yes 的话，并且 $(config get dir)/appendonly.aof 文件存在的话就会加载它到数据库中</div>
+<div> </div>
+<div>对 redis 5.0.5 的 bgrewriteaof 来看，直接重写了原 appendonly.aof 文件</div>
+<div>appendonly.aof 中的操作命令，如果键超过 64 个，会分成多条记录</div>
+<div> </div>
+<div>Redis 事件模型可选择用 epoll(Linux 2.6), select(Apache) 或 kqueue(FreeBSD), 尤以 epoll 效率高.</div>
+<div>Redis 2.6 serverCron 每秒运行 10 次，Redis 2.8 之后可以修改这个值 "hz 10" 表示每少 10 次</div>
+<div> </div>
+<div>Redis 的伪客户端(fd 属性为 -1)，内部用于处理来源于 AOF 文件的请求(启动时还原数据库) 和执行 Lua 脚本中包含的 Redis 命令，它是不需要套接字连接的。Lua 脚本的伪客户端在服务器启动后一直存在。AOF 文件伪客户端在服务器载入 AOF 文件后关闭。</div>
+<div> </div>
+<div>redis&gt; client list     // 可列出所有连接的客户端</div>
+<div>创建 JedisPool 时是否可以为池中的客户端加上名字呢？</div>
+<div> </div>
+<div>客户端执行 PUBSUB 和 script load 命令会设置客户端的 flags 为 REDIS_FORCE_AOF 强制写到 AOF 文件中，加载 AOF 文件时会重新向 channel 发送一次消息，执行 Lua 中的 Redis 命令时还会用 REDIS_FORCE_REPL 标志强制复制 script load 的内容复制给所有从服务器. 因此执行 Lua 中 Redis 命令时客户端标志为 REDIS_LUA_CLIENT | REDIS_FORCE_AOF | REDIS_FORCE_REPL</div>
+<div> </div>
+<div>客户端输入缓冲区最大不能超过 1G，否则服务器会关闭它。每个客户端有两个输出缓冲区，固定大小用于输出较小的回复，如 OK, 简知的字符串值，整数值，错误回复等，可变大小的缓冲区用于较大的回复。固定大小缓冲区默认大小为 16 KB，放不下就往可变大小缓冲区放.</div>
+<div> </div>
+<div>client-output-buffer-limit [normal|slave|pubsub] &lt;hard limit&gt; &lt;soft limit&gt; &lt;soft seconds&gt;</div>
+<div> </div>
+<div>客户端输出超过硬性限制或超过软性限制达规定的时间后会被关掉</div>
+<div> </div>
+<div>Redis 的复制</div>
+<div> </div>
+<div>如果分别启动两个 redis 服务器</div>
+<div> </div>
+<div>$ redis-server --port 6379</div>
+<div>$ redis-server --port 6380</div>
+<div> </div>
+<div>$ redis-cli -p 6379</div>
+<div>redis&gt; set k1 v1</div>
+<div> </div>
+<div>$ redis-cli -p 6380</div>
+<div>redis&gt; slaveof 127.0.0.1 6379</div>
+<div> </div>
+<div>那么 6380 的进程就作为了 6379 进程的从服务器，6379 上现有的内容被复制了去，而且加到 6379 上新的内容也将会被复制到  6380 上。</div>
+<div>当在 6380 上执行了 slaveof 命令后，它将成为只读的了，不能执行写命令</div>
+<div> </div>
+<div>redis&gt; slaveof no none     让当前服务器重新独出来，不再是谁的从服务器，并且恢复可写的能力.</div>
+<div>此时写入新的内容 set newkey newvalue, 再次用  slaveof 127.0.0.1 6379 加入主服务器，新的 newkey 将成为从服务器独有的内容，不会被抹除 </div>
+<div> </div>
+<div>Redis 旧版同步(slaveof) 功能的实现</div>
+<ol>
+    <li>
+<div>从服务器向主服务器发送 SYNC 命令</div>
+</li>
+    <li>
+<div>主服务器执行 BGSAVE 命令在后台生成 RDB 文件，并开启一个缓冲区记录后续写命令</div>
+</li>
+    <li>
+<div>主服务把生成的 RDB 文件发向从服务，还把缓冲区的内容发向从服务器</div>
+</li>
+</ol>
+<div> </div>
+<div>Redis 新版本(自 2.8)同步功能的实现</div>
+<div>新加了 PSYNC 命令，无须每次要求主服务器生成完整的 RDB 文件来同步，即从服务器断线重连只需从断线的时间点开始同步。缺失同步的实现类似于 Kafka 一样，从服务器维护了一个 offset, 主服务器维护一个固定长度 FIFO 队列(默认大小 1M)，如果从服务器断线重连后向主服务器报告上次的 offset 还在主服务器积压缓冲区中，则进行部分重同步(PSYNC)，否则仍然进行完整重同步(SYNC)</div>
+<div> </div>
+<div>redis&gt; info replication      显示出主从服务器相关的信息</div>
+<div>执行同步之后，主从服务器互为客户端，如命令的同步</div>
+<div> </div>
+<div>从服务器默认每秒一次向主服务器发送心跳同步命令</div>
+<div> </div>
+<div>Sentinel: 用于主服务器故障后从从服务器中重新选举新的主服务器，待原主服务器上线后将被降级为新选举新服务器的从服务器</div>
+<div> </div>
+<div>假如下面的主从服务器器关系</div>
+<div> </div>
+<div>$ redis-server --port 6379          主服务器</div>
+<div>$ redis-server --port 6380       然后 redis&gt; slaveof 127.0.0.1 6379  作为  6379  的从服务器</div>
+<div>$ redis-server --port 6381       然后 redis&gt; slaveof 127.0.0.1 6379 也作为 6379 的从服务器</div>
+<div> </div>
+<div>如果把 6379 shutdown 后将没有主服务器，单点故障，其他两个节点都无法工作(只读), 所以需要 Sentinel 来重选主服务器</div>
+<div> </div>
+<div>Sentinel 的启动</div>
+<div> </div>
+<div>$ redid-sentinel /path/to/your/sentinel.conf       // Mac 下配置参考 /usr/local/etc/redis-sentinel.conf</div>
+<div>也可以通过 redis-server /path/to/your/sentinel.conf --sentinel 命令来启动</div>
+<div> </div>
+<div>启动 Sentinel 必须指定配置文件(如监视的主服务器列表)，它本质上也是一个 Redis 服务器，但启动过程与支持的命令还是有些不同</div>
+<div>Sentinel 服务器端口默认为 26379, Sentinel 创建了两个到主服务器的异步连接 1) 向主服务器发送，接收命令, 如 publish  命令 2) 订阅主服务器的  __sentinel__:hello 频道。Sentinel 从主服务器中获得所有的从服务器，也会创建相应的两个连接到所有的从服务器</div>
+<div> </div>
+<div>Sentinel 可有多个实例，sentinel 之间投票表决主服务器是否下线，然后内部选举出领头的 Sentinel(先到先得) 来进行故障转移</div>
+<div> </div>
+<div>一个 Sentinel  的例子，这里只启动一个 Sentinel 实例, 所以 redid-sentinel.conf 配置中的投票数为 1，一个 Sentinel 实例认为主服务器有故障就是有故障</div>
+<div> </div>
+<div>reds-sentinel.conf</div>
+<div> </div>
+<div>sentinel monitor master1 localhost 6379 1</div>
+<div>sentinel down-after-milliseconds master 1 10000</div>
+<div>sentinel failover-timeout master1 60000</div>
+<div> </div>
+<div>启动 sentinel</div>
+<div>$ redis-sentinel redis-sentinel.conf</div>
+<div> </div>
+<div>$ redis-server --port 6379                      // 启动主服务器</div>
+<div>$ redis-server --port 6380     并  redis&gt; slaveof localhost 6379    // 启动从服务器, 并指定主服务器</div>
+<div>$ redis-server --port 6381     并  redis&gt; slaveof localhost 6379                  // 启动从服务器，并指定主服务器</div>
+<div> </div>
+<div>此时可以观察主服务器上的 info replication，redis-cli -p 6379</div>
+<div> </div>
+<div>127.0.0.1:6379&gt; info replication</div>
+<div># Replication</div>
+<div>role:master</div>
+<div>connected_slaves:2</div>
+<div>slave0:ip=::1,port=6380,state=online,offset=14,lag=0</div>
+<div>slave1:ip=::1,port=6381,state=online,offset=14,lag=1</div>
+<div> </div>
+<div>现在 shutdown 6379</div>
+<div>127.0.0.1:6379&gt; shutdown</div>
+<div> </div>
+<div>看 redis-sentinel 控制台的信息</div>
+<div> </div>
+<div>17470:X 07 Oct 2019 01:49:00.331 # Sentinel ID is 960ef11311c7af8587555e0a8060585bd359207d</div>
+<div>17470:X 07 Oct 2019 01:49:00.331 # +monitor master master1 ::1 6379 quorum 1</div>
+<div>17470:X 07 Oct 2019 01:49:15.614 * +slave slave [::1]:6380 ::1 6380 @ master1 ::1 6379</div>
+<div>17470:X 07 Oct 2019 01:49:25.636 * +slave slave [::1]:6381 ::1 6381 @ master1 ::1 6379</div>
+<div>17470:X 07 Oct 2019 01:49:56.320 # +sdown master master1 ::1 6379</div>
+<div>17470:X 07 Oct 2019 01:49:56.320 # +odown master master1 ::1 6379 #quorum 1/1</div>
+<div>17470:X 07 Oct 2019 01:49:56.320 # +new-epoch 6</div>
+<div>17470:X 07 Oct 2019 01:49:56.320 # +try-failover master master1 ::1 6379</div>
+<div>17470:X 07 Oct 2019 01:49:56.321 # +vote-for-leader 960ef11311c7af8587555e0a8060585bd359207d 6</div>
+<div>17470:X 07 Oct 2019 01:49:56.321 # +elected-leader master master1 ::1 6379</div>
+<div>17470:X 07 Oct 2019 01:49:56.321 # +failover-state-select-slave master master1 ::1 6379</div>
+<div>17470:X 07 Oct 2019 01:49:56.390 # +selected-slave slave [::1]:6380 ::1 6380 @ master1 ::1 6379</div>
+<div>17470:X 07 Oct 2019 01:49:56.390 * +failover-state-send-slaveof-noone slave [::1]:6380 ::1 6380 @ master1 ::1 6379</div>
+<div>17470:X 07 Oct 2019 01:49:56.481 * +failover-state-wait-promotion slave [::1]:6380 ::1 6380 @ master1 ::1 6379</div>
+<div>17470:X 07 Oct 2019 01:49:56.796 # +promoted-slave slave [::1]:6380 ::1 6380 @ master1 ::1 6379</div>
+<div>17470:X 07 Oct 2019 01:49:56.796 # +failover-state-reconf-slaves master master1 ::1 6379</div>
+<div>17470:X 07 Oct 2019 01:49:56.852 * +slave-reconf-sent slave [::1]:6381 ::1 6381 @ master1 ::1 6379</div>
+<div>17470:X 07 Oct 2019 01:49:57.805 * +slave-reconf-inprog slave [::1]:6381 ::1 6381 @ master1 ::1 6379</div>
+<div>17470:X 07 Oct 2019 01:49:57.805 * +slave-reconf-done slave [::1]:6381 ::1 6381 @ master1 ::1 6379</div>
+<div>17470:X 07 Oct 2019 01:49:57.874 # +failover-end master master1 ::1 6379</div>
+<div>17470:X 07 Oct 2019 01:49:57.874 # +switch-master master1 ::1 6379 ::1 6380</div>
+<div>17470:X 07 Oct 2019 01:49:57.874 * +slave slave [::1]:6381 ::1 6381 @ master1 ::1 6380</div>
+<div>17470:X 07 Oct 2019 01:49:57.874 * +slave slave [::1]:6379 ::1 6379 @ master1 ::1 6380</div>
+<div>17470:X 07 Oct 2019 01:50:07.903 # +sdown slave [::1]:6379 ::1 6379 @ master1 ::1 6380 </div>
+<div> </div>
+<div>6380 成为了新的主服务器，同时 redid-sentinel.conf 文件也被修改</div>
+<div> </div>
+<div>然后再启动 $ redis-server --port 6379   它将自动成为  6380 的从服务器</div>
+<div> </div>
+<div>可以测试下 AWS ElastiCache 中的 Redis 主从故障切换功能</div>
+<div> </div>
+<div>集群</div>
+<div> </div>
+<div>构建集群前每个节点需要以集群模式启动，在 redis.conf 文件中加上 </div>
+<div> </div>
+<div>cluster-enabled yes</div>
+<div> </div>
+<div>同一台机器上启动多个节点需要在不同的目录中启动(因为每个节点启动时会在当前目录下生成 node.conf 文件)</div>
+<div>创建三个目录，分别 r1, r2, r3, 里面放置含有  cluster-enabled yes 的 redis.conf 文件，三个终端分别进到 r1, r2, r3 目录执行</div>
+<div> </div>
+<div>$ redis-server redis.conf --port 6379</div>
+<div>$ redis-server redis.conf --port 6380</div>
+<div>$ redis-server redis.conf --port 6381</div>
+<div> </div>
+<div>启动了三个集群模式的节点，redis-cli -p 6379, 可用命令 cluster nodes 的节点，只有自己一个</div>
+<div> </div>
+<div>127.0.9.1:6379&gt; cluster meet 127.0.0.1 6380                   //把 6380 加入集群，cluster nodes 可看两个节点，同样的方法可加入 6381 节点到集群</div>
+<div> </div>
+<div>在集群的基础上还能为每一个集群节点增加从节点，集群节点下的主从复制，例如</div>
+<div> </div>
+<div>$redis-server --port 6382                 redis&gt; slaveof 127.0.0.1 6379   这样 6382 成了 6379 的从节点(但是 cluster 模式的主从配置不是这样的，后面会说)</div>
+<div> </div>
+<div>此时还未分配 slot, 集群还不可用，假如</div>
+<div>$ redis-cli -p 6379</div>
+<div>redis&gt; set k1 v1</div>
+<div>(error) CLUSTERDOWN The cluster is down</div>
+<div> </div>
+<div>一个集群有 16384(2 ^ 14, 16384/8 = 2048个字节的进进制位数组, 标号为 0 .. 16383) 个 slot 要分配，用命令 cluster nodes 可以看到每个集群分配到的  slot, 在每个节点上要有命令</div>
+<div>cluster adds lots &lt;slot&gt; [slot ...]   一个个  slot 的添加</div>
+<div> </div>
+<div>不过可以用 lua 脚本来分循环分配 slot, 如第一个节点</div>
+<div> </div>
+<div>127.0.0.1:6379&gt; EVAL "for i=0, 5000 do redis.call('cluster', 'addslots', i) end" 0</div>
+<div> </div>
+<div>之后用 cluster nodes 看到  127.0.0.1:6379@16379 myself,master - 0 1570508853000 1 connected 0-5000</div>
+<div>在其他两个节点上 127.0.0.1:6380&gt; EVAL "for i=5001, 10000 do redis.call('cluster', 'addslots', i) end" 0</div>
+<div>还有 10001 - 16383 未分配，只要 16384 个 slot 没有完全分配到节点上，cluster 都不可用，试图 set k1 v1 的话，出现</div>
+<div> </div>
+<div>(error) CLUSTERDOWN Hash slot not served 或 (error) CLUSTERDOWN The cluster is down</div>
+<div> </div>
+<div>只有全部的 16384 个 slot 分配出去了，cluster 才变得可用 Cluster state changed: ok，分配完后再用  cluster deletes lots 10001 删掉一个 slot 后 cluster 也可以是可用的。但是 set k1 v1 后，用  cluster keyslot k1 找到 k1 在哪个 slot，及对应的节点，在那个节点上把相应的 slot 删掉的话</div>
+<div> </div>
+<div>redis&gt; set k1 v1</div>
+<div>redis&gt; cluster keyslot k1</div>
+<div>(integer) 12706</div>
+<div>redis&gt; cluster nodes                //找到  slot 12706 在哪个节点，然后登陆该节点，作</div>
+<div>redis&gt; cluster delslots 12706   //这时候 cluster 又变成不可用 Cluster state changed: fail   --- (error) CLUSTERDOWN The cluster is down</div>
+<div>需要为  12706 找个节点分配来重新让集群活过来</div>
+<div> </div>
+<div>集群中任意一个节点都知道某个 slot 分配给了哪个节点</div>
+<div> </div>
+<div>key 不在集群中的当前节点，会有 MOVED 错误信息，无法完成该命令，需要连接到相应节点来操作</div>
+<div>127.0.0.1:6379&gt; set zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz aa</div>
+<div>(error) MOVED 16013 127.0.0.1:6381</div>
+<div> </div>
+<div>或用 -c    callback 参数完成重定向</div>
+<div>~:$ redis-cli -p 6379 -c</div>
+<div>127.0.0.1:6379&gt; set zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz aa</div>
+<div>-&gt; Redirected to slot [16013] located at 127.0.0.1:6381              //重新建立到相应节点的连接，并重发前面的命令</div>
+<div>OK</div>
+<div>127.0.0.1:6381&gt;                                   //重定向连接了</div>
+<div> </div>
+<div>命令 cluster getkeysinstot &lt;slot&gt; &lt;count&gt; 可得到某个 slot 上有哪些 key</div>
+<div> </div>
+<div>这种重定向的行为指示了应该如何为集群模式的 Redis 建立连接池. 集群中的节点只能使用 0 号数据库</div>
+<div>127.0.0.1:6380&gt; select 1</div>
+<div>(error) ERR SELECT is not allowed in cluster mode</div>
+<div> </div>
+<div>Cluster 模式下的主从复制及故障转移(无需 Sentinel 来监控节点了, 其实是集群中节点都是 Sentinel，它们之间会投票，半数表决哪个下线，决定主备倒换)，下面是一个完整的示例</div>
+<div> </div>
+<div>$ redis-server redis.conf --port 6379</div>
+<div>$ redis-server redis.conf --port 6380</div>
+<div>$ redis-server redis.conf --port 6381</div>
+<div>$ redis-server redis.conf --port 6382           // 用于作为 6379 的从节点</div>
+<div> </div>
+<div>登陆第一个节点  redis-cli -p 6379</div>
+<div>127.0.0.1:6379&gt; cluster meet 127.0.0.1 6380</div>
+<div>127.0.0.1:6379&gt; cluster meet 127.0.0.1 6381</div>
+<div>127.0.0.1:6379&gt; cluster nodes                                   //找到 6379 的 node_id</div>
+<div>然后用 cluster addslots 分以上三个节点把 0..16383 slot 瓜分干净，才能让 cluster 变得真正可用</div>
+<div>再登陆到 6382  redis-cli -p 6382</div>
+<div>127.0.0.1:6382&gt; cluster replicate &lt;6379 的node_id&gt;    // 把  6382 作为  6379 的从节点，这步会隐式的把 6382 加到集群当中</div>
+<div> </div>
+<div>与非集群的主从复制相同，此时如果 6379 挂掉了，它的从节点 6382 会自动成为主节点，并且 6379 再次启动后会作为 6382 的从节点</div>
+<div> </div>
+<div>从集群中移到节点用 cluster forget &lt;node_id&gt;</div>
+<div> </div>
+<div>发布订阅的命令有 subscribe, psubscribe, publish, 用 info stats 可以看到 channel 相关信息</div>
+<div>pubsub channels [pattern]  查看有多少 channel，psubscribe 订阅的模式不在其中</div>
+<div>pubsub numpat   返回被订阅模式的数量</div>
+<div>pubsub numsub [channel-1] [channel-2] ..  查看 channel 被多少客户端订阅了</div>
+<div> </div>
+<div>Jedis  订阅代码演示</div>
+<div> </div>
+<div>Jedis jedis1 =newJedis("127.0.0.1");</div>
+<div>newThread(() -&gt;jedis1.subscribe(newJedisPubSub() {</div>
+<div>   @Override</div>
+<div>   public voidonMessage(String channel, String message) {</div>
+<div>        System.out.println(message);</div>
+<div>        unsubscribe(channel);//收到一条消息后即退订，否则进程不会退出</div>
+<div>   }</div>
+<div>}, "<a href="http://news.it/">news.it</a>")).start();</div>
+<div> </div>
+<div>Jedis jedis2 =newJedis("127.0.0.1");</div>
+<div>jedis2.publish("<a href="http://news.it/">news.it</a>","hello");</div>
+<div> </div>
+<div>Redis 事物  -- 多个命令一一送到服务器事物队列中，然后整体执行，不被中断</div>
+<div>
+<div> </div>
+<table>
+<colgroup> 
+<col /> 
+<col /></colgroup>
+<tbody>
+<tr>
+<td style="width: 250px;">
+<div>127.0.0.1:6379&gt; flushdb</div>
+<div>OK</div>
+<div>127.0.0.1:6379&gt; multi</div>
+<div>OK</div>
+<div>127.0.0.1:6379&gt; set k1 v1</div>
+<div>QUEUED</div>
+<div>127.0.0.1:6379&gt; get k1</div>
+<div>QUEUED</div>
+<div>127.0.0.1:6379&gt; set k2 v2 error</div>
+<div>QUEUED</div>
+<div>127.0.0.1:6379&gt; set k3 v3</div>
+<div>QUEUED</div>
+<div>127.0.0.1:6379&gt; exec</div>
+<div>1) OK</div>
+<div>2) "v1"</div>
+<div>3) (error) ERR syntax error</div>
+<div>4) OK</div>
+<div>127.0.0.1:6379&gt; keys *</div>
+<div>1) "k3"</div>
+<div>2) "k1"</div>
+</td>
+<td>
+<div>清空数据据</div>
+<div> </div>
+<div>开启事物，客户端打开事特标识 REDIS_MULTI,  其后所有非 exec, discard, watch, multi 可识别命令都入队，错误命令不让入队</div>
+<div> </div>
+<div> </div>
+<div> </div>
+<div>能识别 set 命令 即使参数有错也能入队, 如果是 any abc 不能识别的命令将自动 discard 当前事物</div>
+<div> </div>
+<div> </div>
+<div>执行事物返回结果并关闭客户端的 client.flags &amp;= ~REDIS_MULTI 标识</div>
+</td>
+</tr>
+</tbody>
+</table>
+<div>watch 乐观锁 -- CAS，它控制的是让不让提交其后整个事物，所以不存在部分成功与失败的情况</div>
+</div>
+<div>
+<div> </div>
+<table>
+<colgroup> 
+<col /> 
+<col /></colgroup>
+<tbody>
+<tr>
+<td style="width: 250px;">
+<div>redis&gt; set name aaa</div>
+<div>OK</div>
+<div>redis&gt; watch name</div>
+<div>OK</div>
+<div>redis&gt; multi</div>
+<div>OK</div>
+<div>redis&gt; set k100 v200</div>
+<div>QUEUED</div>
+<div>redis&gt; set name ddd</div>
+<div>QUEUED</div>
+<div>redis&gt; exec</div>
+<div>(nil)</div>
+</td>
+<td>
+<div> </div>
+<div> </div>
+<div>在 watch 与 exec 之间假如有其他客户端改了 name 值(set name aaa 也不行), 那么 multi 中的 set name 操作将会失败，导致 exec 返回 (nil) 而不是 OK</div>
+<div> </div>
+<div>有了 watch 事物才像样，因为这条命令也会失败如果外部修改了 name</div>
+<div> </div>
+<div> </div>
+<div>有监视键被修改，服务会拒绝执行该事物，而不像前面那样边执行边看</div>
+</td>
+</tr>
+</tbody>
+</table>
+<div>Redis 事物的原子性是说 multi 与 exec 之间的命令要么全部执行，要么一个都不执行，但其中任何命令的出错都不会影响到其他命令的执行，也就是说 Redis 不支持事物回滚</div>
+</div>
+<div> </div>
+<div>Lua 脚本，见我之前博文 <a href="https://yanbin.blog/redis-builtin-lua-script/">Redis 中使用服务端 Lua 脚本</a></div>
+<div> </div>
+<div>Redis Lua 脚本中不允许创建全局变量，eval "x=10" 0 要出错，却未禁止修改全局变量，千万不要这么做，如</div>
+<div>127.0.0.1:6379&gt; eval "redis = 10; return redis" 0</div>
+<div>(integer) 10</div>
+<div>127.0.0.1:6379&gt; eval "return redis.call('get', 'key1')" 0</div>
+<div>(error) ERR Error running script (call to f_a87a401641f23ef00477e0bae5bfe8a8b363302e): @user_script:1: user_script:1: attempt to index global 'redis' (a number value)</div>
+<div> </div>
+<div>Lua 每次执行的就是 f_&lt;sha1&gt; 相就的函数，例如</div>
+<div>127.0.0.1:6379&gt; SCRIPT LOAD "return 'hello world'"</div>
+<div>"5332031c6b470dc5a0dd9b4bf2030dea6d65de91"</div>
+<div>127.0.0.1:6379&gt; eval "return f_5332031c6b470dc5a0dd9b4bf2030dea6d65de91()" 0</div>
+<div>"hello world"</div>
+<div> </div>
+<div>Lua 脚本执行有超过 lua-time-limit 的限制时间，如未有写入，可用 script kill 命令指示服务器停止脚本，否则要用 shutdown nosave 命令来停止服务器，没有持久化(RDB 或 AOF) 的，数据会全部丢失</div>
+<div> </div>
+<div>script load 在主服务器上加载的脚本会复制到从服务器。且用 eval "return 123" 在主服务器执行后的脚本也会被复制到从服务器上去(也有可能出现 NOSCRIPT 的问题)。主服务器在复制 evalsha 命令时，如果不是所有从服务器都有该 sha1 哈稀的话会转换为等价的 eval "&lt;脚本内容&gt;" 复制给从服务器</div>
+<div> </div>
+<div> sort 命令</div>
+<div>只能发起于 list(rpush), set(sadd) 或有序 set(zadd). sort 排序的各个元素如果能全部转换为 double 类型，则能简单用 sort key 命令，并且升序输出。如果不能全部转换为为 double 类型，必须指定依什么来排序，如 sort alphabet ALPHA (按字母序), sort test-result by *_num 按每个元素对应 value_num 对应的值排序。</div>
+<div> sort 的排序会依据一个与值列表同大小的参照数组来排序，如整数，浮点数的列表值本身构成的数据，有序 set 的分值数组，by 每个元素对应的数值数组。像是最终会变成类似于有序 set 那样的东西</div>
+<div>ALPHA 好像不用取分值，它还能与  BY 结合使用，sort fruits BY *-id ALPHA   因为对应的  *-id  还是字符串，所以须用 ALPHA</div>
+<div>sort ... limit offset count</div>
+<div>sort 搭配上 get 可以实现类似于 Linux 命令管道操作 sort students alpha get *-name get *-birth, 假如 students 有个值为 tom, 那就要有 tom-name 和 tom-birth 两个键的值，为每一个 student 依次返回 name 和 birthday。获得元素本身可用 get #</div>
+<div>store 能把排序的结果保存为一个列表 sort students alpha store sorted_students, 这样就不需要依次用 rpush 了, store 之前会把已有的键删除</div>
+<div>sort 命令各个参数顺序比较随意，如 sort &lt;key&gt; STORE &lt;store_key&gt; DESC BY &lt;by-pattern&gt; GET &lt;get-pattern&gt; ALPHA LIMIT &lt;offset&gt; &lt;count&gt; 也行</div>
+<div>by 或 get 中要使用 hash 的格式为  SORT mylist BY weight_*-&gt;fieldname GET object_*-&gt;fieldname</div>
+<div> </div>
+<div>位操作命令有 setbit, getbit, bitcount, bitop, 位组的字节大小由 setbit &lt;key&gt; &lt;offset&gt; &lt;value&gt; 中的 &lt;offset&gt; 来决定, 用 memory usage 来查看到位组的大小</div>
+<div> </div>
+<div>redis&gt; config get *  可列出所有配置项，与慢查询日志相关的配置项有</div>
+<div>slowlog-log-slower-than     多于多少微秒的操作会被记录下来 - 10000，   slowlog-max-len    最多记录的慢查询日志条目数 - 128</div>
+<div>redis&gt; slowlog get    列出至多 slowlog-max-len 数目的慢查询操作记录， slowlog reset 清除慢查询日志</div>
+<div> </div>
+<div>某个客户端执行命令 monitor 便能使该客户端变成一个监视器，能看到对 Redis 服务器的所有控制，太恐怖太有用了。每个客户端的命令都要发一份给监视器</div>
+</div>

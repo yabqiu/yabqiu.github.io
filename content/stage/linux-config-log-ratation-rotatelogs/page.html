@@ -1,0 +1,130 @@
+---
+title: Linux 下配置滚动日志之 rotatelogs
+url: /linux-config-log-ratation-rotatelogs/
+date: 2018-06-12T00:11:07-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Linux/Unix
+tags: 
+  - log rotation
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8854 
+wpStatus: publish
+views: 3385
+lastmod: 2018-06-12T00:25:03-05:00
+---
+
+<p>上一篇 <a href="https://yanbin.blog/linux-config-log-ratation-logrotate/">Linux 下配置滚动日志之 logrotate</a>, 介绍了定时服务 logrotate 的方式对日志进行滚动，删除旧归档。logrotate 是目前流行 Linux 发行版内置的定时服务，默认每日根据配置文件来滚动日志文件。那么它可能有一个弊端就是，如果每日增长的日志超大，同时会暴盘，那么就必须调整 logrotate 这个 cron 定时服务为每小时，或自定义的 cron 表达式来控制。</p>
+
+<p>而本文所介绍的 rotatelogs 工具(与 logrotate 名称太过相似) 是采用管道操作的方式来控制日志的滚动，可以基于实时监控的日志文件大小来滚动日志，也可以配置像 logrotate 来定时滚动日志。rotatelogs 是出自于 Apache HTTP Server 家族的，它被用于 Apache HTTP Server 的就错误日志，访问日志的滚动控制。</p>
+
+<p>类似于 rotatelogs 的工具不有一个老旧的 <a href="http://oldzipsarchive.dreamhosters.com/apache/log_rotation/cronolog_faq.htm">cronolog</a>，也是应用管道操作控制日志，它早已无人问津，最近更新在五年前，且功能很弱，只带滚动，不能清理旧归档，磁盘空间占用仍然是无上限。<!--more--></p>
+
+<h3>rotatelogs 的安装</h3><br/>
+<p>安装了 Apache 2.4 及以上的版本就已经有了 rotatelogs 命令。在 Dabian 及其衍生版上可以单独安装，命令是</p>
+
+<blockquote><br/>
+<p>sudo apt-get install apache2-utils</p>
+
+</blockquote>
+
+<p>在红帽系列 Linux 上也可以找到像 apache2-utils 的 rpm 包，但是安装它的依赖恐怕很麻烦。</p>
+
+<p>安装好后，用 <code>man rotatelogs</code> 查看帮助手册</p>
+
+<h3>rotatelogs 的功能</h3><br/>
+<p>关于 rotatelogs 的功能，可查看 <a href="https://httpd.apache.org/docs/2.4/programs/rotatelogs.html">rotatelogs - Piped logging program to rotate Apache logs</a>, 主要的功能描述如下</p>
+
+<ol>
+
+	<li>可基于时间间隔或文件心寸来滚动日志文件</li>
+
+	<li>能同时指定间隔时间与文件最大小尺寸，那么两者中任意一个条件到达了都会进行日志滚动</li>
+
+	<li>可以指定最多保留日志归档文件数目</li>
+
+	<li>归档文件可以指文件名格式，如 /var/log/errorlog.%Y-%m-%d</li>
+
+	<li>能够在发生日志滚动产生新文件后执行一条命令</li>
+
+</ol>
+
+<p>缺陷是日志归档文件不支持压缩，使用了 <code>-n</code> 来达到删除旧日志归档时，不能在文件名中使用模式(%)。</p>
+
+<h3>应用举例</h3><br/>
+<p>假设有一个持续向控制台输出 "Hello World!" 的程序</p>
+
+<pre class="lang:default decode:true">public class Test {<br/>
+    public static void main(String[] args) {<br/>
+        while(true) {<br/>
+            System.out.println("Hello World!");<br/>
+        }<br/>
+    }<br/>
+}</pre>
+
+<blockquote><br/>
+<p>$ java Test | rotatelogs -n 5 stdout.log 5M</p>
+
+</blockquote>
+
+<p>stdout.log 大小达到 5M 后滚动为 stdout.log.1，因为 -n 5 指定最多为五个文件，所以最后的日志文件只有 stdout.log, stdout.log.1, stdout.log.2, stdout.log.3 和 stdout.log.4</p>
+
+<blockquote><br/>
+<p>$ java Test | rotatelogs -n 5 stdout.log 3600</p>
+
+</blockquote>
+
+<p>每一个小时滚动一次日志，最多 5 个文件</p>
+
+<blockquote><br/>
+<p>$ java Test | rotatelogs  stdout.log.%Y-%m-%d-%H_%M_%S 5M</p>
+
+</blockquote>
+
+<p>指定文件名模式生成日志归档，文件尺寸达到 5M 滚动一次，如: stdout.log.2018-06-12-04_43_03，但不产生 stdout.log 文件。但使用了文件名模式后便不能用 -n 指定保留日志文件数目，所以会一直在产生日志归档。必须另加定时任务去清队旧的日志文件</p>
+
+<blockquote><br/>
+<p>$ java Test | rotatelogs -L stdout.log stdout.log.%Y-%m-%d 86400 20M</p>
+
+</blockquote>
+
+<p>当前正在输出的日志文件是  stdout.log，方便 <code>tail -f stdout.log</code> 查看实时日志输出。归档日志文件是 stdout.log.2018-06-12 那样的文件，每日一次日志滚动，或文件名达到上限 20 M 时。如果同一天产生的归档文件名相同则会进行覆盖</p>
+
+<blockquote><br/>
+<p>$ java Test | rotatelogs stdout.log 5M</p>
+
+</blockquote>
+
+<p>文件大小 5M 时滚动，文件名是 stdout.out.1528779417, stdout.out.1528779420, ...。没有 stdout.log 文件，并且文件数目不限制</p>
+
+<blockquote><br/>
+<p>$ java Test | rotatelogs -t stdout.log 5M</p>
+
+</blockquote>
+
+<p>日志不滚动，只会生成 stdout.log 一个文件，日志满了就清掉从来。</p>
+
+<blockquote><br/>
+<p>$ java Test | rotatelogs -L stdout.log stdout.log 5M</p>
+
+</blockquote>
+
+<p>这条命令产生的日志输出很奇怪，如下的文件</p>
+
+<blockquote><br/>
+<p>stdout.1528780849<br /><br/>
+stdout.1528780854<br /><br/>
+stdout.1528780859<br /><br/>
+stdout.log<br /><br/>
+stdout.log.1528780850<br /><br/>
+stdout.log.1528780856</p>
+
+</blockquote>
+
+<p>两套文件名，不知道 stdout.1528780849 这样的文件名从何而来，连 <code>log</code> 字样都从文件名中移除了。</p>

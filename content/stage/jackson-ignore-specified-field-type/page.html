@@ -1,0 +1,152 @@
+---
+title: Jackson 序列化忽略指定类型的属性
+url: /jackson-ignore-specified-field-type/
+date: 2018-08-06T23:52:39-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/08/json-logo.jpeg"
+categories:
+  - Java/JEE
+tags: 
+  - json
+  - jackson
+  - Avro
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8927 
+wpStatus: publish
+views: 3644
+lastmod: 2019-11-05T10:06:04-06:00
+---
+
+本文准确来讲是探讨如何用 Jackson 来序列化 Apache avro 对象，因为简单用 Jackson 来序列化 Apache avro 对象会报错。原因是序列化 <code>Schema getSchema()</code> 时会报错，后面会讲到，需要序列化时忽略该属性。那么能不能在 <code>getSchema()</code> 上加上 <code>@JsonIgnore</code> 来忽略该属性呢？原理上是通的。不过手工修改的 avsc 生成的 Java 文件随时会因为重新编译而还原，所以不太具有实际可操作性，当然通过定制编译 avsc 用的模板文件来加入 <code>@JsonIgnore</code> 是另一回事。<br/><br/>
+由于不能在要忽略的字段上添加 <code>JsonIgnore</code> 来控制，而如果我们明确了要忽略的字段类型的话，是能够定制 Jackson 的  ObjectMapper  来屏蔽某个特定的类型。来看下面序列化 Apache avro 对象的例子：<br/><br/>
+假设我们有一个 Apache 的 Schema 文件 <code>user.avsc</code>, 内容如下：<!--more--><br/><br/>
+<pre class="lang:default decode:true">{
+  "namespace": "cc.unmi.data",
+  "type": "record",
+  "name": "User",
+  "fields": [
+    {"name": "name", "type": "string"},
+    {"name": "address", "type": ["string", "null"]}
+  ]
+}
+</pre>
+<br/>
+编译用 <code>avro-tools compile schema user.avsc .</code> 生成 <code>cc.unmi.data.User.java</code> 源文件，当我们试图对类型的对象用 Jackson 进行序列化时<br/><br/>
+<pre class="lang:default decode:true ">ObjectMapper objectMapper = new ObjectMapper() ;
+User user = User.newBuilder().setName("Yanbin").setAddress("Chicago").build();
+System.out.println(objectMapper.writeValueAsString(user));</pre>
+<br/>
+收到异常(关键信息)<br/><br/>
+<blockquote>
+Caused by: org.apache.avro.AvroRuntimeException: Not a map: {"type":"record","name":"User","namespace":"cc.unmi.data","fields":[{"name":"name","type":"string"},{"name":"address","type":["string","null"]}]}<br />
+    at org.apache.avro.Schema.getValueType(Schema.java:294)<br />
+    at com.fasterxml.jackson.databind.ser.BeanPropertyWriter.serializeAsField(BeanPropertyWriter.java:664)<br />
+    at com.fasterxml.jackson.databind.ser.std.BeanSerializerBase.serializeFields(BeanSerializerBase.java:689)
+</blockquote>
+<br/>
+从上面的错误可以定位到 Jackson 的试图序列化 <code>User</code> 对象的<br/><br/>
+<pre class="lang:default decode:true ">  public org.apache.avro.Schema getSchema() { return SCHEMA$; }</pre>
+<br/>
+而 <code>org.apache.avro.Schema</code> 中的 <code>getValueType()</code> 直接抛出异常拒绝被归化<br/><br/>
+<pre class="lang:default decode:true ">  public Schema getValueType() {
+    throw new AvroRuntimeException("Not a map: "+this);
+  }</pre>
+<br/>
+因此，要实现序列化 Apache avro 对象，解决的办法有三<br/><br/>
+<ol>
+    <li>凡是 <code>org.apache.avro.Schema</code> 的属性不被序列化(Schema 输出确实用处不大)</li>
+    <li>或对于<code>org.apache.avro.Schema</code> 类型的属性定制序列化，比如输出为完整类名，或 Schema 定义的文本内容</li>
+    <li>再来一个，对 <code>SpecificRecordBase</code> 类型的 <code>schema</code> 名称的属性进行忽略(avro 类型继承自 SpecificRecordBase)</li>
+</ol>
+<br/>
+它们的实现分别如下<br/><br/>
+<h3>忽略序列化指定类型的属性</h3><br/><br/>
+先定义一个标注了 <code>@JsonIgnoreType</code> 的注解<br/><br/>
+<pre class="lang:default decode:true ">@JsonIgnoreType
+@interface IgnoreAvroSchemaField {
+}</pre>
+<br/>
+序列化 Apache avro 对象前给 ObjectMapp 加一个 mixin<br/><br/>
+<pre class="lang:default mark:2 decode:true">ObjectMapper objectMapper = new ObjectMapper() ;
+objectMapper.addMixIn(Schema.class, IgnoreAvroSchemaField.class);<br/><br/>
+User user = User.newBuilder().setName("Yanbin").setAddress("Chicago").build();
+System.out.println(objectMapper.writeValueAsString(user));</pre>
+<br/>
+有了上面高度行的代码，这儿的 Apache avro <code>User</code> 对象就能被正常序列化了，输出为<br/><br/>
+<blockquote>
+{"name":"Yanbin","address":"Chicago"}
+</blockquote>
+<br/>
+这样 <code>getSchema()</code> 返回的类型，或另何对象中有 <code>org.apache.avro.Schema</code> 类型的属性都会在序列化时忽略掉<br/><br/>
+<h3>定制 Schema 属的输出内容</h3><br/><br/>
+对于 Schema 类型的属性，除了前面采取堵的方式，还可以因利疏导，即定制 Schema 属性值的输出内容<br/><br/>
+定制化 <code>Schema</code> 序列化方式<br/><br/>
+<pre class="lang:default decode:true">class AvroSchemaSerializer extends JsonSerializer&lt;Schema&gt; {<br/><br/>
+    @Override
+    public void serialize(Schema value, JsonGenerator jgen, SerializerProvider provider) throws IOException {
+        jgen.writeString(value.getFullName()); //直接输出当前 Apache avro 对象的全限类名
+    }
+}</pre>
+<br/>
+给 ObjectMapper 加上定制的序列化器<br/><br/>
+<pre class="lang:default decode:true ">ObjectMapper objectMapper = new ObjectMapper() ;
+SimpleModule simpleModule = new SimpleModule("SimpleModule", Version.unknownVersion());
+simpleModule.addSerializer(Schema.class, new AvroSchemaSerializer());
+objectMapper.registerModule(simpleModule);<br/><br/>
+User user = User.newBuilder().setName("Yanbin").setAddress("Chicago").build();
+System.out.println(objectMapper.writeValueAsString(user));</pre>
+<br/>
+序列化后产生的输出如下<br/><br/>
+<blockquote>
+{"name":"Yanbin","address":"Chicago","schema":"cc.unmi.data.User"}
+</blockquote>
+<br/>
+如果在 <code>AvroSchemaSerializer</code> 把 <code>jgen.writeString(value.getFullName())</code> 替换如下<br/><br/>
+<pre class="lang:default decode:true ">    jgen.writeString(value.toString());</pre>
+<br/>
+并且序列化后对内容进行格式化输出<br/><br/>
+<pre class="lang:default decode:true ">    System.out.println(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(user));</pre>
+<br/>
+<blockquote>
+{<br />
+    "name" : "Yanbin",<br />
+    "address" : "Chicago",<br />
+    "schema" : "{\"type\":\"record\",\"name\":\"User\",\"namespace\":\"cc.unmi.data\",\"fields\":[{\"name\":\"name\",\"type\":\"string\"},{\"name\":\"address\",\"type\":[\"string\",\"null\"]}]}"<br />
+}
+</blockquote>
+<br/>
+如果 JSON 中仍有 <code>schema</code> 属性的话，在反序列化该属性时会出错，因为类型不一致了，解决办法是要为反序列化用的 <code>ObjectMapper</code> 设置<br/><br/>
+<pre class="lang:default decode:true  ">objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);</pre>
+<br/>
+指定特定对象的属性名进行过滤<br/><br/>
+从语义上除了 <code>Ignore</code> 外，<code>Filter</code> 也像是干这事的，可以尝试过下面的方式, 分两步走<br/><br/>
+定义一个带 <code>@JsonFilter</code> 的注解，也是不显示注解到任何类<br/><br/>
+<pre class="lang:default decode:true">@JsonFilter("filter out apache avro schema field") //字符串值要与下面 addFilter("xxx") 保持一致
+class PropertyFilterMixIn {}</pre>
+<br/>
+给 ObjectMapper 设置 filter<br/><br/>
+<pre class="lang:default decode:true">    ObjectMapper objectMapper = new ObjectMapper() ;
+    objectMapper.addMixIn(SpecificRecordBase.class, PropertyFilterMixIn.class); //对 SpecificRecordBase 类型的对象应用
+    FilterProvider filterProvider = new SimpleFilterProvider()  //对 SpecificRecordBase 类型(如 User) 的名为 "schema" 属性屏蔽
+        .addFilter("filter out apache avro schema field", SimpleBeanPropertyFilter.serializeAllExcept("schema"));
+    objectMapper.setFilterProvider(filterProvider);<br/><br/>
+    User user = User.newBuilder().setName("Yanbin").setAddress("Chicago").build();
+    System.out.println(objectMapper.writeValueAsString(user));</pre>
+<br/>
+输出效果没有意外，也能避免序列化 <code>schema</code> 属性<br/><br/>
+<blockquote>
+{"name":"Yanbin","address":"Chicago"}
+</blockquote>
+<br/>
+这最后一种方式是本篇写作行将结束时找到并验证的，所以不写出来，不进行梳理可能永远只会第一种方法。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="http://www.baeldung.com/jackson-ignore-properties-on-serialization">Jackson Ignore Properties on Marshalling</a></li>
+    <li><a href="https://stackoverflow.com/questions/13764280/how-do-i-exclude-fields-with-jackson-not-using-annotations">How do I exclude fields with Jackson not using annotations</a></li>
+</ol>

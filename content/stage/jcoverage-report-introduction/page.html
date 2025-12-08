@@ -1,0 +1,74 @@
+---
+title: 用JCoverage生成测试覆盖率报告(一 介绍)
+url: /jcoverage-report-introduction/
+date: 2006-01-03T09:45:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - JCoverage
+  - Unit Test
+  - Coverage
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 603 
+wpStatus: publish
+views: 1014
+lastmod: 2021-09-03T10:54:34-05:00
+---
+
+JCoverage不是免费的(对商业不是免费,对open source是免费的 </p>
+<br/>
+JCoverage主页:<a href="http://www.jcoverage.com">http://www.jcoverage.com</a> <br/><br/>
+JCoverage的允许需要JUnit和Log4j、bcel、jakarta-oro、getopt类库,这些类库在下载的JCoverage中都包含了,JCoverage主要也是和Ant结合在一起使用, <br/><br/>
+注意事项: <br/><br/>
+1 : 初始化是最好删除当前目录下的jcoverage.ser文件,这个文件就是测试的结果,如果其在当前目录下找到这个文件将不会进行测试,或者重新测试 <br/><br/>
+2 : 在进行instrument时,一定要保证其class是debug模式下编译的,否则将不能注入jcoverage指令到被测试类的二进制文件中,建议从新用debug模式编译一个在当前目录 <!--more--> <br/><br/>
+3 : 在进行junit时,一定要保证测试的是加入jcoverage指令的类,否则不能生成jcoverage.ser文件,当然也就不能够测试覆盖率了。这一步需要注意的是，被注入指令的测试类要早于单元测试所需的测试类装入，为了确保这一点，需要使用&lt;classpath&gt;，使注入指令的测试类位于测试类之前。 <br/><br/>
+4 : 最后生成报告,你可以选择html和xml格式,但free版只有html格式,这里有一个不是很完美的地方,如果你的资源代码是UTF-8编码的,那么生成的报告中代码注释将有一部分乱码 <br/><br/>
+5.jcoverage提供的ant任务标签有： <br/><br/>
+<span style="color: #0000ff;">-instrument</span>，在类的二进制文件中注入jcoverage指令。注意：一定是debug模式下编译的类。 <br/><br/>
+<span style="color: #0000ff;">-report</span>，产生jcoverage报告，默认格式是HTML。也可以产生XML格式方便应用客户自定义的xslt产生其他格式的报告。产生XML格式的报告： <br/><br/>
+&lt;report srcdir="${src.code}" destdir="${doc.jcoverageReport}" format="xml"&gt;<br />
+<br />
+ -&lt;merge&gt; 任务，整合多个由jcoverage产生的输出文件。整个jcoverage实际的运作过程是：首先，jcoverage给测试类注入指令产生新类，被注入指令的类在junit运行过程中产生输出文件（后缀为ser），最后根据输出文件产生报告。如果有多个输出文件， jcoverage提供了&lt;merge&gt; 来整合这些文件，最后，从整合文件中产生整体报告。用法：<br/><br/>
+<pre class="lang:default decode:true">&lt;merge&gt;
+    &lt;fileset dir="${basedir}"&gt;
+        &lt;include name="**/jcoverage.ser"/&gt;
+    &lt;/fileset&gt;
+&lt;/merge&gt;</pre>
+<br/>
+ <span style="color: #0000ff;">-&lt;check&gt;</span> 任务，检查测试是否达到设定的标准，它可以和 &lt;report&gt; 配合使用。使用例子： <br/><br/>
+例1  ：<br />
+<span style="color: #0000ff;">&lt;check branch="95" line="95"/&gt;</span>，意思是分支覆盖率需要达到95%，行覆盖率达到95%。 <br/><br/>
+例2 <br/><br/>
+<pre class="lang:default decode:true ">&lt;check branch="95" line="95"&gt;
+    &lt;regex pattern="xptoolkit.jcoverage.*" branch="85" line="95"/&gt;
+&lt;/check&gt;</pre>
+<br/>
+包名符合xptoolkit.jcoverage.*模式的分支覆盖率达到85%，行覆盖率达到95%其余的分支覆盖率需要达到95%，行覆盖率达到95%。 <br/><br/>
+6.对于那些使用了AOP（如AspectJ）技术的项目，jcoverage不能很好的应用到那些已经添加了Aspect信息的类。 <br/><br/>
+JCoverage用的Ant build文件，分写在两篇文章中，因为写在一起，这里总提未文章太长。<br />
+JCoverage的build文件上部分  JCoverage的build文件下部分<br />
+这个build文件主要是根据下载过来的JCoverage包中的一个example改写而来的，主要是事先已把需要的jar包（bcel.jar, jakarta-oro-2.0.7.jar，java-getopt-1.0.9.jar, jcoverage.jar, junit,log4j-1.2.8.jar）拷入到工程目录下的JCoverageLib中了 <br/><br/>
+Ant脚本执行结果如下： <br/><br/>
+执行到coverage target时出打印一些版权信息(因为不是彻底免费的吗!)<br />
+<span style="color: #000099;">coverage:</span><br />
+<span style="color: #0000ff;">[</span><span style="color: #000099;">report</span><span style="color: #0000ff;">] jcoverage 1.0.5 copyright (c)2003 jcoverage ltd. </span><a href="http://jcoverage.com/"><span style="color: #e61ae6;">http://jcoverage.com/</span></a><span style="color: #0000ff;"><span style="color: #e61ae6;"><br />
+</span>[</span><span style="color: #000099;">report</span><span style="color: #0000ff;">] jcoverage is licensed under the GNU General Public License<br />
+[</span><span style="color: #000099;">report</span><span style="color: #0000ff;">] jcoverage comes with ABSOLUTELY NO WARRANTY<br />
+[</span><span style="color: #000099;">report</span><span style="color: #0000ff;">] jcoverage 1.0.5 copyright (c)2003 jcoverage ltd. </span><a href="http://jcoverage.com/"><span style="color: #c211ee;">http://jcoverage.com/</span></a><span style="color: #0000ff;"><br />
+[</span><span style="color: #000099;">report</span><span style="color: #0000ff;">] jcoverage is licensed under the GNU General Public License<br />
+[</span><span style="color: #000099;">report</span><span style="color: #0000ff;">] jcoverage comes with ABSOLUTELY NO WARRANTY </span><br />
+执行后在工程目录build目录会建立以下四个目录<br />
+build/classes               所有工程类，包括产品类和测试类<br />
+build/instrumented-classes  插入jcoverage指定的产品类<br />
+build/reports               测试报告数据文件，如TEST-CatTest.xml<br />
+build/coverage              覆盖率数据文件(如coverage.xml),报告文件(一些html文件) <br/><br/>
+现在你所要关心的也就是浏览build/coverage目录下的html文件了，打开index.html就行 <br/><br/>
+下面将会有一篇文章就是上面用的build文件的内容。

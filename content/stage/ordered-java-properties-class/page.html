@@ -1,0 +1,70 @@
+---
+title: 保持顺序的 Java Properties 类
+url: /ordered-java-properties-class/
+date: 2012-12-06T23:46:36-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - properties
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5243 
+wpStatus: publish
+views: 2861
+lastmod: 2021-05-21T11:11:11-05:00
+---
+
+Java 的 Properties 加载属性文件后是无法保证输出的顺序与文件中一致的，因为 Properties 是继承自 Hashtable 的， key/value 都是直接存在 Hashtable 中的，而 Hashtable 是不保证进出顺序的。</p>
+<br/>
+总有时候会有关心顺序一致的需求，恰如有 org.apache.commons.collections.OrderdMap（其实用 LinkedHashMap 就是保证顺序） 一样，我们也想要有个 OrderdProperties。网上查了下还真有：<br/><br/>
+<a href="http://livedocs.adobe.com/jrun/4/javadocs/jrunx/util/OrderedProperties.html" target="_blank" rel="noopener">http://livedocs.adobe.com/jrun/4/javadocs/jrunx/util/OrderedProperties.html</a><br/><br/>
+<a href="http://www.openrdf.org/doc/alibaba/2.0-rc4/apidocs/org/openrdf/repository/object/composition/helpers/OrderedProperties.html" target="_blank" rel="noopener">http://www.openrdf.org/doc/alibaba/2.0-rc4/apidocs/org/openrdf/repository/object/composition/helpers/OrderedProperties.html</a><br/><br/>
+不过没找到源码，其实自己写一个 OrderedProperties  也不难，并不需要重头写起，只要继承自 Properties，覆盖原来的 put/keys,keySet,stringPropertyNames 即可，其中用一个 LinkedHashSet 来保存它的所有 key。完整代码如下：<!--more--><br/><br/>
+<pre class="lang:default decode:true">package com.mstar.investmeplugin;<br/><br/>
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.LinkedHashSet;
+import java.util.Properties;
+import java.util.Set;<br/><br/>
+/**
+ * OrderedProperties
+ * @author Unmi
+ * @date 2012-12-07
+ */
+public class OrderedProperties extends Properties {<br/><br/>
+    private static final long serialVersionUID = -4627607243846121965L;
+    
+    private final LinkedHashSet&lt;Object&gt; keys = new LinkedHashSet&lt;Object&gt;();<br/><br/>
+    public Enumeration&lt;Object&gt; keys() {
+        return Collections.&lt;Object&gt; enumeration(keys);
+    }<br/><br/>
+    public Object put(Object key, Object value) {
+        keys.add(key);
+        return super.put(key, value);
+    }<br/><br/>
+    public Set&lt;Object&gt; keySet() {
+        return keys;
+    }<br/><br/>
+    public Set&lt;String&gt; stringPropertyNames() {
+        Set&lt;String&gt; set = new LinkedHashSet&lt;String&gt;();<br/><br/>
+        for (Object key : this.keys) {
+            set.add((String) key);
+        }<br/><br/>
+        return set;
+    }
+}</pre>
+<br/>
+用法：<br/><br/>
+<pre class="brush:java ">Properties props = new OrderedProperties();
+props.load(fileInputStream);<br/><br/>
+//通过 keys(), keySet() 或 stringPropertyNames 来遍历都能保证按文件中的顺序输出</pre>
+<br/>
+一直都是 StackOverflow 威武，本文主要参考自： <a href="http://stackoverflow.com/questions/1312383/pulling-values-from-a-java-properties-file-in-order" target="_blank" rel="noopener">http://stackoverflow.com/questions/1312383/pulling-values-from-a-java-properties-file-in-order</a><br/><br/>
+再看一个在 Playframework1 中的保持顺序的 OrderSafeProperties 的实现 <a href="https://github.com/playframework/play1/blob/master/framework/src/play/utils/OrderSafeProperties.java" target="_blank" rel="noopener">https://github.com/playframework/play1/blob/master/framework/src/play/utils/OrderSafeProperties.java</a>

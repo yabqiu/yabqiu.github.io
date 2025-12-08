@@ -1,0 +1,74 @@
+---
+title: Scala 特质(trait) 的 super 方法调用是动态绑定的
+url: /scala-trait-super-dynamic-binding/
+date: 2012-09-29T09:59:10-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2012/09/scala_trait_feature.jpg"
+categories:
+  - Scala
+tags: 
+  - Scala
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4735 
+wpStatus: publish
+views: 1702
+lastmod: 2021-06-02T23:34:17-05:00
+---
+
+在 Java 或者 Scala 的类中，super.foo() 这样的方法调用是静态绑定的，也就是说当你在代码中写下 super.foo() 的时候就能明确是调用它的父类的 foo() 方法。然而，如果是在特质中写下了 super.foo() 时，它的调用是动态绑定的。调用的实现奖在每一次特质被混入到具体类的时候才被决定。</p>
+<br/>
+确切的讲，特质的 super 调用与混入的次序很重要，参照下面的例子说话：<br/><br/>
+<pre class="brush:scala">val queue = (new BasicIntQueue with Incrementing with Doubling)</pre>
+<br/>
+直截的讲就是超靠近后面的特质越优先起作用。当你调用带混入的类的方法是，最右侧特质的方法首先被调用。如果那个方法调用了 super，它调用其左侧特质的方法。可以这么认为，Doubling 的 super 指向了  Incrementing，Incrementing 的 super 指向了 BasicIntQueue。<br/><br/>
+来看个完整的实例实际体验一把，如果要帮助理解，最好应该实际运行一下这个实例<!--more--><br/><br/>
+<pre class="lang:default decode:true">import scala.collection.mutable.ArrayBuffer<br/><br/>
+/**
+ * @author Unmi
+ */
+object TestClient extends App {    
+    val queue1 = (new BasicIntQueue with Incrementing with Doubling)
+    queue1.put(2) //Doubling.put(2*2)-&gt;Incrementing.put(4+1)
+    println(queue1.get()) //result is 5
+    
+    val queue2 = (new BasicIntQueue with Doubling with Incrementing)
+    queue2.put(2) //Incrementing.put(2+1)-&gt;Doubling.put(2*3)
+    println(queue2.get()) //result is 6
+}<br/><br/>
+abstract class IntQueue {
+    def get(): Int
+    def put(x: Int)
+}<br/><br/>
+class BasicIntQueue extends IntQueue {
+    private val buf = new ArrayBuffer[Int]
+    def get() = buf.remove(0)
+    def put(x: Int) { buf += x }
+}<br/><br/>
+trait Incrementing extends IntQueue {
+    abstract override def put(x: Int) {
+        super.put(x + 1)
+    }
+}<br/><br/>
+trait Doubling extends IntQueue {
+    abstract override def put(x: Int) {
+        super.put(2 * x)
+    }
+}</pre>
+<br/>
+实例中两次声明 queue1 和 queue2 是采用了不同的顺序混入 Incrementing 和 Doubling 两个特质，执行的效果是不一样，输出分别是 5 和 6。这种对 super 的重新理解会带来冲击，同时很有可能在代码维护时调整混入的特质时引来些许的麻烦。<br/><br/>
+混入特质存在着一种线性化的次序关系，再来看一下这个线性化的例子：<br/><br/>
+<pre class="brush:scala">class Animal
+trait Furry extends Animal
+trait HasLegs extends Animal
+trait FourLegged extends HasLegs
+class Cat extends Animal with Furry with FourLegged</pre>
+<br/>
+下图是 Cat 类的继承层级和线性化次序的展示图<br/><br/>
+<a href="/wp-content/uploads/2012/09/scala_trait_super.png"><img class="aligncenter size-full wp-image-4738" title="scala_trait_super" src="/wp-content/uploads/2012/09/scala_trait_super.png" alt="" width="516" height="228" /></a><br/><br/>
+继承次序使用白色三角箭头表示，箭头指向超类，黑底箭头说明线性化次序，箭头指向 super  调用解决的方向。

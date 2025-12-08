@@ -1,0 +1,167 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第九章. 使用 Quartz 的远程方式 (第二部分)
+url: /quartz-job-scheduling-framework-9-2/
+date: 2007-11-22T10:13:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/10/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 468 
+wpStatus: publish
+views: 665
+lastmod: 2021-05-02T23:54:39-05:00
+---
+
+<strong>4. 创建 Quartz RMI 服务端</strong></p>
+<br/>
+你务必按几个步骤来配置 Quartz 来使用 RMI。其中的一些步骤会在创建 Quartz RMI 服务端用到，还有些步骤会在 Quartz 客户端连接服务端。我们先来阐述服务端的配置步骤。<br/><br/>
+<strong>·配置 Quartz RMI 服务端<br />
+</strong><br />
+第一步就是修改要部署到 Quartz RMI 服务端的 <span style="color: #800080;">quartz.properties</span> 文件。当在 Quartz 中使用 RMI，你还必须添加几个新的属性。表 9.1 包括了完整 RMI 属性列表。<!--more--><br/><br/>
+<table border="0" width="650">
+<caption><strong>表 9.1. RMI 服务端必要的属性<br />
+</strong></caption>
+<tbody>
+<tr>
+<td><strong>属性</strong></td>
+<td width="15%"><strong>默认值</strong></td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.scheduler.rmi.export</span><strong>注：</strong>假如你要使 Quartz 调度作为一个可用的 RMI 对象，这个标记必须设置为 <span style="color: #800080;">true</span></td>
+<td><span style="color: #800080;">false</span></td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.scheduler.rmi.registryHost</span><strong>注：</strong>这是运行 RMI 注册表所在的主机</td>
+<td><span style="color: #800080;">localhost</span></td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.scheduler.rmi.registryPort</span><strong>注：</strong>这是 RMI 注册服务监听所用的端口号(通常是1099)</td>
+<td><span style="color: #800080;">1099</span></td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.scheduler.rmi.createRegistry</span><strong>注：</strong>这项决定了 Quartz 是否会创建 RMI 注册服务。如果你不希望 Quartz 创建注册服务就设置为 <span style="color: #800080;">false</span> 或 <span style="color: #800080;">never</span>。如果是希望 Quartz 首先尝试去使用已存在的注册服务，如果失败的话自行创建一个就设置为 <span style="color: #800080;">true</span> 或 <span style="color: #800080;">as_needed</span>。假如注册服务创建好了，它会使用给定的 <span style="color: #800080;">registryPort</span>  绑定到所给的 <span style="color: #800080;">registryHost</span> 上。</td>
+<td><span style="color: #800080;">never</span></td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.scheduler.rmi.serverPort</span><strong>注：</strong>这是 Quartz 调度器服务所绑定的端口号，在其中监听到来的连接。默认，RMI 服务会随机选择一个端口号作为调度器绑定到 RMI 注册服务的端口。</td>
+<td><span style="color: #800080;">-1</span></td>
+</tr>
+</tbody>
+</table>
+<br/>
+<table border="0" width="70%" align="center">
+<tbody>
+<tr>
+<td>表 9.1 中的所有属性都必须加到Quartz RMI 服务端所使用的 <span style="color: #800080;">quartz.properties</span> 文件中去。虽然这些属性都有默认值的，但最好还是显式的为它们指定值，以免产生混乱。代码 9.1 是一个 Quartz RMI 服务端所用的属性文件的样例。</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<strong>代码 9.1. 用于 Quartz RMI 服务端的 quartz.properties 文件样例<br />
+</strong><br/><br/>
+<pre class="brush:c#">#==============================================================
+# Configure Main Scheduler Properties
+#==============================================================
+org.quartz.scheduler.instanceName = RMIScheduler   <br/><br/>
+#==============================================================
+# Configure RMI Properties
+#==============================================================
+org.quartz.scheduler.rmi.export = true
+org.quartz.scheduler.rmi.registryHost = localhost
+org.quartz.scheduler.rmi.registryPort = 1099
+org.quartz.scheduler.rmi.serverPort = 0
+org.quartz.scheduler.rmi.createRegistry = true  <br/><br/>
+#==============================================================
+# Configure ThreadPool
+#==============================================================
+org.quartz.threadPool.class = org.quartz.simpl.SimpleThreadPool
+org.quartz.threadPool.threadCount = 10
+org.quartz.threadPool.threadPriority = 5   <br/><br/>
+#==============================================================
+# Configure JobStore
+#==============================================================
+org.quartz.jobStore.misfireThreshold = 60000
+org.quartz.jobStore.class = org.quartz.simpl.RAMJobStore</pre>
+<br/>
+你认得代码 9.1 的 <span style="color: #800080;">quartz.properties</span> 文件的大部分设置的，这些在前面章节中讲过。我们只是往期中加了表 9.1 所列的属性。<br/><br/>
+<strong>·创建 Quartz RMI 服务端启动类</strong><br/><br/>
+为启动 Quartz RMI 服务端，你必须创建一个启动类，该类从工厂中获取到调度器实例，然后运行这个调度器。即使是不用 RMI 也需要这一步。因为我们要在这个例子中运用 RMI，所以还有一些新的步骤要做。<br/><br/>
+首先，为清晰起见，我们把 <span style="color: #800080;">quartz.properties</span> 文件更名为 <span style="color: #800080;">server.properties</span>，这时候要告诉 Quartz RMI 服务端去加载新命名的文件而不是默认的 <span style="color: #800080;">quartz.properties</span> 文件。更改文件名会让我们调试问题变得容易些。这样，我们可以确保 Quartz 加载的是正确的设置文件。<br/><br/>
+第二个改变是：我们加载了一个新的安全管理器(<span style="color: #800080;">SecurityManager</span>)，以便能够赋予 RMI 服务端必须的权限。我们在本章的前面讨论过 RMI 安全管理器(<span style="color: #800080;">RMISecurityManager</span>)。<br/><br/>
+除了这些改变，代码 9.2 中的启动类看起还是很亲切的<br/><br/>
+<strong>代码 9.2. QuartzRMIServer 可用于启动 Quartz RMI 服务</strong><br/><br/>
+<pre class="brush:java">package org.cavaness.quartzbook.chapter9;   <br/><br/>
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.util.Date;   <br/><br/>
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerFactory;
+import org.quartz.impl.StdSchedulerFactory;   <br/><br/>
+public class QuartzRMIServer {   <br/><br/>
+     public void run() throws Exception {
+          Log log = LogFactory.getLog(QuartzRMIServer.class);   <br/><br/>
+          // Use this properties file instead of quartz.properties
+          System.setProperty("org.quartz.properties",
+               "server.properties");   <br/><br/>
+          // RMI with Quartz requires a special security manager
+          if (System.getSecurityManager() == null) {
+               System.setSecurityManager(new
+                    java.rmi.RMISecurityManager());
+          }
+          // Get a reference to the Scheduler
+          Scheduler scheduler =
+               StdSchedulerFactory.getDefaultScheduler();   <br/><br/>
+          /*
+           * Due to the server.properties file, our Scheduler will
+           * be exported to RMI Registry automatically.
+           */
+          scheduler.start();   <br/><br/>
+          log.info("Quartz RMI Server started at " + new Date());
+          log.info("RMI Clients may now access it. ");   <br/><br/>
+          System.out.println("\n");
+          System.out.println(
+               "The scheduler will run until you type \"exit\"");   <br/><br/>
+          BufferedReader rdr = new BufferedReader(
+                    new InputStreamReader(System.in));   <br/><br/>
+          while (true) {
+               System.out.print("Type 'exit' to shutdown server: ");
+               if ("exit".equals(rdr.readLine())) {
+                    break;
+               }
+          }   <br/><br/>
+          log.info("Scheduler is shutting down...");
+          scheduler.shutdown(true);
+          log.info("Scheduler has been stopped.");
+     }
+     public static void main(String[] args) throws Exception {   <br/><br/>
+          QuartzRMIServer example = new QuartzRMIServer();
+          example.run();
+     }
+}</pre>
+<br/>
+在代码 9.2 中，安装了 <span style="color: #800080;">RMISecurityManager</span> 之后，通过工厂方法获得调度器实例，并调用它的 <span style="color: #800080;">start()</span> 方法。服务端是设计成在控制台运行的，因此一旦调度器启动之后，直至用户在控制台上键入 <span style="color: #800080;">exit</span> 。接着调度器被关闭也不再为远程的客户端提供服务了。<br/><br/>
+除了要使用 <span style="color: #800080;">RMISecurityManager</span>，我们注意到用不着在代码中做任何特别的事情，就能让 Quartz 调度器作为一个远程调度器来用。那些全是托 <span style="color: #800080;">server.properties</span> 文件的福所致。当调度器被创建后，假如属性文件告诉它这么做，调度器就会把自己导出并注册到 RMI 注册服务器上，并使之可被远程调用。<br/><br/>
+<strong>5. 使用 RMI 注册服务<br />
+</strong><br />
+需要运行一个 RMI 注册服务让客户端能访问到服务对象。你可以选择在命令行下使用 Java 的 <span style="color: #800080;">rmiregistry</span> 命令来运行注册服务，或者你可以允许 Quartz 自动启动注册服务。完全由你自己选择，但是，假如你没什么偏爱的话，让 Quartz 自已在需要的时候启动注册服务大概要简单些。<br/><br/>
+假如你要通过命令行启动注册服务，要确保你启动时所用的端口号要与属性文件所指定的一致。要从命令行启动，你应先进入到 <span style="color: #800080;">&lt;JAVA_HOME&gt;/bin</span> 目录下，然后键入如下命令：<br/><br/>
+<span style="color: #800080;">rmiregistry &lt;port&gt;</span><br/><br/>
+假如你不指定端口号，会使用默认的 1099。这个默认值与 Quartz 所用的默认端口是一样的。<br/><br/>
+假如你不想从命令行中运行注册服务，在你为属性 <span style="color: #800080;">org.quartz.scheduler.rmi.createRegistry</span> 设置了正确值的情况下，Quartz 会自动启动注册服务。看表 9.1，这个属性可取以下几个值：<br/><br/>
+<span style="color: #800080;">false (never)<br />
+</span><span style="color: #800080;"><span style="color: #800080;">true</span> (as_needed)<br />
+</span><span style="color: #800080;">always</span><br/><br/>
+如果你想要 Quartz 来启动注册服务，为这个属性设置 <span style="color: #800080;">true</span> 或者 <span style="color: #800080;">always</span> 即可。<br/><br/>
+[译者注] 在为“Registry”和“Registry Server” 用词选择上感觉不怎么贴切，如今都是用的“注册服务”与之对等，确也有译作注册表的，但总觉不妥，太容易与 Windows 系统注册表搞混。

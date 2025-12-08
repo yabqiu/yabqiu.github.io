@@ -1,0 +1,109 @@
+---
+title: Java 和 Scala 调用变参的方式
+url: /java-scala-call-varargs-method/
+date: 2014-07-21T00:11:24-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - Scala
+tags: 
+  - Java
+  - Scala
+  - VarArgs
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6528 
+wpStatus: publish
+views: 1105
+lastmod: 2021-09-03T18:05:54-05:00
+---
+
+Java 和 Scala 都支持变参方法, 写在最后的位置上，最基本的调用方式也都是一样的，一个个罗列过去。也可以传入数组参数，因为变参本质上就是一个数组，就是把 ... 开始位置到最后一个参数都收纳到数组中去，所以变参之所以要放在最后的位置上，且一个方法中最多只能有一个变参类型。</p>
+<br/>
+这里主要是对比 Scala 对变参方法的调用，基本调用法当然是没问题的，但是在传入数组作为变参的参数列表与 Java 相对时就稍有变化了。<br/><br/>
+另外提一下，如果想传入 List 作为变参列表，而不是整体作为变参的第一个元素就是调用集合的 toArray() 方法转换成一个数组传入。<br/><br/>
+下面看 Java 中对变参方法的调用，参数列表和数组<br/><br/>
+<pre class="lang:default decode:true ">public class JavaVarArgs {
+  public static void main(String[] args) {
+    foo("a", "b", "c");
+    foo(new String[]{"d", "e"});
+  }<br/><br/>
+  public static void foo(String...params) {
+    System.out.println(params + " : " + params.length);
+    for(String s: params) {
+      System.out.println(s);
+    }
+  }
+}</pre>
+<br/>
+<!--more-->从输出结果能够很明白的看出变参 params 实际上就是一个数组<br/><br/>
+<blockquote>
+<span style="color: #800000;">[Ljava.lang.String;@3f91beef : 3</span><br />
+<span style="color: #800000;"> a</span><br />
+<span style="color: #800000;"> b</span><br />
+<span style="color: #800000;"> c</span><br />
+<span style="color: #800000;"> [Ljava.lang.String;@1a6c5a9e : 2</span><br />
+<span style="color: #800000;"> d</span><br />
+<span style="color: #800000;"> e</span>
+</blockquote>
+<br/>
+我们知道 Scala 和 Java 之间可以互相调用，现在写一段 Scala 代码来调用 foo() 方法<br/><br/>
+<pre class="lang:default decode:true">object ScalaVarArgs {<br/><br/>
+  def main(args: Array[String]) {
+    JavaVarArgs.foo("a", "b", "c")<br/><br/>
+//    JavaVarArgs.foo(Array[String]("d", "e"))
+  }
+}</pre>
+<br/>
+JavaVarArgs.foo("a", "b", "c") 调用没问题<br/><br/>
+而 JavaVarArgs.foo(Array[String]("d", "e")) 会有编译问题<br/><br/>
+<span style="color: #800000;">Type mismatch: expected String, actual Array[String]</span><br/><br/>
+Java 在调用变参方法时可以直接传入相应类型的数组，而 Scala 确不允许这么做了，因它试图把 Array[String] 整体作为一个元素传递给 foo() 方法，而 foo() 要求的元素类型是字符串，所以编译不过。<br/><br/>
+而 Scala 这时该如何使得与 Java 调用变参方法时的行为一致呢，那就是在调用时再附加说明：是要把数组中的元素逐个传递级变参，写法<br/><br/>
+<pre class="lang:default decode:true">JavaVarArgs.foo(Array[String]("d", "e") :_*)</pre>
+<br/>
+这样的调用输出就是<br/><br/>
+<blockquote>
+<span style="color: #800000;">[Ljava.lang.String;@7a718e31 : 2</span><br />
+<span style="color: #800000;"> d</span><br />
+<span style="color: #800000;"> e</span>
+</blockquote>
+<br/>
+如果从上面的例子说来，我们的运气还不错，因为编译器告诉了你出现了什么问题。最麻烦的问题总是在能编译，但运行时诡异的情况。<br/><br/>
+因为在我本人实际中遭遇到的情形是变参类型是 Object 的方法，形如<br/><br/>
+<pre class="lang:default decode:true">public static void foo(Object...params) {
+  System.out.println(params + " : " + params.length);
+  for(Object o: params) {
+      System.out.println(o);
+  }
+}</pre>
+<br/>
+上面把参数改为 Object...params, 不会改变 Java 传数组调用它的行为，但却增加了 Scala 调用它时的排错难度。<br/><br/>
+在 Scala 中使用  foo(Array[String]("d", "e") 调用并没有编译错误，加入上面的调试代码才发现，不管传入多大的数组，总是输出像<br/><br/>
+<blockquote>
+<span style="color: #800000;">[Ljava.lang.Object;@7814d044 : 1</span><br />
+<span style="color: #800000;">[Ljava.lang.String;@ea25c1</span>
+</blockquote>
+<br/>
+说方法只接收到了一个元素，类型被识别为形参的类型，不过进一步遍历变参，发现第一个元素是一个字符串数组，所以 Scala 把 Array[String]("d", "e") 整体作为 params 的第一个元素传给了 foo() 方法。写成<br/><br/>
+<blockquote>
+<span style="color: #800000;">foo(Array[String]("d", "e") : _*)</span>
+</blockquote>
+<br/>
+是为了把数组拆散了传给 foo() 方法。<br/><br/>
+起初以为是 Scala 调用 Java 的变参方法需要这么做，后来重新用 Scala 实现下变参方法<br/><br/>
+<pre class="lang:default decode:true">def foo(params: AnyRef*) {
+  println(params + " : " + params.length)
+  for (s &lt;- params) {
+    println(s)
+  }
+}</pre>
+<br/>
+用 Scala 代码来调用它，传入数组，如果不想整体作为一个元素时也必须加上 <span style="color: #800000;">: _*</span> 参数说明，同样的：<br/><br/>
+<span style="color: #800000;">foo(Array[String]("d", "e") :_*)</span><br/><br/>
+在写这篇之前，我所认定的这是 Scala 调用变参方法的一个缺陷，<span style="color: #800000;">: _*</span> 似乎是一种默认行为，现在认为这恰恰是 Scala 的一个灵活性所在。Scala 提供了两种方式来传递数组给变参，而为何 Java 不让数组整体作为变参的一个元素呢，不过 Scala 放开这一特性，当变参为 Object... params 确实放大了 Bug 的出现机率。

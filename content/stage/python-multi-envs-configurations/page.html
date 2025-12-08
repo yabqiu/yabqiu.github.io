@@ -1,0 +1,365 @@
+---
+title: Python 基于多环境的配置方式
+url: /python-multi-envs-configurations/
+date: 2023-01-13T09:28:21-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - .env
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12901 
+wpStatus: publish
+views: 2226
+lastmod: 2023-01-13T09:29:00-06:00
+---
+
+部署到不同环境的应用会使用到各自的配置，如 Dev, QA, Stg, Prod 有自己的数据库等资源。Spring Boot 可采用 Profile 对应不同的环境，不同 Profile 选择自己的配置文件 <code>application-${profile}.properties</code>。本人还是偏爱在同一个文件中分组配置，容易查错与编辑，类如在 application.properties 文件中以下面的方式</p>
+<br/>
+<blockquote>
+db.host=aaa<br />
+%dev.db.host=bbb<br />
+%prod.db.host=ccc 
+</blockquote>
+<br/>
+那么在 Python 的项目中应该如何针对不同环境进行配置呢？大概有以下几种<br/><br/>
+<ol>
+    <li>不同环境的 Config 类</li>
+    <li>YAML 文件</li>
+    <li>TOML 文件</li>
+    <li>JSON 文件</li>
+    <li>INI 文件</li>
+    <li>dotenv(.env) 文件</li>
+</ol>
+<br/>
+第一种方式是本人推荐的，其他的方式只是在不同格式的配置文件中，按环境组织不同的配置值，其他方式的不同配置读入内存中基本是体现为字典变量。在 Python 配置中要支持像配置的 placeholder(像 ${host} 还需自己实现。<!--more--><br/><br/>
+<h3>不同环境的 Config 类</h3><br/><br/>
+在同一个文件中配置，方便用点号引用<br/><br/>
+<pre class="lang:default decode:true">import os<br/><br/>
+class Config:
+    DB_HOST = "qa.example.com"
+    DB_USER = "sa"<br/><br/>
+class DevConfig(Config):
+    DB_HOST = "dev.example.com"<br/><br/>
+class QAConfig(Config):
+    pass<br/><br/>
+class ProdConfig(Config):
+    DB_HOST = "prod.example.com"<br/><br/>
+mapping = {
+    'dev': DevConfig,
+    'qa': QAConfig,
+    'prod': ProdConfig
+}<br/><br/>
+APP_ENV = os.environ.get('APP_ENV', 'dev').lower()
+config = mapping[APP_ENV]()</pre>
+<br/>
+使用<br/><br/>
+<pre class="lang:default decode:true">from config import config<br/><br/>
+print(config.DB_HOST)</pre>
+<br/>
+配置环境变量 <code>APP_ENV</code> 为 <code>dev</code>, <code>qa</code>, 或 <code>prod</code> 会输出不同的 DB_HOST 值<br/><br/>
+<h3>YAML 文件</h3><br/><br/>
+需安装依赖 pyyaml<br/><br/>
+<blockquote>
+pip install pyyaml
+</blockquote>
+<br/>
+config.yml 文件配置<br/><br/>
+<pre class="lang:default decode:true">default:
+  db_host: qa.example.com<br/><br/>
+dev:
+  db_host: dev.example.com<br/><br/>
+qa:<br/><br/>
+prod:
+  db_host: prod.example.com </pre>
+<br/>
+使用<br/><br/>
+<pre class="lang:default decode:true ">import yaml
+from yaml import Loader<br/><br/>
+with open("config.yml") as ymlfile:
+    cfg = yaml.load(ymlfile, Loader)<br/><br/>
+print(type(cfg))
+print(cfg)</pre>
+<br/>
+cfg 是一个字典，所以上面的输出为<br/><br/>
+<blockquote>
+&lt;class 'dict'&gt;<br />
+{'default': {'db_host': 'qa.example.com'}, 'dev': {'db_host': 'dev.example.com'}, 'qa': None, 'prod': {'db_host': 'prod.example.com'}}
+</blockquote>
+<br/>
+如果结合环境变量 APP_ENV 从 cfg 中获取配置值<br/><br/>
+<pre class="lang:default decode:true">import os<br/><br/>
+APP_ENV = os.environ.get('APP_ENV', 'dev').lower()
+print(cfg.get(APP_ENV, "default")["db_host"])</pre>
+<br/>
+每次取值有些麻烦, 更高级一点的玩法是让 YAML 序列化为一个自定义对象，然后在自定义类中做文章，如新的 config.yml 配置中要告诉对应的类名<br/><br/>
+<pre class="lang:default decode:true ">--- !Config<br/><br/>
+default:
+  db_host: qa.example.com<br/><br/>
+dev:
+  db_host: dev.example.com<br/><br/>
+qa:<br/><br/>
+prod:
+  db_host: prod.example.com</pre>
+<br/>
+然后定义 Config 类，并使用相应的配置项<br/><br/>
+<pre class="lang:default decode:true">import yaml
+from yaml import Loader
+import os<br/><br/>
+APP_ENV = os.environ.get('APP_ENV', 'dev').lower()<br/><br/>
+class Config(yaml.YAMLObject):
+    yaml_tag = u'!Config'<br/><br/>
+    def __int__(self, default, dev, qa, prod):
+        self.default = default
+        self.dev = dev
+        self.qa = qa
+        self.prod = prod<br/><br/>
+    def __getitem__(self, item):
+        env_conf = getattr(self, APP_ENV) if hasattr(self, APP_ENV) else self.default
+        env_conf = env_conf if env_conf else {}
+        return env_conf[item] if item in env_conf else self.default[item]<br/><br/>
+
+with open("config.yml") as ymlfile:
+    cfg = yaml.load(ymlfile, Loader)<br/><br/>
+print(type(cfg))<br/><br/>
+print(cfg["db_host"])</pre>
+<br/>
+上面的代码输出<br/><br/>
+<blockquote>
+&lt;class '__main__.Config'&gt;<br />
+dev.example.com
+</blockquote>
+<br/>
+ 再改变 APP_ENV 环境变量为 qa 和 prod 时对应的 <code>cfg["db_host"]</code> 的值分别为<br/><br/>
+<blockquote>
+qa.example.com<br />
+prod.example.com
+</blockquote>
+<br/>
+<h3>TOML 文件</h3><br/><br/>
+<a href="https://toml.io">TOML</a>(Tom's Obvious Minimal Language)，初看它的格式像 ini 文件，其实它对 ini 格式强悍许多，支持丰富的数据类型，如布尔型，整数，浮点数，时间，日期，列表和字典等，下面是官方的一个配置样例<br/><br/>
+<pre class="lang:default decode:true "># This is a TOML document<br/><br/>
+title = "TOML Example"<br/><br/>
+[owner]
+name = "Tom Preston-Werner"
+dob = 1979-05-27T07:32:00-08:00<br/><br/>
+[database]
+enabled = true
+ports = [ 8000, 8001, 8002 ]
+data = [ ["delta", "phi"], [3.14] ]
+temp_targets = { cpu = 79.5, case = 72.0 }<br/><br/>
+[servers]<br/><br/>
+[servers.alpha]
+ip = "10.0.0.1"
+role = "frontend"<br/><br/>
+[servers.beta]
+ip = "10.0.0.2"
+role = "backend"</pre>
+<br/>
+Python 的项目管理工具 Poetry 就是用 pyproject.toml 文件来管理依赖配置的。<br/><br/>
+使用 toml 一般安装<br/><br/>
+<blockquote>
+pip install toml
+</blockquote>
+<br/>
+把前面的 config.yml 文件转换为 config.toml 文件，内容如下<br/><br/>
+<pre class="lang:default decode:true ">[default]
+db_host="qa.example.com"<br/><br/>
+[dev]
+db_host= "dev.example.com"<br/><br/>
+[qa]<br/><br/>
+[prod]
+db_host="prod.example.com"
+</pre>
+<br/>
+加载该 toml 文件<br/><br/>
+<pre class="lang:default decode:true ">import toml<br/><br/>
+with open('config.toml') as tomlfile:
+    cfg = toml.load(tomlfile)<br/><br/>
+print(type(cfg))
+print(cfg)</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+&lt;class 'dict'&gt;<br />
+{'default': {'db_host': 'qa.example.com'}, 'dev': {'db_host': 'dev.example.com'}, 'qa': {}, 'prod': {'db_host': 'prod.example.com'}}
+</blockquote>
+<br/>
+要取随 APP_ENV 环境而变的 db_host 的话，代码可实现为<br/><br/>
+<pre class="lang:default decode:true">import toml
+import os<br/><br/>
+APP_ENV = os.environ.get('APP_ENV', 'dev').lower()<br/><br/>
+class Config:
+    def __init__(self, default, dev, qa, prod):
+        self.default = default
+        self.dev = dev
+        self.qa = qa
+        self.prod = prod<br/><br/>
+    def __getitem__(self, item):
+        env_conf = getattr(self, APP_ENV) if hasattr(self, APP_ENV) else self.default
+        env_conf = env_conf if env_conf else {}
+        return env_conf[item] if item in env_conf else self.default[item]<br/><br/>
+
+with open('config.toml') as tomlfile:
+    cfg = Config(**toml.load(tomlfile))<br/><br/>
+print(cfg['db_host'])</pre>
+<br/>
+变更 APP_ENV 环境变量的值为 qa, prod, 会输出以下相应的值<br/><br/>
+<blockquote>
+qa.example.com<br />
+prod.example.com
+</blockquote>
+<br/>
+Config 类的 <code>__init__</code> 和 <code>__getitem__</code> 方法实现与前面的完全一样。<br/><br/>
+TOML 配置文件的表现力很丰富，更强大的功能还有待于日后去发掘。<br/><br/>
+<h3>JSON 文件</h3><br/><br/>
+上面相应的配置文件变成 config.json 就是<br/><br/>
+<pre class="lang:default decode:true">{
+  "default": {
+    "db_host": "qa.example.com"
+  },
+  "dev": {
+    "db_host": "dev.example.com"
+  },
+  "qa": {},
+  "prod": {
+    "db_host": "prod.example.com"
+  }
+}
+</pre>
+<br/>
+使用代码<br/><br/>
+<pre class="lang:default decode:true">import json
+import os<br/><br/>
+with open("config.json") as jsonfile:
+    cfg = json.load(jsonfile)<br/><br/>
+print(type(cfg))
+print(cfg)<br/><br/>
+APP_ENV = os.environ.get('APP_ENV', 'dev').lower()
+env_conf = cfg.get(APP_ENV)
+env_conf = env_conf if env_conf else cfg['default']
+print(env_conf['db_host'])</pre>
+<br/>
+输出<br/><br/>
+<blockquote>
+&lt;class 'dict'&gt;<br />
+{'default': {'db_host': 'qa.example.com'}, 'dev': {'db_host': 'dev.example.com'}, 'qa': {}, 'prod': {'db_host': 'prod.example.com'}}<br />
+qa.example.com
+</blockquote>
+<br/>
+切换 APP_ENV 环境变量测试不同环境下的 db_host 值<br/><br/>
+json.load() 方法也能由 JSON 格式数据反序列化为一个自定义的对象，直接用 object_hook 参数把有嵌套的 JSON 转换成一个自定义对象可就不那么容易了。但通过自定义的 <code>__init__</code> 方法就和前面 YAML 的例子差不多了<br/><br/>
+<pre class="lang:default decode:true">import json<br/><br/>
+class Config:
+    # 实现代码与前方 TOML 中的 Config 完全相同，故省略<br/><br/>
+with open("config.json") as jsonfile:
+    cfg = Config(**json.load(jsonfile))<br/><br/>
+
+print(cfg["db_host"])</pre>
+<br/>
+或者整体 JSON 对象可转换为一个 SimpleNamespace<br/><br/>
+<pre class="lang:default decode:true ">from types import SimpleNamespace<br/><br/>
+with open("config.json") as jsonfile:
+    namespace = json.load(jsonfile, object_hook=lambda d: SimpleNamespace(**d))
+    # 再把 namespace 转换为 Config 对象</pre>
+<br/>
+<h3>INI 文件</h3><br/><br/>
+ini 文件以前广泛应用在 Windows 中作为配置文件的格式，Python 也内置了对它的支持，格式上有点像 TOML 但它不支持嵌套类型。这里只提下 INI 文件的简单读取<br/><br/>
+config.ini<br/><br/>
+<pre class="lang:default decode:true">[default]
+db_host=qa.example.com<br/><br/>
+[dev]
+db_host=dev.example.com<br/><br/>
+[qa]<br/><br/>
+[prod]
+db_host=prod.example.com
+</pre>
+<br/>
+使用<br/><br/>
+<pre class="lang:default decode:true ">import configparser<br/><br/>
+cfg = configparser.ConfigParser()
+cfg.read("config.ini")
+print(type(cfg))
+host = cfg['dev']['db_host']
+print(host)</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+&lt;class 'configparser.ConfigParser'&gt;<br />
+dev.example.com
+</blockquote>
+<br/>
+由于只有一个层次的 Section 系列，不易于扩展，实际中应用较为狭窄，不作细究。<br/><br/>
+<h3>dotenv(.env) 文件</h3><br/><br/>
+基本思路是把 <code>.env</code> 文件中的配置转换为环境变量，可由 os.environ().get(key) 获得，相当于 Linux 下的环境配置 env.sh<br/><br/>
+<pre class="lang:default decode:true">export DOMAIN=example.org
+export ADMIN_EMAIL=admin@${DOMAIN}</pre>
+<br/>
+然后<br/><br/>
+<blockquote>
+source env.sh
+</blockquote>
+<br/>
+相应的 DOMAIN 和 ADMIN_EMAIL 就出现在了 <code>env</code> 列出的环境变量中<br/><br/>
+Python 的 dotenv 有两个实现库<br/><br/>
+第一个是 <a href="https://pypi.org/project/python-dotenv/">python-dotenv</a>, 安装<br/><br/>
+<blockquote>
+pip install python-dotenv
+</blockquote>
+<br/>
+我们在当前目录中创建一个 <code>.env</code> 文件，其中内容为<br/><br/>
+<pre class="lang:default decode:true "># Development settings
+DOMAIN=example.org
+ADMIN_EMAIL=admin@${DOMAIN}
+ROOT_URL=${DOMAIN}/app</pre>
+<br/>
+使用方式<br/><br/>
+<pre class="lang:default decode:true">from dotenv import load_dotenv
+import os<br/><br/>
+load_dotenv()<br/><br/>
+print(os.environ.get("DOMAIN"))
+print(os.environ.get("ADMIN_EMAIL"))
+</pre>
+<br/>
+输出<br/><br/>
+<blockquote>
+example.org<br />
+admin@example.org
+</blockquote>
+<br/>
+<code>load_dotenv()</code> 可以指定不同的文件, 例如采用基于环境区分的文件命名<br/><br/>
+<ul>
+    <li>.env      -- 默认的配置</li>
+    <li>.env_dev</li>
+    <li>.env_qa</li>
+    <li>.env_prod</li>
+</ul><br/><br/>
+加载文件<br/><br/>
+<pre class="lang:default decode:true">from dotenv import load_dotenv
+import os<br/><br/>
+load_dotenv('.env')           # 先加载默认的 .env 文件<br/><br/>
+APP_ENV = os.environ.get('APP_ENV', 'dev').lower()
+load_dotenv(f'.env_{APP_ENV}', override=True) # 再加载环境相关的，<br/><br/>
+print(os.environ)</pre>
+<br/>
+先加载默认的 .env, 再加载环境相关的 .env_dev，这样 .env_dev 中的相同属性会覆盖 .env 中的配置。<br/><br/>
+还有一个 django 的实现 <code>django-environ</code>, 但其中夹带了太多的私货, 如 environ.Env() 中有一些特定的配置项(db_url, cache_url 等)，严格来说，它算不上通用 dotenv 实现。它加载 .env 文件时的行为与 python-dotenv 类似，如<br/><br/>
+<pre class="lang:default decode:true">import environ
+import os<br/><br/>
+env = environ.Env()<br/><br/>
+env.read_env()  # 加载 .env 文件
+APP_ENV = os.environ.get('APP_ENV', 'dev').lower()<br/><br/>
+env.read_env(f'.env_{APP_ENV}', overwrite=True)  # 加载环境相关的，如 .env_qa<br/><br/>
+print(os.environ)
+print(os.environ["ADMIN_EMAIL"])
+print(env.str("ADMIN_EMAIL"))</pre>
+<br/>
+django-environ 中配置的值可以有类型，如 str, bool, int 等。它也像 python-dotenv 一样把 .env 文件中配置加到 os.environ 中去，因此既可通过 os.environ 来获取 .env 文件中配置的值，也能用它自己专有的 environ.Env() 的方式取得值。<br/><br/>
+另外，比起 python-dotenv 弱的地方就是它不支持 placeholder 的解析，.env 配置中的 ${DOMAIN} 将会被原样输出。

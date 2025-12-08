@@ -1,0 +1,184 @@
+---
+title: Python async, await 的理解与使用
+url: /python-async-await-keywords/
+date: 2021-12-17T14:37:01-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+categories:
+  - Python
+tags: 
+  - coroutine
+  - async
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12042 
+wpStatus: publish
+views: 2597
+lastmod: 2021-12-17T15:21:47-06:00
+---
+
+关于 Python 中 async, await 关键字的一些知识在去年的一篇 <a href="https://yanbin.blog/how-flask-work-with-asyncio/">探索 Flask 对 asyncio 的支持</a> 有讲到，一直没在实际上用过它们，所以基本上也就忘干净了。随着 <a href="https://flask.palletsprojects.com/en/2.0.x/">Flask</a> 2 加入了 async 的特性，以及 FastAPI 从一开始支持 async, 又觉得有必要重新温习一下 Python 中如何使用 async, await 关键字了。<br/><br/>
+注：由于 Flask 支持了 async, 号称 async 化 Flask 的  <a href="https://pgjones.gitlab.io/quart/">Quart</a> 项目开始变得无足轻重了。<br/><br/>
+本文主要的学习材料是在 YouTube 上的一个视频 <a href="https://www.youtube.com/watch?v=Bm96RqNGbGo">Fear and Awaiting in Async (Screencast)</a>, 其中用 Python REPL 以 Live 的形式展示，对 async, await 关键字循序渐进的讲解。<br/><br/>
+如今不少语言都支持 async, await 关键字，如 C#, JavaScript, Kotlin, Rust 等，还有今天的主角 Python。而 Java 仍然很重视函数返回值的意义，未支持 async, 只能显式的返回 Future/CompletableFuture, 而且自己控制如何在线程池中执行。<!--more--><br/><br/>
+这又来到了一个叫做纤程的概念，它隐藏在 Python 的 async, await 背后，Go 语言对纤程的支持就更简单了, <code>go foo()</code> 就是了。<br/><br/>
+<h3>async 关键字的函数</h3><br/><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; def greeting(name):
+... return 'Hello ' + name
+...
+>&gt;&gt; greeting('Blog')
+Hello Blog</pre>
+<br/>
+调用后，函数立即执行<br/><br/>
+对于一个普通的没有 async 关键字的函数，调用它直接得到它的返回值，如果给它加上 <code>async</code> 关键字会怎么样呢？<br/><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; async def greeting(name):
+...     print('called gretting function')
+...     return 'Hello ' + name
+...
+>&gt;&gt; greeting('Blog')
+&lt;coroutine object greeting at 0x10dc8ece0&gt;</pre>
+<br/>
+得到的是一个 coroutine 对象，函数没有立即执行。它有点像是其他语言的 Promise 或 Future，下一步需要对兑现它，在 Python 中要去兑现一个 coroutine 可调用它的 send() 方法<br/><br/>
+<pre class="lang:default mark:3,7 decode:true">&gt;&gt;&gt; g = greeting('Blog')
+>&gt;&gt; g.send(None)
+called gretting function
+Traceback (most recent call last):
+  File "&lt;input&gt;", line 1, in &lt;module&gt;
+    g.send(None)
+StopIteration: Hello Blog</pre>
+<br/>
+coroutine.send(None) 触发了它的执行，同时注意到函数抛出了一个异常 StopIteration(Exception), 该异常的 value 就是 async 函数的返回值，所以也就可以定义一个 <code>run()</code> 函数来执行 async 函数<br/><br/>
+<pre class="lang:default decode:true ">&gt;&gt;&gt; def run(coro):
+...     try:
+...         coro.send(None)
+...     except StopIteration as e:
+...         return e.value
+...
+...
+>&gt;&gt; run(greeting('Blog'))
+called gretting function
+'Hello Blog'</pre>
+<br/>
+这就要问，加没有 <code>async</code> 有什么区别呢？我们先从字节码来对比以下两个方法的不同<br/><br/>
+<ol>
+    <li>def foo()</li>
+    <li>async def foo()</li>
+</ol>
+<br/>
+<pre class="lang:default mark:11 decode:true ">&gt;&gt;&gt; def foo():
+...     pass
+...
+>&gt;&gt; dis.dis(foo)
+  2           0 LOAD_CONST               0 (None)
+              2 RETURN_VALUE
+>&gt;&gt; async def foo():
+...     pass
+...
+>&gt;&gt; dis.dis(foo)
+              0 GEN_START                1<br/><br/>
+  2           2 LOAD_CONST               0 (None)
+              4 RETURN_VALUE</pre>
+<br/>
+唯一的不同是加了 <code>async</code> 关键字的函数第一条指令是 <code>GEN_START</code>，开始一个 Generator。<br/><br/>
+如果不想声明这个 run() 函数，也可以直接使用  asyncio 提供的  run 函数<br/><br/>
+<pre class="lang:default decode:true ">&gt;&gt;&gt; import asyncio
+>&gt;&gt; asyncio.run(greeting('Blog'))
+'Hello Blog'</pre>
+<br/>
+asyncio.run() 实际是用 event_loop() 来执行 coroutine 的。<br/><br/>
+<h3>await, async 函数调用另一个 async 函数</h3><br/><br/>
+明白了 <code>async</code> 函数返回的是一个  coroutine 对象后，这就能指导我们如何去调一个 async 函数，特别是由一个 async 函数调用另一个 async 函数<br/><br/>
+如果一个普通函数调用 async 函数，显然只会得到一个 coroutine 对象<br/><br/>
+<pre class="lang:default mark:9 decode:true">&gt;&gt;&gt; async def greeting(name):
+...     return 'Hello ' + name
+...
+>&gt;&gt; def main():
+...     print(greeting('Blog'))
+...
+...
+>&gt;&gt; main()
+&lt;coroutine object greeting at 0x10ce37df0&gt;
+&lt;bpython-input-9&gt;:2: RuntimeWarning: coroutine 'greeting' was never awaited
+  print(greeting('Blog'))
+RuntimeWarning: Enable tracemalloc to get the object allocation traceback</pre>
+<br/>
+并且 Python 解释器会发出警告说 coroutine was never awaited, 因为如果没有 await 的话，对 greeting('Blog') 的调用永远得不到执行，也就失去的调用的必要性。<br/><br/>
+如果由一个 async 函数按传统方式来调用另一个 async 函数会怎么样呢？<br/><br/>
+<pre class="lang:default mark:6,9 decode:true ">&gt;&gt;&gt; async def main():
+...     print(greeting('Blog'))
+...
+...
+>&gt;&gt; main()
+&lt;coroutine object main at 0x10ce37840&gt;
+>&gt;&gt;
+>&gt;&gt; run(main())
+&lt;coroutine object greeting at 0x10cf58120&gt;
+&lt;bpython-input-14&gt;:2: RuntimeWarning: coroutine 'greeting' was never awaited
+  print(greeting('Blog'))
+RuntimeWarning: Enable tracemalloc to get the object allocation traceback</pre>
+<br/>
+没什么意外，<code>main()</code> 返回一个 coroutine, 其他什么也没发生。如果试图去兑现 main() 调用，相当于是普通函数调用了一个  async 函数。<br/><br/>
+这时就引出 <code>await</code> 关键字了，当一个 async 函数中调用另一个 async 函数时，必须在调用前加上 await 关键字，除非你就想得到一个 coroutine  对象。<br/><br/>
+<pre class="lang:default decode:true ">&gt;&gt;&gt; async def main():
+...     print(await greeting('Blog'))
+...
+...
+>&gt;&gt; run(main())
+Hello Blog</pre>
+<br/>
+总结起来就是：由 async 函数发起的对其他 async 函数的调用时，都必须加上 await 关键时。这里 greeting() 也是一个 async 函数，如果它又调用其他的 async 函数，需应用同样的规则，相当于一个 await 链。当对入口的 async 函数发起执行(兑现)时，将会发现链式反应。<br/><br/>
+什么时候不能用 await 呢？<br/><br/>
+在 Python REPL 中对 async 函数不能用 await<br/><br/>
+<pre class="lang:default decode:true ">&gt;&gt;&gt; await main()
+  File "&lt;bpython-input-33&gt;", line 1
+SyntaxError: 'await' outside function</pre>
+<br/>
+普通函数对 async 函数的调用不能 await<br/><br/>
+<pre class="lang:default decode:true ">&gt;&gt;&gt; def foo():
+...     await greeting('Blog')
+  File "&lt;bpython-input-35&gt;", line 2
+SyntaxError: 'await' outside async function</pre>
+<br/>
+上面那两种是一样的情况，因 Python REPL 就是用一个普通函数作为入口的<br/><br/>
+对一个普通函数用 await 语法上不报错，但执行会有问题<br/><br/>
+<pre class="lang:default decode:true ">&gt;&gt;&gt; async def foo():
+...     print(await len('abc'))
+...
+...
+>&gt;&gt; run(foo())
+Traceback (most recent call last):
+  File "&lt;input&gt;", line 1, in &lt;module&gt;
+    run(foo())
+  File "&lt;input&gt;", line 3, in run
+    coro.send(None)
+  File "&lt;input&gt;", line 2, in foo
+    print(await len('abc'))
+TypeError: object int can't be used in 'await' expression</pre>
+<br/>
+能不用用 await<br/><br/>
+<ol>
+    <li>针对 coroutine 使用 await, 也就是调用 async 修饰的函数用 await</li>
+    <li>发起调用的函数必须为一个 async 函数，或 coroutine.send(), 或者 asyncio 的 event loop</li>
+    <li>随着 Python 版本的演进，更多的地方可以用 await，只要跟着感觉走，哪里不能用 await 错了次就知道了</li>
+</ol>
+<br/>
+<h3>asyncio 调用 async 函数</h3><br/><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; async def greeting(name):
+...     return 'Hello ' + name
+...
+>&gt;&gt; import asyncio
+>&gt;&gt; event_loop = asyncio.new_event_loop()
+>&gt;&gt;
+>&gt;&gt; event_loop.run_until_complete(greeting('Blog'))
+'Hello Blog'</pre>
+<br/>
+&nbsp;<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://www.youtube.com/watch?v=Bm96RqNGbGo">Fear and Awaiting in Async (Screencast)</a></li>
+</ol>

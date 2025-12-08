@@ -1,0 +1,247 @@
+---
+title: 使用 Awaitility 测试异步代码
+url: /test-asyn-call-with-awaitility/
+date: 2017-04-19T00:30:10-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Unit Test
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8002 
+wpStatus: publish
+views: 3651
+lastmod: 2021-05-02T22:14:01-05:00
+---
+
+对于同步方法的测试很简单，调用完后可立马检查执行状态; 而异步方法，由于我们无法确切的知道何时结束，因此以往的办法是用 <code>Thread.sleep(500)</code> 来预估一个执行时间。然后通常我们估计的要长于实际的时间，这就很浪费，况且偶然的超过预估的等待时间也并不意味着代码有问题。还有 <code>sleep</code> 方法还抛出一个检测异常 <code>InterruptedException</code>, 一般会要对 <code>Thread.sleep(500)</code> 作下简单包装。<br/><br/>
+于是今天要介绍的 <a href="http://www.awaitility.org/">Awaitility</a> 就应运而生了，专门针对异步方法的测试。它的官方文档在 <a href="https://github.com/awaitility/awaitility/wiki/Usage">https://github.com/awaitility/awaitility/wiki/Usage</a>。本文主要关注在 Java 8 环境下用 Lambda 的代码书写方式。Awaitlity 实际运行是以某种轮询的方式来检查是否达到某个运行状态，可设定最多，最少等待时间，或永久等待，或自定义轮询策略，之后就开始进行需要的断言，所以它可以尽可能的节省测试异步方法所需的时长。而不像 <code>Thread.sleep(500)</code> 一路等到黑，并且没有回头路。<br/><br/>
+通常我会在项目中给 JUnit 配上三个最佳伴侣，它们是(按 <code>mvn dependency:tree</code> 中的显示方式):<br/><br/>
+<ol>
+    <li>org.awaitility:awaitility:2.0.0:test</li>
+    <li>org.assertj:assertj-core: version: 3.8.0:test</li>
+    <li>org.mockito:mockito-core:2.7.22:test</li>
+</ol>
+<br/>
+当然如果项目中没有异步调用自然是不需要 Awaitility, 在我的项目中是基本不可能的。以上三种都追求 DSL，以流畅的方式进行愉快的测试。<br/><br/>
+现在来尝试下 Awaitility 的几种基本的用法，先假定有下面的代码 <code>UserService</code><!--more--><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;<br/><br/>
+public class UserService {
+    public final List&lt;String&gt; users = new ArrayList&lt;&gt;();<br/><br/>
+    public void addUser(String username) {
+        new Thread(() -&gt; {
+            try {
+                TimeUnit.MILLISECONDS.sleep(ThreadLocalRandom.current().nextLong(100, 500));
+            } catch (InterruptedException e) {
+            }
+            users.add(username);<br/><br/>
+        }).start();
+    }
+}
+</pre>
+<br/>
+我们把上面的 <code>addUser()</code> 方法做成了一个异步的，而且执行时间是不定的，此处设定在 100 至 500 毫秒之间，如果用常规的测试方式<br/><br/>
+<pre class="lang:default decode:true">@Test
+public void couldAddUserAsync() throws Exception {
+    UserService userService = new UserService();
+    userService.addUser("Yanbin");<br/><br/>
+    //Thread.sleep(600);
+    assertThat(userService.users).contains("Yanbin");
+}</pre>
+<br/>
+显然是不行的，当然是可以在 <code>assertThat()</code> 前面加上 <code>Thread.sleep(600)</code>, 但每次都会浪费平均大概 300 毫秒的时间，好像也不怎么多，但大量采用这种方式就可观了。用 <code>Thread.sleep(600)</code> 的方式该测试用例在 IntelliJ IDEA 中大概需要 780 毫秒, 每次至少都要 600 毫秒。<br/><br/>
+现在我们换成用 Awaitility 来进行上面的异步方法测试：<br/><br/>
+<h3>Lambda 与 AssertJ 的方式</h3><br/><br/>
+这是我比较喜欢的断定方式<br/><br/>
+<pre class="lang:default decode:true">@Test
+public void couldAddUserAsync() {
+    UserService userService = new UserService();
+    userService.addUser("Yanbin");<br/><br/>
+    Awaitility.await().atMost(600, MILLISECONDS).until(() -&gt;
+        assertThat(userService.users).contains("Yanbin"));
+}
+</pre>
+<br/>
+上面是最多等 600 毫秒，<code>until()</code> 方法的原型是 <code>until(Runnable supplier)</code>, 也就是直到不抛出 <code>AssertionError</code> 异常为止，否则测试会出现异常 <code>ConditionTimeoutException</code>, 并且告知条件不满足的详情。这种方式平均时间在 500 毫秒，最快时 100 多毫秒。<br/><br/>
+Awaitility 并没有提供像 <code>Thread.sleep(600)</code> 那样傻傻的等上 600 毫秒的机制，它总是需要一个测试条件。看到上面的代码好像是在等 600 毫秒，其实内部实现是作了一个默认每隔 100 毫秒的一个轮询，并且在指定的时间内测定条件通过后才往下走，否则是 <code>ConditionTimeoutException</code> 异常。所以试图写成<br/><br/>
+<pre class="brush:java">await().atLeast(600, MILLISECONDS);  //并不会等待，而是立即返回<br/><br/>
+assertThat(userService.users).contains("Yanbin");</pre>
+<br/>
+想让第一行代码像 <code>Thread.sleep(600)</code> 一样工作是徒劳的，用 Awaitility 必须给它提供一个测试条件。<br/><br/>
+使用 Awaitility 要做的事情说到底就是两件：<br/><br/>
+<ol>
+    <li><span style="color: #0000ff;">如何设置轮询策略, atLeast, atMost 或默认超时为 10 秒，默认 100 毫秒的轮询间隔，或 斐波那契数列 间隔，或完全自定义; 还能永久等待(如果你愿意的话)</span></li>
+    <li><span style="color: #0000ff;">测定条件，直到某个方法被调用，直到数据库表中出现某行记录等等。这就是 <code>ConditionFactory</code> 的所有 until 方法要做的事情，见下图</span></li>
+</ol>
+<br/>
+<img class="aligncenter size-full wp-image-8004" src="/wp-content/uploads/2017/04/Awaitility-1.png" alt="" width="775" height="230" /><br/><br/>
+<h3>了解 untilXxx(...) 方法</h3><br/><br/>
+<ul>
+    <li>until(Callable&lt;Boolean&gt; conditionEvaluator):  直到 Callable 返回值为 true</li>
+    <li>until(Runnable supplier): 上面提到过，直到没有 AssertionError 异常为止，所以可于 Fest Assert 很好的工作</li>
+    <li>untilFalse(AtomicBoolean atomic), untilTrue(AtomicBoolean atomic) 用于测试 AtomicBoolean 变量是否为假，或真</li>
+    <li>untilCall(T ignore, Matcher&lt;? super T&gt; matcher) 会让代理记录下对有返回值实际的调用</li>
+</ul><br/><br/>
+这里的 Matcher 可用标准的 <a href="http://code.google.com/p/hamcrest/">Hamcrest</a> matcher, 例如 <a href="http://junit.org/junit4/javadoc/4.12/org/hamcrest/CoreMatchers.html">org.hamcrest.CoreMatchers</a> 下定义了许多的 matcher, is(T value), nullValue(), containsString(String substring) 等，代码<br/><br/>
+<pre class="brush:java">await().until(userDao.findByName("Yanbin"), notNullValue());<br/><br/>
+await().until(userDao::findAll, hasItm("Yanbin"));  //Java 8 就是方便</pre>
+<br/>
+带 AtomicXxx 的方法大概也是方便是 Java 8 下使用，因为匿名类或 Lambda 只能访问外部的 final 变量，如果是 final 的 AtomicXxx 值就可以操作其中的值了<br/><br/>
+<pre class="brush:java">AtomicInterger atomic = new AtomicInteger(0);
+//做些操作来改变 atomic 中的值，比如 Mockito 的桩方法<br/><br/>
+await().untilAtomic(atomic, equalTo(1));</pre>
+<br/>
+<h3>untilCall 代理方法调用</h3><br/><br/>
+演示实例，需要对前面 UserService 稍加改变，在添加完用户到 users 之后，调用一下 say(username) 方法<br/><br/>
+<pre class="lang:default decode:true">public class UserService {
+    public final List&lt;String&gt; users = new ArrayList&lt;&gt;();<br/><br/>
+    public void addUser(String username) {
+        new Thread(() -&gt; {
+            try {
+                TimeUnit.MILLISECONDS.sleep(ThreadLocalRandom.current().nextLong(100, 500));
+            } catch (InterruptedException e) {
+            }<br/><br/>
+            users.add(username);
+            say(username);
+        }).start();
+    }<br/><br/>
+    public String say(String username) {
+        return "Hello " + username;
+    }
+}</pre>
+<br/>
+录制对 say(username) 方法的调用，并不是 Mock, 实际方法会被调用到<br/><br/>
+<pre class="lang:default decode:true">@Test
+public void couldAddUserAsync() {
+    UserService userService = new UserService();
+    userService.addUser("Yanbin");<br/><br/>
+    //直到 say("Yanbin") 被调用，并且返回值为 "Hello Yanbin", say("Yanbin") 需要精确的参数值
+    await().untilCall(to(userService).say("Yanbin"), equalTo("Hello Yanbin"));
+    assertThat(userService.users).contains("Yanbin");
+}
+</pre>
+<br/>
+<h3>Awaitility 与 Mock(以 Mockito 为例)</h3><br/><br/>
+我们需要对待测试代码再做改变，引入一个 <code>UserDao</code> 接口<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+interface UserDao {
+    void add(String username);
+}</pre>
+<br/>
+新的 UserService 类<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;<br/><br/>
+public class UserService {
+    private UserDao userDao;<br/><br/>
+    public UserService(UserDao userDao) {
+        this.userDao = userDao;
+    }<br/><br/>
+    public void addUser(String username) {
+        new Thread(() -&gt; {
+            try {
+                TimeUnit.MILLISECONDS.sleep(ThreadLocalRandom.current().nextLong(100, 500));
+            } catch (InterruptedException e) {
+            }<br/><br/>
+            userDao.add(username);
+        }).start();
+    }
+}</pre>
+<br/>
+<strong>第一种方式，试图获取捕获的参数，直到不抛出 AssertionError 异常为止</strong><br/><br/>
+<pre class="lang:default decode:true">@RunWith(MockitoJUnitRunner.class)
+public class UserServiceTest {
+    @Test
+    public void couldAddUserAsync() {
+        UserDao userDao = Mockito.mock(UserDao.class);
+        UserService userService = new UserService(userDao);<br/><br/>
+        ArgumentCaptor&lt;String&gt; usernameCaptor = ArgumentCaptor.forClass(String.class);
+        doNothing().when(userDao).add(usernameCaptor.capture());  //对 userDao.add(username) 方法打桩，由于无返回值，所以可用 doNothing()<br/><br/>
+        userService.addUser("Yanbin");<br/><br/>
+        await().until(() -&gt; {  //until(Runnable), 直到不抛出 AssertionError 异常为止，所以需要把 MockitoException 转换为 AssertionError
+            try {
+                usernameCaptor.getValue();
+            } catch (Exception ex) {
+                throw new AssertionError(ex.getMessage());
+           }
+        });<br/><br/>
+        assertThat(usernameCaptor.getValue()).isEqualTo("Yanbin");
+    }   
+} 
+</pre>
+<br/>
+如果 userDao.add(username) 有返回值的话，可以用 untilCall() 方法来捕获，相关代码<br/><br/>
+<pre class="brush:java">when(userDao.add(usernameCaptor.capture).thenReturn("Added Yanbin");
+await().untilCall(to(userDao).add("Yanbin"), equalTo("Added Yanbin"));
+assertThat(usernameCaptor.getValue()).isEqualTo("Yanbin");</pre>
+<br/>
+<strong>第二种方式，使用 AtomicBoolean 来记录方法是否被调用</strong><br/><br/>
+<pre class="lang:default decode:true">@RunWith(MockitoJUnitRunner.class)
+public class UserServiceTest {<br/><br/>
+    @Test
+    public void couldAddUserAsync() {
+        UserDao userDao = Mockito.mock(UserDao.class);
+        UserService userService = new UserService(userDao);<br/><br/>
+        ArgumentCaptor&lt;String&gt; usernameCaptor = ArgumentCaptor.forClass(String.class);<br/><br/>
+        AtomicBoolean addMethodCalled = new AtomicBoolean(false);
+        doAnswer(invocationOnMock -&gt; addMethodCalled.getAndSet(true)) //其实可以不用 usernameCaptor, 通过 invocationOnMock 也能获得参数
+            .when(userDao).add(usernameCaptor.capture());<br/><br/>
+        userService.addUser("Yanbin");<br/><br/>
+        await().untilTrue(addMethodCalled);
+        assertThat(usernameCaptor.getValue()).isEqualTo("Yanbin");
+    }
+}</pre>
+<br/>
+<h3>对属性值的测定</h3><br/><br/>
+我们自己能够以反射的方式来测定直到预期的对象内部状态，为方便起见，Awaitility 还为我们提供了几个方法来窥视属性值，下面的例子代码直接从官方 Wiki 拷过来的<br/><br/>
+<pre class="brush:java">await().until(fieldIn(object).ofType(int.class). equalTo(2));<br/><br/>
+await().until(fieldIn(object).ofType(int.class).andWithName("fieldName"), equalTo(2));<br/><br/>
+await().until(fieldIn(object).ofType(int.class).andAnnotatedWith(MyAnnotation.class), equalTo(2));</pre>
+<br/>
+<h3>感受默认轮询行为</h3><br/><br/>
+如果不清楚 atMost(...).until(...) 内部做了什么，可以用 <code>ConditionEvalutionListener</code> 来查看，像下面的代码<br/><br/>
+<pre class="lang:default decode:true">await().atMost(600, MILLISECONDS)
+    .conditionEvaluationListener(new ConditionEvaluationLogger())
+    .until(() -&gt;
+        assertThat(userService.users).contains("Yanbin"));
+</pre>
+<br/>
+从控制台的输出就能了解它与 Thread.sleep() 是要更为高效的, 而不是痴痴的等<br/><br/>
+<blockquote>
+Condition defined as a lambda expression in cc.unmi.UserServiceTest that uses cc.unmi.UserService &lt;[]&gt; does not contain element(s):&lt;['Yanbin']&gt; (elapsed time 125 milliseconds, remaining time 475 milliseconds (last poll interval was 100 milliseconds))<br />
+Condition defined as a lambda expression in cc.unmi.UserServiceTest that uses cc.unmi.UserService &lt;[]&gt; does not contain element(s):&lt;['Yanbin']&gt; (elapsed time 232 milliseconds, remaining time 368 milliseconds (last poll interval was 100 milliseconds))<br />
+Condition defined as a lambda expression in cc.unmi.UserServiceTest that uses cc.unmi.UserService &lt;[]&gt; does not contain element(s):&lt;['Yanbin']&gt; (elapsed time 337 milliseconds, remaining time 263 milliseconds (last poll interval was 100 milliseconds))<br />
+Condition defined as a lambda expression in cc.unmi.UserServiceTest that uses cc.unmi.UserService reached its end value after 440 milliseconds (remaining time 160 milliseconds, last poll interval was 100 milliseconds)
+</blockquote>
+<br/>
+内置的轮询策略基本能满足我们的需求，所以对于如何自定义轮询不进行深入，详情请见官方 <a href="https://github.com/awaitility/awaitility/wiki/Usage">Wiki</a>.<br/><br/>
+&nbsp;<br/><br/>
+<hr /><br/><br/>
+2019-07-17 补充：<br/><br/>
+Mockito 自 1.8.5 开始在  verify 时就可以用 timeout 方法，见 <a href="https://static.javadoc.io/org.mockito/mockito-core/2.28.2/org/mockito/Mockito.html#verification_timeout">Verification with timeout (Since 1.8.5)</a>。示例代码如下：<br/><br/>
+<pre class="lang:default decode:true ">//在 500 毫秒之内有两次对 mock.someMethod() 方法的调用
+//此处最多等待 500 毫秒
+verify(mock, timeout(500).times(2)).someMethod();</pre>
+<br/>
+Awaitility 3.x 开始加入了 untilAsserted() 方法可与  <a href="http://joel-costigliola.github.io/assertj/">AssertJ</a> 或 <a href="https://code.google.com/p/fest/">Fest Assert</a> 进行交互，官方代码<br/><br/>
+Awaitility 3.x 或以后<br/><br/>
+<pre class="lang:default decode:true">await().atMost(5, SECONDS).untilAsserted(() -&gt; assertThat(fakeRepository.getValue()).isEqualTo(1));</pre>
+<br/>
+Awaitility 2.x 及以下<br/><br/>
+<pre class="lang:default decode:true ">await().atMost(5, SECONDS).until(() -&gt; assertThat(fakeRepository.getValue()).isEqualTo(1));</pre>
+<br/>
+其实就是一直尝试去断言 <code>assertThat(fakeRepository.getValue()).isEqualTo(1)</code>, 5 秒钟之内不会有一次成功就算通过测试(直到不抛出 java.lang.AssertionError 错误为止)。<br/><br/>
+参考<br/><br/>
+<ol>
+    <li><a href="https://github.com/awaitility/awaitility/wiki/Usage">Awaitility 官方文档</a></li>
+</ol>

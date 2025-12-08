@@ -1,0 +1,246 @@
+---
+title: Kubernetes 学习笔记(一) - 初上手
+url: /kubernetes-learning-1/
+date: 2020-03-26T20:03:38-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2020/03/kubernetes_logo.png"
+categories:
+  - Docker
+  - Kubernetes
+tags: 
+  - Kubernetes
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9982 
+wpStatus: publish
+views: 802
+lastmod: 2020-04-10T15:51:05-05:00
+---
+
+经过前几天从 Docker Swarm 到 Docker Compose 的历练之后，终于踏上了 Kubernetes 的学习征程了。虽说前两者并非必要的学习 Kubernetes 的基础，但了解它们之后与 Kubernetes 中的一些概念可以进行对比理解。</p>
+<br/>
+本系列是阅读 《每天5分钟玩转Kubernetes》的笔记，书名倒是来的轻松，对我来说每天 5 分钟根本吸收不了什么知识。如果把阅读该书比作台上的话，基本就是台上 5 分钟，台下 50 分钟都不够，实际操作起来不光是版本有差异，还会出现各种意外带来惊喜与折磨。另外该书所采用的版本是 Kubernetes 1.7.4, 当前为 1.18，有不小的差别。<br/><br/>
+Kubernetes 是当今容器编排引擎的事实标准，以前为 Google 内部项目的 Omega 开源为 Kubernetes。传说中的容器编排三足鼎力，Kubernetes, Docker Swarm 和 Apache Mesos, 现在已是 Kubernetes 的一骑绝尘。Mac 下的 Docker Desktop 版本已内置了 Kubernetes 的支持。AWS 中在 ECS 外也支持了 EKS(Elastic Kubernetes Service)。<!--more--><br/><br/>
+Kubernetes 简单就是一个强大灵活的网络操作系统，或者说云操作系统，它的内部生态中有自己的网络, DNS, 应用管理，存储，监控等服务。接下来对 Kubernetes 摩擦一番，并让它能跑起来，最后看看它的 Kubernetes Dashboard。<br/><br/>
+Kubernetes 中一个重要的术语是 Pod(集装箱), 它有些像 Docker Compose 一样, 可把一组相关的容器放到一个 Pod 中, 同一个 Pod 中的所有容器共享 IP 地址和 Port 空间，相当于放到同一个主机中，可用 localhost 进行通信。Pod 是 Kubernetes 中最小的调度单位，同一 Pod 中的容器不可拆分，这与 Compose 中的容器是不一样的。通常我们在一个 Pod 中安置一个容器。<br/><br/>
+Kubernetes 几个重要概念与 Swarm, Compose 的对比：<br/><br/>
+<ol>
+    <li>Cluster: 类似于 Swarm 的集群，也是至少一个 Manager(Master) 和 0 或若干 Worker(Node) 节点组成的集群</li>
+    <li>Master: 类似于 Swarm 的 Manager</li>
+    <li>Node: 类似于 Swarm 的 Worker</li>
+    <li>Pod: 前面说过，Pod 中如果运行多个容器，相当于一个主机上运行的两个进程一样，因为它们共享了 Linux 命名空间</li>
+    <li>Controller: 一般是通过 Controller 来管理 Pod 的, 定义 Pod 如何部署, 几个副本，在什么 Node 上运行，包括 Deployment, ReplicaSet, DaemonSet, StatefulSet 和 Job 等</li>
+    <li>Service: 定义了外界访问一组特定 Pod 的方式，Service 有自己的 IP 和端口，Service 为 Pod 提供了负载均衡</li>
+    <li>Namespace: 同一个 Cluster 中划分的虚拟的 Cluster 就是 Namespace， 像网络的 VLAN 一样，也类似 AWS 的 VPC</li>
+</ol>
+<br/>
+<h3>接下来体验 Kubernetes 的安装</h3><br/><br/>
+既然是集群，那么就准备多台机器，用虚拟机也行，所以先<br/><br/>
+<h4>准备多个虚拟机</h4><br/><br/>
+我用的是 Mac OS X, Mac 下的 Docker Desktop 版本可以开启 Kubernetes 功能，让镜像跑在本地的 Kubernetes 环境中，但好像未提供 kubadm 来自己创建 Cluster。所以用 Vagrant 虚拟机来体验，建立三个目录 k8s-master, k8s-node1, k8s-node2, 其中的 Vagrantfile 文件内容分别为<br/><br/>
+<pre class="lang:default decode:true ">Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/disco64"          # "ubuntu/bionic64"
+  config.vm.hostname = "k8s-master"         # k8s-node1  或 k8s-node2 对应别两个目录中的内容
+  config.vm.network "private_network", type: "dhcp"
+  #config.vm.network "private_network", ip: "172.28.128.x"  查看 vboxnet1 上的网络地址
+end</pre>
+<br/>
+以下命令在每个节点中以 root 用户安装 docker, kubeadm, 和 kubectl 工具。<br/><br/>
+注意：以下在 Linux 下的操作都是用的 root, 所以一进 vagrant ssh, 就用  sudo su - 切换到 root 用户<br/><br/>
+<pre class="lang:default decode:true">apt update &amp;&amp; apt install -y docker.io
+apt install -y apt-transport-https
+curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
+echo "deb http://apt.kubernetes.io/ kubernetes-xenial main" &gt; /etc/apt/sources.list.d/kubernetes.list
+apt update
+apt install -y kubelet kubeadm kubectl</pre>
+<br/>
+安装之后的各版本是<br/><br/>
+<blockquote>
+root@k8s-master:~# docker -v<br />
+Docker version 19.03.6, build 369ce74a3c<br />
+root@k8s-master:~# kubectl version<br />
+Client Version: version.Info{Major:"1", Minor:"17", GitVersion:"v1.17.4", GitCommit:"8d8aa39598534325ad77120c120a22b3a990b5ea", GitTreeState:"clean", BuildDate:"2020-03-12T21:03:42Z", GoVersion:"go1.13.8", Compiler:"gc", Platform:"linux/amd64"}<br />
+Server Version: version.Info{Major:"1", Minor:"17", GitVersion:"v1.17.4", GitCommit:"8d8aa39598534325ad77120c120a22b3a990b5ea", GitTreeState:"clean", BuildDate:"2020-03-12T20:55:23Z", GoVersion:"go1.13.8", Compiler:"gc", Platform:"linux/amd64"}<br />
+root@k8s-master:~# kubeadm version<br />
+kubeadm version: &amp;version.Info{Major:"1", Minor:"17", GitVersion:"v1.17.4", GitCommit:"8d8aa39598534325ad77120c120a22b3a990b5ea", GitTreeState:"clean", BuildDate:"2020-03-12T21:01:11Z", GoVersion:"go1.13.8", Compiler:"gc", Platform:"linux/amd64"}
+</blockquote>
+<br/>
+<h4>创建 Kubernetes Cluster</h4><br/><br/>
+这个操作与 Swarm 初始化集群很相似。在 k8s-master 上，假设该 Master 的 IP 是 172.28.128.13，那么运行<br/><br/>
+<blockquote>
+<div>$ kubeadm init --pod-network-cidr=10.244.0.0/16 --apiserver-advertise-address 172.28.128.13 </div>
+<div>.....</div>
+<div>kubeadm join 172.28.128.9:6443 --token ihdm68.yasza2jolece7t1k \</div>
+<div>    --discovery-token-ca-cert-hash sha256:5b5401a6a3e5fbd253d7de8003112d57920f077c17c49be1f78900b9fd55184e</div>
+</blockquote>
+<br/>
+--pod-network-cidr 定义该 Cluster 的网络<br/><br/>
+运行后产生 node 要加入集群的命令，node 将通过 172.28.128.13:6443 加入集群，还生成了 /etc/kubernetes/admin 文件，以后在 Master 的命令要用到它。<br/><br/>
+完后 docker 中的镜像和运行的容器有一大堆<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-docker-images.png"><img class="aligncenter size-large wp-image-9985" src="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-docker-images-800x176.png" alt="" width="800" height="176" /></a><br/><br/>
+Kubernetes 真是不怕容器多，从中可以看到它有自己的 kube-proxy, coredns, etcd(协调) 等各种服务，Kubernetes 以此完全自主的构建了一个封闭系统。<br/><br/>
+<h4>node 加入 Cluster</h4><br/><br/>
+在 k8s-node1 和 k8s-node2  上执行前面用 kubeadm init 显示出的命令<br/><br/>
+<blockquote>
+<div>$ kubeadm join 172.28.128.13:6443 --token ihdm68.yasza2jolece7t1k \</div>
+<div>    --discovery-token-ca-cert-hash sha256:5b5401a6a3e5fbd253d7de8003112d57920f077c17c49be1f78900b9fd55184e</div>
+<div>......</div>
+<div>This node has joined the cluster:</div>
+<div>......</div>
+</blockquote>
+<br/>
+如果不记得 token 呢，在 Master 上用 kube token list 可以显示出 token, 至于不知道 --discovery-token-ca-cert-hash 怎么办呢？用 <code>kubeadm token create --print-join-command</code> 就能查看 node 加入集群的完整命令，token  有效时间为 2 小时。<br/><br/>
+回到 k8-master 上，仍然用 root 帐户<br/><br/>
+<blockquote>
+# mkdir ~/.kube<br />
+# cp /etc/kubernetes/admin.conf ~/.kube/config
+</blockquote>
+<br/>
+现在可以用 kubectl get nodes 命令了，不做上一步将会看到错误：The connection to the server localhost:8080 was refused - did you specify the right host or port?<br/><br/>
+在  k8s-master 上可以 kubectl get nodes 看到所有节点了(kubectl get nodes -o wide 输出更详细的信息)<br/><br/>
+<blockquote>
+<div>root@k8s-master:~# kubectl get nodes</div>
+<div>NAME         STATUS     ROLES    AGE   VERSION</div>
+<div>k8s-master   NotReady   master   19m   v1.17.4</div>
+<div>k8s-node1    NotReady   &lt;none&gt;   64s   v1.17.4</div>
+<div>k8s-node2    NotReady   &lt;none&gt;   38s   v1.17.4</div>
+</blockquote>
+<br/>
+所有节点的状态都是 NotReady 状态，再看下 Pod 的状态<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-all-pods-1.png"><img class="aligncenter wp-image-9986" src="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-all-pods-1-800x254.png" alt="" width="605" height="192" /></a><br/><br/>
+发现两个 pod 的状态是 Pending, 原因是网络还没准备好，欲知详情可用<br/><br/>
+kubectl describe pod coredns-6955765f44-lnhsn --namespace=kube-system 查看<br/><br/>
+现在把  flannel 网络配上，需运行命令<br/><br/>
+<blockquote>
+$ kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml
+</blockquote>
+<br/>
+注[2020-04-10]：如果用  flannel 网络而造成 <code>iptables</code> 路由问题 -- 通过 ClusterIP 或 NodePort 访问不了 Pod，可考虑用 <code>calico</code> 网络。<br/><br/>
+<blockquote>
+$ kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+</blockquote>
+<br/>
+再用 kubectl get pod --all-namespaces 和 kubectl get nodes 查看，应该全都 Ready 状态<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-all-pods-2.png"><img class="aligncenter wp-image-9987" src="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-all-pods-2-800x435.png" alt="" width="548" height="298" /></a><br/><br/>
+在应用 kube-flannel.yml 时做了什么呢，在 k8s-master 上运行 <code>ifconfig</code> 发现多了个东西<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-flannel-network.png"><img class="aligncenter wp-image-9988" src="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-flannel-network-800x229.png" alt="" width="517" height="148" /></a><br/><br/>
+这就是我们创建 Kubernetes 集群时规划的网络<br/><br/>
+再看下目前有什么容器正在运行<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-containers-1.png"><img class="aligncenter size-large wp-image-9990" src="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-containers-1-800x117.png" alt="" width="800" height="117" /></a><br/><br/>
+现在整个 Kubernetes 集群环境已就绪，可以开始往其中部署应用了。<br/><br/>
+<h3>Kubernetes API</h3><br/><br/>
+像 Elasticsearch 一样有一套完备的 API，Kubernetes 也有自己一套，在  Master 上执行以下命令<br/><br/>
+<blockquote>
+# kubectl proxy --address=172.28.128.13 --accept-hosts='^.*'
+</blockquote>
+<br/>
+在浏览器中打开 http://172.28.128.13.8001<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-api.png"><img class="aligncenter wp-image-9991 size-large" src="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-api-800x408.png" alt="" width="800" height="408" /></a><br/><br/>
+<h3>Kubernetes Dashboard</h3><br/><br/>
+Kubernetes 提供了一个 Web UI  来管理 Kubernetes 集群，部署后还需要一些配置才能看到界面。安装步骤如下：<br/><br/>
+<blockquote>
+# kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0-rc6/aio/deploy/recommended.yaml
+</blockquote>
+<br/>
+用命令 <code>kubectl --namespace=kubernetes-dashboard get service kubernetes-dashboard</code> 看到<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-dashboard-1.png"><img class="aligncenter wp-image-9992" src="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-dashboard-1-800x65.png" alt="" width="604" height="49" /></a><br/><br/>
+目前还无法访问到它，可以用 NodePort 的模式来开放访问，需执行命令<br/><br/>
+<blockquote>
+kubectl --namespace=kubernetes-dashboard edit service kubernetes-dashboard
+</blockquote>
+<br/>
+它会打开 VI 编辑器(根据 Shell 下的配置)，然后把 type: ClusterIP 改为 type: NodePort，然后保存退出，见下<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-dashboard-2-edit.png"><img class="aligncenter wp-image-9993" src="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-dashboard-2-edit.png" alt="" width="249" height="171" /></a><br/><br/>
+再用 <code>kubectl --namespace=kubernetes-dashboard get service kubernetes-dashboard</code> 就能看到 PORT(S) 中的端口号的，此处是 443/30101/TCP.<br/><br/>
+只能用 FirFox 打开，因为 Chrome 和  Safari 不接受这里的自签名<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-dashboard-login.png"><img class="aligncenter wp-image-9994" src="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-dashboard-login-800x391.png" alt="" width="826" height="404" /></a><br/><br/>
+没有 Token 无法登陆，在获得 Token 之前还需配上用户，否则登陆后什么也看不到。准备好下面两个文件 <br/><br/>
+admin-service-account.yaml<br/><br/>
+<pre class="lang:default decode:true">apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admin-user
+  namespace: kubernetes-dashboard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admin-user
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: admin-user
+  namespace: kubernetes-dashboard</pre>
+<br/>
+接着应用它<br/><br/>
+<blockquote>
+<div>kubectl apply -f admin-service-account.yaml</div>
+</blockquote>
+<br/>
+再用命令取到 Token<br/><br/>
+<blockquote>
+kubectl -n kubernetes-dashboard describe secret $(kubectl -n kubernetes-dashboard get secret | grep admin-user | awk '{print $1}')
+</blockquote>
+<br/>
+把产生的 Token 贴入刚刚的登陆界面，我们就正式来到了 Kubernetes Dashboard 管理界面了<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-dashboard-ui.png"><img class="aligncenter size-large wp-image-9995" src="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-dashboard-ui-800x635.png" alt="" width="800" height="635" /></a><br/><br/>
+注意：因为是选择了 NodePort  的方式，所以该用哪个 IP 地址来访问 Dashboad 应该事先查看一下, 用命令 <code>kubectl get pod --namespace=kubernetes-dashboard -o wide</code><br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-dashboard-which-node.png"><img class="aligncenter wp-image-10004" src="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-dashboard-which-node-800x79.png" alt="" width="725" height="72" /></a><br/><br/>
+这里看到 kubernetes-dashboard 运行在 k8s-node1 上，就必须用 k8s-node1 的 IP 来访问 Dashboard, 否则尽管你看到了 k8s-master 上的 30101 端口也是打开的却怎么也不能访问。<br/><br/>
+<h3>尝试部署第一个应用</h3><br/><br/>
+Kubernetes 集群就绪了，且 Dashboad 也有了，现在可以尝试往 Kubernetes 大环境中部署一个 httpd 应用。<br/><br/>
+<blockquote>
+# kubectl run http-app --image=httpd --port=80<br />
+pod/http-app created
+</blockquote>
+<br/>
+一会儿查看<br/><br/>
+<blockquote>
+# kubectl get pods -o wide<br />
+NAME READY STATUS RESTARTS AGE IP NODE NOMINATED NODE READINESS GATES<br />
+http-app 1/1 Running 0 53s 10.244.2.7 k8s-node2 &lt;none&gt; &lt;none&gt;
+</blockquote>
+<br/>
+发现该 Pod 在节点 k8s-node2 上运行，从 Dashboard 也可以看到它<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-dashboard-1stapp.png"><img class="aligncenter wp-image-9997 size-large" src="https://yanbin.blog/wp-content/uploads/2020/03/kubernetes-dashboard-1stapp-800x294.png" alt="" width="800" height="294" /></a><br/><br/>
+同时注意到 Dashboard 有直接编辑 Pod 的功能。<br/><br/>
+那么这个 http-app Pod 该如何访问呢？我们看到了该 Pod 的 IP 是 10.244.2.7, 并且部署在了 k8s-node2 上，现在只能登陆到 k8s-node2 节点上才能直接访问它<br/><br/>
+<blockquote>
+root@k8s-node2:~# curl 10.244.2.6<br />
+&lt;html&gt;&lt;body&gt;&lt;h1&gt;It works!&lt;/h1&gt;&lt;/body&gt;&lt;/html&gt;
+</blockquote>
+<br/>
+当前版本的 Kubernetes 不建议使用 <code>kubectl run</code> 来部署应用，而总是用 <code>kubectl apploy -f httpd-app.yaml</code> 来操作。还是怎么去 scale 一个应用，如果用 service 暴露部署的 <code>httpd-app</code> 这个 Pod 都是接下来的内容。<br/><br/>
+<h3>碰到的问题</h3><br/><br/>
+开始整理本文到现在碰到过不少问题，有时候能不能成功跟运行也是有关。<br/><br/>
+<ol>
+    <li>运行 kubeadm 时说 "[ERROR Swap]: running with swap on is not supported. Please disable swap", 解决办法是执行 <code>swapoff -a</code> 关闭缓存，</li>
+    <li>运行 <code>status kubelet --full</code>, 看到大量的 "Mar 26 00:41:30 k8s-master kubelet[3064]: E0326 00:41:30.065885 3064 dns.go:135] Nameserver limits were exceeded, some nameservers have been omitted, the applied n", 解决办法：没找到</li>
+    <li>运行 <code>kubectl run http-app image=httpd</code> 不能正常部署，好像是提示资源不足，也不知道如何解决</li>
+    <li>碰到几次 Kubernetes Dashboard 改为  NodePort 之后，虽然看到端口号，但无法访问，有时端口号只绑定到 TCP 6 上的地址上，只无奈</li>
+</ol>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="http://www.joseluisgomez.com/containers/kubernetes-dashboard/">Kubernetes Dashboard. Installation Deep Dive</a></li>
+    <li><a href="https://kuboard.cn/">https://kuboard.cn/</a></li>
+</ol>
+<br/>
+<hr /><br/><br/>
+后注[April 4, 2020], 这种方式在后来的使用中发现几个问题<br/><br/>
+<ol>
+    <li>kubect get nodes -o wide 显示出的 INTERNAL-IP 并非节点间用于组成集群的 IP  地址，造成 kubectl exec/logs 等命令报错，解决办法记录在 <a href="https://yanbin.blog/kubernetes-cluster-internal-ip-issue/">Kubernetes 集群中节点的 INTERNAL-IP 问题</a></li>
+    <li>创建服务后，在用 ClusterIP, NodePort, 或域名访问服务时，当 iptables 路由到非本节点上的 Pod 时服务不可访问，解决办法尚无。</li>
+</ol>
+<br/>
+该文 <a href="https://wilhelmguo.cn/blog/post/william/Kubernetes-%E8%B8%A9%E5%9D%91%E8%AE%B0%E4%B9%8B-%E9%9B%86%E7%BE%A4node%E6%97%A0%E6%B3%95%E8%AE%BF%E9%97%AEservice">Kubernetes 踩坑记之 集群node无法访问service</a> 讲的一样的问题。还有这儿说的 <a href="https://feisky.gitbooks.io/kubernetes/troubleshooting/network.html#%E5%86%85%E6%A0%B8%E5%AF%BC%E8%87%B4%E7%9A%84%E9%97%AE%E9%A2%98">内核导致的问题</a>，看来问题就出在 coreos/flannel 上。这里找到一个解决方法 <a href="https://www.itocm.com/a/8B5630EF63824C43978E1482F15623A4">k8s1.16.0 +flannel+kube-proxy出现 --random-fully解决</a>，需重新编译安装 iptables.<br/><br/>
+或许该考虑另一个 Kubernetes 网络方案，比如  <a href="https://docs.projectcalico.org/getting-started/kubernetes/quickstart">Calico</a>, Canal, Kube-router, WeaveNet 等, 参看链接 <a href="https://itnext.io/benchmark-results-of-kubernetes-network-plugins-cni-over-10gbit-s-network-36475925a560">Benchmark results of Kubernetes network plugins (CNI) over 10Gbit/s network</a>。<br/><br/>
+实证了下，<code>kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml</code> 用  calico 网络没问题

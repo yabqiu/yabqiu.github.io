@@ -1,0 +1,540 @@
+---
+title: 从 Rust 官方文档理解 Ownership
+url: /understand-rust-official-document-ownership/
+date: 2024-01-15T12:36:19-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2023/12/rust-logo.png"
+categories:
+  - Rust
+tags: 
+  - Rust
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13502 
+wpStatus: publish
+views: 177
+lastmod: 2024-01-15T12:36:19-06:00
+---
+
+Rust 的 Ownership 感觉仍然很复杂，但 Rust 官方文档 <a href="https://doc.rust-lang.org/book/ch04-00-understanding-ownership.html">The Rust Programming Language - Understanding Ownership</a> 所费篇幅似乎并不多。下面就阅读该文档并记录下来对 Rust Ownership 的理解，相信官方的文档会表述的比准确而清晰。</p>
+<br/>
+本文中对 Ownership, Move, Reference, Dereference, Mutable, Immutable, Borrow, Owner, Stack, Heap, Scope 等词不进行翻译，以免走样。同时在阅读过程中不进行过度的联想，不与 C/C++ 的引用, 指针, 指针的指针进行关联，力求做一个完全不会 C/C++ 的 Rust 初学者。<br/><br/>
+Ownership 是 Rust 独一无二的特性。内存管理一般是两种，显式分配与释放和 GC, 这两种的弊端无需多说。Rust 另辟溪径，用 Owership 的一系列的规则来指导怎么管理内存，编译期保证程序运行期的内存安全性，不影响运行时性能。学习 Rust 的过程中需要很长时间去适应 Ownership, 从 Rust 开发者(Rustacean) 的经验来说是：随着对 Ownership 的掌握，越来轻松自然的写出安全高效的代码(希望如此)。<!--more--><br/><br/>
+<blockquote>
+<strong>关于 Stack 和 Heap 内存</strong>
+作为系统编译语言如 Rust(本人理解应该是像不用 GC 的语言)，应该清楚一个值是在 Stack 还是在 Heap 中的。Rust 的 Ownership 与 Stack 和 Heap 是有关联的。
+Stack 的操作 push/pop 都是在栈顶的进行的，避免了寻址，操作很快。存在 Stack 的数据必须是明确的固定长度的字节数。编译期无法确定大小的数据(像 String) 只能存到 Heap 中去。 
+Heap 内存是碎片化的，每次要分配内存时必须去找到一个足够大的空间，标记为已用并返回一个指针。这个指针本身是确定大小的，所以它存储在 Stack 中，要访问真实数据的话就要跟随指针到 Heap 中找。所以无论分配还是存取 Heap 中的数据都比 Stack 操作要慢
+在 Heap 中寻找分配一个空间的过程叫做 allocating, 而在 Stack 中声明一个值(push) 不被称为 allocating.
+像函数或数学运算(加减等)在操作前会把操作数(包括指向了堆内存数据的指针本身)先压入 Stack, 操作完后，那些值再弹出 Stack.
+Ownership 要做的主要事情就是管理 Heap 中的数据，最小化 Heap 中数据的复制，数据不用时从 Heap 中清除掉。当我们理解了 Ownership 之后反而不用常常去想 Stack 还是 Heap 了。
+Rust 各种容器类型如何在 Stack 和 Heap 中分配内存可参考下图
+<a href="https://yanbin.blog/wp-content/uploads/2024/01/rust_container_cheet_sheet.svg"><img class="aligncenter wp-image-13470 size-large" src="https://yanbin.blog/wp-content/uploads/2024/01/rust_container_cheet_sheet.svg" alt="" width="800" height="400" /></a>
+</blockquote>
+<br/>
+<h3>Ownership 规则</h3><br/><br/>
+<ol>
+    <li>每一个值，在某一时刻有且仅有一个 Owner (move 会改变 Owner, 但 borrow 不会)</li>
+    <li>当 Owner 离开 Scope 时，相应的值被释放 (drop)</li>
+</ol>
+<br/>
+规则很简单，怎么去理解它就能确保内存安全呢？就是在某个内存区(Stack 或 Heap ) 中值，必须要有一个 Owner，但不能有多个 Owner, 这样在应用第二条规则，当 Owner 离开 Scope 时对应的内存区会调用 drop 函数得到释放，且只释放一次。我们说 Owner 对应内存的自动释放是编译器会在退出 Scope 前插入 drop 函数调用。所以第一条规则是为第二条服务的，我们试想打破第一条规则就会出现以下两种非法的状况<br/><br/>
+<ol>
+    <li>某个值没有 Owner, 在退出 Scope 时将无法通过 Owner 来释放内存，造成内存泄漏</li>
+    <li>某个值有多个 Owner, 在退出 Scope 时，多个 Owner 对应的内存被释放多次，内存不安全</li>
+</ol>
+<br/>
+从目前所掌握的 Rust 的知识，看到 Rust 朴素的处理内存的方式是 唯一的 Owner 加上退出 Scope 时自动释放。如此还省去了引用计算来跟踪值的使用情况，但要处理交叉引用的情况会很要命的。<br/><br/>
+所果学到后面的 Rc, Arc 情形或有不同。<br/><br/>
+Rust 的 Scope 是什么，直白讲就是一对花括号(<code>{}</code>) 之间，比如函数区域，或任何时候在 <code>{}</code> 之间安置的代码。下面用一个例子来体验退出 Scope 的自动释放<br/><br/>
+<pre class="lang:default decode:true">struct Student {
+    name: String,
+    age: u16,
+}<br/><br/>
+impl Drop for Student {
+    fn drop(&amp;mut self) {
+        println!("dropped student")
+    }
+}<br/><br/>
+fn main() {
+    {
+        let student = Student {
+            name: String::from("Scott"),
+            age: 11,
+        };
+    }
+    println!("after student scope");
+}</pre>
+<br/>
+执行后输出<br/><br/>
+<blockquote>
+dropped student<br />
+after student scope
+</blockquote>
+<br/>
+我们通过重写自定义 struct 的 drop(&amp;mut self) 函数来捕获对 drop 步骤的调用，其他任意的 Owner 所代表的值在退出 Scope 时都会调用相应的 drop() 方法，可能不会产生任何效果。<br/><br/>
+我们也可主动去调用 drop() 方法，调整代码，把 println! 移入到 Scope 中去，并在它之前显式 drop(student)<br/><br/>
+<pre class="lang:default decode:true">    {
+        let student = Student {
+            name: String::from("Scott"),
+            age: 11,
+        };
+        drop(student);
+        // println!("{}", student.name); // 如果在 drop 之后再引用的话编译不过，value borrowed here after move，drop 也是 move, move 到地狱去了
+        println!("after student scope");
+    }</pre>
+<br/>
+我们执行看到相同的输出<br/><br/>
+<blockquote>
+dropped student<br />
+after student scope
+</blockquote>
+<br/>
+但是 <code>dropped student</code> 是被 drop(student) 主动触发的，而在退出 Scope 时不会进行二次 drop()<br/><br/>
+对于 Stack 的值<br/><br/>
+<pre class="lang:default decode:true">    let x = 5;
+    let y = x;</pre>
+<br/>
+i32 类型数据是固定大小的，4 字节，所以在 Stack 中分配(这个词通常用在 Heap 中分配内存)，绑定给 x, 然后复制 x 的值，再绑定给 y，这时候 x 和 y 是不相关的两个值。<br/><br/>
+我们可以用 <code>cargo asm</code> 来验证这一点，先要用以下命令安装 cargo-show-asm<br/><br/>
+<blockquote>
+cargo install cargo-show-asm     # cargo-asm 已经不再维护
+</blockquote>
+<br/>
+然后写下面的代码<br/><br/>
+<pre class="lang:default decode:true">fn main() {
+    let x = 5;
+    let y = x;
+    let z = 10;
+    
+    println!("{}, {}, {}", x, y, z);
+}</pre>
+<br/>
+如果不使用 x, y, 和 z, main 将会被编译器完全优化成一个什么也不做的空函数。<br/><br/>
+现在运行<br/><br/>
+<blockquote>
+cargo asm learning::main
+</blockquote>
+<br/>
+项目名称是 learning, 用  cargo new learning 创建的<br/><br/>
+得到以上三行相应的汇编代码为(当前 CPU 是 Intel i9-13900F)<br/><br/>
+<pre class="lang:default decode:true"> mov     dword, ptr, [rsp, +, 12], 5
+ mov     dword, ptr, [rsp, +, 16], 5
+ mov     dword, ptr, [rsp, +, 20], 10
+</pre>
+<br/>
+rsp 是 Register Stack Pointer, 每次偏移 4 个字节(i32 的宽度), 然后往 Stack 中压入复制的常量值，复制过程由编译器优化的。<br/><br/>
+如果换成需要在 Heap 中分配内存的类型就不一样了, 比如下面的代码<br/><br/>
+<pre class="lang:default decode:true">    let s1 = String::from("hello");
+    let s2 = s1;</pre>
+<br/>
+当 s1 赋值给 s2 时就会发生 Ownership move 的过程，Ownership 是编译期的概念，所以编译后的汇编代码中是不会有所谓的 move。<br/><br/>
+注：如果以上两行代码放在一个函数中，没有使用 s2 的话，编译出来的代码就是一个空函数，如果使用了 s2 的话，编译器直接会优化成 let s2 = String::from("hello") 的效果，s1 相当于没存在过。实际上在编译时, let s2 = s1 后，s1 也确实是不可用。<br/><br/>
+我们可以查看下面 Rust 代码的汇编代码<br/><br/>
+<pre class="lang:default decode:true">fn main() {
+    let s1 = String::from("hello");
+    println!("{}", s1);
+    let x:i64 = 10;<br/><br/>
+    let s2 = s1;<br/><br/>
+    let y:i64 = 20;
+    println!("{}, {}", x, y);
+    println!("{}", s2);
+}</pre>
+<br/>
+println! 使用相应的变量是为了不被编译期优化掉，一个 println! 行会产生大量的汇编代码，所以用 x, y 的变量声明来区分边界，用 cargo asm learning::main 看到的片断是<br/><br/>
+let s1 = String::from("hello"); 产生的汇编代码<br/><br/>
+<pre class="lang:default decode:true"> mov     byte, ptr, [rax, +, 4], 111
+ mov     dword, ptr, [rax], 1819043176
+ mov     qword, ptr, [rsp, +, 56], rax       # ptr
+ mov     qword, ptr, [rsp, +, 64], 5         # len
+ mov     qword, ptr, [rsp, +, 72], 5         # capacity</pre>
+<br/>
+从上可以看到 String 类型是 Stack 中的数据结构 (ptr, len, capacity)<br/><br/>
+let s2 = s1; 产生的汇编代码<br/><br/>
+<pre class="lang:default decode:true"> mov     rax, qword, ptr, [rsp, +, 72]
+ mov     qword, ptr, [rsp, +, 96], rax
+ movups  xmm0, xmmword, ptr, [rsp, +, 56]  # 用到了 SSE 指令，操作 16 位
+ movaps  xmmword, ptr, [rsp, +, 80], xmm0  # 移动了上面的 56 起始的 16 位到 80 的位置上
+</pre>
+<br/>
+这样的话把原来 Stack 中 56, 64, 72 上的值复制到了现在的 80, 88, 96 的偏移地址上去了。如果是一个超大的字符串，情形又要变化。<br/><br/>
+上面引入汇编代码大概能看出对 Heap 中分配的变量的赋值操作的效果，而且也清楚 String 在 Stack 中的表示。我们不考虑编译优化的情况下，再回到前面的代码<br/><br/>
+<pre class="lang:default decode:true ">    let s1 = String::from("hello");
+    let s2 = s1;</pre>
+<br/>
+产生的编译效果是<br/><br/>
+<img class="aligncenter" style="width: 300px;" src="/wp-content/uploads/2024/01/trpl04-04.svg" /><br/><br/>
+s1 灰掉，将不可用了，如果还试图去使用 s1 的话<br/><br/>
+<pre class="lang:default decode:true ">    let s1 = String::from("hello");
+    let s2 = s1;<br/><br/>
+    println!("{}, world!", s1);
+</pre>
+<br/>
+将会看到编译错误<br/><br/>
+<pre class="lang:default decode:true">error[E0382]: borrow of moved value: `s1`
+ --&gt; src/main.rs:5:28
+  |
+2 |     let s1 = String::from("hello");
+  |         -- move occurs because `s1` has type `String`, which does not implement the `Copy` trait
+3 |     let s2 = s1;
+  |              -- value moved here
+4 |
+5 |     println!("{}, world!", s1);
+  |                            ^^ value borrowed here after move
+  |
+  = note: this error originates in the macro `$crate::format_args_nl` which comes from the expansion of the macro `println` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: consider cloning the value if the performance cost is acceptable
+  |
+3 |     let s2 = s1.clone();
+  |                ++++++++<br/><br/>
+    Building [                             ] 0/1: learning(bin)                                                                                                                       For more information about this error, try `rustc --explain E0382`.
+    Building [                             ] 0/1: learning(bin)                                                                                                                       warning: `learning` (bin "learning") generated 1 warning
+error: could not compile `learning` (bin "learning") due to previous error; 1 warning emitted
+</pre>
+<br/>
+s1 指向值的 Owner move 到了 s2, 所以 s1 不可用了。<br/><br/>
+<h3>Shallow copy(浅拷贝) 和 Deep Copy(深拷贝)</h3><br/><br/>
+我们从前面看到仿佛是两种情况下的变量赋值<br/><br/>
+<table style="border-collapse: collapse; width: 100%; height: 77px;">
+<tbody>
+<tr style="height: 77px;">
+<td style="width: 50%; height: 77px;">
+<pre class="lang:default decode:true">let x = 5;
+let y = x;</pre>
+</td>
+<td style="width: 50%; height: 77px;">
+<pre class="lang:default decode:true">let s1 = String::from("hello");
+let s2 = s1;</pre>
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+基本类型的复制赋值与 Heap 变量的 move 赋值，其实从根本上它们是一致的，都是只复制 Stack 中的值。<br/><br/>
+<ol>
+    <li>基本类型的字节数固定，所以其值本身在 Stack 中</li>
+    <li>需要在 Heap 中分配内存的，会在 Stack 中存储一个结构(至少包含 Heap 中分配内存的起始地址) 来访问 Heap 内存中的数据</li>
+</ol>
+<br/>
+所以无论是 #1 还是 #2，对变量赋值给另一个变量，都是把 Stack 中的值复制一份再绑定到新的变量; 而情形 #2 的 Stack 中还有一个指针指向 Heap 中的内存地址，所以 s1 要失效掉，以保证同一块 Heap 内存只有一个 Owner, 这就是 s1 moved into 2。<br/><br/>
+对于情形 #1，所有的数据都在 Stack 中，成本不高，所以没有必要让 s1 失效掉。<br/><br/>
+Shallow copy 是指拷贝 Stack 中的数据，Deep Copy 是指同时拷贝 Stack 和 Heap 中的数据。对于基本类型，只有 Stack 部分的数据，所以 Shallow Copy 和 Deep Copy 没什么区别。Deep Copy 一般通过 clone() 方法实现<br/><br/>
+<pre class="lang:default decode:true">let s1 = String::from("hello");
+let s2 = s1.clone();           // 这样 s1 仍然有效，因为有独立的两份 Heap 内存</pre>
+<br/>
+实现了 <code>Copy</code> trait 的类型数据会储在 Stack 中，这样的变量值再赋给另一个变量时只是 Shallow Copy, 不存在 Move 的情况。我们前面所说的基本类型(像各种整形, 浮点数类型, bool 型, char)都实现了 <code>Copy</code>, 除此之外, 只包含了基本类型的 Tuple 也是实现了 <code>Copy</code> 的，如 (i32, f64)。<br/><br/>
+<code>Copy</code> trait 和 <code>Drop</code> trait 是不能共存的。<br/><br/>
+另外，如果一个 Struct 的成员全部是可以 <code>Copy</code> 的，我们可以用 <code>#[derive(Copy, Clone)]</code> 注解，然后赋值时完成像基本类型的赋值行为<br/><br/>
+<pre class="lang:default decode:true">#[derive(Copy, Clone)]
+struct Student {
+    age: u8,
+    height: u8,
+}<br/><br/>
+fn main() {
+    let mut s1 = Student {age: 15, height: 155};
+    let s2 = s1;
+    s1.age = 16;<br/><br/>
+    println!("s1 age: {}, s2 age: {}", s1.age, s2.age);
+}</pre>
+<br/>
+s1 在赋值后仍可用，以上代码执行输出为<br/><br/>
+<blockquote>
+s1 age: 16, s2 age: 15
+</blockquote>
+<br/>
+反汇编看下代码片断<br/><br/>
+<pre class="lang:default decode:true"> mov     word, ptr, [rsp, +, 4], -25840
+ mov     word, ptr, [rsp, +, 6], -25841
+</pre>
+<br/>
+struct 的字段 age, height 值都保存在 Stack 中，每个字段一个字节，连接起来就是两个字节，可以说 struct Student 的整个实例都存储在 Stack 中。可 Copy 的 struct 这样处理在 Stack 中存储 struct 倒也省事，把所有基本类型字段连在一块表示，比如<br/><br/>
+age 和 height 分别是 8 位，合起来就用 16 位联合来表示 age 与 height, 我们由果及因来看为什么是 -25840<br/><br/>
+<pre class="lang:default decode:true">    println!("{}", 0b00001111);     // 15 的二进制
+    println!("{}", 0b10011011);   // 155 的二进制
+    println!("{:0&lt;8b}", -25840i16); // 输出为 1001101100010000</pre>
+<br/>
+那么 -25840 对应的二进制 1001101100010000 与 15 与 155 什么关系呢？由于当前系统的 Byte Order 是 Little Endian, 如果我们把 15 与 155 的二进制值排在一起就是 1001101100001111, 为什么不同呢，因为它是反码表示，+1 变成补码就是 1001101100010000。<br/><br/>
+如 struct 是可以 Copy, Clone 的，它的所有字段加起来占的总字节数是固定的，它可以用连续的多个字节放下所有的字段值，所以能够创建在 Stack 中。进一步理解这种实现了 Copy, Clone trait 的 struct 与基本类型的关系<br/><br/>
+<ol>
+    <li>struct Student { age: u8, height: u8 }:  相当于类型 i16，以此类推</li>
+    <li>struct Student { f1: u8, f2: u16}:  相当于 i32, 因为没有 i24, 得向上扩充位数到  i32</li>
+    <li>struct Student {f1: i128, f2: i128}: Rust 没有 i256 类型，在 Stack 中就只能用两个 i128, 共 32 个字节来表示这个 Struct 了</li>
+</ol>
+<br/>
+不管怎么说这样的 Struct(实现了 Copy, Clone trait) 是固定位宽的, 所以整个值依然适合放在 Stack 中。<br/><br/>
+<h3>Ownership 和函数调用</h3><br/><br/>
+理解了变量赋赋值给变量的关系后，函数的调用是一回事，因为有参数的函数调用第一步就是把实参赋值给形参 -- Shallow Copy, 有 Heap 数据的话就会产生 move。<br/><br/>
+所以含有函数调用的代码<br/><br/>
+<pre class="lang:default decode:true">fn main() {
+    let s = String::from("hello");
+    takes_ownership(s);
+    println!("{}", s)
+}<br/><br/>
+fn takes_ownership(some_string: String) {
+    println!("{}", some_string);
+} </pre>
+<br/>
+等效于(或者说内联函数后)<br/><br/>
+<pre class="lang:default decode:true">fn main() {
+    let s = String::from("hello");
+    {
+        let some_string = s;
+        println!("{}", some_string);
+    }
+    println!("{}", s)
+}</pre>
+<br/>
+因此很容易看出在调用了 takes_ownership(s) 函数后，s 的 Owner moved 到了函数中的 some_string, 它会在退出函数 Scope 是清除掉，所以函数调用后的 <code>s</code> 不可用。<br/><br/>
+类推到基本类型(实现了 Copy 的类型) 作为参数，不存在 Owner move 的情况，原来的变量仍然有效。<br/><br/>
+<h3>从函数或 Scope 中返回值的 Owner</h3><br/><br/>
+看下面的例子<br/><br/>
+<pre class="lang:default decode:true">fn main() {
+    let s1 = gives_ownership();
+    println!("{}", s1);
+}<br/><br/>
+fn gives_ownership() -&gt; String {
+    let some_string = String::from("yours");
+    some_string
+}</pre>
+<br/>
+内联函数后效果等同<br/><br/>
+<pre class="lang:default decode:true">fn main() {
+    let s1 = {
+        let some_string = String::from("yours");
+        some_string
+    };
+    println!("{}", s1);
+}</pre>
+<br/>
+退出 Scope 时 some_string move 给了 s1, 所以不会被调用 drop 函数清除 some_string.<br/><br/>
+<h3>Reference 和 Borrowing</h3><br/><br/>
+Rust 中对含有指针的数据类型，传递时(赋值给另一个变量或作为函数参数)会产生 move 而造成变量不再可用，那什么办法可避免这种 move 呢？答案是 <code>reference</code>, 它就像一个地址指针，顺着它可访问到存储该地址中的数据，但是 Reference 不会影响 Owner。但它又不像指针，Reference 在它在生命期内总是指一个有效的值。<br/><br/>
+我也试着用 Value Semantics 和 Reference Semantics 来理解 Rust 的不同类型，但 Google 了一下至少在官方的文档中并未采用这两个概念。<br/><br/>
+看下面的例子<br/><br/>
+<pre class="lang:default decode:true">fn main() {
+    let s1 = String::from("hello");
+    let len = calculate_length(&amp;s1);
+    println!("The length of '{}' is {}.", s1, len);
+}<br/><br/>
+fn calculate_length(s: &amp;String) -&gt; usize { // s 是一个 Reference, 不获得 Ownership
+    s.len()
+}  // 由于 s 未获得 Owership，所以离开这个 Scope 时不会 drop s</pre>
+<br/>
+如果单单看编译后的汇编代码就是优化后的<br/><br/>
+<pre class="lang:default decode:true"> mov     dword, ptr, [rax], 1819043176
+ mov     qword, ptr, [rsp], rax
+ mov     qword, ptr, [rsp, +, 8], 5
+ mov     qword, ptr, [rsp, +, 16], 5
+ mov     qword, ptr, [rsp, +, 24], 5</pre>
+<br/>
+函数调用过程在编译期执行了，所以 len 就是 rsp + 24 中的 5。所以这里我们所有分析的实际上是 Rust 编译器的行为。<br/><br/>
+前面的 <code>&amp;s1</code> 中的 <code>&amp;</code> 符号就是表示 <code>Reference</code>, <code>&amp;s1</code> 语法用来创建一个指向 <code>s1</code> 的 Reference, 但不拥有它，因此不再使用该 Reference 时不会调用 drop 来清除它。<br/><br/>
+内联 calculate_length(s: &amp;String) 函数的等效代码如下<br/><br/>
+<pre class="lang:default decode:true ">fn main() {
+    let s1 = String::from("hello");
+    let len = {
+        let s = &amp;s1;
+        s.len()
+    };
+    println!("The length of '{}' is {}.", s1, len);
+}</pre>
+<br/>
+Rust 给出的 let s = &amp;s1 的效果图是<br/><br/>
+<img class="aligncenter" style="width: 600px;" src="/wp-content/uploads/2024/01/trpl04-05.svg" /><br/><br/>
+对该图的理解还有些疑惑，<code>let s = &amp;s1;</code> 会在 Stack 中创建一个 &amp;String 类型的指针指向同样是在 Stack 中的 s1 的 stuct? 那就意味着所有对 <code>s</code> 的访问都要顺着 <code>s1</code> 来操作。<br/><br/>
+我们称创建一个 Reference 的动作为 Borrowing, 类比于现实中的你向某人借个东西，但不拥有它，完后还需返回去。<br/><br/>
+<h3>Mutable Reference</h3><br/><br/>
+默认的 Reference 是 Immutable, 不能拿着那个 Reference 修改其中的数据，我们也可以创建 Mutable Reference, 这要求声明的变量是 mut 的，以及引用是 &amp;mut 的，如<br/><br/>
+<pre class="lang:default decode:true ">fn main() {
+    let mut s = String::from("hello");
+    change(&amp;mut s);<br/><br/>
+    println!("{}", s);
+}<br/><br/>
+fn change(some_string: &amp;mut String) {
+    some_string.push_str(", world");
+}</pre>
+<br/>
+在使用 Mutable reference 时有一个很大的限制，即同一个 Scope 中不能创建多个 Mutable Reference，比如下面的代码<br/><br/>
+<pre class="lang:default decode:true">fn main() {
+    let mut s = String::from("hello");<br/><br/>
+    let r1 = &amp;mut s;               // #1
+    let r2 = &amp;mut s;               // #2<br/><br/>
+    println!("{}, {}", r1, r2);    // #3
+}</pre>
+<br/>
+编译错误是<br/><br/>
+<blockquote>
+error[E0499]: cannot borrow `s` as mutable more than once at a time
+</blockquote>
+<br/>
+这里所谓的 Mutable reference scope 是指创建引用及使用完该 Reference 的区域, 以上代码在 #3 处使用了 r1 和 r2，比如 r1 的 Scope 是 #1 和 #3 之间, r2 的 Scope 是 #2, #3 之间。<br/><br/>
+如果之前的 Reference 不再使用了，又可以创建另一个 Mutable Reference, 如代码改成如下就可以通过编译了<br/><br/>
+<pre class="lang:default decode:true">fn main() {
+    let mut s = String::from("hello");<br/><br/>
+    let r1 = &amp;mut s;     // #1
+    println!("{}", r1);  // #2<br/><br/>
+    let r2 = &amp;mut s;     // #3
+    println!("{}", r2);  // #4
+}</pre>
+<br/>
+Reference r1 的 Scope 在 #1, #2 之间，Reference r2 的 Scope 在 #3, #4 之间，r1 和 r2 没有同时存在过，所以符合规则。当然用 <code>{}</code> 可以创建更独立的 Scope。<br/><br/>
+同一 Scope 中不能有同一个变量的多个 Mutable Reference 可以在编译器防止数据竞争，数据竞争发生在出现以下三种行为<br/><br/>
+<ol>
+    <li>同一时间两个或多个指针访问相同的数据</li>
+    <li>至少有一个指针用来写数据</li>
+    <li>没有任何机制来同步对数据的访问</li>
+</ol>
+<br/>
+运行期的数据竞争难以诊断，所以 Rust 在编译期对数据竞争进行杜绝(<span style="color: #ff0000;">多线程环境如何访问同一块数据呢?</span>)<br/><br/>
+Rust 也不允许同时出现 Mutable 和 Immutable reference, 下面代码将编译出错<br/><br/>
+<pre class="lang:default decode:true">fn main() {
+    let mut s = String::from("hello");<br/><br/>
+    let r1 = &amp;s; // no problem
+    let r2 = &amp;mut s; // BIG PROBLEM<br/><br/>
+    println!("{}, {}", r1, r2);
+}</pre>
+<br/>
+错误是<br/><br/>
+<blockquote>
+error[E0502]: cannot borrow `s` as mutable because it is also borrowed as immutable
+</blockquote>
+<br/>
+原因是因为随着后面 Mutable 对数据的修改，造成前面由 Immutable Reference 得到的值不再有效，提前举个 slice 的例子<br/><br/>
+<pre class="lang:default decode:true">// 编译不过，error[E0502]: cannot borrow `s` as mutable because it is also borrowed as immutable
+fn main() {
+    let mut s = String::from("hello");<br/><br/>
+    let slice = &amp;s[..2];   // &amp;s 是 Borrowing, slice 是指向 s 的一个片断，此时是 he
+    let r2 = &amp;mut s;
+    r2.clear();            // 当原始 s 清除后, &amp;s[..2] 也就无效了<br/><br/>
+    println!("{}, {}", slice, r2);
+}</pre>
+<br/>
+如果这段代码能编译通过的话，最后的输出什么是什么呢？<br/><br/>
+我们可以想像在使用 Reference 时是在进行延迟计算，所以在使用 Immutable Reference 之前不能有 Mutable Reference。<br/><br/>
+如果我们以 Reference 的创建与最后使用为它的 Scope, 改写成如下代码是合法的<br/><br/>
+<pre class="lang:default decode:true">fn main() {
+    let mut s = String::from("hello");<br/><br/>
+    let r1 = &amp;s; // #1
+    let r2 = &amp;s; // #2
+    println!("{} and {}", r1, r2);  // #3<br/><br/>
+    let r3 = &amp;mut s; // #4
+    println!("{}", r3);         // #5
+}</pre>
+<br/>
+同一个 Scope 中可以同时有多个 Immutable Reference, 如上面的 r1(scope #1..#3) 和 r2(scope #2..#3) 存在重叠。而 r3(scope #4..#5) 不与任何一个 Reference 处于重叠的 Scope 中，所以也没问题。<br/><br/>
+<h3>Dangling References(悬空引用)</h3><br/><br/>
+本人更喜欢用悬空一词而不是悬垂，因为这里头并没有下垂的意思，年纪大了才会下垂。<br/><br/>
+Rust 在编译器保证 Reference 指向的内存区域不会被释放，不用担心 C++ 中发生的事情。所以下面的代码编译不过<br/><br/>
+<pre class="lang:default decode:true">fn main() {
+    let reference_to_nothing = dangle();
+}<br/><br/>
+fn dangle() -&gt; &amp;String {
+    let s = String::from("hello");
+    &amp;s     // 返回一个 Reference 但不交出 Ownership，s 会在函数退出后释放, &amp;s 就会变成 Dangling Reference
+}</pre>
+<br/>
+如果上面的代码能编译通过的话，&amp;s 势将变成一个 Dangling Reference，而实际上 Rust 不是允许这种事情的发生，编译错误是<br/><br/>
+<pre class="lang:default decode:true ">error[E0106]: missing lifetime specifier
+ --&gt; src/main.rs:5:16
+  |
+5 | fn dangle() -&gt; &amp;String {
+  |                ^ expected named lifetime parameter
+  |
+  = help: this function's return type contains a borrowed value, but there is no value for it to be borrowed from
+help: consider using the `'static` lifetime
+  |
+5 | fn dangle() -&gt; &amp;'static String {
+  |                 +++++++</pre>
+<br/>
+这里牵涉到了 Lifetime 的, static 的 Lifetime 可以解决，但主要看错误中的<br/><br/>
+<blockquote>
+this function's return type contains a borrowed value, but there is no value for it to be borrowed from
+</blockquote>
+<br/>
+<h3>Reference 规则</h3><br/><br/>
+<ol>
+    <li>在任何给定时间(共同的 Reference Scope), 只能有一个 Mutable Reference 或多个 Immutable Reference</li>
+    <li>Reference 必须时刻有效 -- 指向的数据总是有效</li>
+</ol>
+<br/>
+<h3>关于 Slice 类型</h3><br/><br/>
+Slice 俗称切片，和其他语言中的 Slice 概念是一样的，只要理解它是通过 Reference 方式获得的原始集合中的一个视图。取 Slice 时指定一个 range, 语法上有各种省略方式<br/><br/>
+<pre class="lang:default decode:true">    let s = "hello world";
+    let x = &amp;s[1..3];   // el,  &amp;s[1..&lt;3] 的简写方式, index: 1,2
+    let x = &amp;s[1..=3];  // ell        index: 1,2,3
+    let x = &amp;s[..];     // hello world
+    let x = &amp;s[..3];    // hel
+    let x = &amp;s[3..];    // lo world</pre>
+<br/>
+Slice 是从原始集合中用 range 表示的连续区域为视图, range 的左，右端都可以省略，右边省略时值为 0, 右端省略时值为集合的长度。<br/><br/>
+下面用一张图形像表示 Slice 与原集合(以 String 为例)的关系<br/><br/>
+<img class="aligncenter" style="width: 300px;" src="/wp-content/uploads/2024/01/trpl04-06.svg" /><br/><br/>
+Slice 是通过 Reference 取得的值，通过 Mutable Reference 和 Immutable Reference 相应的可得到 Mutable Slice 和 Immutable Reference。因为它们是 Reference, 所以它同样要遵循 Reference 的规则<br/><br/>
+下面是一个通过 Mutable Slice 修改原始数据的代码。<br/><br/>
+<pre class="lang:default decode:true">fn main() {
+    let mut v = vec![1, 2, 3, 4, 5];
+    let vec_slice = &amp;mut v[2..3];
+    vec_slice[0] = 88;                   // Slice 有了自己的下标区间
+    println!("vec changed to: {:?}", v);
+}</pre>
+<br/>
+执行后输出<br/><br/>
+<blockquote>
+vec changed to: [1, 2, 88, 4, 5]
+</blockquote>
+<br/>
+Slice 可类比于数据库的视图，不开辟新的内存空间，数据库也有只读和可读写的视图之分。<br/><br/>
+<h3>关于 cargo asm 的 --dev, --rust 参数</h3><br/><br/>
+运行 cargo asm 可以加上有用的参数，如 <code>--rust</code> 会在显示汇编代码时列出相应的 Rust 代码; <code>--dev</code> 为每一行所见代码产生汇编代码，而非编译器优化后的代码。这就是为什么像 C++ 有 Debug/Release 版本一样，Rust 也有 Debug(cargo build) 和 Release(cargo build --release) 之分。对 Release 充分优化后的代码基本就无法进行单步调试的，避如说前面的代码，如果不使用任何声明的变量<br/><br/>
+<pre class="lang:default decode:true ">fn main() {
+    let x = 5;
+    let y = x;
+    let z = 10;
+}</pre>
+<br/>
+编译优化(cargo build --release) 后看到的是这样子的<br/><br/>
+<pre class="lang:default decode:true">fn main() {
+}</pre>
+<br/>
+本来就是什么都没做，如果使用了 y, 则 x, z 会从二进制代码中优化掉, 优化有时候显得很残酷。<br/><br/>
+而加上 <code>--dev</code> 就会保留源代码中的每一行对应的汇编代码<br/><br/>
+没有 <code>--dev</code> 参数时<br/><br/>
+<pre class="lang:default decode:true">cargo asm  learning::main<br/><br/>
+learning::main:
+.cfi_startproc
+ret</pre>
+<br/>
+加上 <code>--dev</code> 参数<br/><br/>
+<pre class="lang:default decode:true">cargo asm --dev learning::main<br/><br/>
+learning::main:
+        .cfi_startproc
+        mov dword ptr [rsp - 12], 5
+        mov dword ptr [rsp - 8], 5
+        mov dword ptr [rsp - 4], 10
+        ret
+</pre>
+<br/>
+再加上 <code>--rust</code> 参数<br/><br/>
+<pre class="lang:default decode:true">cargo asm --dev --rust learning::main<br/><br/>
+learning::main:
+        .cfi_startproc
+                // /home/yanbin/Workspaces/remote-projects/rust-projects/learning/src/main.rs : 2
+                let x = 5;
+        mov dword ptr [rsp - 12], 5
+                // /home/yanbin/Workspaces/remote-projects/rust-projects/learning/src/main.rs : 3
+                let y = x;
+        mov dword ptr [rsp - 8], 5
+                // /home/yanbin/Workspaces/remote-projects/rust-projects/learning/src/main.rs : 4
+                let z = 10;
+        mov dword ptr [rsp - 4], 10
+                // /home/yanbin/Workspaces/remote-projects/rust-projects/learning/src/main.rs : 5
+                }
+        ret
+</pre>
+<br/>
+学习每一种语言时，必要时看看编译出来的汇编或中间代码可帮助我们更好的理解代码的实际行为，而不总是靠猜。比如 .net 的 IL(ILAsm.exe), Java 的 bytecode(javap -c), Python 的 bytecode(dis.dis()) 等。

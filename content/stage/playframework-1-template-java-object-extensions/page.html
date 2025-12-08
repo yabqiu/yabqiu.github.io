@@ -1,0 +1,85 @@
+---
+title: PlayFramework 1 模板应用 -- Java 对象扩展
+url: /playframework-1-template-java-object-extensions/
+date: 2014-04-14T19:09:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PlayFramework
+tags: 
+  - playframewok
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6287 
+wpStatus: publish
+views: 527
+lastmod: 2021-05-03T00:10:21-05:00
+---
+
+涉及到页面显示的问题，用自定义标签总能够能事不少，即使是最原始的自定义 JSP 标签也有人乐此不疲，进化到  Play 中的自定义标签数得上很轻量级的实现，简单的只需要一小页文档 <a href="http://www.playframework.com/documentation/1.2.7/templates" target="_blank" rel="noopener">The template engine </a>就足矣。</p>
+<br/>
+概括起来 Play1 支持三种方式自定义标签: <code>HTML 文件方式</code>, <code>自定义 FastTags</code>, <code>Java 对象扩展方法</code>. 前二者为面向过程的方式，第三种方式为面向对象的方式，是在往某种数据类型追加一个方法。<br/><br/>
+确切的说针对 Java 对象的方法的扩展并不能称之为自定义标签。<br/><br/>
+一个这样的场景，股票价格变化值要显示在页面上，根据正，负，零，再加上不同的区域四种条件分别显示为不同的颜色，比如美国分别为绿色，红色和黑色(注: 美国股市显示的颜色正好与中国相反)。假设 priceChange 是 Integer 类型，我们就可以定义对 Integer 对象的扩展，所在类必须继承自 JavaExtensions 类：<!--more--><br/><br/>
+<pre class="lang:default decode:true ">package utilities;<br/><br/>
+import groovy.lang.Closure;<br/><br/>
+import java.io.PrintWriter;
+import java.util.Map;<br/><br/>
+import play.templates.JavaExtensions;
+import play.templates.GroovyTemplate.ExecutableTemplate;<br/><br/>
+public class PlayTagExtensions extends JavaExtensions {
+  
+  public static String showFor(Integer priceChange, String region) {
+    String color = "black";
+    if(priceChange &gt; 0){
+        color = "US".equals(region) ? "green" : "red";
+    }else if(priceChange &lt; 0){
+      color = "US".equals(region) ? "red" : "green";
+    }
+    return "&lt;span style='color:"+color+"'&gt;" + priceChange + "&lt;/span&gt;";
+  }  
+}
+</pre>
+<br/>
+Play1 中的模板是用的是 Groovy 模板，看到后面用 ${obj.abc()} 格式来调用就知道，FastTags 是用 #{abc} 这样的形式。<br/><br/>
+以上 showFor() 函数第一个参数的类型表示是对 Integer  类型进行扩展，相当于 Integer  类型拥有了 showFor(String region) 这么个方法，其余参数才是使用标签方法时的参数列表，这里除 region 外还可以有更多。方法返回的字符串就是要在页面上输出的内容。<br/><br/>
+<span style="color: #800000;">注：这里不能声明为 showFor(int priceChange, String region)，否则会提示</span><br/><br/>
+<span style="color: #800000;">Exception raised was MissingMethodException : No signature of method: java.lang.Integer.showFor() is applicable for argument types: (java.lang.String) values: [US] Possible solutions: power(java.lang.Number), power(java.lang.Integer).</span><br/><br/>
+<span style="color: #800000;">我们这是要为对象 Integer 扩展方法，原始类型不能扩展方法，也就是像往集合里放对象一样，调用时只会装箱，不会拆箱。</span><br/><br/>
+使用方法，创建了上面的类及方法，无需作任何的配置操作，Play 就知道找到来用。<br/><br/>
+假设在 Controller  中是这样渲染模板的<br/><br/>
+<blockquote>
+int priceChange = 10;  // Integer priceChange = 10; 在 viewTemplate 中会装箱为 Integer<br />
+String region = "US";<br />
+renderTemplate("abc.html", priceChange, region);
+</blockquote>
+<br/>
+在  abc.html 页面中就可以这么使用自定义的标签了<br/><br/>
+<blockquote>
+${priceChange.showFor('US').raw()}
+</blockquote>
+<br/>
+到浏览器中输出的源文件就会是<br/><br/>
+<blockquote>
+&lt;span style='color:green'&gt;10&lt;/span&gt;
+</blockquote>
+<br/>
+防止直接显示 HTML 源代码除了上面 .raw() 也可以用<br/><br/>
+<blockquote>
+#{verbatim}<br />
+    ${priceChange.showFor('US')<br />
+#{/verbatim}
+</blockquote>
+<br/>
+Java 对象扩展方法中只要第一个参数匹配的类型就被扩展了该方法，各级属性也行，如<br/><br/>
+<blockquote>
+${stock.priceChangePercentage.showFor('CN').raw()}<br />
+${(-25).showFor("US").raw()}<br />
+${100.showFor("CN").raw()}
+</blockquote>
+<br/>
+剩下就是自己发挥的问题了。

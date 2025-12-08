@@ -1,0 +1,213 @@
+---
+title: SciPy 最优化之最小化
+url: /scipy-optimize-minimize/
+date: 2024-12-05T01:06:36-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2024/12/scipy-logo.png"
+categories:
+  - Python
+  - Algorithm
+tags: 
+  - Python
+  - SciPy
+  - NumPy
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13969 
+wpStatus: publish
+views: 164
+lastmod: 2024-12-05T14:30:42-06:00
+---
+
+[latexpage]</p>
+<br/>
+ SciPy 是一个开源的算法库和数学工具包，可以处理最优化、线性代数、积分、插值、拟合、特殊函数、快速傅里叶变换、信号处理、图像处理、常微分方程求解器等。 它依赖于 NumPy, Pandas 也依赖了 NumPy。本文重点是体验它怎么处理最优化的问题。很多情形下通过 SciPy 的  optimize.minimize 方法寻求目标函数最小值的过程得到最优化的输入与输出。比如寻找二次元函数的根，求解线性/动态规则，金融行业的计算出最优投资组合的资产分配等。为什么 SciPy 没有 maximize 方法呢，因为没有必要，想要找到最大化的值，只要把目标函数的值取反，或者是模或绝对值的最小值。看到 minimize 方法名更让人觉得目标函数会有一个收敛值。<br/><br/>
+虽然 SciPy 对特定的问题有更直白的函数，如求根有 optimize.root, 线性规则 optimize.linprog(现不建议使用)，但各种优化基本都可以回归到 minimize 方法调用。minimize 方法的原型是<br/><br/>
+<pre class="lang:default decode:true">def minimize(fun, x0, args=(), method=None, jac=None, hess=None,
+             hessp=None, bounds=None, constraints=(), tol=None,
+             callback=None, options=None):</pre>
+<br/>
+除了必须的目标函数和初始值，还有更多参数，像常用的约束(contraints) - 满足某些特定条件的最优化, 线程或非线性约束等; 求解方法(method) - Powell, Newton-CG 等<br/><br/>
+下面用 optimize.minimize 来求解一些问题<!--more--><br/><br/>
+<h3>求一元二次函数的最小值(根)</h3><br/><br/>
+函数定义为 [latex]f(x) = 4x^2 + 2x + 10[/latex], 画出它的函数曲线如下<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/12/scipy-opt-min-1.png"><img class="aligncenter wp-image-13994" src="https://yanbin.blog/wp-content/uploads/2024/12/scipy-opt-min-1-800x636.png" alt="" width="360" height="286" /></a><br/><br/>
+根(顶点) 的 x 值是 [latex]x = -\frac{b}{2a} = -\frac{2}{8} = -0.25[/latex], 相应的 y 值是 9.75<br/><br/>
+现在来看用 minimize 怎么求解的，代码如下<br/><br/>
+<pre class="lang:default decode:true">import scipy.optimize as opt
+import numpy as np<br/><br/>
+def objective(x):
+    return 4*(x**2)+2*x+10<br/><br/>
+x0 =  np.array([-1])
+result = opt.minimize(objective, x0)<br/><br/>
+print(result.x)           # 目标函数最小值时输入 x
+print(result.fun)         # 目标函数最小值
+print(result)             # 迭代结果</pre>
+<br/>
+x0 是猜测的初始值，minimize 通过迭代算出目标函数最小值的。<br/><br/>
+上面代码输出为<br/><br/>
+<pre class="lang:default decode:true ">[-0.25]
+9.75
+  message: Optimization terminated successfully.
+  success: True
+   status: 0
+      fun: 9.75
+        x: [-2.500e-01]
+      nit: 2
+      jac: [ 0.000e+00]
+ hess_inv: [[ 1.250e-01]]
+     nfev: 6
+     njev: 3</pre>
+<br/>
+函数最小值为 9.75, x 为 -0.25，通过两次(nit) 迭代算出。<br/><br/>
+不同的初始值对结果也会影响<br/><br/>
+比如 x0 = np.array[10] 时， x=-0.2500001, f(x)=9.750000000000037<br/><br/>
+-1 和 10 是 -0.25 两边的值，所以 minimize 会向两边进行迭代，不同初始值会影响到迭代的次数。<br/><br/>
+我们可以输出它的迭代过程，用 callback 函数<br/><br/>
+<pre class="lang:default decode:true ">def callback(xk):
+    print(f"Iteration: {callback.iter}, x = {xk}, y = {objective(xk)}")
+    callback.iter += 1<br/><br/>
+callback.iter = 0<br/><br/>
+x0 =  np.array([100])
+result = opt.minimize(objective, x0, callback=callback)</pre>
+<br/>
+输出为<br/><br/>
+<pre class="lang:default decode:true ">Iteration: 0, x = [78.79], y = [24999.0364]
+Iteration: 1, x = [30.19728879], y = [3717.89957945]
+Iteration: 2, x = [-0.24999419], y = [9.75]
+Iteration: 3, x = [-0.25], y = [9.75]</pre>
+<br/>
+很神奇，不知道它内部是怎么算定出 x=-0.25 时就是最小值的<br/><br/>
+如果是一个下开口的二次函数 \( f(x) = -4x^2 + 2x + 10 \), 也试图求其最小值会如何呢？<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/12/scipy-opt-min-2.png"><img class="aligncenter wp-image-13995" src="https://yanbin.blog/wp-content/uploads/2024/12/scipy-opt-min-2-800x618.png" alt="" width="360" height="278" /></a><br/><br/>
+<pre class="lang:default decode:true">def objective(x):
+    return -4*(x**2)+2*x+10<br/><br/>
+x0 =  np.array([10])
+result = opt.minimize(objective, x0)
+print(result)</pre>
+<br/>
+输出结果<br/><br/>
+<pre class="lang:default decode:true ">  message: Desired error not necessarily achieved due to precision loss.
+  success: False
+   status: 2
+      fun: -4359650.2304
+        x: [ 1.044e+03]
+      nit: 1
+      jac: [-8.352e+03]
+ hess_inv: [[-1.250e-01]]
+     nfev: 236
+     njev: 112</pre>
+<br/>
+迭代一次就马上止住，给出答案为没有最小值。但只要改造一下目标函数, 即取反<br/><br/>
+<pre class="lang:default decode:true">def objective(x):
+    return -(-4*(x**2)+2*x+10)</pre>
+<br/>
+这样就能算出它  x= 0.25 时最大值为 10.25，因为向下开口图形的顶点为最大值，取反则为最小值。 <br/><br/>
+我们知道直线没有最小最大值，用 SciPy 试下求函数  \(f(x) = 4x + 10\) 的最小值<br/><br/>
+<pre class="lang:default decode:true">def objective(x):
+    return 4 * x + 10<br/><br/>
+x0 = np.array([10])
+result = opt.minimize(objective, x0)</pre>
+<br/>
+果然，结局是<br/><br/>
+<blockquote>
+message: Desired error not necessarily achieved due to precision loss.<br />
+success: False
+</blockquote>
+<br/>
+<h3>求立体空间中的最小值</h3><br/><br/>
+如果是一个二元的函数 [latex]f(x, y) = 4x^2 + 2y^2 + 10[/latex], 我们先画出它的图形来<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2024/12/optimize-minimize-3.png"><img class="aligncenter wp-image-13996" src="https://yanbin.blog/wp-content/uploads/2024/12/optimize-minimize-3-800x713.png" alt="" width="360" height="321" /></a>现在是看图索骥了，就是想要知道 x, y 分别为多少时函数最小。把这个图形看成是一个地势高低图的话，就是在寻找畦地<br/><br/>
+<pre class="lang:default decode:true">def objective(x_arr):
+    x, y = x_arr
+    return 4*(x**2) + 2*(y**2) + 10<br/><br/>
+x0 = np.array([-10, -10])
+result = opt.minimize(objective, x0)<br/><br/>
+np.set_printoptions(suppress=True)  # 数值不以科学计数法输出
+print(result.x)
+print(result.fun)</pre>
+<br/>
+输出为<br/><br/>
+<blockquote>
+[-0.00000003 -0.00000005]<br />
+10.000000000000009
+</blockquote>
+<br/>
+去除误差，答案是正确的，也就是在 x=0, y=0，函数 f(x,y) 最小为 10.<br/><br/>
+如果预设 x0 = np.array([0,0]), 结果就是<br/><br/>
+<pre class="lang:default decode:true">[0. 0.]
+10.0</pre>
+<br/>
+初始预计值还是要有所讲究<br/><br/>
+<h3>求正弦函数的最小值</h3><br/><br/>
+正弦函数[latex]f(x)=sin(x)+2[/latex] 是一个周期波，它有无数的波峰和波谷。我们的目的就是要找到猜测试值附近的波谷所在。上代码<br/><br/>
+<pre class="lang:default decode:true">np.set_printoptions(suppress=True)<br/><br/>
+def objective(x):
+    return np.sin(x) + 2<br/><br/>
+x0 = np.array([0])
+result = opt.minimize(objective, x0)
+print(result.x)
+print(result.fun)<br/><br/>
+print('---')<br/><br/>
+x0 = np.array([5])
+result = opt.minimize(objective, x0)
+print(result.x)
+print(result.fun)</pre>
+<br/>
+分别得到两组结果<br/><br/>
+<blockquote>
+[-1.57079633]<br />
+1.0<br />
+---<br />
+[4.71238898]<br />
+1.0
+</blockquote>
+<br/>
+最小值都是一样的，所以都找到了各自猜测值附近的波谷位置<br/><br/>
+补上它的平面图<br/><br/>
+<h3><a href="https://yanbin.blog/wp-content/uploads/2024/12/optimize-minimize-4.png"><img class="wp-image-13998 aligncenter" src="https://yanbin.blog/wp-content/uploads/2024/12/optimize-minimize-4-800x635.png" alt="" width="360" height="286" /></a></h3><br/><br/>
+optimize.minimize 还可以实现曲线拟合问题，比如说找到相近的变化趋势，指纹/人脸检测等，当然这方面有更专业的工具箱<br/><br/>
+<h3>关于背包问题</h3><br/><br/>
+背包问题是一个整数的线性规划，<code>scipy.optimize.linprog</code> 可用来解决线性规划，但不适于整数的线性规划，因为背包中能装的物品数量是自然数。更适于解决整数的线程规划应该是 <a href="https://coin-or.github.io/pulp/">Pulp</a>(PuLP is an linear and mixed integer programming modeler) 或 <a href="https://www.pyomo.org/">Pyomo</a>. <br/><br/>
+什么是背包问题:<br/><br/>
+有 n 种物品，物品 j 的重量和价值分别为 [latex]w_{j}[/latex] 和 [latex]v_{j}[/latex]，如果背包的最大容量限制是 m ，怎么样选择放入背包的物品以使得背包的总价值最大？<br/><br/>
+它是一个组合优化问题，设 [latex]x_{j}[/latex] ​ 表示装入背包的第 j 个物品的数量, 那么目标函数和约束条件是：<br/><br/>
+<blockquote>
+目标函数：[latex]max\sum_{j=1}^{n}v_{j}x_{j}[/latex]
+约束条件: [latex]\begin{cases}\sum_{j=1}^n w_j x_j \leq b \\x_j \in \mathbb{N}\end{cases}[/latex]
+</blockquote>
+<br/>
+下面是具体问题的求解<br/><br/>
+<pre class="lang:default decode:true">from pulp import LpMaximize, LpProblem, LpVariable, lpSum, PULP_CBC_CMD<br/><br/>
+weight_values = [(2, 3), (3, 4), (4, 5), (5, 6)]  # 每个物品重量及价值
+capacity = 5  # 背包的最大承重<br/><br/>
+problem = LpProblem(name="knapsack-problem", sense=LpMaximize) # 目标函数最大化<br/><br/>
+# 决策, 1 为选择
+x = [LpVariable(f"x{i}", cat="Binary") for i in range(len(weight_values))]<br/><br/>
+# 目标与约束
+problem.objective = lpSum(v[1] * x[i] for i, v in enumerate(weight_values))
+problem.addConstraint(lpSum(v[0] * x[i] for i, v in enumerate(weight_values)) &lt;= capacity)<br/><br/>
+status = problem.solve(PULP_CBC_CMD(msg=False))<br/><br/>
+print("Selected items:")
+for i, v in enumerate(weight_values):
+    if x[i].value() == 1:
+        print(f" - Item {i + 1} (weight={v[0]}, value={v[1]})")<br/><br/>
+print("Total value: %d" % problem.objective.value())
+</pre>
+<br/>
+解出问题后，结果为<br/><br/>
+<blockquote>
+Selected items:<br />
+- Item 1 (weight=2, value=3)<br />
+- Item 2 (weight=3, value=4)<br />
+Total value: 7
+</blockquote>
+<br/>
+最后包的总重为: 5<br/><br/>
+这个问题还可以更复杂一些，比如说同一件物品可以拿多个进行组合。<br/><br/>
+链接：1. <a href="https://www.cnblogs.com/NaughtyBaby/p/5590081.html">最优化学习笔记</a>

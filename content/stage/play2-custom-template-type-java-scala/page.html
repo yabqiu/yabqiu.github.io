@@ -1,0 +1,178 @@
+---
+title: Play2 自定义模板类型 (Java&Scala)
+url: /play2-custom-template-type-java-scala/
+date: 2014-09-03T10:36:59-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - PlayFramework
+tags: 
+  - template
+  - play2
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6533 
+wpStatus: publish
+views: 904
+lastmod: 2021-09-03T18:04:44-05:00
+---
+
+Play2 默认支持的模板类型是 html, txt, xml 和 js，不在这些支持之列的模板文件即使放到 app/views 目录中，也不会被编译的。如果要支持自定义的模板类型就要些定制了，这比 Play1 复杂些。模板的定制包括在 Build.scala 或 build.sbt 中加上 templatesTypes 配置，并需创建 BufferedContent 和 Format 实现类。下面以增加 json 模板类型为例，兼顾 Scala 和 Java 的实现类，是基于 Play2.2 的，在 Play2.3 中又略有不同。<br/><br/>
+官方有相关的文档，参考：<a href="http://www.playframework.com/documentation/2.2.x/ScalaCustomTemplateFormat" target="_blank" rel="noopener">Custom formats on Scala</a>, <a href="http://www.playframework.com/documentation/2.2.x/JavaCustomTemplateFormat" target="_blank" rel="noopener">Custom formats on Java</a> 和 <a href="https://github.com/playframework/playframework/blob/2.2.x/framework/src/play/src/main/scala/play/api/templates/Templates.scala" target="_blank" rel="noopener">模板定义参考</a>.<br/><br/>
+在较新一些的 2.2 的 <a href="https://searchcode.com/codesearch/view/2451189/#l-210" target="_blank" rel="noopener">PlaySettings</a> 中，可以看到<br/><br/>
+<pre class="lang:default decode:true">templatesTypes := Map(
+      "html" -&gt; "play.api.templates.HtmlFormat",
+      "txt" -&gt; "play.api.templates.TxtFormat",
+      "xml" -&gt; "play.api.templates.XmlFormat",
+      "js" -&gt; "play.api.templates.JavaScriptFormat"
+)</pre>
+<br/>
+弄清了上面的原理后，开始我们的步骤<br/><br/>
+<span style="color: #ff0000;"><strong>第一步：修改项目构建文件</strong></span><br/><br/>
+在构建文件 build.sbt 或 Build.scala 中增加下面的内容作为项目的 setting<!--more--><br/><br/>
+<pre class="lang:default decode:true">templatesTypes += ("json" -&gt; "utilities.templates.JsonFormat")  //这是针对 Scala 写的 JsonFormat<br/><br/>
+//templatesTypes += ("json" -&gt; "utilities.templates.JsonFormat.instance")  // Java 的 JsonFormat 还要加上 instance 静态属性，下有具体例子https://yanbin.blog/wp-admin/post.php?post=6533&amp;action=edit#</pre>
+<br/>
+Build.scala 中要加到下面的位置上<br/><br/>
+<pre class="lang:default decode:true">val main = play.Project(......)
+    .settings(
+      templatesTypes += ("json" -&gt; "utilities.templates.JsonFormat.instance"),
+    )</pre>
+<br/>
+<span style="color: #ff0000;"><strong>第二步：实现 Json 和 JsonFormat 类</strong></span><br/><br/>
+和相应的实现类，前面说过需要两个类型<br/><br/>
+<code>class Json extends BufferedContent</code>  和 <code>class JsonFormat implements Format</code>, 实现各自接口中要求的方法和指定 Content-Type 为 application/json, Format 的 escape() 方法是 view 模板中默认被调用的，比如需要字符串的双引号转议等。<br/><br/>
+开始例子，可以选择下面的某一种实现方：<br/><br/>
+<span style="color: #0000ff;">1. Scala 实现自定义 JSON template</span><br/><br/>
+Scala 的 Json 和 JsonFormat 类/对象 可以写在同一个文件中，比如说 JsonTemplate.scala 文件，内容如下：<br/><br/>
+<pre class="lang:default decode:true">package utilities
+ 
+import org.apache.commons.lang.StringEscapeUtils
+import play.api.http.MimeTypes
+import play.api.templates.BufferedContent
+import play.templates.Format<br/><br/>
+
+class Json(buffer: StringBuilder) extends BufferedContent[Json](buffer) {
+  val contentType = MimeTypes.JSON
+}<br/><br/>
+object Json {<br/><br/>
+  def apply(text: String): Json = {
+    new Json(new StringBuilder(text))
+  }<br/><br/>
+  def empty: Json = new Json(new StringBuilder)
+}<br/><br/>
+object JsonFormat extends Format[Json] {<br/><br/>
+  def raw(text: String): Json = Json(text)<br/><br/>
+  def escape(text: String): Json = Json(StringEscapeUtils.escapeJava(text))
+}
+</pre>
+<br/>
+<span style="color: #0000ff;">2. Java 实现自定义 JSON template</span><br/><br/>
+Java 的实现则需要把 Json 和 JsonFormat 分到两个文件中去，因为它们必须都是 public 的，分别是<br/><br/>
+Json.java<br/><br/>
+<pre class="lang:default decode:true">package utilities;<br/><br/>
+import play.api.templates.BufferedContent;<br/><br/>
+public class Json extends BufferedContent&lt;Json&gt; {<br/><br/>
+  public Json(scala.collection.mutable.StringBuilder buffer) {
+    super(buffer);
+  }<br/><br/>
+  public String contentType() {
+    return "application/json";
+  }
+}</pre>
+<br/>
+JsonFormat.java<br/><br/>
+<pre class="lang:default decode:true">package utilities;<br/><br/>
+import org.apache.commons.lang.StringEscapeUtils;<br/><br/>
+import play.templates.Format;
+import scala.collection.mutable.StringBuilder;<br/><br/>
+public class JsonFormat implements Format&lt;Json&gt; {<br/><br/>
+  public Json raw(String text) {
+    return new Json(new StringBuilder(text));
+  }<br/><br/>
+  public Json escape(String text) {
+    return new Json(new StringBuilder(StringEscapeUtils.escapeJava(text)));
+  }<br/><br/>
+  public static final JsonFormat instance = new JsonFormat(); //对于 Java 版本需要这个静态实例
+}</pre>
+<br/>
+至此，自定义部分已经完成，开始应用 Json 模板了。<br/><br/>
+<strong>1. 书写 json 模板文件</strong><br/><br/>
+模板文件必须以 <code>.scala.json</code> 结尾，比如创建文件 views/user/userlist.scala.json<br/><br/>
+<pre class="lang:default decode:true">@(user: User)
+{
+    "Username": "@user.name",
+}</pre>
+<br/>
+假设在 models 包中已创建了 User(name: String) 类，如果 User 不在 models 包中就得写全路径，如 @(user: models.some.User)，也可以在构建文件中用 templatesImport 加上默认引入包。<br/><br/>
+这时候一切正常的话，Play2 将为你生成源文件 target/scala-2.10/src_managed/main/views/json/user/userlist.template.scala 文件<br/><br/>
+<strong>2. 应用模板，在 controller 中渲染模板</strong><br/><br/>
+<pre class="lang:default decode:true">return ok((Json)views.json.user.userlist.render(user));</pre>
+<br/>
+如果你的 controller 是返回的<br/><br/>
+<pre class="lang:default decode:true">public static F.Promise&lt;Result&gt; index() {
+  F.Promise&lt;User&gt; usersPromise = UserService.fetchAll();
+  return usersPromise.map(new F.Function&lt;User, Result&gt;() {
+    @Override
+    public Result apply(User user) throws Throwable {
+      return ok((Json)views.json.user.userlist.render(user));
+    }
+  });
+}</pre>
+<br/>
+即使没有现成 F.Promise&lt;User&gt;，我们也可以 F.Promise.&lt;String&gt;pure("") 一个出来再 map。<br/><br/>
+这样可以想见模板中将要显示的内容。<br/><br/>
+<strong>附加内容, 可另立主题：view template 中调用外部 Java/Scala 方法<br />
+</strong><br/><br/>
+<hr /><br/><br/>
+view template 的默认行为会把 null 显示为空字符串，这不是我们想要的，所以可以在模板中调用 Java/Scala 方法使用 Jackson 的手段来显示对象或对象属性<br/><br/>
+做法如下<br/><br/>
+<strong>1. JsonFormat 中稍作改动</strong><br/><br/>
+把 escape 方法改成如下，此处不进行字符串转义，把任务交给后端代码去做<br/><br/>
+<pre class="lang:default decode:true">public Json escape(String text) {
+  return new Json(text);
+}</pre>
+<br/>
+<strong>2. 创建 views/json/Helper 文件</strong><br/><br/>
+<pre class="lang:default decode:true">package views.json;<br/><br/>
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;<br/><br/>
+public class Helper {<br/><br/>
+  private static ObjectMapper jsonSerializer = new ObjectMapper();
+  
+  public static String jsonValue(Object data) throws JsonProcessingException {
+    return jsonSerializer.writeValueAsString(data);
+  }
+}</pre>
+<br/>
+<strong>3. 修改项目构建文件</strong><br/><br/>
+<pre class="lang:default decode:true">//模板默认引入了 models 下的类，下面同时引入了 models.some 包下的类，可以在编译出的模板源文件中看到相应引入
+templatesImport ++= Seq("views.json.Helper._", "models.some._")  //默认再引入 views.json.Helper._ 到模板文件中，书写更方</pre>
+<br/>
+<strong>4. 模板文件</strong><br/><br/>
+<pre class="lang:default decode:true">@(user: User)
+{
+    "User": @jsonValue(user),
+    "Username": @jsonValue(user.name)
+}</pre>
+<br/>
+上面完全是调用 Jackson 来输出 json 格式，所以字符串的双引号也省了，最终输出是<br/><br/>
+<pre class="lang:default decode:true ">{
+    "User": {"name": "Unmi"},
+    "Username": "Unmi"
+}</pre>
+<br/>
+引入了 @jsonValue() 方法后，JSON 输出格式变得不可控制了，我们可以在 controller 中把 view 模板的输出重新美化成规整的 JSON 字符串。此是后话，非必要，随便便弄个浏览器就可以格式的很漂亮。<br/><br/>
+参考：<br/><br/>
+<ol>
+    <li><a href="https://searchcode.com/?q=play.api.templates.TxtFormat">https://searchcode.com/?q=play.api.templates.TxtFormat</a></li>
+    <li><a href="https://groups.google.com/forum/#!topic/play-framework/JKic1yVzgY0">https://groups.google.com/forum/#!topic/play-framework/JKic1yVzgY0</a></li>
+    <li><a href="https://github.com/playframework/playframework/blob/2.2.x/framework/src/play/src/main/scala/play/api/templates/Templates.scala">https://github.com/playframework/playframework/blob/2.2.x/framework/src/play/src/main/scala/play/api/templates/Templates.scala</a></li>
+    <li><a href="https://searchcode.com/codesearch/view/64071723/#l-217">https://searchcode.com/codesearch/view/64071723/#l-217</a></li>
+    <li><a href="https://searchcode.com/codesearch/view/2451189/#l-210">https://searchcode.com/codesearch/view/2451189/#l-210</a></li>
+    <li><a href="https://searchcode.com/codesearch/view/2451189/#l-210">https://searchcode.com/codesearch/view/2451189/</a></li>
+</ol>

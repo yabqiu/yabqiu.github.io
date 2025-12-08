@@ -1,0 +1,279 @@
+---
+title: 理解 Spring 定时任务的 fixedRate 和 fixedDelay  的区别
+url: /understand-spring-schedule-fixedrate-fixeddelay/
+date: 2017-09-07T03:04:13-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+categories:
+  - Spring
+tags: 
+  - Spring
+  - Schedule
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8252 
+wpStatus: publish
+views: 9313
+lastmod: 2017-09-07T03:31:20-05:00
+---
+
+<p>用过  Spring 的 @EnableScheduling 的都知道，我们用三种形式来部署计划任务，即 @Scheduled 注解的 fixedRate(fixedRateString), fixedDelay(fixedDelayString), 以及 cron. cron 不在这里讨论的范畴。我们着重在如何理解 fixedRate 和 fixedDelay 的区别。</p>
+
+<p>在 Spring 的  <a href="https://docs.spring.io/spring/docs/current/javadoc-api/org/springframework/scheduling/annotation/Scheduled.html#fixedDelay--">Scheduled</a> 注解的 JavaDoc 对此的解释很简单</p>
+
+<blockquote><br/>
+<p>public abstract long fixedRate <br /><br/>
+ Execute the annotated method with a fixed period in milliseconds between invocations.<br /><br/>
+ <br /><br/>
+ public abstract long fixedDelay <br /><br/>
+ Execute the annotated method with a fixed period in milliseconds between the end of the last invocation and the start of the next.</p>
+
+</blockquote>
+
+<p>只是说是 fixedRate 任务两次执行时间间隔是任务的开始点，而 fixedDelay 的间隔是前次任务的结束与下次任务的开始。</p>
+
+<p>大致用示意字符串来表示如下(每个 T1, 或 T2 代表任务执行秒数(每次任务执行时间不定)，假定 fixedRate 或  fixedDelay 的值是 5 秒，用 W 表示等待的数)</p>
+
+<p>fixedRate:    T1.T1WWWT2.T2.T2WW.T3.T3.T3.T3.T3.T4.T4.T4.T4.T4.T4.T4T5T5WWWT6.T6........</p>
+
+<p>fixedDelay:  T1.T1.WWWWW.T2.T2.T2WWWWW.T3.T3.T3.T3.T3.WWWWW.T4.T4.T4.T4.T4.T4.T4.WWWWWT6.T6......</p>
+
+<p>一般来说能理解到上面两个场景已经差不多了，相比而言 fixedDelay 简单些，盯着上一次任务的屁股就行。<!--more--></p>
+
+<p>以前我对 fixedRate 还有一个误区就是，以为任务时长超过 fixedRate 时会启动多个任务实例，其实不会; 只不过会在上次任务执行完后立即启动下一轮。除非这个 Job 方法用 @Async 注解了，使得任务不在 TaskScheduler 线程池中执行，而是每次创建新线程来执行。</p>
+
+<p>具体理解我们可以用代码来演示</p>
+
+<pre class="lang:java decode:true">@EnableScheduling<br/>
+@SpringBootApplication<br/>
+public class Application {<br/>
+<br/>
+    private AtomicInteger number = new AtomicInteger();<br/>
+<br/>
+    public static void main(String[] args) {<br/>
+        SpringApplication.run(Application.class, args);<br/>
+    }<br/>
+<br/>
+    @Bean<br/>
+    public TaskScheduler taskScheduler() {<br/>
+        ThreadPoolTaskScheduler taskScheduler = new ThreadPoolTaskScheduler();<br/>
+        taskScheduler.setPoolSize(5);<br/>
+        return taskScheduler;<br/>
+    }<br/>
+<br/>
+    @Scheduled(fixedRate = 5000)<br/>
+    public void job() {<br/>
+        LocalTime start = LocalTime.now();<br/>
+        System.out.println(Thread.currentThread() + " start " + number.incrementAndGet() + " @ "  + start);<br/>
+        try {<br/>
+            Thread.sleep(ThreadLocalRandom.current().nextInt(15) * 1000);<br/>
+        } catch (InterruptedException e) {<br/>
+        }<br/>
+        LocalTime end = LocalTime.now();<br/>
+        System.out.println(Thread.currentThread() + " end " + number.get() + " @ " + end<br/>
+            + ", seconds cost " + (ChronoUnit.SECONDS.between(start, end)));<br/>
+    }<br/>
+}</pre>
+
+<p>初始化了一个线程池大小为 5  的 TaskScheduler, 避免了所有任务都用一个线程来执行。 上例中的 fixedRate 为 5 秒，任务执行时间在 0 ～ 15 秒之间，先来看一组数据(样本数据越多越生动)</p>
+
+<blockquote><br/>
+<p><span style="color: #ff0000;">Thread[taskScheduler-1,5,main] start 1 @ 01:23:11.726</span><br /><br/>
+ Thread[taskScheduler-1,5,main] end 1 @ 01:23:24.732, seconds cost 13<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-1,5,main] start 2 @ 01:23:24.736</span><br /><br/>
+ Thread[taskScheduler-1,5,main] end 2 @ 01:23:28.737, seconds cost 4<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-2,5,main] start 3 @ 01:23:28.738</span><br /><br/>
+ Thread[taskScheduler-2,5,main] end 3 @ 01:23:40.739, seconds cost 12<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-1,5,main] start 4 @ 01:23:40.740</span><br /><br/>
+ Thread[taskScheduler-1,5,main] end 4 @ 01:23:52.745, seconds cost 12<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-3,5,main] start 5 @ 01:23:52.745</span><br /><br/>
+ Thread[taskScheduler-3,5,main] end 5 @ 01:24:00.748, seconds cost 8<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-3,5,main] start 6 @ 01:24:00.749</span><br /><br/>
+ Thread[taskScheduler-3,5,main] end 6 @ 01:24:05.750, seconds cost 5<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-3,5,main] start 7 @ 01:24:05.750</span><br /><br/>
+ Thread[taskScheduler-3,5,main] end 7 @ 01:24:05.750, seconds cost 0<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-3,5,main] start 8 @ 01:24:05.750</span><br /><br/>
+ Thread[taskScheduler-3,5,main] end 8 @ 01:24:14.752, seconds cost 9<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-3,5,main] start 9 @ 01:24:14.752</span><br /><br/>
+ Thread[taskScheduler-3,5,main] end 9 @ 01:24:26.756, seconds cost 12<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-3,5,main] start 10 @ 01:24:26.757</span><br /><br/>
+ Thread[taskScheduler-3,5,main] end 10 @ 01:24:39.757, seconds cost 13<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-3,5,main] start 11 @ 01:24:39.757</span><br /><br/>
+ Thread[taskScheduler-3,5,main] end 11 @ 01:24:43.761, seconds cost 4<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-3,5,main] start 12 @ 01:24:43.762</span><br /><br/>
+ Thread[taskScheduler-3,5,main] end 12 @ 01:24:47.763, seconds cost 4<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-3,5,main] start 13 @ 01:24:47.763</span><br /><br/>
+ Thread[taskScheduler-3,5,main] end 13 @ 01:24:49.766, seconds cost 2<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-3,5,main] start 14 @ 01:24:49.767</span></p>
+
+</blockquote>
+
+<p>把 start 行用红色显示。</p>
+
+<ol>
+
+	<li>任务 1 与 2 之间间隔时间是任务时长 13，所以任务 2 在 1 结束后立即启动</li>
+
+	<li>任务 3 与 2 之间间隔还不到 5 秒，也是在任务 2 结束后立即执行</li>
+
+	<li>后面都是在上次任务结束后立即执行下一次任务，看到 7 与 8 之间相差 0 秒，13 与 14 之间相关 2 秒</li>
+
+</ol>
+
+<p>从上面的结果分析，似乎 fixedRate 越到后面都不起作用，总是任务一个接一个的执行。也就是说上面 fixedRate 的示意串</p>
+
+<p>T1.T1WWWT2.T2.T2WW.T3.T3.T3.T3.T3.T4.T4.T4.T4.T4.T4.T4T5T5WWWT6.T6........</p>
+
+<p>已经不成立了，当中间发生了一长时间的任务后，fixedRate 变成了如下的形式</p>
+
+<p>T1.T1.WWWT2.T2.T2.T2.T2.T2.T2.T2.T2.T2.T2.T2.T3.T3.T3.T3.T4.T4.T4.T5.T5.T5.......</p>
+
+<p>任务间的等待都被抹除掉了，这是为什么呢？因为 fixedRate 会对将要执行的任务作一个预先编排，由上输出可以第一次任务在 01:23:11 时间点启动，所以  fixedRate 会基于此把一个时间表准备好，如下</p>
+
+<table style="width: 904px; height: 241px;">
+
+<tbody>
+
+<tr>
+
+<td style="width: 111px;"><span style="color: #000080;">01:23:16</span></td>
+
+<td style="width: 57px;"><span style="color: #000080;">T2</span></td>
+
+<td style="width: 724px;">T1 执行后时间来到了 01:23:24, 下一次任务 T2 安排在更早的时间，所以立即执行 T2</td>
+
+</tr>
+
+<tr>
+
+<td style="width: 111px;"><span style="color: #000080;">01:23:21</span></td>
+
+<td style="width: 57px;"><span style="color: #000080;">T3</span></td>
+
+<td style="width: 724px;">T2 完后时间是 01:23:28, T3 的安排时间也比它早，所以也是立即执行 T3</td>
+
+</tr>
+
+<tr>
+
+<td style="width: 111px;"><span style="color: #000080;">01:23:26</span></td>
+
+<td style="width: 57px;"><span style="color: #000080;">T4</span></td>
+
+<td style="width: 724px;">T3 完后时间是 01:23:40, 无需等待立即执行 T4</td>
+
+</tr>
+
+<tr>
+
+<td style="width: 111px;"><span style="color: #000080;">01:23:31</span></td>
+
+<td style="width: 57px;"><span style="color: #000080;">T5</span></td>
+
+<td style="width: 724px;" rowspan="3">
+
+<p>后面的情况都是一样的, T5.endTime &gt; T6.scheduledTime + fixedRate, 所以立即执行 T6 </p>
+
+<p>除非有一些短任务能把时间压缩回去，造成上一次任务结束后需要进行等待</p>
+
+</td>
+
+</tr>
+
+<tr>
+
+<td style="width: 111px;"><span style="color: #000080;">01:23:35</span></td>
+
+<td style="width: 57px;"><span style="color: #000080;">T6</span></td>
+
+</tr>
+
+<tr>
+
+<td style="width: 111px;"><span style="color: #000080;">01:23:41</span></td>
+
+<td style="width: 57px;"><span style="color: #000080;">T7</span></td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<p> 因此，fixedRate 总是在上一次任务结束后从时间表中挑出下一次任务，对比该任务所预先排好的时间是否晚于上次任务启动时间加上 fixedRate 值，是则等待到预定的时间，否则立即执行。</p>
+
+<p>假设 T1 执行完后时间是 T1.endTime, 这时候判断 <span style="color: #000080;">T1.endTime &lt; T2.scheduledTime + fixedRate</span>,  是则等待到 T2.scheduledTime 启动 T2, 否则立即执行  T2</p>
+
+<p>我们可以用代码进一步来验证上面的说法，其实最具说服力的莫过于源代码，这里只提供感观体验</p>
+
+<p>代码的改动是第一次任务执行时间为 23  秒，此后的任务是不耗时的空操作</p>
+
+<pre class="lang:java decode:true">    private AtomicBoolean firstTime = new AtomicBoolean(true);<br/>
+<br/>
+    @Scheduled(fixedRate = 5000)<br/>
+    public void job() {<br/>
+        LocalTime start = LocalTime.now();<br/>
+        System.out.println(Thread.currentThread() + " start " + number.incrementAndGet() + " @ "  + start);<br/>
+        if (firstTime.getAndSet(false)) {<br/>
+            try {<br/>
+                Thread.sleep(23000);<br/>
+            } catch (InterruptedException e) {<br/>
+            }<br/>
+        }<br/>
+        LocalTime end = LocalTime.now();<br/>
+        System.out.println(Thread.currentThread() + " end " + number.get() + " @ " + end<br/>
+            + ", seconds cost " + (ChronoUnit.SECONDS.between(start, end)));<br/>
+    }</pre>
+
+<p>输出为</p>
+
+<blockquote><br/>
+<p><span style="color: #ff0000;">Thread[taskScheduler-1,5,main] start 1 @ 03:27:54.556</span><br /><br/>
+ Thread[taskScheduler-1,5,main] end 1 @ 03:28:17.562, seconds cost 23<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-1,5,main] start 2 @ 03:28:17.566</span><br /><br/>
+ Thread[taskScheduler-1,5,main] end 2 @ 03:28:17.566, seconds cost 0<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-2,5,main] start 3 @ 03:28:17.566</span><br /><br/>
+ Thread[taskScheduler-2,5,main] end 3 @ 03:28:17.567, seconds cost 0<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-1,5,main] start 4 @ 03:28:17.584</span><br /><br/>
+ Thread[taskScheduler-1,5,main] end 4 @ 03:28:17.584, seconds cost 0<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-4,5,main] start 5 @ 03:28:17.584</span><br /><br/>
+ Thread[taskScheduler-4,5,main] end 5 @ 03:28:17.584, seconds cost 0<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-4,5,main] start 6 @ 03:28:19.549</span><br /><br/>
+ Thread[taskScheduler-4,5,main] end 6 @ 03:28:19.550, seconds cost 0<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-4,5,main] start 7 @ 03:28:24.549</span><br /><br/>
+ Thread[taskScheduler-4,5,main] end 7 @ 03:28:24.550, seconds cost 0<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-4,5,main] start 8 @ 03:28:29.548</span><br /><br/>
+ Thread[taskScheduler-4,5,main] end 8 @ 03:28:29.549, seconds cost 0<br /><br/>
+ <span style="color: #ff0000;">Thread[taskScheduler-4,5,main] start 9 @ 03:28:34.546</span></p>
+
+</blockquote>
+
+<p>因为第一次任务 23 秒的延误，所以后续的任务 2， 3， 4， 5 都是上次任务(耗时为 0)完后立即执行，任务 6 把 2 秒的差距找回来了，以后都是每隔 5 秒执行一次。</p>
+
+<p>fixedDelay 的逻辑就相当简单了，基本无需用代码来演示。不妨把上面的代码中的 fixedRate 改成 fixedDelay 来一见分晓：</p>
+
+<blockquote><br/>
+<p>Thread[taskScheduler-1,5,main] start 1 @ 02:54:33.750<br /><br/>
+ Thread[taskScheduler-1,5,main] end 1 @ 02:54:43.756, seconds cost 10<br /><br/>
+ Thread[taskScheduler-1,5,main] start 2 @ 02:54:48.765<br /><br/>
+ Thread[taskScheduler-1,5,main] end 2 @ 02:55:00.767, seconds cost 12<br /><br/>
+ Thread[taskScheduler-2,5,main] start 3 @ 02:55:05.769<br /><br/>
+ Thread[taskScheduler-2,5,main] end 3 @ 02:55:11.772, seconds cost 6<br /><br/>
+ Thread[taskScheduler-1,5,main] start 4 @ 02:55:16.775<br /><br/>
+ Thread[taskScheduler-1,5,main] end 4 @ 02:55:21.781, seconds cost 5<br /><br/>
+ Thread[taskScheduler-3,5,main] start 5 @ 02:55:26.785<br /><br/>
+ Thread[taskScheduler-3,5,main] end 5 @ 02:55:27.787, seconds cost 1<br /><br/>
+ Thread[taskScheduler-3,5,main] start 6 @ 02:55:32.789<br /><br/>
+ Thread[taskScheduler-3,5,main] end 6 @ 02:55:41.792, seconds cost 9<br /><br/>
+ Thread[taskScheduler-3,5,main] start 7 @ 02:55:46.794</p>
+
+</blockquote>
+
+<p>总是上次任务结束 5 秒后，由此可见 fixedDelay 不存在任务的预先编排操作了，都是相机而为。</p>
+
+<p>最后小结一下：fixedRate 每次任务结束后会从任务编排表中找下一次该执行的任务，判断是否到时机执行。fixedRate 的任务某次执行时间再长也不会造成两次任务实例同时执行，除非用了 @Async 注解。 fixedDelay 总是前一次任务完成后，延时固定长度然后执行一次任务</p>

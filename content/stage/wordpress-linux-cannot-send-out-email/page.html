@@ -1,0 +1,93 @@
+---
+title: Wordpress 在 Linux 下不能发送邮件的问题
+url: /wordpress-linux-cannot-send-out-email/
+date: 2017-02-18T01:31:58-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Linux/Unix
+tags: 
+  - wordpress
+  - exim4
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7843 
+wpStatus: publish
+views: 726
+lastmod: 2017-02-18T01:33:31-06:00
+---
+
+<p>本博客迁移到现在的 VPS 上已是两年有余，在有评论到来时从来就没收到过提醒邮件，以前是放在租的主机上，所以那些都有人配置好了的。其实一直没把 Wordpress 未能发送邮件的问题放心上，自己收不到倒无所谓，但评论者接收邮件提醒算是件重要的事。</p>
+
+<p>今天一同事说我的博客无法进行评论，我一段时间以来只有一丝感觉为何这么久没人评论了，只想大家都不爱说话罢了，并未意思到博客本身的问题，也在此表示感谢。于是自己测试了下，登陆用户评论没问题，游客无法评论，最后查到是 <code>wpDiscuz</code> 与 <code>Math Comment Spam Protection</code> 插件起冲突了，于是把后者禁用了就没问题。至于评论提交后响应有些慢是由于不得不用的 <code>Akismet</code> 插件的原因。</p>
+
+<p>为评论的问题既然登陆到了 VPS 上了，也顺便把两年来的邮件发送问题也诊断一下，其实做来很简单，就是当初配置 VPS 时少做了一步。当前所用的 Linux 发行版是  Debian，之前记录过一篇 <a href="http://unmi.cc/debian-vps-for-wordpress/">Debian Linux VPS 为 WordPress 的系统准备</a>，其中提到 WordPress 发送邮件用的是 exim4,</p>
+
+<p>所以第一步，修改 <code>/etc/exim4/update-exim4.conf.conf</code>, <code>dc_eximconfig_configtype</code> 的值由 '<code>local</code>' 改成 '<code>internet</code>'</p>
+
+<blockquote><br/>
+<p>dc_eximconfig_configtype='internet'</p>
+
+</blockquote>
+
+<p>然后重启 exim4 服务，可用命令 <code>service exim4 restart</code>.<!--more--></p>
+
+<p>下一步是验证，既然是为 Wordpress 服务的，那么就可以用 PHP 脚本来验证</p>
+
+<blockquote><br/>
+<p>root@/# php -a<br /><br/>
+ Interactive mode enabled<br /><br/>
+ <br /><br/>
+ php &gt; mail('fantaisa@sina.com', 'test subject', 'test content');<br /><br/>
+ php &gt; exit</p>
+
+</blockquote>
+
+<p><code>php -a</code> 进到 PHP 的交互界面，如果 PHP 的 <code>mail()</code> 函数没有任何错误表示邮件发送没问题，进邮箱能收到邮件当然就万事大吉了。</p>
+
+<p>而我在用行上面的 PHP 的<code> mail()</code> 函数却发生了如下的问题</p>
+
+<blockquote><br/>
+<p>root@/# php -a<br /><br/>
+ Interactive mode enabled<br /><br/>
+ <br /><br/>
+ php &gt; mail('fantasia@sina.com', 'test subject', 'test content');<br /><br/>
+ 2017-02-18 00:25:48 1ceySq-0006lK-8P Cannot open main log file "/var/log/exim4/mainlog": Permission denied: euid=104 egid=109<br /><br/>
+ 2017-02-18 00:25:48 1ceySq-0006lK-8P &lt;= root@debian U=root P=local S=382<br /><br/>
+ 2017-02-18 00:25:48 1ceySq-0006lK-8P Cannot open main log file "/var/log/exim4/mainlog": Permission denied: euid=104 egid=109<br /><br/>
+ exim: could not open panic log - aborting: see message(s) above<br /><br/>
+ php &gt; exit</p>
+
+</blockquote>
+
+<p>居然是没有权限打开 <code>/var/log/exim4/mainlog</code> 文件，明明是用的 root 用户运行的 <code>php -a</code> 命令啊，再看一下 <code>/var/log/exim4/</code> 目录不存在，因此手动创建该目录和文件</p>
+
+<blockquote><br/>
+<p>mkdir /var/log/exim4<br /><br/>
+ touch /var/log/exim4/mainlog</p>
+
+</blockquote>
+
+<p>再试前面的 <code>mail()</code> 函数，问题依旧，Google, 原来是调用 <code>mail()</code> 函数发送邮件的用户会是 <code>Debian-exim</code>, 所以需要修改 <code>/var/log/exim4</code> 目录及下文件的所有权，命令是</p>
+
+<blockquote><br/>
+<p>chown -R Debian-exim:adm /var/log/exim4<br /><br/>
+ # chmod -R u+rw /var/log/exim4 这行是可选的</p>
+
+</blockquote>
+
+<p>如果是其他的 Linux 发行版，可能会用到 <code>sendmail</code> 或 <code>postfix</code> 来发送邮件，外部调用命令都是 <code>mail</code>.</p>
+
+<p>参考链接：</p>
+
+<ol>
+
+	<li><a href="https://easyengine.io/tutorials/php/test-email-sending/">Checking if PHP/WordPress can send mails</a></li>
+
+	<li><a href="http://leomars.blog.51cto.com/683246/521546">Linux mail 命令</a></li>
+
+</ol>

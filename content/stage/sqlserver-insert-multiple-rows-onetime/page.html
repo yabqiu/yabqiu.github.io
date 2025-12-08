@@ -1,0 +1,127 @@
+---
+title: 用 PreparedStatement 向 SqlServer 中一次性插入多条记录
+url: /sqlserver-insert-multiple-rows-onetime/
+date: 2017-12-05T01:56:44-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - Database
+tags: 
+  - SqlServer
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8392 
+wpStatus: publish
+views: 1877
+lastmod: 2023-08-08T23:19:17-05:00
+---
+
+标准 SQL 都提供了下面这种方式一条 INSERT INTO 语句插入多条记录</p>
+<br/>
+<blockquote>
+<p class="p1"><span class="s1">INSERT</span> <span class="s1">INTO</span> Customers(Id, Name, Age) <span class="s1">VALUES</span> (<span class="s2">1</span>, <span class="s3">'Name1'</span>, <span class="s2">21</span>.<span class="s2">5</span>), (<span class="s2">2</span>, <span class="s3">'Name2'</span>, <span class="s2">32</span>.<span class="s2">3</span>)</p>
+</blockquote>
+<br/>
+VALUES 之后用括号列出每一条记录。但是在 Java 中想把上面的语句转换成 PreparedStatement  来插入多条记录时就有些问题。要么写成<br/><br/>
+<blockquote>
+INSERT INTO Customers(Id, Name, Age) VALUES(?, ?, ?), (?, ?, ?), (?, ?, ?) ....
+</blockquote>
+<br/>
+我们不知道 VALUES 后应该列多少个问号，而且  JDBC 对参数的个数是有限制的，最多 2000 个参数。如果根据字段个数来算一次添加多少条记录，那么这条 SQL 语句也是动态的，不能很好的作为 PreparedStatement 进行预编译。以一个表三个字段为例，2000 个参数下一次性最多能插入记录数 666 条，也可能由于输入是 666 条记录的任意数量，所以生成的语句非静态的。<br/><br/>
+这种方式与每次手动拼凑一个完全静态的 INSERT INTO 语句应该不会有太多的差别。<br/><br/>
+如果只是写成 <br/><br/>
+<blockquote>
+INSERT INTO Customers(Id, Name, Age) VALUES(?, ?, ?)
+</blockquote>
+<br/>
+然后试图进行下面的操作<!--more--><br/><br/>
+<pre class="lang:default decode:true ">PreparedStatement pstmt = connection.prepareStatement(sql);
+for(customer: Customers) {
+   pstmt.setInt(customer.id);
+   pstmt.setString(customer.name);
+   pstmt.setDouble(customer.age);
+   pstmt.addBatch();
+}
+pstmt.executeBatch();</pre>
+<br/>
+从起来好像是做了批量操作，实际上在数据端只是预编译了一次 sql, 还是针对每一条记录执行了一次 INSERT 操作。<br/><br/>
+那么是否可以在 SQL 语句中只放一个 ?, 然后在  JDBC 操作时为那个  ? 问号传入一个相当于表变量，的确如此。比如说用 PreparedStatement 来一次性插入多条记录的 SQL 语句这样写<br/><br/>
+<pre class="lang:default decode:true ">INSERT INTO Customers SELECT * FROM ?</pre>
+<br/>
+这个好理解了，从一个传入的表变量中查出所有记录插入到表 Customers 中去。下面来看如何向 FROM 后的那个问号传参数。<br/><br/>
+首先，后会将会用到 SQL Server JDBC Drvier 特有的 API, 而且需要至少 Microsoft JDBC Driver 6.0 及以上的驱动。<br/><br/>
+<pre class="lang:default decode:true ">String sql = "INSERT INTO Customers SELECT * FROM ?";
+SQLServerPreparedStatement pStmt = (SQLServerPreparedStatement) connection.prepareStatement(sql);   </pre>
+<br/>
+接着应该如何为 FROM 后的问号赋值了，setInt(1, xxx)?, setObject(1, xxx)?, 都不对。参 pStmt 的参数赋值有两要素：类型和数据值<br/><br/>
+先说对上面语句中问号的赋值不再是标准 JDBC 的 PreparedStatement 中的方法，而是 SQLServerPreparedStatement 独有的 setStructured(...) 方法，它有三个版本，分别是<br/><br/>
+<pre class="lang:default decode:true ">public void setStructured(int n, String tvpName, SQLServerDataTable tvpDataTable)
+public void setStructured(int n, String tvpName, ResultSet tvpResultSet) 
+public vpod setStructured(int n, String tvpName, ISQLServerDataRecord tvpBulkRecord)</pre>
+<br/>
+<ul>
+    <li>第一个参数好说，这里就是 1。</li>
+    <li>第二参数 tvpName, 全称是 Table Valued Parameter Name, 需要事先创建一个用户自定义表类型 <a href="http://go.microsoft.com/fwlink/?LinkID=98364">User-Defined Table Types</a>.</li>
+    <li>第三个参数就看我们如何构造表结构的对象类型。可以是一个 SQLServierDataTable, 或 ResultSet(比如从别的库查询得到的)，或者是 ISQLServerDataRecord(与 BCP 操作数据类型 ISQLServerBulkRecord 有点像)</li>
+</ul><br/><br/>
+假定我们操作的  Customers 表的创建语句如下：<br/><br/>
+<pre class="lang:default decode:true ">CREATE TABLE Customers(
+    Id INTEGER,
+    Name VARCHAR(20),
+    Age DECIMAL(5, 2)
+)
+</pre>
+<br/>
+在此，我们必须为 setStructured(...) 的第二个参数创建一个表类型，用下面的语句<br/><br/>
+<pre class="lang:default decode:true ">CREATE TYPE CustomersTableType AS TABLE (
+    Id INTEGER,
+    Name VARCHAR(20),
+    Age DECIMAL(5, 2)
+)
+</pre>
+<br/>
+是不是觉得很罗嗦啊，完全可以用和 Customers 一样的字段类型，<code>SELECT *FROM ?</code> 中的问号就是要用到 <code>CustomersTableType</code> 类型。"INSERT INTO Customers SELECT * FROM ?" 就是要从这个  CustomersTableType  表类型中查询，setStructure(1, "CustomersTableType", <span style="background-color: #ffff99;">????</span>) 也就要为它构造数据结构, 这里用字符串 "CustomersTableType" 指明了后面 <span style="background-color: #ffff99;">????</span> 位置中变量的类型。<br/><br/>
+此篇打算用  SQLServerDataTable 来构造待传入的参数对象<br/><br/>
+<pre class="lang:default decode:true">SQLServerDataTable dataTable = new SQLServerDataTable();
+dataTable.addColumnMetadata("Id", Types.INTEGER);
+dataTable.addColumnMetadata("Name", Types.VARCHAR);
+dataTable.addColumnMetadata("Age", Types.DECIMAL);
+dataTable.addRow(1, "Name1", 21.5);
+dataTable.addRow(2, "Name2", 32.3);</pre>
+<br/>
+构造 sqlServer 时，我们又要为每个字段指定名称和类型，看下面如何绑定到 pStmt 上去<br/><br/>
+<pre class="lang:default decode:true">pStmt.setStructured(1, "CustomersTableType", dataTable)<br/><br/>
+pStmt.execute();</pre>
+<br/>
+其实在用  setStructured(...) 方法绑定参数时，dataTable 中只要有列名就能与 "CustomersTableType" 匹配上每个字段的类型。最好是无需创建 CustomersTableType, 直接使用 SQLServerDataTable  中指定的字段类型。注意：对  SQLServerDataTable.addColumnMetadata(name, type) 时不用指定列宽和数据精度。<br/><br/>
+这样执行后，就会在数据库表 Customers 中插入两条记录。<br/><br/>
+这样一条 SQL 语句插入多条记录效率上肯定比拼 SQL 语句，或多插入语句要高。构建 SQLServerDataTable 对象还好说，美中不足的是需要预先在数据库中创建一个与实际表类似的 Table 类型(这里的 CustomersTableType)，开发人员还不一定有这个权限。如果不用创建这个表类型就完美了，而且如果操作 setStructured(...) 设置的是一个 ISQLServerDataRecord 类型的数据同样是要用到  CustomersTableType 那样的表类型。<br/><br/>
+需要探索一种不用创建 User-Defined Table Types 的方式进行批量插入，是时候考虑下  BCP 协议了。<br/><br/>
+参考：<br/><br/>
+<ol>
+    <li><a href="https://docs.microsoft.com/en-us/sql/connect/jdbc/using-table-valued-parameters">Using Table-Valued Parameters</a></li>
+    <li><a href="https://docs.microsoft.com/en-us/sql/connect/jdbc/using-bulk-copy-with-the-jdbc-driver">Using Bulk Copy with the JDBC Driver</a></li>
+</ol>
+<br/>
+<hr /><br/><br/>
+注：本文测试是用的微软出品的 SqlServer Docker 容器，参考该容器仓库页面 <a href="https://hub.docker.com/r/microsoft/mssql-server-linux/">microsoft/mssql-server-linux</a>.<br/><br/>
+我是用下面的命令启动的一个 SQL Express 版本<br/><br/>
+<blockquote>
+docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=yourStrong(!)Password' -e 'MSSQL_PID=Express' -p 1433:1433 -d microsoft/mssql-server-linux:latest
+</blockquote>
+<br/>
+密码就是 'yourStrong(!)Password'。启动后有任何的异常可执行<br/><br/>
+<blockquote>
+docker logs &lt;容器 id&gt;
+</blockquote>
+<br/>
+来查看容器启动时的日志，看是否 default 虚拟机内存设置不足(至少 2GB, 在  2017-CU2 版本前要求至少  3.25G), 或者是密码复杂度不够，等等。<br/><br/>
+注(2023-08-08): 现在启动 mssql docker contain 的命令是<br/><br/>
+<pre class="lang:default decode:true ">docker run -e "ACCEPT_EULA=Y" -e 'MSSQL_SA_PASSWORD=yourStrong(!)Password' -e "MSSQL_PID=Express" -p 1433:1433 -d mcr.microsoft.com/mssql/server:2019-latest</pre>
+<br/>
+&nbsp;

@@ -1,0 +1,222 @@
+---
+title: Linux 输入输出重定向, &>file, 2>&1, 1>&2 等
+url: /linux-input-output-redirection/
+date: 2015-06-26T13:28:14-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Linux/Unix
+tags: 
+  - Linux
+  - 重定向
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6840 
+wpStatus: publish
+views: 13538
+lastmod: 2023-12-13T00:07:00-06:00
+---
+
+我们无论是在写批处理还是 Linux 的 Shell 都常用到 &gt;, &gt;&gt; 或 &lt;，这是输入输出重定向。特别是 Linux 的 Shell 常见到  2&gt;&amp;1 这样的写法，这是在干什么呢？这里就来了解下 Linux 下的输入输出重定向的一些来龙去脉。</p>
+<br/>
+在 Linux 下几乎一切都号称是文件，标准输入、输出也不例外，它们是叫做 fd (File Descriptor) 文件描述符。这里我们关注三个东西<br/><br/>
+<table>
+<tbody>
+<tr>
+<td>名称</td>
+<td>代码</td>
+<td>操作符</td>
+<td>Java中表示</td>
+<td>Linux 下文件描述符（Debian 为例)</td>
+</tr>
+<tr>
+<td>标准输入(stdin)</td>
+<td>0</td>
+<td>&lt; 或 &lt;&lt;</td>
+<td>System.in</td>
+<td>/dev/stdin -&gt; /proc/self/fd/0 -&gt; /dev/pts/0</td>
+</tr>
+<tr>
+<td>标准输出(stdout)</td>
+<td>1</td>
+<td>&gt;, &gt;&gt;, 1&gt; 或 1&gt;&gt;</td>
+<td>System.out</td>
+<td>/dev/stdout -&gt; /proc/self/fd/1 -&gt; /dev/pts/0</td>
+</tr>
+<tr>
+<td>标准错误输出(stderr)</td>
+<td>2</td>
+<td>2&gt; 或 2&gt;&gt;</td>
+<td>System.err</td>
+<td>/dev/stderr -&gt; /proc/self/fd/2 -&gt; /dev/pts/0</td>
+</tr>
+</tbody>
+</table>
+<br/>
+从以上表格我们可以理解 0, 1 和 2 分别是什么东西了，它们的输入源或输出目的地默认都是屏幕。<br/><br/>
+下面不作系统解释输入, 输出重定向的完整使用，只说明一些常见的例子：<!--more--><br/><br/>
+使用 &gt; 或 &gt;&gt; 时，默认为标准输出 1 重定向, 所以 &gt; file 就是 1&gt; file 的省写，1 与 &gt; 之间不能有空格。<br/><br/>
+比如 ls -l &gt; a.txt 就是 ls -l 1&gt; a.txt<br/><br/>
+数字 0, 1, 2 与它后面的操作符 &gt; 或 &lt; 等 总是一个整体<br/><br/>
+2&gt;&amp;1  表示把 标准错误输出 重定向到 标准输出, 这在控制台下看到的效果 2&gt;&amp;1 和 1&gt;&amp;2 可能是一样的，因为标准输出或标准错误输出的目的地默认都为屏幕。<br/><br/>
+2&gt;&amp;1 是最常见到的写，这样就是把错误信息与标准输出都收集到一块了<br/><br/>
+<span style="color: #999999;">&amp;&gt; file 表示把 标准输出 和 标准错误输出 都重定向到文件 file 中</span><br />
+<span style="color: #999999;">&gt;&amp; file  把标准输出和标准错误输出都重定向到文件 file, 由于 &gt; 默认为重定向标准输出，所以和 1&gt;&amp; file 是一个意思</span><br/><br/>
+<span style="color: #999999;">以上 &amp;&gt; file 和 &gt;&amp; file 也较少见，我还不没能理解上边两个中那个光杆子 &amp; 是什么含义</span><br/><br/>
+我们要把错误也重定向到标准输出上，一般是用  &gt;file 2&gt;&amp;1, 即分两步，先 标准输出 重定向到 file 中，然后 标准错误输出 定向到 标准输出<br/><br/>
+如：<br/><br/>
+<span style="color: #800000;">ls xxx &gt; /dev/null 2&gt;&amp;1</span><br/><br/>
+同样第一个 &gt; 操作的默认是 1 所以写成 ls xxx 1&gt; /dev/null 2&gt;&amp;1 是一样的<br/><br/>
+&gt;/dev/null 的使用也是惯招，它表示一个空设备，相当于一个黑洞，用来忽略掉输出<br/><br/>
+顺序要注意，假设 xxx 是不存在的，所以 ls xxx 命令能产生一个错误输出<br/><br/>
+<span style="color: #800000;">bash-3.2$ ls -l xxx &gt; /dev/null 2&gt;&amp;1</span><br />
+<span style="color: #800000;">bash-3.2$ </span><br />
+<span style="color: #800000;">bash-3.2$ ls xxx 2&gt;&amp;1 &gt; /dev/null</span><br />
+<span style="color: #800000;">ls: xxx: No such file or directory</span><br/><br/>
+2&gt;&amp;1, 或  1&gt;&amp;2 中的 &amp; 可以理解为像是 C 中的取地址操作，用于重定向到另一个文件描述符上去。<br/><br/>
+&gt; /dev/null 可以关闭输出，还有另一种方式能做到，即 &amp;-<br/><br/>
+<span style="color: #800000;">bash-3.2$ ls xxx 2&gt;&amp;-</span><br />
+<span style="color: #800000;">bash-3.2$</span><br/><br/>
+关闭标准输入也无差异，用 &lt; &amp;-<br/><br/>
+输出重定向的一个应用例子，有些命令的输出是在 stderr 上，而 grep 只作用在标准输出<br/><br/>
+<span style="color: #800000;">bash-3.2$ java -version | grep version</span><br />
+<span style="color: #800000;">java version "1.8.0_31"</span><br />
+<span style="color: #800000;">Java(TM) SE Runtime Environment (build 1.8.0_31-b13)</span><br />
+<span style="color: #800000;">Java HotSpot(TM) 64-Bit Server VM (build 25.31-b07, mixed mode)</span><br/><br/>
+上面无论 grep 什么都抓不到只想要显示 的行，这时候可以把错误输出导向到标准输出, 然后再 grep<br/><br/>
+<span style="color: #800000;">bash-3.2$ java -version 2&gt;&amp;1 | grep version</span><br />
+<span style="color: #800000;">java version "1.8.0_31"</span><br/><br/>
+<hr /><br/><br/>
+这里还是补上从别处摘来的三个表格：<br/><br/>
+<strong>输出重定向</strong><br/><br/>
+<table>
+<tbody>
+<tr>
+<td>Command &gt; filename</td>
+<td>把标准输出重定向到一个新文件中</td>
+</tr>
+<tr>
+<td>Command &gt;&gt; filename</td>
+<td>把标准输出重定向到一个文件(追加)</td>
+</tr>
+<tr>
+<td>Command &gt; filename 2&gt;&amp;1</td>
+<td>把标准输出和错误一起重定向到一个文件中</td>
+</tr>
+<tr>
+<td>Command 2&gt; filename</td>
+<td>把标准错误重定向到一个文件中</td>
+</tr>
+<tr>
+<td>Command 2&gt;&gt; filename</td>
+<td>把标准错误重定向到一个文件中(追加)</td>
+</tr>
+<tr>
+<td>Command &gt;&gt; filename 2&gt;&amp;1</td>
+<td>把标准输出和错误一起重定向到一个文件中(追加)</td>
+</tr>
+<tr>
+<td>Command &gt; filename 2&gt; /dev/null</td>
+<td>标准输出定向到文件，屏蔽掉错误输出</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<strong>输入重定向</strong><br/><br/>
+<table>
+<tbody>
+<tr>
+<td>Command &lt; filename</td>
+<td>Command 命令以 filename 文件作为标准输入</td>
+</tr>
+<tr>
+<td>Command &lt; filename &gt; filename2</td>
+<td>Command 信不信以 filename 文件作为标准输入，以 filename 2  作为标准输出</td>
+</tr>
+<tr>
+<td>Command &lt;&lt; delimiter</td>
+<td>从标准输入中读入，以  delimiter 为结束符。这就是 Bash 的 HereDoc 用法</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<strong>绑定重定向</strong><br/><br/>
+<table>
+<tbody>
+<tr>
+<td>Command  &gt;&amp;m</td>
+<td>把标准输出重定向到文件描述符 m 中，如 ls &gt;&amp;1 </td>
+</tr>
+<tr>
+<td>Command m&gt;&amp;n</td>
+<td>把往文件描述符 m 的输出重定向到文件描述符 n 上，2&gt;71。再如上面的完整写法是 1&gt;&amp;m</td>
+</tr>
+<tr>
+<td>Command &lt;&amp;-</td>
+<td>关闭标准输入</td>
+</tr>
+<tr>
+<td>Command 2&gt;&amp;-</td>
+<td>关闭标准错误输出，和 2&gt;/dev/null 有类似功效</td>
+</tr>
+</tbody>
+</table>
+<br/>
+可以用 exec 绑定重定向做一些有趣的操作，摘录两个操作实例<br/><br/>
+<span style="color: #800000;">[chengmo@centos5 shell]$ exec 6&gt;&amp;1</span><br />
+<span style="color: #800000;">#将标准输出与fd 6绑定</span><br />
+<span style="color: #800000;"> </span><br />
+<span style="color: #800000;">[chengmo@centos5 shell]$ ls  /proc/self/fd/ </span><br />
+<span style="color: #800000;">0  1  2  3  6</span><br />
+<span style="color: #800000;">#出现文件描述符6</span><br />
+<span style="color: #800000;"> </span><br />
+<span style="color: #800000;">[chengmo@centos5 shell]$ exec 1&gt;suc.txt</span><br />
+<span style="color: #800000;">#将接下来所有命令标准输出，绑定到suc.txt文件（输出到该文件）</span><br />
+<span style="color: #800000;"> </span><br />
+<span style="color: #800000;">[chengmo@centos5 shell]$ ls -al</span><br />
+<span style="color: #800000;">#执行命令，发现什么都不返回了，因为标准输出已经输出到suc.txt文件了</span><br />
+<span style="color: #800000;"> </span><br />
+<span style="color: #800000;">[chengmo@centos5 shell]$ exec 1&gt;&amp;6</span><br />
+<span style="color: #800000;">#恢复标准输出</span><br />
+<span style="color: #800000;"> </span><br />
+<span style="color: #800000;">[chengmo@centos5 shell]$ exec 6&gt;&amp;-</span><br />
+<span style="color: #800000;">#关闭fd 6描述符</span><br />
+<span style="color: #800000;"> </span><br />
+<span style="color: #800000;">[chengmo@centos5 ~]$ ls /proc/self/fd/</span><br />
+<span style="color: #800000;">0  1  2  3</span><br/><br/>
+<strong>读文件：</strong><br/><br/>
+<span style="color: #800000;">exec 3&lt;&gt;test.sh;</span><br />
+<span style="color: #800000;">#打开test.sh可读写操作，与文件描述符3绑定</span><br />
+<span style="color: #800000;"> </span><br />
+<span style="color: #800000;">while read line&lt;&amp;3</span><br />
+<span style="color: #800000;"> do</span><br />
+<span style="color: #800000;">    echo $line;</span><br />
+<span style="color: #800000;">done</span><br />
+<span style="color: #800000;">#循环读取文件描述符3（读取的是test.sh内容）</span><br />
+<span style="color: #800000;">exec 3&gt;&amp;-</span><br />
+<span style="color: #800000;">exec 3&lt;&amp;-</span><br />
+<span style="color: #800000;">#关闭文件的，输入，输出绑定</span><br/><br/>
+附：下面是用 ls 命令显示出的在 Linux 和 Mac 下文件描述符的链接关系：<br/><br/>
+Debian 8 下<br/><br/>
+<span style="color: #800000;">~# ls -l  /dev/std* /proc/self/fd/* /dev/pts/0</span><br />
+<span style="color: #800000;">crw------- 1 root tty  136, 0 Jun 27 13:11 /dev/pts/0</span><br />
+<span style="color: #800000;">lrwxrwxrwx 1 root root     15 Jun 22 16:47 /dev/stderr -&gt; /proc/self/fd/2</span><br />
+<span style="color: #800000;">lrwxrwxrwx 1 root root     15 Jun 22 16:47 /dev/stdin -&gt; /proc/self/fd/0</span><br />
+<span style="color: #800000;">lrwxrwxrwx 1 root root     15 Jun 22 16:47 /dev/stdout -&gt; /proc/self/fd/1</span><br />
+<span style="color: #800000;">lrwx------ 1 root root     64 Jun 27 13:11 /proc/self/fd/0 -&gt; /dev/pts/0</span><br />
+<span style="color: #800000;">lrwx------ 1 root root     64 Jun 27 13:11 /proc/self/fd/1 -&gt; /dev/pts/0</span><br />
+<span style="color: #800000;">lrwx------ 1 root root     64 Jun 27 13:11 /proc/self/fd/2 -&gt; /dev/pts/0</span><br/><br/>
+Mac OS X 下<br/><br/>
+<span style="color: #800000;">$ ls -l /dev/std* /dev/fd/*</span><br />
+<span style="color: #800000;">crw--w----  1 yanbin  tty     16,   1 Jun 26 23:09 /dev/fd/0</span><br />
+<span style="color: #800000;">crw--w----  1 yanbin  tty     16,   1 Jun 26 23:09 /dev/fd/1</span><br />
+<span style="color: #800000;">crw--w----  1 yanbin  tty     16,   1 Jun 26 23:09 /dev/fd/2</span><br />
+<span style="color: #800000;">lr-xr-xr-x  1 root  wheel         0 Jun 26 12:05 /dev/stderr -&gt; fd/2</span><br />
+<span style="color: #800000;">lr-xr-xr-x  1 root  wheel         0 Jun 26 12:05 /dev/stdin -&gt; fd/0</span><br />
+<span style="color: #800000;">lr-xr-xr-x  1 root  wheel         0 Jun 26 12:05 /dev/stdout -&gt; fd/1</span><br/><br/>
+参考：1. <a href="http://www.cnblogs.com/chengmo/archive/2010/10/20/1855805.html" target="_blank" rel="noopener noreferrer">linux shell数据重定向（输入重定向与输出重定向）详细分析</a><br />
+        2. <a href="http://blog.csdn.net/cjfeii/article/details/10084343" target="_blank" rel="noopener noreferrer">Linux shell的标准输入、输出和错误</a>

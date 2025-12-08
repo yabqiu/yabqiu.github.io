@@ -1,0 +1,69 @@
+---
+title: VBA 中发送邮件（一. 使用 Outlook 组件）
+url: /vba-send-email-outlook/
+date: 2009-04-02T22:27:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - C++/VB
+tags: 
+  - VBA
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 287 
+wpStatus: publish
+views: 2645
+lastmod: 2015-06-30T21:53:31-05:00
+---
+
+<p>帮同事做了一个在 Excel 中用 VBA 发邮件的程序，逐行读取 Excel 表格记录中的待发邮件主题、内容及收件人进行发送。首先想到也是看看能否使用 Outlook 的组件，网上查了查，果然有，现把代码贴出来如下：<!--more--></p><pre class="brush:vb">'使用 Outlook 来发送邮件了<br/>
+Sub SendEmailByOutlook()<br/>
+<br/>
+    '要能正确发送并需要对Microseft Outlook进行有效配置<br/>
+    On Error Resume Next<br/>
+    Dim rowCount, endRowNo<br/>
+    Dim objOutlook As New Outlook.Application<br/>
+    Dim objMail As MailItem<br/>
+<br/>
+    '取得当前工作表与Cells(1,1)相连的数据区行数<br/>
+    endRowNo = Cells(1, 1).CurrentRegion.Rows.Count<br/>
+<br/>
+    '创建objOutlook为Outlook应用程序对象<br/>
+    Set objOutlook = New Outlook.Application<br/>
+<br/>
+    '开始循环发送电子邮件，比如从第二行开始，第一行是标题<br/>
+    For rowCount = 2 To endRowNo<br/>
+<br/>
+        '创建objMail为一个邮件对象<br/>
+        Set objMail = objOutlook.CreateItem(olMailItem)<br/>
+        With objMail<br/>
+<br/>
+            '设置收件人地址（比如从 Excel 表的第一列“E-mail地址”字段中获得）<br/>
+            .To = Cells(rowCount, 1).Value '"fantasia@sina.com"<br/>
+<br/>
+            '设置邮件主题（比如从 Excel 表的第二列“邮件主题”字段中获得）<br/>
+            .Subject = Cells(rowCount, 2).Value '"邮件主题"<br/>
+<br/>
+            '设置邮件内容（比如从 Excel 表的第三列“邮件内容”字段中获得）<br/>
+            .Body = Cells(rowCount, 3).Value '"邮件内容"<br/>
+<br/>
+            '设置附件（比如从 Excel 表的第四列“附件”字段中获得）<br/>
+            .Attachments.Add Cells(rowCount, 4).Value '"c:\\users.ctl"<br/>
+<br/>
+            .Send<br/>
+<br/>
+         End With<br/>
+<br/>
+         '销毁objMail对象<br/>
+         Set objMail = Nothing<br/>
+<br/>
+     Next<br/>
+<br/>
+     '销毁objOutlook对象<br/>
+     Set objOutlook = Nothing<br/>
+<br/>
+End Sub</pre><p>Excel 中贴个按钮，单击事件指向到这个过程。Excel 的 Visual Basic 编辑器中还必须引用 Microsoft Outlook 11.0 Object Library，具体组件名视你安装的 Outlook 版可能有所不同。只能使用 Outlook 而不是 Outlook Express。</p><p>您必须对 Outlook 进行了正确的配置，即达到能使用默认帐户发送邮件，上面代码实现的就是使用 Outlook 的默认帐户来发送邮件。</p><p>这种方法有一个很要命的问题就是，每发一封的时候会弹出一个 Outlook 的安全提示，如图：</p><div><img class=" aligncenter" src="http://unmi.cc/wp-content/uploads/2009/04/OutlookAlert1.jpg" alt="OutlookAlert1.jpg" width="359" height="181" border="0" /></div><p>一个个“是” 吧，这一定会让你厌其烦的，有说用 SendKeys 或别的软件来自动“是”，但都不太美妙。还不能真正达到全自动批量发邮件的效果。倒是在 Outlook Express 和 Outlook 2007 的安全设置中有这么一个选项“当别的应用程序试图用我的名义发送电子邮件时警告我(W)” 的可选项，可是一则 VBA 不知如何使用 Outlook Express，二则我电脑里没安装 2007 这么高级版本。所以得另寻他法了，那就是 JMail 组件。</p><p>参考：1. <a href="http://www.officeba.com.cn/article/htmldata/detail/2008/3/3/1733.html" target="_blank">如何利用Excel发邮件</a>(Shell 和 SendKeys 来模拟 Outlook Express 操作 )<br />         2. <a href="http://tech.ddvip.com/2007-05/118051502526274.html" target="_blank">巧用Excel发送电子邮件</a></p>

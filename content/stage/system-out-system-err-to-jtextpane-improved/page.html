@@ -1,0 +1,186 @@
+---
+title: 重定向System.out和System.err到JTextPane,分别用黑色红色显示(改进)
+url: /system-out-system-err-to-jtextpane-improved/
+date: 2007-11-15T10:41:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2018/06/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - debug
+  - System.out
+  - System.err
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 473 
+wpStatus: publish
+views: 669
+lastmod: 2021-09-03T10:02:35-05:00
+---
+
+在上一篇 <a id="viewpost1_TitleUrl" href="http://unmi.cc/system-out-system-err-jtextpane/">重定向System.out和System.err到JTextPane,分别用黑色红色显示</a> 中讲了如何把 System.out 和 System.err 重定向到 JTextPane 上，并分不同颜色显示，其中用到了 PipedInputStream、PipedOutputStream。那个例子还是参考的 《<a href="http://www.exampledepot.com/?l=ex">The Java Developers Almanac 1.4</a>》，翻译出来叫做 《Java 开发者年鉴 1.4》，显得多么的权威啊，我当时还真把它看成官方最佳推荐实现了，太迷信了。</p>
+<br/>
+可是现在看来，前面那个实现不仅代码繁琐，而且是 Bug 多多。现在重新对上回的 ConsolePane 来个新的更简洁高效的实现。代码如下：<!--more--><br/><br/>
+<pre class="lang:default decode:true">package com.unmi;   
+  
+import java.awt.*;   
+import java.io.*;   
+  
+import javax.swing.*;   
+import javax.swing.text.*;   
+  
+/**   
+ * @author Unmi  
+ */  
+public class ConsolePane extends JScrollPane {   
+  
+    private JTextPane textPane = new JTextPane();   
+  
+    private static ConsolePane console = null;   
+  
+    public static synchronized ConsolePane getInstance() {   
+        if (console == null) {   
+            console = new ConsolePane();   
+        }   
+        return console;   
+    }   
+  
+    private ConsolePane() {   
+  
+        setViewportView(textPane);   
+  
+        // Set up System.out   
+        PrintStream mySystemOut = new MyPrintStream(System.out, Color.BLACK);   
+        System.setOut(mySystemOut);   
+  
+        // Set up System.err   
+        PrintStream mySystemErr = new MyPrintStream(System.err, Color.RED);   
+        System.setErr(mySystemErr);   
+           
+        textPane.setEditable(true);   
+        setPreferredSize(new Dimension(640, 120));   
+    }   
+  
+    /**   
+     * Returns the number of lines in the document.  
+     */  
+    private final int getLineCount() {   
+        return textPane.getDocument().getDefaultRootElement().getElementCount();   
+    }   
+  
+    /**   
+     * Returns the start offset of the specified line.  
+     * @param line  The line  
+     * @return The start offset of the specified line, or -1 if the line is  
+     *         invalid  
+     */  
+    private int getLineStartOffset(int line) {   
+        Element lineElement = textPane.getDocument().getDefaultRootElement()   
+                .getElement(line);   
+        if (lineElement == null)   
+            return -1;   
+        else  
+            return lineElement.getStartOffset();   
+    }   
+  
+    /**   
+     * 清除超过行数时前面多出行的字符  
+     */  
+    private void replaceRange(String str, int start, int end) {   
+        if (end &lt; start) {   
+            throw new IllegalArgumentException("end before start");   
+        }   
+        Document doc = textPane.getDocument();   
+        if (doc != null) {   
+            try {   
+                if (doc instanceof AbstractDocument) {   
+                    ((AbstractDocument) doc).replace(start, end - start, str,   
+                            null);   
+                } else {   
+                    doc.remove(start, end - start);   
+                    doc.insertString(start, str, null);   
+                }   
+            } catch (BadLocationException e) {   
+                throw new IllegalArgumentException(e.getMessage());   
+            }   
+        }   
+    }   
+  
+    class MyPrintStream extends PrintStream {   
+  
+        private Color foreground; //输出时所用字体颜色   
+           
+        /**   
+         * 构造自己的 PrintStream  
+         * @param out 可传入 System.out 或 System.err, 实际不起作用  
+         * @param foreground 显示字体颜色  
+         */  
+        MyPrintStream(OutputStream out,Color foreground) {   
+            super(out,true); //使用自动刷新   
+            this.foreground = foreground;   
+        }   
+  
+        /**   
+         * 在这里重截,所有的打印方法都要调用最底一层的方法  
+         */  
+        public void write(byte[] buf, int off, int len) {   
+            final String message = new String(buf, off, len);   
+  
+            /** SWING非界面线程访问组件的方式 */  
+            SwingUtilities.invokeLater(new Runnable() {   
+                public void run() {   
+                    try {   
+  
+                        StyledDocument doc = (StyledDocument) textPane   
+                                .getDocument();   
+  
+                        // Create a style object and then set the style   
+                        // attributes   
+                        Style style = doc.addStyle("StyleName", null);   
+  
+                        // Foreground color   
+                        StyleConstants.setForeground(style, foreground);   
+  
+                        doc.insertString(doc.getLength(), message, style);   
+  
+                    } catch (BadLocationException e) {   
+                        // e.printStackTrace();   
+                    }   
+  
+                    // Make sure the last line is always visible   
+                    textPane.setCaretPosition(textPane.getDocument()   
+                            .getLength());   
+  
+                    // Keep the text area down to a certain line count   
+                    int idealLine = 150;   
+                    int maxExcess = 50;   
+  
+                    int excess = getLineCount() - idealLine;   
+                    if (excess &gt;= maxExcess) {   
+                        replaceRange("", 0, getLineStartOffset(excess));   
+                    }   
+                }   
+            });   
+        }   
+    }   
+}</pre>
+<br/>
+使用方法依旧，是一个 JScrollPane，加上自己的面板上就行：<br />
+<strong><span style="color: #ff1493;">getContentPane().add(ConsolePane.getInstance(), BorderLayout.CENTER);</span></strong><br/><br/>
+界面效果图同前面基本一样：<br/><br/>
+<div><img class=" aligncenter" src="/wp-content/uploads/2007/11/RedirectSystemOutLog.jpg" alt="RedirectSystemOutLog.jpg" width="716" height="240" border="0" /></div>
+<br/>
+能解决的问题恰恰就是上面遗留下来的1、2、3：<br />
+1. 不再产生 java.io.IOException: Write end dead 异常<br />
+2. 输出时不再会缺几个字母，或产生空行了<br />
+3. 输出顺序根据程序执行先后能得到保证<br/><br/>
+如果希望能捕获到 Log4j 的输出，仍然依赖于要用 Log4j 1.2.13 或以上的版本，并设置属性：<br/><br/>
+<strong><span style="color: #0000ff;">log4j.appender.console.follow = true</span></strong><br/><br/>
+这个问题在上一篇 <a href="http://unmi.cc/system-out-system-err-jtextpane/">重定向System.out和System.err到JTextPane,分别用黑色红色显示</a> <strong><em>Log4J 与 ConsolePane </em></strong>一节中用讲，但是如果是用 SWT 的话，这个问题可以解决，不再依赖于这一属性设置了。<br/><br/>
+这段时间正在研究 SWT，感觉用起来比 SWING 舒服多了，考虑暂时放耽下 SWING 了，过阵会再写一篇关于把 System.out 和  System.err 定向到 SWT 文本控件的日志。<br/><br/>
+TestConsolePane 代码还是请见上篇日志：<a href="http://unmi.cc/system-out-system-err-jtextpane/">重定向System.out和System.err到JTextPane,分别用黑色红色显示</a>

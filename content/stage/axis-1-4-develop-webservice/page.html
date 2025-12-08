@@ -1,0 +1,347 @@
+---
+title: 应用 Axis 1.4 开发 WebService
+url: /axis-1-4-develop-webservice/
+date: 2021-11-14T18:03:18-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - SOAP
+  - soapenv
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 11934 
+wpStatus: publish
+views: 1222
+lastmod: 2021-11-15T23:28:11-06:00
+---
+
+Axis 1 的最后一个版本还是 2006-04-22 发布的 1.4 Final 版，当前的版本是  Axis 2， 即于  2021-08-01 发布的  Axis v1.8.0 版本。想想在  2006 年 4 月份，软件开发是一种什么样的景象，JDK 5 于 2004-09-30 发布，同年 12 月 12 日 JDK 6 才出来, Spring 还是 1.x 的版本。那时候仍是 EJB 兴旺的年代，微服务概念的出现还有等好多年。<br/><br/>
+那为什么还要学习 Axis 1.4 呢？目的就是为了放弃，先前的 Axis 1.4 的项目不稍加理解，怎么能顺利的过度到 Axis 2 呢？要说眼下更好的用来开发 SOAP WebService 的库应该首选 <a href="http://cxf.apache.org/">Apache CXF</a>。本来拟定的文章标题的 Springboot2 应用 Axis 1.4 开发 WebService, 但一发挥就用力过猛，只得下回另立新篇来再加上 Springboot2 了，因此本篇就是为 SpringBoot2 与 Axis 1 的结合铺路的。<br/><br/>
+什么是 <a href="https://en.wikipedia.org/wiki/SOAP">SOAP</a>，Simple Object Access Protocol, 简单对象访问协议，一种 XML-RPC 的实现。谁都敢号称简单，与当今的 REST API 一对照，任何人都会觉得 SOAP 是把一个远程调用搞得无比的复杂。SOAP 有 1.1 和 1.2 两个版本，现在提 SOAP 基本就是 SOAP 1.2 的代名词。另外，SOAP 1.2 开始也承认不简单，不再明确为 Simple Object Access Protocol 的缩写，而叫做 Messaging Framework (Second Edition)。<!--more--><br/><br/>
+Axis 1.4  兼容 SOAP 1.1 和 1.2 两个版本，即例 Axis 升级到了 2, 但 SOAP 本身并没有多大的进展。下面先直接体验一下 Axis 1.4 的示例项目，然后看如何进行开发与调用。<br/><br/>
+下载 axis 1.4 的二进制包 <a href="https://archive.apache.org/dist/ws/axis/1_4/axis-bin-1_4.tar.gz">axis-bin-1_4.tar.gz</a>, 然后解压，把其中的 webapps/axis 拷贝到 Tomcat 的 webapps 目录下，启动 Tomcat, 访问 http://localhost:8080/axis, 就能看到<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/11/apache-axis1-1.png"><img class="aligncenter wp-image-11937" src="https://yanbin.blog/wp-content/uploads/2021/11/apache-axis1-1-800x313.png" alt="" width="637" height="249" /></a><br/><br/>
+点 Validation 检查必须和可选的依赖包，当前 axis/WEB-INF/lib 下的 jar 包就是我们需要的，分别是 axis-ant.jar, commons-discovery-0.2.jar, jaxrpc.jar, saaj.jar, axis.jar, commons-logging-1.0.4.jar, log4j-1.2.8.jar, wsdl4j-1.5.1.jar。后面我们要用 Maven 管理依赖的话就得把它们加到 pom.xml 中去。<br/><br/>
+点 List(http://localhost:8080/axis/servlet/AxisServlet) 可看到两个 Service<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/11/apache-axis1-2.png"><img class="aligncenter wp-image-11938" src="https://yanbin.blog/wp-content/uploads/2021/11/apache-axis1-2.png" alt="" width="268" height="122" /></a><br/><br/>
+访问 http://localhost:8080/axis/services/Version?wsdl 显示该接口的 WSDL(Web Services Description Language) 描述<br/><br/>
+现在就开始来看下如何调用该 getVersion 接口，有 Dynamic Invocation Interface(DII), Dynamic Proxy, 和 Stubs 方式<br/><br/>
+<h3>Dynamic Invocation Interface(DII)</h3><br/><br/>
+我们从 Axis 1 的 github 中找到该 getVersion 接口的实现在 <a href="https://github.com/apache/axis-axis1-java/blob/1ab0004dfd1d7ef3aacf6042e4a1f870c60051e8/axis-rt-core/src/main/java/org/apache/axis/Version.java">org.apache.axis.Version</a> 类中，其中还有如何调用该接口的代码。整理出的调用代码如下<br/><br/>
+<pre class="lang:default decode:true">import org.apache.axis.client.Call;<br/><br/>
+public class SoapClient {<br/><br/>
+    public static void main(String[] args) throws Exception {
+        String servicesURL = "http://localhost:8080/axis/services/Version";
+        Call call = new Call(servicesURL);
+        String result = (String)call.invoke("Version", "getVersion", null);
+        System.out.println(result);
+    }<br/><br/>
+}</pre>
+<br/>
+执行后得到输出为<br/><br/>
+<blockquote>
+Apache Axis version: 1.4<br />
+Built on Apr 22, 2006 (06:55:48 PDT)
+</blockquote>
+<br/>
+如果使用原生的 <code>javax.xml</code> 的类来实现这一客户端的话，下面的代码与前面的  <code>SoapClient</code>  是等效的<br/><br/>
+<pre class="lang:default decode:true">import javax.xml.namespace.QName;
+import javax.xml.rpc.Call;<br/><br/>
+public class Client {
+    public static void main(String[] args) throws Exception {
+        String servicesURL = "http://localhost:8080/axis/services/Version";
+        Call call = new org.apache.axis.client.Service ().createCall();
+        call.setTargetEndpointAddress(servicesURL);
+        call.setOperationName(new QName("Version", "getVersion"));
+        String version = (String)call.invoke(new Object[]{});
+        System.out.println(version);
+    }
+}
+</pre>
+<br/>
+<h3>原始 HTTP SOAP 请求</h3><br/><br/>
+从 Java 实现的客户端看，似乎还应了 SOAP 名称的缩写，但从 HTTP 协议去看就复杂了, 下面是捕获的客户端发出的包，用 cURL 进行 HTTP 请求<br/><br/>
+<blockquote>
+$ curl -X POST 'http://localhost:8080/axis/services/Version' \<br />
+--header 'SOAPAction;' \<br />
+--header 'Content-Type: text/xml' \<br />
+--data-raw '&lt;?xml version="1.0" encoding="UTF-8"?&gt;<br />
+&lt;soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"<br />
+        xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"&gt;<br />
+    &lt;soapenv:Body&gt;<br />
+        &lt;ns1:getVersion soapenv:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:ns1="Version"/&gt;<br />
+    &lt;/soapenv:Body&gt;<br />
+&lt;/soapenv:Envelope&gt;'
+<span style="color: #000080;">&lt;?xml version="1.0" encoding="UTF-8"?&gt;&lt;soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"&gt;&lt;soapenv:Body&gt;&lt;ns1:getVersionResponse soapenv:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:ns1="Version"&gt;&lt;getVersionReturn xsi:type="xsd:string"&gt;<span style="color: #ff0000;">Apache Axis version: 1.4</span></span><br />
+<span style="color: #000080;"><span style="color: #ff0000;">Built on Apr 22, 2006 (06:55:48 PDT)</span>&lt;/getVersionReturn&gt;&lt;/ns1:getVersionResponse&gt;&lt;/soapenv:Body&gt;&lt;/soapenv:Envelope&gt;</span>
+</blockquote>
+<br/>
+SOAPAction; 用示 SOAPAction 的值为空。要用 HTTP 直接调用可不简单啊<br/><br/>
+注：在上面 HTTP 请求 Body 中 <code>xmlns:xsd</code> 和 <code>xmlns:xsi</code> 这两个别名可省略。<br/><br/>
+另外还有一种方式叫做 Dynamic Proxy, 需先定义一个客户端的接口，如<br/><br/>
+<blockquote>
+<pre class="lang:default decode:true ">public interface GetVersionInterface extends java.rmi.Remote {
+    public String getVersion() throws java.rmi.RemoteException;
+}</pre>
+</blockquote>
+<br/>
+然后基于该接口实现出一个调用 getVersion 的客户端，此处不详述，不管客户端的代码如何变，它们总是在构建相同的 &lt;soapenv&gt; 请求的 Body<br/><br/>
+还有一种是根据服务描述文档(WSDD) 生成 Java 客户端代码(Stubs), 再进行 SOAP 调用。<br/><br/>
+<h3>Web Service 的开发</h3><br/><br/>
+大致体验了 Axis 1.4 自带的 axis 服务，及如何调用 SOAP 接口后，现在移步到如何开发和发布一个 Web Service。有两种方式<br/><br/>
+<ol>
+    <li>JWS  即时发布 - Java WebService</li>
+    <li>WSDD 定制发布 - Web Service Deployment Descriptor</li>
+</ol>
+<br/>
+<h4>JWS 即时发布 Web Service</h4><br/><br/>
+JWS 是一种最简单的方式，把 Java 源文件的扩展名改为 .jws, 放在 Web 根目录下，该 Java 类不能用包名。在 Axis 1 自带的 axis 包中有两个 JWS, EchoHeaders.jws 和 StockQuoteService.jws。<br/><br/>
+jws 文件会在运行时编译到 WEB-INF/jwsClasses 目录中，如：<br/><br/>
+<blockquote>
+$ ls jwsClasses<br />
+EchoHeaders.class EchoHeaders.java SayHello.class SayHello.java
+</blockquote>
+<br/>
+用 http://localhost:8080/axis/EchoHeaders.jws?wsdl 和 http://localhost:8080/axis/StockQuoteService.jws?wsdl 就能看到它们各自的描述。EchoHeaders.jws 定义了 list(), whoami(), echo(str) 等方法。为有更好的体验，我们还是写一个自己的 JWS 服务。<br/><br/>
+在 webapps/axis/ 目录中创建一个 SayHello.jws 文件，内容为<br/><br/>
+<pre class="lang:default decode:true">public class SayHello{
+    public String sayMsg(String name){
+        return "Hello,"+name;
+    }
+}</pre>
+<br/>
+由于 SayHello.jws 是一个新文件，Tomcat 需要配置了 tools.jar 在 classpath 下才能编译它，否则访问 http://localhost:8080/axis/SayHello.jws?wsdl 出现错误 <br/><br/>
+<blockquote>
+Fault - ; nested exception is:<br />
+             java.lang.RuntimeException: No compiler found in your classpath! (you may need to add 'tools.jar')
+</blockquote>
+<br/>
+选择你喜欢的方式把 tools.jar 加到 Tomcat 的  classpath 中，比如可以这样<br/><br/>
+<blockquote>
+$ cp /Library/Java/JavaVirtualMachines/jdk1.8.0_281.jdk/Contents/Home/lib/tools.jar $TOMCAT_HOME/lib
+</blockquote>
+<br/>
+然后重启  Tomcat，刷新 http://localhost:8080/axis/SayHello.jws?wsdl 就能看到它的 WSDL 文档了。<br/><br/>
+调用方式<br/><br/>
+<pre class="lang:default decode:true">String servicesURL = "http://localhost:8080/axis/SayHello.jws";
+Call call = new Call(servicesURL);
+String result = (String)call.invoke("", "sayMsg", new Object[]{"Yanbin"});
+System.out.println(result);</pre>
+<br/>
+执行得到输出<br/><br/>
+<blockquote>
+Hello Yanbin
+</blockquote>
+<br/>
+与之相应的 HTTP 请求为<br/><br/>
+<blockquote>
+curl -X POST 'http://localhost:8080/axis/SayHello.jws' \<br />
+--header 'SOAPAction;' \<br />
+--header 'Content-Type: text/xml' \<br />
+--data-raw '&lt;?xml version="1.0" encoding="UTF-8"?&gt;<br />
+&lt;soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"<br />
+      xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"&gt;<br />
+    &lt;soapenv:Body&gt;<br />
+        &lt;sayMsg soapenv:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"&gt;<br />
+            &lt;arg0 xsi:type="soapenc:string" xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/"&gt;Yanbin&lt;/arg0&gt;<br />
+        &lt;/sayMsg&gt;<br />
+    &lt;/soapenv:Body&gt;<br />
+&lt;/soapenv:Envelope&gt;'
+<span style="color: #000080;">&lt;?xml version="1.0" encoding="UTF-8"?&gt;&lt;soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"&gt;&lt;soapenv:Body&gt;&lt;sayMsgResponse soapenv:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"&gt;&lt;sayMsgReturn xsi:type="xsd:string"&gt;<span style="color: #ff0000;">Hello,Yanbin</span>&lt;/sayMsgReturn&gt;&lt;/sayMsgResponse&gt;&lt;/soapenv:Body&gt;&lt;/soapenv:Envelope&gt;</span>
+</blockquote>
+<br/>
+<h4>WSDD 定制发布 Web Service</h4><br/><br/>
+下面是一种更灵活的定制 wsdd 文件的方式发布 Web Service，这在实际开发中应用更广泛，更便于组织 Java 的实现类。先以一个简单的实例开始，编写一个类<br/><br/>
+com.example.HelloService<br/><br/>
+<pre class="lang:default decode:true">package com.example;<br/><br/>
+public class HelloService {
+    public String sayMsg(String name) {
+        return "Hello," + name;
+    }
+} </pre>
+<br/>
+假设我们后面操作时的当前目录是 $TOMCAT_HOME/webapps/axis/WEB-INF。那么需要把编译生成的 HelloService.class 文件拷贝到 classes/com/example 下，在 classes 目录下没有 com/example 目录的话请事先创建好。<br/><br/>
+<blockquote>
+$ cp target/classes/com/example/HelloService.class classes/com/example
+</blockquote>
+<br/>
+接下来在  WEB-INF 目录下创建文件 helloservice-deploy.wsdd，内容为<br/><br/>
+<pre class="lang:default decode:true ">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;deployment xmlns="http://xml.apache.org/axis/wsdd/"
+            xmlns:java="http://xml.apache.org/axis/wsdd/providers/java"&gt;
+    &lt;service name="HelloService" provider="java:RPC"&gt;
+        &lt;parameter name="className" value="com.example.HelloService" /&gt;
+        &lt;parameter name="allowedMethods" value="*" /&gt;
+        &lt;parameter name="scope" value="request" /&gt;
+    &lt;/service&gt;
+&lt;/deployment&gt;</pre>
+<br/>
+表示我们对于 com.example.HelloService 类, 暴露所有的方法为 Web Service，并且 Scope 为 request。<br/><br/>
+provider 除 RPC 外，可选的值还有 Document, Wrapped, Message, EJB, RMI<br/><br/>
+scope 可选值有 request, session 和 application, 即SOAP 请求时产生的服务对象的生存周期<br/><br/>
+最后一步是生成 HelloService 到 server-config.wsdd 文件中，注意到在 WEB-INF 目录下存在 server-config.wsdd 文件，它列出了我们用 wsdd 方出发布的 Web Service。执行<br/><br/>
+<blockquote>
+$ java -Djava.ext.dirs=lib org.apache.axis.client.AdminClient helloservice-deploy.wsdd
+</blockquote>
+<br/>
+执行上面的 AdminClient 时 Tomcat 还必须是启动着的，否则有错: {http://xml.apache.org/axis/}stackTrace:java.net.ConnectException: Connection refused (Connection refused)<br/><br/>
+在 server-config.wsdd 就有了 HelloService 的内容，上面的 AdminClient 命令最终可见的效果就是在 server-config.wsdd 中添加了下面四行<br/><br/>
+<pre class="lang:default decode:true"> &lt;service name="HelloService" provider="java:RPC"&gt;
+  &lt;parameter name="allowedMethods" value="*"/&gt;
+  &lt;parameter name="scope" value="request"/&gt;
+  &lt;parameter name="className" value="com.example.HelloService"/&gt;
+ &lt;/service&gt; </pre>
+<br/>
+所以使用 WSDD 的方式也可以手动修改 server-config.wsdd 文件，但要重启服务才能生效，而用 AdminClient 则可不用重启服务。不过修改或添加了新的  class 文件，类的热加载工作不正常的情况用 AdminClient 也可能要重启服务。<br/><br/>
+使用 AdminService 这个 Web Service 也能达成相同的结果，命令如下<br/><br/>
+<blockquote>
+$ java -Djava.ext.dirs=lib org.apache.axis.client.AdminClient -lhttp://localhost:8080/axis/services/AdminService helloservice-deloy.wsdd
+</blockquote>
+<br/>
+看起来有点绕，既然在应用的 WEB-INF 目录，为何还要走 Web Service。其实都是 AdminClient 的参数 <code>-l</code> 默认值就是 http://localhost:8080/axis/services/AdminService。<br/><br/>
+现在访问 http://localhost:8080/axis/servlet/AxisServlet，就有了 HelloService<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/11/apache-axis-1-3.png"><img class="aligncenter wp-image-11945" src="https://yanbin.blog/wp-content/uploads/2021/11/apache-axis-1-3.png" alt="" width="278" height="163" /></a><br/><br/>
+&nbsp;<br/><br/>
+调用该接口, 换一种方式<br/><br/>
+<pre class="lang:default decode:true ">String servicesURL = "http://localhost:8080/axis/services/HelloService";
+Call call = new org.apache.axis.client.Service ().createCall();
+call.setTargetEndpointAddress(servicesURL);
+call.setOperationName(new QName("", "sayMsg"));
+String result = (String)call.invoke(new Object[]{"WSDD"});
+System.out.println(result);</pre>
+<br/>
+执行后输出为<br/><br/>
+<blockquote>
+Hello, WSDD
+</blockquote>
+<br/>
+如果要卸载该 HelloService 服务，在 WEB-INF 下创建一个 helloserver-undeploy.wsdd 文件，内容为<br/><br/>
+<pre class="lang:default decode:true">&lt;undeployment xmlns="http://xml.apache.org/axis/wsdd/"&gt;
+  &lt;service name="HelloService"/&gt;
+&lt;/undeployment&gt; </pre>
+<br/>
+然后执行相类似的 AdminClient 命令<br/><br/>
+<blockquote>
+$ java -Djava.ext.dirs=lib org.apache.axis.client.AdminClient helloservice-undeploy.wsdd
+</blockquote>
+<br/>
+HelloService 就会消失了。<br/><br/>
+<h3>一个更复杂的 Web Service</h3><br/><br/>
+前面的 Web Service 要么无参数，要么参数类型是基本类型，下面的例子输入参数为自定义类型 User。我们在 com.example.HelloService 中再加一个方法<br/><br/>
+<pre class="lang:default decode:true ">public String sayHello(User user) {
+    return String.format("Hello %s %s", user.getFirstname(), user.getLastname());
+}</pre>
+<br/>
+所以要创建一个 User 类<br/><br/>
+<pre class="lang:default decode:true">package com.example;<br/><br/>
+public class User {
+    private String firstname;
+    private String lastname;<br/><br/>
+    public String getFirstname() {
+        return firstname;
+    }<br/><br/>
+    public void setFirstname(String firstname) {
+        this.firstname = firstname;
+    }<br/><br/>
+    public String getLastname() {
+        return lastname;
+    }<br/><br/>
+    public void setLastname(String lastname) {
+        this.lastname = lastname;
+    }
+}
+</pre>
+<br/>
+完后，把编译好的 HelloService.class 和 User.class 文件拷贝到 $TOMCAT_HOME/webapps/axis/WEB-INF/classes/com/example 目录中。<br/><br/>
+再编译 helloservice-deploy.wsdd 文件，修改为<br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;deployment xmlns="http://xml.apache.org/axis/wsdd/"
+            xmlns:java="http://xml.apache.org/axis/wsdd/providers/java"&gt;
+    &lt;service name="HelloService" provider="java:RPC"&gt;
+        &lt;parameter name="className" value="com.example.HelloService" /&gt;
+        &lt;parameter name="allowedMethods" value="*" /&gt;
+        &lt;parameter name="scope" value="request" /&gt;
+        &lt;typeMapping xmlns:ns1="http://yanbin.blog" qname="ns1:user"
+          type="java:com.example.User"
+          serializer="org.apache.axis.encoding.ser.BeanSerializerFactory"
+          deserializer="org.apache.axis.encoding.ser.BeanDeserializerFactory"
+          encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"/&gt;
+    &lt;/service&gt;
+&lt;/deployment&gt; </pre>
+<br/>
+执行 AdminClient 命令<br/><br/>
+<blockquote>
+$ java -Djava.ext.dirs=lib org.apache.axis.client.AdminClient helloservice-deploy.wsdd
+</blockquote>
+<br/>
+如果运气好的，刷新 http://localhost:8080/axis/servlet/AxisServlet 就能看到 HelloService 下有两个接口。看不到的请尝试重启 Tomcat，或清理  $TOMCAT_HOME/work 目录下的缓存<br/><br/>
+<img class="aligncenter wp-image-11947" src="https://yanbin.blog/wp-content/uploads/2021/11/apache-axis1-4.png" alt="" width="270" height="182" /><br/><br/>
+在 http://localhost:8080/axis/services/HelloService?wsdl 能够看到 sayHello 接口的 user(firstname, lastname) 信息<br/><br/>
+调用 sayHello 接口的代码如下<br/><br/>
+<pre class="lang:default decode:true ">package com.example;<br/><br/>
+import org.apache.axis.client.Call;
+import org.apache.axis.encoding.ser.BeanDeserializerFactory;
+import org.apache.axis.encoding.ser.BeanSerializerFactory;<br/><br/>
+import javax.xml.namespace.QName;<br/><br/>
+public class SoapClient {<br/><br/>
+    public static void main(String[] args) throws Exception {
+        String servicesURL = "http://localhost:8080/axis/services/HelloService";
+        Call call = new Call(servicesURL);<br/><br/>
+        QName qname = new QName("https://yanbin.blog", "user");
+        call.registerTypeMapping(User.class, qname,
+            new BeanSerializerFactory(User.class, qname),
+            new BeanDeserializerFactory(User.class, qname));<br/><br/>
+        User user = new User();
+        user.setFirstname("Scott");
+        user.setLastname("Tiger");
+        String result = (String)call.invoke("", "sayHello", new Object[]{user});
+        System.out.println(result);
+    }<br/><br/>
+}</pre>
+<br/>
+相应的 HTTP 请求也不能少<br/><br/>
+<blockquote>
+curl -X POST 'http://localhost:8080/axis/services/HelloService' \<br />
+--header 'SOAPAction;' \<br />
+--header 'Content-Type: text/xml' \<br />
+--header 'Cookie: JSESSIONID=DCEC1F5487CDE319C406256B0BE00EEC' \<br />
+--data-raw '&lt;?xml version="1.0" encoding="UTF-8"?&gt;<br />
+&lt;soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"<br />
+    xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"&gt;<br />
+    &lt;soapenv:Body&gt;<br />
+        &lt;sayHello soapenv:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"&gt;<br />
+            &lt;arg0 href="#id0"/&gt;<br />
+        &lt;/sayHello&gt;<br />
+        &lt;multiRef id="id0" soapenc:root="0" soapenv:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"<br />
+             xsi:type="ns1:user" xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/" xmlns:ns1="http://yanbin.blog"&gt;<br />
+            &lt;firstname xsi:type="soapenc:string"&gt;Scott&lt;/firstname&gt;<br />
+            &lt;lastname xsi:type="soapenc:string"&gt;Tiger&lt;/lastname&gt;<br />
+        &lt;/multiRef&gt;<br />
+    &lt;/soapenv:Body&gt;<br />
+&lt;/soapenv:Envelope&gt;'
+<span style="color: #000080;">&lt;?xml version="1.0" encoding="UTF-8"?&gt;&lt;soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"&gt;&lt;soapenv:Body&gt;&lt;sayHelloResponse soapenv:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"&gt;&lt;sayHelloReturn xsi:type="soapenc:string" xmlns:soapenc="http://schemas.xmlsoap.org/soap/encoding/"&gt;<span style="color: #ff0000;">Hello Scott Tiger</span>&lt;/sayHelloReturn&gt;&lt;/sayHelloResponse&gt;&lt;/soapenv:Body&gt;&lt;/soapenv:Envelope&gt;</span>
+</blockquote>
+<br/>
+以上内容基本涵盖了要往 SpringBoot2 + Axis_1.4 方向走的准备，再有就是 <a href="https://github.com/apache/axis-axis1-java/blob/master/axis-war/src/main/webapp/WEB-INF/web.xml">web.xml</a> 中关于 AxisServlet(实现类 org.apache.axis.transport.http.AxisServlet) 的配置，对 url-paatern 为 <code>/servlet/AxisServlet</code>, <code>*.jws</code>, <code>/services/*</code> 都会进到 AxisServlet。还有一个跟随 Tomcat 启动的 AdminServlet(实现类 org.apache.axis.transport.http.AdminServlet)，可能须用 SpringBoot2 的方式来声明。<br/><br/>
+最后，由于 WebLogic 8.1 的 webservices.jar 与 saaj.jar 相冲突，要确保在 WebLogic 8.1 中也能正常的话，在 WEB/weblogic.xml 中要加上<br/><br/>
+<pre class="lang:default decode:true ">&lt;weblogic-web-app&gt;
+  &lt;container-descriptor&gt;
+    &lt;prefer-web-inf-classes&gt;true&lt;/prefer-web-inf-classes&gt;
+  &lt;/container-descriptor&gt;
+&lt;/weblogic-web-app&gt;</pre>
+<br/>
+关于  WSDL2Java 根据 wsdl 描述文档生成 Java 的 Stub 代码文件这里未涉及。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://www.ibm.com/docs/en/was-nd/8.5.5?topic=soap-differences-in-versions">Differences in SOAP versions</a></li>
+    <li><a href="http://www.micmiu.com/soa/webservice/axis-ws-demo/">Axis开发webservice的简单实例</a></li>
+    <li><a href="https://www.cnblogs.com/hoojo/archive/2010/12/20/1911363.html">二、用wsdd（Web Services Deployment Descriptor）方式发布WebService</a></li>
+    <li><a href="https://github.com/alaeessaki/spring-boot-axis1.4-server">Spring boot axis 1.4 webService Server</a></li>
+    <li><a href="https://axis.apache.org/axis/java/user-guide.html">Apache Axis 1.x Java User's Guide</a></li>
+</ol>

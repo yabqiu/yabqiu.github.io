@@ -1,0 +1,56 @@
+---
+title: 谈Objective-C中的property
+url: /several-tips-about-objc-property/
+date: 2012-02-25T23:05:52-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - iOS
+tags: 
+  - objective-c
+  - property
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 4272 
+wpStatus: publish
+views: 832
+lastmod: 2021-06-17T18:19:17-05:00
+---
+
+property大概是objc中唯一的元编程机制，用来快速地生成类的数据成员的get和set方法。本文谈谈我对property的一些使用心得。</p>
+<br/>
+1）retain，copy和assign：<br/><br/>
+retain的作用在于生成set方法时该数据成员（一定是objc对象）的引用计数+1，通常用于除NSString类型以外的objc对象。如<br/><br/>
+<pre class="lang:default decode:true">- (void)setMember:(Member *)member
+{
+    [member_ release];
+    member_ = [member retain];
+}</pre>
+<br/>
+一个常见的例外是delegate的set方法通常设为assign，这是为了避免循环引用造成的引用计数无法归0，然后内存泄漏——考虑一个view的delegate为该view所在controller的情况。<br/><br/>
+NSString类的对象的set方法设为copy，字符串对象需要深拷贝。<!--more--><br/><br/>
+变量的set方法都应设为assign。<br/><br/>
+2）优雅地释放成员对象。<br/><br/>
+以controller为例，通常在viewDidUnload方法和dealloc方法中需要释放成员对象，直接的方法是<br/><br/>
+<pre class="brush:objc ">[member_ release];</pre>
+<br/>
+这样做的问题在于产生了野指针，在多线程的程序中也许会产生意想不到的bug——如果程序的设计比较奇特，<br/><br/>
+并且运气足够差的话。<br/><br/>
+优雅的做法是<br/><br/>
+<pre class="brush:objc">self.member = nil;</pre>
+<br/>
+展开来就是<br/><br/>
+<pre class="brush:objc">[member_ release];
+member_ = nil;</pre>
+<br/>
+3）nonatomic和atomic<br/><br/>
+atomic即原子的意思，在多线程的程序中，atomic的数据成员在读写时会加锁，以极小的额外开销保证数据的安全。nonatomic则认为该数据成员不会同时被多线程读写。<br/><br/>
+个人的观点——在实际编程中准确判断一个数据成员是否有可能被多线程同时读写是不现实的，所以不必用nonatomic，由此造成的额外开销可以忽略不计。<br/><br/>
+滥用nonatomic也许会造成意料不到的bug——运气足够差的话。<br/><br/>
+4）私有与公有<br/><br/>
+应该尽量把property设成私有的——这样能让类的头文件看起来简洁很多。通常而言，一个controller中的几乎所有数据成员的property都可以设成私有的——否则意味着程序的设计很可能存在问题。<br/><br/>
+摘自：http://www.cnblogs.com/qswang/archive/2011/11/08/2360486.html

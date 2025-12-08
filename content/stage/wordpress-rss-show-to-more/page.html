@@ -1,0 +1,42 @@
+---
+title: 定制 WordPress 的 Rss 输出到 &lt;!--more--&gt;
+url: /wordpress-rss-show-to-more/
+date: 2010-09-18T13:11:17-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - WordPress
+tags: 
+  - wordpress
+  - rss
+  - More
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2603 
+wpStatus: publish
+views: 885
+lastmod: 2021-09-03T11:49:57-05:00
+---
+
+<a href="http://unmi.cc/wordpress-rss-show-to-more"><img class="alignleft size-full wp-image-2607" style="margin: 2px 8px; border: black 1px solid;" title="wordpress-rss" src="http://unmi.cc/wp-content/uploads/2010/09/wordpress-rss.png" alt="Wordpress rss summary" width="227" height="53" /></a>看来我真是浸淫在了 WordPress 里，俗称工欲善其事，必先利其器，也不知道想把这一器磨成多利。大约和当初结识 Joomla 时同样的境遇，难道要变大杀器不成？接连都几篇与 WordPress 相关的内容，反而把主业给抛在了一边。</p>
+<br/>
+好了，都是实际的问题，我的文章里因为有一些代码什么的，所以选择了用 &lt;!--more--&gt; 的形式显示片断，而不是用的摘要，虽然摘要也有可视编辑器，但还是用 &lt;!--more--&gt; 一点鼠标方便些。但是问题又有了，文章列表页里是显示了 more 前面的内容，但 RSS 不好控制，因为文章没有摘要，所以在后台 Settings/Reading 里无论选择 Rss 输出是 Full Text 还是 Summary 都会以全文的方式输出。选择 Summary 时，WordPress 看到没有填写文章摘要就会代之以全文。<!--more--><br/><br/>
+这就要作些改动了，用插件吗，好像必要性不大，何况好像还没有这样的插件，只要改改代码就行了。我的 WordPress 是当前最新版 3.0.1，打开 /wp-includes/feed-rss2.php，把大约第 44 行改一下，也就是要把下面代码：<br/><br/>
+<pre class="lang:default decode:true">&lt;?php if (get_option('rss_use_excerpt')) : ?&gt;
+  &lt;description&gt;&lt;![CDATA[&lt;?php the_excerpt_rss() ?&gt;]]&gt;&lt;/description&gt;
+&lt;?php else : ?&gt;</pre>
+<br/>
+改为<br/><br/>
+<pre class="lang:default decode:true ">&lt;?php if (get_option('rss_use_excerpt')) : ?&gt;
+  &lt;description&gt;&lt;![CDATA[&lt;?php if(has_excerpt()) the_excerpt_rss(); else {global $more;$more=0;the_content('阅读全文 &gt;&gt;');} ?&gt;]]&gt;&lt;/description&gt;
+&lt;?php else : ?&gt;</pre>
+<br/>
+即在后台 Settings/Reading Settings 里设置了 Rss 输出是以 Summary 摘要的方式，就会去判断，若有摘要输出摘要，否则就从开头输出到 More 位置，没有 More 标记当然还是输出全文。<br/><br/>
+几个注意的地方，代码中为 the_content() 传入 '阅读全文'  链接名，因为有中文，所以该文件应该保存为 utf-8 格式。为了保证效果是输出到 More 位置，必须在后台 Settings/Reading Settings 里，设置 For each article in a feed, show 选项要选择 Summary，Full text 仍然以全文输出。所以这种修改不会影响到原有的功能。<br/><br/>
+网上还说过其他的修改办法，一个是在后台选择 Full text 的时候可以替换 /wp-includes/feed-rss2.php 大约 48 行处的 the_content_feed('rss2') 为 global $more;$more=0;the_content('阅读全文 &gt;&gt;')。还有一种做法是在判断页面类型的的时候，当是 is_feed() 的时候，全局的 $more 要设置为零，也能达到类似的效果。<br/><br/>
+我还曾想过，写个完成此功能的插件，会让更多人更方便些，而无需懂代码或不懂代码的人都去动 WordPress 的核心的代码，但是要拦截这个 Filter 有点困难。升级 WordPress 本身的时候记得作了这样的改动就行。<br/><br/>
+参考：1. <a href="http://baoz.net/wordpress-rss-feed-more/">http://baoz.net/wordpress-rss-feed-more/</a>

@@ -1,0 +1,304 @@
+---
+title: Docker Swarm 集群模式实操
+url: /docker-swarm-cluster-in-action/
+date: 2020-03-22T23:55:55-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2020/03/docker_swarm.png"
+categories:
+  - Docker
+tags: 
+  - Swarm
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9955 
+wpStatus: publish
+views: 747
+lastmod: 2021-06-24T13:08:56-05:00
+---
+
+在正式进入 Kubernetes 之前希望能对早先的 Docker Swarm 有所了解，虽然它目前基本上没什么用处。Swarm 提供的是 Docker 宿主机的集群，集群中至少有一个 Manager(或多个), 再加上 0 或多个 Worker。它的大意是有个 Docker 服务(容器)通过 Manager 告诉用所管理的 Swarm 集群来执行，它就会在该集群中找到相应的宿主机来执行。Manager 和 Workder 都可用来运行 Docker 容器，但只有 Manager 才能执行部分管理命令。</p>
+<br/>
+下面两张图很好的体现了我们平时在一个宿主机上和 Swarm 集群宿主机上运行 Docker 容器的区别<br/><br/>
+<table style="border-collapse: collapse; width: 60.5933%;">
+<tbody>
+<tr>
+<td style="width: 26.231%; text-align: center;"><a href="https://yanbin.blog/wp-content/uploads/2020/03/docker-2.png"><img class="aligncenter size-full wp-image-9957" src="https://yanbin.blog/wp-content/uploads/2020/03/docker-2.png" alt="" width="256" height="256" /></a>所有容器自己扛</td>
+<td style="width: 1.65785%;">  =&gt;</td>
+<td style="width: 25.7504%; text-align: center;"><a href="https://yanbin.blog/wp-content/uploads/2020/03/docker_swarm.png"><img class="aligncenter size-full wp-image-9956" src="https://yanbin.blog/wp-content/uploads/2020/03/docker_swarm.png" alt="" width="256" height="256" /></a>容器大家一起扛</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<p data-wp-editing="1">Docker 在 1.12 之后自带了 Swarm 模式。本文实质上对 <a href="https://www.jianshu.com/p/df744c4e375e">使用Docker Swarm模式搭建Swarm集群</a> 的一次实际操作与体验。只是自己方便使用了三个 Vagrant 虚拟机进行实践，其中一个 Swarm Manager 节点，两个 worker 节点<!--more--></p>
+<br/>
+<ol>
+    <li data-wp-editing="1">ubuntu-master: 172.28.128.6</li>
+    <li data-wp-editing="1">ubuntu-worker1: 172.28.128.7</li>
+    <li data-wp-editing="1">ubuntu-worker2: 172.28.128.7</li>
+</ol>
+<br/>
+所用的 Vagrantfile 是<br/><br/>
+<pre class="lang:default decode:true">Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/disco64"
+  config.vm.hostname = "ubuntu-master"    #相应的 worker 为 ubuntu-worker1 和 ubuntu-worker2
+  config.vm.network "private_network", type: "dhcp"
+end</pre>
+<br/>
+vagrant up, vagrant ssh 进入机器后，sudo su - 切换到 root 用户，用 snap install docker 或 apt install docker.io 安装  docker 都行，然后就可用 docker swarm 命令了。<br/><br/>
+<h3>创建 Swarm 集群</h3><br/><br/>
+一个 Swarm 集群中至少要有一个 Manager 节点<br/><br/>
+<h4>创建 Manager 节点</h4><br/><br/>
+在 ubuntu-master 机器上执行<br/><br/>
+<pre class="lang:sh decode:true ">root@ubuntu-master:~# docker swarm init --advertise-addr 172.28.128.6
+Swarm initialized: current node (sjfg7nljuyt54yapffvosrzmh) is now a manager.<br/><br/>
+To add a worker to this swarm, run the following command:<br/><br/>
+    docker swarm join --token SWMTKN-1-3wnd3z2xp49j6vyf6nt8kiuz38bjgjbbs90kz8x48z6dhyr7rc-c2cwfzg2jzhi3qz12wicn89a0 172.28.128.6:2377<br/><br/>
+To add a manager to this swarm, run 'docker swarm join-token manager' and follow the instructions.</pre>
+<br/>
+<code>--addvertise-addr</code> 表示 worker 节点与 manager 的联系地址与端口，所以 master 的 2377 端口要打开。上面同时显示了在 worker 中如何加入到 Swarm 集群中的命令，在 master 上用以下两命令可随时查看加入 worker 或新 manager  的完整命令<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master: ~# docker swarm join-token worker
+......
+root@ubuntu-master: ~# docker swarm join-token manager
+....</pre>
+<br/>
+这时可使用 <code>docker info</code> 和 <code>docker node ls</code> 查看 Swarm 集群的信息<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker info
+......
+Swarm: active
+ NodeID: sjfg7nljuyt54yapffvosrzmh
+ Is Manager: true
+ ClusterID: r2cr7km655esw58olbc6gyncn
+ Managers: 1
+ Nodes: 1
+ Default Address Pool: 10.0.0.0/8
+ SubnetSize: 24
+ Orchestration:
+  Task History Retention Limit: 5
+......<br/><br/>
+root@ubuntu-master:~# docker node ls
+ID                            HOSTNAME            STATUS              AVAILABILITY        MANAGER STATUS      ENGINE VERSION
+sjfg7nljuyt54yapffvosrzmh *   ubuntu-master       Ready               Active              Leader              18.09.9</pre>
+<br/>
+<h4>加入 Worker 节点到 Swarm  集群</h4><br/><br/>
+在 ubuntu-worker1 和 ubuntu-worker2 两个节点上执行相同的命令<br/><br/>
+<pre class="lang:default decode:true ">root@ubuntu-worker1:~# docker swarm join --token SWMTKN-1-3wnd3z2xp49j6vyf6nt8kiuz38bjgjbbs90kz8x48z6dhyr7rc-c2cwfzg2jzhi3qz12wicn89a0 172.28.128.6:2377
+This node joined a swarm as a worker.</pre>
+<br/>
+完后在 manager 机器上再用 <code>docker info</code> 和 <code>docker node ls</code> 查看下<br/><br/>
+<pre class="lang:default decode:true ">root@ubuntu-master:~# docker info
+......
+Swarm: active
+ NodeID: sjfg7nljuyt54yapffvosrzmh
+ Is Manager: true
+ ClusterID: r2cr7km655esw58olbc6gyncn
+ Managers: 1
+ Nodes: 3
+ Default Address Pool: 10.0.0.0/8
+ SubnetSize: 24
+ Orchestration:
+  Task History Retention Limit: 5
+......
+root@ubuntu-master:~# docker node ls
+ID                            HOSTNAME            STATUS              AVAILABILITY        MANAGER STATUS      ENGINE VERSION
+sjfg7nljuyt54yapffvosrzmh *   ubuntu-master       Ready               Active              Leader              18.09.9
+q82ndq11h1mie6lwmog5pfymu     ubuntu-worker1      Ready               Active                                  18.09.7
+xuzc43qrrdirkmabivdzg8ruc     ubuntu-worker2      Ready               Active                                  18.09.9</pre>
+<br/>
+在 worker 上看到的  <code>docker info</code> 信息略有不同，且 <code>docker node</code> 命令是不能在 worker 上执行的。<br/><br/>
+<h3>在 Swarm 集群中部署服务</h3><br/><br/>
+现在我们有了一个由一个 manager 和两个 worker 组成的 Swarm 集群了，可以开始在这个集群中运行我们的 docker 容器(服务) 了。<br/><br/>
+有别于我们通常用 <code>docker run</code> 的方式在当前机器为宿主机上运行容器，在 Swarm 集群中部署服务要在 manager 节点上用 <code>docker service</code> 命令。<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker service create --replicas 2 --name helloworld alpine ping docker.com
+15aptyokhcp42qa47rfmhgx82
+overall progress: 2 out of 2 tasks
+1/2: running   [==================================================&gt;]
+2/2: running   [==================================================&gt;]
+verify: Service converged</pre>
+<br/>
+<ol>
+    <li><code>--replicas</code> 指定启动服务由几个实例组成</li>
+    <li><code>--name</code> 与 docker run 时的 --name  一样，指定服务名</li>
+    <li><code>alpine</code> 为 docker 镜像名称</li>
+    <li><code>ping docker.com</code> 服务执行的命令，由于 Linux 下的 ping 命令是不会停的，因此后面可以观察运行状态</li>
+</ol>
+<br/>
+<h4>查看 Swarm 中服务信息</h4><br/><br/>
+<code>docker service ls</code> 查看服务列表<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker service ls
+ID                  NAME                MODE                REPLICAS            IMAGE               PORTS
+15aptyokhcp4        helloworld          replicated          2/2                 alpine:latest</pre>
+<br/>
+<code>docker service inspec</code>t 查看服务信息，与 <code>docker inspect</code> 查看容器信息类似<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker service inspect --pretty helloworld<br/><br/>
+ID:     15aptyokhcp42qa47rfmhgx82
+Name:       helloworld
+Service Mode:   Replicated
+ Replicas:  2
+Placement:
+UpdateConfig:
+ Parallelism:   1
+......
+ContainerSpec:
+ Image:     alpine:latest@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
+ Args:      ping docker.com
+ Init:      false</pre>
+<br/>
+类似于 <code>docker ps</code> 的 <code>docker service ps &lt;SERVICE-ID&gt;</code> 命令可查询哪个(些) 节点正在运行该服务<br/><br/>
+<pre class="lang:default decode:true ">root@ubuntu-master:~# docker service ps 15
+ID                  NAME                IMAGE               NODE                DESIRED STATE       CURRENT STATE           ERROR               PORTS
+ay8qybtmtpqo        helloworld.1        alpine:latest       ubuntu-worker1      Running             Running 6 minutes ago
+ou1gltvexpkc        helloworld.2        alpine:latest       ubuntu-master       Running             Running 6 minutes ago</pre>
+<br/>
+我们注意到前面指定了 <code>--replicas=2</code> 运行的两份服务分别在 <code>ubuntu-worker1</code> 和 <code>ubuntu-master</code> 两个节点上。所以我们可以跑到所有节点上用 <code>docker ps</code> 验证一下<br/><br/>
+<pre class="lang:default decode:true ">root@ubuntu-master:~# docker ps
+CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES
+16eb4dbfc88b        alpine:latest       "ping docker.com"   7 minutes ago       Up 7 minutes                            helloworld.2.ou1gltvexpkcbna6rttbjbosl</pre>
+<br/>
+<pre class="lang:default decode:true ">root@ubuntu-worker1:~# docker ps
+CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES
+5b4367423853        alpine:latest       "ping docker.com"   7 minutes ago       Up 7 minutes                            helloworld.1.ay8qybtmtpqotpokauyde7ob0</pre>
+<br/>
+<pre class="lang:default decode:true ">root@ubuntu-worker2:~# docker ps
+CONTAINER ID        IMAGE               COMMAND             CREATED             STATUS              PORTS               NAMES</pre>
+<br/>
+没问题，Docker Swarm 的集群就相当于我们跑到每个独立结节上按需运行 <code>docker run --name helloworld.x alpine ping docker.com</code> 的效果。<br/><br/>
+<h4>在 Swarm 集群中服务的动态伸缩</h4><br/><br/>
+有集群的好处就是我们可以在群集中对服务进行动态伸缩，规模超过集群节点数也不是问题，无外乎在一个节点上会运行多个服务。<br/><br/>
+<pre class="lang:default decode:true ">root@ubuntu-master:~# docker service scale helloworld=5
+helloworld scaled to 5
+overall progress: 5 out of 5 tasks
+1/5: running   [==================================================&gt;]
+2/5: running   [==================================================&gt;]
+3/5: running   [==================================================&gt;]
+4/5: running   [==================================================&gt;]
+5/5: running   [==================================================&gt;]
+verify: Service converged</pre>
+<br/>
+<code>helloworld=5</code> 相当于创建服务时指定的 <code>--replicas=5</code> 一样<br/><br/>
+再查看一下服务节点分配的列表<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker service ps helloworld
+ID                  NAME                IMAGE               NODE                DESIRED STATE       CURRENT STATE            ERROR               PORTS
+ay8qybtmtpqo        helloworld.1        alpine:latest       ubuntu-worker1      Running             Running 14 minutes ago
+ou1gltvexpkc        helloworld.2        alpine:latest       ubuntu-master       Running             Running 14 minutes ago
+8xhmp5ehboo6        helloworld.3        alpine:latest       ubuntu-worker2      Running             Running 47 seconds ago
+kagiwq7sh105        helloworld.4        alpine:latest       ubuntu-worker2      Running             Running 47 seconds ago
+ijmgo4udbe1d        helloworld.5        alpine:latest       ubuntu-worker1      Running             Running 47 seconds ago</pre>
+<br/>
+其中有两个节点运行了两个服务。不妨往小里试一番<br/><br/>
+<pre class="lang:default decode:true ">root@ubuntu-master:~# docker service scale helloworld=1
+helloworld scaled to 1
+overall progress: 1 out of 1 tasks
+1/1: running   [==================================================&gt;]
+verify: Service converged</pre>
+<br/>
+再看服务列表<br/><br/>
+<pre class="lang:default decode:true ">root@ubuntu-master:~# docker service ps helloworld
+ID                  NAME                IMAGE               NODE                DESIRED STATE       CURRENT STATE            ERROR               PORTS
+ay8qybtmtpqo        helloworld.1        alpine:latest       ubuntu-worker1      Running             Running 17 minutes ago</pre>
+<br/>
+在每一次用 <code>docker service scale helloworld=&lt;NUM&gt;</code> 之后可以到具体节点上去用 <code>docker ps</code> 查看当前节点所运行的容器来验证。<br/><br/>
+到这时候我们真切的体验到了 Swarm 集群一些好处，但实际应用场景好像不是这么一回事。实践中节点都是动态增减的，除非首先启动一个 manager 节点，其后新启的节点自动加为 worker, 节点消亡后自动退出 Swarm  集群。<br/><br/>
+下面是 Swarm 集群中服务的管理<br/><br/>
+<h4>删除 Swarm 集群中的服务</h4><br/><br/>
+用 <code>docker service rmi helloworld</code> 命令删除服务。<br/><br/>
+<h4>更新 Swarm 集群中的服务</h4><br/><br/>
+比如要更新服务中的镜像版本，基本命令是 <code>docker service update --image alpine:3.10 helloworld</code>, 以下是完整演示把镜像从 alpine:latest 更新到  alpine:3.10<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker service create --replicas 3 --name helloworld alpine ping docker.com
+pz8ifs41o90fren4hc6dgc1gz
+overall progress: 3 out of 3 tasks
+1/3: running   [==================================================&gt;]
+2/3: running   [==================================================&gt;]
+3/3: running   [==================================================&gt;]
+verify: Service converged
+root@ubuntu-master:~# docker service ps helloworld
+ID                  NAME                IMAGE               NODE                DESIRED STATE       CURRENT STATE                ERROR               PORTS
+qhmkkife291l        helloworld.1        alpine:latest       ubuntu-worker1      Running             Running about a minute ago
+ia6bpvky5fdd        helloworld.2        alpine:latest       ubuntu-worker2      Running             Running about a minute ago
+i6ux7j6jpwqi        helloworld.3        alpine:latest       ubuntu-master       Running             Running about a minute ago
+root@ubuntu-master:~# docker service update --image alpine:3.10 helloworld
+helloworld
+overall progress: 3 out of 3 tasks                                     //这里可以看到怎么动态的更新过程
+1/3: running   [==================================================&gt;]
+2/3: running   [==================================================&gt;]
+3/3: running   [==================================================&gt;]
+verify: Service converged
+root@ubuntu-master:~# docker service ps helloworld                     //显示了由  latest 更新到了 3.10
+ID                  NAME                IMAGE               NODE                DESIRED STATE       CURRENT STATE             ERROR               PORTS
+lgqlxpkdjyl8        helloworld.1        alpine:3.10         ubuntu-worker1      Running             Running 14 seconds ago
+qhmkkife291l         \_ helloworld.1    alpine:latest       ubuntu-worker1      Shutdown            Shutdown 15 seconds ago
+5qj7hf6dm75x        helloworld.2        alpine:3.10         ubuntu-worker2      Running             Running 26 seconds ago
+ia6bpvky5fdd         \_ helloworld.2    alpine:latest       ubuntu-worker2      Shutdown            Shutdown 27 seconds ago
+p1aibrthhs4k        helloworld.3        alpine:3.10         ubuntu-master       Running             Running 38 seconds ago
+i6ux7j6jpwqi         \_ helloworld.3    alpine:latest       ubuntu-master       Shutdown            Shutdown 39 seconds ago</pre>
+<br/>
+更新时为了尽量不中断服务，Swarm 会进行逐个服务停止，更新，再启动。<br/><br/>
+<h3>Swarm 中节点的离线与上线</h3><br/><br/>
+对运行服务中的 Swarm 集群，我们可以让某个点节离线，那么其上的服务就会转移到另一个可用的节点上。离线的节点可以重新上线，但先前上面的服务不会重新转移过来，只要在进行服务伸缩或创建新服务时才会分配到新上线的节点上。看下面的一个完整演示<br/><br/>
+<pre class="lang:default decode:true">root@ubuntu-master:~# docker service create --replicas 3 --name helloworld alpine ping docker.com
+zn19c80zdpehq40dwz25lgton
+overall progress: 3 out of 3 tasks
+1/3: running   [==================================================&gt;]
+2/3: running   [==================================================&gt;]
+3/3: running   [==================================================&gt;]
+verify: Service converged
+root@ubuntu-master:~# docker service ps helloworld          //每个节点上都运行一个容器
+ID                  NAME                IMAGE               NODE                DESIRED STATE       CURRENT STATE            ERROR               PORTS
+r36yh4yfyrjj        helloworld.1        alpine:latest       ubuntu-worker1      Running             Running 13 seconds ago
+2fyzydfs2n8w        helloworld.2        alpine:latest       ubuntu-worker2      Running             Running 13 seconds ago
+smqv1mfh1lba        helloworld.3        alpine:latest       ubuntu-master       Running             Running 13 seconds ago
+root@ubuntu-master:~# docker node update --availability drain ubuntu-worker1
+ubuntu-worker1
+root@ubuntu-master:~# docker service ps helloworld          // ubuntu-worker1 离线后，其上的任务转移到了 ubuntu-master 节点上
+ID                  NAME                IMAGE               NODE                DESIRED STATE       CURRENT STATE            ERROR               PORTS
+5z10pj4z9ldq        helloworld.1        alpine:latest       ubuntu-master       Running             Running 1 second ago
+r36yh4yfyrjj         \_ helloworld.1    alpine:latest       ubuntu-worker1      Shutdown            Shutdown 2 seconds ago
+2fyzydfs2n8w        helloworld.2        alpine:latest       ubuntu-worker2      Running             Running 50 seconds ago
+smqv1mfh1lba        helloworld.3        alpine:latest       ubuntu-master       Running             Running 50 seconds ago
+root@ubuntu-master:~# docker node update --availability active ubuntu-worker1
+ubuntu-worker1
+root@ubuntu-master:~# docker service ps helloworld         // ubuntu-worker1 重新上线后，任务分配情况保持不变
+ID                  NAME                IMAGE               NODE                DESIRED STATE       CURRENT STATE                ERROR               PORTS
+5z10pj4z9ldq        helloworld.1        alpine:latest       ubuntu-master       Running             Running 56 seconds ago
+r36yh4yfyrjj         \_ helloworld.1    alpine:latest       ubuntu-worker1      Shutdown            Shutdown 56 seconds ago
+2fyzydfs2n8w        helloworld.2        alpine:latest       ubuntu-worker2      Running             Running about a minute ago
+smqv1mfh1lba        helloworld.3        alpine:latest       ubuntu-master       Running             Running about a minute ago</pre>
+<br/>
+<h3>管理 Swarm 集群</h3><br/><br/>
+最后是几个管理 Swarm 集群的命令<br/><br/>
+worker 离开 Swarm 集群<br/><br/>
+<pre class="lang:default decode:true ">root@ubuntu-worker1:~# docker swarm leave
+Node left the swarm.</pre>
+<br/>
+离开后用 <code>docker node ls</code> 看到的节点状态是 down<br/><br/>
+<pre class="lang:default decode:true ">root@ubuntu-master:~# docker node ls
+ID                            HOSTNAME            STATUS              AVAILABILITY        MANAGER STATUS      ENGINE VERSION
+sjfg7nljuyt54yapffvosrzmh *   ubuntu-master       Ready               Active              Leader              18.09.9
+q82ndq11h1mie6lwmog5pfymu     ubuntu-worker1      Down                Active                                  18.09.7
+xuzc43qrrdirkmabivdzg8ruc     ubuntu-worker2      Down                Active                                  18.09.9</pre>
+<br/>
+注意 worker 离开后，在 Swarm 集群中运行的服务仍然会依赖 <code>--replicas=&lt;NUM&gt;</code> 进行重新分配。如果所有 worker 都删除后，服务全都会部署到 Manager 节点上。如果需要从 <code>docker node ls</code> 中删除节点，需要用<br/><br/>
+<pre class="lang:default decode:true ">root@ubuntu-master:~# docker node rm ubuntu-worker1
+ubuntu-worker1
+root@ubuntu-master:~# docker node rm --force ubuntu-worker2
+ubuntu-worker2</pre>
+<br/>
+删不掉就加上  <code>--force</code> 参数<br/><br/>
+最后 manager 节点的退出相当于 Swarm 集群的消失<br/><br/>
+<pre class="lang:default decode:true ">root@ubuntu-master:~# docker swarm leave --force
+Node left the swarm.
+oot@ubuntu-master:~# docker node ls
+Error response from daemon: This node is not a swarm manager. Use "docker swarm init" or "docker swarm join" to connect this node to swarm and try again.</pre>
+<br/>
+Swarm 集群最络也被删除了。<br/><br/>
+这差不多是 Docker Swarm 的基本的内容了，如果 Swarm 集群创建有问题，请留意以下两个端口号没被防火墙挡住<br/><br/>
+<ol>
+    <li>7946 端口，用于集群节点之间的通信</li>
+    <li>4789 端口，用于 overlay 网络流量</li>
+</ol>
+<br/>
+接下来就会移步到 Docker compose, 甚至 compose 可以部署到 Swarm 集群中，终极目标还是会去了解 Kubernetes。 

@@ -1,0 +1,264 @@
+---
+title: 演示 MCP 服务与 Claude 桌面版或 LM Studio 的集成
+url: /demo-mcp-server-integrate-with-claude-desktop-or-lm-studio/
+date: 2025-07-13T23:50:23-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2025/07/mcp-logo.png"
+categories:
+  - AI
+tags: 
+  - AI
+  - MCP
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14328 
+wpStatus: publish
+views: 276
+lastmod: 2025-07-16T14:01:05-05:00
+---
+
+AI 领域真是风头正劲，各种概念扑面而来，像 AGI, RAG, AI Agent, Agentic AI 等，目前的 MCP(Model Context Protocol, 模型上下文协议) 又随处可见。MCP 是 Anthropic 于 2024 年 11 月底推出的一种开放标准，旨在统一大模型与外部数据源和工具之间的通信协议。MCP 使用 LLM 应用能安全的访问和操作外部资源，轻松的实现了 Function Calling 的功能。<br/><br/>
+试想一下，以前问大语言模型一个复杂一点的计算题<br/><br/>
+<blockquote>
+12345 的 6.7 次方是多少？
+</blockquote>
+<br/>
+光语言模型只会在自己的向量数据库里找简单的碰到过的计算题，如 100 的 2 次方，但看到偏门的计算就会出现幻觉了，因为它没有实际的计算引擎。下面是在 LM Studio 中使用 qwen2.5-7b-instruct-mlx 模型时的结果<!--more--><br/><br/>
+该模型能够从问话中提取到要计算 12345 ** 6.7 的需求，也知道可以用 Python 的  12345 ** 6.7 来计算结果，但实际又不调用 Python 代码，所以最后的结果是错的。<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-1.png"><img class="wp-image-14336 aligncenter" src="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-1-800x567.png" alt="" width="553" height="392" /></a><br/><br/>
+在 Python 中<br/><br/>
+<blockquote>
+&gt;&gt; 12345 ** 6.7<br />
+2.5881552961584156e+27
+</blockquote>
+<br/>
+差得十万八千里。既然模型能理解计算需求，这就可以调用外部工具来处理相应的计算，于是就有了 MCP。<br/><br/>
+本文不详细描述 MCP 架构，只需要大略的知道 LLM 应用能从对话中提取到将要与 MCP Server 的交互，如调用某个 MPC Server 相应的工具，资源，或 Prompt 信息，然后融合结果再与 LLM 模型交互。<br/><br/>
+MCP 是 Client/Server 架构，有 MCP Server 就有相应的 MCP Client, 它被集成在了一些工具当中。目前有不少工具内置了 MCP Client, 即支持 MCP Server 的接入能力，如 Claude Desktop, Cursor, Cline, LM Studio, Cherry Studio 等，更多 MCP Client 列表请见附录。<br/><br/>
+MCP 协议主要支持以下几种通信机制<br/><br/>
+<ol>
+    <li>stdio(Standard input output, 标准输入输出): 作为 MCP Client 与 MCP Server 本地进程间的调用，启动子进程的方式</li>
+    <li>SSE (Server Sent Events): 基于 HTTP, 浏览器流式输出，可用作实时聊天</li>
+    <li>http: 单次请求响应，简单 REST 接口，适合测试，如 Postman, 或 MCP Inspector</li>
+    <li>streamable-http: 请求，流式响应，类似 fetch() + chunked HTTP 响应。适用于 Chat UI, Agent 工具，多轮对话</li>
+</ol>
+<br/>
+它们的通信的协议格式都是 JSON-RPC 2.0, 只有第一种 stdio 不能用于远程通信，其他都行。<br/><br/>
+有一些网站列出了许多可用的 MCP Servers(见附录)，有些要部署到本地用 stdio 连接，有一些可直接通过远程连接，比如集成到 Claude Desktop, Cursor, LM Studio 或自己的 AI 应用当中<br/><br/>
+我们总是有一些内部应用可与 AI 集成，所以需要自己的私有 MCP Server.下面就简单演示一下如何用 Python 创建自己的 MCP Server，并在 Claude Desktop 和 LM Studio 中使用。<br/><br/>
+在 <a href="https://github.com/modelcontextprotocol/servers">Model Context Protocol Servers</a> 页面中看到 MCP 官方提供了多种 SDK 方便我们写自己的 MCP Server，如 <a href="https://github.com/modelcontextprotocol/csharp-sdk">C# MCP SDK</a>, <a href="https://github.com/modelcontextprotocol/java-sdk">Java MCP SDK</a>, <a href="https://github.com/modelcontextprotocol/kotlin-sdk">Kotlin MCP SDK</a>, <a href="https://github.com/modelcontextprotocol/python-sdk">Python MCP SDK</a>, <a href="https://github.com/modelcontextprotocol/typescript-sdk">Typescript MCP SDK</a>. 当然只要遵循 MCP 的规范和  JSON-RPC 2.0 协议，可以用任何语言或框架实现自己 MCP Server.<br/><br/>
+这里直接用 <a href="https://github.com/modelcontextprotocol/python-sdk">MCP Python SDK</a>，本文主要也是参考其中的例子。<br/><br/>
+<h3>实现 MCP Server</h3><br/><br/>
+先要创建一个  mcp-server-demo 项目，并引入相关的依赖。现在流行 <a href="https://docs.astral.sh/uv/">UV</a> 这个 Python 的虚拟环境，依赖管理，构建工具，用 Rust 写的。用了下确实不一般，<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/07/uv-comparison.png"><img class="aligncenter wp-image-14341" src="https://yanbin.blog/wp-content/uploads/2025/07/uv-comparison-800x202.png" alt="" width="488" height="123" /></a>真的是极速，平时有些项目就用 pip，有些用了 poetry, 尝试过 pdm, pdm 也开始拥抱 uv( <a class="md-nav__link md-nav__link--active" href="https://pdm-project.org/en/latest/usage/uv/"><span class="md-ellipsis">Use uv (Experimental)</span></a>), 不过感觉 pdm 没必要发展下去了，因为 uv 速度上与别的工具有断档的差距，而且功能上也很齐备。关于 uv 的安装这里就不介绍了。<br/><br/>
+<blockquote>
+uv init mcp-server-demo<br />
+cd mcp-server-yanbin-demo<br />
+uv add "mcp[cli]"
+</blockquote>
+<br/>
+然后在该项目中创建 server.py, 内容为<br/><br/>
+<pre class="lang:default decode:true">from mcp.server.fastmcp import FastMCP<br/><br/>
+# Create an MCP server
+mcp = FastMCP("Demo")<br/><br/>
+
+# Add an addition tool
+@mcp.tool()
+def sum(a: int, b: int) -&gt; int:
+    """Add two numbers"""
+    return a + b<br/><br/>
+@mcp.tool()
+def get_weather(city: str, unit: str = "celsius") -&gt; str:
+    """Get weather for a city."""
+    # This would normally call a weather API
+    return f"Weather in {city}: 22degrees{unit[0].upper()}"<br/><br/>
+
+# Add a dynamic greeting resource
+@mcp.resource("greeting://{name}")
+def get_greeting(name: str) -&gt; str:
+    """Get a personalized greeting"""
+    return f"Hello, {name}!"<br/><br/>
+@mcp.prompt(title="Review PR")
+def review_code(pr: str) -&gt; str:
+    return f"Please review this PR: https://bitbucket.org/my-company/repo/pull-requests/{pr}"</pre>
+<br/>
+<h3>MCP Inspector 调试</h3><br/><br/>
+运行命令<br/><br/>
+<blockquote>
+uv run mcp dev server.py
+</blockquote>
+<br/>
+它用打开默认浏览器，链接如 http://localhost:6274/?MCP_PROXY_AUTH_TOKEN=0cacceedd3324989bbf4f6f4f2d9f4649a2e00f14acf139c5e05ab068cbbf6d9<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-2-scaled.png"><img class="aligncenter wp-image-14342" src="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-2-800x515.png" alt="" width="850" height="547" /></a><br/><br/>
+在该 MCP Inspector 中看到 Command 为 uv, Arguments 为 run --with mcp mcp run server.py。刚打开页面时左侧 "Configuration" 下显示的是一个 "Connect" 按钮，点击 "Connect" 按钮就会显示 "Connected"。然后在右侧可浏览该 MCP Server 暴露的 Resources, Prompts, Tools 等接口，这里选择 Tools, "List Tools" 就显示 "sum" 和 "get_weather" 两个 tools, 在最右侧输入两个整数进行测试。<br/><br/>
+<h3>MCP Server 与 Claude Desktop 集成</h3><br/><br/>
+用  MCP Inspector 验证可用后，再实际与 Claude Desktop 集成使用，本机为 macOS<br/><br/>
+运行命令 'uv run mcp install server.py', 然后看到相应的输出<br/><br/>
+<blockquote>
+uv run mcp install server.py<br />
+[07/13/25 21:51:32] INFO Added server 'Demo' to Claude config claude.py:136<br />
+INFO Successfully installed Demo in Claude app cli.py:485
+</blockquote>
+<br/>
+说加了一个 "Demo" 配置到 Claude, "Demo" 是因为创建的 MCP Server 的名称，在 Python 代码中<br/><br/>
+<blockquote>
+mcp = FastMCP("Demo")
+</blockquote>
+<br/>
+要让 Claude 能感知该 MCP Server 话，需要重启 Claude Desktop。而后在 Claude 中有三个地方可以看到该 MCP Server 的存在<br/><br/>
+其一，在 Claude Desktop 应用程序的 Settings 中，在 Developer 项中可以看到 Demo<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-3.png"><img class="wp-image-14343 aligncenter" src="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-3-800x569.png" alt="" width="770" height="548" /></a><br/><br/>
+并且显示了相应的  Command 和 Arguments, 如果点击 "Edit Config", 会指引到文件<br/><br/>
+<blockquote>
+~/Application Support/Claude/claude_desktop_config.json
+</blockquote>
+<br/>
+内容为<br/><br/>
+<pre class="lang:default decode:true">{
+  "mcpServers": {
+    "Demo": {
+      "command": "/opt/homebrew/bin/uv",
+      "args": [
+        "run",
+        "--with",
+        "mcp[cli]",
+        "mcp",
+        "run",
+        "/Users/yanbin/Workspaces/mcp-server-demo/server.py"
+      ]
+    }
+  }
+}</pre>
+<br/>
+所以手工编辑该文件也能为 Claude 指定 MCP Servers。<br/><br/>
+其二，还可以从用户的 Settings 的 Connectors 中看到 Demo (LOCAL)<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-4.png"><img class="aligncenter wp-image-14344" src="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-4-800x542.png" alt="" width="898" height="608" /></a><br/><br/>
+点击右边的 "...", 从下拉中打开 "Tools and settings" 中看到该 Demo 相关的资源<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-5.png"><img class="aligncenter wp-image-14345" src="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-5-800x542.png" alt="" width="898" height="608" /></a><br/><br/>
+其三，从聊天窗口的 "Search and tools" 按钮中可以看到 Demo<br/><br/>
+<img class="aligncenter wp-image-14346" src="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-6-800x338.png" alt="" width="681" height="288" /><br/><br/>
+现在可以在 Claude 中问一个问题<br/><br/>
+<blockquote>
+please calculate 234 plus 888
+</blockquote>
+<br/>
+这时候 Claude 会为安全起见，弹出一个对话框确认是否要调用 Demo 的 sum 方法来计算 234 + 888, 点击 "Allow always" 或 "Allow once"。而后 Claude 就会调用 MCP Server(Demo) 进行计算，接着又问了一个关 Chicago 天气的问题<br/><br/>
+<blockquote>
+How about the weather in city of Chicago?
+</blockquote>
+<br/>
+同样会询问是否调用 Demo 的 get_weather, 下面的两个问题的截屏<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-7.png"><img class="aligncenter wp-image-14347" src="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-7-800x740.png" alt="" width="868" height="803" /></a><br/><br/>
+Claude 会自动收缩对 MCP Server 的输入输出，这里把 sum 调用的输入输出展开了， get_weather 保持未展开状态，最后看到 Claude 的得到温度为 22 度的时候，还加了一句评论<br/><br/>
+<blockquote>
+The current weather in Chicago is 22°C (about 72°F). That's quite pleasant for a summer day!
+</blockquote>
+<br/>
+如果是在公网上用  SSE 发布了一个 MCP Server(比如用下面的方式启动 MCP Server)，如何在 Claude Desktop 中连接使用呢?<br/><br/>
+<pre class="lang:default decode:true ">if __name__ == "__main__":
+    mcp.run(transport='sse')</pre>
+<br/>
+免费的 Claude 用户是没这个功能，每月 $17 的 Pro 用户支持<br/><br/>
+<blockquote>
+Connect any content or tool throught Integrations with remote MCP
+</blockquote>
+<br/>
+如果 Pro 或更高级的  Claude 用户将可以用户的 Settings 中看到 "Integrations", 新加一个集成，填入 URL 类如 https://yanbin.app/sse 就能使用远程的 MCP Server。<br/><br/>
+<h3>LM Studio 中集成 MCP Server</h3><br/><br/>
+还有像 <a href="https://www.cherry-ai.com/">Cheery Studio</a>, <a href="https://lmstudio.ai/">LM Studio</a> 等工具也支持与 MCP Server 的集成。LM Studio 自版本 0.3.17 开始支持连接 MCP Server，官方文档 <a href="https://lmstudio.ai/docs/app/plugins/mcp">Use MCP Servers</a>，当前 LM Studio 版本为 0.3.18。<br/><br/>
+由于是本地运行模型，为支持 MCP Server 也要求选择的模型带有一个锤子图标<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-10.png"><img class="size-large wp-image-14354 aligncenter" src="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-10-800x213.png" alt="" width="800" height="213" /></a><br/><br/>
+它用示 "This model has been trained for tool use". 我们这里选择模型 "qwen2.5-7b-instruct-mlx", 模型尺寸为  4.30 GB。<br/><br/>
+macOS 版，点右上角的像个反漏斗样的 'Show Settings' 图标，点击后变成折叠按钮,  然后在 "Program" 页(Power User 和 Developer 才有 Program)，"Integrations  Install" 下拉选择  "Edit mcp.json", 就可以在中间编辑 "mcp.json" 文件 <br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-11.png"><img class="aligncenter wp-image-14357" src="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-11-800x411.png" alt="" width="850" height="436" /></a><br/><br/>
+我们同样贴入 ~/Application Support/Claude/claude_desktop_config.json 文件的内容，点击 "Save"  按钮后就会在右边看到新的 MCP Server "mcp/demo" 及解析出来的两个方法，并可选择是否每次都询问，还是总是允许。<br/><br/>
+测试一下<br/><br/>
+&nbsp;<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-12.png"><img class="aligncenter wp-image-14362" src="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-12-800x963.png" alt="" width="715" height="861" /></a><br/><br/>
+从对话中发现有调用相应 MCP Server 工具方法的情况会发起一个 Function Calling，无关的话题，仍然像往常一样。<br/><br/>
+如何远程连接 MCP Server，就不能用 stdio 了，要选择 sse 或 http, 或 streamable-http。但 mcp.server.fastmcp.FastMCP 只支持 stdio 和 sse, 并且在选择 sse 时不易改变主机和端口号。最好是使用单独安装的 fastmcp, 当前版本为 2.10.5<br/><br/>
+用 uv 安装组件<br/><br/>
+<blockquote>
+uv add fastmcp
+</blockquote>
+<br/>
+写作时安装的是 fastmcp 2.10.5<br/><br/>
+然后 server.py 的<br/><br/>
+<blockquote>
+from mcp.server.fastmcp import FastMCP
+</blockquote>
+<br/>
+改成<br/><br/>
+<blockquote>
+from fastmcp import FastMCP
+</blockquote>
+<br/>
+这时候的启动代码就用<br/><br/>
+<pre class="lang:default decode:true">if __name__ == "__main__":
+    mcp.run(transport='sse', host="0.0.0.0")</pre>
+<br/>
+用 fastmcp 2.x 调用 mcp.run() 方法时就能指定 host, port 等参数，而不是只会启动在 localhost:8000 上。<br/><br/>
+启动 server.py 后，显示<br/><br/>
+<blockquote>
+[07/13/25 22:57:49] INFO   Starting MCP server 'Demo' with server.py:1448<br />
+                                                   transport 'sse' on <br />
+                                                   http://0.0.0.0:8000/sse/
+</blockquote>
+<br/>
+如果选择 transport 为 http 或 streamable-http 时，显示的 http 或 streamable-http 的 URL 是<br/><br/>
+<blockquote>
+http://0.0.0.0:8000/mcp/
+</blockquote>
+<br/>
+用 LM Studio 连接远程的 MCP Server 时，mcp.json 文件内容就是<br/><br/>
+<pre class="lang:default decode:true">{
+  "mcpServers": {
+    "Demo": {
+      "url": "http://0.0.0.0:8000/sse/"
+    }
+  }
+}</pre>
+<br/>
+如果 transport 为 http 或 streamable-http, url 是<br/><br/>
+<blockquote>
+http://0.0.0.0:8000/mcp/
+</blockquote>
+<br/>
+Save 后得到同样的效果，只是把 STDIO 输入输出方式转变为 HTTP 调用远程 MCP 方式。<br/><br/>
+<h3>Postman 中测试 MCP Server</h3><br/><br/>
+Postman 也与时俱进，加入了 GraphQL, AI, MCP, gRPC, WebSocket, Socket.IO, MQTT, Flow 等的支持<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-8.png"><img class="wp-image-14350 aligncenter" src="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-8-800x491.png" alt="" width="521" height="320" /></a><br/><br/>
+如果我们在  "New" 中选择 MCP，它可支持两种协议 STDIO 和 HTTP，在选择 STDIO 的情况，把之前 Claude Desktop  用的 ~/Application Support/Claude/claude_desktop_config.json 文件内容贴到 STDIO 右边的输入框就行，连接后可列出该 MCP Server 的  Tools, Prompts, Resources 资源，测试一下 Tools/sum 函数<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-9.png"><img class="aligncenter wp-image-14351" src="https://yanbin.blog/wp-content/uploads/2025/07/mcp-server-9-800x586.png" alt="" width="850" height="623" /></a><br/><br/>
+Postman 连接远程 MCP Server 的方式与 LM Studio 的做法一样，也是要用 sse, http, 或 streamable-http 方式启动 MCP Server，然后在 Postman 中 MCP 选择 HTTP 时，只要输入 http://127.0.0.1:8000/sse 或对应于 http/streamable-http 的 http://127.0.0.1:8000/mcp 就能得到与上面同样的效果。 <br/><br/>
+<h3>后续话题</h3><br/><br/>
+<ol>
+    <li>要在 Claude Desktop 中使用公共的 MCP Server 资源就得每月 $17</li>
+    <li>如果使用本地模型，使用任意的 MCP Server 都没有问题，但本地模型显然太弱，参数太多则太慢，参数多些也难比免费的 Claude, Open AI, Grok, Gemini 等模型</li>
+    <li>在使用 API Key 使用 ChatGPT 等服务时需进一步研究应如何集成 MCP Server 的服务</li>
+    <li>可以尝试用 FastAPI 来实现 MCP Server</li>
+    <li>进一步研究 MCP Server 的 resource 和 prompt 的用法</li>
+</ol>
+<br/>
+<h3>附录 MCP Servers 和 MCP Clients</h3><br/><br/>
+<h4>MCP Servers:</h4><br/><br/>
+<ol>
+    <li><a href="https://mcpservers.org/">Awesome MCP Servers</a>(https://mcpservers.org/)</li>
+    <li><a href="https://mcp.so/">MCP Servers</a>(https://mcp.so/)</li>
+    <li><a href="https://mcpmarket.com/">MCP Market</a>(https://mcpmarket.com/)</li>
+    <li><a href="https://smithery.ai/">Smithery - Model Context Protocol Registry</a>(https://smithery.ai/)</li>
+    <li><a href="https://mcp.higress.ai/">MCP Marketplace</a>(https://mcp.higress.ai/)</li>
+    <li><a href="https://mcp.composio.dev/">MCP | Composio</a>(https://mcp.composio.dev/)</li>
+</ol>
+<br/>
+<h4>MCP Clients:</h4><br/><br/>
+<ol>
+    <li><a href="https://github.com/punkpeye/awesome-mcp-clients?tab=readme-ov-file#clients">Awesome MCP Clients</a>(https://github.com/punkpeye/awesome-mcp-clients?tab=readme-ov-file#clients)</li>
+    <li><a href="https://www.pulsemcp.com/clients">MCP Clients</a>(https://www.pulsemcp.com/clients)</li>
+    <li><a href="https://mcp.so/clients">MCP Clients</a>(https://mcp.so/clients)</li>
+</ol>

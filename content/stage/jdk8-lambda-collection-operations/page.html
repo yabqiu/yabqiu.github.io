@@ -1,0 +1,102 @@
+---
+title: JDK8 的 Lambda 表达式 -- 理解新式集合操作
+url: /jdk8-lambda-collection-operations/
+date: 2014-03-25T03:11:11-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - jdk8
+  - lambda
+  - java8
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6247 
+wpStatus: publish
+views: 765
+lastmod: 2021-09-03T18:24:16-05:00
+---
+
+有了前面的 SAM，Lambda 表达式，以及默认接口方法作铺垫后，我们可以去很好的去理解 Java8 用 Lambda  表达式操作集合的基本原理了。此篇我们想要化解的示例代码如下：</p>
+<br/>
+<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
+import java.util.stream.Collectors;<br/><br/>
+/**
+ * @author Unmi
+ */
+public class TestJava8Collection {
+    public static void main(String[] args) {
+        Collection collection = Arrays.asList("abc", "cde", "efg");
+        List list = collection.stream().filter(x -&gt; x.contains("c")).collect(Collectors.toList());
+        list.forEach(x-&gt;System.out.println(x));
+  }
+}</pre>
+<br/>
+如果对其他支持闭包的语言，如 JavaScript, Groovy, Ruby, Scala 等有所了解的话，很容易看出前面的代码输出为<br/><br/>
+<blockquote>
+abc<br />
+cde<!--more-->
+</blockquote>
+<br/>
+因为这两个元素含有字母 "c"。<br/><br/>
+前面演示的是对集合过滤后，再次构成一个新的集合，最后用 forEach 输出所有元素。如果无需返回新的集合，只是过滤输出的话，只要一句话就行<br/><br/>
+<blockquote>
+collection.stream().filter(x -&gt; x.contains("c")).forEach(x-&gt;System.out.println(x));
+</blockquote>
+<br/>
+用不着回味相比于 JDK 本身，原来用 Apache Commons Collections 似乎为我们处理集合带来了不少便利，在 Lambda 面前真的不值一提。<br/><br/>
+在用 Lambda 进行集合操作基本都是先匹配到 Stream 类型上去，因为我们只知 collection 是一个接口类型，只有 Collection 的默认接口方法靠得住，它有哪几个默认方法呢，四：<br/><br/>
+<pre class="lang:default decode:true">public interface Collection extends Iterable {
+    .................<br/><br/>
+    default boolean removeIf(Predicate&lt;? super E&gt; filter) {
+        Objects.requireNonNull(filter);
+        boolean removed = false;
+        final Iterator each = iterator();
+        while (each.hasNext()) {
+            if (filter.test(each.next())) {
+                each.remove();
+                removed = true;
+            }
+        }
+        return removed;
+    }<br/><br/>
+    @Override
+    default Spliterator spliterator() {
+        return Spliterators.spliterator(this, 0);
+    }<br/><br/>
+    default Stream stream() {
+        return StreamSupport.stream(spliterator(), false);
+    }<br/><br/>
+    default Stream parallelStream() {
+        return StreamSupport.stream(spliterator(), true);
+    }
+}</pre>
+<br/>
+Collection 的父接口是 Iterable 中也有默认方法<br/><br/>
+<pre class="lang:default decode:true ">public interface Iterable {<br/><br/>
+    default void forEach(Consumer&lt;? super T&gt; action) {
+        Objects.requireNonNull(action);
+        for (T t : this) {
+            action.accept(t);
+        }
+    }<br/><br/>
+    default Spliterator spliterator() {
+        return Spliterators.spliteratorUnknownSize(iterator(), 0);
+    }
+}</pre>
+<br/>
+所以对于 Collection 类型也可以直接调用 forEach() 方法。<br/><br/>
+这里默认接口方法就是担当的一个桥梁的作用。待得到了 Stream 实例后就可以好好去享用如此之多的集合处理函数<br/><br/>
+<p style="text-align: center;"><a href="/wp-content/uploads/2014/03/java8_stream_methods.png"><img class="aligncenter wp-image-6251" src="/wp-content/uploads/2014/03/java8_stream_methods-1005x1024.png" alt="java8_stream_methods" width="800" /></a></p>
+<br/>
+为什么说有了 Stream 就可以用 Lambda 来处理了呢，因为它的众多方法参数是功能性接口，所以能够用 Lambda 表达式与 SAM 匹配上构造出功能性接口的实例。如 Function, Consumer, Predicate, Collector, Comparator, BinaryOperator 等比比皆是功能性接口。<br/><br/>
+所以仍然那句话，Java8 中想要 Lambda 友好性，就必须往功能性接口上靠，寻找你的 SAM。<br/><br/>
+写到此，本以为会有不少内容值得发挥，没想，初见 collection.stream() 时的那种神秘感已悄然褪去，stream() 不过是一个接口的默认方法，真正好戏在它后头，其后亦不过功能性接口(SAM)，仅此而已。

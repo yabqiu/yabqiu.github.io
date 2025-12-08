@@ -1,0 +1,116 @@
+---
+title: 为 Jackson 自定义序列化对象的 JSON 格式
+url: /jackson-custom-serialize-json-format/
+date: 2014-06-12T00:58:28-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - PlayFramework
+tags: 
+  - json
+  - jackson
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6512 
+wpStatus: publish
+views: 4926
+lastmod: 2021-09-03T18:07:25-05:00
+---
+
+伴随着 Play1, 我们原来使用的 JSON 库是 Gson. 回忆下 Gson 是怎么自定义序列化对象的 JSON 格式，大概是这样子的</p>
+<br/>
+GsonBuilder()..registerTypeHierarchyAdapter(Cat.class, new Cat());<br/><br/>
+然后 Cat 需要实现 JsonSerializer 的 serialize() 方法。<br/><br/>
+来到了 Play2 中，JSON 库变成了 Jackson，那么 Jackson 该如何为对象自定义 JSON 格式呢？<br/><br/>
+例如，默认时 Jackson 对 Map 类型输出的是一个 JSON 对象<br/><br/>
+Map("key1"-&gt;"value1", "key2"-&gt;"value2")     转换成 JSON 是 {"key1":"value1", "key2":"value2"}<br/><br/>
+当为适应某些客户端，对于 LinkedHashMap 类型，我们想要输出的是一个有序的 JSON 数组： [{"key1":"value1"},{"key2":"value2"}]<br/><br/>
+我们就应该自定义某些 Map 的序列化格式，实现方法有两种，addSerializer 和 @JsonSerialize，不管哪种方式都需事先具体化 JsonSerializer 类，并实现它的 serialize 抽象方法<br/><br/>
+所以我先来实现一个能序列化 Map 的 JsonArrayMapSerializer 类<!--more--><br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.serialization;<br/><br/>
+import com.fasterxml.jackson.core.*;
+import com.fasterxml.jackson.databind.*;<br/><br/>
+import java.io.IOException;
+import java.util.Map;<br/><br/>
+public class JsonArrayMapSerializer extends JsonSerializer&lt;Map&lt;?, ?&gt;&gt; {<br/><br/>
+  @Override
+  public void serialize(Map&lt;?, ?&gt; value, JsonGenerator jgen, SerializerProvider provider)
+      throws IOException, JsonProcessingException {
+    jgen.writeStartArray();
+    for(Object key: value.keySet()) {
+      jgen.writeStartObject();
+      jgen.writeObjectField(key.toString(), value.get(key));
+      jgen.writeEndObject();
+    }
+    jgen.writeEndArray();
+  }
+}</pre>
+<br/>
+上面调用了 JsonGenerator 的 writeXxx() 方法来输出 JSON 格式<br/><br/>
+接着看两种实现方式<br/><br/>
+<span style="color: #0000ff; font-size: 14pt;"><strong>1. addSerializer() 方式</strong></span><br/><br/>
+我采用了 Scala 来书写测试代码, 贴代码也有点问题，所以用图片代替<br/><br/>
+<img class="aligncenter size-large wp-image-6522" src="/wp-content/uploads/2014/06/Jackson_serializer_3-800x450.png" alt="Jackson_serializer_3" width="800" height="450" /><br />
+测试结果：<br/><br/>
+<img class="aligncenter wp-image-6513" src="/wp-content/uploads/2014/06/Jackson_serializer_2-800x367.png" alt="Jackson_serializer_2" width="600" height="275" /><br/><br/>
+<span style="color: #0000ff; font-size: 14pt;"><strong>2. @JsonSerialize 注解方式</strong></span><br/><br/>
+看下注解 @JsonSerialize 的定义<br/><br/>
+@Target({ElementType.ANNOTATION_TYPE, ElementType.METHOD, ElementType.FIELD, ElementType.TYPE, ElementType.PARAMETER})<br/><br/>
+它可以作用在注解，方法，字段，类型和参数上。我们举两个例子，分别是对类型和字段使用此注解<br/><br/>
+1）自定义的 JsonArrayMap 类型<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.serialization;<br/><br/>
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import java.util.LinkedHashMap;<br/><br/>
+@JsonSerialize(using = JsonArrayMapSerializer.class)
+public class JsonArrayMap&lt;K, V&gt; extends LinkedHashMap&lt;K, V&gt;{<br/><br/>
+}
+</pre>
+<br/>
+2) 作用在字段上<br/><br/>
+<pre class="lang:default decode:true">val map = new java.util.HashMap[String, String]
+map.put("key1", "value1")
+map.put("key2", "value2")<br/><br/>
+val obj = new Object {
+  @JsonSerialize(using = classOf[JsonArrayMapSerializer])
+  val attr = map
+}</pre>
+<br/>
+用测试用例来验证下：<br/><br/>
+<pre class="lang:default decode:true">package cc.unmi.serialization<br/><br/>
+import com.fasterxml.jackson.databind.{PropertyNamingStrategy, ObjectMapper}
+import utilities.JsonArrayMap
+import com.fasterxml.jackson.databind.annotation.JsonSerialize
+import org.scalatest.{MustMatchers, WordSpec}<br/><br/>
+class JsonArrayMapSerializerTest extends WordSpec with MustMatchers {<br/><br/>
+  "JsonArrayMapSerializer#serialize" should {<br/><br/>
+    val jsonSerializer: ObjectMapper = new ObjectMapper()
+      .setPropertyNamingStrategy(PropertyNamingStrategy.PASCAL_CASE_TO_CAMEL_CASE)<br/><br/>
+    "generate a JsonArrayMap as JSON array format" in {
+      val map = new JsonArrayMap[String, String]
+      map.put("key1", "value1")
+      map.put("key2", "value2")<br/><br/>
+      val jsonString = jsonSerializer.writeValueAsString(map)
+      jsonString mustBe """[{"key1":"value1"},{"key2":"value2"}]"""
+    }<br/><br/>
+    "write Map to json array if annotated with @JsonSerialize(using = classOf[JsonArrayMapSerializer]) " in
+      {
+        val obj = new {
+          @JsonSerialize(using = classOf[JsonArrayMapSerializer])
+          val field = new java.util.HashMap[String, String]
+          field.put("key1", "value1")
+          field.put("key2", "value2")
+        }<br/><br/>
+        val jsonString = jsonSerializer.writeValueAsString(obj)
+        jsonString mustBe """{"Field":[{"key2":"value2"},{"key1":"value1"}]}"""
+      }
+  }
+}</pre>
+<br/>
+测试结果<br/><br/>
+<img class="aligncenter wp-image-6514" src="/wp-content/uploads/2014/06/Jackson_serializer_1-800x250.png" alt="Jackson_serializer_1" width="960" height="301" /><br/><br/>
+可以进一步考虑让 @JsonSerialize 应用在别处，如方法参数，getter 方法上。

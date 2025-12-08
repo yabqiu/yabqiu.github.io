@@ -1,0 +1,139 @@
+---
+title: Java 语言的几个缺陷之五: 多返回值问题
+url: /java-language-defect-no-multiple-returns/
+date: 2016-07-10T02:10:26-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - java-wanted
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7356 
+wpStatus: publish
+views: 503
+lastmod: 2021-09-03T17:18:49-05:00
+---
+
+希望 Java 能支持动态对象(匿名对象) 的特性是源于想要 Java 方法能优雅的返回多个值. 目前如果希望 Java 方法返回多个值的做法有返回一个自定义对象, 数组或列表, 或 Map. 这种需求多发生在私有方法上, 但目前的解决办法有如下弊端:</p>
+<br/>
+<ol>
+    <li>如果用自定义类来作为返回类型的话, 会使得类过于杂乱, 而且这些自定义类的复用性不高</li>
+    <li>数组或列表有太强的顺序依赖, 没有属性名告知每个位置上值的意义, 而且类型都必须为 Object</li>
+    <li>返回 Map 的, 在维护 Key 上容易出错(或须为 Key 定义很多字符串常量), 且类型也是为 Object.</li>
+</ol>
+<br/>
+说了上面许多, 各位可能还不定清楚我想要的是什么, 其实就是类似于 C# 的匿名对象(或曰动态对象), 看一段 C#  的方法返回一个匿名对象的例子(.NET3.5 开始引入匿名对象, .NET 4.0 后匿名对象可以作为函数值)<!--more--><br/><br/>
+<pre class="lang:default decode:true">//MyClass.cs
+class MyClass {
+    public dynamic Person()  //返回匿名对象的方法用 dynamic 关键字声明
+    {
+        return new {name = "Yanbin", city = "Chicago" };
+    }
+}<br/><br/>
+//Program.cs
+class MainClass
+{
+    public static void Main (string[] args)
+    {
+        var person = new MyClass().Person();  //C# 还是有赖于 var 进行类型推断
+        Console.WriteLine("Name: {0}, City: {1}", person.name, person.city);  //person 为动态类型时, 编译器不对 name, city 属性有无进行检查
+    }
+}</pre>
+<br/>
+上面的代码输出为<br/><br/>
+<blockquote>
+Name: Yanbin, City: Chicago
+</blockquote>
+<br/>
+注意: 对于方法返回的动态类型, 如 person, C# 编译器无法判断它有什么属性, 所以写 person.ab, person.bb 都能通过, 只会在运行期报错. 这就像返回 Map 的方法一样, 编译器是不知道某个 Key 是否存在的. 如果是在可见作用域下使用匿名对象编译器是可以检测属性是否存在, 如<br/><br/>
+<pre class="lang:default decode:true">var person = new { name = "Yanbin" };
+Console.WriteLine(person.abc);  //这行代码无法通过编译, 因为 abc 属性不存在</pre>
+<br/>
+很多其他语言的方法是通过  <code>Tuple</code> 来返回多个值, 在接收 <code>Tuple</code> 时可以进行拆解, 后面会说.<br/><br/>
+Play Framework 受到 Scala Tuple 的启迪, 它自己实现了几个 Java 版 Tuple(见 <a href="https://github.com/playframework/playframework/blob/master/framework/src/play/src/main/java/play/libs/F.java">F.java</a>), 包括 Tuple, Tuple3, Tuple4 和 Tuple5. 如果一个方法同时返回值不超过 5 个的话可以选择其中一种类型, 使用例子:<br/><br/>
+<pre class="lang:default decode:true">public Tuple3&lt;Integer, String, String&gt; getPerson() {
+  return new Tuple3(100, "Yanbin", "Chicago");
+}<br/><br/>
+//调用代码
+Tuple3&lt;Integer, String, String&gt; person = getPerson();<br/><br/>
+//使用每一个属性值
+System.out.printf("Id: %s, Name: %s, City: %s", person._1, person._2, person._3);<br/><br/>
+//如果多次经常性的用 ._1, ._2, ._3 这样来获得属性会造成难于理解, 可以像下面那样拆解
+int id = person._1;
+String name = person._2;
+String city = person._3;
+System.out.printf("Id: %s, Name: %s, City: %s", id, name, city);</pre>
+<br/>
+这就是 Java, 只能看到一大片的 ._1, ._2, 有时候一段代码要同时多个 Tuple, 于是一堆  person._1, customer._2, consumer._2, 这时就是眼花缭乱, 甚至是六神无主了.<br/><br/>
+假如换做其他几门语言<br/><br/>
+<strong>Scala</strong> (它有类库有 Tuple1, Tuple2, ..... Tuple22, 22  个类型来支持)<br/><br/>
+<pre class="lang:default decode:true">scala&gt; def person() = (100, "Yanbin", "Chicago")
+person: ()(Int, String, String)<br/><br/>
+scala&gt; val (id, name, city) = person()
+id: Int = 100
+name: String = Yanbin
+city: String = Chicago</pre>
+<br/>
+<strong>Swift</strong>(它在拆解 Tuple  时只与顺序有关)<br/><br/>
+<pre class="lang:default decode:true">let person = (firstName: "John", lastName: "Smith")
+print(person.firstName)               //John<br/><br/>
+let (firstName, familyName) = person  
+print(firstName, familyName)          //John Smith<br/><br/>
+let (a, b, c) = (100, "Name", "City")
+print(a, b, c)                        //100, Name, City</pre>
+<br/>
+Swift 的 Tuple 给属性命上名, 和 C# 的匿名对象基本是一样了.<br/><br/>
+<strong>JavaScript(ES6)</strong>, JavaScript 都不干示弱了<br/><br/>
+<pre class="lang:default decode:true">[a, b] = [1, 2];   //a=1, b=2
+[a, b, ...rest] = [1, 2, 3, 4, 5];  //a=1, b=2, rest = [3, 4, 5]
+{a, b} = {a:1, b:2};  //a=1, b=2, 与 Swift 不同, 这里的变量名 a 要与键 a 匹配, {a, b} = {b:2, c:3}, a 将是 undefined
+{a, b, ...rest} = {a:1, b:2, c:3, d:4}; //a=1, b=2, rest = {c:3, d:4}, ES7 才支持</pre>
+<br/>
+<strong>Perl</strong>(与 Scala, Swift 语法差不多<br/><br/>
+<pre class="lang:default decode:true">($a, $b) = (100, "Chicago");
+print $a, $b;        //100Chicago</pre>
+<br/>
+<strong>Ruby</strong>(它是以数组形式返回多个值)<br/><br/>
+<pre class="lang:default decode:true">irb(main):013:0&gt; def multiple
+irb(main):014:1&gt; return 1, 2
+irb(main):015:1&gt; end
+=&gt; nil
+irb(main):016:0&gt; x, y = multiple
+=&gt; [1, 2]
+irb(main):017:0&gt; x
+=&gt; 1
+irb(main):018:0&gt; y
+=&gt; 2
+irb(main):019:0&gt; x = multiple
+=&gt; [1, 2]
+irb(main):020:0&gt; x
+=&gt; [1, 2]</pre>
+<br/>
+<strong>Python</strong><br/><br/>
+<pre class="lang:default decode:true">&gt;&gt;&gt; def multiple():
+... return (100, "Yanbin")
+...
+>&gt;&gt; id, name = multiple()
+>&gt;&gt; id
+100
+>&gt;&gt; name
+'Yanbin'</pre>
+<br/>
+<strong>Clojure</strong>(最近在学这个)<br/><br/>
+<pre class="lang:default decode:true ">user=&gt; (defn multiple [] [100 "Yanbin"])
+#'user/multiple
+user=&gt; (let [[id name] (multiple)]
+ #_=&gt; (println id)
+ #_=&gt; (println name))
+100
+Yanbin
+nil</pre>
+<br/>
+参考: 1. <a href="https://rosettacode.org/wiki/Return_multiple_values">https://rosettacode.org/wiki/Return_multiple_values</a>

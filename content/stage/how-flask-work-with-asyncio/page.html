@@ -1,0 +1,276 @@
+---
+title: 探索 Flask 对 asyncio 的支持
+url: /how-flask-work-with-asyncio/
+date: 2020-07-12T02:07:58-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2020/07/flask-logo.png"
+categories:
+  - Flask
+tags: 
+  - Flask
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10368 
+wpStatus: publish
+views: 7871
+lastmod: 2021-12-07T22:32:33-06:00
+---
+
+源于自己折腾的一个小 Flask 项目中，后台需访问多个 HTTP 服务，目前采用 ThreadPoolExecutor 多线程的方式处理的。但因访问 HTTP 服务有前后关联关系，如得到请求 A 的结果后再访问 B，这似乎用 Promise.then().then() 编程方式更合适些。于是巡着这一路子，翻出 Python 的各种相关部件来，比如 Python 对 coroutine(协程) 的支持，asyncio, 及后面的 async/await 关键子，<a href="https://docs.aiohttp.org/">aiohttp</a> 组件，requests 的 async 替代品有 <a href="https://docs.aiohttp.org/">aiohttp</a>, <a href="https://github.com/spyoungtech/grequests">grequests</a>, 和 <a href="https://www.python-httpx.org/">httpx</a>，aiohttp  可替代 Flask, 最后竟然找到了一个更彻底的 Flask 的 Async 版本 <a href="https://pgjones.gitlab.io/quart/">Quart</a>。 </p>
+<br/>
+Python 3.4 引入了 asyncio 模块，基于生成器(yield 和 yield from) 和 @asyncio.coroutine 的方式来支持 coroutine(协程), 到 Python 3.5 后有了 async/await(@asyncio.corouting 替换为 async, yield from 替换为 await) 关键字，协程的实现变得更为简单。Python 3.4  使用 coroutine 的方式我们跳过，直接看<br/><br/>
+<!--more--><br/><br/>
+<h3>async/await 方式的实现</h3><br/><br/>
+<pre class="lang:default decode:true">import asyncio
+import time
+import threading<br/><br/>
+
+async def compute(cost):
+    compute_start = time.time()
+    await asyncio.sleep(cost)
+    print(f'{cost}: {time.time() - compute_start} - {threading.current_thread().name}')
+    return cost + 1<br/><br/>
+
+tasks = [asyncio.ensure_future(compute(cc)) for cc in [2, 4]]<br/><br/>
+start = time.time()
+loop = asyncio.get_event_loop()
+try:
+    results = loop.run_until_complete(asyncio.gather(*tasks))
+    # loop.run_until_complete(asyncio.wait(tasks))  # 或者这种方式
+    print('results: ', results)
+finally:
+    loop.close()
+print(f'Total elapsed time {time.time() - start}')</pre>
+<br/>
+执行后输出如下：<br/><br/>
+<blockquote>
+2: 2.000903844833374 - MainThread<br />
+4: 4.000842094421387 - MainThread<br />
+results: [3, 5]<br />
+Total elapsed time 4.001974821090698
+</blockquote>
+<br/>
+compute() 函数暂停输入参数的秒数，分别两个任务，暂停时间各自为 2 和  4  秒，但总的执行时间为最大的那个数字，相当于那两个任务是并发执行的。注意，我们这里并没有使用到线程，都是用的 <code>MainThread</code>，却收到同样的效果<br/><br/>
+自 Python 3.7 及之后可以用  <code>asyncio.run()</code> 来简单调用，以上的代码从 <code>tasks = ...</code> 行开始可替换为如下代码<br/><br/>
+<pre class="lang:default decode:true">tasks = [compute(cc) for cc in [2, 4]]<br/><br/>
+async def main():
+    return await asyncio.gather(*tasks)<br/><br/>
+start = time.time()
+results = asyncio.run(main())   # main() 就是一个 coroutine 对象
+print('results:', results)
+print(f'Total elapsed time {time.time() - start}')</pre>
+<br/>
+执行后获得相同的结果。<br/><br/>
+我们查看一下  <code>asyncio.run()</code>  函数的源代码<br/><br/>
+<pre class="lang:default decode:true">def run(main, *, debug=False):
+    if events._get_running_loop() is not None:
+        raise RuntimeError(
+            "asyncio.run() cannot be called from a running event loop")<br/><br/>
+    if not coroutines.iscoroutine(main):
+        raise ValueError("a coroutine was expected, got {!r}".format(main))<br/><br/>
+    loop = events.new_event_loop()
+    try:
+        events.set_event_loop(loop)
+        loop.set_debug(debug)
+        return loop.run_until_complete(main)
+    finally:
+        try:
+            _cancel_all_tasks(loop)
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        finally:
+            events.set_event_loop(None)
+            loop.close()
+</pre>
+<br/>
+Python 3.4 开始，在主线程上可以用 <code>asyncio.get_event_loop()</code> 直接获得 <code>EventLoop</code>，主线程上存在 <code>EventLoop</code> 直接返回，无则创建新的。 而 <code>asyncio.main()</code> 方法总是创建一个新的 <code>EventLoop</code>。<br/><br/>
+<h3>Flask 中实现一个异步 API</h3><br/><br/>
+先用 <code>asyncio.run()</code> 的方式，用协程来异步调用三个 URL，分别获得它们的响应文本的长度<br/><br/>
+<pre class="lang:default decode:true">import asyncio
+import requests
+from flask import Flask<br/><br/>
+app = Flask(__name__)<br/><br/>
+
+async def fetch(url):
+    return requests.get(url).text<br/><br/>
+async def main():
+   tasks = [fetch(url) for url in ["https://google.com", "https://bing.com", "https://yanbin.blog"]]
+   return await asyncio.gather(*tasks)<br/><br/>
+@app.route("/")
+def index():
+    responses = asyncio.run(main())
+    return f'response sizes: {[len(res) for res in responses]}\n'<br/><br/>
+if __name__ == "__main__":
+    app.run(debug=False, use_reloader=False)
+</pre>
+<br/>
+用 <code>python app.py</code> 启动后，访问 <code>/</code> API<br/><br/>
+<blockquote>
+curl http://localhost:5000/<br />
+response sizes: [12019, 60030, 96362]
+</blockquote>
+<br/>
+由前所知 <code>asyncio.run()</code> 总是会在当前线程上创建并注册一个 <code>EventLoop</code>，所以它总是可行的。那么能不能直接用 <code>asyncio.get_event_loop()</code> 获得一个 <code>EventLoop</code> 呢？<br/><br/>
+在 <code>index()</code> 方法中用 <code>asyncio.get_event_loop()</code>，报错<br/><br/>
+<blockquote>
+<span style="color: #800000;">RuntimeError: There is no current event loop in thread 'Thread-6'.</span>
+</blockquote>
+<br/>
+就是说在 Flask 启动的处理 HTTP  的线程上没有 <code>EventLoop</code>，而每次都需要自己注册一个。从每次的线程来看，Flask 应该是每次请求都创建一个线程来处理任务，用 <code>get_event_loop()</code> 方式的代码如下：<br/><br/>
+<pre class="lang:default decode:true">import asyncio
+import requests
+from flask import Flask<br/><br/>
+app = Flask(__name__)<br/><br/>
+async def fetch(url):
+    return requests.get(url).text<br/><br/>
+@app.route("/")
+def index():<br/><br/>
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError as er:
+        print(er.args[0], 'create a new EventLoop')
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)<br/><br/>
+    responses = loop.run_until_complete(asyncio.gather(
+        fetch("https://google.com"),
+        fetch("https://bing.com"),
+        fetch("https://yanbin.blog")
+    ))
+    return f'response sizes: {[len(res) for res in responses]}'<br/><br/>
+if __name__ == "__main__":
+    app.run(debug=False, use_reloader=False)
+</pre>
+<br/>
+每次请求都会打印 <code>create a new EventLoop</code><br/><br/>
+虽然用 <code>asyncio.run()</code> 避免了每次创建并注册新 <code>EventLoop</code> 的过程，但有时候我们确实需要 <code>EventLoop</code> 的方法处理协程，这样使用 Flask 的异步方式就稍显麻烦。<br/><br/>
+<h3>异步调用使用主线程的 EventLoop</h3><br/><br/>
+我们知道，Python 的主线程上注册有一个  <code>EventLoop</code>，所以我们可以让所有异步调用用主线程上那个 <code>EventLoop</code>, 以下代码来自于 <a href="https://www.thetopsites.net/article/50177664.shtml">Python3 Asyncio call from Flask route</a><br/><br/>
+<pre class="lang:default decode:true">import asyncio
+from flask import Flask<br/><br/>
+async def abar(a):
+    print(a)<br/><br/>
+loop = asyncio.get_event_loop()  # 获得主线程上的 EventLoop
+app = Flask(__name__)<br/><br/>
+@app.route("/")
+def notify():
+    loop.run_until_complete(abar("abar"))  # 异步调用使用主线程的 EventLoop
+    return "OK"<br/><br/>
+if __name__ == "__main__":
+    app.run(debug=False, use_reloader=False)</pre>
+<br/>
+异步调用全部用主线程上的 EventLoop<br/><br/>
+<h3>Quart 作者提供的一个 Flask async 方案</h3><br/><br/>
+在 <a href="https://pgjones.dev/blog/flask-async-quart-sync-2019/">Making Flask async and Quart sync</a>, Quart 的作者 PG Jones 给出了一个 Flask 异步化的代码，route 方法可加上 async  关键字和 @run_async 装饰<br/><br/>
+<pre class="lang:default decode:true  ">from flask import Flask, jsonify, has_request_context, copy_current_request_context
+from functools import wraps
+from concurrent.futures import Future, ThreadPoolExecutor
+import asyncio<br/><br/>
+def run_async(func):
+    @wraps(func)
+    def _wrapper(*args, **kwargs):
+        call_result = Future()
+        def _run():
+            loop = asyncio.new_event_loop()
+            try:
+                result = loop.run_until_complete(func(*args, **kwargs))
+            except Exception as error:
+                call_result.set_exception(error)
+            else:
+                call_result.set_result(result)
+            finally:
+                loop.close()<br/><br/>
+        loop_executor = ThreadPoolExecutor(max_workers=1)
+        if has_request_context():
+            _run = copy_current_request_context(_run)
+        loop_future = loop_executor.submit(_run)
+        loop_future.result()
+        return call_result.result()<br/><br/>
+    return _wrapper<br/><br/>
+
+app = Flask(__name__)<br/><br/>
+
+@app.route('/')
+@run_async
+async def index():
+    return jsonify('hello')<br/><br/>
+app.run()
+</pre>
+<br/>
+启动后，测试下<br/><br/>
+<blockquote>
+$ curl localhost:5000<br />
+"hello"
+</blockquote>
+<br/>
+<h3>两个不在维护的 Flask 扩展</h3><br/><br/>
+另外还有两个试图扩展 Flask 异步功能的已不再维护的组伯<br/><br/>
+<a href="https://flask-aiohttp.readthedocs.io/en/latest/">Flask-aiohttp</a>，已经找不到怎么安装它。GitHub 的代码 <a href="https://github.com/Hardtack/Flask-aiohttp">Flask-aiohttp</a> 已不再维护，实现上加了一个 <code>@async</code> 装饰器<br/><br/>
+<pre class="lang:default decode:true ">@app.route('/use-external-api')
+@async
+def use_external_api():
+    response = yield from aiohttp.request(
+        'GET', 'https://api.example.com/data/1')
+    data = yield from response.read()<br/><br/>
+    return data</pre>
+<br/>
+<a href="https://github.com/mrdon/flask/">Flask-Async</a>, 在 PyPi 上有，也是一个比 Flask-aiohttp 更久远的项目，最近修改 6 年前，它是一个 Flask 的修改版本，加入了异步特性。实现上与 Flask-aiohttp 类似，只不过它的装饰器是 <code>@coroutine</code><br/><br/>
+<pre class="lang:default decode:true">from asyncio import coroutine, sleep
+from flask import Flask, request<br/><br/>
+app = Flask(__name__)<br/><br/>
+@app.route("/hello/&lt;string:name&gt;")
+@coroutine
+def say_hi(name):
+    yield from sleep(2)
+    return "it worked %s" % request.args.get("name", name)<br/><br/>
+app.run()</pre>
+<br/>
+看得出来它还没用上 Python 3.5 的 async/await 关键字来实现协程。<br/><br/>
+<h3>使用 aiohttp 进行异步 HTTP 调用</h3><br/><br/>
+<code>requests</code> 是一个同步 HTTP 请求库，为了应用到协程当中去，必须把请求包装到 <code>async def</code> 定义的方法中去。<code>aiohttp</code> 提供了异步的方法，<code>aiohttp</code> 库同时提供了服务端和客户端，服务端可以用来替代 Flask  功能，可启动 HTTP 服务并用路由来定义不同的 API。我们这里只使用它的客户端组件，<br/><br/>
+安装 <code>aiohttp</code><br/><br/>
+<blockquote>
+$ pip install aiohttp
+</blockquote>
+<br/>
+下面用 aiohttp 代替前面的 fetch(url) 方法<br/><br/>
+<pre class="lang:default decode:true">import asyncio
+import async_timeout<br/><br/>
+async def fetch(url):
+    async with aiohttp.ClientSession() as session, async_timeout.timeout(10):
+        async with session.get(url) as response:
+            return await response.text()</pre>
+<br/>
+想要实现 Promise 那样的 then/then 功能，没找到  <code>aoihttp</code> 现成的方法，准确说是 Python 的  coroutine 没提供像 Java 的 CompletableFuture 那样完备的 thenRun(), thenApply() 等等方法，所以在 Python  中还得自己用 async/await 关键字串起来，比如基于第一个异步请求的响应数据，发现第二个异步请求<br/><br/>
+<pre class="lang:default decode:true ">async def fetch(url):
+    async with aiohttp.ClientSession() as session, async_timeout.timeout(10):
+        async with session.get(url) as response:
+            response = await response.text()
+            async with session.get(f'http://localhost:5000/ping/{len(response)}') as res:
+                return await res.text()</pre>
+<br/>
+再继续 Google 找啊找啊，可以直接用 aiohttp 来实现异步的 Web 服务器，再进一步 Quart 是一个比  Flask 更完美的替代器。原本写在一篇博客之中，最后还是决定另立新篇来介绍 aiohttp 和 Quart 实现 异步 Web 服务器。<br/><br/>
+<h3>总结：</h3><br/><br/>
+综合前面，我们认识到<br/><br/>
+<ol>
+    <li>Python 要支持协程必须要与 <code>EventLoop</code> 交互</li>
+    <li>自 Python 3.4 之后，主线程上可用 <code>asyncio.get_event_loop()</code> 直接获得 <code>EventLoop</code></li>
+    <li><code>asyncio.run()</code> 总是创建一个新的 <code>EventLoop</code>，然后协程在其中执行地</li>
+    <li>Flask 处理请求时每次都创建一个新的线程，该线程上没有注册 <code>EventLoop</code></li>
+    <li>因为上一条，在 Flask(当前版本 1.1.2), 要使用协程，必须每次注册一个 <code>EventLoop</code>, 用 <code>asyncio.run()</code> 或用如下两行代码获得 <code>EventLoop</code><br />
+       loop = asyncio.new_event_loop()<br />
+       asyncio.set_event_loop(loop)</li>
+    <li>如果要用一个异步版的 <code>requests</code>, 可以选 <code>aiohttp</code>, <code>grequests</code>, 或 <code>httpx</code></li>
+    <li>可替代的 <code>aiohttp</code> 服务组件和 <code>Quart</code> 可直接支持协程，因为它们的路由方法可用 <code>async</code> 修饰，首选  <code>Quart</code></li>
+</ol>
+<br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://realpython.com/async-io-python/">Async IO in Python: A Complete Walkthrough</a></li>
+    <li><a href="https://www.thetopsites.net/article/50177664.shtml">Python3 Asyncio call from Flask route</a></li>
+</ol>
+<br/>
+&nbsp;

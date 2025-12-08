@@ -1,0 +1,89 @@
+---
+title: 如何在 js 代码中使用 jsp 标签或 Java 代码
+url: /use-jsp-tag-in-js/
+date: 2010-11-17T06:01:04-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - Web/JS
+tags: 
+  - js
+  - Java
+  - JSP
+  - tag
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2842 
+wpStatus: publish
+views: 6009
+lastmod: 2021-09-04T11:08:56-05:00
+---
+
+JSP 标签还是很方便的，比如 Struts、Spring 等提供给我们的 JSP 标签，可以用它们来获取变量或进行一些计算。比如 struts2 的 &lt;s:url value="/admin/unmi.action"/&gt; 会为我们自动在前面附加上应用上下文，如实际会生成 /testsite/admin/unmi.action。还有更多更方便的标签使用，比如用标签获取到 session 或请求中的数据作为 js 的变量等。 </p>
+<br/>
+引申此话题的，其实不光是在 JS 中使用 JSP 标签，可用 JSP 标签的地方当然可以直接写 Java 代码，即 ScriptLet 代码。<!--more--> <br/><br/>
+如果是在 JSP 中内嵌的 JS 代码，那当然好办，JSP 文件中能用什么标签，js 代码中也能随便用，因为 JSP  标签会先在服务端解释生成相应的 JS 代码，丢给客户端执行。 <br/><br/>
+那如果是在单独的 JS 文件中想要使用 JSP 标签，该如何办呢？还直接像 JSP 那样使用标签的话，对不起 JS 文件中给你原样显示出来，因为 JS 文件不被服务器端解释。其实到现在问题也基本有了答案，要解决的问题就是要让服务端去解释你的标签，有两种方案。 <br/><br/>
+<strong>一.  js 文件命名为 JSP 文件，写 js 内容，其中用标签</strong>，然后用 &lt;script src="/scripts/tags.js.jsp"&gt;&lt;/script&gt; 把该  JSP  文件当作 JS 文件那样引入。 <br/><br/>
+因为 JSP 文件会被服务端解释，所以把该 JSP 文件当作 JS 文件来写，JS 文件里应该是什么，你的 JSP 文件也应该输出什么，只是里面可以放标签，要知道它将会输出什么。用 &lt;script&gt; 来引入的话，页面顺理的把它认为是一段外部 JS 代码。 <br/><br/>
+例如文件 /scripts/tags.js.jsp 中的内容是： <br/><br/>
+<pre class="lang:default decode:true ">&lt;%@ taglib prefix="s" uri="/struts-tags" %&gt;
+var currentUser = '&lt;s:property value="#session.userName" /&gt;';
+alert("currentUser: " + currentUser);</pre>
+<br/>
+那么在某个网页中用 &lt;script src="/scripts/tags.js.jsp"&gt;&lt;/script&gt; 引入该文件时，上面的 JS 代码将会弹出当前 session 中的用户名来。 <br/><br/>
+上面代码执行都没问题的，但是你直接浏览 <a href="http://unmi/testsite/scripts/tags.js.jsp">http://unmi/testsite/scripts/tags.js.jsp</a>  你看到的是挤在一团的代码，不像查看普通 JS 文件那样有清晰的换行和退格，原因是浏览器默认只认扩展名，它的 mime 类型，也就是 Content-Type <code>text/html。要让它更像是个 JS 文件那得给它加上响应类型的设置，在 tags.js.jsp 文件第一行加上：</code> <br/><br/>
+<code>&lt;%response.setContentType("text/javascript;charset=utf-8");%&gt;</code> <br/><br/>
+<code>这时候对于浏览器来说，无论从哪个方向来看它都是个切切实实的 JS 文件，只扩展名不同罢了。</code> <br/><br/>
+<code>上面的方法实际表现是没什么问题的，不过还有两点不那么完美，第一，文件名看起来像 JSP 文件，有些令人误解；第二，在 IDE 中打开该 JSP 文件，没法应用 JS 的语法加亮，给编辑带来不少麻烦。下面的方法充分解决前面两个问题。</code> <br/><br/>
+<code><strong>二. 直接在 JS 文件中使用 JSP 标签</strong></code> <br/><br/>
+<code>讲下原理，不是说应用服务器端默认不解释 JS 中的标签吗，那我们可以让个别的 JS 文件同样受到服务器端的关注，不是把 js 原文直接抛给客户端，而是先解释其中的标签，或是其中的 java 代码。</code> <br/><br/>
+<code>Tomcat 这种应用服务器我们通常也会称它为 Servlet 容器，因为它执行的是 Servlet，JSP 自然也是 Servlet。在 %TOMCAT_HOME%/conf/web.xml 中我们可以看到实际处理 JSP 文件的 Servlet 是：</code> <br/><br/>
+&nbsp;<br/><br/>
+<pre class="lang:default decode:true">&lt;servlet&gt;
+    &lt;servlet-name&gt;jsp&lt;/servlet-name&gt;
+    &lt;servlet-class&gt;org.apache.jasper.servlet.JspServlet&lt;/servlet-class&gt;
+    &lt;init-param&gt;
+        &lt;param-name&gt;fork&lt;/param-name&gt;
+        &lt;param-value&gt;false&lt;/param-value&gt;
+    &lt;/init-param&gt;
+    &lt;init-param&gt;
+        &lt;param-name&gt;xpoweredBy&lt;/param-name&gt;
+        &lt;param-value&gt;false&lt;/param-value&gt;
+    &lt;/init-param&gt;
+    &lt;load-on-startup&gt;3&lt;/load-on-startup&gt;
+&lt;/servlet&gt;<br/><br/>
+&lt;servlet-mapping&gt;
+    &lt;servlet-name&gt;jsp&lt;/servlet-name&gt;
+    &lt;url-pattern&gt;*.jsp&lt;/url-pattern&gt;
+&lt;/servlet-mapping&gt;<br/><br/>
+&lt;servlet-mapping&gt;
+    &lt;servlet-name&gt;jsp&lt;/servlet-name&gt;
+    &lt;url-pattern&gt;*.jspx&lt;/url-pattern&gt;
+&lt;/servlet-mapping&gt;</pre>
+<br/>
+org.apache.jasper.servlet.JspServlet，所以我们可以在自己应用的 web.xml 文件中配置某些特别的文件同样由 JspServlet 来处理。比如要特别处理 /scripts/tags.js 文件，在应用的 web.xml 中只要加上：  <br/><br/>
+<pre class="lang:default decode:true">&lt;servlet-mapping&gt;
+    &lt;servlet-name&gt;jsp&lt;/servlet-name&gt;
+    &lt;url-pattern&gt;/scripts/tags.js&lt;/url-pattern&gt;
+&lt;/servlet-mapping&gt;</pre>
+<br/>
+<hr /><br/><br/>
+注意，上面是 Tomcat 6.x 或更早版中应用的 web.xml 的写法，后来 servlet-mapping 中 url-pattern 可同时写多个，加上 Tomcat 7 自身的古怪，这一设置会覆盖掉原 jsp 的设置，所以在 Tomcat 7 中应用必须配置成如下（也就是必须默认项也带上，然而列出自己的希望被当作 jsp 的 js 文件，可多个，不把 *.jsp/*.jspx 带上的话，你原有的 jsp 会当作文本文件直接展示出源码来）：<br/><br/>
+<pre class="lang:default decode:true ">&lt;servlet-mapping&gt;
+    &lt;servlet-name&gt;jsp&lt;/servlet-name&gt;
+    &lt;url-pattern&gt;*.jsp&lt;/url-pattern&gt;
+    &lt;url-pattern&gt;*.jspx&lt;/url-pattern&gt;
+    &lt;url-pattern&gt;/scripts/tags.js&lt;/url-pattern&gt;
+&lt;/servlet-mapping&gt;</pre>
+<br/>
+我们配置 /scripts/tags.js 要由 JspServlet 来处理，不会影响到现有的其他任何 JS 文件。<br/><br/>
+那现在的 /scripts/tags.js 可不是普通的 js 文件了，它可是具有放置 JSP 标签和写 Java 代码的超能力了，因为其中的 JSP 标签和 Java 代码首先会经由服务端来解释。它集 JS 和 JSP 于一身，另外也别忘了给该 JS 文件前面加上代码：<br/><br/>
+<code>&lt;%response.setContentType("text/javascript;charset=utf-8");%&gt;</code> <br/><br/>
+不然单独浏览它也就只是不那么好看。<br/><br/>
+无疑，这是目前我能想的最完美的一种方式了，且兼容于其他的 Servlet 容器，也不用改动公共部分的东西。/scripts/tags.js 在 JS IDE 中打开也漂亮多了，因为它就是个 JS 文件，只是被赋予了 JSP 的功能。

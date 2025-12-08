@@ -1,0 +1,197 @@
+---
+title: Nginx 反向代理 WebSocket 服务
+url: /nginx-reverse-proxy-websocket/
+date: 2025-06-14T10:52:52-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2025/06/nginx-logo.png"
+categories:
+  - Web/JS
+tags: 
+  - WebSocket
+  - Nginx
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14262 
+wpStatus: publish
+views: 62
+lastmod: 2025-06-14T10:52:52-05:00
+---
+
+前一篇 <a href="https://yanbin.blog/experience-fastapi-websocket-simple-chat/">尝试 FastAPI WebSocket 写简单的聊天应用</a> 刚体验了 WebSocket, HTTP 可以共用下层的 TCP 连接保持网页与服务器的双向连接。先简单作个回顾，也是为了解释后面关于 Nginx 反向代理 WebSocket 作准备，比如说下面的 WebSocket 服务</p>
+<br/>
+<blockquote>
+ws://localhost:8000/ws
+</blockquote>
+<br/>
+当在浏览器中用 JavaScript<br/><br/>
+<blockquote>
+var ws = new WebSocket("ws://test.exmple.com:8080/ws");
+</blockquote>
+<br/>
+后，浏览器首先会发送一个 GET /ws 的 HTTP 请求，如下(不相关的 HTTP 头省去)<!--more--><br/><br/>
+<pre class="lang:default decode:true">GET /ws HTTP/1.1
+Host: localhost:8000
+Connection: Upgrade
+Upgrade: websocket
+Origin: http://localhost:8000
+Sec-WebSocket-Version: 13
+Sec-WebSocket-Key: A3+6KUIiYQSSwVf+9Ec+ag==
+Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits</pre>
+<br/>
+服务器收到请求后，会回应<br/><br/>
+<pre class="lang:default decode:true">HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Accept: wsjTAriES7avXQbPbdm7cvo9C98=
+Sec-WebSocket-Extensions: permessage-deflate</pre>
+<br/>
+客户端与服务器之间依照请求响应中与 WebSocket 相关的头完成了 HTTP 到 WebSocket 协议的升级。<br/><br/>
+那么通过反向代理的方式访问 ws://localhost:8000/ws 需不需要特别的处理呢？<br/><br/>
+下面用 Nginx 作反向代理服务器进行测试，为使用配置以 server_name 的方式识别请求进行代理转发，在 /etc/hosts 中添加<br/><br/>
+<blockquote>
+127.0.0.1 test.example.com
+</blockquote>
+<br/>
+首先如往常一样只在 nginx.conf 文件中添加<br/><br/>
+<pre class="lang:default decode:true">    server {
+      listen 8080;
+      server_name test.example.com;
+      location / {
+        proxy_pass http://localhost:8000;
+      }
+    }</pre>
+<br/>
+Nginx 服务启动在 8080 端口号，对所有以 test.example.com 域名的访问反向代理到 http://localhost:8000(FastAPI 写的 WebSocket 服务启动在该端口号上)<br/><br/>
+仍然参照 FastAPI 的 <a href="https://fastapi.tiangolo.com/advanced/websockets/">WebSockets</a> 官方文档，写一个 WebSocket 服务<br/><br/>
+<pre class="lang:default decode:true ">@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    while True:
+        data = await websocket.receive_text()
+        await websocket.send_text(f"Message text was: {data}")</pre>
+<br/>
+该服务启动在 8000 端口号<br/><br/>
+现在，在浏览器中用代码访问 ws://test.example.com/ws<br/><br/>
+<pre class="lang:default decode:true ">var ws = new WebSocket("ws://test.exmple.com:8080/ws");</pre>
+<br/>
+用 WireShark 工具捕获网络包，条件用 tcp.port == 8080 || tcp.port = 8000，因为需要同时观察前端与 Nginx, Nginx 与后端之间的通信<br/><br/>
+观察到如下通信，省去非 WebSocket 相关的 HTTP 头<br/><br/>
+浏览器发起的<br/><br/>
+<blockquote>
+GET /ws HTTP/1.1<br />
+Host: test.example.com:8080<br />
+Connection: Upgrade<br />
+Upgrade: websocket<br />
+Origin: http://test.example.com:8080<br />
+Sec-WebSocket-Version: 13<br />
+Sec-WebSocket-Key: 842MJ6JxeagM78Cp4n5ykw==<br />
+Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits
+</blockquote>
+<br/>
+然后是 Nginx 代理发向 FastAPI 的请求<br/><br/>
+<blockquote>
+GET /ws HTTP/1.0<br />
+Host: localhost:8000<br />
+Origin: http://test.example.com:8080<br />
+Sec-WebSocket-Version: 13<br />
+Sec-WebSocket-Key: 842MJ6JxeagM78Cp4n5ykw==<br />
+Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits
+</blockquote>
+<br/>
+HTTP 协议变成了 HTTP/1.0, 请求头方面，其他的头都还在，唯独缺失了 WebSocket 依赖的<br/><br/>
+<blockquote>
+Connection: Upgrade<br />
+Upgrade: websocket
+</blockquote>
+<br/>
+在 FastAPI 端收到请求也就理所当然的不被认为是 WebSocket 请求，而当作普通的 HTTP 请求，所以回了<br/><br/>
+<blockquote>
+HTTP/1.1 404 Not Found<br />
+date: Fri, 13 Jun 2025 15:09:13 GMT<br />
+server: uvicorn<br />
+content-length: 22<br />
+content-type: application/json<br />
+connection: close
+</blockquote>
+<br/>
+因为 http://test.example.com:8000/ws 找不到<br/><br/>
+这样也就无法完成 HTTP 到 WebSocket 协议的升级，也可用 wscat(需用 npm --install -g wscat 安装) 来测试 WebSocket 连接<br/><br/>
+<blockquote>
+wscat -c ws://test.example.com:8080/ws<br />
+error: Unexpected server response: 404
+</blockquote>
+<br/>
+问题就出在 Nginx 反向代理未把 Connection 和 Upgrade 两个请求头转发到后端，不知道 Nginx 的默认行为什么能转发 Sec-WebSocket-xxx 等其他的头，却偏偏要无视 Connection 和 Upgrade 头。<br/><br/>
+在 Nginx 中要能同时代理 WebSocket 服务的话, 需显式配置转发 Connection 和 Upgrade 请求头，改为<br/><br/>
+<pre class="lang:default decode:true">    server {
+      listen 8080;
+      server_name test.example.com;
+      location / {
+        proxy_pass http://localhost:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+      }
+    }</pre>
+<br/>
+nginx -s reload 重启 Nginx 服务，再次用 wscat 就没问题了<br/><br/>
+<blockquote>
+wscat -c ws://test.example.com:8080/ws<br />
+Connected (press CTRL+C to quit)
+</blockquote>
+<br/>
+Nginx 能正确的向后端服务转发请求<br/><br/>
+<blockquote>
+GET /ws HTTP/1.1<br />
+Upgrade: websocket<br />
+Connection: upgrade<br />
+Host: localhost:8000<br />
+Sec-WebSocket-Version: 13<br />
+Sec-WebSocket-Key: BAbcsmO25oMa/eU/I0BGYA==<br />
+Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits
+</blockquote>
+<br/>
+从 Nginx 回过来的响应也没问题<br/><br/>
+<blockquote>
+HTTP/1.1 101 Switching Protocols<br />
+Upgrade: websocket<br />
+Connection: Upgrade<br />
+Sec-WebSocket-Accept: KimOgq/mSttogBD9xo+Kai5dHB4=<br />
+Sec-WebSocket-Extensions: permessage-deflate<br />
+date: Fri, 13 Jun 2025 15:12:47 GMT<br />
+server: uvicorn
+</blockquote>
+<br/>
+注意到我们多添加了<br/><br/>
+<blockquote>
+proxy_http_version 1.1;
+</blockquote>
+<br/>
+如果去掉这一行又会如何呢? 一样能建立正常的 WebSocket 连接，只是由 Nginx 代理发送到 FastAPI 的请求是<br/><br/>
+<blockquote>
+GET /ws HTTP/1.0<br />
+Upgrade: websocket<br />
+Connection: upgrade<br />
+Host: localhost:8000<br />
+Sec-WebSocket-Version: 13<br />
+Sec-WebSocket-Key: nnV1+D8S+WP50PdV0F+2Gg==<br />
+Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits
+</blockquote>
+<br/>
+但由 FastAPI 回送的响应是坚定的 HTTP/1.1<br/><br/>
+<blockquote>
+HTTP/1.1 101 Switching Protocols<br />
+Upgrade: websocket<br />
+Connection: Upgrade<br />
+Sec-WebSocket-Accept: 3YpMC13b4DP98JySgxqDg8K0wwg=<br />
+Sec-WebSocket-Extensions: permessage-deflate<br />
+date: Fri, 13 Jun 2025 15:56:27 GMT<br />
+server: uvicorn
+</blockquote>
+<br/>
+因此最终 WebSocket 客户端收到的依然是 HTTP/1.1, 不影响 WebSocket 的通信。只是不明白为什么都 2025 年了, Ngix 1.27(28 May 2024) 的版本还是默认使用 HTTP/1.0 向后端转发请求。

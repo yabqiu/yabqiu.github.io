@@ -1,0 +1,65 @@
+---
+title: 为已有的 WebForm 项目引入 Asp.Net MVC 框架
+url: /webform-asp-net-mvc-support/
+date: 2010-09-10T19:31:52-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - .Net
+tags: 
+  - Asp.Net
+  - mvc
+  - WebForm
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 800 
+wpStatus: publish
+views: 1359
+lastmod: 2021-09-03T11:00:10-05:00
+---
+
+Asp.Net 的项目多数还是应用的 WebForm 进行开发，MVC 框架随着在其他语言中的兴起，也进入了 Asp.Net 领域，那就是 Asp.Net MVC，现在的正式版本是 2.0，已经出了 3.0 Preview 版的。</p>
+<br/>
+WebForm 对于小项目的快速开发还是很方便的，对应对业务逻辑复杂而庞大的项目时，分层就很有必要的，MVC 恰到好处的层次结构，让人艳羡的。除此之外，应用了 MVC 框架的项目可测试性是 WebForm 无法比拟的，开始可以很好的进行单元测试了。<!--more--><br/><br/>
+完全搭建一个全新的 MVC 应用没必要多说，但为完成 WebForm 项目中引入 Asp.Net MVC 你手边还得有一个 MVC 的示例项目来作为参考。而且了解 Asp.Net MVC 项目的目录结构以及实现原理是十分必要的，关键的东西在于 System.Web.Routing 以及构建在它之上的 MVCRoudeHandler。<br/><br/>
+现在正式要介绍的是怎么让已有的 WebForm 项目支持后续用 Asp.Net MVC 开发，不是完全转换，而是让两种方式同时能运转。有以下步骤或关键点。<br/><br/>
+<u><strong>1. 引入 Asp.Net MVC 应用库</strong></u><br/><br/>
+当我们安装了 Asp.Net MVC 之后，一般是在 C:\Program Files\Microsoft ASP.NET\ASP.NET MVC 2\Assemblies 目录下会有两个文件 System.Web.Mvc.dll 和 System.Web.Mvc.xml，由于在欲部署的机器上可能未安装过 Asp.Net MVC，所以只为项目添加 System.Web.Mvc.dll 的引用无法运行起来。Asp.Net 要用什么第三方的动态库都是把它们拷到项目的 bin 就是了，把  Asp.Net MVC 当作个第三方库，只要把 System.Web.Mvc.dll 放到项目的 bin 目录中就 OK，要是编程方便的话，把 System.Web.Mvc.xml 也放进去。<br/><br/>
+<strong><u>2. 在 Web.Config 中引入所需的库</u></strong><br/><br/>
+仿照 MVC 示例程序的 Web.Config 文件，在你的 Web.Config 中，&lt;system.web&gt;/compilation&gt;/&lt;assemblies&gt; 加上以下几行：<br/><br/>
+<pre class="lang:default decode:true ">&lt;add assembly="System.Web.Routing, Version=3.5.0.0, Culture=neutral, PublicKeyToken=31BF3856AD364E35"/&gt;
+&lt;!--add assembly="System.Web.Mvc, Version=2.0.0.0, Culture=neutral, PublicKeyToken=31BF3856AD364E35"/--&gt;
+&lt;add assembly="System.Web.Abstractions, Version=3.5.0.0, Culture=neutral, PublicKeyToken=31BF3856AD364E35"/&gt;
+&lt;add assembly="System.ComponentModel.DataAnnotations, Version=3.5.0.0, Culture=neutral, PublicKeyToken=31BF3856AD364E35"/&gt;</pre>
+<br/>
+由于 System.Web.Mvc.dll 已经放到项目的 bin 目录里了，所以这里可以省去 System.Web.Mvc 这行。System.Web.Routing 是 Asp.Net MVC 实现的根基，DataAnnotations 在 Model 类中要用到。<br/><br/>
+<strong><u>3. 布置好相应的目录</u></strong><br/><br/>
+把 MVC 示例项目的 Controllers 和 Models 目录拷到 WebForm 项目的 App_Code 目录中去，因为这两目录里是 CS 代码，对于 WebForm 项目来说，App_Code 中才是放 CS 代码的地方。然后把示例项目的 Views、Content 和 Scripts 目录放到 WebForm 项目的根目录下，Views 里是些视图文件，它们继承自 System.Web.Mvc.ViewPage，不需要像 WebForm 那样的后端 CS 文件了。<br/><br/>
+留意下这里的 Views 目录的结构，并理解其中的 Web.config 文件的意义，不让通过 URL 直接访问其中的资源，就像 Java Web 的 WEB-INF 中的东西不能直接访问那般。<br/><br/>
+<strong><u>4. Global.Asax 中配置路由</u></strong><br/><br/>
+参照 MVC 示例项目的 Global.asax.cs 文件，按如下方式操作：<br/><br/>
+<pre class="brush:c#">//在原有 ASP.NET 项目中创建这个方法
+public static void RegisterRoutes(RouteCollection routes)
+{
+    routes.IgnoreRoute("{resource}.axd/{*pathInfo}");<br/><br/>
+    //依据业务需求建立自己的 Route，下面这个 Default 可用来测试<br/><br/>
+    routes.MapRoute(
+        "Default", // Route name
+        "{controller}/{action}/{id}", // URL with parameters
+        new { controller = "Home", action = "Index", id = UrlParameter.Optional } // Parameter defaults
+    );<br/><br/>
+}<br/><br/>
+protected void Application_Start()
+{<br/><br/>
+    //把下面两行代码放到原有 ASP.NET 系统中的 Global.asax 的 Application_Start() 方法中
+     AreaRegistration.RegisterAllAreas();<br/><br/>
+     RegisterRoutes(RouteTable.Routes);
+}
+</pre>
+<br/>
+至此可以运行这个 WebForm 和 MVC 兼而有之的项目，浏览 <a href="http://ip/virtual/Home">http://ip/virtual/Home</a> 就可以看到 MVC 框架执行的效果，并且原有 WebForm 是不受影响的。<br/><br/>
+可以进一步深入 ASP.NET MVC 的各方面的功能，好做单元测试了。不在需要写 aspx 后端的 cs 文件了，注意的是 master page 必须继承自 System.Web.Mvc.ViewMasterPage，还有 aspx 文件要继承自 System.Web.Mvc.ViewPage。可以不用那些 WebForm 的服务器端控件，而是采用有些微类似 JSP 标签的写法来生成 HTML 组件。

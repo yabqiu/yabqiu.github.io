@@ -1,0 +1,106 @@
+---
+title: 使用 SQL Server 的 uniqueidentifier 字段类型
+url: /use-sql-server-uniqueidentifier-data-type/
+date: 2018-05-18T23:20:30-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/sqlserver-logo.png"
+categories:
+  - Java/JEE
+  - Database
+tags: 
+  - SqlServer
+  - uniqueidentifier
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8754 
+wpStatus: publish
+views: 4484
+lastmod: 2021-09-10T12:44:18-05:00
+---
+
+SQL Server 自 2008 版起引入了 <code>uniqueidentifier</code> 字段，它存储的是一个 UUID, 或者叫 GUID，内部存储为 16 个字节。SQL Server 可用两个函数来生成 <code>uniqueidentifier</code>, 分别是 <code>NEWID()</code> 和 <code>NEWSEQUENTIALID()</code>, 后者只能用作字段的默认值。Java 也有一个 UUID 工具类 <code>java.uti.UUID</code>, <code>UUID.randomUUID().toString()</code> 生成一个随机的 UUID 字符串，在 <code>java.util.UUID</code> 也是用两个 <code>long</code> 字段表示内部状态。<br/><br/>
+SQL Server 的 <code>uniqueidentifier</code> 类型字段表明了内部如何存储，在我们操作它时，它的外在表现形式都是一个固定格式 `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` 的字符串，不区分大小写的。<br/><br/>
+本文所使用的 SQL Server 是 2017 版，通过 Docker 来启动的<br/><br/>
+<blockquote>
+docker run -e 'ACCEPT_EULA=Y' -e 'SA_PASSWORD=yourStrong(!)Password' -p 1433:1433 -d microsoft/mssql-server-linux:2017-latest
+</blockquote>
+<br/>
+然后我们创建一个带有 <code>uniqueidentifier</code> 类型字段的表<!--more--><br/><br/>
+<pre class="lang:default decode:true">CREATE TABLE customers (
+  id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+  name VARCHAR(36)
+)</pre>
+<br/>
+默认值也可以指定为 <code>NEWSEQUENTIALID()</code>, <code>uniqueidentifier</code> 字段不指定默认值也没问题。上面把 id 设置为主键，接下为了验证大小写的问题。<br/><br/>
+关于 <code>NEWID()</code> 与 <code>NEWSEQUENTIALID()</code> 的一个显著区别是<br/><br/>
+<blockquote>
+SELECT NEWID();        --这句是合法的<br />
+SELECT NEWSEQUENTIALID();    -- 这条语句出错，提示该函数只能用作创建表时 uniquidentifier 类型字段的默认值
+</blockquote>
+<br/>
+用 SQL 语句插入<br/><br/>
+<pre class="lang:default decode:true">insert into customers(id, name) values(newid(), 'Hello');
+insert into customers(id, name) values('A972C577-DFB0-064E-1189-0154C99310DAAC12', 'World');<br/><br/>
+--以下两条语句均会失败
+insert into customers(id, name) values('a972c577-dfb0-064e-1189-0154c99310daac12', 'loser case');
+insert into customers(id, name) values('X972C577-DFB0-064E-1189-0154C99310DAAC12', 'Not a GUID');</pre>
+<br/>
+第三条语句在第二条 id 的小写形式，破坏了唯一性约束，因为大小写字符串只是一种外面表现形式，第四条语句把第一个字母改成了 <code>X</code> 后，它实际不是一个有效的 GUID。<br/><br/>
+所以往数据库表中插入或更新 <code>uniqueidentifier</code> 字段时，相当于把字符用 <code>java.uti.UUID.fromString("your-input")</code> 转换输入为 <code>UUID</code> 对象<br/><br/>
+<ul>
+    <li>如果不能转换为 UUID 对象，操作失败</li>
+    <li>转换后的 UUID  对象再看是否违反了唯一性约束，因此输入字符的大小写不敏感</li>
+</ul><br/><br/>
+查询 <code>uniqueidentifier</code> 字段<br/><br/>
+<a href="/wp-content/uploads/2018/05/sqlserver-uniqueidentifier-1.png"><img class="aligncenter size-full wp-image-8755" src="/wp-content/uploads/2018/05/sqlserver-uniqueidentifier-1.png" alt="" width="451" height="106" /></a><br/><br/>
+展示为字符串，因为大小写不敏感，所以下面的条件查询<br/><br/>
+<blockquote>
+select * from customers where id='a972c577-dfb0-064e-1189-0154c99310daac12'
+</blockquote>
+<br/>
+也可以查出 name 为 "World" 的记录，由于 SQL Server 是把该字符串转换为 UUID 来比较的，因此与输入的外在形式无关。<br/><br/>
+JDBC 操作 <code>uniqueidentifier</code> 字段<br/><br/>
+也是把它当作字符串来看待，<code>rs.getString(..)</code>, <code>pstmt.setString(index, "&lt;UUID-STRING&gt;")</code>，只是这个字符串必须是一个符合规格的 UUID。<br/><br/>
+<pre class="lang:default decode:true ">DriverManager.registerDriver(new SQLServerDriver());
+Connection conn = DriverManager.getConnection(
+    "jdbc:sqlserver://localhost;databaseName=master", "sa", "yourStrong(!)Password");<br/><br/>
+PreparedStatement pstmt = conn.prepareStatement("insert into customers(id, name) values(?, ?)");<br/><br/>
+pstmt.setString(1, UUID.randomUUID().toString());<br/><br/>
+//下面三行也能用来设置 uniqueidentifier 字段的值
+//pstmt.setString(1, "98F99731-9AB0-4CF7-A861-051771E481F9");
+//pstmt.setObject(1, UUID.randomUUID().toString());
+//pstmt.setObject(1, UUID.randomUUID());  //JDBC 驱动还是会调用 UUID 的 toString() 方法<br/><br/>
+pstmt.setString(2, "From JDBC");<br/><br/>
+pstmt.execute();<br/><br/>
+ResultSet rs = conn.createStatement().executeQuery("select * from customers");
+while (rs.next()) {
+    System.out.println(rs.getString(1) + "=&gt;" + rs.getString(2)); //getObject(1) 也是 String 类型
+}</pre>
+<br/>
+执行后插入一条新记录，并查询显示出所有的记录<br/><br/>
+<blockquote>
+A972C577-DFB0-064E-1189-0154C99310DA=&gt;World<br />
+4A69AA7E-2136-48B2-951C-3EC52942534D=&gt;From JDBC<br />
+2F7EB3C8-F4E3-4ECF-9727-B2898CC70F75=&gt;Hello
+</blockquote>
+<br/>
+还有一个小发现就是，查询显示出来的结果与插入的顺序是不一致的。<br/><br/>
+<blockquote>
+pstmt.setObject(1, UUID.randomUUID())
+</blockquote>
+<br/>
+也没问题，上面最终也是会调用 UUID.randomUUID().toString() 方法，说到底 SQL Server 在插入该字段数据之前收到的还是一个字符串。<br/><br/>
+SQL Server JDBC 驱动的 PreparedStatement 实现类是 <code>SQLServerPreparedStatement</code>, 它有 <code>setUniqueIdentifier(...)</code> 方法，不过仍然是接收字符串，与 <code>setString(...)</code> 没什么不同。<br/><br/>
+<pre class="lang:default decode:true  ">SQLServerPreparedStatement pstmt = (SQLServerPreparedStatement) conn.prepareStatement("insert into customers(id) values(?)");
+pstmt.setUniqueIdentifier(1, UUID.randomUUID().toString());</pre>
+<br/>
+总之 SQL Server 的 <code>uniqueidentifier</code> 字段是内部存储 16 字节，外部表现为字符串的类型，操作是接受的字符串必须是一个合法的 GUID(UUID) 串就行。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://docs.microsoft.com/en-us/sql/t-sql/data-types/uniqueidentifier-transact-sql?view=sql-server-2017">uniqueidentifier (Transact-SQL)</a></li>
+</ol>

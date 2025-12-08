@@ -1,0 +1,126 @@
+---
+title: Bash/Zsh 下调用 Emacs/Vim 编辑当前命令
+url: /bash-zsh-call-emacs-vim-edit-current-command/
+date: 2018-01-23T01:32:52-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/01/vim-logo-en.png"
+categories:
+  - Linux/Unix
+tags: 
+  - Linux
+  - vi
+  - Emacs
+  - Shell
+  - vim
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8455 
+wpStatus: publish
+views: 1746
+lastmod: 2018-01-23T10:11:49-06:00
+---
+
+<h2>Bash 环境</h2><br/>
+<p>多数时候我们用的是 Bash, 比如个人的 Linux 不愿去定制，远程服务器的由不得你去定制，所以就从 Bash 说起。</p>
+
+<h4>默认键绑定 <code>emacs</code>, 操作是 <code>ctrl-x, ctrl-e</code></h4><br/>
+<p>在默认的 Bash  环境下，只要在命令行中按下 <code>ctrl-x, ctrl-e</code> 就会把当前命令的内容调入到环境变量  <code>$EDITOR</code> 指示的编辑器(默认为 emacs)去编辑，编辑后保存退出就会立即执行。</p>
+
+<p>如果未安装 <code>Emacs</code> 编辑器，在按下 <code>ctrl-x, ctrl-e</code> 会得到如下提示</p>
+
+<blockquote><br/>
+<p>[vagrant@localhost ~]$<br /><br/>
+ -bash: emacs: command not found</p>
+
+</blockquote>
+
+<p>如果希望使用 <code>vi</code> 来编辑当前命令，就需要设置 <code>EDITOR</code> 环境变量，比如在 <code>.bashrc</code> 中加入</p>
+
+<blockquote><br/>
+<p>export EDITOR=vi</p>
+
+</blockquote>
+
+<p>那么在命令行中按下 <code>ctrl-x, ctrl-e</code> 使用打开  <code>vi</code> 来编辑当前命令。</p>
+
+<p>注：Emacs 要用 <code>ctrl-x, ctrl-c</code>, 再回答 <code>y</code>, 命令保存到临时文中; 而 vi 的相应操作是 <code>:wq</code>, 至少这个操作上 vi 要简洁些。<!--more--></p>
+
+<p>可以用命令 <code>bind -p | grep -F "\C-x\C-e</code> 查看 <code>ctrl-x, ctrl-e</code> 是执行了 Readline 命令 <code>edit-and-execute-command</code></p>
+
+<blockquote><br/>
+<p>$ bind -p | grep -F "\C-x\C-e"<br /><br/>
+ "\C-x\C-e": <span style="color: #ff0000;">edit-and-execute-command</span></p>
+
+</blockquote>
+
+<p>更多：<code>bind -p</code> 可以显示所有的键绑定，<code>bind -p | grep -F "\C"</code> 可查看含 ctrl 按键的绑定。</p>
+
+<h4>键绑定为 <code>vi</code> 时，操作是正常模式下按 <code>v</code> 键</h4><br/>
+<p>可以用命令 <code>set -o vi</code> 切换到  <code>Vi</code> 键绑定。切回到 <code>emacs</code> 键绑定用  <code>set -o emacs</code>。</p>
+
+<p><code>Vi</code> 键绑定时命令行就像是一个简单的行编辑器，<code>Esc</code> 在正常模式与输入模式间切换，如果要打开 Vi 来编辑当前命令只需在正常模式按下 <code>v</code>, 环境变量 <code>$EDITOR</code> 指定的编辑器(默认为 Vi ) 载入当前命令进行编辑。</p>
+
+<p>如果对 Emacs 青睐有加的话，可以设置  <code>$EDITOR</code> 为 <code>emacs</code>, 这时按 <code>v</code> 键打开的就是 <code>Emacs</code> 编辑器。</p>
+
+<h2>Zsh 环境</h2><br/>
+<p>同 Bash 的内置 <code>bind</code> 命令一样，Zsh 也有自己内置的键绑定命令 <code>bindkey</code>。而且也有相应的 <code>emaces</code> 和 <code>vi</code> 键绑定，切换的命令分别是 <code>bindkey -e</code>, 和 <code>bindkey -v</code>。</p>
+
+<p>默认情况下，不管是 <code>emacs</code> 键绑定还是 <code>vi</code>，<code>ctrl-x, ctrl-e</code> 和  <code>v</code> 键都不起作用，所以都得定制。针对两种键绑定类型分别为：</p>
+
+<h4><code>emacs</code> 键绑定</h4><br/>
+<p>默认的，或使用了 <code>bindkey -e</code> 指定为 <code>emacs</code> 键绑定，可以在 <code>~/.zshrc</code>  中加入</p>
+
+<pre class="lang:sh decode:true ">autoload -z edit-command-line<br/>
+zle -N edit-command-line<br/>
+bindkey "^X^E" edit-command-line</pre>
+
+<p><code>source ~/.zshrc</code> 后，便可按 <code>ctrl-x, ctrl-e</code> 打开 <code>$EDITOR</code> 指定的编辑器(默认为 vi) 来编辑当前命令</p>
+
+<h4><code>vi</code> 键绑定</h4><br/>
+<p>用 <code>bindkey -v</code> 切换键绑定到 <code>vi</code>, 在 <code>~/.zshrc</code> 加入</p>
+
+<pre class="lang:sh decode:true">autoload -z edit-command-line<br/>
+zle -N edit-command-line<br/>
+bindkey -M vicmd v edit-command-line</pre>
+
+<p>然后 <code>source ~/.zshrc</code> 后，在命令行的 vi 命令模式下按  <code>v</code> 键会打开<code>$EDITOR</code> 指定的编辑器(默认为 vi) 来编辑当前命令。</p>
+
+<p>注意：在 Zsh 中，不管是 <code>emacs</code> 还是 <code>vi</code> 键绑定，未设置 <code>$EDITOR</code> 的话，默认都是 <code>vi</code>, 这一点与 Bash 是不同的。</p>
+
+<p><code>bindkey</code> 的几个相关命令：<code>bindkey -l</code>, <code>bindkey -lL</code>, <code>bindkey -L</code>, <code>bindkey --</code>, <code>bindkey -a</code></p>
+
+<h2>总结</h2><br/>
+<ol>
+
+	<li>最好是设置环境变量 <code>$EDITOR</code> 明确指定编辑器是 <code>emacs</code> 还是 <code>vi</code>。</li>
+
+	<li>Bash <code>emacs</code> 键绑定按 <code>ctrl-x, ctrl-e</code> 打开编辑器载入命令，<code>vi</code> 键绑定按 <code>v</code> 键打开编辑器</li>
+
+	<li>Zsh 需要自行绑定按钮到 <code>edit-command-line</code> 命令</li>
+
+	<li><code>emacs</code>  的保存退出命令是 <code>ctrl-x, ctrl-c</code>, 回答 <code>y</code> 退出，<code>vi</code> 就用 <code>:wq</code> 退出</li>
+
+	<li>配置只单单按<code>v</code> 键打开编辑器更容易产生误操作，也可能会与 <code>vi</code> 的可视模式混淆</li>
+
+</ol>
+
+<p>任何情况下，不管是 Bash/Zsh, 无论何种键绑定都可以使用 <code>fc</code> 命令调用 <code>EDITOR</code> 来编辑最后一条执行的命令。</p>
+
+<p>参考：</p>
+
+<ol>
+
+	<li><a href="https://sanctum.geek.nz/arabesque/vi-mode-in-bash/">Vi mode in Bash</a></li>
+
+	<li><a href="http://zsh.sourceforge.net/Doc/Release/Zsh-Line-Editor.html">Zsh Line Editor</a></li>
+
+	<li><a href="https://github.com/zsh-users/zsh/tree/master/Functions/Zle">Zsh Zle Functions</a></li>
+
+	<li><a href="http://nuclearsquid.com/writings/edit-long-commands/">Editing long commands in your shell</a></li>
+
+</ol>

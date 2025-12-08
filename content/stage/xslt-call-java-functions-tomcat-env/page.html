@@ -1,0 +1,77 @@
+---
+title: XSLT 调用 Java 的类方法 -- Tomcat 环境
+url: /xslt-call-java-functions-tomcat-env/
+date: 2013-07-26T01:47:54-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - XML/DOM
+  - Java/JEE
+tags: 
+  - xslt
+  - xml
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5620 
+wpStatus: publish
+views: 950
+lastmod: 2021-05-10T10:26:40-05:00
+---
+
+很早很久以前写过一篇 <a title="XSLT 调用 Java 的类方法" href="http://unmi.cc/xslt-call-java-method" target="_blank" rel="noopener">在 xslt 调用 java 方法的日志 XSLT 调用 Java 的类方法</a>, 其中介绍是使用 org.apache.xalan.processor.TransformerFactoryImpl 实现的例子，JDK 本身就是用这个的。但是在 Tomcat 环境下，它有它自己的 XSLT 默认实现是 net.sf.saxon.TransformerFactoryImpl，这时候 XSLT 中的内容略有不同，而且显示更简便一些。</p>
+<br/>
+这么说吧, xalan 支持以下两种调用 java 方法的方式，而 saxon 只认得第二种<br/><br/>
+<strong>1. 声明到包，调用时带上类名</strong><br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+    xmlns:java="cc.unmi.commons" exclude-result-prefixes="java"&gt;<br/><br/>
+    &lt;xsl:output method="xml"/&gt;<br/><br/>
+    &lt;xsl:template match="user/name"&gt;
+        &lt;li&gt;&lt;xsl:value-of select='java:XsltFunctions.replace(.)'/&gt;&lt;/li&gt;
+    &lt;/xsl:template&gt;
+&lt;/xsl:stylesheet&gt; 
+</pre>
+<br/>
+<strong><!--more-->2. 声明到类，直接用方法名</strong><br/><br/>
+<pre class="lang:default decode:true">&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;xsl:stylesheet version="1.0" xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
+    xmlns:java="cc.unmi.commons.XsltFunctions" exclude-result-prefixes="java"&gt;<br/><br/>
+    &lt;xsl:output method="xml"/&gt;<br/><br/>
+    &lt;xsl:template match="user/name"&gt;
+        &lt;li&gt;&lt;xsl:value-of select='java:replace(.)'/&gt;&lt;/li&gt;
+    &lt;/xsl:template&gt;
+&lt;/xsl:stylesheet&gt; 
+</pre>
+<br/>
+显然第二种方式写起来要简便些，省却了每次调用时输入类名，如果会用到多个类中的方法就多写个 Namespace  xmlns:proc="cc.unmi.common.ProcFunctions" 就行，用 proc:foo() 来调用。<br/><br/>
+此处省略了 cc.unmi.commons.XsltFunctions.replace(String src) 实现，可参考 <a title="XSLT 调用 Java 的类方法" href="http://unmi.cc/xslt-call-java-method" target="_blank" rel="noopener">在 xslt 调用 java 方法的日志 XSLT 调用 Java 的类方法</a>。<br/><br/>
+如果用下面的方法结合第一个 xslt 的写法<br/><br/>
+<pre class="lang:default decode:true">    public static void transfer() throws Exception{
+        Source xmlSource = new StreamSource("example.xml");
+        Source xsltSource = new StreamSource("example.xslt");<br/><br/>
+        System.setProperty("javax.xml.transform.TransformerFactory", "net.sf.saxon.TransformerFactoryImpl");
+        TransformerFactory transfact = TransformerFactory.newInstance();<br/><br/>
+        StringWriter sw = new StringWriter();
+        Result result = new StreamResult(sw);<br/><br/>
+        Transformer trans = transfact.newTransformer(xsltSource);
+        trans.transform(xmlSource, result);<br/><br/>
+        System.out.println(sw.toString());
+    }
+</pre>
+<br/>
+会收到类似这样的错误:<br/><br/>
+<span style="color: #ff0000;">Error at xsl:value-of on line 8 of :</span><br />
+<span style="color: #ff0000;">  XPST0003: XPath syntax error at char 62 on line 8 in {.......}:</span><br />
+<span style="color: #ff0000;">    Cannot find a matching 1-argument function named</span><br />
+<span style="color: #ff0000;">  {cc.unmi.commons}XslFunctions.replace()</span><br/><br/>
+应用第 2 个 xslt 内容则可通过，或者把实现改成<br/><br/>
+System.setProperty("javax.xml.transform.TransformerFactory", "org.apache.xalan.processor.TransformerFactoryImpl");<br/><br/>
+则可兼容并蓄。<br/><br/>
+如果构造 TransformerFactory 实例时指定实现类则更具灵活性，即两种实现能较好的共存。<br/><br/>
+<pre class="brush:java ">TransformerFactory transfact = TransformerFactory.newInstance("YOUR TransformerFactory implementation HERE", classLoader);</pre>
+<br/>
+再补充一点，用 xalan 时，XSLT 中 XPath 选取的节点类型是 org.w3c.dom.Node，这个比较好处理，而用 saxon 时，XPath 选取的节点类型则是  net.sf.saxon.om.NodeInfo, 它和 w3c 的 Node 摊不上一点关系，也只有它的  getStringValue() 较有用处。

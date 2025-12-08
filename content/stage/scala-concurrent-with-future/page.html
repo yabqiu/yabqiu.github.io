@@ -1,0 +1,247 @@
+---
+title: Scala 中应用 Future 并发编程
+url: /scala-concurrent-with-future/
+date: 2017-12-13T01:14:57-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2017/11/scala-logo.png"
+categories:
+  - Scala
+tags: 
+  - Future
+  - Concurreent
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8424 
+wpStatus: publish
+views: 3579
+lastmod: 2017-12-13T18:26:58-06:00
+---
+
+<p>Java 世界里进行并发编程有 Future 和  ExecutorService(当成 ThreadPool 来对待)，及至 Java 8 引入了更为趁手的 CompletableFuture。那么使用 Scala 该如何进行并发编程呢？Scala 能毫无障碍的使用 Java 类库，所以完全可以用 Java 的 API 来使用线程池，只是那不太 Scala 罢了。</p>
+
+<p>既然是 Scala, 就尽量写成 Scala Style 吧，Scala 也有自己的 Future, 还有 Promise 呢? 至于 Promise 与 Future 多大区别，语义上似乎也差不多，只看到 Promise 中有一个 Future 的属性。如果想玩得高级一点的话就该把  Actor 弄起来，它算是所谓的纤程，多个  Actor 可跑在同一个线程中，当然启动要快，内存消耗少，还避免了上下文切换。</p>
+
+<p>这里还是先体验 Scala Future 的用法。Future 本身只是描述了一个任务，及将要获得的结果(或执行的动作)，因此那样一个任务也是要放到线程池中去执行。这和 Java 的 Future/ThreadPool 是一样的概念。稍有不同的是线程池的创建与使用，线程池的默认大小配置等。看个简单的应用示例，本次测试的 Scala 版本是 2.11.12，为了突出实际的线程池大小，我们把任务数设置为 20 个</p>
+
+<h3>Scala Future 并发编程体验</h3><br/>
+<p><!--more--></p>
+
+<pre class="lang:default decode:true">import scala.concurrent._<br/>
+import scala.concurrent.ExecutionContext.Implicits.global<br/>
+<br/>
+(1 to 20).foreach(index =&gt; Future {<br/>
+  println(Thread.currentThread().getName + ", " + index)<br/>
+  Thread.sleep(1000)  //延时来充分使用到线程池中的每一个线程<br/>
+})<br/>
+<br/>
+println("AvailableProcessors: " + Runtime.getRuntime.availableProcessors()) //打印出可用处理器数目<br/>
+Thread.sleep(2000000) //为了在程序结束前看到执行完所有任务，所以阻塞主线程</pre>
+
+<p>上面的程序代码输出</p>
+
+<blockquote><br/>
+<p>ForkJoinPool-1-worker-5, 5<br /><br/>
+ ForkJoinPool-1-worker-1, 7<br /><br/>
+ AvailableProcessors: 8<br /><br/>
+ ForkJoinPool-1-worker-11, 2<br /><br/>
+ ForkJoinPool-1-worker-15, 8<br /><br/>
+ ForkJoinPool-1-worker-3, 6<br /><br/>
+ ForkJoinPool-1-worker-7, 4<br /><br/>
+ ForkJoinPool-1-worker-9, 3<br /><br/>
+ ForkJoinPool-1-worker-13, 1<br /><br/>
+ ForkJoinPool-1-worker-5, 12<br /><br/>
+ ForkJoinPool-1-worker-1, 14<br /><br/>
+ ForkJoinPool-1-worker-15, 10<br /><br/>
+ ForkJoinPool-1-worker-7, 11<br /><br/>
+ ForkJoinPool-1-worker-3, 9<br /><br/>
+ ForkJoinPool-1-worker-13, 13<br /><br/>
+ ForkJoinPool-1-worker-9, 16<br /><br/>
+ ForkJoinPool-1-worker-11, 15<br /><br/>
+ ForkJoinPool-1-worker-5, 17<br /><br/>
+ ForkJoinPool-1-worker-15, 19<br /><br/>
+ ForkJoinPool-1-worker-7, 20<br /><br/>
+ ForkJoinPool-1-worker-1, 18</p>
+
+</blockquote>
+
+<p>输出的结果可能有点意外，因为线程的编号是  1 至 15 间的奇数，正好是以用处理器数目 8。这样的线程编号差一点让我误以为线程池大小是 15。</p>
+
+<h3>如何创建任务</h3><br/>
+<p>简单来理解一下上面的程序，<code>Future { ... }</code>  应该是用来向线程池提交任务的，那么线程池是什么呢？大小多少？瞧瞧它的实现方法 <code>scala.concurrent.Future.apply(...)</code></p>
+
+<pre class="lang:default decode:true">def apply[T](body: =&gt;T)(implicit @deprecatedName('execctx) executor: ExecutionContext): Future[T] = impl.Future(body)</pre>
+
+<p>这是柯里化的函数定义方式，第二个参数是一个隐式参数，类型为 <code>ExecutionContext</code>。进到 <code>impl.Future(body)</code> 的实现代码 <code>scala.concurrent.impl.Future</code></p>
+
+<pre class="lang:default decode:true ">  def apply[T](body: =&gt;T)(implicit executor: ExecutionContext): scala.concurrent.Future[T] = {<br/>
+    val runnable = new PromiseCompletingRunnable(body)<br/>
+    executor.prepare.execute(runnable)<br/>
+    runnable.promise.future<br/>
+  }</pre>
+
+<p>确确实实的是像 executor 代表的线程池中提交任务。</p>
+
+<h3>线程池由谁来提供</h3><br/>
+<p>那么这里的隐式参数 <code>implicit executor: ExecutionContext</code> 是由谁来隐式提供的呢？很明显是</p>
+
+<pre class="lang:default decode:true">import scala.concurrent.ExecutionContext.Implicits.global</pre>
+
+<p>扮演了该角色。顺着这个  <code>global</code> 直接来到 <code>scala.concurrent.impl.ExecutionContextImpl</code> 的 <code>createExecutorService</code> 方法</p>
+
+<pre class="lang:default decode:true">  def createExecutorService: ExecutorService = {<br/>
+<br/>
+    def getInt(name: String, default: String) = (try System.getProperty(name, default) catch {<br/>
+      case e: SecurityException =&gt; default<br/>
+    }) match {<br/>
+      case s if s.charAt(0) == 'x' =&gt; (Runtime.getRuntime.availableProcessors * s.substring(1).toDouble).ceil.toInt<br/>
+      case other =&gt; other.toInt<br/>
+    }<br/>
+<br/>
+    def range(floor: Int, desired: Int, ceiling: Int) = scala.math.min(scala.math.max(floor, desired), ceiling)<br/>
+<br/>
+    val desiredParallelism = range(<br/>
+      getInt("scala.concurrent.context.minThreads", "1"),<br/>
+      getInt("scala.concurrent.context.numThreads", "x1"),<br/>
+      getInt("scala.concurrent.context.maxThreads", "x1"))<br/>
+<br/>
+    val threadFactory = new DefaultThreadFactory(daemonic = true)<br/>
+<br/>
+    try {<br/>
+      new ForkJoinPool(<br/>
+        desiredParallelism,<br/>
+        threadFactory,<br/>
+        uncaughtExceptionHandler,<br/>
+        true) // Async all the way baby<br/>
+    } catch {<br/>
+      case NonFatal(t) =&gt;<br/>
+        System.err.println("Failed to create ForkJoinPool for the default ExecutionContext, falling back to ThreadPoolExecutor")<br/>
+        t.printStackTrace(System.err)<br/>
+        val exec = new ThreadPoolExecutor(<br/>
+          desiredParallelism,<br/>
+          desiredParallelism,<br/>
+          5L,<br/>
+          TimeUnit.MINUTES,<br/>
+          new LinkedBlockingQueue[Runnable],<br/>
+          threadFactory<br/>
+        )<br/>
+        exec.allowCoreThreadTimeOut(true)<br/>
+        exec<br/>
+    }<br/>
+  }</pre>
+
+<p>正常情况下它会创建一个 <code>scala.concurrent.forkjoin.ForkJoinPool</code>, 它也是一个 Java ExecutorService 实现。</p>
+
+<h3>如何控制全局线程池的大小</h3><br/>
+<p>先看线程池的大小是怎么控制的，即这里面的 <code>desiredParallelism</code> 数值，由三个系统属性确定</p>
+
+<blockquote><br/>
+<p><code>scala.concurrent.context.minThreads</code>, 默认为 <code>1</code><br /><br/>
+ <code>scala.concurrent.context.numThreads</code>, 默认为 <code>x1</code><br /><br/>
+ <code>scala.concurrent.context.maxThreads</code>, 默认为 <code>x1</code></p>
+
+</blockquote>
+
+<p>整数表示为常量值，以 <code>x</code> 开头则表示为可用处理器数目的倍数(Double 值，例如 x1.5)。最终 <code>desiredParalleism</code> 的确定是前两个的最大值与第三个相比的最小值，比如说 minThreads = 10, numThreads = 20, maxThreads = 16, 最后获得的 min(max(10, 20), 16) 还是 16。那么线程池的大小就应该是 16，接下来可验证一下。</p>
+
+<p>欲使得 <code>desiredParallelism</code> 为 16，我们设置以下两个系统属性</p>
+
+<pre class="lang:default decode:true">System.setProperty("scala.concurrent.context.minThreads", "16")<br/>
+System.setProperty("scala.concurrent.context.maxThreads", "16")</pre>
+
+<p>仍然是使用上面 20 任务的代码，执行后输出为</p>
+
+<blockquote><br/>
+<p>ForkJoinPool-1-worker-31<br /><br/>
+ ForkJoinPool-1-worker-27<br /><br/>
+ ForkJoinPool-1-worker-17<br /><br/>
+ AvailableProcessors: 8<br /><br/>
+ ForkJoinPool-1-worker-25<br /><br/>
+ ForkJoinPool-1-worker-3<br /><br/>
+ ForkJoinPool-1-worker-9<br /><br/>
+ ForkJoinPool-1-worker-21<br /><br/>
+ ForkJoinPool-1-worker-13<br /><br/>
+ ForkJoinPool-1-worker-23<br /><br/>
+ ForkJoinPool-1-worker-29<br /><br/>
+ ForkJoinPool-1-worker-1<br /><br/>
+ ForkJoinPool-1-worker-7<br /><br/>
+ ForkJoinPool-1-worker-11<br /><br/>
+ ForkJoinPool-1-worker-19<br /><br/>
+ ForkJoinPool-1-worker-5<br /><br/>
+ ForkJoinPool-1-worker-15<br /><br/>
+ ForkJoinPool-1-worker-7<br /><br/>
+ ForkJoinPool-1-worker-23<br /><br/>
+ ForkJoinPool-1-worker-5<br /><br/>
+ ForkJoinPool-1-worker-15</p>
+
+</blockquote>
+
+<p>从 1 到 31 间的奇数，总共 16 个线程。从 <code>scala.concurrent.forkjoin.ForkJoinPool</code> 的线程命名的相关代码来看有可能会更奇怪，一个要确定线程池大小的实际大小，再也不能看到线程名中的实际最大编号马上反应出线程池的大小。而 <code>java.util.concurrent.ForkJoinPool</code> 的线程编号是连续的。</p>
+
+<p>注意：别看到 <code>minThreads</code> 和 <code>maxThreads</code> 就以为是一个声明上下限的线程池，其实是一个固定大小的线程池，也就是那个 <code>desiredParallelism</code> 值。</p>
+
+<p>以上用编程方式设置系统属情，也可以在程序启动的时候设定</p>
+
+<blockquote><br/>
+<p>java -Dscala.concurrent.context.minThreads=16 -Dscala.concurrent.context.maxThreads=16 -java abc.jar</p>
+
+</blockquote>
+
+<h3>创建自定义的线程</h3><br/>
+<p>前面用的线程池是系统全局的</p>
+
+<blockquote><br/>
+<p>import scala.concurrent.ExecutionContext.Implicits.global</p>
+
+</blockquote>
+
+<p>如果能确定当前进程有哪些地方在使它这个全局线程池的话，是可以使用它的。如果大小不够还能通过系统属性来调节。但是代码由多人维护，很多人都来用全局线程池，反而任务会堵成一团。这就像 Java 8 中大量使用集合的 parallelStream(), 大家都用 ForkJoinPool 的  commonPool() 一样，只是  commonPool 的大小还难以控制。因此必要的时候需要提供自己的线程池实现。</p>
+
+<p>注意到 Future.apply(...) 第二个参数是一个隐式的 ExecutionContext, 所以我们只要声明一个 ExecutionContext 实例，并设定为 <code>implicit</code> 就会自动应用上，或者显式传入第二个参数。方法有二</p>
+
+<h4>声明隐式的 ExecutionContext</h4><br/>
+<pre class="lang:default mark:2 decode:true">import scala.concurrent._<br/>
+implicit val ec = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(3))<br/>
+<br/>
+(1 to 5).foreach(index =&gt; Future {<br/>
+  println(Thread.currentThread().getName)<br/>
+  Thread.sleep(1000)<br/>
+})</pre>
+
+<p>执行输出</p>
+
+<blockquote><br/>
+<p>pool-1-thread-3<br /><br/>
+ pool-1-thread-1<br /><br/>
+ pool-1-thread-2<br /><br/>
+ pool-1-thread-3<br /><br/>
+ pool-1-thread-1</p>
+
+</blockquote>
+
+<h4>显式传给  Future.apply(...) 方法</h4><br/>
+<pre class="lang:default mark:2,7 decode:true ">import scala.concurrent._<br/>
+val ec = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(3))<br/>
+<br/>
+(1 to 5).foreach(index =&gt; Future {<br/>
+  println(Thread.currentThread().getName)<br/>
+  Thread.sleep(1000)<br/>
+}(ec))</pre>
+
+<p>执行效果和上面是一样的。</p>
+
+<p>参考链接：</p>
+
+<ol>
+
+	<li><a href="http://josephguan.github.io/2016/06/26/thread-in-future/">Scala中Future的线程数</a></li>
+
+	<li><a href="https://blog.eood.cn/scala-future">Scala 中的 Future 和 ExecutionContext</a></li>
+
+	<li><a href="http://blog.csdn.net/jameshadoop/article/details/52337949">scala 隐式详解(implicit关键字)</a></li>
+
+</ol>

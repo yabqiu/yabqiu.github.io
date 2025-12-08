@@ -1,0 +1,78 @@
+---
+title: JDK8 的 Lambda 表达式 -- 词法范围和变量捕获
+url: /jdk8-lambda-lexical-scoping-variable-capture/
+date: 2013-10-16T08:35:23-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - jdk8
+  - lambda
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5769 
+wpStatus: publish
+views: 396
+lastmod: 2021-05-05T16:11:28-05:00
+---
+
+Lambda 表达式的词法范围，一言以蔽之就是没有引入新的词法范围。这里的词法范围要研究的课题是 this 的指向有没有在变。我们知道在匿名类内部 this 指向的匿名类的实例，这种关系是在编译期就确定的。而在 Lambda 表达式中的 this 与外部的 this 没有差别，也就是说你可以把 Lambda 表达式当成一般的语句来看待，多简单啊，不像 JavaScript 中的 this 被搞的那么魔幻。</p>
+<br/>
+可以这么测试：<br/><br/>
+<pre class="lang:default decode:true">public void foo(){
+    System.out.println(this);
+    Arrays.asList("Unmi").forEach((s) -&gt; System.out.println(this));
+}
+</pre>
+<br/>
+输出的是同一个地址里的东西：<br/><br/>
+<span style="color: #800000;">cc.unmi.testjdk8.TestLambda@28a418fc</span><br />
+<span style="color: #800000;">cc.unmi.testjdk8.TestLambda@28a418fc</span><br/><br/>
+接下来瞧瞧 Lambda 表达式对外层变量的捕获。Lambda 表达式的有个好处就是它是轻量级，可重用单元，并且可捕获外层变量。<!--more--><br/><br/>
+如果要你说出下面的代码会有什么编译错误的话<br/><br/>
+<pre class="lang:default decode:true">String name = "Unmi";
+button.addActionListener(new ActionListener() {
+    @Override
+    public void actionPerformed(ActionEvent e) {
+        System.out.println(name); //这行代码是 JDK8 下是可以编译通过的
+    }
+});
+</pre>
+<br/>
+只要有一点 Java 经验的人一眼就能看出，在匿名类的  System.out.println(name) 不能引用 non-final 的外部变量。是的，因为大概很多和我一样，经常是先收到这个错误提示，然后再把需要的外部变量改为 final 的，很少会是事先声明为 final，这是一种很奇怪的编程方式。<br/><br/>
+幸好，我们的苦处得到了体谅，这已成为了过去时，自 JDK8 起匿名类访问的外部变量不需要是 final 的。但是你依然不能去修改它的值(不管是引用类型还是原始类型，我都会把值理解为同一个概念，直接用等号赋予它的就是它的值，非内容)，也就是故有约束仍然没有变。<br/><br/>
+思考一下在 JDK8 之前匿名类里引用外层的变量，则这个变量为什么要求是 final 的呢？我的理解是因为 Java 允许在匿名类内部引用外层的变量，但不希望外层的变量的值莫名其妙的在自己的内部类中被改变了，就像方法不能修改掉它的参数值一样。<br/><br/>
+进一步把匿名类中的代码想像为是在执行一个方法，则被匿名类引用的外部变量就是方法参数。对于真正的方法，你试图让方法改变参数值是合法的，但跳出方法后参数值又归位。类似的匿名类内部也是不能改变外部变量的值，另一方面又没有更好的约束办法，所以就要求外面声明为 final。<br/><br/>
+JDK8 之中被匿名类或访问的外层变量更象是个方法参数 -- 虽未显示声明为 final 的，但其实在被访问时(作为方法参数角色时)就是个 final 的类型，只是隐式的罢了。<br/><br/>
+同样的，在 JDK8 的 Lambda 表达式，如果 Lambda 表达式内部想要读取外层的变量时，也不要求那个外层的变量是 final 修饰的，例如，下面的可编译通过<br/><br/>
+<pre class="lang:default decode:true">public void foo(){
+    String names = "Hello";
+    Arrays.asList("Unmi").forEach(e -&gt; System.out.println(names));
+}:
+</pre>
+<br/>
+上面是读取外层变量值的情况。想要改写外层变量值会出现什么情况呢？就是没门，在 JDK8 下无论是在匿名类还是 Lambda 表达式都不允许修改外层变量的值，所以下面两段代码都无法通过编译<br/><br/>
+如果你也试图去改变外层变量的值，写成下面那样的代码也是无法通过编译的<br/><br/>
+<pre class="lang:default decode:true">String name = "Unmi";
+    button.addActionListener(new ActionListener() {
+    @Override
+    public void actionPerformed(ActionEvent e) {
+        name = "fantasia@sina.com"; //Variable name is required to be final or effectively final
+    }
+});
+</pre>
+<br/>
+<pre class="lang:default decode:true ">public void foo(){
+    String names = "Hello";
+    Arrays.asList("Unmi").forEach(e -&gt; names += e); //Variable names is required to be final or effectively final 
+}
+</pre>
+<br/>
+它们报的错误是一样，说的都是 names 必须是 final 的或者类似 final 的，但你要跟着错误提示走给 names 加上个 final 修饰，又会收到不能给 final 类型再赋值的错误，这是无解的，这其实是绕进去了。<br/><br/>
+不过函数式编程，或是在并发的环境之下，尽可能的去使用不可变的类型是不会错的，所以尽管 JDK8 对被访问的外层变量未显示的要求是个 final, 但在由匿名类或 Lambda 访问的那一刻它就是个隐式 final 的类型。<br/><br/>
+<strong>小结：Lambda 表达式中的 this 还是它外层的那个 this；JDK8 之前在匿名类中只能引用外部 final 的变量，JDK8 后，匿名类和 Lambda  表达式一样都可能读取外部 final 或 non-final 型变量，且都不允许改变外部变量的值。</strong>

@@ -1,0 +1,135 @@
+---
+title: Groovy 的多重赋值和方法的多返回值
+url: /groovy-multiple-assignment-returns/
+date: 2018-03-04T00:32:58-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/03/groovy-logo.png"
+categories:
+  - Groovy
+tags: 
+  - multiple returns
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8558 
+wpStatus: publish
+views: 5328
+lastmod: 2021-09-10T12:53:42-05:00
+---
+
+追溯到刚开始学习 Groovy 还是在  2008 年，距今 2018 年有九年半余，曾记下几篇 <a href="/category/groovy/">Groovy</a> 的日志。那时学习 Groovy 并无明确的目的，只因它是脚本语言, 可用来快速验证 Java API。曾经 BeanShell 芸花一现，JRuby 和 Jython 总是别人家的语言照搬而来的。而 Scala，Nashorn(jjs), JShell 更是后来的事，唯有 Groovy 写起来很亲切，完全不懂 Groovy 都没关系，直接上 Java。<br/><br/>
+现如今之所以重新勾搭上了 Groovy 是因为它仍然坚挺着，在 SoupUI(ReadyAPI) 和 Jenkins 中获得了重视，倒不是因为 Gradle。先前 Groovy 在 Spring 框架中的地位估计要被如今的 Kotlin 取而代之。<br/><br/>
+好了，回顾完后进入正题，关于 Groovy 如何进行多重赋值，以及延伸到方法返回多个值的情形。这里所说的多重赋值不是指用连等号来同时赋为一个值，<br/><br/>
+def a = b = c = 100   //不是说的这个<br/><br/>
+而是指同时对多个变量一步到位的赋成不同的值，要实现这个必须用到 List 类型。看下面一个基本例子(GroovyConsole)<!--more--><br/><br/>
+<a href="/wp-content/uploads/2018/03/groovy-multiple-assignment.png"><img class="aligncenter size-full wp-image-8559" src="/wp-content/uploads/2018/03/groovy-multiple-assignment.png" alt="" width="300" height="160" /></a><br/><br/>
+基本语法就是<br/><br/>
+<pre class="lang:default decode:true">def（var1, var2, var3) = [value1, value2, value3]</pre>
+<br/>
+右边中括号声明的是一个 <code>ArrayList</code>, 右边对等位置找到相应的值逐个赋给左边的变量, 前面的例子实际可以理解为下面的过程<br/><br/>
+<pre class="lang:default decode:true">list = [1, 'Yanbin]
+id = list.getAt(0)
+name = list.getAt(1)</pre>
+<br/>
+凡事都得举一反三<br/><br/>
+<ol>
+    <li>前面赋值是左右元素数目相等，如果是左短右长，或左长右短会是怎样</li>
+    <li>如果只需提取右端列表的某几个元素一条语句该如何做</li>
+    <li>函数如何返回多个值，以及如何一条语句接受函数返回的多个值</li>
+    <li>是否能一条语句获得自定义对象(非 List) 的多个属性值</li>
+    <li>正则表达式多组捕获的字符串是否能一次性的赋给多个变量</li>
+</ol>
+<br/>
+一般情况下我比较爱在 Groovy Shell  下进行简单的测试，但是发现 Groovy Shell  下用 <code>def (a, b) = [1, 2]</code> 的形式有个 Bug，去掉 <code>def</code>  关键字就可以了, 看下面的截图<br/><br/>
+<a href="/wp-content/uploads/2018/03/groovy-multiple-assignment-2.png"><img class="aligncenter size-full wp-image-8560" src="/wp-content/uploads/2018/03/groovy-multiple-assignment-2.png" alt="" width="335" height="226" /></a>加了 <code>def</code> 关键字后 <code>id</code> 和 <code>name</code> 两个变量反而不可见了，所以接下来的测试中我仍然用 Groovy Shell, 但是会把  <code>def</code> 关键字隐去。<br/><br/>
+<h4>左边变量数目多于右边列表元素</h4><br/><br/>
+<pre class="lang:default decode:true">groovy:000&gt; (id, name, address) = [1, 'Yanbin']
+===&gt; [1, Yanbin]
+groovy:000&gt; println "$id, $name, $address"
+1, Yanbin, null</pre>
+<br/>
+左边多余的变量会被声明为 <code>null</code> 值<br/><br/>
+<h4>左边变量数目少于右边列表元素</h4><br/><br/>
+<pre class="lang:default decode:true ">groovy:000&gt; (id, name) = [1, 'Yanbin', 'Earth']
+===&gt; [1, Yanbin, Earth]
+groovy:000&gt; println "$id, $name"
+1, Yanbin</pre>
+<br/>
+列表从左自右只提取需要的元素分别赋值左边的变量<br/><br/>
+<h4>关于任意位置提取右边 List 的元素</h4><br/><br/>
+Groovy 无法简单像 Scala 那样提取任意位置的元素，而必须显式的用  <code>[index]</code> 或 <code>getAt(index)</code> 方法。例如<br/><br/>
+<pre class="lang:default decode:true">groovy:000&gt; list = [1, 2, 3, 4, 5]
+===&gt; [1, 2, 3, 4, 5]
+groovy:000&gt; def (a, b, rest) = [0, 1, 2..-1].collect { list[it] }
+===&gt; [1, 2, [3, 4, 5]]</pre>
+<br/>
+上面直接用的 list[0], list[1], 和  list[2..01] 来得到 a, b, rest 的值。<br/><br/>
+而 Scala 从 Tuple 或各类集合中提取元素所展现的是它强大的模式匹配功能，Groovy 在这点上是不太具备的。<br/><br/>
+<h4>Groovy 方法同时返回多个值</h4><br/><br/>
+有了以上的知识后，要实现 Groovy 方法返回多值就好办了，只要让方法返回一个 List 就行，接收端用 (a, b) = foo() 来进行多重赋值<br/><br/>
+<pre class="lang:default decode:true ">groovy:000&gt; def getUserInfo() { [1, 'Yanbin'] }
+===&gt; true
+groovy:000&gt; def (id, name) = getUserInfo()
+===&gt; [1, Yanbin]</pre>
+<br/>
+<h4>从自定定义对象一次性提取多个属性值</h4><br/><br/>
+比如，对于一个自定义对象 User，获得实例 user 后，需要分别用 <code>user.id</code>  和 <code>user.name</code> 来得到 id 和 name<br/><br/>
+<pre class="lang:default decode:true">@groovy.transform.Canonical
+class User {
+  Integer id;
+  String name;
+}
+ 
+def user = new User(1, 'Yanbin')
+println "${user.id}, ${user.name}" //输出 1, Yanbin</pre>
+<br/>
+那是否能用下面的形式一次性声明 id 和 name 两个变量，并从 user 实例中获得相应的值呢？<br/><br/>
+<pre class="lang:default decode:true">def (id, name) = new user(1, 'Yanbin')  //有异常，见下
+</pre>
+<br/>
+Groovy 报出异常<br/><br/>
+<blockquote>
+<span style="color: #800000;">Exception thrown</span>
+<span style="color: #800000;">groovy.lang.MissingMethodException: No signature of method: User.getAt() is applicable for argument types: (java.lang.Integer) values: [0]</span><br />
+<span style="color: #800000;">Possible solutions: getAt(java.lang.String), getId(), setId(java.lang.Integer), getName(), putAt(java.lang.String, java.lang.Object), wait()</span>
+</blockquote>
+<br/>
+这个线索给予我们的是 <code>User</code> 类需要实现 <code>getAt(Integer)</code> 方法，因此对代码的改造如下<br/><br/>
+<pre class="lang:default decode:true">@groovy.transform.Canonical
+class User {
+  Integer id;
+  String name;
+  
+  def getAt(Integer index) {
+    switch(index) {
+      case 0: id; break;
+      case 1: name; break;
+      default: throw new IndexOutOfBoundsException(String.valueOf(index))
+    }
+  }
+}
+ 
+def (id, name) = new User(1, 'Yanbin')
+println "$id, $name"   //输出为 1, Yanbin</pre>
+<br/>
+<code>def (id, name) = new User(1, 'Yanbin')</code> 相当于执行了<br/><br/>
+<pre class="lang:default decode:true ">def user = new User(1, 'Yanbin')
+def id = user.getAt(0)
+def name = user.getAt(1)</pre>
+<br/>
+<h4>正则表达式中同时捕获多组值赋给多个变量</h4><br/><br/>
+代码演示<br/><br/>
+<pre class="lang:default decode:true ">groovy:000&gt; def (exp, amount, currency) = ('12 Euro' =~ /(\d+) (\w+)/)[0]
+===&gt; [12 Euro, 12, Euro]</pre>
+<br/>
+<code>exp</code>, <code>amount</code> 和  <code>currency</code> 的值分别为 <code>12 Euro</code>, <code>12</code> 和 <code>Euro</code>。同样的，正则表达式分组中第一个元素是被匹配的字符串本身。<br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="http://mrhaki.blogspot.com/2009/09/groovy-goodness-multiple-assignments.html">Groovy Goodness: Multiple Assignments</a></li>
+    <li><a href="https://stackoverflow.com/questions/26074333/getting-tail-of-a-list-in-multiple-assignment-in-groovy">Getting tail of a list in Multiple Assignment in Groovy</a></li>
+    <li><a href="http://yeziwang.iteye.com/blog/827155">Groovy中的隐式构造函数</a></li>
+</ol>

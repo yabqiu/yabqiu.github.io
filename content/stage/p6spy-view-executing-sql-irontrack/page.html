@@ -1,0 +1,26 @@
+---
+title: 用 p6spy 来观察 Java 程序中执行的所有 SQL 语句（五. 结合 IronTrack SQL）
+url: /p6spy-view-executing-sql-irontrack/
+date: 2009-03-31T03:18:00-05:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - p6spy
+  - IronTrack
+  - sq
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 289 
+wpStatus: publish
+views: 650
+lastmod: 2015-06-30T21:46:05-05:00
+---
+
+<p>本想把 p6spy 结合 SQL Profiler 或 IronTrack SQL 的使用介绍掇凑于一块来写。简单点说，只是一贴上图样，篇幅便需拖拉难遂人愿，也好，索性把它们分成两个篇章。一来每篇主旨鲜明，二来五篇成一系列比起四更来的自然且吉利。</p><p>前面讲过 p6spy 本身就可利用 Log4j 的 SocketAppender 向远端发送日志，SQL Profiler 不过是在这个基础上作了进一步拓展。而接下来要说的 IronTrack SQL 就略有不同了，看它带的 p6spy.properties 文件，里面有 IronTrack SQL 给 p6spy 定制的一个模块：module.ibeam=com.irongrid.ibeam.server.IBeamFactory。它用到了 log4j-1.2.8.jar，不过还得研究下 Log4j 在其中所起的作来。现在就来介绍 p6spy 结合 IrconTrack SQL 的使用，最好是你知道如何单独使用 p6spy。压缩包里有文档：是 IronTrackSQL\docs\index.html。</p><p><strong>p6spy + IronTrack SQL 观察 SQL 语句<!--more--><br /> </strong><br /> 下载 IronTrack SQL：<a href="http://www.dlog.cn/uploads/files/IronTrackSQL.zip">http://www.dlog.cn/uploads/files/IronTrackSQL.zip</a>，网上很多文章说从 <a href="http://www.irongrid.com/ironeyesql">http://www.irongrid.com/ironeyesql</a> 下载，而实际上这个域名不存在了。若是第一个地址无法下载，请留言我放哪里供大家下载。好再看使用步骤，解开 IronTrackSQL.zip，可以看到在第一级目录中有必须的 p6spy.ar、log4j-1.2.8.jar、irontracksql.jar、spy.properties、irongrid.properies 文件。</p><p>1. 把压缩包中的 irontracksql.jar 拷到 p6spy.jar 所在的目录中，比如 Tomcat 5.x 的 common/lib 目录中<br /> 2. 压缩包中还有个 p6spy.properties 文件，我们就在这个文件基础上少作改动，把它放在加载 p6spy.jar 的加载器能见的位置上，如 Tomcat 5.x 的 common/classes 目录中。<br />     注意：如果你在 Tomcat 中，p6spy.jar 和 sqlprofiler.jar 是由 commons 加载器加载的，那么要用到的 log4j-1.2.8.jar 也必须放在与他们同一目录中由 cmmons 类加载器来加载，如果仍然在应用的 WEB-INF/lib目录中的话，log4j 的类对于 p6spy 和 sqlprofiler 来说不可见。如果你对于类加载器不熟的话，还是别把事情搞太复杂了，把那些 jar 文件全部放到应用的 WEB-INF/lib 中吧，但是配置连接池的时候又可能碰到新问题。<br /> 3. 修改 p6spy.properties 文件，只启用你所用的 realdriver，如对于 oracle 是 realdrive=oraclejdbc.driver.OacleDriver。<br />     看到其中对模块 ibeam 的配置 monitorport=2000，我们就使用这个监听端口吧。<br /> 4. 命令行下进到 IronTrackSQL 的解压目录，执行 java -jar irontracksql.jar 来启动IronTrack SQL，监听 p6spy 的 SQL 语句输出<br /> 5. 启动应用，进行业务操作，就能在 IronTrack SQL 界面上直观的看到你需要的东西了。</p><p>不多说了，看看界面吧，这个 IronTrackSQL 看起来比 SQL Profiler 要专业些。</p><div><img class=" aligncenter" src="http://unmi.cc/wp-content/uploads/2009/03/IronTrackSQL1.jpg" alt="IronTrackSQL1.jpg" width="750" height="551" border="0" /><br /> <strong>SQL Monitor 界面</strong></div><div> </div><div><img class=" aligncenter" src="http://unmi.cc/wp-content/uploads/2009/03/IronTrackSQL2.jpg" alt="IronTrackSQL2.jpg" width="750" height="551" border="0" /><br /> <strong>Graphing 图形展示</strong></div><div> </div><div><img class=" aligncenter" src="http://unmi.cc/wp-content/uploads/2009/03/IronTrackSQL3.jpg" alt="IronTrackSQL3.jpg" width="750" height="551" border="0" /><br /> <strong>可设定监听端口，导出导入历史数据</strong></div><div>irongrid.properties 文件中保存了 Iron TrackSQL 运行时的配置数据。与 SQL Profiler 相比，它有以下几个特点：</div><p>1. 界面标志些，使用了 JFreeChart 来展示图表<br /> 2. 既能实时监听，又能保存历史数据来对比分析<br /> 3. 并不要求先启动 Iron TrackSQL，相比于 SQL Profiler 的被动监听，它采取的是主动去查询。更适于远程监控，想在何时监控就启动，完事就关闭，不至于像 SQL Profiler 那样一旦监听窗口坏了一下，就得重启应用。而且我想它对应用程序的性能影响也较小些的</p><p>参考：1. <a href="http://www.javaresearch.org/article/42102.htm" target="_blank">使用Log4j搭建一个日志服务器</a><br />         2. <a href="http://www.blogjava.net/hexuzhong/archive/2006/01/28/29345.html" target="_blank">利用P6SPY ＋SQL Profiler记录、统计web app对数据库的操作</a><br />         3. <a href="http://www.cnblogs.com/wllyy189/archive/2008/09/25/1298870.html" target="_blank">P6Spy + SQL Profiler + IronTrackSQL【修改】</a></p>

@@ -1,0 +1,104 @@
+---
+title: Oracle 存储过程中发送邮件，并支持用户验证、中文标题和内容
+url: /oracle-procedure-send-email/
+date: 2009-02-06T17:17:00-06:00
+featured: false
+draft: true
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Database
+tags: 
+  - Oracle
+  - email
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 296 
+wpStatus: publish
+views: 1010
+lastmod: 2021-09-02T11:46:50-05:00
+---
+
+在 Oracle 的存储过程执行中，我们可能希望它本身能完成邮件发送执行的结果，特别是在捕获到了异常时。不能总是依赖于调用存储过程的外部程序－－调用后，根据出口参数，发送执行结果。这一需求更迫切的表现在非人工参与的 Oracle Job 调用存储过程的情况下。</p>
+<br/>
+所幸，Oracle 为我们提供了发送邮件的工具包 UTL_SMTP，它最早出现在 Oracle 8.1.7 版本中。下面是我从网络上搜索相关资料后、综合整理、多处修正、数次调试、排除万难而写出的一个发送邮件的存储过程。可支持需用户验证的邮件服务器，中文标题和中文内容无乱码，只还未支持附件的发送，相信这方面应用较少，需要的话再 Google 一下，且文后参考中有相应的链接。<!--more--><br/><br/>
+<pre class="lang:default decode:true ">CREATE OR REPLACE PROCEDURE send_mail(
+     p_recipient VARCHAR2, -- 邮件接收人
+     p_subject   VARCHAR2, -- 邮件标题
+     p_message   VARCHAR2  -- 邮件正文
+)
+IS<br/><br/>
+    --下面四个变量请根据实际邮件服务器进行赋值
+    v_mailhost  VARCHAR2(30) := 'mail.xxx.com';     --SMTP服务器地址
+    v_user      VARCHAR2(30) := 'user'; --登录SMTP服务器的用户名
+    v_pass      VARCHAR2(20) := 'pass';          --登录SMTP服务器的密码
+    v_sender    VARCHAR2(50)  := 'user@xxx.com'; --发送都邮箱，一般与 ps_user 对应<br/><br/>
+    v_conn  UTL_SMTP.connection; --到邮件服务器的连接
+    v_msg varchar2(4000);  --邮件内容<br/><br/>
+BEGIN<br/><br/>
+    v_conn := UTL_SMTP.open_connection(v_mailhost, 25);
+    UTL_SMTP.ehlo(v_conn, v_mailhost); --是用 ehlo() 而不是 helo() 函数
+    --否则会报：ORA-29279: SMTP 永久性错误: 503 5.5.2 Send hello first.<br/><br/>
+    UTL_SMTP.command(v_conn, 'AUTH LOGIN');   -- smtp服务器登录校验
+    UTL_SMTP.command(v_conn,UTL_RAW.cast_to_varchar2(UTL_ENCODE.base64_encode(UTL_RAW.cast_to_raw(v_user))));
+    UTL_SMTP.command(v_conn,UTL_RAW.cast_to_varchar2(UTL_ENCODE.base64_encode(UTL_RAW.cast_to_raw(v_pass))));<br/><br/>
+    UTL_SMTP.mail(v_conn, v_sender);     --设置发件人
+    UTL_SMTP.rcpt(v_conn, p_recipient);  --设置收件人<br/><br/>
+    -- 创建要发送的邮件内容 注意报头信息和邮件正文之间要空一行
+    v_msg :='Date:'|| TO_CHAR(SYSDATE, 'dd mon yy hh24:mi:ss')
+        || UTL_TCP.CRLF || 'From: '|| v_sender || '&lt;' || v_sender || '&gt;'
+        || UTL_TCP.CRLF || 'To: '  || p_recipient || '&lt;' || p_recipient || '&gt;'
+        || UTL_TCP.CRLF || 'Subject: ' || p_subject
+        || UTL_TCP.CRLF || UTL_TCP.CRLF  -- 这前面是报头信息
+        || p_message;    -- 这个是邮件正文<br/><br/>
+    UTL_SMTP.open_data(v_conn); --打开流
+    UTL_SMTP.write_raw_data(v_conn, UTL_RAW.cast_to_raw(v_msg)); --这样写标题和内容都能用中文
+    UTL_SMTP.close_data(v_conn); --关闭流
+    UTL_SMTP.quit(v_conn); --关闭连接<br/><br/>
+EXCEPTION<br/><br/>
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.put_line(DBMS_UTILITY.format_error_stack);
+        DBMS_OUTPUT.put_line(DBMS_UTILITY.format_call_stack);<br/><br/>
+END send_mail;</pre>
+<br/>
+上面代码在 Oracle 9.2.0(Solaris 平台，数据库字符集是 ZHS16GBK) 中实际运行后通过，在 PL/SQL Developer 的 SQL Window 中用下面代码调用该存储过程：<br/><br/>
+<span style="color: #800080;">begin<br />
+    send_mail(</span><a href="mailto:'fantasia@sina.com','"><span style="color: #800080;">'fantasia@sina.com','</span></a><span style="color: #800080;">中文标题','中文内容');<br />
+end;<br />
+</span><br />
+而且在 PL/SQL Developer 的 Command Windows 或是 SQL *Plus 中执行：<br/><br/>
+<span style="color: #800080;">send_mail(</span><a href="mailto:'fantasia@sina.com','"><span style="color: #800080;">'fantasia@sina.com','</span></a><span style="color: #800080;">中文标题','中文内容');</span><br/><br/>
+都能正常发送，成功收到邮件，并且标题和内容的中文显示正常。<br/><br/>
+网络上直接拿下来的例子，多是没有很好的解决中文文题，有些不能支持邮件服务器的验证，当今时代要找个不需要用户验证的邮件服务器太难了。关键是有个致命问题是，一运行就报类似如下的错误：<br/><br/>
+<span style="color: #ff0000;">ORA-29279: SMTP 永久性错误: 503 5.5.2 Send hello first.</span><br/><br/>
+<span style="color: #ff0000;">----- PL/SQL Call Stack -----<br />
+  object      line  object<br />
+  handle    number  name<br />
+38298bd60        45  procedure TCSM.SEND_MAIL<br />
+38a4efa40         2  anonymous block</span><br/><br/>
+原因是：若邮件服务器需要用户验证时，对邮件服务器打招呼的方式不对，不能写成<br/><br/>
+<span style="color: #800080;">UTL_SMTP.helo(v_conn, v_mailhost);<br />
+</span><br />
+而要写成:<br/><br/>
+<span style="color: #800080;">UTL_SMTP.ehlo(v_conn, v_mailhost);<br />
+</span><br />
+如果你的邮件中只用英文，那么上面代码中的三行：<br/><br/>
+<span style="color: #800080;">UTL_SMTP.open_data(v_conn); --打开流<br />
+UTL_SMTP.write_raw_data(v_conn, UTL_RAW.cast_to_raw(v_msg));<br />
+UTL_SMTP.close_data(v_conn); --关闭流<br />
+</span><br />
+只需要写成一行就行了，如下：<br/><br/>
+<span style="color: #800080;">UTL_SMTP.DATA (mail_conn, v_msg);<br />
+</span><br />
+也可以把邮件报头和正文信息分开来写入到连接中去，但这样做恐怕对于标题和正文的中文文题会顾此失彼了。<br/><br/>
+参考：1. <a href="http://bbs.erp100.com/thread-7814-1-1.html" target="_blank" rel="noopener">用utl_smtp发送邮件时的汉字解决方法</a><br />
+        2. <a href="http://www.zymose.com/isarticles/xcs/xcs/a75364.html" target="_blank" rel="noopener">实例讲解如何通过Oracle成功发送邮件</a><br />
+        3. <a href="http://lz726.javaeye.com/blog/141456" target="_blank" rel="noopener">用oracle发送邮件（功能很全）</a> 介绍了附件的发送<br />
+        4. <a href="http://www.psoug.org/reference/utl_smtp.html" target="_blank" rel="noopener">Oracle UTL_SMTP</a><br />
+        5. <a href="http://www.juyimeng.com/sending-mail-using-telnet-with-smtp-auth.html" target="_blank" rel="noopener">用telnet发邮件(支持smtp认证)</a><br/><br/>
+<hr /><br/><br/>
+附注：在 Oracle(8.1.7及以上版本) 中可以用下面语句获得字符串的 base64 编码，如：<br/><br/>
+select UTL_RAW.cast_to_varchar2(UTL_ENCODE.base64_encode(UTL_RAW.cast_to_raw('user'))) from dual;<br />
+select UTL_RAW.cast_to_varchar2(UTL_ENCODE.base64_encode(UTL_RAW.cast_to_raw('pass'))) from dual;
