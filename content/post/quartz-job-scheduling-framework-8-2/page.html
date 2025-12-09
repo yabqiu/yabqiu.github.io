@@ -1,0 +1,197 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第八章. 使用 Quartz 插件 (第二部分)
+url: /quartz-job-scheduling-framework-8-2/
+date: 2008-07-19T21:29:00-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 367 
+wpStatus: publish
+views: 578
+lastmod: 2021-09-03T21:21:44-05:00
+---
+
+<strong>二. 创建 Quartz 插件</strong></p>
+<br/>
+创建一个新的插件很简单。你所有要做的就是创建一个 Java 类(或重用一个现有的类)，让它实现 <span style="color: #800080;">org.quartz.spi.SchedulerPlugin</span> 接口。Scheduler 将会在启动期间创建这个插件的实例。这个插必须有一个无参的构造方法，很显然它不能是抽象的。<br/><br/>
+<strong>·<span style="color: #800080;">JobInitializationPlugin</span><br />
+</strong><br />
+Quartz 框架有一个用来从 XML 文件中加载 Job 和 Trigger 信息的插件。这个插件就是 <span style="color: #800080;">org.quartz.plugins.xml.JobInitializationPlugin</span>，并且它在前面第三章 "Hello, Quartz" 中简略的讨论过。当你使用这个插件的时候，Quartz 框架就会搜寻一个叫做 <span style="color: #800080;">quartz_jobs.xml</span> 的文件并试图从中加载 Job 和 Trigger 信息。 <!--more--><br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>改变 <span style="color: #800080;">JobInitializtionPlugin</span> 加载的 XML 文件<br />
+</strong><br />
+插件允许你改变它要查找来加载 Job 和 Trigger 信息的文件的名字。你可以通过在 <span style="color: #800080;">quartz.properties</span> 文件中设置一个别的文件名。我们会在本章后续中讲到更多的关于设置插件参数的内容。</td>
+</tr>
+</tbody>
+</table>
+<br/>
+如第三章所解释的，这个插件在你的应用需求不涉及到从数据库中加载 Job 信息时是很方便的。它在开发和测试期间也是很有用的，因为你可以快速的配置哪些 Job 和 Trigger 要被触发。就是说，无可争辩的，修改一个 XML 总比一系列的数据库表要简单。<br/><br/>
+对于从一个 XML 文件中加载 Job 和 Trigger 信息做法的一个很好的延展就是可以有一个目录来存储 Job XML 文件，然后过使用一个插件，Scheduler 就会加载任何存在的 Job 文件了。这允许你在 Scheduler 启动时简单从指定的目录中添加或移除 Job 文件来方便的增加或删除 Job。在本章剩下的部分，我们向你展示如何构建这个插件。<br/><br/>
+<strong>·创建 <span style="color: #800080;">JobLoaderPlugin</span><br />
+</strong><br />
+我们把这个新插件命名为 <span style="color: #800080;">JobLoaderPlugin</span>。代码 8.2 中显示了这个 <span style="color: #800080;">JobLoaderPlugin</span> 类。<br/><br/>
+<strong>代码 8.2. 从一个目录中加载多个 Job 文件的 Quartz <span style="color: #800080;">SchedulerPlugin</span></strong>
+{{< highlight java >}}
+package org.cavaness.quartzbook.chapter8;
+
+import java.io.File;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerConfigException;
+import org.quartz.SchedulerException;
+import org.quartz.spi.SchedulerPlugin;
+import org.quartz.xml.JobSchedulingDataProcessor;
+
+public class JobLoaderPlugin implements SchedulerPlugin {
+
+    private static Log logger =
+        LogFactory.getLog(JobLoaderPlugin.class);
+
+    // The directory to load jobs from
+    private String jobsDirectory;
+
+    // An array of File objects
+    private File[] jobFiles = null;
+
+    private String pluginName;
+
+    private Scheduler scheduler;
+
+    private boolean validateXML = true;
+
+    private boolean validateSchema = true;
+
+    public JobLoaderPlugin() {
+    }
+
+    public File[] getJobFiles() {
+        return jobFiles;
+    }
+
+    public void setJobFiles(File[] jobFiles) {
+        this.jobFiles = jobFiles;
+    }
+
+    public boolean isValidateSchema() {
+        return validateSchema;
+    }
+
+    public void setValidateSchema(boolean validatingSchema) {
+        this.validateSchema = validatingSchema;
+    }
+
+    public void initialize(String name, final Scheduler scheduler)
+        throws SchedulerException {
+
+        this.pluginName = name;
+        this.scheduler = scheduler;
+
+        logger.debug("Registering Plugin " + pluginName);
+        // Load the job definitions from the specified directory
+        loadJobs();
+    }
+
+    private void loadJobs() throws SchedulerException {
+
+        File dir = null;
+
+        // Check directory
+        if (getJobsDirectory() == null
+            || !(dir =
+            new File(getJobsDirectory())).exists()) {
+            throw new SchedulerConfigException(
+                "The jobs directory was missing "
+                    + jobsDirectory);
+
+        }
+        logger.info("Loading jobs from " + dir.getName());
+
+        // Only XML files, filtering out any directories
+        this.jobFiles = dir.listFiles(new XMLFileOnlyFilter());
+    }
+
+    public void start() {
+        processJobs();
+    }
+
+    public void shutdown() {
+        // nothing to clean up
+    }
+
+    public void processJobs() {
+        // There should be at least one job
+        if (getJobFiles() == null || getJobFiles().length == 0) {
+            return;
+        }
+
+        JobSchedulingDataProcessor processor =
+            new JobSchedulingDataProcessor(
+                true, isValidateXML(), isValidateSchema());
+
+        int size = getJobFiles().length;
+        for (int i = 0; i &lt; size; i++) {
+            File jobFile = getJobFiles()[i];
+
+            String fileName = jobFile.getAbsolutePath();
+            logger.debug("Loading job file: " + fileName);
+
+            try {
+
+                processor.processFileAndScheduleJobs(
+                    fileName, scheduler, true);
+
+            } catch (Exception ex) {
+                logger.error("Error loading jobs: " + fileName);
+                logger.error(ex);
+            }
+        }
+    }
+
+    public String getJobsDirectory() {
+        return jobsDirectory;
+    }
+
+    public void setJobsDirectory(String jobsDirectory) {
+        this.jobsDirectory = jobsDirectory;
+    }
+
+    public String getPluginName() {
+        return pluginName;
+    }
+
+    public void setPluginName(String pluginName) {
+        this.pluginName = pluginName;
+    }
+
+    public boolean isValidateXML() {
+        return validateXML;
+    }
+
+    public void setValidateXML(boolean validateXML) {
+        this.validateXML = validateXML;
+    }
+}
+{{</ highlight >}}
+<br/>
+代码 8.2 中 <span style="color: #800080;">JobLoaderPlugin</span> 的实际工作仅是由两个方法：<span style="color: #800080;">initialize()</span> 和 <span style="color: #800080;">start()</span> 来完成的。它们是 <span style="color: #800080;">SchedulerPlugin</span> 接口所必须的。其他的方法只是 <span style="color: #800080;">setXXX</span> 和 <span style="color: #800080;">getXXX</span> 方法是用于实现 JavaBean 规范的，因为声明了私有属性。<br/><br/>
+<strong>·<span style="color: #800080;">JobLoaderPlugin initialize()</span> 方法</strong><br/><br/>
+正如你看到的，由 Scheduler 调用的 <span style="color: #800080;">initialize()</span> 方法会调用 <span style="color: #800080;">loadJobs()</span> 方法。<span style="color: #800080;">loadJobs()</span> 方法使用从 <span style="color: #800080;">quartz.properties</span> 文件传入的 <span style="color: #800080;">jobsDirectory</span> 所指示的目录中获取所有的 XML 文件。这个插件还不会试图部署 Job，因为在插件的 <span style="color: #800080;">initialize()</span> 方法被调用的时候 Scheduler 还没有完全初始化好。<span style="color: #800080;">JobLoaderPlugin</span> 只简单的持有一个 File 对象的数组，直等 <span style="color: #800080;">start()</span> 方法被调用。我们还持有了一个 Scheduler 实例，以便我们在 <span style="color: #800080;">start()</span> 方法在调用时能访问它。<br/><br/>
+<strong>·<span style="color: #800080;">JobLoaderPlugin start()</span> 方法</strong><br/><br/>
+当 Scheduler 调用 <span style="color: #800080;">JobLoaderPlugin</span> 的 <span style="color: #800080;">start()</span> 方法时，<span style="color: #800080;">start()</span> 方法就调用 <span style="color: #800080;">processJobs()</span>。<span style="color: #800080;">processJobs()</span> 方法遍历那个 Job 文件的数组并把每个都加载到 Scheduler 实例中。<br/><br/>
+对 Job 文件的处理是通过一个 <span style="color: #800080;">org.quartz.xml.JobSchedulingDataProcessor</span> 实例来完成的。调用 <span style="color: #800080;">processFileAndScheduleJobs()</span> 方法并传入文件名，Scheduler 实例和一个布尔值告诉它是否覆盖已有的 Job。<br/><br/>
+当 <span style="color: #800080;">processJobs()</span> 方法完成后，这个指定 <span style="color: #800080;">jobsDirectory</span> 下的所有 Job 文件就已经被加载并被部署了。

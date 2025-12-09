@@ -1,0 +1,253 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第七章. 实现 Quartz 监听器 (第三部分)
+url: /quartz-job-scheduling-framework-7-3/
+date: 2008-07-05T22:17:00-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 376 
+wpStatus: publish
+views: 564
+lastmod: 2020-03-22T11:55:52-05:00
+---
+
+<strong>四. 监听 Trigger 事件</strong></p>
+<br/>
+正如 <span style="color: #800080;">JobListener</span>, <span style="color: #800080;">org.quartz.TriggerListener</span> 接口也包含一系列给 <span style="color: #800080;">Scheduler</span> 调用的方法。然而，与 <span style="color: #800080;">JobListener</span> 有所不同的是， <span style="color: #800080;">TriggerListener</span> 接口还有关于 Trigger 实例生命周期的方法。代码 7.5 列出了 <span style="color: #800080;">TriggerListener</span> 接口的方法。<br/><br/>
+<strong>代码 7.5. <span style="color: #800080;">org.quartz.TriggerListener</span> 接口的方法<!--more--></strong>
+{{< highlight java >}}
+public interface TriggerListener {
+    public String getName();
+
+    public void triggerFired(Trigger trigger,
+         JobExecutionContext context);
+
+    public boolean vetoJobExecution(Trigger trigger,
+          JobExecutidonContext context);
+
+    public void triggerMisfired(Trigger trigger);
+
+    public void triggerComplete(Trigger trigger,
+          JobExecutionContext context,
+          int triggerInstructionCode);
+}
+{{</ highlight >}}
+<br/>
+<strong>·<span style="color: #800080;">getName()</span> 方法<br />
+</strong><br />
+和前面的 <span style="color: #800080;">JobListener</span> 一样，<span style="color: #800080;">TriggerListner</span> 接口的 <span style="color: #800080;">getName()</span> 返回一个字符串用以说明监听器的名称。对于非全局的 <span style="color: #800080;">TriggerListener</span>，在 <span style="color: #800080;">addTriggerListener()</span> 方法中给定的名称必须与监听器的 <span style="color: #800080;">getName()</span> 方法返回值相匹配。<br/><br/>
+<strong>·<span style="color: #800080;">triggerFired()</span> 方法</strong><br/><br/>
+当与监听器相关联的 Trigger 被触发，Job 上的 <span style="color: #800080;">execute()</span> 方法将要被执行时，Scheduler 就调用这个方法。在全局 <span style="color: #800080;">TriggerListener</span> 情况下，这个方法为所有 Trigger 被调用。<br/><br/>
+<strong>·<span style="color: #800080;">vetoJobExecution()</span> 方法<br />
+</strong><br />
+在 Trigger 触发后，Job 将要被执行时由 Scheduler 调用这个方法。<span style="color: #800080;">TriggerListener</span> 给了一个选择去否决 Job 的执行。假如这个方法返回 true，这个 Job 将不会为此次 Trigger 触发而得到执行。<br/><br/>
+<strong>·<span style="color: #800080;">triggerMisfired()</span> 方法<br />
+</strong><br />
+Scheduler 调用这个方法是在 Trigger 错过触发时。如这个方法的 JavaDoc 所指出的，你应该关注此方法中持续时间长的逻辑：在出现许多错过触发的 Trigger 时，长逻辑会导致骨牌效应。你应当保持这上方法尽量的小。<br/><br/>
+<strong>·<span style="color: #800080;">triggerComplete()</span> 方法</strong><br/><br/>
+Trigger 被触发并且完成了 Job 的执行时，Scheduler 调用这个方法。这不是说这个 Trigger 将不再触发了，而仅仅是当前 Trigger 的触发(并且紧接着的 Job 执行) 结束时。这个 Trigger 也许还要在将来触发多次的。<br/><br/>
+代码 7.6 展示了一个很简单的 <span style="color: #800080;">TriggerListener</span> 实现<br/><br/>
+<strong>代码 7.6. 一个简单的 <span style="color: #800080;">TriggerListener</span> 实现</strong>
+{{< highlight java >}}
+package org.cavaness.quartzbook.chapter7;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.quartz.JobExecutionContext;
+import org.quartz.Trigger;
+import org.quartz.TriggerListener;
+
+public class SimpleTriggerListener implements TriggerListener {
+     Log logger = LogFactory.getLog(SimpleTriggerListener.class);
+
+     private String name;
+
+     public SimpleTriggerListener(String name) {
+         this.name = name;
+     }
+
+     public String getName() {
+          return name;
+     }
+
+     public void triggerFired(Trigger trigger,
+          JobExecutionContext context) {
+
+          String triggerName = trigger.getName();
+          logger.info(triggerName + " was fired");
+     }
+
+     public boolean vetoJobExecution(Trigger trigger,
+               JobExecutionContext context) {
+
+          String triggerName = trigger.getName();
+          logger.info(triggerName + " was not vetoed");
+          return false;
+     }
+
+     public void triggerMisfired(Trigger trigger) {
+         String triggerName = trigger.getName();
+         logger.info(triggerName + " misfired");
+     }
+
+     public void triggerComplete(Trigger trigger,
+         JobExecutionContext context,
+         int triggerInstructionCode) {
+
+         String triggerName = trigger.getName();
+         logger.info(triggerName + " is complete");
+     }
+}
+{{</ highlight >}}
+<br/>
+正如代码7.2 中的 <span style="color: #800080;">JobListener</span> 一样，代码 7.6 中的 <span style="color: #800080;">TriggerListener</span> 也是初步的。 它不过是在 Scheduler 调用它的方法时打印了一条日志信息。代码 7.7 中代码测试了这个简单的 <span style="color: #800080;">TriggerListener</span>。<br/><br/>
+<strong>代码 7.7. 使用 <span style="color: #800080;">SimpleTriggerListener</span> 作为一个全局的 TriggerListener<br />
+</strong>
+{{< highlight java >}}
+package org.cavaness.quartzbook.chapter7;
+
+import java.util.Date;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.cavaness.quartzbook.common.PrintInfoJob;
+import org.quartz.JobDetail;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.Trigger;
+import org.quartz.TriggerListener;
+import org.quartz.TriggerUtils;
+import org.quartz.impl.StdSchedulerFactory;
+
+public class Listing_7_7 {
+     static Log logger = LogFactory.getLog(Listing_7_7.class);
+
+     public static void main(String[] args) {
+          Listing_7_7 example = new Listing_7_7();
+          try {
+               example.startScheduler();
+          } catch (SchedulerException ex) {
+               logger.error(ex);
+          }
+    }
+
+    public void startScheduler() throws SchedulerException {
+
+         // Create an instance of the factory
+         Scheduler scheduler = null;
+
+         // Create the scheduler and JobDetail
+         scheduler = StdSchedulerFactory.getDefaultScheduler();
+         JobDetail jobDetail = new JobDetail("PrintInfoJob",
+                   Scheduler.DEFAULT_GROUP, PrintInfoJob.class);
+
+         // Create and register the global job listener
+         TriggerListener triggerListener =
+              new SimpleTriggerListener("SimpleTriggerListener");
+
+         scheduler.addGlobalTriggerListener(triggerListener);
+
+         /*
+          * Set up a trigger to start firing now, with no end
+          * date/time, repeat forever and have 10 secs
+          * (10000 ms) between each firing.
+          */
+         Trigger trigger = TriggerUtils.makeSecondlyTrigger(10);
+         trigger.setName("SimpleTrigger");
+         trigger.setStartTime(new Date());
+
+         // Register the JobDetail and Trigger
+         scheduler.scheduleJob(jobDetail, trigger);
+
+         // Start the scheduler
+         scheduler.start();
+         logger.info("Scheduler was started at " + new Date());
+    }
+}
+{{</ highlight >}}
+<br/>
+代码 7.7 显示了如何注册 <span style="color: #800080;">SimpleTriggerListener</span> 为一个全局的 <span style="color: #800080;">TriggerListener</span>。它看起来与代码 7.3 中用来注册一个全局 <span style="color: #800080;">JobListener</span> 的代码完全相似。你只需要调用 <span style="color: #800080;">addGloabelTriggerListener()</span> 方法并传入这个 <span style="color: #800080;">TriggerListener</span> 实例。<br/><br/>
+<strong>·注册为非全局的 <span style="color: #800080;">TriggerListener</span><br />
+</strong><br />
+要注册为一个非全局的 <span style="color: #800080;">TriggerListener</span>，你必须调用 <span style="color: #800080;">addTriggerListener()</span> 方法并传入这个 <span style="color: #800080;">TriggerListener</span> 实例。接着调用 Trigger 实例的 <span style="color: #800080;">addTriggerListener()</span> 方法并传入这个 <span style="color: #800080;">TriggerListener</span> 的名称。<br/><br/>
+在代码 7.8 中展示了这一过程。<br/><br/>
+<strong>代码 7.8. 使用一个非全局的 <span style="color: #800080;">TriggerListener</span></strong>
+{{< highlight java >}}
+package org.cavaness.quartzbook.chapter7;
+
+import java.util.Date;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.cavaness.quartzbook.common.PrintInfoJob;
+import org.quartz.JobDetail;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.Trigger;
+import org.quartz.TriggerListener;
+import org.quartz.TriggerUtils;
+import org.quartz.impl.StdSchedulerFactory;
+
+public class Listing_7_8 {
+     static Log logger = LogFactory.getLog(Listing_7_8.class);
+
+     public static void main(String[] args) {
+          Listing_7_8 example = new Listing_7_8();
+
+          try {
+               example.startScheduler();
+          } catch (SchedulerException ex) {
+               logger.error(ex);
+          }
+    }
+
+    public void startScheduler() throws SchedulerException {
+
+         // Create an instance of the factory
+         Scheduler scheduler = null;
+
+         // Create the scheduler and JobDetail
+         scheduler = StdSchedulerFactory.getDefaultScheduler();
+         JobDetail jobDetail = new JobDetail("PrintInfoJob",
+                   Scheduler.DEFAULT_GROUP, PrintInfoJob.class);
+
+         // Create and register the nonglobal job listener
+         TriggerListener triggerListener =
+              new SimpleTriggerListener("SimpleTriggerListener");
+
+         scheduler.addTriggerListener( triggerListener );
+
+         /*
+          * Set up a trigger to start firing now, with no end
+          * date/time, repeat forever and have 10 secs
+          * (10000 ms) between each firing.
+          */
+         Trigger trigger = TriggerUtils.makeSecondlyTrigger(10);
+         trigger.setName("SimpleTrigger");
+         trigger.setStartTime(new Date());
+
+         // Set the listener name for the trigger
+         trigger.addTriggerListener( triggerListener.getName() );
+
+         // Register the JobDetail and Trigger
+         scheduler.scheduleJob(jobDetail, trigger);
+
+         // Start the scheduler
+         scheduler.start();
+         logger.info("Scheduler was started at " + new Date());
+    }
+}
+{{</ highlight >}}
+<br/>
+针对于前面的非全局 <span style="color: #800080;">JobListener</span> 提到的相同的警告可以应用到这里来；你必须在把它设置给 Trigger 实例并存储了 Trigger 之前把 <span style="color: #800080;">TriggerListener</span> 加入到 Scheduler 中。

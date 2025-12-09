@@ -3,11 +3,11 @@ title: Quartz Job Scheduling Framework［翻译］第九章. 使用 Quartz 的�
 url: /quartz-job-scheduling-framework-9-2/
 date: 2007-11-22T10:13:00-06:00
 featured: false
-draft: true
+draft: false
 toc: false
 # menu: main
 usePageBundles: true
-thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/10/quartz-logo.jpeg"
+thumbnail: "../images/logos/quartz-logo.jpeg"
 categories:
   - Quartz
 tags: 
@@ -68,11 +68,12 @@ lastmod: 2021-05-02T23:54:39-05:00
 </table>
 <br/>
 <strong>代码 9.1. 用于 Quartz RMI 服务端的 quartz.properties 文件样例<br />
-</strong><br/><br/>
-<pre class="brush:c#">#==============================================================
+</strong>
+{{< highlight java-properties >}}#==============================================================
 # Configure Main Scheduler Properties
 #==============================================================
-org.quartz.scheduler.instanceName = RMIScheduler   <br/><br/>
+org.quartz.scheduler.instanceName = RMIScheduler
+
 #==============================================================
 # Configure RMI Properties
 #==============================================================
@@ -80,18 +81,21 @@ org.quartz.scheduler.rmi.export = true
 org.quartz.scheduler.rmi.registryHost = localhost
 org.quartz.scheduler.rmi.registryPort = 1099
 org.quartz.scheduler.rmi.serverPort = 0
-org.quartz.scheduler.rmi.createRegistry = true  <br/><br/>
+org.quartz.scheduler.rmi.createRegistry = true
+
 #==============================================================
 # Configure ThreadPool
 #==============================================================
 org.quartz.threadPool.class = org.quartz.simpl.SimpleThreadPool
 org.quartz.threadPool.threadCount = 10
-org.quartz.threadPool.threadPriority = 5   <br/><br/>
+org.quartz.threadPool.threadPriority = 5
+
 #==============================================================
 # Configure JobStore
 #==============================================================
 org.quartz.jobStore.misfireThreshold = 60000
-org.quartz.jobStore.class = org.quartz.simpl.RAMJobStore</pre>
+org.quartz.jobStore.class = org.quartz.simpl.RAMJobStore
+{{</ highlight >}}
 <br/>
 你认得代码 9.1 的 <span style="color: #800080;">quartz.properties</span> 文件的大部分设置的，这些在前面章节中讲过。我们只是往期中加了表 9.1 所列的属性。<br/><br/>
 <strong>·创建 Quartz RMI 服务端启动类</strong><br/><br/>
@@ -99,22 +103,29 @@ org.quartz.jobStore.class = org.quartz.simpl.RAMJobStore</pre>
 首先，为清晰起见，我们把 <span style="color: #800080;">quartz.properties</span> 文件更名为 <span style="color: #800080;">server.properties</span>，这时候要告诉 Quartz RMI 服务端去加载新命名的文件而不是默认的 <span style="color: #800080;">quartz.properties</span> 文件。更改文件名会让我们调试问题变得容易些。这样，我们可以确保 Quartz 加载的是正确的设置文件。<br/><br/>
 第二个改变是：我们加载了一个新的安全管理器(<span style="color: #800080;">SecurityManager</span>)，以便能够赋予 RMI 服务端必须的权限。我们在本章的前面讨论过 RMI 安全管理器(<span style="color: #800080;">RMISecurityManager</span>)。<br/><br/>
 除了这些改变，代码 9.2 中的启动类看起还是很亲切的<br/><br/>
-<strong>代码 9.2. QuartzRMIServer 可用于启动 Quartz RMI 服务</strong><br/><br/>
-<pre class="brush:java">package org.cavaness.quartzbook.chapter9;   <br/><br/>
+<strong>代码 9.2. QuartzRMIServer 可用于启动 Quartz RMI 服务</strong>
+{{< highlight java >}}
+package org.cavaness.quartzbook.chapter9;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
-import java.util.Date;   <br/><br/>
+import java.util.Date;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.quartz.Scheduler;
 import org.quartz.SchedulerFactory;
-import org.quartz.impl.StdSchedulerFactory;   <br/><br/>
-public class QuartzRMIServer {   <br/><br/>
+import org.quartz.impl.StdSchedulerFactory;
+
+public class QuartzRMIServer {
+
      public void run() throws Exception {
-          Log log = LogFactory.getLog(QuartzRMIServer.class);   <br/><br/>
+          Log log = LogFactory.getLog(QuartzRMIServer.class);
+
           // Use this properties file instead of quartz.properties
           System.setProperty("org.quartz.properties",
-               "server.properties");   <br/><br/>
+               "server.properties");
+
           // RMI with Quartz requires a special security manager
           if (System.getSecurityManager() == null) {
                System.setSecurityManager(new
@@ -122,34 +133,42 @@ public class QuartzRMIServer {   <br/><br/>
           }
           // Get a reference to the Scheduler
           Scheduler scheduler =
-               StdSchedulerFactory.getDefaultScheduler();   <br/><br/>
+               StdSchedulerFactory.getDefaultScheduler();
+
           /*
            * Due to the server.properties file, our Scheduler will
            * be exported to RMI Registry automatically.
            */
-          scheduler.start();   <br/><br/>
+          scheduler.start();
+
           log.info("Quartz RMI Server started at " + new Date());
-          log.info("RMI Clients may now access it. ");   <br/><br/>
+          log.info("RMI Clients may now access it. ");
+
           System.out.println("\n");
           System.out.println(
-               "The scheduler will run until you type \"exit\"");   <br/><br/>
+               "The scheduler will run until you type \"exit\"");
+
           BufferedReader rdr = new BufferedReader(
-                    new InputStreamReader(System.in));   <br/><br/>
+                    new InputStreamReader(System.in));
+
           while (true) {
                System.out.print("Type 'exit' to shutdown server: ");
                if ("exit".equals(rdr.readLine())) {
                     break;
                }
-          }   <br/><br/>
+          }
+
           log.info("Scheduler is shutting down...");
           scheduler.shutdown(true);
           log.info("Scheduler has been stopped.");
      }
-     public static void main(String[] args) throws Exception {   <br/><br/>
+     public static void main(String[] args) throws Exception {
+
           QuartzRMIServer example = new QuartzRMIServer();
           example.run();
      }
-}</pre>
+}
+{{</ highlight >}}
 <br/>
 在代码 9.2 中，安装了 <span style="color: #800080;">RMISecurityManager</span> 之后，通过工厂方法获得调度器实例，并调用它的 <span style="color: #800080;">start()</span> 方法。服务端是设计成在控制台运行的，因此一旦调度器启动之后，直至用户在控制台上键入 <span style="color: #800080;">exit</span> 。接着调度器被关闭也不再为远程的客户端提供服务了。<br/><br/>
 除了要使用 <span style="color: #800080;">RMISecurityManager</span>，我们注意到用不着在代码中做任何特别的事情，就能让 Quartz 调度器作为一个远程调度器来用。那些全是托 <span style="color: #800080;">server.properties</span> 文件的福所致。当调度器被创建后，假如属性文件告诉它这么做，调度器就会把自己导出并注册到 RMI 注册服务器上，并使之可被远程调用。<br/><br/>

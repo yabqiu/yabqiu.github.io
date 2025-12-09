@@ -3,11 +3,11 @@ title: Quartz Job Scheduling Framework［翻译］第八章. 使用 Quartz 插�
 url: /quartz-job-scheduling-framework-8-4/
 date: 2008-07-21T05:11:00-05:00
 featured: false
-draft: true
+draft: false
 toc: false
 # menu: main
 usePageBundles: true
-thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/10/quartz-logo.jpeg"
+thumbnail: "../images/logos/quartz-logo.jpeg"
 categories:
   - Quartz
 tags: 
@@ -26,66 +26,88 @@ lastmod: 2021-09-03T21:17:41-05:00
 <br/>
 你喜欢多少个，就可以在 <span style="color: #800080;">quartz.properties</span> 文件中注册多少个插件。然而，加载和初始化的顺序却不能保证，因为 Quartz 加载先把所有的属性到一个 Map 中，然后按照从 Map 中取出的顺序遍历插件。<br/><br/>
 为规避这一限制，你可以创建一个 Quartz 插件作为父插件，然后以给定的顺序加载其他多个插件。代码 8.6 显示了 <span style="color: #800080;">ParentPlugin</span> 长什么样子。<br/><br/>
-<strong>代码 8.6. <span style="color: #800080;">ParentPlugin</span> 能以特定的顺序加载子插件<!--more--></strong><br/><br/>
-<pre class="lang:default decode:true ">package org.cavaness.quartzbook.chapter8;<br/><br/>
+<strong>代码 8.6. <span style="color: #800080;">ParentPlugin</span> 能以特定的顺序加载子插件<!--more--></strong>
+{{< highlight java >}}
+package org.cavaness.quartzbook.chapter8;
+
 import java.util.ArrayList;
 import java.util.List;
-import java.util.StringTokenizer;<br/><br/>
+import java.util.StringTokenizer;
+
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.quartz.Scheduler;
 import org.quartz.SchedulerConfigException;
 import org.quartz.SchedulerException;
-import org.quartz.spi.SchedulerPlugin;<br/><br/>
+import org.quartz.spi.SchedulerPlugin;
+
 public class ParentPlugin implements SchedulerPlugin {
-    private static Log logger = LogFactory.getLog(ParentPlugin.class);<br/><br/>
+    private static Log logger = LogFactory.getLog(ParentPlugin.class);
+
     // A list of child plug-ins
-    private List childPlugins = new ArrayList();<br/><br/>
-    private String childPluginNames;<br/><br/>
-    private String pluginName;<br/><br/>
-    private Scheduler scheduler;<br/><br/>
+    private List childPlugins = new ArrayList();
+
+    private String childPluginNames;
+
+    private String pluginName;
+
+    private Scheduler scheduler;
+
     /**
      * Default no-arg Constructor
      *
      */
     public ParentPlugin() {
-    }<br/><br/>
+    }
+
     /**
      * Pass the initialize call on to the child plug-ins.
      *
      * @throws SchedulerConfigException
      *             if there is an error initializing.
-     */<br/><br/>
+     */
+
     public void initialize(String name, final Scheduler scheduler)
-              throws SchedulerException {<br/><br/>
+              throws SchedulerException {
+
          this.pluginName = name;
-         this.scheduler = scheduler;<br/><br/>
-         logger.info("Searching for child plugins to load");<br/><br/>
+         this.scheduler = scheduler;
+
+         logger.info("Searching for child plugins to load");
+
          // The child plug-ins are comma-separated
          StringTokenizer tokenizer =
-              new StringTokenizer(childPluginNames, ",");<br/><br/>
+              new StringTokenizer(childPluginNames, ",");
+
          while (tokenizer.hasMoreElements()) {
-              String pluginClassname = tokenizer.nextToken();<br/><br/>
+              String pluginClassname = tokenizer.nextToken();
+
               try {
                    Class pluginClass =
-                        Class.forName(pluginClassname);<br/><br/>
-                   Object obj = pluginClass.newInstance();<br/><br/>
+                        Class.forName(pluginClassname);
+
+                   Object obj = pluginClass.newInstance();
+
                    // Make sure the specified class is a plug-in
                    if (obj instanceof SchedulerPlugin) {
                         // Initialize the Plugin
                         SchedulerPlugin childPlugin =
-                              (SchedulerPlugin) obj;<br/><br/>
+                              (SchedulerPlugin) obj;
+
                              logger.info("Init child Plugin " +
-                                  pluginClassname);<br/><br/>
+                                  pluginClassname);
+
                         childPlugin.initialize(pluginClassname,
-                             scheduler);<br/><br/>
+                             scheduler);
+
                         // Store the child plug-in in the list
                         childPlugins.add(childPlugin);
                    } else {
                         // Skip loading class
                         logger.error("Class is not a plugin " +
                              pluginClass);
-                   }<br/><br/>
+                   }
+
               } catch (Exception ex) {
                    // On error, log and go to next child plug-in
                    logger.error("Error loading plugin " +
@@ -98,34 +120,42 @@ public class ParentPlugin implements SchedulerPlugin {
          int size = childPlugins.size();
          for (int i = 0; i &lt; size; i++) {
               SchedulerPlugin childPlugin =
-                   ((SchedulerPlugin) childPlugins.get(i));<br/><br/>
+                   ((SchedulerPlugin) childPlugins.get(i));
+
               logger.info("Starting Child Plugin " + childPlugin);
               childPlugin.start();
          }
-    }<br/><br/>
+    }
+
     public void shutdown() {
          // Stop each child plug-in
          int size = childPlugins.size();
          for (int i = 0; i &lt; size; i++) {
               SchedulerPlugin childPlugin =
-                   ((SchedulerPlugin) childPlugins.get(i));<br/><br/>
+                   ((SchedulerPlugin) childPlugins.get(i));
+
               logger.info("Stopping Plugin " + childPlugin);
               childPlugin.shutdown();
          }
-    }<br/><br/>
+    }
+
     public String getPluginName() {
          return pluginName;
-    }<br/><br/>
+    }
+
     public void setPluginName(String pluginName) {
          this.pluginName = pluginName;
-    }<br/><br/>
+    }
+
     public String getChildPluginNames() {
          return childPluginNames;
-    }<br/><br/>
+    }
+
     public void setChildPluginNames(String childPluginNames) {
          this.childPluginNames = childPluginNames;
     }
-}</pre>
+}
+{{</ highlight >}}
 <br/>
 代码 8.6 中的插件基什么也不做，也就只能算作一个插件，但是它扮演着子插件的加载器。一个子插件是个有效的 Quartz 插件，它可以是你所编写的或者是包含在框架中的。<br/><br/>
 <strong>·配置文件 <span style="color: #800080;">quartz.properties</span> 中的 <span style="color: #800080;">ParentPlugin</span></strong><br/><br/>

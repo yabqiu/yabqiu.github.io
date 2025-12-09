@@ -1,0 +1,68 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第七章. 实现 Quartz 监听器 (第一部分)
+url: /quartz-job-scheduling-framework-7/
+date: 2008-06-28T00:21:00-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 379 
+wpStatus: publish
+views: 514
+lastmod: 2020-03-22T11:42:05-05:00
+---
+
+<strong>第七章. 实现 Quartz 监听器<br />
+</strong><br/><br/>
+在某个所关注事件发生时，监听器提供了一种方便且非侵入性的机制来获得这一通知。Quartz 提供了三种类型的监听器：监听 Job 的，监听 Trigger 的，和监听 Scheduler 自已的。本章解释如何应用每一种类型来更好的管理你的 Quartz 应用，并获悉到什么事件正在发生。<br/><br/>
+<strong>一. 监听器作为扩展点<br />
+</strong><br />
+术语 "<em>扩展点</em>" 在软件开发中用于指示框架或应用的某个位置，在这一位置在创建者期望用户扩展或定制这一框架来适合于他们的需要。(你也将会听到 <em>hook</em>(钩子) 一词，是一样意思的)<!--more--><br/><br/>
+Quartz 监听器是某一类型的扩展点，在这里你，作为一个 Quartz 用户，可以扩展这框架并定制它来做些新的事情。定制化发生成监听类的实现当中，我们会在本章中告诉你如何构建它。<br/><br/>
+监听器并非框架中仅有的扩展点。还有插件和一些其他的定制选项，不过监听器提供了一个简单的方式来定制框架，使之做你需要它做的事情。因为针对于监听器的扩展点是通过公有化接口来支持，所以你用不着担心创建了你自己的分支代码，到后来又不被支持的情况。<br/><br/>
+<strong>二. 实现监听</strong><br/><br/>
+在接下来的讨论中，实现监听器的方法通用于所有的三种类型。可以分成以下步骤：<br/><br/>
+<strong>1.</strong> 创建一个 Java 类，实现监听器接口<br/><br/>
+<strong>2.</strong> 用你的应用中特定的逻辑实现监听器接口的所有方法<br/><br/>
+<strong>3.</strong> 注册监听器<br/><br/>
+<strong>·创建监听器类<br />
+</strong><br />
+监听器是一个 Java 接口，它必须由一个具体类来实现。你也不需要只为这个目的创建一个专门的类；它可以是任何一个你希望能接收到方法回调的类。为符合良好的程序设计，你应当注意保持高内聚和松耦合性。认真的考虑哪个类你决定用于实现监听器类；这从总体设计的视角来看是很重要的。<br/><br/>
+<strong>·实现监听器方法<br />
+</strong><br />
+因为监听器是普通的 Java 接口，每个方法都必须在你的监听器实现类中实现。假如有一些监听器接口方法你不感兴趣，允许你使用空的方法体；只是，你仍必须提供一个有效的方法实现它。例如，下面的代码片断显示了 <span style="color: #800080;">SchedulerListerner</span> 中一个方法的空方法体：<br/><br/>
+<span style="color: #800080;">SchedulerListener methods:</span><br/><br/>
+<span style="color: #800080;">... rest of the SchedulerListener not shown</span><br/><br/>
+<span style="color: #800080;">public void schedulerShutdown(){<br />
+  // Don't care about the shutdown event<br />
+}<br />
+</span><br/><br/>
+<strong>·注册监听器</strong><br/><br/>
+要接收到方法回调，Scheduler 必须能获知监听实例。图 7.1 描绘了用 Scheduler 注册一个监听器和接受回调的过程。<br/><br/>
+<div><strong>图 7.1. 监听器被注册并接受 Scheduler 的回调<br />
+</strong>
+{{< bundle-image src="QuartzFigure7.1_CN.JPG" width="331px" >}}
+</div>
+
+<div><strong>全局之于非全局监听器</strong></div>
+<br/>
+<strong><br />
+<span style="color: #800080;">JobListener</span> 和 <span style="color: #800080;">TriggerListener</span> 可被注册为全局或非全局监听器。一个全局监听器能接收到所有的 Job/Trigger 的事件通知。而一个非全局监听器(或者说是一个标准的监听器) 只能接收到那些在其上已注册了监听器的 Job 或 Triiger 的事件。</strong><br/><br/>
+你要注册你的监听器为全局或非全局的需依据你特定的应用需要。我们在以下章节中提供了两种方式的例子。从另一方面来认识全局和非全局的监听器是来自于 Quartz 框架的创建者。James House 在描述全局和非全局监听器时是这样的：<br/><br/>
+<table border="0" width="70%" align="center">
+<tbody>
+<tr>
+<td>全局监听器是主动意识的，它们为了执行它们的任务而热切的去寻找每一个可能的事件。通常，全局监听器要做的工作不用指定到特定的 Job 或 Trigger。非全局监听器一般是被动意识的，它们在所关注的 Trigger 激发之前或是 Job 执行之前什么事也不做。因此，非全局的监听器比起全局监听器而言更适合于修改或增加 Job 执行的工作。这有点像知名的装饰设计模式的装饰器。</td>
+</tr>
+</tbody>
+</table>

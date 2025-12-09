@@ -1,0 +1,103 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第七章. 实现 Quartz 监听器 (第六部分)
+url: /quartz-job-scheduling-framework-7-6/
+date: 2008-07-10T07:38:00-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 371 
+wpStatus: publish
+views: 493
+lastmod: 2021-09-02T14:35:18-05:00
+---
+
+<strong>七. 在 <span style="color: #800080;">quartz_jobs.xml</span> 文件中实现监听器</strong></p>
+<br/>
+本章的所有例子告诉了你如何以编程的方式设置监听器。假如我们一个关于在 <span style="color: #800080;">quartz_jobs.xml</span> 文件中以声明式配置监听器的例子都不提供本章就不能算是完结。<br/><br/>
+自 Quartz 1.5 开始，你能够在 Job 定义文件中指定监听器，当然就是知名的 <span style="color: #800080;">quartz_jobs.xml</span> 文件了。代码 7.14 显示了一个使用全局监听器的例子。<br/><br/>
+<strong>代码 7.14. Quartz 监听器能在 <span style="color: #800080;">quartz_jobs.xml</span> 文件中实现<!--more--></strong>
+{{< highlight xml >}}
+<?xml version='1.0' encoding='utf-8'?>
+
+<quartz>
+ <job-listener
+   class-name="org.cavaness.quartzbook.chapter7.SimpleJobListener"
+   name="SimpleJobListener">
+</job-listener>
+
+<job>
+  <job-detail>
+   <name>PrintInfoJob</name>
+   <group>DEFAULT</group>
+   <job-listener-ref>SimpleJobListener</job-listener-ref>
+   <job-class>
+     org.cavaness.quartzbook.common.PrintInfoJob
+   </job-class>
+ </job-detail>
+
+ <trigger>
+   <simple>
+     <name>printJobTrigger</name>
+     <group>DEFAULT</group>
+     <job-name> PrintInfoJob</job-name>
+     <job-group>DEFAULT</job-group>
+     <start-time>2005-09-13 6:10:00 PM</start-time>
+      <! repeat indefinitely every 10 seconds >
+     <repeat-count>-1</repeat-count>
+     <repeat-interval>10000</repeat-interval>
+   </simple>
+ </trigger>
+</job>
+</quartz>
+{{</ highlight >}}
+<br/>
+在代码 7.14 中你看到那个附加的 <span style="color: #800080;">&lt;job-listener&gt;</span> 元素，它有两个必须的属性：<br/><br/>
+<span style="color: #800080;">&lt;job-listener<br />
+  class-name="org.cavaness.quartzbook.chapter7.SimpleJobListener"<br />
+  name="SimpleJobListener"&gt;<br />
+</span><br />
+<span style="color: #800080;">class-name</span> 属性标识了监听器类的全限名称。<span style="color: #800080;">name</span> 属性指派给这个监听器一个逻辑名，在 <span style="color: #800080;">&lt;job-detail&gt;</span> 元素中用到。<br/><br/>
+下一步就是为在同一个文件中的每一个要用到监听器的 <span style="color: #800080;">&lt;job-detail&gt;</span> 元素中定义一个 <span style="color: #800080;">&lt;job-listener-ref&gt;</span> 元素。该元素的值必须与文件中所定义的其中一个 <span style="color: #800080;">&lt;job-listener&gt;</span> 元素的 <span style="color: #800080;">name</span> 属性相匹配。<br/><br/>
+做完那之后，要确保你已经在 <span style="color: #800080;">quartz.properties</span> 文件中通过设置属性让 Scheduler 使用了 <span style="color: #800080;">JobInitializationPlugin</span>。Quartz 插件会在下一章中详细讨论。目前，只要加入以下行到你的 <span style="color: #800080;">quartz.properties</span> 文件中：<br/><br/>
+<span style="color: #800080;">org.quartz.plugin.jobInitializer.class = org.quartz.plugins.xml.JobInitializationPlugin</span><br/><br/>
+<span style="color: #800080;">org.quartz.plugin.jobInitializer.overWriteExistingJobs = true<br />
+org.quartz.plugin.jobInitializer.failOnFileNotFound = true<br />
+org.quartz.plugin.jobInitializer.validating=false<br />
+</span><br/><br/>
+然后命名你的 XML 文件为 <span style="color: #800080;">quartz_jobs.xml</span> 并放到你的 classpath 下。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>一些需注意的易出错的地方<br />
+</strong>
+很有必要提醒你在尝试 XML 文件中设置监听器时很可能会遇到的两个问题。在 Quartz 1.5 中，至少，监听器的的 <span style="color: #800080;">setName()</span> 方法未包含中接口中。<span style="color: #800080;">getName()</span> 方法是有的，但不存在相应的 <span style="color: #800080;">setName()</span>。这在以编程式使用监听器时似乎不会导致什么问题，但是对于声明式时就有问题了。你需要简单的为你的监听器创建一个 <span style="color: #800080;">setName()</span> 方法。另一个提示就是要确保你的监听器有一个无参构造方法。在某些情况下，Quartz 框架不会在乎，但当以声明式使用它时，你将会得到一个错误。最好还是声明一个无参的构造方法，这样总是安全的。
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<hr /><br/><br/>
+[译者 Unmi 后记] 配置文件中写成 <span style="color: #800080;">&lt;start-time&gt;2005-09-13 6:10:00 PM&lt;/start-time&gt;</span>，让 Quartz 来解析这个时间字符串可能会出现异常，这在我的一个回复(<a href="http://www.blogjava.net/Unmi/archive/2007/11/17/159830.html#210032">http://www.blogjava.net/Unmi/archive/2007/11/17/159830.html#210032</a>) 中有论及，现摘录如下：<br/><br/>
+<span style="color: #800080;">quart_jobx.xml</span> 中时间格式的问题，写成 2008-06-20 7:23:00 PM 的话 <span style="color: #800080;">JobSchedulingDataProcessor.parseDate(value)</span> 没办法解析<br/><br/>
+在 <span style="color: #800080;">quarts_jobs.xml</span> 中 <span style="color: #800080;">&lt;start-time&gt;</span> 的格式是：<br/><br/>
+<span style="color: #800080;">&lt;start-time&gt;2008-06-23T21:23:00&lt;/start-time&gt;</span><br/><br/>
+T隔开日期和时间，默认时区<br/><br/>
+或者：<br />
+<span style="color: #800080;">&lt;start-time&gt;2008-06-23T21:23:00+08:00&lt;/start-time&gt;</span><br />
++08:00 表示东八区<br/><br/>
+我觉得这是 Quartz 的一个 Bug，其实 Quartz 在解析时间时准备了两个 Pattern 的，分别是：<br />
+<span style="color: #800080;">yyyy-MM-dd'T'hh:mm:ss<br />
+yyyy-MM-dd hh:mm:ss a</span><br/><br/>
+但是在 <span style="color: #800080;">JobSchedulingDataProcessor.parseDate(value)</span> 方法中只会以第一个 Pattern 解析时间，并不会尝试使用第二个 Pattern 去解析时间，第二个 Pattern 是可以认识 2008-06-20 7:23:00 PM 的。<br/><br/>
+所以为了规避这个问题，还是应该写成 <span style="color: #800080;">yyyy-MM-dd'T'hh:mm:ss</span> 格式。
