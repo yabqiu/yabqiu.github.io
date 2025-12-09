@@ -1,0 +1,155 @@
+---
+title: AWS S3 应用 KMS Key 进行服务端数据加密
+url: /aws-s3-server-side-data-encryption-with-kms-key/
+date: 2018-05-13T12:45:39-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - S3
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8656 
+wpStatus: publish
+views: 2508
+lastmod: 2021-09-10T12:50:36-05:00
+---
+
+当我们把数据搬上云端，为了保护敏感数据一定要对数据存储进行加密。而对于 S3 上的数据加密最简单莫过于启用服务端数据加密，可以是 AES-256 或 AWS-KMS。进行了服务端加密码的文件有什么不同呢？首先从 AWS S3 文件列表视图中看到的文件大小与原始文件大小是一样的，其实数据在 AWS 机房是加密存储了的，比如说直接在 AWS 服务器上拷出那些 S3 文件是不能理解的。</p>
+<br/>
+本文涉及的内容包括：<br/>
+<ol>
+    <li>服务器端加密后的 S3 文件有何不同</li>
+    <li>不启用 Bucket 的默认加密如何进行服务端数据加密(含 AWS CLI 和  Java 代码操作)</li>
+    <li>启用及应用 Bucket 的默认加密</li>
+    <li>上传与下载文件的 IAM role 需要的权限</li>
+</ol>
+<br/>
+<h3>服务器端加密后的 S3 文件有何不同</h3>
+首先看现象，后面才能确认我们的操作是否对数据真的进行了服务端加密。查看使用 AWS-KMS key 加密后的 S3 文件的 <code>Overview</code>, 看到下面两个属性<br/>
+<blockquote>
+<strong>Server-side encryption</strong><br />
+AWS-KMS
+<strong>KMS key ID</strong><br />
+arn:aws:kms:us-east-1:123456789012:key/e4ce859b-786b-4b8e-8b73-4968adb6e4ed
+</blockquote>
+
+没加密的话, Server-side encryption 是 None, 并且没有 KMS key ID 属性。<!--more--><br/>
+点击 <code>Make public</code> 把该文件设置为 public,  然后直接打开下方的链接(如 https://s3.amazonaws.com/yanbin-test-encryption-bucket/123.txt), 下载不了了<br/><br/>
+{{< bundle-image src="s3-sse-1-800x258.png" width="800px" >}}
+必须提供更丰富的请求头信息才能下载该文件了。<br/><br/>
+注意到，文件大小仍然是原始文件大小，前面提到过，这只是一个视图显示，实际在 AWS 数据中心存储就不同的。文件的 Metadata 也没有什么不同。<br/><br/>
+总之以后可以从文件的 Overview 中 <code>Server-side encrytpion</code> 和 <code>KMS key ID</code> 来确认 S3 文件是否被服务端加密了。<br/><br/>
+<h3>不启用 Bucket 的默认加密如何进行服务端数据加密</h3>
+如果某个 Bucket 中允许混杂存储加密与非加密的数据，或者单个 Bucket 的数据混合选用不同的 KMS key 来加密数据文件，这时候我们不一定会启用 Bucket 的默认加密选项。这种情况下要求我们在上传文件时指定是否启用服务端加密以及所使用的 KMS key。我们这儿只讨论用 AWS-KMS 的方式来加密文件，所以我们应该事先在 AWS 的 IAM/Encryption keys 中创建好我们下面要用到的 KMS key。 下面第一个是 AWS 默认的 S3 KMS key 和两个自定义的 Key, <code>-</code> 前后分别为 Key 的别名和 ARN<br/>
+<blockquote>
+aws/s3  -   arn:aws:kms:us-east-1:123456789012:key/d133e4fd-3dd1-4fee-a090-c0b5c1cc7c6a， 这是 AWS 默认的 S3 KMS key<br />
+demo/test1  - arn:aws:kms:us-east-1:123456789012:key/1a3f0285-f1ab-4e38-915d-c7a9fcd16d30<br />
+demo/test2  - arn:aws:kms:us-east-1:123456789012:key/fa6b91b4-d18d-4961-84e4-6150ff5bcc31
+</blockquote>
+
+下面的各种上传操作及产生的效果<br/>
+<blockquote>
+$ aws s3 cp test.txt s3://yanbin-test-encryption-bucket --sse aws:kms
+</blockquote>
+
+这个命令将会用默认的 KMS key <code>aws/s3</code> 来加密文件。另外，如果不指定 <code>aws:kms</code>, 写成下面的方式<br/>
+<blockquote>
+$ aws s3 cp test.txt s3://yanbin-test-encryption-bucket --sse
+</blockquote>
+
+也会启用服务端加密文件，只不过加密方式为 Server-side encryption: AES-256<br/><br/>
+如果要使用指定的 KMS key 来加密文件，必须写成下面的两种方式<br/>
+<blockquote>
+$ aws s3 cp test test.txt s3://yanbin-test-encryption-bucket --sse aws:kms --sse-kms-key-id arn:aws:kms:us-east-1:123456789012:key/1a3f0285-f1ab-4e38-915d-c7a9fcd16d30<br />
+$ aws s3 cp test test.txt s3://yanbin-test-encryption-bucket --sse aws:kms --sse-kms-key-id 1a3f0285-f1ab-4e38-915d-c7a9fcd16d30  # 也可以只指定 ID
+</blockquote>
+
+上面的用 aws cli 的命令方式来指定服务端数据加密，下面来看看应用 Java SDK 如何操作<br/>
+{{< highlight java >}}
+AmazonS3 amazonS3 = AmazonS3ClientBuilder.defaultClient();
+ObjectMetadata objectMetadata = new ObjectMetadata();
+objectMetadata.setSSEAlgorithm("aws:kms");
+amazonS3.putObject("yanbin-test-encryption-bucket", "test.txt",
+    new ByteArrayInputStream("hello".getBytes()), objectMetadata);
+{{</ highlight >}}
+<br/>
+使用默认的 KMS key <code>aws/s3</code> 来加密文件。<br/><br/>
+如果要选用其他的 KMS key 来加密文件，可用下面两种写法<br/>
+{{< highlight java >}}
+AmazonS3 amazonS3 = AmazonS3ClientBuilder.defaultClient();
+ObjectMetadata objectMetadata = new ObjectMetadata();
+objectMetadata.setSSEAlgorithm("aws:kms");
+objectMetadata.setHeader("x-amx-server-side-encryption-aws-kms-key-id",
+    "arn:aws:kms:us-east-1:123456789012:key/fa6b91b4-d18d-4961-84e4-6150ff5bcc31")
+amazonS3.putObject("yanbin-test-encryption-bucket", "test.txt",
+    new ByteArrayInputStream("hello".getBytes()), objectMetadata);
+{{</ highlight >}}
+<br/>
+或<br/>
+{{< highlight java >}}
+AmazonS3 amazonS3 = AmazonS3ClientBuilder.defaultClient();
+ObjectMetadata objectMetadata = new ObjectMetadata();
+PubObjectRequest putObjectRequest = new PutObjectRequest("yanbin-test-encrytpion-bucket",
+    "test.txt", new ByteArrayInputStream("hello".getBytes()), objectMetadata);
+putObjectMetadata.setSSEAwsKeyManagementParams(new SSEAwsKeyManagementParams(
+    "arn:aws:kms:us-east-1:123456789012:key/fa6b91b4-d18d-4961-84e4-6150ff5bcc31"));
+amazonS3.putObject(putObjectRequest);
+{{</ highlight >}}
+<br/>
+aws cli 和 Java 代码指定 KMS key 时都可以用 ID 或完整的 key ARN。用 Java 代码上传本地文件加密方式存储到 S3 也是类似的，Java 代码读取服务端加密的 S3 文件与读未加密的文件是一样的。<br/><br/>
+对于未启用默认加密的 Bucket, 我们可以设定 Bucket 的 Deny Policy 来限制只有指定了服务端加密，并且采用了特定的 KMS key 的 pubObject 才能接受，否则拒绝该操作。<a href="http://awspolicygen.s3.amazonaws.com/policygen.html">AWS Policy Generator</a> 能帮助我们生成各种 AWS 的 Policy<br/><br/>
+<h3>启用及应用 Bucket 的默认加密</h3>
+在创建 Bucket 的过程中或 Bucket 创建之后的 <code>Properties</code> 中，点击 <code>Default encryption</code>, 选择 <code>AWS-KMS</code> 并事先创建好的 KMS key。启用了 <code>Default encryption</code> 后看起来就是这样子的<br/><br/>
+{{< bundle-image src="s3-default-encryption-1-300x219.png" width="300px" >}}
+一个 S3 Bucket 启用了 <code>Default encryption</code> 意味着什么呢？<br/><br/>
+<ul>
+    <li>Bucket 中原有的数据是不会被加密的，但新上传的文件是会被加密的</li>
+    <li>对原数据文件的加密存储必须进行一个拷贝操作</li>
+</ul><br/>
+有了 Bucket 的默认加密设置，aws cli 和 Java 代码只需要用最简单的操作来上传文件，文件将会采用默认加密中指定的 KMS key<br/>
+<blockquote>
+$ aws s3 cp test.txt s3://yanbin-test-encryption-bucket
+</blockquote>
+
+或 Java 代码<br/>
+{{< highlight java >}}
+AmazonS3 amazonS3 = AmazonS3ClientBuilder.defaultClient();
+ObjectMetadata objectMetadata = new ObjectMetadata();
+amazonS3.putObject("yanbin-test-encryption-bucket", "test.txt",
+    new ByteArrayInputStream("hello".getBytes()), objectMetadata);
+{{</ highlight >}}
+<br/>
+如果要使用非默认的 KMS key 来上传文件则可运用上一节介绍的方式。<br/><br/>
+而且启用了默认加密，通过网页来上传，<code>Encryption</code> 即使为 None, 文件也会应用默认的 KMS key 进行加密，也能在该界面中选择别的 KMS key 来加密。<br/><br/>
+{{< bundle-image src="s3-ss3-2.png" width="701px" >}}
+我们同时也发现一个问题，Bucket 在启用的默认加密后，好像没有办法让新上传的文件不进行服务端加密了。用默认的 KMS key, 或指定别的 key, 就是不能不加密。<br/><br/>
+<h3>上传与下载文件的 IAM role 需要的权限</h3>
+我们执行 aws cli 或从本地执行 Java 代码所使用的 profile 基本感受不到 AWS 操作权限的约束。而假如是一个 Lambda 要访问 S3 中的加密数据，执行该 Lambda 的 role 除了对 Bucket 有相应的对写权限外，还需要对所用的 KMS key 有相应的权限。否则对 S3 的操作就会失败，这也从另一个侧面验证了数据是被加密了，因为操作触及了对 KMS key 的相应操作。<br/><br/>
+经试验测定，putObject 与 getObject 分别需要待访问 KMS key 的以下两个权限<br/>
+<blockquote>
+putObject  --  kms:GenerateDataKey<br />
+getObject  --  kms:Decrypt
+</blockquote>
+
+比如说该 Lambda 需要对某个启用了默认加密(KMS) 的 Bucket 的读写权限，那么执行 role 的 Attach policy 就是<br/>
+{{< highlight json >}}
+{
+    "Effect": "Allow",
+    "Action": [
+        "kms:GenerateDataKey*",
+        "kms:Decrypt"
+    ],
+    "Resource": [
+        "arn:aws:kms:us-east-1:123456789012:key/1a3f0285-f1ab-4e38-915d-c7a9fcd16d30"
+    ]
+}
+{{</ highlight >}}
+<br/>
+如果只往 Bucket 中写数据就只给 <code>kms:GenerateDataKey</code>, 只读就只需 <code>kms:Decrypt</code> 权限。

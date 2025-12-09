@@ -1,0 +1,122 @@
+---
+title: 实现 Amazon S3 数据(文件)分段上传
+url: /aws-s3-multipe-parts-upload/
+date: 2017-12-07T01:42:19-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - S3
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8410 
+wpStatus: publish
+views: 10388
+lastmod: 2017-12-07T02:05:11-06:00
+---
+
+<h3>探索是否能以流式写数据到 S3</h3>
+<p>通常，在我们项目中用 Java 代码上传数据到 S3 是下面那样的操作</p>
+
+<blockquote>
+<p>AmazonS3 s3Client = AmazonS3ClientBuilder.defaultClient();<br /><br/>
+ s3Client.putObject("bucket_name", "s3key.txt", new ByteArrayInputStream("hello".getBytes()), new ObjectMetadata()); //ObjectMetadata 没什么特别的话可以为 null</p>
+</blockquote>
+
+<p>虽然  putObject() 的第三个参数是一个流，但它是输入流, 并非输出流啊。也就是说在执行该方法时必须把所有待上传的上据全部准备在这个输入流中，所以这里就直接用一个 ByteArrayInputStream 来包裹需上入到 S3 的数据内容。</p>
+
+<p>当然 putObject() 也就无法像 FileObjectOutputStream 那样流式写入内容到文件中，因为 putObject() 前后都没有与 bucket 上那个文件上有联系。即使是用 PipedInputStream/PipedOutputStream  也不行, 比如说下面的代码<!--more--></p>
+
+{{< highlight java "hl_lines=9" >}}
+AmazonS3 amazonS3 = AmazonS3ClientBuilder.defaultClient();
+
+PipedOutputStream outputStream = new PipedOutputStream();
+PipedInputStream inputStream = new PipedInputStream();
+outputStream.connect(inputStream);
+
+outputStream.write("hello".getBytes());
+
+outputStream.close();  //若是把这行注释了，程序便一直堵在下一行代码  amazonS3.putObject(.....), 不能结束
+
+amazonS3.putObject("bucket_name", "try-streaming-write.txt", inputStream, null);
+{{</ highlight >}}
+
+<p>见上面的注释，如果把 <code>outputStream.close();</code> 注释了但卡在最后一行上了，有 <code>outputStream.close();</code> 是可以成功向 S3 写入文件及相应的内容 <code>hello</code> 的。</p>
+
+<p>所以用管道转换后拿到了一个  OutputStream 也没什么用，看来试图流式写入数据到 S3 是不行了。那么对于大数据的写入该如何操作呢？特别是一个内存与执行时间受限的 Lambda 服务，更是不可能把所以欲写入 S3 数据先放到内存。其他应用可以先生成一个本地文件，Lambda 还不能这么做。必要时必须要上 S3 的分段上传了，它能帮我们解决大数据往 S3 的写入。</p>
+
+<h3>什么是 S3 分段数据上传</h3>
+<p>S3 的分段数据上传就像是我们见过的文件分块下载一样，或者说是一个个 Chunk。它可让我们上传大数据(或文件时)，分成最小 5M 大小段往 S3 上传，待分段全部成功上传到 S3 后再执行一条指令通知 S3 合并文件。只有最后一个段是可以小于  5MB 的，其他段小于 5MB 上传会有异常的。</p>
+
+<p>S3 不分段上传，单个文件最大 5GB, 而分段后，每个段的大小在 5MB 到 5GB 之间，可以有 10000 个分段数量，所以最大单个文件可以达到 5TB. 分段上传大数据(文件) 的好处是可以提高吞吐量与上传的可靠性，分段可以同时上传，单个分段上传失败只需重传该分段，而无需全部重传。一般来说数据(文件) 上了 100M 就该考虑分段上传了。</p>
+
+<p>注意的就是，会采用分段上传的 Bucket 应该设置好它的生命周期，否则烂在上面的未成功合并的并段将得不到清理。</p>
+
+<h3>Java 代码实现分段数据上传</h3>
+<p>下面将用 Java 代码来演示如何进行数据的分段上传，主要分以下几步</p>
+
+<ol>
+	<li>初始化，声明说要开始一个 Multipart Upload, 并获得一个批次 ID, 大概意思是下面应用这个 ID 的分段将会被合并</li>
+	<li>上传每一个分段，并指定分段号(从 1 开始), 当前分段大小，并把每次分段请求的 ETag 记录下来</li>
+	<li>completeMultipartUpload(...) 方法完成分段上传</li>
+</ol>
+
+{{< highlight java >}}
+String bucket = "your-bucket-name";
+String s3Key  = "test-multiparts-upload.txt";
+
+AmazonS3 s3Client = AmazonS3ClientBuilder.defaultClient();
+
+// 创建一个列表保存所有分传的 PartETag, 在分段完成后会用到
+List<PartETag> partETags = new ArrayList<>();
+
+// 第一步，初始化，声明下面将有一个 Multipart Upload
+InitiateMultipartUploadRequest initRequest = new InitiateMultipartUploadRequest(bucket, s3Key);
+InitiateMultipartUploadResult initResponse = s3Client.initiateMultipartUpload(initRequest);
+
+int minPartSize = 5 * 1024 * 1024; //分段大小在 5MB - 5GB 之间，只有最后一个分段才允许小于 5MB，不可避免的
+
+try {
+    for (int i = 1; i < 100; i++) {
+        byte[] bytes = RandomStringUtils.randomAlphabetic(minPartSize).getBytes(); //填充一个 5MB 的字符串
+
+        UploadPartRequest uploadRequest = new UploadPartRequest()
+            .withBucketName(bucket)
+            .withKey(s3Key)
+            .withUploadId(initResponse.getUploadId())
+            .withPartNumber(i)
+            .withInputStream(new ByteArrayInputStream(bytes))
+            .withPartSize(bytes.length);
+
+        // 第二步，上传分段，并把当前段的 PartETag 放到列表中
+        partETags.add(s3Client.uploadPart(uploadRequest).getPartETag());
+    }
+
+    // 第三步，完成上传
+    CompleteMultipartUploadRequest compRequest = new CompleteMultipartUploadRequest(bucket, s3Key,
+        initResponse.getUploadId(), partETags);
+
+    s3Client.completeMultipartUpload(compRequest);
+} catch (Exception e) {
+    s3Client.abortMultipartUpload(new AbortMultipartUploadRequest(bucket, s3Key, initResponse.getUploadId()));
+    System.out.println("Failed to upload, " + e.getMessage());
+}
+{{</ highlight >}}
+
+<p>这样就往 S3 写入了一个 500M 的文件。打开 Amazon API 的 Debug 日志，看到每一个分段都是一个单独的 POST 请求。这是用低级 API 作的分段上传，Amazon 还提供了自动的方式，要用到  TransferManager, 由不得我们去手工分段，并不一定用着方便，具体请参考 <a href="http://docs.aws.amazon.com/zh_cn/AmazonS3/latest/dev/HLuploadFileJava.html">使用适用于分段上传的 AWS Java 开发工具包 (高级别 API)</a></p>
+
+<p>分段上传可以提升我们上传大文件的效率，它不是为了解决流式向 S3 写入数据而产生的。当然，若应用它的 Lambda 中，也确实可以缓解内存的紧张，5 分钟的时间还是很紧迫的。它一定程度上是像流式写入，只是它的写入单位不是字节，或任意大小的字节数据，而是至少 5MB 的 Chunk.</p>
+
+<p>相关链接：</p>
+
+<ol>
+	<li><a href="https://aws.amazon.com/cn/blogs/china/uploading-using-s3/">如何使用AWS 命令行分段上传大文件</a></li>
+	<li><a href="http://docs.aws.amazon.com/zh_cn/AmazonS3/latest/dev/mpListPartsJavaAPI.html">使用适用于分段上传的 AWS Java 开发工具包 (低级别 API)</a></li>
+	<li><a href="http://docs.aws.amazon.com/zh_cn/AmazonS3/latest/dev/HLuploadFileJava.html">使用适用于分段上传的 AWS Java 开发工具包 (高级别 API)</a></li>
+</ol>

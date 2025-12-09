@@ -1,0 +1,142 @@
+---
+title: AWS Session Manager 管理 EC2 实例
+url: /aws-session-manager-ec2-instance/
+date: 2021-02-16T13:16:26-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - AWS
+  - Cloud
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10627 
+wpStatus: publish
+views: 2308
+lastmod: 2021-06-24T09:57:03-05:00
+---
+
+管理一个远程机器最常规的做法是 SSH(Unix/Linux, Mac) 或 PowerShell/RDP(Windows)，这就要求远端机器要开通相应的访问端口及打开防火墙，配置好登陆用的用户名密码或 SSH Key。当选择一个 EC2 实例的时候，可以点击 "Connect" 按，它提供有三种连接选择：</p>
+<br/>
+<ol>
+    <li>EC2 Instance Connect: 要求 EC2 配置了 SSH Key, 启动了 sshd 并开启了 ssh 的 Security Group，还要在实例上安装了 <code>ec2-instance-connect</code>(如安装命令 sudo yum install ec2-instance-connect)</li>
+    <li>Session Manager: 这就是我们本文要讲述的，sshd 不用启动，Security Group 只要求能往连接外部的 443 端口，SSH Key 不需要</li>
+    <li>SSH client: 客户端 SSH 到 EC2 实例，需要打开 sshd 其 22 号端口接受连接的 Security Group，用 SSH Key 或 AMI 中的用户名和密码，或配置加入了域后使用域帐号验证登陆</li>
+</ol>
+<br/>
+AWS 的 Session Manager 提供了通过浏览器或 AWS CLI 来访问 EC2 实例，<span style="text-decoration: underline;">甚至是本地机房的机器或虚拟机(需 advanced-instances tier 的支持)</span>，不再依赖于 SSH。<!--more--><br/><br/>
+<h3>Session Manager 概要</h3>
+Session Manager 决定谁能不能访问是由 IAM 访问策略来控制的。可通过本地端口转发，会话中的操作日志可记录下来作为审计，会话的开始或结束可设置发送消息到 Amazon EventBridge 或 SQS。日志或会话通读可由 KMS key 进行加密码。<br/><br/>
+支持 Session Manager 访问的 EC2 的基本条件就是要运行 SSM Agent。SSM Agent 在自身版本升级中陆续的增加了各种功能的支持，如用 KMS Key 加密，端口转发和 SSH 会话，日志功能等，总之安装最新版本就没错，当前版本<br/><br/>
+SSM Agent 会创建一个叫作 <code>ssm-user</code> 的用户，它具有根用户或超级管理员的权限。要能在 EC2 上启动 SSM Agent 的话，IAM Role 最简单的配置上加上 AmazonSSMManagedInstanceCore 这个策略，或者根据需求参照着 <a href="https://docs.aws.amazon.com/systems-manager/latest/userguide/getting-started-add-permissions-to-existing-profile.html">Adding Session Manager permissions to an existing instance profile</a> 来添加所需的权限。<br/><br/>
+Session Manger 控制台，到 https://console.aws.amazon.com/systems-manager/, 点 Start session, 从列表中选择启动了 SSM Agent 的 EC2 实例<br/><br/>
+或在 EC2 的实例界面 https://console.aws.amazon.com/ec2/，选择一个 EC2 实例，点击上方的  Connect 按钮，如果访实例已启动 SSM Agent, 则可在下一界面选择用 Session Manager 来连接。<br/><br/>
+AWS CLI 启动 ssm: aws ssm start-session --target i-0c0072d1212832d20  --  需给 AWS CLI 安装 Session Manager 插件<br/><br/>
+前面是在别人帮你配置好了 EC2 支持 Session Manager 的情况下我们可用的各种连接方式，下面自己来动手怎么配置一个能支持 Session Manager 连接的 EC2 实例。<br/><br/>
+<h3>Session Manager 连接 EC2 实例</h3>
+以 Amazon ECS-Optimized Amazon Linux 2 AMI(2.0.20210121) 镜像版本为例，可参考 <a href="https://docs.aws.amazon.com/systems-manager/latest/userguide/sysman-manual-agent-install.html">Manually install SSM Agent on EC2 instances for Linux</a><br/><br/>
+首先需要创建一个启动 EC2 的 role, 并附上 AmazonSSMManagedInstanceCore 策略，可命名为 es2_role_with_ssm_agent。启动一个 EC2 实例，选取 Amazon ECS-Optimized Amazon Linux 2 AMI 镜像。Security Group  的要求是只要能访问外部机器的 443 端口就行。<br/><br/>
+待到 EC2 实例创建后就可以选择它，并点击 <code>Connect</code> 按钮， Session Manager 中的  Connect 按钮就会变得可用，连接就进到了 Bash 的命令行下。登陆用户为  <code>ssm-user</code>, 具有最高级的权限。<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-1.png"><img class="aligncenter wp-image-10636" src="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-1-800x447.png" alt="" width="816" height="456" /></a><br/><br/>
+登陆后，验证几个事实<br/><br/>
+<a href="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-2.png"><img class="aligncenter wp-image-10637" src="https://yanbin.blog/wp-content/uploads/2021/02/session-manager-2-800x345.png" alt="" width="745" height="321" /></a><br/><br/>
+这里列出 EC2 实例能被 Session Manager 连接管理的基本条件：<br/><br/>
+<ol>
+    <li>EC2 IAM role 要求附着了 AmazonSSMManagedInstanceCore 这个策略，或手工添加了相应的权限，这个角度会用来创建具有根用户权限的 <code>ssm-user</code>, Session Manager 将采用这个用户登陆。</li>
+    <li>Security Group 要求 EC2 能连接外部的 443 端口，比如 0.0.0.0:443，Session Manager 的通信方式是 EC2 用某个 IP 的 443 端口作为代理，所以不需要 SSH 服务</li>
+    <li>EC2 上必须启动 ssmagent, 列进程时会看到 <code>/usr/bin/amazon-ssm-agent</code> 和 <code>/usr/bin/ssm-agent-worker</code> 两个驻留进程。每登入进来一个用户创建一个 <code>ssm-session-worker</code> 进程</li>
+</ol>
+<br/>
+注：如果 EC2 的 role 没有 AmazonSSMManagedInstanceCore 策略的相应权限也能启动 ssmagent, 但无法创建 <code>ssm-user</code>，这时候 <code>Session Manager</code> 也会认为这个 EC2 实例是可连接的，实际却无法连接。<br/><br/>
+前面我们选择的 AMI Amazon ECS-Optimized Amazon Linux 2 AMI(2.0.20210121) 已经内置了自动启动 ssmagent，但没有 AmazonSSMManagedInstanceCore 策略权限就无法创建 <code>ssm-user</code> 这个用户。<br/><br/>
+假如选择的 AMI 没有内置启动 ssmagent，以 Amazon Linux 2 为例，就需要把在 EC2 的 userdata 中加上下面的行<br/>
+<blockquote>
+sudo yum install -y https://s3.<span style="color: #ff0000;">us-east-1</span>.amazonaws.com/amazon-ssm-<span style="color: #ff0000;">us-east-1</span>/latest/linux_amd64/amazon-ssm-agent.rpm
+</blockquote>
+<br/>
+自己随便选择一个区域的 s3 链接就行，并不要求 us-east-1 的 EC2 只能下载 us-east-1 的 rpm 包。不同的 Linux 发行版本安装方式略有不同<br/><br/>
+装完后 ssm-agent 应该是自动启动的<br/><br/>
+<h3>连接 Session Manager 的其他方式</h3>
+前面直接找到 EC2 实例进行 Session Manager 连接，也可进到 Session Manager 的控制台选择启动了 ssmagent 的 EC2 实例发起连接，它们都是 Web 的方式连接会话的。下面是其他几种方式。<br/><br/>
+
+<h4>本地启动 AWS CLI  session</h4>
+本地除安装了 AWS CLI 外，需安装 Session Manager Plugin(<a href="https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html">(Optional) Install the Session Manager plugin for the AWS CLI</a>, 找好自己的平台来安装)。完后只要指定 EC2 实例的 ID 就能连接，而无需 IP 地址。<br/>
+<blockquote>
+$ aws ssm start-session --target i-0c0072d1212832d20
+Starting session with SessionId: yanbin@example.com-0f3cabb8dd1bf0bb4<br />
+sh-4.2$ hostname<br />
+p-172-31-60-8.ec2.internal
+</blockquote>
+
+这种方式显得很专业，与 Web 的 Session Manager 连接 EC2 实例一样，看似 SSH, 其实根本不需要 EC2 主机上启动 sshd 服务。但是必须在本地配置好连接 AWS 的 profile, 或 session key 和 secret key。如果没有安装  Session Manager Plugin 的话，运行 aws ssm start-session 时会提示<br/>
+<blockquote>
+SessionManagerPlugin is not found. Please refer to SessionManager Documentation here: http://docs.aws.amazon.com/console/systems-manager/session-manager-plugin-not-found
+</blockquote>
+
+本地验证关闭 SSH 服务后也能用 Session Manager 进行连接<br/>
+<blockquote>
+$ telnet 10.255.57.211 22<br />
+Trying 10.255.57.211...
+</blockquote>
+
+$ aws ssm start-session --target i-0c0072d1212832d20<br/>
+<blockquote>
+Starting session with SessionId: yabqiu@gmail.com-06065c404df8b1cbe<br />
+sh-4.2$ sudo service sshd status<br />
+openssh-daemon is stopped<br />
+sh-4.2$ netstat -na|grep :22<br />
+sh-4.2$
+</blockquote>
+
+再次用 Session Manager 进行连接<br/>
+<blockquote>
+$ aws ssm start-session --target i-0c0072d1212832d20
+Starting session with SessionId: yanbin@example.com-0f3cabb8dd1bf0bb4<br />
+sh-4.2$ hostname<br />
+p-172-31-60-8.ec2.internal
+</blockquote>
+<br/>
+再进一步探究 Session Manager 是如何通信的，分别到 EC2 实例和运行 <code>aws ssm start-session</code> 的本地机器查看网络连接情况<br/><br/>
+{{< bundle-image src="session-manager-3-800x270.png" width="649px" >}}
+于是很容易得到下面的连接过程<br/><br/>
+{{< bundle-image src="session-manager-4.png" width="360px" >}}
+&nbsp;<br/>
+这就能理解为什么 Session Manager 不需要 SSH 及打开相应的 22 号端口了<br/><br/>
+<h4>客户端 SSH over session manager</h4>
+参考 <a href="https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-getting-started-enable-ssh-connections.html">Step 8: (Optional) Enable SSH connections through Session Manager</a><br/><br/>
+在客户端配置文件 ～/.ssh/config 中加上<br/>
+<blockquote>
+# SSH over Session Manager<br />
+host i-* mi-*<br />
+    ProxyCommand sh -c "aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p'"
+</blockquote>
+
+不过现在需要 EC2 实例打开 sshd 服务，但仍然不需要为 22 开启防火墙<br/><br/>
+客户端执行<br/>
+<blockquote>
+ssh -i ~/path/my-key-pair.pem ec2-user@i-0c0072d1212832d20<br />
+......<br />
+[ec2-user@ab-0aff39d3 ~]$
+</blockquote>
+
+scp 也行，用 scp -i /path/my-key-pair.pem test.txt ec2-user@i-0c0072d1212832d20<br/><br/>
+这种方式与上面唯一不同之处就是 EC2 上的 ssmagent 与 EC2 本机的 SSH 服务进行通信，而不是直接与本地的 shell 交互。<br/><br/>
+连接图<br/><br/>
+{{< bundle-image src="session-manager-x1-800x563.png" width="436px" >}}
+<h4>端口转发服务</h4>
+有点像 SSH Tunnel(ssh -A -L :56789:10.255.57.64:80), 我们也能利用 Session Manager 进行端口转发，命令如下：<br/>
+<blockquote>
+aws ssm start-session \<br />
+    --target instance-id \<br />
+    --document-name AWS-StartPortForwardingSession \<br />
+    --parameters '{"portNumber":["80"], "localPortNumber":["56789"]}'
+</blockquote>
+
+访问 http://localhost:56789 就能访问到远端 EC2 的 80 端口。<br/><br/>
+关于 Session Manager 的 documents 的用法请参考 <a href="https://docs.aws.amazon.com/systems-manager/latest/userguide/sysman-ssm-docs.html">AWS System Manager documents</a>。
