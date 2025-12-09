@@ -1,0 +1,90 @@
+---
+title: ASP.NET 中使用 Log4Net 记系统日志
+url: /aspnet-log4net-logger/
+date: 2006-08-30T23:29:00-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - .Net
+tags: 
+  - Asp.Net
+  - log4net
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 551 
+wpStatus: publish
+views: 664
+lastmod: 2021-05-02T22:31:52-05:00
+---
+
+Unmi原来一直是做 Java 的，凡是做 Java 的项目都会用到 Log4J 来记载日志，比如那些开源的框架，Struts/Hibernate/Spring 都有用到 Log4J, 系统日志成了一个必要的东西，没有它，软件出问题了很难去定位。</p>
+<br/>
+最近无奈间接手了一个 .NET 项目，代码一片混乱，又没有错误日志，只在不很紧要处用 LogEvent 写了些东西到系统事件日志中。经常的客户有对这个项目提些 TroubleShooting, 基本只能对代码走查找到问题所在，实在是累啊，而且有些问题可就无能为力了。所以希望在新的版本上线时有记录错误日志信息，这样以后发生错误就能根椐日志信息迅速定位到代码行以及了解到发生了何种具体异常。<!--more--><br/><br/>
+有了 Log4J 的使用经验自然就会想到有没有 Log4Net,到 Apache 的网站上 <a href="http://logging.apache.org/">http://logging.apache.org/</a> logging项目中有以下几个子项目：Log4Cxx (c++) ，Log4j，Log4Net，Log4Perl，Log4PHP，Log4PLSQL，JDK1.4's util.logging framework ，还较齐全的。<br/><br/>
+好啦，言归正传，接下来就介绍如何把 Log4Net 应用到 ASP.NET 项目中。首先在 <a href="http://logging.apache.org/log4net/downloads.html">http://logging.apache.org/log4net/downloads.html</a> 下载到 <a href="http://cvs.apache.org/dist/incubator/log4net/1.2.10/incubating-log4net-1.2.10.zip">incubating-log4net-1.2.10.zip</a>，当前版本是1.2.10，如果已有新版本链接也许有所变动，本文将是针对这一版本来说明的，把下载的压缩包解压到某个目录中，如 d:\ 下。<br/><br/>
+1. 在 Visual Studio .NET 2003 中建立一个 C# 的 ASP.NET Web 应用程序，命名为 WebApp，为这个项目引入 Log4Net.dll, 位置在 D:\log4net-1.2.10\bin\net\1.1\release\ 中(假设解压在 D:\)。<br/><br/>
+2. 在工程 WebApp 目录下建立文件 WebApp.dll.log4net ( WebApp.dll 为 WebApp 将要生成的动态库的文件名，为什么后缀为 log4net 后面将会提到), 该文件的内容为<br/>
+{{< highlight xml >}}
+<log4net debug="false">
+    <appender name="UnmiRollingLogFileAppender" type="log4net.Appender.RollingFileAppender">
+        <file value="log-data\rolling-log.txt" />
+        <appendToFile value="true" />
+        <maxSizeRollBackups value="10" />
+        <maximumFileSize value="5MB" />
+        <rollingStyle value="Size" />
+        <staticLogFileName value="true" /><br/><br/>
+        <layout type="log4net.Layout.PatternLayout">
+            <conversionPattern value="%date [%thread] %-5level %logger [%M(%n)] - %m%newline" />
+        </layout>
+    </appender><br/><br/>
+    <root>
+        <level value="DEBUG" />
+        <appender-ref ref="UnmiRollingLogFileAppender" />
+    </root>
+</log4net>
+{{</ highlight >}}
+<br/>
+用过 Log4J 的同志看到上面那段配置肯定不会陌生的，一看就会明白 Log4Net 会怎么记日志的。日志生成到回滚文件 log-data\rolling-log.txt 中和控制台。 输出 DEBUG 及以上的日志，还配置了日志文件按什么条件回滚备份。您需要在 WebApp 应用的根目录下建立目录 <span style="color: #dc009c;"><span style="color: #0000ff;"><span style="color: #dc009c;"><span style="color: #0000ff;"><span style="color: #804040;"><span style="color: #ff0000;"><span style="color: #804040;"><span style="color: #ff0000;">log-data。</span></span></span></span></span></span></span></span>产品发布时可以把 level 的 value 属性改为 ERROR, 只输出 ERROR 和 FETAL 信息。<br/><br/>
+补充一点，如果 log-data 目录是放在 NTFS 文件系统上，应该设置该目录让用户 ASPNET 有写文件的权限。<br/><br/>
+3. 在 AssemblyInfo.cs 或 Global.asax.cs 中加上一行，推荐加在 AssemblyInfo.cs 中。<br/>
+{{< highlight csharp >}}
+// Load the configuration from the 'WebApp.dll.log4net' file   
+[assembly: log4net.Config.XmlConfigurator(ConfigFileExtension="log4net", Watch=true)]  
+{{</ highlight >}}
+<br/>
+让 WebApp 应用程序启动时加载当前目录下后缀名为 log4net,前缀与程序集同名的配置文件，也就是 WebApp.dll.log4net.<br/><br/>
+这一行其实就是指明将要读取何处的配置文件，是用 XmlConfiguratorAttribute 还配置的，可配置ConfigFile、ConfigFileExtension、Watch。ConfigFile可指定配置文件的相对或绝对路径，如：<br/><br/>
+{{< highlight csharp >}}
+[ assembly: log4net.Config.XmlConfigurator(ConfigFile="C:\log4net.config", Watch=true)]
+{{</ highlight >}}
+<br/>
+如果配置了ConfigFile属性，ConfigFileExtension将不被采用，找哪个配置文件前面有讲，如果ConfigFile和ConfigFileExtension都没指定，则会去Project的配置文件，如Web.config中找 log4net section指示的配置。<br/><br/>
+Watch是表明，当配置改变时是否热加载，为True时，应用无需重启也可应用新的配置，False则反之，一般Web.config变了，应用都会重启的。<br/><br/>
+4. 声明 log, 记录日志。在需要记录日志的类中声明类变量，如在已有的 WebForm1 类中加上代码<br/>
+{{< highlight csharp >}}
+private static readonly log4net.ILog log = log4net.LogManager.GetLogger(typeof(WebForm1));
+{{</ highlight >}}
+<br/>
+5. 用 log 来记录日志，在需要的地方调用 log 的记日志方法，这里我们测试时可以在 WebForm1 的 Page_Load() 方法中，加上<br/>
+{{< highlight java >}}
+log.Debug("Debug log");
+log.Warn("Warn log");
+log.Info("Info log");
+log.Error("Error log");
+log.Fatal("Fatal log");
+{{</ highlight >}}
+&nbsp;<br/>
+6. 执行 WebForm1 页面后，你将在看到在 log-data 目录中生成有一个文件 rolling-log.txt,其中会有内容<br/><br/>
+2006-08-30 22:45:50,156 [7856] WARN WebApp.WebForm1 [Page_Load(28)] - Warn log<br />
+2006-08-30 22:45:50,187 [7856] DEBUG WebApp.WebForm1 [Page_Load(29)] - Debug log<br />
+2006-08-30 22:45:50,187 [7856] INFO WebApp.WebForm1 [Page_Load(30)] - Info log<br />
+2006-08-30 22:45:50,187 [7856] ERROR WebApp.WebForm1 [Page_Load(31)] - Error log<br />
+2006-08-30 22:45:50,203 [7856] FATAL WebApp.WebForm1 [Page_Load(32)] - Fatal log<br/><br/>
+就是刚刚生成的日志。这个项目主要参考自 Log4Net 自带的一个项目，在解压的目录中，如 D:\log4net-1.2.10\examples\net\1.0\Tutorials\WebApp\cs\src。<br/><br/>
+与 Log4J 一样，最应该给予关注的应该是那个配置文件，通过改变配置文件可以设置更多的日志生成的目的地，即不同的 Appender，如 记录到数据库中的Appender, AspNetTraceAppender, BufferingForwardingAppender, ColoredConsoleAppender, ConsoleAppender, EventLogAppender, FileAppender, ForwardingAppender, MemoryAppender, NetSendAppender, OutputDebugStringAppender, RemotingAppender, RollingFileAppender, SmtpAppender,SmtpPickupDirAppender, TraceAppender, UdpAppender, 通过名字去感觉一下您的日志信息将可以配置输出到哪儿去，参考页面 <a href="http://logging.apache.org/log4net/release/config-examples.html">http://logging.apache.org/log4net/release/config-examples.html</a>。<br/><br/>
+通过配置 conversionPattern 可产生更丰富的日志输出格式，详细信息参考页面 <a href="http://logging.apache.org/log4net/release/config-examples.html">http://logging.apache.org/log4net/release/config-examples.html</a>。<br/><br/>
+另外也可以像一般应用程序那般配置，如在 App.config 文件中声明一个 configSections， 然后把 Log4Net 的配置写在 App.config 中，也可以自己写代码初始化 Log4Net, 而不用 Attributes。

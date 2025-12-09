@@ -3,11 +3,11 @@ title: 使用 avro-tools, jq 查看 Apache Avro 序列化文件
 url: /avro-tools-jq-view-apache-avro-file/
 date: 2017-06-04T14:38:27-05:00
 featured: false
-draft: true
+draft: false
 toc: false
 # menu: main
 usePageBundles: true
-thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/apache-avro.png"
+thumbnail: "../images/logos/apache-avro.png"
 categories:
   - Java/JEE
 tags: 
@@ -23,26 +23,27 @@ lastmod: 2021-09-10T12:59:38-05:00
 
 Apache Avro 是类似于 Google protobuf 那样的数据交换协议，但 Avro 可以用 JSON 格式来定义 Schema, 所以相比而言更容易上手。它也是 Hadoop, Kafka 所采用的交换格式。对于生成的 avro 序列化文件如果要编写代码来解读其中内容的话就太过于麻烦，Apache 给了我们一个便捷的工具来处理 Avro Schema 和数据。</p>
 <br/>
-Java 版的 Avro Tools 可点击链接 <a href="http://apache.mirrors.tds.net/avro/avro-1.8.2/java/avro-tools-1.8.2.jar">avro-tools-1.8.2.jar</a> 下载，当前版本 1.8.2(发布于 2017/05/20)，执行命令是<br/><br/>
+Java 版的 Avro Tools 可点击链接 <a href="http://apache.mirrors.tds.net/avro/avro-1.8.2/java/avro-tools-1.8.2.jar">avro-tools-1.8.2.jar</a> 下载，当前版本 1.8.2(发布于 2017/05/20)，执行命令是<br/>
 <blockquote>
 java -jar avro-tools-1.8.2.jar ..............
 </blockquote>
-<br/>
-如果是 Mac 平台，还可以通过<br/><br/>
+
+如果是 Mac 平台，还可以通过<br/>
 <blockquote>
 brew install avro-tools
 </blockquote>
-<br/>
+
 来安装，执行命令就只是 <code>avro-tools</code> 了。<br/><br/>
-在本文中还会用到一个 JSON 格式化高亮显示的工具 <code>jq</code>, 在 Mac 下通过以下命令安装<br/><br/>
+在本文中还会用到一个 JSON 格式化高亮显示的工具 <code>jq</code>, 在 Mac 下通过以下命令安装<br/>
 <blockquote>
 brew install jq
 </blockquote>
-<br/>
-avro-tools 和 jq 已准备就绪，接下来演示下如何使用它们。<br/><br/>
-<h3>avro-tools 能做什么</h3><br/><br/>
-<!--more--><br/><br/>
-<pre class="brush:text">➜  avro-tools
+
+avro-tools 和 jq 已准备就绪，接下来演示下如何使用它们。<br/>
+<!--more-->
+<h3>avro-tools 能做什么</h3>
+{{< highlight sh >}}
+➜  avro-tools
 Version 1.8.1 of Apache Avro
 Copyright 2010-2015 The Apache Software Foundation<br/><br/>
 This product includes software developed at
@@ -73,12 +74,14 @@ Available tools:
      totrevni  Converts an Avro data file to a Trevni file.
   trevni_meta  Dumps a Trevni file's metadata as JSON.
 trevni_random  Create a Trevni file filled with random instances of a schema.
-trevni_tojson  Dumps a Trevni file as JSON.</pre>
+trevni_tojson  Dumps a Trevni file as JSON.
+{{</ highlight >}}
 <br/>
-能做的事情很多，可以编译 Schema 为 Java 代码，从 avro 文件中获得元数据，Schema, 生成 JSON 数据，还能合并和修复 avro 文件等等。<br/><br/>
-<h3>定义 Schema 文件</h3><br/><br/>
-创建一个 Avro Schema 文件 user.avsc, 内容如下<br/><br/>
-<pre class="brush:js">{
+能做的事情很多，可以编译 Schema 为 Java 代码，从 avro 文件中获得元数据，Schema, 生成 JSON 数据，还能合并和修复 avro 文件等等。<br/>
+<h3>定义 Schema 文件</h3>
+创建一个 Avro Schema 文件 user.avsc, 内容如下<br/>
+{{< highlight json >}}
+{
   "namespace": "cc.unmi.data",
   "type": "record",
   "name": "User",
@@ -87,25 +90,28 @@ trevni_tojson  Dumps a Trevni file as JSON.</pre>
     {"name": "name", "type": "string"},
     {"name": "address", "type": "string"}
   ]
-}</pre>
+}
+{{</ highlight >}}
 <br/>
-<h3>创建 JSON 数据文件</h3><br/><br/>
-avro-tools 可以通过 Schema 定义和 JSON 数据文件来生成 avro 序列化文件，所以现定义 user.json 内容如下<br/><br/>
-<pre class="brush:js">{"id": 1, "name": "Yanbin", "address": "Chicago"}
+<h3>创建 JSON 数据文件</h3>
+avro-tools 可以通过 Schema 定义和 JSON 数据文件来生成 avro 序列化文件，所以现定义 user.json 内容如下<br/>
+{{< highlight json >}}
+{"id": 1, "name": "Yanbin", "address": "Chicago"}
 {"id": 2, "name": "Someone1", "address": "Shenzhen"}
-{"id": 3, "name": "Someone2", "address": "Ji'an"}</pre>
+{"id": 3, "name": "Someone2", "address": "Ji'an"}
+{{</ highlight >}}
 <br/>
 注意，这个不是真正意义上的 JSON 文件，每个 {} 表示一条记录，不需要 [], 也不用逗号分隔。<br/><br/>
-<h3>生成 avro 文件</h3><br/><br/>
+<h3>生成 avro 文件</h3>
 <blockquote>
 avro-tools fromjson --schema-file user.avsc --code deflate user.json &gt; user.avro
 </blockquote>
-<br/>
+
 现在生成了一个序列化文件 <code>user.avro</code>, 并选取了压缩方式为 deflate。可用 vi 打它来大致查看下<br/><br/>
-<img class="aligncenter size-full wp-image-8105" src="/wp-content/uploads/2017/06/avro-tools-1.png" alt="" width="654" height="91" /><br/><br/>
+{{< bundle-image src="avro-tools-1.png" width="654px" >}}
 是一个 avro 文件上，Schema 内容也在里面，avro.codec 是 deflate, 数据内容看不出来，即使用不压缩的数据用 vi 看得也不明白，所以需要用 avro-tools 来查看记录内容<br/><br/>
-<h3>查看 avro 数据</h3><br/><br/>
-<strong>用 avro-tools 的 tojson 命令</strong><br/><br/>
+<h3>查看 avro 数据</h3>
+<strong>用 avro-tools 的 tojson 命令</strong><br/>
 <blockquote>
 ➜ <span style="color: #ff0000;"> avro-tools tojson user.avro</span><br />
 <span style="color: #800000;">log4j:WARN No appenders could be found for logger (org.apache.hadoop.metrics2.lib.MutableMetricsFactory).</span><br />
@@ -115,16 +121,16 @@ avro-tools fromjson --schema-file user.avsc --code deflate user.json &gt; user.a
 <span style="color: #0000ff;">{"id":2,"name":"Someone1","address":"Shenzhen"}</span><br />
 <span style="color: #0000ff;">{"id":3,"name":"Someone2","address":"Ji'an"}</span>
 </blockquote>
-<br/>
-上面蓝色部分即为序列化 user.avro 文件中数据记录，而且从前面我们应该注意到每次执行 avro-tools 命令都会打印 log4j 的告警信息--找不到 appenders, 这是 avro-tools 没处理好的，可以简单用 `2 &gt; /dev/null` 屏蔽掉。后面也会介绍一个办法来消除这个 log4j 告警信息。<br/><br/>
+
+上面蓝色部分即为序列化 user.avro 文件中数据记录，而且从前面我们应该注意到每次执行 avro-tools 命令都会打印 log4j 的告警信息--找不到 appenders, 这是 avro-tools 没处理好的，可以简单用 `2 &gt; /dev/null` 屏蔽掉。后面也会介绍一个办法来消除这个 log4j 告警信息。<br/>
 <blockquote>
 ➜  <span style="color: #ff0000;">avro-tools tojson user.avro 2&gt;/dev/null</span><br />
 <span style="color: #0000ff;">{"id":1,"name":"Yanbin","address":"Chicago"}</span><br />
 <span style="color: #0000ff;">{"id":2,"name":"Someone1","address":"Shenzhen"}</span><br />
 <span style="color: #0000ff;">{"id":3,"name":"Someone2","address":"Ji'an"}</span>
 </blockquote>
-<br/>
-<strong>avro-tools getscheme</strong><br/><br/>
+
+<strong>avro-tools getscheme</strong><br/>
 <blockquote>
 ➜  <span style="color: #ff0000;">avro-tools getschema user.avro 2&gt;/dev/null</span><br />
 <span style="color: #0000ff;">{</span><br />
@@ -143,42 +149,42 @@ avro-tools fromjson --schema-file user.avsc --code deflate user.json &gt; user.a
 <span style="color: #0000ff;">  } ]</span><br />
 <span style="color: #0000ff;">}</span>
 </blockquote>
-<br/>
-<strong>avro-tools getmeta</strong><br/><br/>
+
+<strong>avro-tools getmeta</strong><br/>
 <blockquote>
 ➜  <span style="color: #ff0000;">avro-tools getmeta user.avro 2&gt;/dev/null</span><br />
 <span style="color: #0000ff;">avro.schema    {"type":"record","name":"User","namespace":"cc.unmi.data","fields":[{"name":"id","type":"int"},{"name":"name","type":"string"},{"name":"address","type":"string"}]}</span><br />
 <span style="color: #0000ff;">avro.codec    deflate</span>
 </blockquote>
-<br/>
-<h3>avro-tools + jq 高亮格式化显示</h3><br/><br/>
-格式化并高亮显示，命令 <code>avro-tools tojson user.avro | jq</code><br/><br/>
-<img class="aligncenter size-full wp-image-8109" src="/wp-content/uploads/2017/06/avro-tools-2.png" alt="" width="270" height="275" /><br/><br/>
-紧凑高亮显示，命令 <code>avro-tools tojson user.avro  | jq</code><br/><br/>
-<img class="aligncenter wp-image-8110 size-full" src="/wp-content/uploads/2017/06/avro-tools-3.png" alt="" width="340" height="73" /><br/><br/>
+
+<h3>avro-tools + jq 高亮格式化显示</h3>
+格式化并高亮显示，命令 <code>avro-tools tojson user.avro | jq</code><br/>
+{{< bundle-image src="avro-tools-2.png" width="270px" >}}
+紧凑高亮显示，命令 <code>avro-tools tojson user.avro  | jq</code><br/>
+{{< bundle-image src="avro-tools-3.png" width="340px" >}}
 一行一记录的显示好处是节约屏幕，并且更方便于用 <code>grep</code> 来查找记录<br/><br/>
-<h3>消除 avro-tools 的 log4j 警告信息</h3><br/><br/>
-默认情况下我们每次执行 <code>avro-tools</code> 命令都会看到 lo4j 的警告信息<br/><br/>
+<h3>消除 avro-tools 的 log4j 警告信息</h3>
+默认情况下我们每次执行 <code>avro-tools</code> 命令都会看到 lo4j 的警告信息<br/>
 <blockquote>
 log4j:WARN No appenders could be found for logger (org.apache.hadoop.metrics2.lib.MutableMetricsFactory).<br />
 log4j:WARN Please initialize the log4j system properly.<br />
 log4j:WARN See http://logging.apache.org/log4j/1.2/faq.html#noconfig for more info.
 </blockquote>
-<br/>
+
 这对我们是没有用处的，应该是 avro-tools 中 Java 代码是被应用中 Java 项目中，一般都会有可用的日志配置文件，但作为命令来运行就没有 log4j 配置文件。因此消除上面信息的办法就是给它一个 log4j.properties 文件<br/><br/>
 进到 avro-tools 命令所在的目录，用 brew 安装的话，在 <code>/usr/local/Cellar/avro-tools/1.8.1/bin</code> 目录中，在该目录中创建文件<br/><br/>
-<strong>log4j.properties, 内容如下</strong><br/><br/>
+<strong>log4j.properties, 内容如下</strong><br/>
 <blockquote>
 log4j.rootLogger = ERROR, nullAppender<br />
 log4j.appender.nullAppender=org.apache.log4j.varia.NullAppender
 </blockquote>
-<br/>
-<strong>并修改 avro-tools 命令文件如下</strong><br/><br/>
+
+<strong>并修改 avro-tools 命令文件如下</strong><br/>
 <blockquote>
 #!/bin/bash<br />
 exec java -Dlog4j.configuration=file:/usr/local/Cellar/avro-tools/1.8.1/bin/log4j.properties \<br />
   -jar /usr/local/Cellar/avro-tools/1.8.1/libexec/avro-tools-1.8.1.jar "$@"
 </blockquote>
-<br/>
+
 如此，则以后执行 avro-tools 命令就不会看到 log4j:WARN 信息了。如果常见得 NullAppender 太过份了点，可以配置只有 ERROR 级别的信息输出到控制台 ConsoleAppender.<br/><br/>
 链接：1. <a href="http://www.michael-noll.com/blog/2013/03/17/reading-and-writing-avro-files-from-the-command-line/">Reading and Writing Avro Files From the Command Line</a>
