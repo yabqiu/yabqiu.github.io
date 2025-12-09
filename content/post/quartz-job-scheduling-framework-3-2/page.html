@@ -1,0 +1,341 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第三章. Hello Quartz (第二部分)
+url: /quartz-job-scheduling-framework-3-2/
+date: 2007-11-11T07:33:00-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 474 
+wpStatus: publish
+views: 1119
+lastmod: 2019-11-30T10:19:27-06:00
+---
+
+<strong>2. 调度 <span style="color: #800080;">Quartz ScanDirectoryJob</span><br />
+</strong></p>
+<br/>
+到目前为止，我们已经创建了一个 Quartz job，但还没有决定怎么处置它－－明显地，我们需以某种方式为这个 Job 设置一个运行时间表。时间表可以是一次性的事件，或者我们可能会安装它在除周日之外的每个午夜执行。你即刻将会看到，Quartz Schduler 是框架的心脏与灵魂。所有的 Job 都通过 Schduler 注册；必要时，Scheduler 也会创建 Job 类的实例，并执行实例的 <span style="color: #800080;">execute()</span> 方法。<!--more--><br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>Scheduler 会为每一次执行创建新的 Job 实例</strong>Scheduler 在每次执行时都会为 Job 创建新的实例。这就意味着 Job 的任何实例变量在执行结束之后便会丢失。与此相反概念则可用述语<em>有状态的</em>（J2EE世界里常见语）来表达，但是应用 Quartz  ，一个有状态的 Job 并不用多少开销，而且很容易的配置。当你创建一个有状态的 Job 时，有一些东西对于 Quartz 来说是独特的。最主要的就是不会出现两个有着相同状态的 Job 实例并发执行。这可能会影响到程序的伸缩性。这些或更多的问题将在以后的章节中详细讨论。</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<strong>·创建并运行 Quartz Scheduler<br />
+</strong><br />
+在具体谈论 ScanDirectoryJob 之前，让我们大略讨论一下如何实例化并运行 Quartz Scheduler 实例。代码 3.3 描述了创建和启动一个 Quartz Scheduler 实例的必要且基本的步骤。<br/><br/>
+<strong>代码 3.3 运行一个简单的 Quartz 调度器<br />
+</strong>
+{{< highlight java >}}
+package org.cavaness.quartzbook.chapter3;
+
+package org.cavaness.quartzbook.chapter3;
+
+import java.util.Date;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.impl.StdSchedulerFactory;
+
+public class SimpleScheduler {
+     static Log logger = LogFactory.getLog(SimpleScheduler.class);
+
+     public static void main(String[] args) {
+          SimpleScheduler simple = new SimpleScheduler();
+          simple.startScheduler();
+     }
+
+     public void startScheduler() {
+          Scheduler scheduler = null;
+
+          try {
+               // Get a Scheduler instance from the Factory
+               scheduler = StdSchedulerFactory.getDefaultScheduler();
+
+               // Start the scheduler
+               scheduler.start();
+               logger.info("Scheduler started at " + new Date());
+
+          } catch (SchedulerException ex) {
+               // deal with any exceptions
+               logger.error(ex);
+          }
+     }
+}
+{{</ highlight >}}
+<br/>
+运行上面 3.3 的代码，会有日志输出，你会看到类似如下的输出：<br/><br/>
+<span style="color: #800080;">INFO [main] (SimpleScheduler.java:30) - Scheduler started at Mon Sep 05 13:06:38 EDT 2005</span><br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>关闭 Quartz Info 级别的日志信息<br />
+</strong><br />
+假如你搭配着 Log4J 使用 Commons Logging 日志框架，就像本书的例子那样，你也许需要把除本书例子外，其他的所有 Info 级别以上的日志信息关闭掉。这是因为 Quartz 中 Debug 和　Info 级别的日志信息数量上大体相当。当你明白了 Quartz 在做什么的时候，你真正关注的信息却淹没在大量的日志信息中。为了不至于这样，你可以创建一个文件 <span style="color: #800080;">log4j.properties</span> 指定只输出 ERROR 级别信息，但是要为本书中的例子设置定显示 INFO 级别的信息。这里有一个 log4j.properties 的例子文件来达到这个目的：<br/>
+{{< highlight java-properties >}}
+# Create stdout appender
+log4j.rootLogger=error, stdout
+
+# Configure the stdout appender to go to the Console
+log4j.appender.stdout=org.apache.log4j.ConsoleAppender
+
+# Configure stdout appender to use the PatternLayout
+log4j.appender.stdout.layout=org.apache.log4j.PatternLayout
+
+# Pattern output the caller's filename and line #
+log4j.appender.stdout.layout.ConversionPattern=%5p [%t] (%F:%L) - %m%n
+
+# Print messages of level INFO or above for examples
+log4j.logger.org.cavaness.quartzbook=INFO
+{{</ highlight >}}
+文件 <span style="color: #800080;">log4j.properties</span> 配置了默认向标准输出只输出 ERROR 级别以上的日志信息，但是任何在包 org.cavaness.quartzbook 中的 INFO 以上级别的信息也会输出。这有赖于以上属性文件最后一行配置。
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+代码 3.3 展示了启动一个 Quartz 调度器是那么的简单。当调度器起来之后，你可以利用它做很多事情或者获取到它的许多信息。例如，你也许需要安排一些 Job  或者改变又安排在调度器上 Job 的执行次数。你也许需要让调度器处于暂停模式，接着再次启动它以便重新执行在其上安排的作业。当调度器处于暂停模式时，不执行任何作业，即使是作业到了它所期待的执行时间。代码 3.4 展示了怎么把调度器置为暂停模式然后又继续运行，这样调度器会从中止处继续执行。<br/><br/>
+<strong>代码 3.4 设置调度器为暂停模式<br />
+</strong>
+{{< highlight java >}}
+private void modifyScheduler(Scheduler scheduler) {
+
+    try {
+         if (!scheduler.isInStandbyMode()) {
+              // pause the scheduler
+              scheduler.standby();
+         }
+
+         // Do something interesting here
+
+         // and then restart it
+         scheduler.start();
+
+    } catch (SchedulerException ex) {
+         logger.error(ex);
+    }
+}
+{{</ highlight >}}
+<br/>
+代码 3.4 中的片断仅仅是一个最简单的例子，说明了当你执有一个 Quartz 调度器的引用，你可以利用它做一些你有感兴趣的事情。当然了，并非说 Scheduler 只有处于暂停模式才能很好的利用它。例如，你能在调度器处于运行状态时，安排新的作业或者是卸下已存在的作业。我们将通过本书的一个调度器尽可能的去掌握关于 Quartz 更多的知识。<br/><br/>
+上面的例子看起来都很简单，但千万不要被误导了。我们还没有指定任何作业以及那些作业的执行时间表。虽然代码 3.3 中的代码确实能启动运行，可是我们没有指定任何作业来执行。这就是我们下一节要讨论的。<br/><br/>
+<strong>·编程式安排一个 Quartz Job</strong><br/><br/>
+所有的要 Quartz 来执行的作业必须通过调度器来注册。大多情况下，这会在调度器启动前做好。正如本章前面说过，这一操作也提供了声明式与编程式两种实现途径的选择。首先，我们讲解如何用编程的方式；接下来在本章，我们会用声明的方式重做这个练习。<br/><br/>
+因为每一个 Job 都必须用 Scheduler 来注册，所以先定义一个 JobDetail，并关联到这个 Scheduler 实例。见代码 3.5。<br/><br/>
+<strong>代码 3.5. 编程式安排一个 Job</strong><br/>
+{{< highlight java >}}
+package org.cavaness.quartzbook.chapter3;
+
+import java.util.Date;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.quartz.JobDetail;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.Trigger;
+import org.quartz.TriggerUtils;
+import org.quartz.impl.StdSchedulerFactory;
+
+public class Listing_3_5 {
+     static Log logger = LogFactory.getLog(Listing_3_5.class);
+
+     public static void main(String[] args) {
+          Listing_3_5 example = new Listing_3_5();
+
+          try {
+               // Create a Scheduler and schedule the Job
+               Scheduler scheduler = example.createScheduler();
+               example.scheduleJob(scheduler);
+
+               // Start the Scheduler running
+               scheduler.start();
+
+               logger.info( "Scheduler started at " + new Date() );
+
+          } catch (SchedulerException ex) {
+               logger.error(ex);
+          }
+    }
+
+    /*
+     * return an instance of the Scheduler from the factory
+     */
+    public Scheduler createScheduler() throws SchedulerException {
+         return StdSchedulerFactory.getDefaultScheduler();
+    }
+
+    // Create and Schedule a ScanDirectoryJob with the Scheduler
+    private void scheduleJob(Scheduler scheduler)
+         throws SchedulerException {
+
+         // Create a JobDetail for the Job
+         JobDetail jobDetail =
+                       new JobDetail("ScanDirectory",
+                   Scheduler.DEFAULT_GROUP,
+                             ScanDirectoryJob.class);
+
+         // Configure the directory to scan
+         jobDetail.getJobDataMap().put("SCAN_DIR",
+                   "c:\\quartz-book\\input");
+
+         // Create a trigger that fires every 10 seconds, forever
+         Trigger trigger = TriggerUtils.makeSecondlyTrigger(10);
+         trigger.setName("scanTrigger");
+         // Start the trigger firing from now
+         trigger.setStartTime(new Date());
+
+         // Associate the trigger with the job in the scheduler
+         scheduler.scheduleJob(jobDetail, trigger);
+    }
+}
+{{</ highlight >}}
+<br/>
+上面程序提供了一个理解如何编程式安排一个 Job 很好的例子。代码首先调用 <span style="color: #800080;">createScheduler()</span> 方法从 Scheduler 工厂获取一个 Scheduler 的实例。得到 Scheduler 实例之后，把它传递给 <span style="color: #800080;">schedulerJob()</span> 方法，由它把 Job 同 Scheduler 进行关联。<br/><br/>
+首先，创建了我们想要运行的 Job 的 <span style="color: #800080;">JobDetail</span> 对象。<span style="color: #800080;">JobDetail</span> 构造器的参数中包含指派给 Job 的名称，逻辑组名，和实现 <span style="color: #800080;">org.quartz.Job</span> 接口的全限类名称。我们可以使用 <span style="color: #800080;">JobDetail</span> 的别的构造器。<br/><br/>
+<span style="color: #800080;">public JobDetail();<br />
+public JobDetail(String name, String group, Class jobClass);<br />
+public JobDetail(String name, String group, Class jobClass,<br />
+     boolean volatility, boolean durability, boolean recover);<br />
+</span><br/><br/>
+<table style="border: 1px;" border="0" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>注</strong>一个 Job 在同一个 Scheduler 实例中通过名称和组名能唯一被标识。假如你增加两个具体相同名称和组名的 Job，程序会抛出 <span style="color: #800080;">ObjectAlreadyExistsException</span> 的异常。</td>
+</tr>
+</tbody>
+</table>
+<br/>
+在本章前面有说过，<span style="color: #800080;">JobDetail</span> 扮演着某一 Job 定义的角色。它带有 Job 实例的属性，能在运行时被所关联的 Job 访问到。其中在使用 <span style="color: #800080;">JobDetail</span> 时，的一个最重要的东西就是 <span style="color: #800080;">JobDataMap</span>，它被用来存放 Job 实例的状态和参数。在代码 3.5 中，待扫描的目录名称就是通过  <span style="color: #800080;">scheduleJob()</span> 方法存入到 <span style="color: #800080;">JobDataMap</span> 中的。<br/><br/>
+<strong>·理解和使用 Quartz Trigger</strong><br/><br/>
+Job 只是一个部分而已。注意到代码 3.5，我们没有在 <span style="color: #800080;">JobDetail</span> 对象中为 Job 设定执行日期和次数。这是 Quartz Trigger 该做的事。顾名思义，Trigger 的责任就是触发一个 Job 去执行。当用 Scheduler 注册一个 Job 的时候要创建一个 Trigger 与这个 Job 相关联。Quartz 提供了四种类型的 Trigger，但其中两种是最为常用的，它们就是在下面章节中要用到的 <span style="color: #800080;">SimpleTrigger</span> 和  <span style="color: #800080;">CronTrigger</span>.<br/><br/>
+<span style="color: #800080;">SimpleTrigger</span> 是两个之中简单的那个，它主要用来激发单事件的 Job，Trigger 在指定时间激发，并重复 n 次--两次激发时间之间的延时为 m，然后结束作业。<span style="color: #800080;">CronTrigger</span> 非常复杂且强大。它是基于通用的公历，当需要用一种较复杂的时间表去执行一个 Job 时用到。例如，四月至九月的每个星期一、星期三、或星期五的午夜。<br/><br/>
+为更简单的使用 Trigger，Quartz 包含了一个工具类，叫做 <span style="color: #800080;">org.quartz.TriggerUtils</span>. <span style="color: #800080;">TriggerUtils</span> 提供了许多便捷的方法简化了构造和配置 trigger. 本章的例子中有用的就是 <span style="color: #800080;">TriggerUtils</span> 类；<span style="color: #800080;">SimpleTrigger</span> 和 <span style="color: #800080;">CronTrigger</span> 会在后面章节中用到。<br/><br/>
+正如你从代码3.5中看到的那样，调用了 <span style="color: #800080;">TriggerUtils</span> 的方法 <span style="color: #800080;">makeSecondlyTrigger()</span> 来创建一个每10秒种激发一次的 trigger(实际是由 <span style="color: #800080;">TriggerUtils</span> 生成了一个 <span style="color: #800080;">SimpleTrigger</span> 实例，但是我们的代码并不想知道这些)。我们同样要给这个 trigger 实例一个名称并告诉它何时激发相应的 Job；在代码3.5 中，与之关联的 Job 会立即启动，因为由方法 <span style="color: #800080;">setStartTime()</span> 设定的是当前时间。<br/><br/>
+代码 3.5 演示的是如何向 Scheduler 注册单一 Job。假如你有不只一个个 Job (你也许就是)，你将需要为每一个 Job 创建各自的 <span style="color: #800080;">JobDetail</span>。每一个 <span style="color: #800080;">JobDetail</span> 必须通过 <span style="color: #800080;">scheduleJob()</span> 方法一一注册到 Scheduler 上。<br/><br/>
+<table style="border: 1px;" border="0" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>注</strong>回到代码  3.1 中，我们从代码中看到要扫描的目录名属性是从 <span style="color: #800080;">JobDataMap</span> 中获取到的。再看代码 3.5，你能发现这个属性是怎么设置的。</td>
+</tr>
+</tbody>
+</table>
+<br/>
+如果你想重用了一个 Job 类，让它产生多个实例运行，那么你需要为每个实例都创建一个 <span style="color: #800080;">JobDetail</span>。例如，假如你想重用 <span style="color: #800080;">ScanDirectoryJob</span> 让它检查两个不同的目录，你需要创建并注册两个 <span style="color: #800080;">JobDetail</span> 实例。代码 3.6 显示了是如何做的。<br/><br/>
+<strong>代码 3.6. 运行 <span style="color: #800080;">ScanDirectoryJob</span> 的多个实例<br />
+</strong>
+{{< highlight java >}}
+package org.cavaness.quartzbook.chapter3;
+
+import java.util.Date;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.quartz.JobDetail;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.Trigger;
+import org.quartz.TriggerUtils;
+import org.quartz.impl.StdSchedulerFactory;
+
+public class Listing_3_6 {
+     static Log logger = LogFactory.getLog(Listing_3_6.class);
+
+     public static void main(String[] args) {
+          Listing_3_6 example = new Listing_3_6();
+
+          try {
+               // Create a Scheduler and schedule the Job
+               Scheduler scheduler = example.createScheduler();
+
+               // Jobs can be scheduled after Scheduler is running
+               scheduler.start();
+
+               logger.info("Scheduler started at " + new Date());
+
+               // Schedule the first Job
+               example.scheduleJob(scheduler, "ScanDirectory1",
+                         ScanDirectoryJob.class,
+                                     "c:\\quartz-book\\input", 10);
+
+               // Schedule the second Job
+               example.scheduleJob(scheduler, "ScanDirectory2",
+                         ScanDirectoryJob.class,
+                               "c:\\quartz-book\\input2", 15);
+
+          } catch (SchedulerException ex) {
+               logger.error(ex);
+          }
+     }
+
+     /*
+      * return an instance of the Scheduler from the factory
+      */
+     public Scheduler createScheduler() throws SchedulerException {
+          return StdSchedulerFactory.getDefaultScheduler();
+     }
+
+     // Create and Schedule a ScanDirectoryJob with the Scheduler
+     private void scheduleJob(Scheduler scheduler, String jobName,
+               Class jobClass, String scanDir, int scanInterval)
+               throws SchedulerException {
+
+           // Create a JobDetail for the Job
+          JobDetail jobDetail =
+                       new JobDetail(jobName,
+                              Scheduler.DEFAULT_GROUP, jobClass);
+
+          // Configure the directory to scan
+          jobDetail.getJobDataMap().put("SCAN_DIR", scanDir);
+
+          // Trigger that repeats every "scanInterval" secs forever
+          Trigger trigger =
+                      TriggerUtils.makeSecondlyTrigger(scanInterval);
+
+          trigger.setName(jobName + "-Trigger");
+
+          // Start the trigger firing from now
+          trigger.setStartTime(new Date());
+
+          // Associate the trigger with the job in the scheduler
+          scheduler.scheduleJob(jobDetail, trigger);
+     }
+}
+{{</ highlight >}}
+<br/>
+代码 3.6 和代码 3.5 非常的类似，只存在一点小小的区别。主要的区别是代码 3.6 中重构了允许多次调用 <span style="color: #800080;">schedulerJob()</span> 方法。在设置上比如 Job 名称和扫描间隔名称通过参数传。因此从 <span style="color: #800080;">createScheduler()</span> 方法获取到 Scheduler 实例后，两个 Job(同一个类) 用不同的参数就被安排到了 Scheduler 上了。(译者注：当用调 <span style="color: #800080;">createScheduler() </span>方法得到 Scheduler 实例后，都还没有往上注册 Job，何来两个 Job 呢)。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>在 Scheduler 启动之前还是之后安排 Job 代码</strong>代码 3.6 中，我们在安排 Job 之前就调用了 Scheduler 的<span style="color: #800080;"> start()</span> 方法。回到代码 3.5 中，采用了另一种方式：我们是在 Job 安排了之后调用了 <span style="color: #800080;">start()</span> 方法。Job 和 Trigger 可在任何时候在 Scheduler 添加或删除 (除非是调用了它的 <span style="color: #800080;">shutdown()</span>方法)。</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<strong>·运行代码 3.6 中的程序<br />
+</strong><br />
+如果我们执行类 <span style="color: #800080;">Listing_3_6</span>，会得到类似如下的输出：<br/><br/>
+<span style="color: #800080;">INFO [main] (Listing_3_6.java:35) - Scheduler started at Mon Sep 05 15:12:15 EDT 2005<br />
+ INFO [QuartzScheduler_Worker-0] ScanDirectory1 fired at Mon Sep 05 15:12:15 EDT 2005<br />
+ INFO [QuartzScheduler_Worker-0] - c:\quartz-book\input\order-145765.xml - Size: 0<br />
+ INFO [QuartzScheduler_Worker-0] - ScanDirectory2 fired at Mon Sep 05 15:12:15 EDT 2005<br />
+ INFO [QuartzScheduler_Worker-0] - No XML files found in c:\quartz-book\input2<br />
+ INFO [QuartzScheduler_Worker-1] - ScanDirectory1 fired at Mon Sep 05 15:12:25 EDT 2005<br />
+ INFO [QuartzScheduler_Worker-1] - c:\quartz-book\input\order-145765.xml - Size: 0<br />
+ INFO [QuartzScheduler_Worker-3] - ScanDirectory2 fired at Mon Sep 05 15:12:30 EDT 2005<br />
+ INFO [QuartzScheduler_Worker-3] - No XML files found in c:\quartz-book\input2</span>

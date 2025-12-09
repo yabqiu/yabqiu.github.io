@@ -1,0 +1,276 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第四章. 部署 Job (第二部分)
+url: /quartz-job-scheduling-framework-4-2-2/
+date: 2007-12-27T07:56:00-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 455 
+wpStatus: publish
+views: 881
+lastmod: 2021-05-02T23:56:19-05:00
+---
+
+<strong>3. 管理 Scheduler</strong></p>
+<br/>
+除了启动 Scheduler, 在应用的生命周期中你也许还要执行 Scheduler 的别的一些操作。这些 Scheduler 操作包括查询、设置 Scheduler 为 standby 模式、继续、停止。很多情况下，当一个 Scheduler 启动后，除让它运行之外你不需要对它做任何事情的。在某些情形下，你也可能会要临时的终止 Scheduler 而转入到 standby 模式。<br/><br/>
+<strong>·启动 Scheduler</strong><br/><br/>
+启动一个 Scheduler 也不总是一目了然的。当你有了 Scheduler 的实例，并得到正确的初始化，你的 Job 和 Triiger 也已注册上去了，你只需要简单的调用 <span style="color: #800080;">start()</span> 方法：<br/>
+<!--more-->
+{{< highlight java >}}
+//Create an instance of the Scheduler
+Scheduler scheduler =
+   StdSchedulerFactory.getDefaultScheduler();
+
+//Start the scheduler
+scheduler.start();
+{{</ highlight >}}
+<br/>
+一旦 start() 方法被调用，Scheduler 就开始搜寻需要执行的 Job。在你刚得到一个 Scheduler 新的实例时，或者 Scheduler 被设置为 standby 模式后，你才可以调用 <span style="color: #800080;">start()</span> 方法。只要调用了 <span style="color: #800080;">shutdown()</span> 方法之后，你就不能再调用 Scheduler 实例的 <span style="color: #800080;">start()</span> 方法了。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>别在 <span style="color: #800080;">shutdown()</span> 之后调用 <span style="color: #800080;">start()</span></strong>
+Scheduler 实例被关闭之后你就不能调用它的 <span style="color: #800080;">start()</span> 方法了。这是因为 <span style="color: #800080;">shutdown()</span> 方法销毁了为 Scheduler 创建的所有的资源(线程，数据库连接等)。假如你在 <span style="color: #800080;">shutdown()</span> 之后调用 <span style="color: #800080;">start()</span>你将收到 <span style="color: #800080;">SchedulerException</span> 的异常。
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<strong>·Standby 模式<br />
+</strong><br/>
+设置 Scheduler 为 standby 模式会导致 Scheduler 暂时停止查找 Job 去执行。例如，假定你的 Scheduler 是从数据库中获取到的 Job 信息，这时候你需要重启数据库。在数据库恢复之后你也需要重新启动 Scheduler，或者仅仅是设置为 standby 模式就行了。你能通过调用 <span style="color: #800080;">standby()</span> 方法让 Scheduler 进入到 standby 模式：<br/>
+{{< highlight java >}}
+public void standby() throws SchedulerException;
+{{</ highlight >}}
+<br/>
+在 standby 模式，Scheduler 不再试图去执行 Job，因为那些搜寻要执行的 Job 的线程被暂停了下来。<br/><br/>
+<strong>·停止 Scheduler<br />
+</strong><br />
+你能使用两个版本的 <span style="color: #800080;">shutdonw()</span> 方来停止 Scheduler:<br/>
+{{< highlight java >}}
+public void shutdown(boolean waitForJobsToComplete)
+throws SchedulerException;
+
+public void shutdown() throws SchedulerException;
+{{</ highlight >}}
+<br/>
+上面那两个方法唯一不同之处是其中一个方法可接受一个 boolean 型参数，表示是否让当前正在进行的 Job 正常执行完成才停止 Scheduler。无参的 <span style="color: #800080;">shutdown()</span> 方法相当于调用 <span style="color: #800080;">shutdown(false).</span><br/><br/>
+<span style="color: #000000;"><strong>4. 管理 Job</strong></span><br/><br/>
+前面章节我们粗略的看了 Quartz Job，现在来详细正式的讨论 Quartz Job 和怎样使用它们。<br/><br/>
+<strong>·什么是 Quartz Job?<br />
+</strong><br />
+很简单，一个 Quart Job 就是一个为你执行一个任务的 Java 类。这个任务是你能用 Java 编码的任何东西。下面就是一些任务的例子：<br/><br/>
+    ·使用 JavaMail (或别的 Mail 框架、如 Commons Net) 发送 e-mail<br/><br/>
+    ·创建一个远程接口并调用 EJB 上的方法<br/><br/>
+    ·获得 Hibernate 会话，查询、更新关系数据库中的数据<br/><br/>
+    ·使用 OSWorkflow 并在 Job 中调用一个工作流<br/><br/>
+上面的例子仅仅是一部份；你一定能列出不少你自己的任务。任何 Java 能做的事情都可以成为一个 Job.<br/><br/>
+<strong>·<span style="color: #800080;">org.quartz.Job</span> 接口</strong><br/><br/>
+把 Quartz 作用到 Java 类上唯一要做的就是让它实现 <span style="color: #800080;">org.quartz.Job</span> 接口。你的 Job 类可以实现任何其他想要的接口或继承任何需要的基类，但是它自己或是它的超类必须实现这个 Job 接口。这个 Job 接口只定义了单个方法：<br/>
+{{< highlight java >}}
+public void execute(JobExecutionContext context)
+     throws JobExecutionException;
+{{</ highlight >}}
+<br/>
+当 Scheduler 决定了是时候运行 Job 时，方法 <span style="color: #800080;">execute()</span> 就会被调用，并传递一个 <span style="color: #800080;">JobExecutionContext</span> 对象给这个 Job。Quartz 加给方法 <span style="color: #800080;">execute()</span> 要承担的唯一合约责任就是如果在 Job 中出现严重问题时，必须抛出一个 <span style="color: #800080;">org.quartz.JobExecutionException</span> 异常。<br/><br/>
+<strong>·</strong><span style="color: #800080;"><strong>JobExecutionContext</strong></span><br/><br/>
+<span style="color: #000000;">当 Scheduler 调用一个 Job，一个 <span style="color: #800080;">JobexecutionContext</span> 传递给 <span style="color: #800080;">execute()</span> 方法。<span style="color: #800080;">JobExecutionContext</span> 对象让 Job 能访问 Quartz 运行时候环境和 Job 本身的明细数据。这就类似于在 Java Web 应用中的 servlet 访问 <span style="color: #800080;">ServletContext</span> 那样。通过 <span style="color: #800080;">JobExecutionContext</span>，Job 可访问到所处环境的所有信息，包括注册到 Scheduler 上与该 Job 相关联的 JobDetail 和 Triiger。代码 4.4 展示了一个叫做 <span style="color: #800080;">PrintInfoJob</span> 的 Job 打印出相关的一些信息。</span><br/><br/>
+从代码 4.4 中可以看到，Quartz Job 的一个非常基础的代码。<span style="color: #800080;">PrintInfoJob</span> 获得存储在   <span style="color: #800080;">JobExecutionContext</span> 中的 <span style="color: #800080;">JobDetail</span> 对象，进而打印出 Job 相关的基本明细。还<span style="color: #800080;">JobDetail</span> 类还会被给予更多的一些讨论。<br/><br/>
+<strong>代码 4.4. <span style="color: #800080;">PrintInfoJob</span> 显示了如何访问 <span style="color: #800080;">JobExecutionContext<br />
+</span></strong><br/>
+{{< highlight java >}}
+public class PrintInfoJob implements Job {
+     static Log logger = LogFactory.getLog(PrintInfoJob.class);
+
+     public void execute(JobExecutionContext context)
+               throws JobExecutionException {
+
+          // Every job has its own job detail
+          JobDetail jobDetail = context.getJobDetail();
+
+          // The name and group are defined in the job detail
+          String jobName = jobDetail.getName();
+          logger.info("Name: " + jobDetail.getFullName());
+
+          // The name of this class configured for the job
+          logger.info("Job Class: " + jobDetail.getJobClass());
+
+          // Log the time the job started
+          logger.info(jobName + " fired at " + context.getFireTime());
+
+         logger.info("Next fire time " + context.getNextFireTime());
+     }
+}
+{{</ highlight >}}
+<br/>
+<strong>·<span style="color: #800080;">JobDetail</span></strong><br/><br/>
+你第一次看到 <span style="color: #800080;">org.quartz.JobDetail</span> 类是在前面的第三章。对于部署在 Scheduler 上的每一个 Job 只创建了一个 <span style="color: #800080;">JobDetail</span> 实例。<span style="color: #800080;">JobDetail</span> 是作为 Job 实例进行定义的。注意到在代码 4.5 中不是把 Job 对象注册到 Scheduler；实际注册的是一个 <span style="color: #800080;">JobDetail</span> 实例。<br/><br/>
+<strong>代码 4.5. 注册到 Scheduler 上的是一个 <span style="color: #800080;">JobDetail</span>，而不是 Job</strong><br/>
+
+{{< highlight java >}}
+public class Listing_4_5 {
+     static Log logger = LogFactory.getLog(Listing_4_5.class);
+
+     public static void main(String[] args) {
+          Listing_4_5 example = new Listing_4_5();
+          example.runScheduler();
+     }
+
+     public void runScheduler() {
+
+          try {
+
+               // Create a default instance of the Scheduler
+               Scheduler scheduler =
+                              StdSchedulerFactory.getDefaultScheduler();
+
+              logger.info("Scheduler starting up...");
+              scheduler.start();
+
+              // Create the JobDetail
+              JobDetail jobDetail =
+                             new JobDetail("PrintInfoJob",
+                        Scheduler.DEFAULT_GROUP,
+                                     PrintInfoJob.class);
+                     // Create a trigger that fires now and repeats forever
+              Trigger trigger = TriggerUtils.makeImmediateTrigger(
+                        SimpleTrigger.REPEAT_INDEFINITELY, 10000);
+              trigger.setName("PrintInfoJobTrigger");
+
+             // register with the Scheduler
+             scheduler.scheduleJob(jobDetail, trigger);
+
+        } catch (SchedulerException ex) {
+             logger.error(ex);
+        }
+     }
+  }
+{{</ highlight >}}
+<br/>
+在代码 4.5 中你可以看到，<span style="color: #800080;">JobDetail</span> 被加到 Scheduler 中了，而不是 job。Job 类是作为 <span style="color: #800080;">JobDetail</span> 的一部份，但是它直到 Scheduler 准备要执行它的时候才会被实例化的。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>直到执行时才会创建 Job 实例</strong></td>
+</tr>
+</tbody>
+</table>
+<br/>
+Job 的实例要到该执行它们的时候才会实例化出来。每次 Job 被执行，一个新的 Job 实例会被创建。其中暗含的意思就是你的 Job 不必担心线程安全性，因为同一时刻仅有一个线程去执行给定 Job 类的实例，甚至是并发执行同一 Job 也是如此。<br/><br/>
+<strong>·使用 <span style="color: #800080;">JobDataMap</span> 对象设定 Job 状态</strong><br/><br/>
+你能使用 <span style="color: #800080;">org.quartz.JobDataMap</span> 来定义 Job 的状态。JobDataMap 通过它的超类 <span style="color: #800080;">org.quartz.util.DirtyFlagMap</span> 实现了 <span style="color: #800080;">java.util.Map</span> 接口，你可以向 <span style="color: #800080;">JobDataMap</span> 中存入键/值对，那些数据对可在你的 Job 类中传递和进行访问。这是一个向你的 Job 传送配置的信息便捷方法。代码 4.6 描述的就是，我们特意创建了一个叫做 <span style="color: #800080;">PrintJobDataMapJob</span> 的 Job，使用了这种方式。<br/><br/>
+<strong>代码 4.6. 使用 <span style="color: #800080;">JobDataMap</span> 向你的 Job 传递配置信息</strong><br/>
+{{< highlight java >}}
+public class Listing_4_6 {
+     static Log logger = LogFactory.getLog(Listing_4_6.class);
+
+     public static void main(String[] args) {
+          Listing_4_6 example = new Listing_4_6();
+          example.runScheduler();
+     }
+
+     public void runScheduler() {
+          Scheduler scheduler = null;
+
+          try {
+               // Create a default instance of the Scheduler
+               scheduler = StdSchedulerFactory.getDefaultScheduler();
+               scheduler.start();
+               logger.info("Scheduler was started at " + new Date());
+
+               // Create the JobDetail
+               JobDetail jobDetail =
+                              new JobDetail("PrintJobDataMapJob",
+                         Scheduler.DEFAULT_GROUP,
+                              PrintJobDataMapJob.class);
+
+               // Store some state for the Job
+               jobDetail.getJobDataMap().put("name", "John Doe");
+               jobDetail.getJobDataMap().put("age", 23);
+               jobDetail.getJobDataMap().put("balance",
+                                                    new BigDecimal(1200.37));
+               // Create a trigger that fires once
+               Trigger trigger =
+                              TriggerUtils.makeImmediateTrigger(0, 10000);
+               trigger.setName("PrintJobDataMapJobTrigger");
+
+               scheduler.scheduleJob(jobDetail, trigger);
+
+          } catch (SchedulerException ex) {
+                logger.error(ex);
+          }
+     }
+ }
+{{</ highlight >}}
+<br/>
+在代码 4.6 中，我们想要传递给 <span style="color: #800080;">PrintJobDataMapJob</span> 的信息存储到了 <span style="color: #800080;">JobDetail</span> 的 <span style="color: #800080;">JobDataMap</span> 中。因为 <span style="color: #800080;">JobDataMap</span> 实现了 <span style="color: #800080;">java.util.Map</span> 接口，所以我们可以以键/值对的形式在其中存储状态。<span style="color: #800080;">JobDataMap</span> 包含了许多精细的方法使处理起对象来方便简易。一般使用 map 的话，我们不得不要显式把 Object 类型转换成已知类型。<span style="color: #800080;">JobDataMap</span> 包含的方法能帮你完成这些工作。<br/><br/>
+当 Scheduler 最后调用了 Job，Job 可以通过 <span style="color: #800080;">JobDetail</span> 来访问到 <span style="color: #800080;">JobDataMap</span> 中的键/值对。代码 4.7 就是这个 <span style="color: #800080;">PrintJobDataMapJob</span>.<br/><br/>
+<strong>代码 4.7. Job 能通过 <span style="color: #800080;">JobExecutionContext </span>对象访问 <span style="color: #800080;">JobDataMap</span></strong><br/>
+{{< highlight java >}}
+public class PrintJobDataMapJob implements Job {
+     static Log logger = LogFactory.getLog(PrintJobDataMapJob.class);
+
+     public void execute(JobExecutionContext context)
+               throws JobExecutionException {
+
+          logger.info("in PrintJobDataMapJob");
+
+          // Every job has its own job detail
+          JobDataMap jobDataMap =
+                       context.getJobDetail().getJobDataMap();
+
+          // Iterate through the key/value pairs
+          Iterator iter = jobDataMap.keySet().iterator();
+
+          while (iter.hasNext()) {
+               Object key = iter.next();
+               Object value = jobDataMap.get(key);
+
+               logger.info("Key: " + key + " - Value: " + value);
+          }
+      }
+ }
+{{</ highlight >}}
+<br/>
+当你获得了 <span style="color: #800080;">JobDataMap</span>，你可以当它是任何 map 实例一样调用它的方法。一般的，你会自己选择一个预定义的键值来访问 <span style="color: #800080;">JobDataMap</span> 中的数据。你也可以像代码 4.7 那样遍历其中的所有数据。<br/><br/>
+像 <span style="color: #800080;">PrintJobDataMapJob</span> 那样的 Job，<span style="color: #800080;">JobDataMap</span> 中的属性成为了一个在部署 Job 的客户端与 Job 自身之间的一个非正式的契约。Job 的创建者应该非常仔细的文档化规定哪些属性是必须的，哪些又是可选的。这样有助于确保 Job 能被团队中的其他成员重用。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>自 Quartz 1.5 始，JobDataMap 对 Trigger 也是可用的</strong></td>
+</tr>
+</tbody>
+</table>
+<br/>
+在 Quartz 1.5 中，<span style="color: #800080;">JobDataMap</span> 在 Trigger 级也是可用的。它的用途类似于 Job 级的 <span style="color: #800080;">JobDataMap</span>，此外它还能支持应用在同一个 <span style="color: #800080;">JobDetail </span>上的多个 Trigger 上。伴随着加入到 Quartz 1.5 中的这一增强特性，可以使用 <span style="color: #800080;">JobExecutionContext</span> 的一个新的更方便的方法获取到 Job 和 Trigger 级的并集的 map 中的值。这个方法就是 <span style="color: #800080;">getMergedJobDataMap()</span>，它能够在 Job 中使用。从 Quartz 1.5 之后，使用这个方法被认为是获取 <span style="color: #800080;">JobDataMap</span> 最佳实践。<br/><br/>
+<strong>·有状态的之于无状态的 Job</strong><br/><br/>
+你从前一节中学到，信息可插入到 <span style="color: #800080;">JobDataMap</span> 中然后被 Job 访问到。然而，对于每一次的 Job 执行，都会为特定的 Job 取用存储在某处(例如，数据库中)的值创建一个新的 <span style="color: #800080;">JobDataMap</span> 实例。因此，无法为两次 Job 调用之间持有那些信息，除非你使用有状态的 Job.<br/><br/>
+同样的方式，J2EE 中有状态的 Session Bean(SFSB) 能在两个调用之间保持状态，Quartz 的 <span style="color: #800080;">StatefulJob</span> 也能在两次 Job 执行间保持它的状态。然而，正如 SFSB 那样，Quartz 的有状态的 Job 与无状态的 Job 比起来也有一些不利的方面。<br/><br/>
+<strong>·使用有状态的 Job<br />
+</strong><br />
+当你需要在两次 Job 执行间维护状态的话，Quartz 框架为此提供了 <span style="color: #800080;">org.quartz.StatefulJob</span> 接口。<span style="color: #800080;">StatefulJob</span> 接口仅仅是扩展了 Job 接口，未加入新的方法。你只需要通过使用与 Job 接口相同的 <span style="color: #800080;">execute()</span> 方法简单的实现 <span style="color: #800080;">StatefulJob</span> 接口即可。假如你有已存在的 Job 类，你所有要做的只是改变 Job 的接口为 <span style="color: #800080;">org.quartz.StatefulJob</span>。<br/><br/>
+Job 和 <span style="color: #800080;">StatefulJob</span> 在框架中使用中存在两个关键差异。首先，<span style="color: #800080;">JobDataMap</span> 在每次执行之后重新持久化到 <span style="color: #800080;">JobStore</span> 中。这样就确保你对 Job 数据的改变直到下次执行仍然保持着。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>改变有状态 Job 的 </strong><span style="color: #800080;"><strong>JobDataMap</strong><br />
+</span></td>
+</tr>
+</tbody>
+</table>
+<br/>
+你可以在有状态 Job 中简单的通过 map 的 put() 方法来修改 <span style="color: #800080;">JobDataMap</span>.已存在的任何数据会被新的数据覆盖掉。你也能对无状态的 Job 这么做，但是因为对于无状态 Job 来说，<span style="color: #800080;">JobDataMap</span> 不会持久化，所以数据不会保存下来。对于 Trigger 和 <span style="color: #800080;">JobExecutionContext</span> 上的 <span style="color: #800080;">JobDataMap</span> 的数据修改也是没能保存下来的。<br/><br/>
+另一个无状态和有状态 Job 重大区别就是：两个或多个有状态的 <span style="color: #800080;">JobDetail</span> 实例不能并发执行。说的是你创建并注册了一个有状态 <span style="color: #800080;">JobDetail</span> 到 Scheduler 上。你还建立了两个 Trigger 来触发这个 Job：一个每五分钟触发，另一个也是每五分钏触发。假如这两个 Trigger 试图在同一时刻触发 Job，框架是不允许这种事情发生的。第二个 Trigger 一直会被阻塞直到第一个结束。<br/><br/>
+这就产生了处理 <span style="color: #800080;">JobDataMap</span> 存储的需求了。因为 <span style="color: #800080;">JobDataMap</span> 的存储是伴随着 <span style="color: #800080;">JobDetail</span> 的，而 <span style="color: #800080;">JobDetail</span> 定义了 Job 实例，所以线程安全性问题必须纳入到我们考虑的范畴。同一时刻只能由一个线程去运行并更新 <span style="color: #800080;">JobDataMap</span> 存储。然而，由于在第一个 Trigger 有机会更新存储之前第二个就会试图执行 Job，所以数据有可能会出错。甚至可能的话还会第二个 Trigger 先于第一个执行完成(依赖于你的 Job 所做的事情)，这时就可能会出现奇怪的结果。<br/><br/>
+因为这些区别，在你使用 <span style="color: #800080;">StatefulJob</span> 时可要谨慎了。当你需要避免并发执行一个 Job 时，那么有状态 Job 就是你最简单的筹码了。在 J2EE 的世界里，有状态一词已经引起了一些负面影响，但对于 Quartz 却非如此。
