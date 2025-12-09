@@ -3,11 +3,11 @@ title: AWS SNS 订阅到 HTTP 的过程及消息报文
 url: /aws-sns-subscribe-http-endpoint-messages/
 date: 2023-02-23T00:33:56-06:00
 featured: false
-draft: true
+draft: false
 toc: false
 # menu: main
 usePageBundles: true
-thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+thumbnail: "../images/logos/aws-logo.png"
 categories:
   - AWS
 tags: 
@@ -27,10 +27,11 @@ AWS SNS(Simple Notification Service) 以消息订阅，推送的方式对组件�
 本文试验如何用 HTTP 端点订阅 SNS 消息，订阅确认，以及发送消息到 SNS 主题后消息推送到 HTTP 端点的细节，重点是了解订阅及被推送过来消息时的 HTTP 报文内容。SNS 的 HTTP 端点订阅需要一个公网上的 HTTP URL, 对 SNS 可见，所以我在本地测试时在家中路由器上加一个端口映射，对 Modem 获得的公有 IP 的 8080 端口访问转发到写此文用所用机器的 8080 端口上。<br/><br/>
 在本机需要在 8080 端口上启动一个 HTTP 服务以迎接 AWS 消息的到来，比如用 python 3 的话，简单运行命令 <code>python -m http.server 8080</code>。如果不想在 API 代码中分析 HTTP 报文数据，只需打开 <a href="https://www.wireshark.org/">Wireshark</a>(过滤条件 tcp.port=8080 &amp;&amp; http) 抓取 8080 上的 HTTP 数据通信即可。在 API 代码中如何处理 HTTP 请求数据不是本文的重点。<!--more--><br/><br/>
 为方便起见，暂时设定了一个 DNS A 记录  sns.yanbin.blog 指向到 Modem 的 8080，拟定 HTTP 端点为 http://sns.yanbin.blog:8080/。<br/><br/>
-<h3>SNS 到 HTTP 端点的订阅与确认</h3><br/><br/>
+<h3>SNS 到 HTTP 端点的订阅与确认</h3>
 首先在 Amazon 中创建一个 SNS topic, 命名为 test-topic，然后创建订阅时选择协议为 HTTP，在 Endpoint 中填入 "http://sns.yanbin.blog:8080/", 这里有个选项 "Enable raw message delivery", 先不勾选, 后面讲对比选与不选该项的不同; 在点击 "Create subscription" 按钮之前打开 Wireshark 准备捕获从 AWS 过来的报文。<br/><br/>
-现在点击 "Create subscription" 按钮，这时候在 "http://sns.yanbin.blog:8080/" 端上收到一个来自 AWS 的 HTTP POST 请求，它的 HTTP 协议文本是<br/><br/>
-<pre class="wrap:true lang:default decode:true">POST / HTTP/1.1
+现在点击 "Create subscription" 按钮，这时候在 "http://sns.yanbin.blog:8080/" 端上收到一个来自 AWS 的 HTTP POST 请求，它的 HTTP 协议文本是<br/>
+{{< highlight text >}}
+POST / HTTP/1.1
 x-amz-sns-message-type: SubscriptionConfirmation
 x-amz-sns-message-id: 11ec7b76-af78-467b-97c9-cf9f4ec6508f
 x-amz-sns-topic-arn: arn:aws:sns:us-east-1:0123456789012:test-topic
@@ -39,7 +40,8 @@ Content-Type: text/plain; charset=UTF-8
 Host: sns.yanbin.blog:8080
 Connection: Keep-Alive
 User-Agent: Amazon Simple Notification Service Agent
-Accept-Encoding: gzip,deflate<br/><br/>
+Accept-Encoding: gzip,deflate
+
 {
   "Type" : "SubscriptionConfirmation",
   "MessageId" : "11ec7b76-af78-467b-97c9-cf9f4ec6508f",
@@ -51,13 +53,14 @@ Accept-Encoding: gzip,deflate<br/><br/>
   "SignatureVersion" : "1",
   "Signature" : "DiEDpqoGs41NfZkNpvBSeY1OOUQGRvAwqQax1Oo51po+h6NLO7F3j2pdTR5jwWvCOIQ4vH5r48+4Ha9VsvGDf81/ATRuMDO5rvfT5p1ptMDRR+leJ9W4YDvzOg96XIggbUl8DYWbKWDiEdmFZQhkgWasILbMPsGt9WJCVRLFekaH18fdT38oTf7w8dulOBVLpWVVHj//gpR6DvGWBRHM9zc6GS8XmhcddGdgfRe50tNfwf8NNpYK8unIvxDZfsWiK9KmBsj7V0bEpzAa8GVnTNyKvfflxcI/XD7wiDcqM7Pivcb9DZAvOiydUgBs2TiRnGcRUmzCMrotnq5XKz4tyQ==",
   "SigningCertURL" : "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-56e67fcb41f6fec09b0196692625d385.pem"
-}</pre>
+}
+{{</ highlight >}}
 <br/>
 现在 SNS 主题 test-topic 上有一个待确认的订阅<br/><br/>
-<a href="https://yanbin.blog/wp-content/uploads/2023/02/sns-http-1.png"><img class="aligncenter wp-image-13001 size-large" src="https://yanbin.blog/wp-content/uploads/2023/02/sns-http-1-800x163.png" alt="" width="800" height="163" /></a> <br/><br/>
+{{< bundle-image src="sns-http-1-800x163.png" width="800px" >}}
 在这个界面上可以选择这个 Pending 的订阅，进行 "Confirm subscription", 确认时需要填入 "Subscription confirmation url", 就是在点击 "Create subscription" 按钮时收到 HTTP 请求中的 "SubscribeURL", 其中包含 Token。<br/><br/>
 或者直接访问 "SubscribeURL": "https://sns.us-east-1.amazonaws.com/?Action=ConfirmSubscription&amp;TopicArn=arn:aws:sns:us-east-1:0123456789012:test-topic&amp;Token=2336412f37fb687f5d51e6e2425c464de7ccff1bc58035297fde704abfc2c9ef4c5ba9ebca38627878248a51e55f6ad10793b1a7945993c8556591ca55772e787de1a6f2d06b27a4ff2a9e66db529fa4b317306d6587efa7341b550a811ee95d21091ab4ac99dddc2de3496837e2ebde" 立即进行订阅的确认，GET 或 POST 随意。<br/><br/>
-以下 curl 命令后的 URL 中 <code>?</code>， <code>=</code> , <code>&amp;</code> 需要用 <code>\</code> 进行转义<br/><br/>
+以下 curl 命令后的 URL 中 <code>?</code>， <code>=</code> , <code>&amp;</code> 需要用 <code>\</code> 进行转义<br/>
 <blockquote>
 $ curl https://sns.us-east-1.amazonaws.com/\?Action\=ConfirmSubscription\&amp;TopicArn\=arn:aws:sns:us-east-1:0123456789012:test-topic\&amp;Token\=2336412f37fb687f5d51e6e2425c464de7ccff1bc58035297fde704abfc2c9ef4c5ba9ebca38627878248a51e55f6ad10793b1a7945993c8556591ca55772e787de1a6f2d06b27a4ff2a9e66db529fa4b317306d6587efa7341b550a811ee95d21091ab4ac99dddc2de3496837e2ebde<br />
 &lt;ConfirmSubscriptionResponse xmlns="http://sns.amazonaws.com/doc/2010-03-31/"&gt;<br />
@@ -69,12 +72,12 @@ $ curl https://sns.us-east-1.amazonaws.com/\?Action\=ConfirmSubscription\&amp;To
   &lt;/ResponseMetadata&gt;<br />
 &lt;/ConfirmSubscriptionResponse&gt;
 </blockquote>
-<br/>
+
 "Request confirmation" 按钮可重新发送 Type: SubscriptionConfirmation 的消息到 HTTP 端点，以防我们丢失了之前确认订阅用的 "SubscribeURL"<br/><br/>
 订阅确认后就变得可用<br/><br/>
-<a href="https://yanbin.blog/wp-content/uploads/2023/02/sns-http-2.png"><img class="size-large wp-image-13006 aligncenter" src="https://yanbin.blog/wp-content/uploads/2023/02/sns-http-2-800x160.png" alt="" width="800" height="160" /></a><br/><br/>
+{{< bundle-image src="sns-http-2-800x160.png" width="800px" >}}
 理解了这个过程之后，我们在实现 http://sns.yanbin.blog:8080/ API 时，当收到 AWS 过来的特定条件的 SNS "SubscriptionConfirmation" 消息后可以立马访问 "SubscribeURL" 来完成订阅的确认。<br/><br/>
-懂得了发生成后面的对话过程，无论是用 AWS CLI 还是 Terraform 来完成订阅与确认过程就好理解了，比如用 AWS CLI 的订阅过程是<br/><br/>
+懂得了发生成后面的对话过程，无论是用 AWS CLI 还是 Terraform 来完成订阅与确认过程就好理解了，比如用 AWS CLI 的订阅过程是<br/>
 <blockquote>
 $ aws sns subscribe --topic-arn arn:aws:sns:us-east-1:0123456789012:test-topic --protocol http --notification-endpoint http://sns.yanbin.blog:8080/<br />
 {<br />
@@ -87,7 +90,7 @@ $ aws sns confirm-subscription --topic-arn arn:aws:sns:us-east-1:0123456789012:t
 </blockquote>
 <br/>
  Token 就是订阅时 POST 到 notification-endpoint 去 SubscribeURL 中的 token<br/><br/>
-<h3>SNS 向 HTTP 端点推着消息</h3><br/><br/>
+<h3>SNS 向 HTTP 端点推着消息</h3>
 HTTP 订阅确认后，我们现在往主题 test-topic 中发送一条消息来观察 http://sns.yanbin.blog:8080/ 上会收到什么 HTTP 报文。直接在 AWS SNS Web 控制台，选择 test-topic 主题，点击按钮 "Publish message"<br/><br/>
 <ol>
     <li>Subject: "test subject"</li>
@@ -95,8 +98,9 @@ HTTP 订阅确认后，我们现在往主题 test-topic 中发送一条消息来
     <li>Message attributes: 加一条 "Type: String, Name: key1, Value: value1" 的属性条目</li>
 </ol>
 <br/>
-最后点击 "Publish message" 按钮，来到 Wireshark, 收到一个 POST http://sns.yanbin.blog:8080/ 请求, 报文为<br/><br/>
-<pre class="lang:default decode:true">POST / HTTP/1.1
+最后点击 "Publish message" 按钮，来到 Wireshark, 收到一个 POST http://sns.yanbin.blog:8080/ 请求, 报文为<br/>
+{{< highlight text >}}
+POST / HTTP/1.1
 x-amz-sns-message-type: Notification
 x-amz-sns-message-id: 3118e726-bb2f-5816-a923-bb5646a17faa
 x-amz-sns-topic-arn: arn:aws:sns:us-east-1:0123456789012:test-topic
@@ -107,7 +111,8 @@ Content-Type: text/plain; charset=UTF-8
 Host: sns.yanbin.blog:8080
 Connection: Keep-Alive
 User-Agent: Amazon Simple Notification Service Agent
-Accept-Encoding: gzip,deflate<br/><br/>
+Accept-Encoding: gzip,deflate
+
 {
   "Type" : "Notification",
   "MessageId" : "3118e726-bb2f-5816-a923-bb5646a17faa",
@@ -118,15 +123,17 @@ Accept-Encoding: gzip,deflate<br/><br/>
   "SignatureVersion" : "1",
   "Signature" : "E6TrWsmMWts81MYnT54WYJH1bFTubU1bOvPbriIbekwbb4ZYP3l/wOqEbc4Zj9UH9dRkqPwO8NjHKoZWJEL08gOvrcPE50tqLSc9beyT/BVA+1TnqrtGjuFuK+Dnlq0kG3mJYEpTLDDv0IAAj0Mzjdg9Kcho2as9D84F9yeReitJuaBGVTVInKv4WQMyFtIHebhFEqFn5jrcDtWg/KifHe61pifllr/3DyaaZIfE1TZLyaIc4aEzcY/DwAcA/x/0syNlIlFor8prJXZh4ds32kiDYMiQm85qBinVRq+SI1qPXL6f4zWEuGmxxCUCvkUoa2mRjRW/P2DsZ14TeeY/ng==",
   "SigningCertURL" : "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-56e67fcb41f6fec09b0196692625d385.pem",
-  "UnsubscribeURL" : "https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe&amp;SubscriptionArn=arn:aws:sns:us-east-1:0123456789012:test-topic:0cc7bbc1-e16f-457e-a6d1-2183eddbe277",
+  "UnsubscribeURL" : "https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=arn:aws:sns:us-east-1:0123456789012:test-topic:0cc7bbc1-e16f-457e-a6d1-2183eddbe277",
   "MessageAttributes" : {
     "key1" : {"Type":"String","Value":"value1"}
   }
-}</pre>
+}
+{{</ highlight >}}
 <br/>
 标准的消息推着，有消息就调用一下订阅时设定的 HTTP 端点, post body 是一个 JSON, Type 为 "Notification", 包含有完整的消息内容，并且带上了友好的退订链接。<br/><br/>
-上面是订阅是未勾选 "Enable raw message delivery" 选项，我们可以修改现有的订阅，把该选项勾上，然后重新发送一条相同的消息内容，对应的 HTTP 报文是<br/><br/>
-<pre class="lang:default decode:true">POST / HTTP/1.1
+上面是订阅是未勾选 "Enable raw message delivery" 选项，我们可以修改现有的订阅，把该选项勾上，然后重新发送一条相同的消息内容，对应的 HTTP 报文是<br/>
+{{< highlight text >}}
+POST / HTTP/1.1
 x-amz-sns-message-type: Notification
 x-amz-sns-message-id: d9f3a6bd-c69c-55d7-9a80-facd39b5d520
 x-amz-sns-topic-arn: arn:aws:sns:us-east-1:0123456789012:test-topic
@@ -138,14 +145,17 @@ Content-Type: text/plain; charset=UTF-8
 Host: sns.yanbin.blog:8080
 Connection: Keep-Alive
 User-Agent: Amazon Simple Notification Service Agent
-Accept-Encoding: gzip,deflate<br/><br/>
-test message body</pre>
+Accept-Encoding: gzip,deflate
+
+test message body
+{{</ highlight >}}
 <br/>
 收到一条只有消息体的 SNS 消息，没有 subject, 还有其他的 Message Attribute 也都被忽略掉了。<br/><br/>
 为了单一 HTTP 端点能够根据消息 Type 的类型进行复用，还是别勾选上 "Enable raw message delivery" 为好，当然某些时候该选项还是有意义的。<br/><br/>
 进行了上面的分析后，订阅 SNS 的 HTTP endpoint 中怎么无需多讲了，本文也就此告结了。<br/><br/>
-最后附一个 S3 Event 到 SNS topic, 然后订阅到 HTTP 的消息样例<br/><br/>
-<pre class="lang:default decode:true ">POST / HTTP/1.1
+最后附一个 S3 Event 到 SNS topic, 然后订阅到 HTTP 的消息样例<br/>
+{{< highlight text >}}
+POST / HTTP/1.1
 x-amz-sns-message-type: Notification
 x-amz-sns-message-id: c1640ed7-6ae6-5bd8-a492-52a6a132b1ce
 x-amz-sns-topic-arn: arn:aws:sns:us-east-1:069762108088:test-topic
@@ -155,7 +165,8 @@ Content-Type: text/plain; charset=UTF-8
 Host: 71.228.15.105:8080
 Connection: Keep-Alive
 User-Agent: Amazon Simple Notification Service Agent
-Accept-Encoding: gzip,deflate<br/><br/>
+Accept-Encoding: gzip,deflate
+
 {
   "Type" : "Notification",
   "MessageId" : "c1640ed7-6ae6-5bd8-a492-52a6a132b1ce",
@@ -166,7 +177,8 @@ Accept-Encoding: gzip,deflate<br/><br/>
   "SignatureVersion" : "1",
   "Signature" : "KaBUZTOhvtPksBDoGEYcWX/hS5Z13EPeSI6Z0Fu0vwl0QN0+DNflf/Kj9ws5Va1VwLDpgCitQM7o10Y/uiLD9syl3sru8Al97ZBHblN7mcWrAoKl+5cESYRBznTY3lXMbrfhb28WzHUWCPVGADv2K/R/c7SNRe78MMx1BIW0t96WH1Ttet0Nl2hsdSNnYNN0Os2DRY3MrNalBBWKi9QmW95ZlBvvO9Nq7GIerqgrqA8ShsH0xymyl3MXdM3ryHCpfBo0qSLXcohKB5/E6M3xfJLk8EH+nOlqKgxjRJXgMW9Bz6jh7fRxT45fKAweSstEfGOD/1MrM1tzRhwV/NjMcg==",
   "SigningCertURL" : "https://sns.us-east-1.amazonaws.com/SimpleNotificationService-56e67fcb41f6fec09b0196692625d385.pem",
-  "UnsubscribeURL" : "https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe&amp;SubscriptionArn=arn:aws:sns:us-east-1:069762108088:test-topic:2c6c6284-7faa-44c4-92f3-c7aacae249e8"
-}</pre>
+  "UnsubscribeURL" : "https://sns.us-east-1.amazonaws.com/?Action=Unsubscribe&SubscriptionArn=arn:aws:sns:us-east-1:069762108088:test-topic:2c6c6284-7faa-44c4-92f3-c7aacae249e8"
+}
+{{</ highlight >}}
 <br/>
 S3 的消息以字符串形式包裹在 SNS 消息的 "Message" 体中，如果选择了 "Enable raw message delivery"，将只有 S3 的消息部分，即 "{Records:[{...."

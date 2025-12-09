@@ -1,0 +1,80 @@
+---
+title: AWS SQS 队列的 DLQ 设置与行为
+url: /aws-sqs-dead-letter-queue-setting-and-behavior/
+date: 2018-03-29T01:21:20-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - sqs
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8601 
+wpStatus: publish
+views: 1616
+lastmod: 2021-09-10T13:04:28-05:00
+---
+
+和 Lambda 类似，AWS 的  SQS 队列也提供了 DLQ(Dead Letter Queue) 来支持重试功能，可以设定某一个消息在接收多次重新变得可见后进入到另一个 SQS 队列中。比如说队列 user-id-queue，设定了它的 Redrive Policy 为三次接收后转入到另一个 SQS 队列 user-id-dlq, 就会显示为</p>
+
+<blockquote>
+<strong>Maximum Receives</strong> 3<br />
+<strong>Dead Letter Queue</strong> arn:aws:sqs:us-east-1:&lt;account_id&gt;:user-id-dlq
+</blockquote>
+
+<div>在运用 SQS 的 DLQ 之前首先要理解 SQS 中消息的几个概念</div>
+<br/>
+<ol>
+    <li>Message Available:  SQS 客户端可以获取到的消息, 即 Visible Messages</li>
+    <li>Messages in Flight: 消息被 SQS 收取了之后，由 Available 转为 In Flight, 该状态的消息不能被客户端接收到</li>
+    <li>Visibility Timeout:  消息停留在 In Flight 状态的时间, 如果在 Timeout 之前未删除这个消息，该消息重新变为 Available 状态</li>
+</ol>
+<br/>
+我们可以设置 SQS 队列的默认 Visibility Timeout 大小，也可以在代码中收取消息时指定这个值。<br/><br/>
+所以我们能够在集群环境中应用 SQS 的这个特性让多个节点同时监听单个 SQS 队列，基本上保证每个节点处理各自不同的消息。有一种例外就是：假设我们设置了 Visibility Timeout 是 30 秒，客户端 1 获取到消息后，消息变为 In Flight 状态，但 30 秒后仍然在处理过程中，此时消息回到Available 状态，客户端 2 也能获取到该消息，这也会造成单条消息的重复处理。解决的办法之一是适当延长 Visibility Timeout 的时间，给予第一个客户端更充分的处理时间。<!--more--><br/><br/>
+那么 DLQ 可以做什么用呢？SQS 的 Visibility Timeout 可以实现消息未能成功处理而不作删除，又回炉到 SQS 中去(重新变为 Available)，别的客户端或下轮又可以得到该消息进行再次处理。但是极有可能某个消息无论如何都无法处理，这就会造成无限循环。这就要 DLQ 来担当，例如前面的设置三次接收后消息会进入到另一个队列中去，也就是一个消息最多可以尝试处理三次，全部失败的话就移入到 DLQ 中去。<br/><br/>
+Dead Letter Queue 的设置界面如下，可以在队列创建时或创建后进行修改<br/><br/>
+{{< bundle-image src="sqs-dlq.png" width="650px" >}}
+上面的 user-id-dlq SQS 队列需要事先创建好。<br/><br/>
+下面是代码演示<br/>
+{{< highlight java >}}
+String queueUrl = "https://sqs.us-east-1.amazonaws.com/<account_id>/user-id-queue";
+AmazonSQS sqsClient = AmazonSQSClientBuilder.defaultClient();
+ReceiveMessageRequest request = new ReceiveMessageRequest().withQueueUrl(queueUrl)
+    .withVisibilityTimeout(30).withMaxNumberOfMessages(1);
+ReceiveMessageResult messageResult = sqsClient.receiveMessage(request);
+
+messageResult.getMessages().forEach(message -> {
+    try {
+        process(message);
+        sqsClient.deleteMessage(queueUrl, message.getReceiptHandle());
+    } catch (Exception ex) {
+        //don't delete this message from queue
+    }
+});
+{{</ highlight >}}
+<br/>
+上面代码只在消息被成功处理后主动删除，出现异常则在 VisibilityTimeout 过去后自动变为 Available, 使得该消息可被再次接收处理。<br/><br/>
+由于设置了 Dead Letter Queue, 所以消息接收 3 次后再次触碰到，该消息被移除到 DLQ 队列 user-id-dlq。<br/><br/>
+假设队列 user-id-queue 中只有一条消息，并且上面每次调用 process(message)  都出现异常，即不能成功处理该消息<br/><br/>
+{{< bundle-image src="sqs-dlq-2.png" width="319px" >}}
+<ul>
+    <li>第一轮执行，该消息变成 In Flight, 30 秒后变回 Available</li>
+    <li>第二轮执行，同上: 该消息变成 In Flight, 30 秒后变回 Available</li>
+    <li>第三轮执行，同上: 该消息变成 In Flight, 30 秒后变回 Available</li>
+</ul><br/><br/>
+如果三轮过后不去从该队列中接收消息，在 AWS SQS 控制台下看到的那条消息一直是 Available 状态. 可是再次尝试取该消息时，就没有可用的消息，该消息立马被移入到了 DLQ 队列 user-id-dlq 去了，所以被移动到 DLQ 是在第四次接收时触发的。<br/><br/>
+这其中，SQS 肯定是对每条消息有一个计数器的，每次消息从 In Flight 回到 Available 状态，计数器都会加 1。猜想是如果获取到某条消息，它的计数器是 3，则把该消息移到 DLQ 中去，至于那个计数器藏到哪里去了，就不知道了。最有可能是消息的 Receipt 里，却至今未明白那个 Receipt 是怎么编码的，像下面那样的值<br/>
+<blockquote>
+AQEBC7WZSN2Qzw+3wwXHtCqacbkA9bkZb296ujhhdNyz5GO0zcX4qVDFCHjnjUJtva+fetAlC9pai7Qg8zG1S2sc9qZCXM8lpCJp2I4oxQ6ngsMrDLwva64EIR98xebJwDytarOYFKQIWzcSS3JfiVEQzKVX2SOBp6ggwSZ5Jzx51UAeX++IPwyAGhl6D+et/0lkcSgU7xhcZeV304UJsbTwYQg6Q4DpEXLI5ANHiXzl01F6BrDHceT0C1PSzmi/1jmt05lxpmKsdwbC2nawaUPxg4Ry7VLcTpdr+epM1GLR7bPaZoO077BsNwWbAQ5Mu871GKgxXTZ159fd1IAebZp+m5UZ9e02R8ROiYetYyBso0bUUhICQ81WIFFUOLh4EkOf
+</blockquote>
+<br/>
+是一个 Base64 编码的字符串，a-z, A-Z, + 和 /，但解码出来仍然不可读，应该还需要作些小小的转换。这个 Receipt 除了有消息计数信息应该还包含了 MessageId。 <br/><br/>
+<h3>关于对主队列与 DLQ  的 role 的访问权限</h3>
+如果代码由某个 IAM role 来执行，主队列是 user-id-queue, 它的 DLQ 是 user-id-dlq, 那么该角色只需要拥有对主队列  user-id-queue 的类似于 sqs:SendMessage, sqs:ReceiveMessage, 或 sqs:DeleteMessage 的权限。无须设置用户角色对 DLQ user-id-queue 的任何访问权限，换句话说就是该 IAM role 对于 user-id-queue 是完全不用关心的。消息从主队列到 DLQ 的移动是由 AWS 来完成的，与 Lambda 的 DLQ 是一致的。
