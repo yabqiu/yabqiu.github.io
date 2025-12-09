@@ -3,7 +3,7 @@ title: "AWS EKS 执行 kubectl 时 error: You must be logged in to the server (U
 url: /aws-eks-kubectl-error-you-must-be-logged-in-to-the-server-unauthorized/
 date: 2020-04-06T17:10:36-05:00
 featured: false
-draft: true
+draft: false
 toc: false
 # menu: main
 usePageBundles: true
@@ -21,14 +21,15 @@ lastmod: 2020-04-06T17:10:36-05:00
 ---
 
 在 AWS 上创建好 EKS 后，想要在本地用  kubectl 来管理 EKS，必须用 <code>aws eks update-kubeconfig</code> 来更新本地的 <code>~/.kube/config</code> 文件或者 <code>KUBECONFIG</code> 环境变量指向的别的配置文件。<br/><br/>
-比如说你创建 EKS 的用户在本地 <code>~/.aws/credentials</code> 中的 profile 是 <code>my-aws-profile</code>, 那么完整的 <code>update-kubeconfig</code> 命令就是<br/><br/>
+比如说你创建 EKS 的用户在本地 <code>~/.aws/credentials</code> 中的 profile 是 <code>my-aws-profile</code>, 那么完整的 <code>update-kubeconfig</code> 命令就是<br/>
 <blockquote>
 $ aws eks --profile my-aws-profile --region us-east-1 update-kubeconfig --name myeks-cluster<br />
 Updated context arn:aws:eks:us-east-1:069762108088:cluster/myeks-cluster in /Users/yanbin/.kube/config
 </blockquote>
-<br/>
-再来执行 <code>kubectl get pods</code> 如果出现错误 <span style="color: #800000;">error: You must be logged in to the server (Unauthorized)</span>，肯定是因为你使用的 awscli 命令比较老(到底有多老呢？在 github 上已经无法追溯了，大概是 1.16.266 之前的)。大约生成的 ~/.kube/config 文件末尾像下面那样<!--more--><br/><br/>
-<pre class="lang:default decode:true">......
+
+再来执行 <code>kubectl get pods</code> 如果出现错误 <span style="color: #800000;">error: You must be logged in to the server (Unauthorized)</span>，肯定是因为你使用的 awscli 命令比较老(到底有多老呢？在 github 上已经无法追溯了，大概是 1.16.266 之前的)。大约生成的 ~/.kube/config 文件末尾像下面那样<!--more--><br/>
+{{< highlight yaml >}}
+......
 - name: arn:aws:eks:us-east-1:069762108088:cluster/myeks-cluster
   user:
     exec:
@@ -37,23 +38,25 @@ Updated context arn:aws:eks:us-east-1:069762108088:cluster/myeks-cluster in /Use
       - token
       - -i
       - myeks-cluster
-      command: aws-iam-authenticator</pre>
+      command: aws-iam-authenticator
+{{</ highlight >}}
 <br/>
 获得权限的方式是 <code>aws-iam-authenticator</code>, 而该命令与 <code>aws cli</code> 一样的方式获得访问 AWS  的权限，所以需设置相应的环境变量给 EKS 的 <code>kubectl</code> 命令用。<br/><br/>
 因此 <code>aws-iam-authenticator</code> 也试图根据 <code>AWS_PROFILE</code> 或 <code>ACCESS_KEY</code> 和 <code>AWS_SECRET_ACCESS_KEY</code> 来获得 AWS 访问权限。由于没有设置 <code>AWS_PROFILE=my-aws-profile</code>, 所以 <code>aws-iam-authenticator</code> 报出  <span style="color: #800000;">error: You must be logged in to the server (Unauthorized)</span> 错误。<br/><br/>
-所以要以 awscli 同样的方式告诉 <code>aws-iam-authenticator</code> 使用用什么 AWS 用户。比如说创建 EKS 的 profile 是 <code>my-aws-profile</code>，那么在执行 <code>kubectl</code> 之前也要设定默认的 AWS_PROFILE, 命令是<br/><br/>
+所以要以 awscli 同样的方式告诉 <code>aws-iam-authenticator</code> 使用用什么 AWS 用户。比如说创建 EKS 的 profile 是 <code>my-aws-profile</code>，那么在执行 <code>kubectl</code> 之前也要设定默认的 AWS_PROFILE, 命令是<br/>
 <blockquote>
 $ export AWS_PROFILE=my-aws-profile
 </blockquote>
-<br/>
-或者用下面等价的方式<br/><br/>
+
+或者用下面等价的方式<br/>
 <blockquote>
 $ export ACCESS_KEY=******<br />
 $ export AWS_SECRET_ACCESS_KEY=******
 </blockquote>
-<br/>
-如果是新版的 awscli 就不会有这样的问题, 因为在执行 <code>aws eks --profile my-aws-profile --region us-east-1 update-kubeconfig --name myeks-cluster</code> 后，命令中的 profile 和  region 会带入到 <code>~/.kube/config</code> 文件中去，也就不会出现 error: You must be logged in to the server(Unauthorized)  错误了。生成的 <code>~/.kube/config</code> 内容后部分是<br/><br/>
-<pre class="lang:default decode:true">users:
+
+如果是新版的 awscli 就不会有这样的问题, 因为在执行 <code>aws eks --profile my-aws-profile --region us-east-1 update-kubeconfig --name myeks-cluster</code> 后，命令中的 profile 和  region 会带入到 <code>~/.kube/config</code> 文件中去，也就不会出现 error: You must be logged in to the server(Unauthorized)  错误了。生成的 <code>~/.kube/config</code> 内容后部分是<br/>
+{{< highlight yaml >}}
+users:
 - name: arn:aws:eks:us-east-1:069762108088:cluster/myeks-cluster
   user:
     exec:
@@ -68,7 +71,8 @@ $ export AWS_SECRET_ACCESS_KEY=******
       command: aws
       env:
       - name: AWS_PROFILE
-        value: my-aws-profile</pre>
+        value: my-aws-profile
+{{</ highlight >}}
 <br/>
 <code>kubectl</code> 读到 <code>~/.kube/config</code> 后也就知道去使用 <code>my-aws-profile</code> 去获得 AWS 的访问权限。<br/><br/>
 另有一种情况是 EKS 可能不是 <code>my-aws-profile</code> 所代表的用户创建的，那么请参考下面的链接来解决。<br/><br/>
