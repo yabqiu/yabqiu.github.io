@@ -1,0 +1,42 @@
+---
+title: 访问日志文件过大而导致启动 Apache 时出现 httpd could not be started 错误
+url: /apache-httpd-could-not-be-started-log-too-large/
+date: 2008-05-19T12:16:00-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/apache_logo.png"
+categories:
+  - Mid-Ware
+tags: 
+  - Apache
+  - Httpd
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 392 
+wpStatus: publish
+views: 1468
+lastmod: 2020-03-22T11:39:49-05:00
+---
+
+正式应用又好久没有重启过了，所以先停了 IBM Http Server (IHS，Apache 1.3.28)，再把所有应用启动妥当后，最后把 Apache 启起来。终端下进到 IBMHttpServer 目录，然后敲入命令：<span style="color: #800080;">bin/apachectl start</span><span style="color: #000000;">，得到的错误是：</span>bin/apachectl start: httpd could not be started。</p>
+<br/>
+这下有点慌了神，以前从未碰到过，怀疑是配置文件 httpd.conf 有问题，但一般 httpd.conf 有问题有提示错误的，不管，还是用 bin/apachectl configtest 看下，返回 Syntax OK，没问题。<br/><br/>
+可能别的程序占用了 80 端口？netstat -na|grep 80 没发现什么。<br/><br/>
+翻看日志，打开 IBMHttpServer 下的 log.txt，好久以前的信息，打开 logs/error_log 也是很久以前的信息。<!--more--><br/><br/>
+网上搜索到一个相关的页面是这个 <a href="http://lists.freebsd.org/pipermail/freebsd-questions/2006-January/110052.html">http://lists.freebsd.org/pipermail/freebsd-questions/2006-January/110052.html</a>。<br/><br/>
+它给出来的答案是这两个<br/><br/>
+Some ideas, I may be off base here:<br/><br/>
+1. Is there anything being written to the error_log file?<br />
+2. Can you start Apache with the -F argument to make it stay in the<br />
+foreground? Any output there?<br/><br/>
+真还有别的程序在写 error_log 吗？于是试着 mv error_log error_log_bak，更名也能成功，说明没有其他进程锁住了这个文件。再 bin/apachectl start 看看，依旧是：bin/apachectl start: httpd could not be started。但此时我立刻注意到在 logs/ 目录下又生成了一个 error_log 文件，打开它，里面赫然写着：<br/><br/>
+[Mon May 19 23:19:05 2008] [error] (79)Value too large for defined data type: could not open transfer log file /d02/IBM/IBMHttpServer/logs/access_log.<br/><br/>
+就是说 access_log 的什么数据类型太大，索性把 access_log 也用 mv access_log access_log_bak 更了名，再次执行 bin/apachectl start 提示 bin/apachectl start: httpd started，启动成功。<br/><br/>
+再醒过神来用 ls -l logs 来看看，原来是那个 access_log_bak(从 access_log 更名而来的) 文件过大，已达到了 2147483734 字节，不能再写了；而且 error_log_bak(从 error_log 更名而来的) 也不小了，405811968，连真正的错误信息都懒得记了。<br/><br/>
+所以，如果 access_log 里的访问记录对你意义不大的话，你可以不记载它们，要修改配置文件 conf/httpd.conf，找到大致如 CustomLog /d02/IBM/IBMHttpServer/logs/access_log common 这样的行，注释掉就重启 apache 就行了。<br/><br/>
+<hr /><br/>
+补充：2008－05－27　访问日志文件或错误日志文件过大也会影响到响应请求的速度。当你的 Apache 处理请求很慢时，请留意一下这两个文件的大小。

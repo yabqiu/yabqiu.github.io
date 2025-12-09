@@ -3,7 +3,7 @@ title: 探索 Apache, Tomcat, SpringBoot 对请求数据的解压缩
 url: /apache-tomcat-springboot-decompress-request-body/
 date: 2021-05-04T12:21:26-05:00
 featured: false
-draft: true
+draft: false
 toc: false
 # menu: main
 usePageBundles: true
@@ -24,17 +24,19 @@ lastmod: 2021-05-04T12:26:37-05:00
 
 通常我们都会配置 Web 服务端对响应数据进行压缩，如用 Apache 的 mod_deflate 模块，或配置 Tomcat connector 启用压缩，又或者是在 Java Web 项目中加 Web Filter 来压缩特定的响应数据。这样客户端发送 HTTP 请求时在头中声明如 Accept-Encoding: gzip，服务端就可能会对响应数据进行压缩，同时带上 Content-Encoding: gzip 响应头。<br/><br/>
 有时候 HTTP Post 的数据太大同样会要求客户端在传输数据之前对请求数据进行压缩，本文主要关注服务端如何自动解压客户端发出的压缩数据。<br/><br/>
-先以 Apache2 为例，以 Ubuntu 20.04 为例，用命令 <code>apt-get install apache2</code> 安装 Apache 2.4.41, 它自动启用了 <a href="https://httpd.apache.org/docs/current/mod/mod_deflate.html">mod_deflate</a> 模块。mod_deflate 模块的配置文件 /etc/apache2/modes-enabled/deflate.conf 内容如下<br/><br/>
-<pre class="lang:default decode:true">&lt;IfModule mod_deflate.c&gt;
-    &lt;IfModule mod_filter.c&gt;
+先以 Apache2 为例，以 Ubuntu 20.04 为例，用命令 <code>apt-get install apache2</code> 安装 Apache 2.4.41, 它自动启用了 <a href="https://httpd.apache.org/docs/current/mod/mod_deflate.html">mod_deflate</a> 模块。mod_deflate 模块的配置文件 /etc/apache2/modes-enabled/deflate.conf 内容如下<br/>
+{{< highlight apache >}}
+<IfModule mod_deflate.c>
+    <IfModule mod_filter.c>
         AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css
         AddOutputFilterByType DEFLATE application/x-javascript application/javascript application/ecmascript
         AddOutputFilterByType DEFLATE application/rss+xml
         AddOutputFilterByType DEFLATE application/xml
-    &lt;/IfModule&gt;
-&lt;/IfModule&gt;</pre>
+    </IfModule>
+</IfModule>
+{{</ highlight >}}
 <br/>
-它表示只对以上特定的响应数据类型进行压缩，下面来测试下对 html 内容的压缩<!--more--><br/><br/>
+它表示只对以上特定的响应数据类型进行压缩，下面来测试下对 html 内容的压缩<!--more--><br/>
 <blockquote>
 $ curl -ivs -H "Accept-Encoding:gzip" http://localhost/index.html | more<br />
 * Trying 127.0.0.1:80...<br />
@@ -47,17 +49,17 @@ $ curl -ivs -H "Accept-Encoding:gzip" http://localhost/index.html | more<br />
 > Accept-Encoding:gzip<br />
 ><br />
 * Mark bundle as not supporting multiuse<br />
-&lt; HTTP/1.1 200 OK<br />
-&lt; Date: Tue, 04 May 2021 14:27:43 GMT<br />
-&lt; Server: Apache/2.4.41 (Ubuntu)<br />
-&lt; Last-Modified: Fri, 30 Apr 2021 14:53:21 GMT<br />
-&lt; ETag: "2aa6-5c131c5e6bc5b-gzip"<br />
-&lt; Accept-Ranges: bytes<br />
-&lt; Vary: Accept-Encoding<br />
-&lt; Content-Encoding: gzip<br />
-&lt; Content-Length: 3138<br />
-&lt; Content-Type: text/html<br />
-&lt;<br />
+< HTTP/1.1 200 OK<br />
+< Date: Tue, 04 May 2021 14:27:43 GMT<br />
+< Server: Apache/2.4.41 (Ubuntu)<br />
+< Last-Modified: Fri, 30 Apr 2021 14:53:21 GMT<br />
+< ETag: "2aa6-5c131c5e6bc5b-gzip"<br />
+< Accept-Ranges: bytes<br />
+< Vary: Accept-Encoding<br />
+< Content-Encoding: gzip<br />
+< Content-Length: 3138<br />
+< Content-Type: text/html<br />
+<<br />
 { [3138 bytes data]<br />
 * Connection #0 to host localhost left intact<br />
 HTTP/1.1 200 OK<br />
@@ -76,19 +78,21 @@ o�6$KcjX&lt;&amp;'����p8�ڇd����Y-S�통�L3�,[�px2�
 </blockquote>
 <br/>
 mod_deflate 在工作了，只要请求中加上 Accept-Encoding: gzip, 回过来的响应就是压缩内容，并且头中有 Content-Encoding: gzip.<br/><br/>
-回过头来，现在开始体验下 mod_deflate 是如何对请求数据进行解压缩的，压缩过程是在客户端进行的。mod_deflate 默认并不会对请求进行解压缩，即使在请求头中加了 Content-Encoding: gzip。为了测试请求数据的处理，我们安装 PHP，命令为 <code>apt install php</code>, 完后不需要额外的配置即支持 php 文件。在 web 根目录下创建 test.php 文件，内容为<br/><br/>
-<pre class="lang:default decode:true">&lt;?php
+回过头来，现在开始体验下 mod_deflate 是如何对请求数据进行解压缩的，压缩过程是在客户端进行的。mod_deflate 默认并不会对请求进行解压缩，即使在请求头中加了 Content-Encoding: gzip。为了测试请求数据的处理，我们安装 PHP，命令为 <code>apt install php</code>, 完后不需要额外的配置即支持 php 文件。在 web 根目录下创建 test.php 文件，内容为<br/>
+{{< highlight php >}}
+<?php
 $body = file_get_contents('php://input');
 echo 'received post body: ' . $body . "\n";
-?&gt;</pre>
+?>
+{{</ highlight >}}
 <br/>
-只是简单的把收到的 request body 打印出来。<br/><br/>
+只是简单的把收到的 request body 打印出来。<br/>
 <blockquote>
 curl -X POST http://localhost/test.php -d 'hello world!'<br />
 received post body: hello world!
 </blockquote>
 <br/>
-如果我们传输入压缩的 post body 呢？<br/><br/>
+如果我们传输入压缩的 post body 呢？<br/>
 <blockquote>
 $ echo 'hello world!' | gzip &gt; body.gz<br />
 $ cat body.gz -<br />
@@ -122,16 +126,18 @@ Content-Type: text/html; charset=UTF-8
 received post body: �H���W(�/�IQ����<br />
 * Connection #0 to host localhost left intact
 </blockquote>
-<br/>
+
 加了 Content-Encoding: gzip，Apache 也没有解压缩请求数据。<br/><br/>
-为了让 Apache  在看到 Content-Encoding: gzip 后自动解压请求数据，还须在 /etc/apache/mod-enabled/deflate.conf 中加上一行 SetInputFilter DEFLATE<br/><br/>
-<pre class="lang:default mark:3 decode:true ">&lt;IfModule mod_deflate.c&gt;
-        &lt;IfModule mod_filter.c&gt;
+为了让 Apache  在看到 Content-Encoding: gzip 后自动解压请求数据，还须在 /etc/apache/mod-enabled/deflate.conf 中加上一行 SetInputFilter DEFLATE<br/>
+{{< highlight apache "hl_lines=3" >}}
+<IfModule mod_deflate.c>
+        <IfModule mod_filter.c>
                 SetInputFilter DEFLATE
-        &lt;/IfModule&gt;
-&lt;/IfModule&gt;</pre>
+        </IfModule>
+</IfModule>
+{{</ highlight >}}
 <br/>
-apachectl graceful 重启 Apache 后再次测试<br/><br/>
+apachectl graceful 重启 Apache 后再次测试<br/>
 <blockquote>
 curl -iv -H 'Content-Encoding: gzip' http://localhost/test.php --data-binary @body.gz --output -<br />
 * Trying 127.0.0.1:80...<br />
@@ -161,13 +167,13 @@ Content-Type: text/html; charset=UTF-8
 received post body: hello world!
 * Connection #0 to host localhost left intact
 </blockquote>
-<br/>
-没问题了，Apache 正确理解请求中的压缩数据。假如把头 Content-Encoding: gzip 拿掉会怎么样呢？<br/><br/>
+
+没问题了，Apache 正确理解请求中的压缩数据。假如把头 Content-Encoding: gzip 拿掉会怎么样呢？<br/>
 <blockquote>
 curl http://localhost/test.php --data-binary @body.gz --output -<br />
 received post body: �H���W(�/�IQ����
 </blockquote>
-<br/>
+
 又是乱码，没什么惊讶。<br/><br/>
 OK, 我们移步到 Tomcat, 如果我们在  Tomcat 前端配置了一个 Apache 来分发请求，那么处理请求数据的压缩可以完全仰杖 Apache。而让 Tomcat 直接面对客户要如何自动解缩请求数据呢？<br/><br/>
 很遗憾，Tomcat 的 <a href="https://tomcat.apache.org/tomcat-9.0-doc/config/http.html">Connector 配置</a>也只能对响应数据进行压缩，无法对解压缩请求数据，是否支持这一需求尚在讨论当中 <a href="https://bz.apache.org/bugzilla/show_bug.cgi?id=62072">Add support fo request compression</a>。所以不得不进到自己的 Java 应用中用 Web filter 来解决。<br/><br/>
@@ -180,15 +186,18 @@ OK, 我们移步到 Tomcat, 如果我们在  Tomcat 前端配置了一个 Apach
 </ol>
 <br/>
 SpringBoot 和  Tomcat 一样，都无法自动解压缩请求中的数据。<br/><br/>
-在 SpringBoot 中的配置可应用于除 Tomcat 外任何的 Servlet 容器, 如 Jetty, Undertow, Netty 等。<br/><br/>
-<pre class="lang:default decode:true ">@RestController
-public class HelloController {<br/><br/>
+在 SpringBoot 中的配置可应用于除 Tomcat 外任何的 Servlet 容器, 如 Jetty, Undertow, Netty 等。<br/>
+{{< highlight java >}}
+@RestController
+public class HelloController {
+
     @PostMapping("/")
     public String hello(@RequestBody String body) {
         return body + "\n";
     }
-}</pre>
-<br/>
+}
+{{</ highlight >}}
+
 <blockquote>
 echo 'hello world!' | gzip &gt; body.gz
 curl -X POST -H "Content-Encoding: gzip" http://localhost:8081/ --data-binary @body.gz --output -<br />
@@ -220,77 +229,90 @@ Date: Tue, 04 May 2021 15:36:31 GMT
 %1F%EF%BF%BD%08%00%EF%BF%BDi%EF%BF%BD%60%00%03%EF%BF%BDH%EF%BF%BD%EF%BF%BD%EF%BF%BDW%28%EF%BF%BD%2F%EF%BF%BDIQ%EF%BF%BD%02%00%EF%BF%BD%EF%BF%BD%EF%BF%BD%01%0D%00%00%00=<br />
 * Connection #0 to host localhost left intact
 </blockquote>
-<br/>
+
 显示的是对压缩数据的 URL Encode 编码，反正是理解不了请求中的压缩数据。<br/><br/>
 在 Java 的 Web 应用中要能解压缩请求数据还得自定义 Web Filter, 在 filter 方法中把原本的 HttpServletRequest 置换掉，把其中的 InputStream 包装为 GZIPInputStream，后续从其中读取内容时就能自动解压了。<br/><br/>
-相关代码，先要创建一个 DelegatingServletInputStream, 继承自 ServletInputStream, 这个类的实现还是从 spring-test 包中拷贝过来的<br/><br/>
-<pre class="lang:default decode:true ">public class DelegatingServletInputStream extends ServletInputStream {
+相关代码，先要创建一个 DelegatingServletInputStream, 继承自 ServletInputStream, 这个类的实现还是从 spring-test 包中拷贝过来的<br/>
+{{< highlight java >}}
+public class DelegatingServletInputStream extends ServletInputStream {
     private final InputStream sourceStream;
-    private boolean finished = false;<br/><br/>
+    private boolean finished = false;
+
     public DelegatingServletInputStream(InputStream sourceStream) {
         Assert.notNull(sourceStream, "Source InputStream must not be null");
         this.sourceStream = sourceStream;
-    }<br/><br/>
+    }
+
     @Override
     public int read() throws IOException {
         int data = this.sourceStream.read();
         if (data == -1) {
             this.finished = true;
-        }<br/><br/>
+        }
+
         return data;
-    }<br/><br/>
+    }
+
     @Override
     public int available() throws IOException {
         return this.sourceStream.available();
-    }<br/><br/>
+    }
+
     @Override
     public void close() throws IOException {
         super.close();
         this.sourceStream.close();
-    }<br/><br/>
+    }
+
     @Override
     public boolean isFinished() {
         return this.finished;
-    }<br/><br/>
+    }
+
     @Override
     public boolean isReady() {
         return true;
-    }<br/><br/>
+    }
+
     @Override
     public void setReadListener(ReadListener readListener) {
         throw new UnsupportedOperationException();
     }
-}</pre>
+}
+{{</ highlight >}}
 <br/>
-然后创建 Filter, 在 SpringBoot 中把它声明为一个 SpringBean 就行<br/><br/>
-<pre class="lang:default decode:true">@Component
+然后创建 Filter, 在 SpringBoot 中把它声明为一个 SpringBean 就行<br/>
+{{< highlight java >}}
+@Component
 @Order(1)
-public class DecompressFilter implements Filter {<br/><br/>
+public class DecompressFilter implements Filter {
+
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
         throws IOException, ServletException {
         HttpServletRequest req = (HttpServletRequest) request;
         String contentEncoding = req.getHeader("Content-Encoding");
-        if (contentEncoding != null &amp;&amp; contentEncoding.toLowerCase().contains("gzip")) {
+        if (contentEncoding != null && contentEncoding.toLowerCase().contains("gzip")) {
             HttpServletRequest delegatingRequest = new HttpServletRequestWrapper(req) {
                 @Override
                 public ServletInputStream getInputStream() throws IOException {
                     return new DelegatingServletInputStream(new GZIPInputStream(req.getInputStream()));
                 }
-            };<br/><br/>
+            };
+
             chain.doFilter(delegatingRequest, response);
         } else {
             chain.doFilter(request, response);
         }
     }
 }
-</pre>
+{{</ highlight >}}
 <br/>
 这儿大概的查看到头 Content-Encoding 中是否包含 gzip，然后就认为它是一个压缩的请求，包装为 new DelegatingServletInputStream(new GZIPInputStream(req.getInputStream())), 接着往下传递。实际实现中需要严格判断更复杂的 <a href="https://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html">Content-Encoding</a> 值进行不同方式的解压。如 <br/><br/>
 Content-Encoding: deflate, gzip<br />
 Content-Encoding: compress<br />
 Accept-Encoding: gzip;q=1.0, identity; q=0.5, *;q=0<br/><br/>
-现在来测试一下<br/><br/>
+现在来测试一下<br/>
 <blockquote>
 $ curl -ivs -X POST -H "Content-Encoding: gzip" -H "Content-Type: text/plain" http://localhost:8081/ --data-binary @body.gz --output -<br />
 * Trying ::1...<br />
@@ -317,7 +339,7 @@ Date: Tue, 04 May 2021 16:25:54 GMT
 hello world!
 </blockquote>
 <br/>
-没问题，能成功解压缩请求中的压缩数据。注意前面除 Content-Encoding: gzip，还加了 Content-Type: text/plain，如果不加 Content-Type, 那么它默认的值就是 Content-Type: application/x-www-form-urlencoded，将得不到正确的解压缩。<br/><br/>
+没问题，能成功解压缩请求中的压缩数据。注意前面除 Content-Encoding: gzip，还加了 Content-Type: text/plain，如果不加 Content-Type, 那么它默认的值就是 Content-Type: application/x-www-form-urlencoded，将得不到正确的解压缩。<br/>
 <blockquote>
 curl -ivs -X POST -H "Content-Encoding: gzip" http://localhost:8081/ --data-binary @body.gz --output -<br />
 * Trying ::1...<br />
@@ -343,31 +365,34 @@ Date: Tue, 04 May 2021 17:09:48 GMT
 &lt;<br />
 %1F%EF%BF%BD%08%00%EF%BF%BDi%EF%BF%BD%60%00%03%EF%BF%BDH%EF%BF%BD%EF%BF%BD%EF%BF%BDW%28%EF%BF%BD%2F%EF%BF%BDIQ%EF%BF%BD%02%00%EF%BF%BD%EF%BF%BD%EF%BF%BD%01%0D%00%00%00=
 </blockquote>
-<br/>
+
 因为在 Content-Type: application/x-www-form-urlencoded 时，应用将不会使用前面覆盖的 <code>getInputStream()</code> 方法，而是进入到 ServletRequestWrapper.getParameterMap() 方法，最后读取了 org.apache.catalina.connector.CoyoteInputStream, 而不是我们期待的  GZIPInputStream。<br/><br/>
 不过对非 application/x-www-form-urlencoded 时的请求数据进行解压缩足够满足我们的需求了，大约不会有人传大数据时用 form 的 key/value 格式连接再压缩的。因此可要求客户端总是带上 Content-Type 头。<br/><br/>
-在使用 SpringBoot 时 Filter 也可以继承自 OncePerRequestFilter, 以下 Filter 实现的效果是完全一样的<br/><br/>
-<pre class="lang:default decode:true ">@Component
+在使用 SpringBoot 时 Filter 也可以继承自 OncePerRequestFilter, 以下 Filter 实现的效果是完全一样的<br/>
+{{< highlight java >}}
+@Component
 @Order(1)
-public class DecompressFilter extends OncePerRequestFilter {<br/><br/>
+public class DecompressFilter extends OncePerRequestFilter {
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
         throws ServletException, IOException {
         String contentEncoding = request.getHeader("Content-Encoding");
-        if (contentEncoding != null &amp;&amp; contentEncoding.toLowerCase().contains("gzip")) {
+        if (contentEncoding != null && contentEncoding.toLowerCase().contains("gzip")) {
             HttpServletRequest delegatingRequest = new HttpServletRequestWrapper(request) {
                 @Override
                 public ServletInputStream getInputStream() throws IOException {
                     return new DelegatingServletInputStream(new GZIPInputStream(request.getInputStream()));
                 }
-            };<br/><br/>
+            };
+
             chain.doFilter(delegatingRequest, response);
         } else {
             chain.doFilter(request, response);
         }
     }
 }
-</pre>
+{{</ highlight >}}
 <br/>
 链接：<br/><br/>
 <ol>
