@@ -1,0 +1,70 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第十一章. Quartz 集群 (第四部分)
+url: /quartz-job-scheduling-framework-11-4/
+date: 2008-08-11T12:29:00-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 349 
+wpStatus: publish
+views: 1365
+lastmod: 2010-08-19T11:15:15-05:00
+---
+
+<strong>四. 运行 Quartz 集群节点</strong><br/>
+<br/>
+在启动集群中的 Quartz 应用真的没什么差别。每个实例(或节点) 必须单独启动。启动时，实例连接到数据库，获取 Scheduler 信息，并开始部署 Job。<br/>
+<br/>
+因为 Quartz 使用了一个随机的负载均衡算法，你将会看到 Job 以随机的行方式由不同的实例执行。没有固定的模式或预告定义的节点来执行特定的 Job。<br/>
+<br/>
+下一节会讨论一些在处理集群环境中的 Quartz 较常见的问题和任务。<br/>
+<br/>
+<strong>五. Quartz 集群 Cookbook</strong><br/>
+<br/>
+本节旨在为开发者便于解决 Quartz 集群的具体问题而提供了资源。<!--more--><br/>
+<br/>
+<strong>·指派 Job 给集群中特定的实例<br/>
+</strong><br/>
+当前，还不存在一个方法来指派(钉住) 一个 Job 到集群中特定的节点。假如你需要这种行为，你可以创建一个非集群的 Quartz 应用与集群中的节点并行运行，并且要使用独立的一套数据库表或单独的 <span style="color: #800080;">JobInitializationPlugin</span> 用到的 XML 文件。<br/>
+<br/>
+不要让非集群的实例指向到集群所用的同一套数据库表。不然你会得到莫名其妙的结果。<br/>
+<br/>
+<strong>·在集群中的每一个节点上运行 Job<br/>
+</strong><br/>
+正如前面所回答的，当前还没有一种方式能让某一个 Job 实例在集群中的每一个节点上都运行。最好的办法是使用一个非集群的实例与集群的每一个节点并行运行，并且要使用独立的一套数据库表或单独的 <span style="color: #800080;">JobInitializationPlugin</span> 和 <span style="color: #800080;">RAMJobStore</span> 用到的 XML 文件。<br/>
+<br/>
+<strong>·在不同的机器上运行节点</strong><br/>
+<br/>
+Quartz 实际并不关心你是在相同的还是不同的机器上运行节点。当集群是放置在不同的机器上时，通常称之为水平集群。节点是跑在同一台机器是，称之为垂直集群。对于垂直集群，存在着单点故障的问题。这对高可用性的应用来说是个坏消息，因为一旦机器崩溃了，所有的节点也就被有效的终止了。<br/>
+<br/>
+<strong>·使用时间同步服务</strong><br/>
+<br/>
+当你在是在不同的机器上运行 Quartz 集群时，时钟应当要同步，以免出现离奇且不可预知的行为。我们已经提及过，假如时钟没能够同步，Scheduler 实例将对其他节点的状态产生混乱。有几种简单的方法来保证时钟何持同步，而且也没有理由不这么做。<br/>
+<br/>
+最简单的同步计算机时钟的方式是使用某一个 Internet 时间服务器(Internet Time Server ITS)。关于如何基于其中一个国际可接受标准来设置你的时钟的信息请看 <a href="http://tf.nist.gov/service/its.html">http://tf.nist.gov/service/its.html</a>。<br/>
+<br/>
+<strong>·从集群获取正在执行的 Job 列表</strong><br/>
+<br/>
+当前，如果不直接进到数据库的话，还没有一个简单的方式来得到集群中所有正在执行的 Job 列表。如果你请求一个 Scheduler 实例，你将只能得到在那个实例上正运行 Job 的列表。你可以写一些访问数据库 JDBC 代码来从适当的表中获取信息。当然，这是用的 Quartz 之外的方法，但确是能解决问题的。另一个途是使用 Quartz 的 RMI 特性来依次连接到每一个节点，并从中查询到当前正在执行的 Job。<br/>
+<br/>
+<strong>·让集群和非集群实例一起运行<br/>
+</strong><br/>
+没什么会阻止你在相同环境中使用集群的和非集群的 Quartz 应用。唯一要注意的是这两个环境不要混用在相同的数据库中(译者 Unmi 注：应用是数据库表)。意思是非集群环境不要使用与集群应用相同的一套数据库表；否则将得到希奇古怪的结果，集群和非集群的 Job 都会遇到问题。<br/>
+<br/>
+假如你让一个非集群的 Quartz 应用与集群节点并行着运行，设法使用 <span style="color: #800080;">JobInitializationPlugin</span>(随之的 XML 文件) 和 <span style="color: #800080;">RAMJobStore</span>。这会让你的生活更轻松。<br/>
+<br/>
+<strong>·在集群环境中使用全局监听器<br/>
+</strong><br/>
+你仍然可以使用 Job 和 Trigger 监听器在集群环境中。唯一能让你有所迷惑的是要努力理解哪个 Scheduler 实例将收到方法回调。<br/>
+<br/>
+要记住这个最简单的方法是：Job 或 Trigger 是在哪个 Scheduler 实例上执行的，通知的就是这个 Scheduler 实例上的监听器。因为 Job 和 Trigger 只会在单个节点上执行，也就只会通知那个节点上的监听器。
