@@ -1,0 +1,138 @@
+---
+title: Asp.net 使用 System.Web.Routing 来实现 UrlRewrite
+url: /asp-net-routing-urlrewrite/
+date: 2010-06-14T01:16:00-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - .Net
+tags: 
+  - urlrewrite
+  - Asp.Net
+  - Routing
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 171 
+wpStatus: publish
+views: 681
+lastmod: 2021-09-02T10:45:00-05:00
+---
+
+不管是隐藏信息还是搜索引擎友好，UrlRewrite 还是很有用的。我们可以在应用服务层实现 UrlRewrite，比如 Apache 或 IIS；也可以在应用程序层实现 UrlRewrite。Java 有很好的组件实现，.Net 中可以用 <a href="http://urlrewriter.net/" target="_blank" rel="noopener">UrlRewriter.NET</a> 来实现。看 Asp.Net MVC 引入 Routing 的概念，不过幸运的是我们不必搞个 MVC 项目也能享受到 Routing，那就是 .Net 3.5 已经为 MVC 做好准备的 System.Web.Routing。</p>
+<br/>
+差点忘了轻带一下什么是 UrlRewrite，比如说：<!--more--><br/><br/>
+想访问 http://ip/test.aspx     你需要在地址栏里输入 <a href="http://ip/test">http://ip/test</a>，或者是 <a href="http://ip/test.do">http://ip/test.do</a> 就行了<br />
+想访问 <a href="http://ip/test.aspx?key1=val1&amp;key2=val2">http://ip/test.aspx?key1=val1&amp;key2=val2</a>，地址栏里输入 <a href="http://ip/test/val1/val2">http://ip/test/val1/val2</a>，或者是 <a href="http://test-val1-val2">http://test-val1-val2</a>，自由的定义 URL 映射<br />
+或者地址栏里输入一个 Url，<a href="http://ip/rss-pro-10">http://ip/rss-pro-10</a>，直接访问的是个类，根本不需要一个 aspx 页面来处理请求。<br />
+比如访问某篇日志不再输入 <a href="http://ip/article.aspx?id=1989">http://ip/article.aspx?id=1989</a>，而只需要输入 <a href="http://ip/article-1989.html">http://ip/article-1989.html</a> 就能达到目的等等<br/><br/>
+以上想要输入的 Url 可以自由定义的，只要你能从中取出想要的信息，并把请求路由到实际的处理者(aspx或类) 便行。<br/><br/>
+我们知道在 Asp.Net 中要定义任意扩展名的请求可以使用 Handler，但它对于参数的重写有点困难，且对 IIS7 以前的版本还需加个扩展名的配置。而全功能的 UrlRewrite，确实可以用 UrlRewriter.NET 组件，只是如果你用的是 .Net 3.5 的话，又何必如此周折，直接上内置的 System.Web.Routing 便是。<br/><br/>
+下面具体例子来了解 System.Web.Routing 的整个工作过程与原理，可惜 .Net 的东西看不到源代码，很难更深入的，一直在这方面有点鄙视 MS。<br/><br/>
+需求是网站要向外提供 Rss Feed，Rss 是有过滤条件的，比如条目的类型，记录数。正常情况下我们通过 <a href="http://ip/rss.aspx?type=pro&amp;num=10">http://ip/rss.aspx?type=pro&amp;num=10</a> 来获得记录，而我们这里要实现的是用户可以用 <a href="http://ip/rss-pro-10">http://ip/rss-pro-10</a> 就能得到想要的 Rss 数据。<br/><br/>
+实现过程如下：<br/><br/>
+<strong>一：引入 System.Web.Routing 程序集</strong><br/><br/>
+Add Reference，引入之后，在 Web.Config 的 &lt;assemblies&gt; 中可以看到添加了一行：<br/><br/>
+<span style="color: #800080;">&lt;add assembly="System.Web.Routing, Version=3.5.0.0, Culture=neutral, PublicKeyToken=31BF3856AD364E35"/&gt;&lt;/assemblies&gt;<br />
+</span><br />
+<strong>二：加入 UrlRoutingModule 配置</strong><br/><br/>
+System.Web.Routing 是基于 httpModules 来实现的，所以还应该在 Web.Config 的 &lt;httpModules&gt; 节点中加上：<br/><br/>
+<span style="color: #800080;">&lt;add name="UrlRoutingModule" type="System.Web.Routing.UrlRoutingModule, System.Web.Routing, Version=3.5.0.0, Culture=neutral, PublicKeyToken=31BF3856AD364E35"/&gt;</span><br/><br/>
+<strong>三：在程序启动时注册 Url 路由规则</strong><br/><br/>
+这要在 Global.asax 中控制，在 Application_Start() 方法中注册路由条目。如果你理解 TCP/IP 网络的路由就很容易理解这里的路由，其实是一个道理。TCP/IP 网络的路由说的是数据包要去往哪里应该经过哪个网关，而这里的路由是指要访问哪个实际的资源应该走哪个 IRouteHandler 实例。<br/><br/>
+看 Global.asax 的注册路由的代码：<br/>
+{{< highlight csharp >}}
+void Application_Start(object sender, EventArgs e)
+{
+    //调用 RegisterRoutes() 来注册 Url 路由
+    RegisterRoutes(RouteTable.Routes);
+}
+
+private static void RegisterRoutes(RouteCollection routes)
+{
+    IRouteHandler rssRouteHandler = new RssRouteHandler();
+
+    //对于 /rss-type-num 这种规则的 Url 会转到 rssRouteHandler 实例来处理
+    routes.Add(new Route("rss-{type}-{num}", rssRouteHandler));
+
+    //可以调用 Add 注册多个路由项，还可以使用正则表达式
+    //比如下面，Url 为 /rss/type/num/2010-02-12/2010-8-9 转到 rssRouteHandler 来处理
+    routes.Add(new Route("rss/{type}/{num}/{dateStart}/{dateEnd}",
+                new RouteValueDictionary(),
+                new RouteValueDictionary(
+                   new { dateStart = @"\d{4}-\d{1,2}-\d{1,2}", dateEnd = @"\d{4}-\d{1,2}-\d{1,2}" }
+                ), rssRouteHandler));
+}
+{{</ highlight >}}
+<br/>
+注册了两种 Url 规则的路由，第二个 Url 规则还用了正则表达式来约束，注意大括号里的参数在以后是可以得到的。符合规则的 Url 会转到与它相关联的 IRouteHandler 来处理。注意其中的 RouteValueDictionary 参数分别代表着什么，以及它们的声明办法，怎么设定正则表达式，以及与参数的对应。注册路由时还可以附加其他的约束条件，比如只处理 POST 请求等等。<br/><br/>
+<strong>四：IRouteHandler 实现</strong><br/><br/>
+前面既然是为 Url 映射 IRouteHandler 实现，那么这里来看看 RssRouteHandler 是长什么样子的。<br/>
+{{< highlight csharp >}}
+using System.Web;
+using System.Web.Routing;
+
+/// <summary>
+/// Summary description for RssRouteHandler
+/// </summary>
+public class RssRouteHandler : IRouteHandler
+{
+    public IHttpHandler GetHttpHandler(RequestContext requestContext)
+    {
+        return new RssProvider(requestContext);
+    }
+}
+{{</ highlight >}}
+<br/>
+只要实现 IRouteHandler 接口，实现接口方法即可，接口方法需要返回的是一个 IHttpHandler 实现实例。并且参数 RequestContext 是在你的 IHttpHandler 实现类是用得着的。这样路由完成了从 Url -&gt; IRouteHandler -&gt; IHttpHandler 的层进，写过 HttpHandler 的人应该知道它可以处理页面能做的事情。那么来看看这里的 RssProvider 的简单实现吧：<br/><br/>
+<strong>五：IHttpHandler 实现</strong><br/>
+{{< highlight csharp >}}
+using System;
+using System.Web;
+using System.Web.Routing;
+
+/// <summary>
+/// Summary description for RssProvider
+/// </summary>
+public class RssProvider : IHttpHandler
+{
+    public RequestContext RequestContext { get; private set; }
+
+    public RssProvider(RequestContext context)
+    {
+        this.RequestContext = context;
+    }
+
+    //暂且让它只处理 /rss-type-num 规则的 Url
+    public virtual void ProcessRequest(HttpContext context)
+    {
+        string type = RequestContext.RouteData.Values["type"].ToString();
+        int num = Int32.Parse(RequestContext.RouteData.Values["num"].ToString());
+
+        //比如可以转换出实际 URI 去执行
+        //context.Server.Execute("rss.aspx?type="+type+"&num="+num);
+
+        context.Response.Write("Type: " + type +" ; " + "Number: " + num + "<br/>");
+        context.Response.Write("根据上面条件设置响应头，输出需要的 RSS 数据。");
+    }
+    public bool IsReusable
+    {
+        get { return false; }
+    }
+}
+{{</ highlight >}}
+<br/>
+可以从重写的 Url 中按照规则获得请求参数，然后转给实际的资源去处理，或者直接在 HttpHandler 的 ProcessRequest() 方法中或再调用其他方法来玩成本次请求。<br/><br/>
+在 RssRouteHandler 为 RssProvider 这个 HttpHandler 实现类注入了 RequestContext  实例，你可以用这个实例从 Url 中获得想要的参数。<br/><br/>
+还有，在实际应用中最好能明确 IRouteHandler 和 IHttpHandler 实现类实例的复用情况，可选择适当的设计模式来保证。<br/><br/>
+<strong>六：配置 IIS6 使其他未知请求类型也由 Asp.Net 来处理</strong><br/><br/>
+如果是在 Visual Studio 2008 的调试环境可以不作此配置，自动支持。对于 IIS 7 也不需要作特别的设置。XP 环境的 IIS6 和 Win2003 下的 IIS6 配置还略有不同：<br/><br/>
+Win2003 下 IIS6 配置：Default Web Site 的属性，Home Directory 标签页里，Configuation...，为 Wildcard application maps(order of implementation) Insert 一项，指向到 c:\windows\microsoft.net\framework\v2.0.50727\aspnet_isapi.dll，不勾选 Verify that file exists.<br/><br/>
+XP 下的 IIS6 配置：虚拟目录的属性页(不是 Default Web Site Properties 了), Virtual Directory 标签页中，点 Configuration 按钮，Maapings, 点 Add 按钮，Add/Edit Application Extensiona Mapping 窗口里，Executable 里选择 C:\WINDOWS\Microsoft.NET\Framework\v2.0.50727\aspnet_isapi.dll,Extension 里填 <span style="color: #ff0000;">.*</span>，然后不选 Check that file exists，确定就行了。<br/><br/>
+这样就完成了，通过 /rss-type-num 或 /rss/type/num/dateStart/dateEnd 就会执行到 RssProvider  的 ProcessRequest() 方法中，这样就完成了真实 Url 的重写，也能实现不需要 aspx 文件处理 Http 请求。<br/><br/>
+参考：1. <a href="http://tutorial.it55.com/ChengXuKaiFa/ASPNET/2010/03/10/14542739867.html" target="_blank" rel="noopener">Asp.net Url Routing代码分享</a><br />
+        2. <a href="http://www.pin5i.com/showtopic-19991.html" target="_blank" rel="noopener">System.Web.Routing入门及进阶 上篇</a><br />
+        3. <a href="http://www.pin5i.com/showtopic-19992.html" target="_blank" rel="noopener">System.Web.Routing入门及进阶 下篇</a>
