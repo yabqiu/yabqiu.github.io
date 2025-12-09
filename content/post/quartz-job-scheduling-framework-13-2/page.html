@@ -1,0 +1,65 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第十三章. Quartz 和 Web 应用 (第二部分)
+url: /quartz-job-scheduling-framework-13-2/
+date: 2008-04-25T10:47:00-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 410 
+wpStatus: publish
+views: 446
+lastmod: 2020-03-22T11:25:35-05:00
+---
+
+<strong>三. 在 Struts 框架中使用 Quartz<br />
+</strong><br/><br/>
+第一步就是要下载 Apache Struts 并创建好你的 Web 应用的目录结构。Struts 框架可从 Apache Struts 站点 <a href="http://struts.apache.org">http://struts.apache.org</a> 上找到。也很欢迎你直接抓取到源代码来编译它，尽管你能够及时下载到最新版本的二进制版。<br/><br/>
+因为 Quartz 不直接依赖于 Struts 框架，所以你也就不必为该使用哪一版本的 Struts 而忧心。只管下载到当前的最新版本就是了。不过，你应该认识到，Struts 和 Quartz 框架共同依赖了一些第三方的包。实际上，在前面列出的 Quartz 所需要的库也是 Struts 框架所必须的。就是要留心混在一起不同的版本，如在最后一节的警告所注明的。<!--more--><br/><br/>
+<strong>·创建你的 Web 应用目录结构<br />
+</strong><br />
+下载到了 Struts 之后，你就可以创建你的目录结构并引入必须的文件。作为例子，我们将创建一个虚构的 Web 应用，叫做 Job 管理控制台。因为这仅是一个假想的应用，我们并不打算完整的构建它。相应的，我们用它来来解释与 Quartz 集成的几个关键点，剩余的部分留给你的探索了。现在，假定老板给了我们一个在 Job 调度框架(这个吗，当然是基于 Quartz 的) 之上构建 GUI 的任务。图 13.1 和 13.2 显示了 Job 管理控制台应用的登录和主界面。<br/><br/>
+<div><strong><br />
+图 13.1. Job 管理控制台应用的登录界面</strong></div>
+<br/>
+<div style="text-align: center">[<a href="{{< bundle-resource QuartzFigure13.1.jpg >}}" target="_blank" rel="noopener noreferrer">看全尺寸图</a>]<br /></div>
+{{< bundle-image src="QuartzFigure13.1.jpg" width="500px" >}}
+当用户按下 Login 按钮，应用就会带领用户到操控板界面，见图 13.2。<br/><br/>
+图 13.2 显示了所有用户登录后被带领到的控制台操控板。<br/><br/>
+图 13.2 中显示了操控板页面相当简单但足以应达到我们的目的。<br/><br/>
+<div>
+<strong>图 13.2. Job 管理控制台的操控板是用户的主界面</strong>
+  <br/><br/>
+  <div style="text-align: center">
+[<a href="{{< bundle-resource QuartzFigure13.2.jpg >}}" target="_blank" rel="noopener noreferrer">看全尺寸图</a>]<br />
+  </div>
+{{< bundle-image src="QuartzFigure13.2.jpg" width="500px" >}}
+</div>
+<br/>
+<strong>·创建 Job 管理控制台项目结构<br />
+</strong><br />
+Job 管理控制台项目结构在 Java Web 应用中是非常标准的，并且大部分 Java Web 开发者能清楚以下所示的多数目录的功用。<span style="color: #800080;">WEB-INF</span> 下的标签目录将存放 <span style="color: #800080;">.tld</span> 文件，应用据此来引用自定义标签库。Struts 框架提供了几个标签库，能用来简化 JSP 开发；<span style="color: #800080;">.tld</span> 目录中存有那些标签的标述文件。图 13.3 显示了这一应用的项目结构。<br/><br/>
+<div><strong>图 13.3. Job 管理控制台项目的结构</strong></div>
+<br/>
+{{< bundle-image src="QuartzFigure13.3.jpg" width="182px" >}}
+<strong>·在 Web 应用中初始化 Quartz</strong><br/><br/>
+当 Quartz 应用于命令行中时，是用一个 Java 类来创建 <span style="color: #800080;">SchedulerFactory</span> 并实例化 Scheduler。由于 Quartz 现在将要运行在 Web 应用中，你就不容易访问到 <span style="color: #800080;">main()</span> 方法了，因为应用是由容器来启动的，而 <span style="color: #800080;">main()</span> 是埋在了代码中，可能甚至是实际不可执行的。所幸的是，解决办法很简单：你所需要做的就是确保当容器首先启动这个 Web 应用时，你有一些代码扮演着以工厂创建实例的逻辑。这就是说，当容器首次加载 Web 应用时，你需要创建一个 <span style="color: #800080;">SchedulerFactory</span> 并启动这个 Scheduler。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>是 start() 还是不 start()<br />
+</strong><br />
+依赖于你的需求，你也许希望 Scheduler 在 Web 应用首次加载时立即启动。然而，或许你开始只是要 Scheduler 准备就绪， 待到某个其他的动作发生时才启动它。例如，也许在你的 Job 管理控制台应用中，Scheduler 直到用户进入到操控板页面并按下开始按钮才启动。如果是这种情况，可以获取到工厂，但 Scheduler 直到你准备好了才启动。</td>
+</tr>
+</tbody>
+</table>
