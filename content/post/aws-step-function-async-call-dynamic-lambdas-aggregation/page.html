@@ -3,11 +3,11 @@ title: AWS Step Function 异步动态调用 Lambda 后汇集结果
 url: /aws-step-function-async-call-dynamic-lambdas-aggregation/
 date: 2023-06-19T11:59:03-05:00
 featured: false
-draft: true
+draft: false
 toc: false
 # menu: main
 usePageBundles: true
-thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2017/03/aws-logo.png"
+thumbnail: "../images/logos/aws-logo.png"
 categories:
   - AWS
 tags: 
@@ -24,12 +24,12 @@ lastmod: 2023-06-20T11:14:38-05:00
 ---
 
 分布式计算有这么一个需求，主进程准备好输入数据，然后根据输入中某个 Items 动态调用若干计算进程，待到所有计算完成后再汇集结果。这一需求移植到 AWS 上就像是下面这样子<br/><br/>
-<a href="https://yanbin.blog/wp-content/uploads/2023/06/lambda-sync-call-1-1.png"><img class="aligncenter wp-image-13227 size-full" src="https://yanbin.blog/wp-content/uploads/2023/06/lambda-sync-call-1-1.png" alt="" width="400" height="247" /></a><br/><br/>
+{{< bundle-image src="lambda-sync-call-1-1.png" width="400px" >}}
 但在一个 Lambda 中同步调用其他 Lambda 时就有个费时费钱的问题，虽然我们采用线程池来调用 Lambda2, 由于每个同步调用的耗时不相同， Lambda1 最终要等待最慢的那个调用结束后才能对所有结果进行聚集处理。这就是著名的“长板效应”, Lambda1 多数时候是在无谓的等待当中消耗着你的钱财。<!--more--><br/><br/>
 如果把同步改成异步调用 Lambda2 的话，就要有一种通知机制，在所有的 Lambda2 完成后再触发一个 Lambda 去收集结果，比如用一致性的协调服务器，像 ZooKeeper, etcd 等，或者是能保持事物的 Redis 都行，只要每一个 Lambda2 完成后能知道自己是最后一个就能通知下一个 Lambda 去处理结果。<br/><br/>
 基于以上的需求，AWS 的 Step Function 能派上用场了，Step Function 现在支持 Map 方式调用异步动态数量的 Lambda。比如根据输入的 JSON 中某个数组项，或 S3 中的 JSON 文件中的数组项，或 S3 的目录中的对象数进行异步动态调用。<br/><br/>
 下面是使用了 AWS Step Function 的状态机及如何启动<br/><br/>
-<a href="https://yanbin.blog/wp-content/uploads/2023/06/step-function-2.png"><img class="size-full wp-image-13215 aligncenter" src="https://yanbin.blog/wp-content/uploads/2023/06/step-function-2.png" alt="" width="480" height="380" /></a><br/><br/>
+{{< bundle-image src="step-function-2.png" width="480px" >}}
 <ol>
     <li>Start：状态机将会由 SQS 触发一个 Lambda来启动</li>
     <li>Calculations: Step Function 根据输入中的 items 项数异步调用动态数量的 Calculation Lambda。Calculations 外的虚线框就表示调用数是动态的</li>
@@ -39,10 +39,11 @@ lastmod: 2023-06-20T11:14:38-05:00
 <br/>
 接下来用 Terraform 和 Python 实际演示上面整个使用 Step Function 的流程，文中贴出所有代码，这将大大增加本文的篇幅。<br/><br/>
 首先是所用到的 IAM Role, 所有 Lambda 共同一个 Role, Step Function 有自己的 Role<br/><br/>
-iam_roles.tf<br/><br/>
-<pre class="lang:default decode:true ">resource "aws_iam_role" "lambda_role" {
+iam_roles.tf<br/>
+{{< highlight terraform >}}
+resource "aws_iam_role" "lambda_role" {
   name = "step_function_lambda_role"
-  assume_role_policy = &lt;&lt;-EOF
+  assume_role_policy = <<-EOF
   {
     "Version": "2012-10-17",
     "Statement": [
@@ -59,7 +60,7 @@ EOF
   managed_policy_arns = ["arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"]
   inline_policy {
     name = "test_inline_policy"
-    policy = &lt;&lt;-EOF
+    policy = <<-EOF
 {
     "Version": "2012-10-17",
     "Statement": [
@@ -83,10 +84,11 @@ EOF
 }
 EOF
   }
-}<br/><br/>
+}
+
 resource "aws_iam_role" "step_function_role" {
   name               = "step-function-role"
-  assume_role_policy = &lt;&lt;-EOF
+  assume_role_policy = <<-EOF
   {
     "Version": "2012-10-17",
     "Statement": [
@@ -102,7 +104,7 @@ resource "aws_iam_role" "step_function_role" {
   EOF
   inline_policy {
     name = "call_lambda_policy"
-    policy = &lt;&lt;-EOF
+    policy = <<-EOF
   {
     "Version": "2012-10-17",
     "Statement": [
@@ -128,15 +130,18 @@ resource "aws_iam_role" "step_function_role" {
 EOF
   }
 }
-</pre>
+
+{{</ highlight >}}
 <br/>
 然后是三个 Lambda 的定义<br/><br/>
-lambdas.tf<br/><br/>
-<pre class="lang:default decode:true ">data "archive_file" "lambda_package" {
+lambdas.tf<br/>
+{{< highlight terraform >}}
+data "archive_file" "lambda_package" {
   source_file = "aws_lambdas.py"
   output_path = "aws_lambdas.zip"
   type        = "zip"
-}<br/><br/>
+}
+
 resource "aws_lambda_function" "start" {
   function_name = "step_function_start"
   role          = aws_iam_role.lambda_role.arn
@@ -151,12 +156,14 @@ resource "aws_lambda_function" "start" {
       STATE_MACHINE_ARN = aws_sfn_state_machine.demo.arn
     }
   }
-}<br/><br/>
+}
+
 resource "aws_lambda_event_source_mapping" "event_mapping" {
   event_source_arn = aws_sqs_queue.step_function_input.arn
   function_name = aws_lambda_function.start.function_name
   batch_size = 1
-}<br/><br/>
+}
+
 resource "aws_lambda_function" "calculation" {
   function_name = "step_function_calculation"
   role          = aws_iam_role.lambda_role.arn
@@ -166,7 +173,8 @@ resource "aws_lambda_function" "calculation" {
   source_code_hash = data.archive_file.lambda_package.output_base64sha256
   runtime = "python3.10"
   handler = "aws_lambdas.calculate"
-}<br/><br/>
+}
+
 resource "aws_lambda_function" "aggregation" {
   function_name = "step_function_aggregation"
   role          = aws_iam_role.lambda_role.arn
@@ -176,63 +184,80 @@ resource "aws_lambda_function" "aggregation" {
   source_code_hash = data.archive_file.lambda_package.output_base64sha256
   runtime = "python3.10"
   handler = "aws_lambdas.aggregate"
-}</pre>
+}
+{{</ highlight >}}
 <br/>
 三个 Lambda 的代码实现放在同一个 py 文件中，使用了不同的入口函数<br/><br/>
-aws_lambdas.py<br/><br/>
-<pre class="lang:default decode:true ">import json
+aws_lambdas.py<br/>
+{{< highlight python >}}
+import json
 import os
 import time
 import boto3
-import logging<br/><br/>
+import logging
+
 logging_format = '%(asctime)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s\n'
 logger = logging.getLogger()
 if logger.handlers:
     logger.handlers[0].setFormatter(logging.Formatter(logging_format))
-    logger.setLevel(logging.INFO)<br/><br/>
+    logger.setLevel(logging.INFO)
 
-sfn = boto3.client('stepfunctions')<br/><br/>
+
+sfn = boto3.client('stepfunctions')
+
 
 def start(event, context):
     sqs_message = event['Records'][0]['body']
-    logger.info('sqs message: %s', sqs_message)<br/><br/>
+    logger.info('sqs message: %s', sqs_message)
+
     response = sfn.start_execution(
         stateMachineArn=os.getenv("STATE_MACHINE_ARN"),
         input=sqs_message,
     )
-    logger.info("start response %s", response)<br/><br/>
+    logger.info("start response %s", response)
+
 
 def calculate(event, context):
-    logger.info("received message: %s", event)<br/><br/>
+    logger.info("received message: %s", event)
+
     if event['id'] == 104:
-        raise Exception('calculation failed')<br/><br/>
+        raise Exception('calculation failed')
+
     logger.info("sleep %s seconds", event['sleep'])
     time.sleep(event['sleep'])
     logger.info("done")
-    return {f"result{event['id']}": f"processed task: {event['id']}"}<br/><br/>
+    return {f"result{event['id']}": f"processed task: {event['id']}"}
+
 
 def aggregate(event, context):
-    logger.info("received aggregated result: %s", event)<br/><br/>
+    logger.info("received aggregated result: %s", event)
+
     if 'Error' in event:
         return "one of calculation failed"
     else:
         return "processed result " + json.dumps(event, default=str)
-</pre>
+
+{{</ highlight >}}
 <br/>
 Lambda 实现中根据输入中的 <code>sleep</code> 模拟耗时，并在 id 为 104 时模拟 Lambda 调用失败。<br/><br/>
 再就是要创建一个 SQS 消息队列以及 Step Function 本身<br/><br/>
-main.tf<br/><br/>
-<pre class="lang:default decode:true ">provider "aws" {}<br/><br/>
+main.tf<br/>
+{{< highlight terraform >}}
+provider "aws" {}
+
 resource "aws_sqs_queue" "step_function_input" {
   name = "step_function_input"
   sqs_managed_sse_enabled = false
-}<br/><br/>
+}
+
 locals {
   step_function_arn = format("arn:aws:states:%s:%s:stateMachine:step-function-demo",
     data.aws_region.current.id, data.aws_caller_identity.current.account_id)
-}<br/><br/>
+}
+
 data "aws_caller_identity" current {}
-data aws_region current {}<br/><br/>
+data aws_region current {}
+
 resource "aws_sfn_state_machine" "demo" {
   name = "step-function-demo"
   role_arn   = aws_iam_role.step_function_role.arn
@@ -240,10 +265,12 @@ resource "aws_sfn_state_machine" "demo" {
     CALCULATION_LAMBDA_ARN = aws_lambda_function.calculation.arn
     AGGREGATION_LAMBDA_ARN = aws_lambda_function.aggregation.arn
   })
-}</pre>
+}
+{{</ highlight >}}
 <br/>
-Step Function 的状态机定义放置在了单独的 state_machine.json 文件中<br/><br/>
-<pre class="lang:default decode:true">{
+Step Function 的状态机定义放置在了单独的 state_machine.json 文件中<br/>
+{{< highlight json >}}
+{
   "Comment": "A description of my state machine",
   "StartAt": "Map-calculation",
   "States": {
@@ -319,13 +346,15 @@ Step Function 的状态机定义放置在了单独的 state_machine.json 文件
       "End": true
     }
   }
-}</pre>
+}
+{{</ highlight >}}
 <br/>
 特别注意在 Map-calculation 中会根据 <code>InputPath: $.items</code> 即输入 JSON 中的 <code>items</code> 数组异步调用相应数目的 Calculation Lambda<br/><br/>
 除了定义流程外，还请留意其中的重试与异常捕获处理机制。我们定义了在 Calculation 中无论出现任何异常都会跳到 Aggregation 步骤。<br/><br/>
 接下来对 Step Function 进行测试，并统计每一步的耗时。测试方法是往 SQS 队列 <code>step_function_input</code> 中发送 JSON 格式的消息。<br/><br/>
-测试一：所有场景均执行成功，发送消息<br/><br/>
-<pre class="lang:default decode:true ">{
+测试一：所有场景均执行成功，发送消息<br/>
+{{< highlight json >}}
+{
     "items": [
         {
             "id": 100,
@@ -340,7 +369,8 @@ Step Function 的状态机定义放置在了单独的 state_machine.json 文件
             "sleep": 10
         }
     ]
-}</pre>
+}
+{{</ highlight >}}
 <br/>
 测试结果<br/><br/>
 <table style="border-collapse: collapse; width: 100%; height: 192px;">
@@ -392,10 +422,11 @@ Step Function 的状态机定义放置在了单独的 state_machine.json 文件
     <li>每一个 Lambda 都在规定的时间内完成自己的任务，不存在任何无谓等待的环节</li>
 </ol>
 <br/>
-所有步骤成功后在 Step Function 中看到的该执行(Execution) 的图形显示为<br/><br/>
-<a href="https://yanbin.blog/wp-content/uploads/2023/06/step-function-2-1.png"><img class="aligncenter wp-image-13217" src="https://yanbin.blog/wp-content/uploads/2023/06/step-function-2-1.png" alt="" width="247" height="215" /></a><br/><br/>
-测试二：Calculation 存在失败的情况，发送消息<br/><br/>
-<pre class="lang:default decode:true">{
+所有步骤成功后在 Step Function 中看到的该执行(Execution) 的图形显示为<br/>
+{{< bundle-image src="step-function-2-1.png" width="247px" >}}
+测试二：Calculation 存在失败的情况，发送消息<br/>
+{{< highlight json >}}
+{
     "items": [
         {
             "id": 100,
@@ -410,7 +441,8 @@ Step Function 的状态机定义放置在了单独的 state_machine.json 文件
             "sleep": 1
         }
     ]
-}</pre>
+}
+{{</ highlight >}}
 <br/>
 有一个 Calculation Lambda 在收到 <code>id:104</code> 时会抛出异常，执行失败。消息中加大了  101 任务的执行时间，在 104 进行了所有的重试后 101 仍未执行完，以此来考察 aggregation 在什么时机被触发。<br/><br/>
 <table style="border-collapse: collapse; width: 100%;">
@@ -455,11 +487,11 @@ Step Function 的状态机定义放置在了单独的 state_machine.json 文件
     <li>step_function_aggregation 并未等待所有的 calculation 结束后才执行，而是有一个失败就会触发，以此通告整个状态机的执行失败</li>
 </ol>
 <br/>
-有任务执行失败的话在 Step Function 显示的状态机执行图形是<br/><br/>
-<a href="https://yanbin.blog/wp-content/uploads/2023/06/step-function-3.png"><img class="aligncenter wp-image-13219" src="https://yanbin.blog/wp-content/uploads/2023/06/step-function-3.png" alt="" width="247" height="215" /></a><br/><br/>
+有任务执行失败的话在 Step Function 显示的状态机执行图形是<br/>
+{{< bundle-image src="step-function-3.png" width="247px" >}}
 本文简单的尝试了 Step Function 动态异步调用 Lambda 函数的用法，实际使用中必定会复杂些。例如大数据的输入输出可能要借助于 S3 来转储，重试与捕获异常的机制需更多的考虑，在某个步骤失败时可以立即发送 SQS/SNS 消息进行通知而不必执行后续的步骤，等等。<br/><br/>
-另外，除了用 SQS 触发 Lambda 来执行 Step Function 的状态机外，还可以用 Amazon EventBridge Pipe，参考下图的流程<br/><br/>
-<a href="https://yanbin.blog/wp-content/uploads/2023/06/amazon-eventbridge-stepfunction.png"><img class="aligncenter wp-image-13223" src="https://yanbin.blog/wp-content/uploads/2023/06/amazon-eventbridge-stepfunction-800x64.png" alt="" width="850" height="68" /></a><br/><br/>
+另外，除了用 SQS 触发 Lambda 来执行 Step Function 的状态机外，还可以用 Amazon EventBridge Pipe，参考下图的流程<br/>
+{{< bundle-image src="amazon-eventbridge-stepfunction-800x64.png" width="850px" >}}
 Source 可以选择 AWS 流服务，如 Kinesis, Kafka, DynamoDB, Amazon MQ, 还不支持 SNS, 选择 SQS 时默认 batch 为 1。<br/><br/>
 然后后面的好理解了 Filtering 过滤收到的 Source 中的消息，Enrichment 对输入进行加工处理，除 Lambda 外还能选择用 API Gateway, API Destination 和 Step Function。<br/><br/>
 最后 Target 的选择就特别的多，如 SQS, SNS, Kinesis, Lambda, EventBridge event bus, ECS Cluster 等，我们这里选择 Step Function 就可以用前一步 Enrichment 的输出直接启动 Step Function 的状态机。<br/><br/>
