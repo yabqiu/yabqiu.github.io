@@ -1,0 +1,158 @@
+---
+title: 利用 Ant 的 SQL Task 来实现自己的 Java 执行 SQL 脚本文件的功能
+url: /ant-sql-task-exec-sql-scripts/
+date: 2008-04-24T08:03:00-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/java-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Java
+  - Sql
+  - ant
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 412 
+wpStatus: publish
+views: 863
+lastmod: 2021-09-02T20:47:22-05:00
+---
+
+前面记载过一篇 <a href="/java-execute-sql-script-file/" target="_blank" rel="noopener noreferrer">Java 执行 SQL 脚本文件</a>，这里边完全是由自己写代码来分离出脚本中的每一个 SQL 语句的，有不少缺陷。当时还不太清楚 ANT 本身提供了功能很强的执行 SQL 语句和脚本的 SQL Task 可用。以下依次简单介绍如何在 build.xml 中执行 SQL 语句或脚本；Java 代码中如何调用 ant 的 SQLExec 类执行 SQL 脚本，最后考虑  ant.jar 的个头说大也不小，1M 多，如果只用于执行 SQL 脚本，则绝大部分代码就是垃圾，所以从同抽离出需要的两个类 JDBCTask 和 SQLExec，完全去除了对 ant.jar 包的依赖。<br/><br/>
+有关 ant 的更详细的记录请参见，<a href="http://ant.apache.org/manual/CoreTasks/sql.html">http://ant.apache.org/manual/CoreTasks/sql.html</a> 。<!--more--><br/><br/>
+<strong><u>1. build.xml 中执行 sql 脚本</u></strong><br/>
+{{< highlight xml >}}
+<project name="TestSqlExec" default="sql">
+    <target name="sql">
+        <sql driver="oracle.jdbc.driver.OracleDriver" password="xxpass"  userid="xxuser" autocommit="true"
+         url="jdbc:oracle:thin:@10.128.x.x:1521:xxsid" src="data.sql" print="yes" output="sql_out.txt">
+         <classpath>
+            <pathelement path="d:\oracle\ora90\jdbc\lib\classes12.jar"/>
+         </classpath>
+        </sql>
+    </target>
+</project>
+{{</ highlight >}}
+<br/>
+也可以在 &lt;sql&gt;...&lt;/sql&gt;  中直接包含一条或多条 sql 语句，默认分号分隔。脚本文件 data.sql 中可以写多个语句，也是默认分号分隔，可含 -- 注释符。说白了就是基本在 PL/SQL Developer 中可以怎么写，你的脚本文件中也可以怎么写，并且还能支持象 MySQL 的 // 那样的注释符。<br/><br/>
+像如下那样的 SQL 脚本内容 (data.sql)<br/>
+{{< highlight sql >}}
+--插入记录
+insert into test_table values(1,'Unmi');
+
+select *
+from test_table
+ where id>0;
+ --and name like '%Unmi' ;
+
+ --删除 ID 为 1 的记录
+ delete  from test_table where id=1;
+{{</ highlight >}}
+<br/>
+ant 执行后控制台输出为：<br/><br/>
+<span style="color: #0000ff;">sql:</span><br />
+<span style="color: #0000ff;">Executing resource: E:\Workspace\Eclipse\TestAnt\src\data.sql<br />
+</span>3 of 3 SQL statements executed successfully<br/><br/>
+sql_out.text 中的输出内容是：<br/><br/>
+<span style="color: #0000ff;">1 rows affected<br />
+ID,NAME<br />
+1,Unmi</span><br/><br/>
+<span style="color: #0000ff;">0 rows affected<br />
+1 rows affected<br />
+</span><br/>
+不过 ant 执行的 sql 语句不支持行末的注释符 "--"，这有待改进。<br/><br/>
+<strong><u>2. Java 代码调用 ant 的 SQLExec 执行脚本文件</u></strong><br/>
+{{< highlight java >}}
+package com.unmi;
+
+import java.io.*;
+
+import org.apache.tools.ant.*;
+import org.apache.tools.ant.taskdefs.*;
+import org.apache.tools.ant.types.*;
+
+/**
+ * 调用 ant.jar 的 SQLExec 执行 SQL 脚本文件
+ * @author Unmi
+ */
+public class AntExecSql {
+
+    /**
+     * @param args
+     */
+    public static void main(String[] args) {
+        SQLExec sqlExec = new SQLExec();
+
+        //设置数据库参数
+        sqlExec.setDriver("oracle.jdbc.driver.OracleDriver");
+        sqlExec.setUrl("jdbc:oracle:thin:@10.128.x.x:1521:xxsid");
+        sqlExec.setUserid("xxuser");
+        sqlExec.setPassword("xxpass");
+
+        //要执行的脚本
+        sqlExec.setSrc(new File("src/data.sql"));
+
+        //有出错的语句该如何处理
+        sqlExec.setOnerror((SQLExec.OnError)(EnumeratedAttribute.getInstance(
+                SQLExec.OnError.class, "abort")));
+
+        sqlExec.setPrint(true); //设置是否输出
+
+        //输出到文件 sql.out 中；不设置该属性，默认输出到控制台
+        sqlExec.setOutput(new File("src/sql.out"));
+        sqlExec.setProject(new Project()); // 要指定这个属性，不然会出错
+        sqlExec.execute();
+    }
+}
+{{</ highlight >}}
+<br/>
+项目中需要引入 ant.jar，并且在代码中需执行 sqlExec.setProject(new Project()); 无意义的操作。其他用法及效果与前面类似。<br/><br/>
+<strong><u>3. 从 ant.jar 中抽离出需要的类 SQLExec 和 JDBCTask</u></strong><br/><br/>
+使用代码如下（AntSqlExec.java）：<br/>
+{{< highlight java >}}
+package com.unmi.sql;
+
+import java.io.*;
+
+/**
+ * Java 执行 Sql 脚本文件
+ * @author Unmi
+ */
+public class AntSqlExec {
+
+    /**
+     * @param args
+     * @throws Exception
+     */
+    public static void main(String[] args) throws Exception {
+        SQLExec sqlExec = new SQLExec();
+
+        //设置数据库参数
+        sqlExec.setDriver("oracle.jdbc.driver.OracleDriver");
+        sqlExec.setUrl("jdbc:oracle:thin:@10.128.x.x:1521:xsid");
+        sqlExec.setUserid("xxuser");
+        sqlExec.setPassword("xxpass");
+
+        //要执行的脚本
+        sqlExec.setSrc(new File("src/data.sql"));
+
+        //有出错的语句该如何处理
+        sqlExec.setOnerror(SQLExec.ON_ERROR_ABORT); //abort/conitue/stop
+
+        sqlExec.setPrint(true); //设置是否输出
+
+        //输出到文件 sql.out 中；不设置该属性，默认输出到控制台
+        sqlExec.setOutput(new File("src/sql.out"));
+        sqlExec.execute();
+    }
+}
+{{</ highlight >}}
+<br/>
+因 SQLExec.java  和 JDBCTask.java 代码行较多，不便列出，可下载 <a href="/wp-content/uploads/2008/04/SQLExec(FromAnt).rar">SQLExec(FromAnt).rar</a> 解开来看。抽取出来的类修改后不再依赖于 ant 的 Jar 包了(不再需要 引入 org.apache.* 包了)，并简化的代码，削去了一些不用的功能，如设置是否是非关系型数据库、设置数据库版本、扩展属性的设置、设置 classpath 属性通过自定义类加载器加载驱动等。前面说过，还有点遗憾的是还不支持行末的注释符 "--" 或 "//"，还需增强，所以目前使用。<br/><br/>
+前面讲的大体都是在执行 SQL 脚本的功能，其实 SQLExec 的还提供事物控制的功能。比如 autoCommit 属性的设置，可同时调入多个 SQL 脚本文件，让多个 SQL 脚本同处一个事物当中，更为细致的用法还有待您来发掘，在修改后的 SQLExec.java  和 JDBCTask.java 实用功能都有保留。<br/><br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>
