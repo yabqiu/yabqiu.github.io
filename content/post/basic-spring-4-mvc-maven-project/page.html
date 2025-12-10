@@ -1,0 +1,347 @@
+---
+title: 一个最基础的 Spring 4 MVC Maven 项目
+url: /basic-spring-4-mvc-maven-project/
+date: 2018-04-30T08:35:12-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/spring-logo.png"
+categories:
+  - Spring
+tags: 
+  - Maven
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8659 
+wpStatus: publish
+views: 626
+lastmod: 2021-09-10T12:49:54-05:00
+---
+
+这是一个最基本的 Spring 4 MVC 的 Maven 项目，非 SpringBoot 的，SpringBoot 由于有许多自动化配置特性，会更简单些。本例全部用 Java 代码作为配置，免除了创建 <code>web.xml</code> 和如 <code>dispatcher-servlet.xml</code> 这样的文件。本人更倾向于 Java 配置，它的优势在于能进行编译期检查，逻辑性也强，配置文件只是改动无需重新编译，都是要重启服务的; 关于使用 XML 配置文件的方式可参考文后的链接。<br/><br/>
+本文侧重于 Spring MVC 项目提供 RESTful JSON API, 因而静态 Web 内容提及较少。创建一个 Maven 项目的方式，可以直接创建一个 <code>pom.xml</code> 文件，然后编辑它的内容，使用 IntelliJ IDEA 的话只需要选择导入为一个 Maven 项目就成，Eclipse 的话可能还要事先运行 <code>mvn eclipse:eclipse</code> 初始化一下。<br/><br/>
+<h3>项目结构布局</h3>
+{{< bundle-image src="spring-mvc-base-1-297x300.png" width="297px" >}}
+就是一个普通的 Maven 项目，稍稍不同的是 src/main 目录中除了 java 和 resources 之外，还有 webapp 目录，用于存放 web 静态文件或模板文件的。<!--more--><br/><br/>
+<h3>pom.xml 文件内容</h3>
+{{< highlight xml >}}
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>demo</groupId>
+    <artifactId>springmvc</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <packaging>war</packaging>
+
+    <properties>
+        <jdk.version>1.8</jdk.version>
+        <maven-compiler-plugin.version>3.1</maven-compiler-plugin.version>
+
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <spring.version>4.3.16.RELEASE</spring.version>
+        <maven-war-plugin.version>2.4</maven-war-plugin.version>
+        <tomcat7.version>2.2</tomcat7.version>
+        <servlet.version>3.0.1</servlet.version>
+        <jackson.version>2.9.5</jackson.version>
+        <logback.version>1.2.3</logback.version>
+        <guava.version>25.0-jre</guava.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-framework-bom</artifactId>
+                <version>${spring.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <dependencies>
+        <dependency>
+            <groupId>javax.servlet</groupId>
+            <artifactId>javax.servlet-api</artifactId>
+            <version>${servlet.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-webmvc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>${logback.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>${guava.version}</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>${maven-compiler-plugin.version}</version>
+                <configuration>
+                    <encoding>UTF-8</encoding>
+                    <source>${jdk.version}</source>
+                    <target>${jdk.version}</target>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-war-plugin</artifactId>
+                <version>${maven-war-plugin.version}</version>
+                <configuration>
+                    <failOnMissingWebXml>false</failOnMissingWebXml>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.tomcat.maven</groupId>
+                <artifactId>tomcat7-maven-plugin</artifactId>
+                <version>${tomcat7.version}</version>
+                <configuration>
+                    <path>/springmvc</path>
+                    <contextReloadable>true</contextReloadable>
+                </configuration>
+            </plugin>
+
+        </plugins>
+    </build>
+</project>
+{{</ highlight >}}
+<br/>
+本例使用了 slfj + logback 作为日志框架与实现，并且引入非常常用的 Google Guava 通用库。<br/><br/>
+<ul>
+    <li>maven-war-plugin 用于创建可发布的 war 包</li>
+    <li>tomcat7-maven-plugin 用于测试项目，它的 <code>contextReloadable</code> 属性可在类改动重新编译后使 Spring 重新启动</li>
+</ul><br/><br/>
+在 IntelliJ IDEA 中如果想要修改 Java 类后自动重启 Spring 上下文的话，有两种方式<br/><br/>
+<ol>
+    <li style="list-style-type: none;">
+<ol>
+    <li>启用自动编译功能，Preferences/Build, Execution, Deployment/Compiler, 勾选上 Build project automatically</li>
+    <li>类修改后，从 Build 菜单中，选 <code>Recompile...</code>, <code>Build Project</code>, <code>Build Module</code>, <code>Rebuild Project</code> 都会触发 Spring 上下文重启。</li>
+</ol>
+</li>
+</ol>
+<br/>
+<h3>WebInitializer 类</h3>
+{{< highlight java >}}
+package config;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.web.WebApplicationInitializer;
+import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
+import org.springframework.web.filter.CharacterEncodingFilter;
+import org.springframework.web.servlet.DispatcherServlet;
+
+import javax.servlet.DispatcherType;
+import javax.servlet.FilterRegistration;
+import javax.servlet.ServletContext;
+import javax.servlet.ServletException;
+import javax.servlet.ServletRegistration;
+import java.util.EnumSet;
+
+public class WebInitializer implements WebApplicationInitializer {
+
+    private static final Logger logger = LoggerFactory.getLogger(WebInitializer.class);
+
+    @Override
+    public void onStartup(ServletContext container) throws ServletException {
+        logger.info("Starting container......");
+
+        AnnotationConfigWebApplicationContext context = new AnnotationConfigWebApplicationContext();
+        context.register(WebAppConfig.class);
+        context.setServletContext(container);
+        context.refresh();
+
+        ServletRegistration.Dynamic dispatcher = container.addServlet("dispatcher", new DispatcherServlet(context));
+        dispatcher.setLoadOnStartup(1);
+        dispatcher.addMapping("/");
+
+        FilterRegistration.Dynamic filter = container.addFilter("encoding", CharacterEncodingFilter.class);
+        filter.setInitParameter("encoding", "UTF-8");
+        filter.addMappingForServletNames(EnumSet.allOf(DispatcherType.class), true, "dispatcher");
+    }
+}{{</ highlight >}}
+<br/>
+这是 Seervlet 3 才有的特性，在 Spring-Web 项目中有一个实现了 Servlet3 <code>ServletContainerInitializer</code> 接口的类 <code>SpringServletContainerInitializer</code>, 它会在 Spring 容器启动时扫描 <code>WebApplicationInitializer</code> 的所有实现类，并调用它们的 <code>onStartup</code> 文件。由此才实现了免 <code>web.xml</code> 文件配置 servlet 的方式。<br/><br/>
+<code>SpringServletContainerInitializer</code> 是以 SPI 的方式加载的，定义在 spring-web 包中，见下图<br/><br/>
+{{< bundle-image src="spring-mvc-base-3-800x105.png" width="800px" >}}
+并且这个 <code>WebInitializer</code> 把 Spring 的上下文 <code>AnnotationConfigWebApplicationContext</code> 与 Servlet 容器上下文 <code>ServletContext</code> 关联起来了。注册了 Spring 本身的 Java 配置 <code>WebAppConfig</code> 类。创建了 <code>/</code> 到 <code>dispatcher</code> servlet 的映射。<br/><br/>
+<h3>WebAppConfig 类</h3>
+{{< highlight java >}}
+package config;
+
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.web.servlet.config.annotation.EnableWebMvc;
+
+@EnableWebMvc
+@ComponentScan(basePackages = {"controller"})
+public class WebAppConfig {
+
+}{{</ highlight >}}
+<br/>
+这个类对于当前实例来说没多少内容，主要就是 <code>EnableWebMvc</code> 启用 <code>SpringMVC</code> 特性，并指示 Spring 上下文扫描 <code>controller</code> 包。因为该例只用一个 controller 来进行演示，未涉及到 service, model 等内容。<br/><br/>
+<h3>UserController 类</h3>
+{{< highlight java >}}
+package controller;
+
+import com.google.common.collect.ImmutableMap;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
+
+@RestController
+@RequestMapping("/users")
+public class UserController {
+
+    @RequestMapping(value="/{userId}", method= RequestMethod.GET)
+    public Map<String, Object> getUserInfo(@PathVariable("userId") Integer userId) {
+        return ImmutableMap.of("UserId", userId, "Name", "Yanbin");
+    }
+}
+{{</ highlight >}}
+<br/>
+此处注解没什么好说的，普通的 Spring RESTful 的 controller 的注解<br/><br/>
+<h3>测试运行 tomcat</h3>
+在项目目录下，执行 <code>mvn tomcat7:run</code> 命令<br/>
+<blockquote>
+[INFO] --- tomcat7-maven-plugin:2.2:run (default-cli) @ springmvc ---<br />
+[INFO] Running war on http://localhost:8080/springmvc<br />
+[INFO] Creating Tomcat server configuration at /Users/yanbin/workspace/springmvc/target/tomcat<br />
+[INFO] create webapp with contextPath: /springmvc<br />
+Apr 30, 2018 7:54:04 AM org.apache.coyote.AbstractProtocol init<br />
+INFO: Initializing ProtocolHandler ["http-bio-8080"]<br />
+Apr 30, 2018 7:54:04 AM org.apache.catalina.core.StandardService startInternal<br />
+INFO: Starting service Tomcat<br />
+Apr 30, 2018 7:54:04 AM org.apache.catalina.core.StandardEngine startInternal<br />
+INFO: Starting Servlet Engine: Apache Tomcat/7.0.47<br />
+Apr 30, 2018 7:54:06 AM org.apache.catalina.core.ApplicationContext log<br />
+INFO: 1 Spring WebApplicationInitializers detected on classpath<br />
+2018-04-30 07:54:06 [localhost-startStop-1] INFO WebInitializer - Starting container......<br />
+2018-04-30 07:54:06 [localhost-startStop-1] INFO AnnotationConfigWebApplicationContext - Refreshing Root WebApplicationContext: startup date [Mon Apr 30 07:54:06 CDT 2018]; root of context hierarchy<br />
+2018-04-30 07:54:06 [localhost-startStop-1] INFO AnnotationConfigWebApplicationContext - Registering annotated classes: [class config.WebAppConfig]<br />
+2018-04-30 07:54:06 [localhost-startStop-1] INFO AutowiredAnnotationBeanPostProcessor - JSR-330 'javax.inject.Inject' annotation found and supported for autowiring<br />
+2018-04-30 07:54:07 [localhost-startStop-1] INFO RequestMappingHandlerMapping - Mapped "{[/users/{userId}],methods=[GET]}" onto public java.util.Map&lt;java.lang.String, java.lang.Object&gt; controller.UserController.getUserInfo(java.lang.Integer)<br />
+2018-04-30 07:54:07 [localhost-startStop-1] INFO RequestMappingHandlerAdapter - Looking for @ControllerAdvice: Root WebApplicationContext: startup date [Mon Apr 30 07:54:06 CDT 2018]; root of context hierarchy<br />
+Apr 30, 2018 7:54:07 AM org.apache.catalina.core.ApplicationContext log<br />
+INFO: Initializing Spring FrameworkServlet 'dispatcher'<br />
+2018-04-30 07:54:07 [localhost-startStop-1] INFO DispatcherServlet - FrameworkServlet 'dispatcher': initialization started<br />
+2018-04-30 07:54:07 [localhost-startStop-1] INFO DispatcherServlet - FrameworkServlet 'dispatcher': initialization completed in 19 ms<br />
+Apr 30, 2018 7:54:07 AM org.apache.coyote.AbstractProtocol start<br />
+INFO: Starting ProtocolHandler ["http-bio-8080"]
+</blockquote>
+
+这样就启动了我们的 SpringMVC 项目，可以测试 http://localhost:8080/springmvc/users/1234<br/>
+<blockquote>
+➜ / curl -v http://localhost:8080/springmvc/users/1234<br />
+* Trying ::1...<br />
+* TCP_NODELAY set<br />
+* Connected to localhost (::1) port 8080 (#0)<br />
+> GET /springmvc/users/1234 HTTP/1.1<br />
+> Host: localhost:8080<br />
+> User-Agent: curl/7.54.0<br />
+> Accept: */*<br />
+><br />
+&lt; HTTP/1.1 200 OK<br />
+&lt; Server: Apache-Coyote/1.1<br />
+&lt; Content-Type: application/json;charset=UTF-8<br />
+&lt; Transfer-Encoding: chunked<br />
+&lt; Date: Mon, 30 Apr 2018 13:04:52 GMT<br />
+&lt;<br />
+* Connection #0 to host localhost left intact<br />
+{"UserId":1234,"Name":"Yanbin"}
+</blockquote>
+<br/>
+因为我们在 pom.xml 中引入了 jackson, 所以 Controller 方法返回的对象被自动转换为 JSON 格式的数据<br/><br/>
+http://localhost:8080/springmvc/ 将会访问到 src/webapp/index.jsp 的内容，如果文件存在的话。<br/><br/>
+<h3>关于响应格式</h3>
+如果在项目中还引入了 Jackson 的另一个 xml 包<br/>
+{{< highlight xml >}}
+<dependency>
+    <groupId>com.fasterxml.jackson.dataformat</groupId>
+    <artifactId>jackson-dataformat-xml</artifactId>
+    <version>${jackson.version}</version>
+</dependency>
+{{</ highlight >}}
+<br/>
+<code>mvn tomcat7:run</code> 重启 Tomcat, 访问 http://localhost:8080/springmvc/users/1234, 这时候看到输出的是 xml 格式<br/>
+<blockquote>
+➜ / curl -v http://localhost:8080/springmvc/users/1234<br />
+.......<br />
+><br />
+&lt; HTTP/1.1 200 OK<br />
+&lt; Server: Apache-Coyote/1.1<br />
+&lt; Content-Type: application/xml;charset=UTF-8<br />
+&lt; Transfer-Encoding: chunked<br />
+&lt; Date: Mon, 30 Apr 2018 13:06:47 GMT<br />
+&lt;<br />
+* Connection #0 to host localhost left intact<br />
+&lt;Map&gt;&lt;UserId&gt;1234&lt;/UserId&gt;&lt;Name&gt;Yanbin&lt;/Name&gt;&lt;/Map&gt;
+</blockquote>
+
+那么在这种情况下如何再次获得 JSON 的响应数据呢？有三种办法<br/><br/>
+<h4>请求时指定响应头</h4>
+<blockquote>
+➜ / curl -H "Accept:application/json" http://localhost:8080/springmvc/users/1234<br />
+{"UserId":1234,"Name":"Yanbin"}
+</blockquote>
+
+<h4>@RequestMapping 指定 produces</h4>
+Controller 类或方法上指定 @RequestMapping 的 produces 属性为 json, 例如<br/>
+<blockquote>
+@RequestMapping(value = "/users", produces = "application/json")<br />
+//或<br />
+@RequestMapping(value="/{userId}", method=RequestMethod.GET, produces = "application/json")
+</blockquote>
+<br/>
+这时候不带 <code>Accept</code> 头默认的响应就是 JSON 了<br/><br/>
+<h4>借助于 WebMvcConfigurerAdapter 设置默认的响应类型</h4>
+修改前面的 <code>WebAppConfig</code> 类的内容如下<br/>
+{{< highlight xml >}}
+@EnableWebMvc
+@ComponentScan(basePackages = {"controller"})
+public class WebAppConfig extends WebMvcConfigurerAdapter {
+
+    @Override
+    public void configureContentNegotiation(ContentNegotiationConfigurer configurer) {
+        configurer.defaultContentType(MediaType.APPLICATION_JSON_UTF8);
+    }
+
+}{{</ highlight >}}
+<br/>
+如果在 Controller 或请求头中没有特别说明默认输出 <code>JSON</code> 格式响应。也就是说这时候请求头中如果要求得到 <code>XML</code> 格式的数据还是没问题的。<br/>
+<blockquote>
+➜ / curl -H "Accept:text/xml" http://localhost:8080/springmvc/users/1234<br />
+&lt;Map&gt;&lt;UserId&gt;1234&lt;/UserId&gt;&lt;Name&gt;Yanbin&lt;/Name&gt;&lt;/Map&gt;
+</blockquote>
+
+链接：<br/><br/>
+<ol>
+    <li><a href="http://wiki.jikexueyuan.com/project/spring/mvc-framework/spring-mvc-hello-world-example.html">Spring MVC Hello World 例子</a>(web.xml 和 dispatcher-servlet.xml 方式)</li>
+    <li><a href="https://viralpatel.net/blogs/spring-4-mvc-tutorial-maven-example/">Spring 4 MVC Tutorial Maven Example - Spring Java Configuration</a></li>
+</ol>
