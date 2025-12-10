@@ -1,0 +1,273 @@
+---
+title: 构建 AWS AMI 镜像(EC2 Image Builder + Terraform)
+url: /build-aws-ami-with-ec2-image-builder-terraform/
+date: 2022-04-12T00:22:39-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - AWS
+  - Terraform
+  - AMI
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12377 
+wpStatus: publish
+views: 1362
+lastmod: 2022-04-12T00:25:43-05:00
+---
+
+使用到 AWS 的 EC2 服务时，选择一个基础镜像后，要定制的话需要在 userdata 中写上一堆脚本。如果不想每次重复 userdata，或者要更快速的初始化一个虚拟机，就应该定制自己的 AMI，特别是在 Batch, ECS, EKS 选择的基础镜像还不方便使用 userdata。<br/><br/>
+定制一个 AMI, 我们可以用 <code>aws create-image</code> 命令，或是 HashiCorp 提供的 <a href="https://www.packer.io/">Packer</a>(它不仅支持 AWS, 还能为 阿里云，Azure, Google 云，vmware, docker, Vagrant 等定制镜像)。而我们这里将要介绍的仍然是 HashiCorp 公司的 Terraform 并结合 AWS 的 EC2 Image Builder 服务来构建 AMI 镜像。<br/><br/>
+EC2 Image Builder 是 2019 年 12 月 1 日推出来的服务，见 <a href="https://aws.amazon.com/about-aws/whats-new/2019/12/introducing-ec2-image-builder/">Introducing EC2 Image Builder</a>。<br/><br/>
+构建一个镜像的基本过程是选择一个基础镜像来启动一个实例，然后在该实例中做一系列的操作，再保存操作后的状态为自己的镜像。这和用 Dockerfile 定制自己的 Docker 镜像是类似的。<!--more--><br/><br/>
+EC2 Image Builder 中主要有四个概念，网上没找到合适的图，自己画了一张<br/><br/>
+{{< bundle-image src="EC2-Image-Builder-Concepts-800x364.png" width="826px" >}}
+&nbsp;<br/><br/>
+<ol>
+    <li>Image recipe(Container recipe): 选择一个基础镜像(AMI ID) 或用 EC2 Image Builder 构建出来的 Image 的 ARN, 并关联一个多个 Component 来对该基础镜像进行定制</li>
+    <li>Component: 就是基于 recipe 中选择镜像的定制步骤，如安装组件，修改配置等</li>
+    <li>Infrastructure configuration: 配置启动基础镜像的 EC2 运行环境，如实例类型，subnet, Security Group, IAM role, Key pair 等</li>
+    <li>Distribution Settings: 构建好的 AMI 要往哪里放，可以跨帐号跨区域。跨区域是依赖目的帐号的 IAM role: EC2ImageBuilderDistributionCrossAccountRole，源帐号需 Assume 它。</li>
+    <li>Image pipeline: 组合了以上 #1, #3 和 #4 的流程，可以手工启动它，或设置 Schedule</li>
+</ol>
+<br/>
+基本的概念介绍完毕，下面看如何用 Terraform 脚本进行具体的实施。以一个 Windows 2016 基本镜像，在其中启用 IIS 等特性为例<br/><br/>
+<h3>Image recipe</h3>
+以 Image recipe 为起点，parent_image 是一个 Windows 2016 的 AMI ImageId，它也可以是用 EC2 Image Build 构建好的 Image 的 ARN， 格式为：arn:aws:imagebuilder:&lt;region-id&gt;:&lt;account-id&gt;:image/&lt;image-recipe-name&gt;/&lt;image-recipe-version&gt;<br/>
+{{< highlight terraform >}}
+resource "aws_imagebuilder_image_recipe" "windows-iis" {
+  component {
+    component_arn = aws_imagebuilder_component.windows-iis.arn
+  }
+  name         = local.image_recipe_name
+  parent_image = "ami-0bcfc9e7c5f2f7fe4"
+  version      = "1.0.0"
+}
+
+locals {
+  image_recipe_name = "windows-2016-iis"
+}
+{{</ highlight >}}
+<br/>
+把这里及后面用到的局部变量 image_recipe_name 也列出来<br/><br/>
+上面的 component 是一个 block, 所以它可以出现多次来按序引用多个 component，接下来看 component 的配置<br/><br/>
+<h3>Component</h3>
+Component 的关键就是 data 中的操作步骤，它是一个 yaml 文件<br/>
+{{< highlight terraform >}}
+resource "aws_imagebuilder_component" "windows-iis" {
+  name     = local.image_recipe_name
+  description = "Install required software for WindowsServer 2016"
+  data = yamlencode({
+    phases = [{
+      name = "build"
+      steps = [{
+        name      = "install-software"
+        action = "ExecutePowerShell"
+        inputs = {
+          commands = [
+            "Install-WindowsFeature -Name Web-Server,NET-Framework-45-ASPNET,Web-Asp-Net45,Web-Net-Ext45,Web-Mgmt-Tools"
+          ]
+        }
+        onFailure = "Abort"
+      },{
+        name = "reboot-system"
+        action = "Reboot"
+        inputs = {
+          delaySeconds: 5
+        }
+      }]
+    }, {
+      name = "validate",
+      steps = [{
+        name = "verify-components"
+        action = "ExecutePowerShell"
+        inputs = {
+          commands = [
+            "Invoke-WebRequest -UseBasicParsing http://localhost"
+          ]
+        }
+      }]
+    }]
+    schemaVersion = 1.0
+  })
+  platform = "Windows"
+  version  = "1.0.0"
+}
+{{</ highlight >}}
+<br/>
+也可以把操作步骤放到 s3 上去，用<br/>
+<blockquote>
+uri = "s3://${aws_s3_object.example.bucket}/${aws_s3_object.example.key}
+</blockquote>
+
+来配置<br/><br/>
+phases 中可有 build, validate 和 test，基本 build 和 validate 是在构建镜像的 EC2 实例中执行，而 test 是在测试镜像的 EC2 实例中执行。<br/><br/>
+action 根据 platform(Windows/Linux 等) 的不同有 <code>ExecuteBash</code>, <code>ExecuteBinary</code>, <code>ExecuteDocument</code>, <code>ExecutePowerShell</code>, <code>InstallMSI</code>, <code>Reboot</code>, <code>SetRegistry</code> 等操作。简单起见我们只要用 <code>ExecuteBash</code> 或 <code>ExecutePowerShell</code> 就足够了，剩下的事件全用 Bash 或 PowerShell 搞定。<br/><br/>
+关于 Component 的操作请参考 <a href="https://docs.aws.amazon.com/imagebuilder/latest/userguide/toe-component-manager.html">AWS Task Orchestrator and Executor component manager</a> <br/><br/>
+接下来就是 Component 的执行环境，也就是<br/><br/>
+<h3>Infrastructure configuration</h3>
+{{< highlight terraform >}}
+resource "aws_imagebuilder_infrastructure_configuration" "windows-iis" {
+  description           = "Windows 2016 IIS build infrastructure"
+  instance_profile_name = aws_iam_instance_profile.image_builder.name
+  instance_types        = ["t3.large"]
+  name                  = "${local.image_recipe_name}-ami-build-infr"
+  security_group_ids    = ["sg-0f32c21c45bd9dd28"]
+
+  subnet_id                     = "subnet-0e9dffcf213fb2958"
+  terminate_instance_on_failure = true
+
+  # logging {
+  #   s3_logs {
+  #     s3_bucket_name = "yanbin-bucket"
+  #     s3_key_prefix  = "image-builder/${local.image_recipe_name}"
+  #   }
+  # }
+}
+{{</ highlight >}}
+<br/>
+想要详细的日志文件输出到 S3 上去就声明 logging 部分，记得要在 IAM role 中把相应的 s3 操作权限加上去。S3 上没有日志也不大要紧，Component 执行时的控制台输出地记录到 CloudWatch 上去，Log Stream 是 /aws/imagebuilder/&lt;image-recipe-name&gt;/&lt;image-recipe-version&gt;/&lt;sequence&gt;，如 /aws/imagebuilder/windows-2016-iis/1.0.0/1<br/><br/>
+前面看到需要一个 instance_profile_name, 我们本着先入为主，缺什么被什么的原则，贴上 instance_profile 的声明<br/><br/>
+<h3>Instance profile</h3>
+我以这种声明 AWS 资源的顺序方式更主要是追随思维的行进，而非先声明一大堆资源待用，可那都是干什么的呀，何时才要用到呢。虽说 EC2 Image Builder 中也叫 Recipe, 但和炒菜前先把料全配置好不一样，菜在锅中炒要葱姜蒜时临时准备可来不急，但创建 AWS 资源就无所谓先后了<br/>
+{{< highlight terraform >}}
+resource "aws_iam_role" "image_builder" {
+  name = "ec2InstanceRoleImageBuilder"
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+EOF
+  managed_policy_arns = [
+    "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+    "arn:aws:iam::aws:policy/EC2InstanceProfileForImageBuilder"
+  ]
+}
+
+resource "aws_iam_instance_profile" "image_builder" {
+  name = "ec2InstanceProfileImageBuilder"
+  role = aws_iam_role.image_builder.name
+}
+{{</ highlight >}}
+<br/>
+这个 role 是要给 EC2 实例用的，所以 assume_role_policy 是 ec2.amazonaws.com，同时大约 Component 中的操作是通过 Session Manager 登陆去执行的，因此要 AmazonSSMManagedInstanceCore, 并加上 EC2 Image Builder 必须的 EC2InstanceProfileForImageBuilder policy。如有其他特殊的权限自行补上。<br/><br/>
+<h3>Distribution configuration</h3>
+经过了在 EC2 环境中构建好预期的镜像后就要发布到不同帐户下，或区域中去<br/>
+{{< highlight terraform >}}
+resource "aws_imagebuilder_distribution_configuration" "windows-iis" {
+  name = "${local.image_recipe_name}-distribution"
+  description = "distribute Windows 2016 IIS image to two region/accounts"
+  dynamic "distribution" {
+    for_each = ["us-east-1", "us-west-2"]
+    iterator = region
+    content {
+      ami_distribution_configuration {
+        name = "Windows 2016 IIS - {{imagebuilder:buildDate}}"
+
+        launch_permission {
+          user_ids = ["123456789001"]
+        }
+        target_account_ids = ["123456789002", "123456789003"]
+      }
+      region = region.value
+    }
+  }
+}
+{{</ highlight >}}
+<br/>
+这里预设了要发布到两个不同的目标帐号下(target_account_ids) 指定，并分布到各自的两个区域中(us-east-1 和 us-west-2), 用 dynamic block 配置的。<br/><br/>
+跨区域是没有权限问题的，因为 IAM role 是 global 的。<br/><br/>
+强调下跨帐号的分发，比如说前面 target_account_ids 中，第一个帐号 <code>123456789002</code> 是构建镜像的帐号，而要分发镜像到第二个帐号 <code>123456789003</code> 下的话，我们就要求事先在目标帐号中创建一个 IAM role, 名称必须是 <code>EC2ImageBuilderDistributionCrossAccountRole</code>, 加上 <code>Ec2ImageBuilderCrossAccountDistributionAccess</code> policy, 并受权给 <code>123456789002</code> 帐号可 Assume 来使用<br/>
+{{< highlight terraform >}}
+resource "aws_iam_role" "cross-account" {
+  name = "EC2ImageBuilderDistributionCrossAccountRole"
+  description = "Assumed by other account to copy AMI to here"
+  assume_role_policy = <<EOF
+  {
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "sts:AssumeRole"
+      ],
+      "Principal": {
+        "AWS": ["arn:aws:iam::123456789002:root"]
+      }
+    }
+  ]
+}
+EOF
+  managed_policy_arns = [
+    "arn:aws:iam::aws:policy/Ec2ImageBuilderCrossAccountDistributionAccess"
+  ]
+}
+{{</ highlight >}}
+<br/>
+由此也不难理解跨帐号分发镜像的工作机制，源帐号将会明确的 Assume 目标帐号下的 Role <code>Ec2ImageBuilderDistributionCrossAccountRole</code> 来操作。<br/><br/>
+<h3>Image pipeline</h3>
+最后就是组合创建自己需要的 pipeline 了<br/>
+{{< highlight terraform >}}
+resource "aws_imagebuilder_image_pipeline" "windows-iis-ami" {
+  image_recipe_arn                 = aws_imagebuilder_image_recipe.windows-iis.arn
+  infrastructure_configuration_arn = aws_imagebuilder_infrastructure_configuration.windows-iis.arn
+  distribution_configuration_arn = aws_imagebuilder_distribution_configuration.windows-iis.arn
+  name                             = "${local.image_recipe_name}-ami"
+  status                           = "ENABLED"
+  description                      = "Creates a Windows 2016 IIS AMI"
+  image_tests_configuration {
+    image_tests_enabled = true
+  }
+}
+{{</ highlight >}}
+<br/>
+Image pipeline 可配置<br/>
+<blockquote>
+schedule {<br />
+    schedule_expression = "cron(0 0 * * ? *)"<br />
+}
+</blockquote>
+
+自动构建，或者完全手工来触发执行，在 AWS EC2 Image Builder Web 控制台下选择一个 Image pipeline, 然后 Actions 中 Run pipeline。<br/><br/>
+<h3>其他补充</h3>
+以上创建的资源都可以在 AWS EC2 Image Builder Web 控制台下看到。Image 的构建过程中的关键事件可配置发送消息到某个 SNS topic 中，Image pipeline 还能用 EventBridge rules 基于某些事件串联来触发。<br/><br/>
+触发 Image pipeline 后会在 Images 中看到镜像的构建过程，构建状态有 Pending, Creating, Building, Testing, Distributing。<br/><br/>
+如果不通过 Image pipeline, 可直接创建一个 Image 立即构建，并且 Terraform apply 后一直等待 Image 完全构建后才返回<br/>
+{{< highlight terraform >}}
+resource "aws_imagebuilder_image" "example" {
+  distribution_configuration_arn   = aws_imagebuilder_distribution_configuration.windows-iis.arn
+  image_recipe_arn                 = aws_imagebuilder_image_recipe.windows-iis.arn
+  infrastructure_configuration_arn = aws_imagebuilder_infrastructure_configuration.windows-iis.arn
+}
+{{</ highlight >}}
+<br/>
+在 AMI Image 的构建过程中我们在 EC2 Instances 列表中可以看到名为如下的实例<br/>
+<blockquote>
+Build instance for windows-2016-iis<br />
+Test instance for windows-2016-iis
+</blockquote>
+
+这里的 <code>windows-2016-iis</code> 是 Image recipe 的名称。<br/><br/>
+Windows 镜像的构建过程将会耗时 30-40 分钟，Linux 镜像可快许多。<br/><br/>
+现实中使用 EC2 Image Builder 时，用 Image pipeline 的 schedule 似乎没多大的意义，我们总不能死劲的按住相同的 parent_image 和 component，却要不停摩擦出更好的 AMI 镜像，而需要依赖于某个事件(或手工)，对 Image recipe 或 component(甚至是 Distribution settings) 进行改动后创建出具有新特性的 AMI 镜像。  <br/><br/>
+链接：<br/><br/>
+<ol>
+    <li><a href="https://cloudly.engineer/2021/get-started-with-ec2-image-builder-in-terraform/aws/">Get started with EC2 Image Builder in Terraform</a></li>
+</ol>
