@@ -1,0 +1,228 @@
+---
+title: 跨 CA 签发多个证书的 Nginx mTLS 配置
+url: /client-certs-with-different-ca-nginx-mtls-config/
+date: 2024-12-02T22:47:17-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https-logo.png"
+categories:
+  - HTTP
+tags: 
+  - HTTPS
+  - TLS
+  - mTLS
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13954 
+wpStatus: publish
+views: 205
+lastmod: 2024-12-03T00:14:16-06:00
+---
+
+研究过用同一个 CA 签发的服务端和客户端证书的 Nginx mTLS 配置，本文要试验一番服务端和客户端证书由不同 CA 机构签发的情形。这是常有事，比如与客户间采用 mTLS 加密方式，需要文件交付可能是</p>
+<br/>
+<ol>
+    <li>客户端证书由甲方生成，发送客户端私钥和证书(或放在一起的 PKCS#12 格式证书)给乙方</li>
+    <li>或由乙方生成客户端私钥或证书，乙方把签发用的 CA 证书发给甲方已配置信任链</li>
+    <li>甚至服务端，客户端的证书都由甲方生成的情况下也可能使用不同的 CA 签发</li>
+</ol>
+<br/>
+下面来测试不同 CA 签发证书的 Nginx mTLS 配置。<br/><br/>
+今天升级了 ChatGPT 为 Plus 版本，可以用 ChatGPT 4o, 确实是比较强，输入 "mtls 不同 ca 签发的服务端客户端证书在 nginx 中的配置" 提示符产生的内容几乎可以直接作为博文。但本人必须遵循本博客非 AI 产生的原则，只参考 ChatGTP 的答案，关键是一个要自己亲自动手验证并理解每一项配置的功用。<!--more--><br/><br/>
+本文需要用到的所有 key 和证书按如下步骤操作<br/><br/>
+<h3>生成 server 和 client 的 CA 证书</h3>
+{{< highlight sh >}}
+openssl req -x509 -newkey rsa:2048 -nodes -keyout server-ca.key -out server-ca.crt  \
+  -subj "/C=US/ST=Illinois/L=Chicago/O=Server CA Company/CN=ServerCA"
+
+openssl req -x509 -newkey rsa:2048 -nodes -keyout client-ca.key -out client-ca.crt  \
+  -subj "/C=US/ST=New York/L=New York/O=Client CA Company/CN=ClientCA"
+{{</ highlight >}}
+<br/>
+分别生成 server-ca.key, server-ca.crt, client-ca.key, client-ca.crt<br/><br/>
+然后分别用它们签发服务端与客户端证书<br/><br/>
+<h3>用 server ca 签发服务端证书</h3>
+{{< highlight sh >}}
+openssl req -newkey rsa:2048 -nodes -keyout server.key -out server.csr \
+  -subj "/C=US/ST=Illinois/L=Chicago/O=X Company/CN=server.local"
+
+openssl x509 -req -in server.csr -out server.crt -CA server-ca.crt -CAkey server-ca.key -days 365
+{{</ highlight >}}
+<br/>
+生成了 server.key, server.crt<br/><br/>
+注：CN=server.local 是指定的域名，本机或其他机器要访问该 Nginx, 应在 /etc/hosts 中配置 &lt;nginx ip&gt; server.local, 然后就可以解析 server.local 了<br/><br/>
+<h3>用  client ca 签发客户端证书</h3>
+{{< highlight sh >}}
+openssl req -newkey rsa:2048 -nodes -keyout client1.key -out client1.csr \
+  -subj "/C=US/ST=Iowa/L=Iowa/O=Company 1/CN=client1"
+
+openssl x509 -req -in client1.csr -out client1.crt -CA client-ca.crt -CAkey client-ca.key -days 365
+{{</ highlight >}}
+<br/>
+生成了 client1.key, client1.crt<br/><br/>
+<h3>Nginx 中的 mTLS 配置</h3>
+先尝试一下错误的配置，在 /etc/nginx/nginx.conf 中如果 server {} 配置是<br/>
+{{< highlight nginx "hi_lines=9" >}}
+server {
+    listen 443 ssl;
+    server_name server.local;
+    ssl_certificate /certs/server.crt;
+    ssl_certificate_key /certs/server.key;
+
+    ssl_verify_client on;
+
+    ssl_client_certificate /certs/server-ca.crt;
+}
+{{</ highlight >}}
+<br/>
+也就是 ssl_client_certificate 指定为 /certs/server-ca.crt<br/><br/>
+curl 带上 --cert client1.crt --key client1.key  也访问不了<br/>
+{{< highlight sh >}}
+$ curl --cert client1.crt --key client1.key https://server.local -k
+<html>
+<head><title>400 The SSL certificate error</title></head>
+<body>
+<center><h1>400 Bad Request</h1></center>
+<center>The SSL certificate error</center>
+<hr><center>nginx/1.24.0 (Ubuntu)</center>
+</body>
+</html>
+{{</ highlight >}}
+<br/>
+因为用于签发客户端 client1.key, client1.crt 的 CA 证书未配置在 nginx.conf 中，也就是说它们的证书不被 Nginx 信任<br/><br/>
+如果把 ssl_client_certificate 换成 /certs/client-ca.crt<br/>
+{{< highlight nginx >}}
+server {
+    listen 443 ssl;
+    server_name server.local;
+    ssl_certificate /certs/server.crt;
+    ssl_certificate_key /certs/server.key;
+
+    ssl_verify_client on;
+
+    ssl_client_certificate /certs/client-ca.crt;
+}
+{{</ highlight >}}
+<br/>
+就能用 curl 正常访问了<br/>
+{{< highlight nginx >}}$
+curl --cert client1.crt --key client1.key https://server.local -k
+Ok
+{{</ highlight >}}
+<br/>
+因为 client1.crt 是用 /certs/client-ca.crt 签发的，所以 client1.crt 是被信任的。<br/><br/>
+配置项 <code>ssl_client_certificate</code> 看上去就是要配置一个客户端证书，其实不对，而是要一个用于签发客户端证书的 CA 的证书。<br/><br/>
+假如生成更多的 client key  和证书，如  client2.key 和  client2.crt<br/>
+{{< highlight sh >}}
+openssl req -newkey rsa:2048 -nodes -keyout client2.key -out client2.csr \
+  -subj "/C=US/ST=Iowa/L=Iowa/O=Company 2/CN=client2"
+
+openssl x509 -req -in client2.csr -out client2.crt -CA client-ca.crt -CAkey client-ca.key -days 365
+{{</ highlight >}}
+<br/>
+由于 client2.crt 也是由 client-ca 签发的，所以不用改 nginx.conf 配置，下面 curl 换成了 client2.crt, client2.key 后也没问题<br/>
+{{< highlight sh >}}
+$ curl --cert client2.crt --key client2.key https://server.local -k
+Ok
+{{</ highlight >}}
+<br/>
+如果再有新 CA 签发的客户端证书，如<br/>
+{{< highlight sh >}}
+openssl req -x509 -newkey rsa:2048 -nodes -keyout client-x-ca.key -out client-x-ca.crt  \
+  -subj "/C=US/ST=New York/L=New York/O=ClientX CA Company/CN=ClientXCA"
+
+openssl req -newkey rsa:2048 -nodes -keyout client3.key -out client3.csr \
+  -subj "/C=US/ST=Iowa/L=Iowa/O=Company 3/CN=client3"
+
+openssl x509 -req -in client3.csr -out client3.crt -CA client-x-ca.crt -CAkey client-x-ca.key -days 365
+{{</ highlight >}}
+<br/>
+生成的 client-x-ca.key, client-x-ca.crt, client3.key, client3.crt<br/><br/>
+若要让 curl --cert client3.crt --key client3.key https://server.local -k 可工作的话，则可以用 ssl_trusted_certificate 补上用于签下 client3 证书的 CA 证书 client-x-ca.crt<br/>
+{{< highlight nginx >}}
+server {
+    listen 443 ssl;
+    server_name server.local;
+    ssl_certificate /certs/server.crt;
+    ssl_certificate_key /certs/server.key;
+
+    ssl_verify_client on;
+
+    ssl_client_certificate /certs/client-ca.crt;
+    ssl_trusted_certificate /certs/client-x-ca.crt;
+}
+{{</ highlight >}}
+<br/>
+再有更多 CA  签发的客户端证书，字面上的光靠 ssl_client_certificate 和  ssl_trusted_certificate 似乎无能为力了，因为它们都是不可重复的属性。<br/><br/>
+但是一个 *.crt 文件中可以包含多个证书的内容啊，因此我们需要把多个 CA 的证书合并成一个证书文件，即要让 ssl_trusted_certificate 指定的文件中含多个 CA 证书的内容。下面是简单的合并证书内容的命令<br/>
+<blockquote>
+cat client_a-ca.crt client_b-ca.crt client_c-ca.crt &gt; other-clients-ca.crt
+</blockquote>
+
+合并后，other-clients-ca.crt 中的内容就是下面的格式<br/>
+{{< highlight text >}}
+-----BEGIN CERTIFICATE-----
+<client1-ca-content>
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+<client2-ca-content>
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+<client3-ca-content>
+-----END CERTIFICATE-----
+{{</ highlight >}}
+<br/>
+再用 ssl_trusted_certificate 指定为该含有多个 CA 证书的文件<br/>
+{{< highlight text >}}
+    ssl_trusted_certificate /certs/other-clients-ca.crt;
+{{</ highlight >}}
+<br/>
+该做法实质用 ssl_trusted_certificate 配置的是一个客户端证书信任链，服务端就能会信任 ssl_client_certificate 和 ssl_trusted_certificate 包含的所有 CA 签发的客户端证书。<br/><br/>
+<h3>附：如何让 curl 信任证书</h3>
+默认是 curl 也是只信任权威的证书，所以对于自签发证书配置的配置端必须用 <code>-k</code> 来强自任凭，没有 <code>-k</code> 就是<br/><br/>
+{{< highlight sh >}}
+curl --cert client1.crt --key client1.key https://server.local
+curl: (60) SSL certificate problem: unable to get local issuer certificate
+More details here: https://curl.se/docs/sslcerts.html
+
+curl failed to verify the legitimacy of the server and therefore could not
+establish a secure connection to it. To learn more about this situation and
+how to fix it, please visit the web page mentioned above.
+{{</ highlight >}}
+<br/>
+那么如何不用 <code>-k</code>  参数还能获取正常响应结果呢？有以下几种办法<br/><br/>
+--cacert 参数，相当于浏览器导入了第三方可信任证书<br/>
+{{< highlight sh >}}curl --cert client1.crt --key client1.key --cacert server.crt https://server.local
+Ok
+
+curl --cert client1.crt --key client1.key --cacert server-ca.crt https://server.local
+Ok
+{{</ highlight >}}
+<br/>
+即信任服务端 <code>server.crt</code> 证书或用于签发 <code>server.crt</code> 的 CA 证书。信任某个证书的话也必须信任由此证书签发的其他证书，即信任老子就要无条件信任小子。<br/><br/>
+通过环境变量替换 --cacert 参数<br/>
+{{< highlight sh >}}
+export CURL_CA_BUNDLE=server.crt
+curl --cert client1.crt --key client1.key  https://server.local
+Ok
+
+export CURL_CA_BUNDLE=server-ca.crt
+curl --cert client1.crt --key client1.key  https://server.local
+Ok
+{{</ highlight >}}
+<br/>
+与前面等效。还有一个  <code>--capath</code>  指定目录，用起来稍显复杂，不作深入了。<br/><br/>
+还可以用 Trust Store, 如 macOS 的 Keychain Access, Windows 的 Certificates, Debian/Ubuntu 的 /etc/ssl/certs/ca-certificates.crt, 和 RHEL/CentOS  的文件 /etc/pki/tls/certs/ca-bundle.crt。<br/><br/>
+以 Ubuntu 为例，把欲信任的证书内容附加到 /etc/ssl/certs/ca-certificates.crt 后就可以免去 <code>-k</code>, 操作<br/>
+{{< highlight sh >}}
+# cat server-ca.crt >> /etc/ssl/certs/ca-certificates.crt
+# curl --cert client1.crt --key client1.key https://server.local
+Ok
+{{</ highlight >}}
+<br/>
+假设 server-ca.crt 在当前目录中。<br/><br/>
+对于 Java 程序或很多地方也都有 Trust Store 这个概念，可以顺着这个思路，进行信任某个 CA 所签发的证书。 
