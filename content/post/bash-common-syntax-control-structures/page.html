@@ -1,0 +1,178 @@
+---
+title: Bash 的常用语法，控制结构
+url: /bash-common-syntax-control-structures/
+date: 2015-05-18T04:02:59-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Linux/Unix
+tags: 
+  - Linux
+  - Shell
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6816 
+wpStatus: publish
+views: 502
+lastmod: 2021-09-03T17:53:19-05:00
+---
+
+最近玩弄 Jenkins 较多，构建服务器基本是 Mac OS 和 Linux，虽说有许多现成插件可用，但不敢不说 <strong>Execute Shell</strong> 这个东西都是即开即用，方便而灵活的。因此不断的要和 Shell 打交道，真正通用的的 Shell 自然是 Bash，在 Mac OS 下可发现自带了 zsh, ksh 和 tcsh，考虑到 Linux 还是 Bash 吧。</p>
+<br/>
+本人工作时用的是 Fish Shell，目前相当的脚本语言都可用来写 Shell 脚本，如 PHP, Ruby, Python, Perl，NodeJs 等，只是 Bash 的地位总难被替代，借句话说 Bash 的是拿来 “用” 的，而像 Ruby, Python 等做 Shell 是拿来 “编” 的，再就是 Bash 与 Linux 命令的亲缘性更强。<br/><br/>
+我也只会在实在用 Bash 太难于表达的时候才用其他脚本语言，如处理日期的运算，因 Mac OS 的 date 和 Linux 的 date 命令差异较大，不得已会选择有较强类型的 Ruby 等。<br/><br/>
+既然 Bash 要作为一个日常语言，那不妨作个备忘录，记录下那些常用的语法，控制结构。<br/><br/>
+<span style="font-size: 12pt;"><strong>1. if 条件语句</strong></span><!--more--><br/><br/>
+基本语法<br/>
+{{< highlight bash >}}
+if [ condition ]; then 
+  statement 
+elif [ condition ]; then 
+  statement 
+else 
+  statement 
+fi
+{{</ highlight >}}
+<br/>
+elif 和 else 是可选部分，结尾要用 if 反着写的 fi，简单例子<br/>
+{{< highlight bash >}}
+if [ "$a" == "abc" ]; then
+  echo "yes"
+else
+  echo "no"
+fi
+{{</ highlight >}}
+<br/>
+写上面的脚本一定要与我们的高级编程语方区分开来理解，Bash 只认命令，所有上面<br/><br/>
+1. <strong>[</strong> 前后要有空格， <strong>==</strong> 前后要有空格， <strong>]</strong> 前要有空格，if 是个 shell 命令，所以后面的每一部分都是作为它的一个个参数<br />
+2. <strong>then</strong> 之前的分号，因为本质上 if 和 then 是两个命令，所以需要用分别隔开，我们也可以 then 另起一行，则分号可省略。<br />
+3. if 后面也可以用 [[ condition ]] 或 (( condition ))，(( ... )) 在循环语句中会碰到。<br/><br/>
+<strong>下面就是关于条件测试</strong><br/><br/>
+全面的说明在这里 <a href="http://www.tldp.org/LDP/abs/html/refcards.html#AEN22473" target="_blank" rel="noopener"><strong>http://www.tldp.org/LDP/abs/html/refcards.html#AEN22473</strong></a>，<br/><br/>
+下面列此常用的：<br />
+等于: -eq(equal) ，== 或 =<br />
+大于：-gt(greater than), 字符串比较用  \&gt;，如果是 [[ ... ]]，\&gt; 则要写成 &gt;，像 if [[ "b" &gt; "a" ]]<br />
+大于等于：-ge(greater equal)，写在 (( ... )) 中可写成  &gt;=，如  if (( $a &gt;= 3 ))<br />
+小于：-lt(less than) 或 \&lt; 用于比较字符, 在 [[ ... ]] 中\&lt; 要写成  &lt;<br />
+小于等于：-le(less equal) , (( ... )) 中用 &lt;=, 如 if (( $a &lt;= 3 ))<br />
+不等于：-ne(not equal) 或 !=<br/><br/>
+有时得注意引号的使用，能避免空白的引入，假如写成<br/><br/>
+if [ $a -gt 7 ], 当 $a 是空白的时候，就被解析成  if [ -gt 7 ] 执行时就会报错，这时为保险需写成  if [ "$a" -gt 7 ] 这时即时  $ 没值也是 if [ "" -gt 7 ]，语法上不会有问题<br/><br/>
+另外需说一个模式匹配符 "=~"，判断左边的字符串能否被右边的模式所匹配，用于[[ expression ]]<br/><br/>
+例如：<span style="color: #800000;">if [[ abc123 =~ [a-z]{3}[0-9]{3} ]]</span>, <span style="text-decoration: underline;">字符串和模式都<strong>不需要</strong>引号括起来</span>，正则表达也是比较有限的支持，这里不能用 \d 替代 [0-9]<br/><br/>
+一些<span style="text-decoration: underline;">单目测试：</span><br/><br/>
+-z：字符串是否为空，  -n：字符串是否不为空。这两个可用于测试变量是否存在并赋予了非空时。<br />
+其实像多数编程语言一样空为否，如 if [ "" ], 或 $a 不存在时 if [ "$a" ] 都是 false<br/><br/>
+文件、目录测试常见： -e 文件是否存在    -d：测试是否目录， -f：测试是否普通文件，还有诸如是否块文件，socket 文件，是否有读、写、执行的权限，文件大小是否为零等等。详见 <a href="http://www.tldp.org/LDP/abs/html/refcards.html#AEN22473" target="_blank" rel="noopener">http://www.tldp.org/LDP/abs/html/refcards.html#AEN22473</a><br/><br/>
+组合条件测试：<br/><br/>
+逻辑与: [ ... ] 写成 -a (and), [[ ... ]] 中写成  &amp;&amp;， if  [ "a" = "a" -a "b" = "b" ], if  [[ "a" = "a" &amp;&amp; "b" = "b" ]]，也能这样写 if [ "a" = "a" ] &amp;&amp; [ "b" = "b" ]<br />
+逻辑或: 与上同理, [ ... ] 中写作 -o (or), [[ ... ]] 中写成  ||<br />
+逻辑非: 写成  if [ ! "a" = "a" ] 这个相当于 if [ "a" != "a" ] 了，但 ! 可放到任何地方 if [ ! "$b" -gt 7" ], if [ ! -z "$abc" ]<br/><br/>
+条件语句的内容大概就是这些了，至于比较内容的获得就是随你意了，可以是脚本变量，环境变量，参数，或执行 shell 的返回结果，如<br/><br/>
+if [ `ls -l | wc -l` -gt 20 ]; then echo "more than 20 files"; fi<br />
+if [ $(ls -l | wc -l) -gt 20 ]; then echo "more than 20 files"; fi<br/><br/>
+backtick 和 $() 都可以收集执行命令后的返回值。<br/><br/>
+另外 Bash 还支持 case 语句，基本语法是<br/>
+{{< highlight bash >}}
+case String in
+  pattern1)
+    statement
+    ;;
+  pattern2 | pattern3)
+    ;;
+    statement
+  *)
+    statement
+    ;;
+esac
+{{</ highlight >}}
+<br/>
+要说这个语法还有些怪异，模式后只用单右括号，;; 相当于是 break,  结尾是 case 反着写的的 esac<br/><br/>
+不举例子，看何时真正用上再细究。<br/><br/>
+<span style="font-size: 12pt;"><strong>2. 循环语句</strong></span><br/><br/>
+最常用的 for 基本语法是<br/>
+{{< highlight bash >}}
+for variable in sequence
+do
+  statement
+done
+{{</ highlight >}}
+<br/>
+也可以像前面 if 那样的写法，把 do 提到上一行去<br/>
+{{< highlight bash >}}
+for variable in sequence; do
+  statement
+done
+{{</ highlight >}}
+<br/>
+这是代码风格问题，for 和 do 两个命令写成一行就需要用分号隔开。来看可以怎么产生需要的序列<br/><br/>
+for 的参数 hello 和 world<br/>
+{{< highlight bash >}}
+bash-3.2$ for k in hello world
+> do
+> echo $k
+> done
+hello
+world
+{{</ highlight >}}
+<br/>
+seq 命令产生序列号<br/>
+{{< highlight bash >}}
+bash-3.2$ for k in $(seq 1 3); do echo "number: $k"; done
+number: 1
+number: 2
+number: 3
+{{</ highlight >}}
+<br/>
+其他命令的输出行<br/>
+{{< highlight bash >}}
+for k in `ls`; do echo $k; done
+#或
+for k in $(ls); do echo $k; done
+{{</ highlight >}}
+<br/>
+那么这里不得不提到 C-Style 的循环<br/>
+{{< highlight bash >}}
+bash-3.2$ for ((i= 0; i < 5; i++ )); do echo "Welcome $i time."; done
+Welcome 0 time.
+Welcome 1 time.
+Welcome 2 time.
+Welcome 3 time.
+Welcome 4 time.
+{{</ highlight >}}
+<br/>
+我们也要注意到这里 for 后面 ((...)) 中的写法也不像 [ ... ] 里那么严格，(( 后可以不用空格，等号前后可以不用空格，就是按照 C 的写法，只是必须双重括号。<br/><br/>
+还能定义并遍历数组<br/>
+{{< highlight bash >}}
+#!/bin/bash
+# define an array called fruits
+fruits=("Apple" "Mango" "Pineapple" "Banana" "Orange" "Papaya" "Watermelon")
+len=${#fruits[*]}         # get total elements in an array，or ${#fruit[@]}
+ 
+# print it
+for (( i=0; i<${len}; i++ ));
+do
+    echo "${fruits[$i]}"
+done
+{{</ highlight >}}
+<br/>
+另外 Bash 还当仁不让的支持  while, until 这两种循环，不细说他们了，基本语法是<br/>
+{{< highlight bash >}}
+while condition; do
+  statement
+done
+{{</ highlight >}}
+<br/>
+和<br/>
+{{< highlight bash >}}
+until condition; do
+  statement
+done
+{{</ highlight >}}
+<br/>
+condition 部分的语法可参考 if 条件语句。<br/><br/>
+参考：<a href="http://www.tldp.org/LDP/abs/html/index.html" target="_blank" rel="noopener">Advanced Bash-Scripting Guide</a>
