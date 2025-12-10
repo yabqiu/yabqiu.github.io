@@ -1,0 +1,344 @@
+---
+title: Celery(分布式任务队列)入门学习笔记
+url: /celery-distributed-task-queue-learning/
+date: 2022-01-17T02:50:38-06:00
+featured: true
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/celery-logo2.jpeg"
+categories:
+  - Python
+tags: 
+  - Redis
+  - RabbitMQ
+  - Queue
+  - Celery
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12139 
+wpStatus: publish
+views: 961
+lastmod: 2022-09-14T22:54:47-05:00
+---
+
+
+<p>在步入到 AWS 后，设计一个典型的分布式计算任务模式是</p>
+
+<ol>
+	<li>提交任务的客户端把一组组待计算任务的输入编制成消息发送到 SQS 或 SNS 队列中</li>
+	<li>SQS 消息可被  ECS 或 Lambda 处理, SNS 消息还能触发 Lambda，ECS/Lambda 完成实际的计算任务</li>
+	<li>结果可以保存到 Redis, S3 或别处, 如果提交任务端想要获取计算结果，可用 ID 来追踪</li>
+</ol>
+
+<p>用 ECS 的好处是可以基于 SQS 的消息数进行 AutoScaling 配置，决定 Worker 的规模; 用 Lambda 适当的用 Concurrency 数来限定 Lambda 的实例数。</p>
+
+<p>而 Python 的 Celery 让这一切变得更简单，它其实就是以上设计的一个集成方案。它以配置的方式选择使用任务队列(Broker), 结果存储方式(Backend), 让任务提交与 Worker 的代码实现简单化。<!--more--></p>
+
+<h3>Celery 的简单介绍</h3>
+<p>用 <a href="https://docs.celeryproject.org/en/stable/">Celery</a> 官方的介绍：它是一个分布式任务队列; 简单，灵活，可靠的处理大量消息的分布式系统; 它专注于实时处理，并支持任务调度。</p>
+
+<p>Celery 如果使用 RabbitMQ 作为消息系统的话，整个应用体系就是下面这张图</p>
+
+{{< bundle-image src="/celery_architecture_final-800x510.png" width="800px" >}}
+
+<p>前脚刚学习的 RabbitMQ 就是为这个作准备的。</p>
+
+<p>Celery 官方给出的 Hello World, 对于未接触它的人来说根本就不知道是什么</p>
+
+{{< highlight python >}}
+from celery import Celery
+
+app = Celery('hello', broker='amqp://guest@localhost//')
+
+@app.task
+def hello():
+    return 'hello world'
+{{</ highlight >}}
+
+<p>还是有必要按住上面那张图看 Celery 的组成部分</p>
+
+<ol>
+	<li>Celery 自身实现的部分其实是 Producer 和 Consumer. Producer 创建任务，并发送消息到消息队列，我们称这个队列为 Broker。Consumer 从 Broker 中接收消息，完成计算任务，把结果存到 Backend</li>
+	<li>Broker 就是那个消息队列，可选择的实现有 RabbitMQ, Redis, Amazon SQS</li>
+	<li>结果存储(Backend), 可选择 AMQP(像 RabbitMQ 就是它的一个实现), Redis, Memcached, Cassandra, Elasticsearch, MongoDB, CouchDB, DynamoDB, Amazon S3, File system 等等，看来它的定制性很强</li>
+	<li>消息和结果的存储还涉及到一个序列化的问题，可选择 pickle(Python 专用), json, yaml, msgpack. 消息可用 zlib, bzip2 进行压缩, 或加密存储</li>
+	<li>Worker 的并发可采用 prefork(多进程), thread(多线程), Eventlet, gevent, solo(单线程)]</li>
+</ol>
+
+<p>如果 Broker  选择 SQS, Worker 部署在 AWS 上的话也可以基于 SQS 中的消息数目进行自动伸缩控制。</p>
+
+<h3>Celery 应用的基础选型</h3>
+<p>Celery 的 Broker 和 Backend 有非常多的选择组合，RabbitMQ 和 Redis 都是即可作为 Broker 又能用作 Backend。但 Celery 的推荐是用 RabbitMQ 作为 Broker, 小的结果这里选择用 Redis 作为 Backend, 所以这里的选型是</p>
+
+<ol>
+	<li>Broker: RabbitMQ</li>
+	<li>Backend: Redis</li>
+	<li>序列化：JSON  -- 方便在学习中查到消息中的数据</li>
+</ol>
+
+<h4>准备 RabbitMQ 和 Redis</h4>
+<p>为了体现多机器的分布性，我们仍然用一个 Vagrant 虚拟机来安装它们，Vagrantfile 文件内容和学习 RabbitMQ 一文中是一样的</p>
+
+{{< highlight ruby >}}
+Vagrant.configure("2") do |config|
+  config.vm.box = "generic/ubuntu2004"
+  config.vm.network "public_network"
+
+  config.vm.define "celery"
+  config.vm.hostname = "celery"
+end
+{{</ highlight >}}
+
+<p>注：Vagrant 如何管理虚拟机请参考我之前的一篇博客 <a href="https://yanbin.blog/vagrant-intro-config-commands/">Vagrant 简介与常用操作及配置</a></p>
+
+<p>启动该虚拟机并 SSH 进到该系统</p>
+
+<blockquote>
+<p>$ vagrant up &amp;&amp; vagrant ssh</p>
+</blockquote>
+
+<p>然后是安装配置 RabbitMQ，需执行下面一系列的命令</p>
+
+<blockquote>
+<p>vagrant@celery:~$ sudo apt install rabbitmq-server<br /><br/>
+vagrant@celery:~$ sudo rabbitmq-plugins enable rabbitmq_management<br /><br/>
+vagrant@celery:~$ sudo rabbitmqctl add_user celery your-password<br /><br/>
+vagrant@celery:~$ sudo rabbitmqctl set_user_tags celery administraor<br /><br/>
+vagrant@celery:~$ sudo rabbitmqctl set_permissions -p / celery ".*" ".*" ".*"</p>
+</blockquote>
+
+<p>注：可选择创建一个自己的 vhost, 用命令</p>
+
+<blockquote>
+<p>vagrant@celery:~$ sudo rabbitmqctl add_vhost celery</p>
+</blockquote>
+
+<p>其他的 rabbitmqctl 命令可用 -p celery 在 celery vhost 下创建相应用的资源</p>
+
+<p>安装 Redis</p>
+
+<blockquote>
+<p>vagrant@celery:~ sudo apt install redis<br /><br/>
+vagrant@celery:~ sudo sed -i 's/^bind 127.0.0.1.*$/bind 0.0.0.0/' /etc/redis/redis.conf<br /><br/>
+vagrant@celery:~ sudo systemctl restart redis</p>
+</blockquote>
+
+<p>Redis 访问默认是不需要用户名和密码的</p>
+
+<h4>安装 Python 包</h4>
+<p>在需要运行 Producer 和 Consumer(worker) 的机器上创建一个 Python 虚拟环境，然后安装下面的包</p>
+
+<blockquote>
+<p>$ pip install celery redis</p>
+</blockquote>
+
+<p>实践中只需要安装 celery redis 就能运行后面的例子，没有安装 librabbitmq, "celery[librabbitmq]" 也行，安装了这两个库能使用更高效的 librabbitmq C 库。如果安装了 librabbitmq 库，broker='amqp://...'  默认使用 librabbitmq, 找不到 librabbitmq 的话就用 broker='pyamqp://...'</p>
+
+<blockquote>
+<p>$ pip install librabbitmq<br /><br/>
+$ pip install "celery[librabbitmq]"</p>
+</blockquote>
+
+<p>注：中括号中的是安装 Celery 提供的 bundle, 它定义在 setup.py 的 setup 函数中的 extras_require。</p>
+
+<h3>Celery 应用实战</h3>
+<p>我们不用 Celery 的 Hello World 实例，那不能帮助我们理解背后发生了什么。创建一个 tasks.py 文件</p>
+
+{{< highlight python >}}
+from celery import Celery
+
+
+app = Celery('celery-demo',
+                broker='amqp://celery:your-password@192.168.86.181:5672/',
+                backend='redis://192.168.86.181:6379')
+
+
+@app.task
+def add(x, y):
+    return x + y
+{{</ highlight >}}
+
+<p>这里配置连接到 brocker 的 <code>/</code> vhost, 如果连接到别的 vhost, 如 celery 的话， url 写成 <code>amqp://celery:your-passoword@192.168.86.181:5672/celery</code>. backend 的 redis 如果要配置用户名和密码, 和 db 的话，写成 <code>redis://username:password@192.168.86.181:6379/2</code></p>
+
+<p>暂且不在该脚本中直接执行 <code>add.delay(15, 30)</code>, 而是放到 Python 控制台下方便测试</p>
+
+<p>现在进到 Python 控制台</p>
+
+{{< highlight python >}}
+>>> from tasks import add
+>>> task = add.delay(15, 30)
+>>> task.id
+'c3552fa2-502a-450b-933b-19a1da65ba33'
+>>> task.status
+'PENDING'
+{{</ highlight >}}
+
+<p>由于 Worker 还没有启动，所以得到一个 task_id, 状态是 PENDING。趁这时候看看 Celery 目前做了什么，来查看到 RabbitMQ</p>
+
+{{< highlight text "hl_lines=7 5 16 21" >}}
+vagrant@celery:~$ sudo rabbitmqctl list_exchanges
+Listing exchanges for vhost / ...
+name	type
+amq.rabbitmq.trace	topic
+amq.topic	topic
+amq.match	headers
+celery	direct
+amq.fanout	fanout
+	direct
+amq.headers	headers
+amq.direct	direct
+vagrant@celery:~$ sudo rabbitmqctl list_bindings
+Listing bindings for vhost /...
+source_name	source_kind	destination_name	destination_kind	routing_key	arguments
+	exchange	celery	queue	celery	[]
+celery	exchange	celery	queue	celery	[]
+vagrant@celery:~$ sudo rabbitmqctl list_queues
+Timeout: 60.0 seconds ...
+Listing queues for vhost / ...
+name	messages
+celery	1
+{{</ highlight >}}
+
+<p>Celery 在 RabbitMQ 中创建了的资源有</p>
+
+<ol>
+	<li>一个 Exchange: celery direct</li>
+	<li>两个 binding: 送到<code>默认(空字符串)</code>或 <code>celery</code> exchange 的, routing-key 为 celery 的消息会转发到队列 <code>celery</code> 中</li>
+	<li>一个队列 <code>celery</code></li>
+</ol>
+
+<p>查看队列 <code>celery</code> 中的消息</p>
+
+{{< highlight sh >}}
+vagrant@celery:~$ rabbitmqadmin get queue=celery ackmode=ack_requeue_true
++-------------+----------+---------------+-------------------------------------------------------------------------------------+---------------+------------------+-------------+
+| routing_key | exchange | message_count |                                       payload                                       | payload_bytes | payload_encoding | redelivered |
++-------------+----------+---------------+-------------------------------------------------------------------------------------+---------------+------------------+-------------+
+| celery      |          | 0             | [[15, 30], {}, {"callbacks": null, "errbacks": null, "chain": null, "chord": null}] | 83            | string           | False       |
++-------------+----------+---------------+-------------------------------------------------------------------------------------+---------------+------------------+-------------+
+{{</ highlight >}}
+
+<p>ackmode=ack_requeue_true, 所以消息仍然在队列中, Redis 中什么也还没发生，接下来要</p>
+
+<h4>启动 Celery Worker</h4>
+<p>要用到 celery 命令，不过只要是 Python 的程序，命令行能做的事情总是能用 Python 代码来执行，用 <code>celery --help</code> 可看它的详细说明。</p>
+
+<blockquote>
+<p>$ celery -A tasks worker -l INFO</p>
+</blockquote>
+
+<p><code>tasks</code> 是自己创建的模块文件 <code>tasks.py</code></p>
+
+<p>这时候显示出一条绿绿的芹菜出来了，所以得用屏幕截图来表现</p>
+
+{{< bundle-image src="python-celery-2-800x492.png" width="800px" >}}
+
+<p>取出消息并显示任务执行完成，这时候去看 RabbitMQ 的队列 celery 中的消息不见了，启动 Worker 后也会在 RabbitMQ 中创建 queue, 及对应的 binding, exchange。</p>
+
+<p>再回到提交任务的 Python 控制台</p>
+
+{{< highlight text >}}
+>>> task.status
+'SUCCESS'
+>>> task.result
+45
+{{</ highlight >}}
+
+<p>一个 Celery 全套服务圆满完成。结果存在了 Redis 中</p>
+
+<blockquote>
+<p>192.168.86.181:6379&gt; keys *<br /><br/>
+1) "celery-task-meta-c3552fa2-502a-450b-933b-19a1da65ba33"<br /><br/>
+192.168.86.181:6379&gt; TTL celery-task-meta-c3552fa2-502a-450b-933b-19a1da65ba33<br /><br/>
+(integer) 85840<br /><br/>
+192.168.86.181:6379&gt; get celery-task-meta-c3552fa2-502a-450b-933b-19a1da65ba33<br /><br/>
+"{\"status\": \"SUCCESS\", \"result\": 45, \"traceback\": null, \"children\": [], \"date_done\": \"2022-01-17T07:23:48.901999\", \"task_id\": \"c3552fa2-502a-450b-933b-19a1da65ba33\"}"</p>
+</blockquote>
+
+<p>Redis 中的结果保存时长为 24 小时，失败的任务会记录下异常信息。</p>
+
+<p>关于 Worker 的控制查看帮助 <code>celery worker --help</code>, 比如</p>
+
+<ol>
+	<li>-c, --concurrency: 并发数，默认为系统中 CPU 的内核数</li>
+	<li>-P, --pool [prefork|eventlet|gevent|solo|processes|threads]:  worker 池的实现方式</li>
+	<li>--max-tasks-per-child INTEGER: worker 执行的最大任务数，达到最大数目后便重启当前 worker</li>
+	<li>-Q, --queues: 指定处理任务的队列名称，逗号分隔</li>
+</ol>
+
+<p>任务的状态变迁是：PENDING -&gt; STARTED -&gt; RETRY -&gt; STARTED -&gt; RETRY -&gt; STARTED -&gt; SUCCESS</p>
+
+<h3>Celery 的配置</h3>
+<p>除了在声明 Celery 对象时可以指定 broker, backend 属性之外，我们可以用 py 配置文件的形式来配置更多的内容，配置文件 <code>celeryconfig.py</code>, 内容是 <a href="https://docs.celeryproject.org/en/stable/userguide/configuration.html#configuration">Configuration and defautls</a> 中列出的项目</p>
+
+<p>比如 celeryconfig.py</p>
+
+{{< highlight java-properties >}}
+broker_url = 'amqp://celery:your-password@192.168.86.181:5672/'
+result_backend = 'redis://192.168.86.181:6379'
+task_serializer = 'json'
+result_serializer = 'json'
+accept_content = ['json']
+timezone = 'America/Chicago'
+enable_utc = True
+{{</ highlight >}}
+
+<p>新的格式是用小写的，旧格式用大写，如 <code>BROKER_URL</code>, 但是同一个配置文件中不能混合大小写，同时写 <code>BROKER_URL</code> 和 <code>result_backend</code> 就不行了。</p>
+
+<p>然后在 tasks.py 中加载配置文件</p>
+
+{{< highlight python >}}
+from celery import Celery
+import celeryconfig
+app = Celery('celery-demo')
+app.config_from_object(celeryconfig)
+
+{{</ highlight >}}
+
+<h3>Celery 实时监控工具</h3>
+<p><a href="http://docs.celeryproject.org/en/latest/userguide/monitoring.html#flower-real-time-celery-web-monitor">Flower</a> 是一个基于 Web 的监控 Celery 中任务的工具，安装和启动</p>
+
+<blockquote>
+<p>$ pip install flower<br /><br/>
+$ celery -A tasks flower</p>
+</blockquote>
+
+{{< bundle-image src="python-celery-3.png" width="580px" >}}
+
+<p>打开链接 http://localhost:5555</p>
+
+{{< bundle-image src="python-celery-4-800x489.png" width="800px" >}}
+
+<p>其他剩下的问题，应该就是如何安排 Worker(比如结合 AutoScaling)，从 Python 代码中启动 Worker, 怎么做灵活的配置, 调度任务的执行，其他的 backend 选择等等。</p>
+
+<h3>其他补充</h3>
+<h4>backend rpc:// 的组合</h4>
+<p>如果配置中用</p>
+
+{{< highlight java-properties >}}
+broker_url = 'amqp://celery:password@192.168.86.50:5672/celery'
+result_backend = 'rpc://'
+{{</ highlight >}}
+
+<p>amqp 和 rpc:// 的组合，任务和结果都会存在 RabbitMQ 中</p>
+
+{{< highlight java-properties >}}
+broker_url = 'redis://192.168.86.50'
+result_backend = 'rpc://'
+{{</ highlight >}}
+
+<p>redis 和  rpc:// 的组合，任务和结果都保存在 Redis 中</p>
+
+<p>为什么 Celery 推荐使用 RabbitMQ, 一说是它的一开发人员负责开发过 RabbitMQ, 所以即使使用 Redis 时，也会在 Redis 中写入有关 RabbitMQ 概念的数据，如 exchange, routing key 等。</p>
+
+<p>链接：</p>
+
+<ol>
+	<li><a href="https://www.cnblogs.com/cwp-bg/p/8759638.html">python之celery使用详解一</a></li>
+	<li><a href="https://tests4geeks.com/blog/python-celery-rabbitmq-tutorial/">Python Celery &amp; RabbitMQ Tutorial</a></li>
+	<li><a href="https://pocketcloud.vip/2020/03/15/Celery%E5%85%A5%E9%97%A8%E5%92%8C%E7%AE%80%E5%8D%95%E4%BD%BF%E7%94%A8/">Celery入门和简单使用</a></li>
+	<li><a href="https://www.cnblogs.com/dion-90/articles/8454840.html">celery、rabbitmq的使用</a></li>
+</ol>

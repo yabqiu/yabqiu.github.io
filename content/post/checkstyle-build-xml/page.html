@@ -1,0 +1,85 @@
+---
+title: 一个切实可用的CheckStyle的build.xml文件
+url: /checkstyle-build-xml/
+date: 2006-01-04T09:13:00-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/checkstyle-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - build
+  - Java
+  - CheckStyle
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 598 
+wpStatus: publish
+views: 868
+lastmod: 2021-04-07T09:53:16-05:00
+---
+
+网上找了好些个关于CheckStyle的文章都是抄抄抄一大通，却没有一个build.xml着实可运行,<br />
+在这里我也是参考着一编，改改成能成功运行并能生成正确报告，发送 Email 的build.xml文件</p>
+<br/>
+{{< highlight xml >}}
+&lt;?xml version="1.0" encoding="gb2312"?>
+
+<!-- ANT make file checkstype -->
+
+<!-- See <a href="http://jakarta.apache.org/ant" data-mce-href="http://jakarta.apache.org/ant">http://jakarta.apache.org/ant</a> for info about ANT -->
+<!-- 网上下来的CheckStyle解压在d:/javalib/CheckStyle/checkstyle-4.1中 -->
+<project name="checkstyle" default="checkstyle" basedir="d:/javalib/CheckStyle/checkstyle-4.1">
+
+    <!-- CheckStyle配置,这里你替换成你实际的环境 -->
+    <property name="project.docs.dir" value="${basedir}/contrib"/>
+
+    <!-- 源代码的目录是e:/eclipseworkspace/talupdate/src -->
+    <property name="project.src.dir" value="e:/eclipseworkspace/talupdate/src"/>
+
+    <!-- 建立了build目录在其中生成报告 -->
+    <property name="project.checkstyleReport.dir" value="${basedir}/build"/>
+    <property name="checkstyle.jar" value="${basedir}/checkstyle-all-4.1.jar"/>
+
+    <!-- 使用SUN的代码规范，可替换成公司自己的规范 -->
+    <property name="checkstyle.config" value="${basedir}/sun_checks.xml"/>
+    <property name="checkstyle.report.style" value="${project.docs.dir}/checkstyle-noframes.xsl"/>
+    <property name="checkstyle.result" value="${project.checkstyleReport.dir}/checkstyle_result.xml"/>
+    <property name="checkstyle.report" value="${project.checkstyleReport.dir}/checkstyle_report.html"/>
+
+    <!-- 定义发送邮件列表 -->
+    <property name="mail.list" value="(User1)user1@xxx.com,(User2)user2@xxx.com"/>
+
+    <target name="init">
+        <tstamp/>
+    </target>
+
+    <!--CheckStyle脚步-->
+    <taskdef resource="checkstyletask.properties" classpath="${checkstyle.jar}"/>
+
+    <target name="checkstyle" depends="init" description="对java源代码进行检查并产生检查报告. ">
+        <checkstyle config="${checkstyle.config}" failOnViolation="false" failureProperty="checkstyle.failure">
+            <formatter type="xml" tofile="${checkstyle.result}"/>
+            <fileset dir="${project.src.dir}" includes="**/*.java"/>
+        </checkstyle>
+
+        <!-- 生成报告,其格式取决于${checkstyle.report.style} -->
+        <style in="${checkstyle.result}" out="${checkstyle.report}" style="${checkstyle.report.style}"/>
+    </target>
+
+    <!-- 当有不规范的情况发生时将检查结果发送到 -->
+    <target name="checkstyle-nightly" depends="checkstyle" if="checkstyle.failure"
+        description="Sends email if checkstyle detected code conventions violations.">
+
+        <!-- 如果邮件服务器需要验证，则加上 user 和 password 属性 -->
+        <mail from="(Admin)admin@xxx.com" tolist="${mail.list}" mailhost="mail.xxx.com"
+            subject=" checkstyle result from project reports" files="${checkstyle.report}"/>
+    </target>
+</project>
+{{</ highlight >}}
+<br/>
+&lt;继续补充内容&gt;
