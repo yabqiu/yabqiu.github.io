@@ -3,7 +3,7 @@ title: 创建和发布自己的 Python 包到 PyPI 上
 url: /create-publish-your-own-pypi-python-package/
 date: 2021-10-27T16:58:20-05:00
 featured: false
-draft: true
+draft: false
 toc: false
 # menu: main
 usePageBundles: true
@@ -22,94 +22,86 @@ views: 1523
 lastmod: 2022-01-11T13:29:09-06:00
 ---
 
-<!-- wp:paragraph --><br/>
 <p>像 Java 可发布包到 Maven 仓库，NodeJS 发布包到 NPM 一样，我们也可以创建自己的 Python 包并发布到 <a href="https://pypi.org/">PyPI</a> 仓库中去。或者内部使用的包，只须发布到私有的 Nexus 服务器上。</p>
 
 <p>本文中的例子将创建一个 Python 包 <code>bounded-executor</code>, 并发布到 PyPI 上。为什么创建这个包呢？原因是直接用 Python 的 ThreadPoolExecutor 或  ProcessPoolExecutor 来提交任务的话，任务的等待队列是没有边界的，这就会造成因提交任务过快而使得内存爆满。本包最为合适的名称应该是 <code>bounded-pool-executor</code>, 可是名字已被他人使用，但此外的实现有所不同，ThreadPoolExecutor 用 Queue(maxsize) 来控制，而 ProcessPoolExceutor 用 BoundedSemaphore 来控制。</p>
 
 <p>我们以经典的 Python 工程目录结构为例，构建的核心是执行 <code>setup.py</code> 中的 <code>setup</code> 函数，由此来理解 <code>setup</code> 的最主要配置与关键命令做了些什么。这样有助于我们理解其他的 Python 包管理工具的底层行为，从中我们可以对比 poetry 的 build, install, 和 publish 命令。<!--more--></p>
 
-<h3>打包发布的准备</h3><br/>
+<h3>打包发布的准备</h3>
 <ol>
-
 	<li>setuptools: 这个无需安装，在用 Python -m venv 创建一个虚拟环境后就有了</li>
-
 	<li>pip install wheel：如果要生成 wheels 格式的包就须安装</li>
-
 	<li>pip install twine: 方便发布包到 PyPI 上, python setup.py ... upload 不再使用</li>
-
 	<li>PyPI 上注册一个帐号</li>
-
 </ol>
 
-<h3>项目的结构</h3><br/>
-<blockquote><br/>
-<p>bounded-executor<br /><br/>
-├── README.rst<br /><br/>
-├── bounded_executor<br /><br/>
-│       ├── __init__.py<br /><br/>
-│       └── executors.py<br /><br/>
+<h3>项目的结构</h3>
+<blockquote>
+<p>bounded-executor<br />
+├── README.rst<br />
+├── bounded_executor<br />
+│       ├── __init__.py<br />
+│       └── executors.py<br />
 └── setup.py</p>
-
 </blockquote>
 
-<h3>关键就是 setup.py 文件</h3><br/>
+<h3>关键就是 setup.py 文件</h3>
 <p>该项目 bounded-executor 的核心实现代码不是这里的重点。主要的配置是 setup.py 文件，它调用 setuptools.setup 函数</p>
 
-<pre class="lang:default decode:true">from setuptools import setup, find_packages<br/>
-<br/>
-with open('README.rst') as f:<br/>
-    long_description = f.read()<br/>
-<br/>
-setup(<br/>
-    name='bounded_executor',<br/>
-    version='0.0.3',<br/>
-    description='Bounded ThreadPoolExecutor and ProcessPoolExecutor',<br/>
-    long_description=long_description,<br/>
-    long_description_content_type='text/x-rst',<br/>
-    author='Yanbin',<br/>
-    author_email='yabqiu@gmail.com',<br/>
-    url='https://github.com/yabqiu/bounded-pool-executor',<br/>
-    license='BSD License',<br/>
-    packages=find_packages(),<br/>
-    platforms=['all'],<br/>
-    python_requires='&gt;=3.2',<br/>
-    classifiers=[<br/>
-        'Programming Language :: Python :: 3',<br/>
-        'Programming Language :: Python :: 3.6',<br/>
-        'Programming Language :: Python :: 3.7',<br/>
-        'Programming Language :: Python :: 3.8',<br/>
-        'Programming Language :: Python :: 3.9',<br/>
-        'Programming Language :: Python :: 3.10',<br/>
-        'Programming Language :: Python :: Implementation :: CPython',<br/>
-        'Programming Language :: Python :: Implementation :: PyPy'<br/>
-    ]<br/>
-) </pre>
+{{< highlight python >}}
+from setuptools import setup, find_packages
+
+with open('README.rst') as f:
+    long_description = f.read()
+
+setup(
+    name='bounded_executor',
+    version='0.0.3',
+    description='Bounded ThreadPoolExecutor and ProcessPoolExecutor',
+    long_description=long_description,
+    long_description_content_type='text/x-rst',
+    author='Yanbin',
+    author_email='yabqiu@gmail.com',
+    url='https://github.com/yabqiu/bounded-pool-executor',
+    license='BSD License',
+    packages=find_packages(),
+    platforms=['all'],
+    python_requires='>=3.2',
+    classifiers=[
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: Implementation :: CPython',
+        'Programming Language :: Python :: Implementation :: PyPy'
+    ]
+) 
+{{</ highlight >}}
 
 <p>注：distutils.core.setup 和 setuptools.setup 两个 setup 函数目前都可用，推荐使用 setuptools 中的 setup 函数，见 <a href="https://stackoverflow.com/questions/25337706/setuptools-vs-distutils-why-is-distutils-still-a-thing">setuptools vs. distutils: why is distutils still a thing?</a></p>
 
 <p>包依赖的其他第三方包用 <code>install_requires</code> 配置，如</p>
 
-<pre class="lang:default decode:true ">install_requires=[<br/>
-    'urllib3&gt;=1.21.1,&lt;1.27',<br/>
-    'certifi',<br/>
-    'idna&gt;=2.5'<br/>
-]</pre>
+{{< highlight python >}}
+install_requires=[
+    'urllib3>=1.21.1,<1.27',
+    'certifi',
+    'idna>=2.5'
+]
+{{</ highlight >}}
 
 <p>测试依赖用 <code>test_requirements</code> 配置，格式与 <code>install_requires</code>  一致。</p>
 
 <p>说明：</p>
 
 <ol>
-
 	<li>调用 setup 函数只需填上基本的 <code>name</code> 和 <code>version</code> 两个参数也能构建，发布成功，但尽量填上更详细的包相关的信息。</li>
-
 	<li>发布到 PyPI 上的版本可以被删除，但被删除的版本号不能再重复使用</li>
-
 	<li><code>long_description</code> 是显示在项目页面(<a href="https://pypi.org/project/bounded-executor/">https://pypi.org/project/bounded-executor/</a>)主体部位中的内容，可以用 Markdown 或 RST，默认的 <code>long_description_content_type</code> 是 <code>text/x-rst</code>, 如果使用 Markdown  格式， <code>long_description_content_type</code> 须设置为 <code>text/markdown</code></li>
-
 	<li>也可以用 setup.cfg 搭配 setup.py 来使用，比如在 setup.cfg 中的 [meatadata] 可填上项目相关的信息，在 setup.py 中只需一个无参的 <code>setup()</code> 函数调用，则 <code>setup()</code> 的信息将会从 <code>setup.cfg</code> 中来。多加一个 <code>setup.cfg</code> 还是显得有点多余，<code>setup()</code> 函数中的参数名描述的足够清楚。参见 <a href="https://setuptools.pypa.io/en/latest/userguide/declarative_config.html">Configuring setup() using setup.cfg files</a>. <code>setup.cfg</code> 中有一个方便之处就是可用 attr 或 file 来读取其他文件中的信息，如 <code>long_description = file: README.rst, CHANGELOG.rst, LICENSE.rst</code>。</li>
-
 </ol>
 
 <p>配置了 <code>setup()</code> 后，接下来基本就是围绕着 <code>setup.py</code> 中的 <code>setup()</code> 函数调用。</p>
@@ -118,73 +110,72 @@ setup(<br/>
 
 <p>以及后面将要用到的其他一系列的命令，用 --help-commands 预览一下</p>
 
-<pre class="height-set:true lang:default decode:true ">$ python setup.py --help-commands<br/>
-Standard commands:<br/>
-  build             build everything needed to install<br/>
-  build_py          "build" pure Python modules (copy to build directory)<br/>
-  build_ext         build C/C++ extensions (compile/link to build directory)<br/>
-  build_clib        build C/C++ libraries used by Python extensions<br/>
-  build_scripts     "build" scripts (copy and fixup #! line)<br/>
-  clean             clean up temporary files from 'build' command<br/>
-  install           install everything from build directory<br/>
-  install_lib       install all Python modules (extensions and pure Python)<br/>
-  install_headers   install C/C++ header files<br/>
-  install_scripts   install scripts (Python or otherwise)<br/>
-  install_data      install data files<br/>
-  sdist             create a source distribution (tarball, zip file, etc.)<br/>
-  register          register the distribution with the Python package index<br/>
-  bdist             create a built (binary) distribution<br/>
-  bdist_dumb        create a "dumb" built distribution<br/>
-  bdist_rpm         create an RPM distribution<br/>
-  bdist_wininst     create an executable installer for MS Windows<br/>
-  check             perform some checks on the package<br/>
-  upload            upload binary package to PyPI<br/>
-<br/>
-Extra commands:<br/>
-  bdist_wheel       create a wheel distribution<br/>
-  alias             define a shortcut to invoke one or more commands<br/>
-  bdist_egg         create an "egg" distribution<br/>
-  develop           install package in 'development mode'<br/>
-  dist_info         create a .dist-info directory<br/>
-  easy_install      Find/get/install Python packages<br/>
-  egg_info          create a distribution's .egg-info directory<br/>
-  install_egg_info  Install an .egg-info directory for the package<br/>
-  rotate            delete older distributions, keeping N newest files<br/>
-  saveopts          save supplied options to setup.cfg or other config file<br/>
-  setopt            set an option in setup.cfg or another config file<br/>
-  test              run unit tests after in-place build (deprecated)<br/>
-  upload_docs       Upload documentation to sites other than PyPi such as devpi<br/>
-<br/>
-usage: setup.py [global_opts] cmd1 [cmd1_opts] [cmd2 [cmd2_opts] ...]<br/>
-   or: setup.py --help [cmd1 cmd2 ...]<br/>
-   or: setup.py --help-commands<br/>
-   or: setup.py cmd --help</pre>
+{{< highlight sh >}}
+$ python setup.py --help-commands
+Standard commands:
+  build             build everything needed to install
+  build_py          "build" pure Python modules (copy to build directory)
+  build_ext         build C/C++ extensions (compile/link to build directory)
+  build_clib        build C/C++ libraries used by Python extensions
+  build_scripts     "build" scripts (copy and fixup #! line)
+  clean             clean up temporary files from 'build' command
+  install           install everything from build directory
+  install_lib       install all Python modules (extensions and pure Python)
+  install_headers   install C/C++ header files
+  install_scripts   install scripts (Python or otherwise)
+  install_data      install data files
+  sdist             create a source distribution (tarball, zip file, etc.)
+  register          register the distribution with the Python package index
+  bdist             create a built (binary) distribution
+  bdist_dumb        create a "dumb" built distribution
+  bdist_rpm         create an RPM distribution
+  bdist_wininst     create an executable installer for MS Windows
+  check             perform some checks on the package
+  upload            upload binary package to PyPI
 
-<h3>各式打包相关的命令</h3><br/>
+Extra commands:
+  bdist_wheel       create a wheel distribution
+  alias             define a shortcut to invoke one or more commands
+  bdist_egg         create an "egg" distribution
+  develop           install package in 'development mode'
+  dist_info         create a .dist-info directory
+  easy_install      Find/get/install Python packages
+  egg_info          create a distribution's .egg-info directory
+  install_egg_info  Install an .egg-info directory for the package
+  rotate            delete older distributions, keeping N newest files
+  saveopts          save supplied options to setup.cfg or other config file
+  setopt            set an option in setup.cfg or another config file
+  test              run unit tests after in-place build (deprecated)
+  upload_docs       Upload documentation to sites other than PyPi such as devpi
+
+usage: setup.py [global_opts] cmd1 [cmd1_opts] [cmd2 [cmd2_opts] ...]
+   or: setup.py --help [cmd1 cmd2 ...]
+   or: setup.py --help-commands
+   or: setup.py cmd --help
+{{</ highlight >}}
+
+<h3>各式打包相关的命令</h3>
 <p>开发模式下安装包</p>
 
 <p>先用命令 <code>python -m venv ~/test-venv</code> 创建一个虚拟环境，并 <code>source ~/test-venv/bin/activate</code> 应用它</p>
 
-<blockquote><br/>
+<blockquote>
 <p>$ python setup.py develop</p>
-
 </blockquote>
 
 <p>它会在当前目录下生成一个目录 <code>bounded_executor.egg-info</code>, 其中有四个文件 <code>PKG-INFO</code>, <code>SOURCES.txt</code>, <code>dependency_links.txt</code> 和 <code>top_level.txt</code>。还在虚拟环境中生成了两个文件</p>
 
 <p>~/test-venv/lib/python3.9/site-packages/bounded-executor.egg-link，内容为</p>
 
-<blockquote><br/>
+<blockquote>
 <p>/Users/yanbin/Workspaces/github/bounded-executor<br /><br/>
 .</p>
-
 </blockquote>
 
 <p>~/test-venv/lib/python3.9/site-packages/easy-install.pth, 内容为</p>
 
-<blockquote><br/>
+<blockquote>
 <p>/Users/yanbin/Workspaces/github/bounded-executor</p>
-
 </blockquote>
 
 <p>后一个文件才是关键，因为它是在 site-packages 目录下的 <code>pth</code> 文件，这就意味着使用同一个虚拟环境的其他项目会直接通过访问 <code>/Users/yanbin/Workspaces/github/bounded-executor</code> 源文件的方式来使用其中的代码。</p>
@@ -193,64 +184,66 @@ usage: setup.py [global_opts] cmd1 [cmd1_opts] [cmd2 [cmd2_opts] ...]<br/>
 
 <p><code>python setup.py sdist</code>: 在 <code>dist</code> 目录下生成以源文件形式发布的包 <code>bounded_executor-0.0.3.tar.gz</code></p>
 
-<blockquote><br/>
-<p>$ tar -tf dist/bounded_executor-0.0.3.tar.gz<br /><br/>
-bounded_executor-0.0.3/<br /><br/>
-bounded_executor-0.0.3/PKG-INFO<br /><br/>
-bounded_executor-0.0.3/README.rst<br /><br/>
-bounded_executor-0.0.3/bounded_executor/<br /><br/>
-bounded_executor-0.0.3/bounded_executor/__init__.py<br /><br/>
-bounded_executor-0.0.3/bounded_executor/executors.py<br /><br/>
-bounded_executor-0.0.3/bounded_executor.egg-info/<br /><br/>
-bounded_executor-0.0.3/bounded_executor.egg-info/PKG-INFO<br /><br/>
-bounded_executor-0.0.3/bounded_executor.egg-info/SOURCES.txt<br /><br/>
-bounded_executor-0.0.3/bounded_executor.egg-info/dependency_links.txt<br /><br/>
-bounded_executor-0.0.3/bounded_executor.egg-info/top_level.txt<br /><br/>
-bounded_executor-0.0.3/setup.cfg<br /><br/>
+<blockquote>
+<p>$ tar -tf dist/bounded_executor-0.0.3.tar.gz<br />
+bounded_executor-0.0.3/<br />
+bounded_executor-0.0.3/PKG-INFO<br />
+bounded_executor-0.0.3/README.rst<br />
+bounded_executor-0.0.3/bounded_executor/<br />
+bounded_executor-0.0.3/bounded_executor/__init__.py<br />
+bounded_executor-0.0.3/bounded_executor/executors.py<br />
+bounded_executor-0.0.3/bounded_executor.egg-info/<br />
+bounded_executor-0.0.3/bounded_executor.egg-info/PKG-INFO<br />
+bounded_executor-0.0.3/bounded_executor.egg-info/SOURCES.txt<br />
+bounded_executor-0.0.3/bounded_executor.egg-info/dependency_links.txt<br />
+bounded_executor-0.0.3/bounded_executor.egg-info/top_level.txt<br />
+bounded_executor-0.0.3/setup.cfg<br />
 bounded_executor-0.0.3/setup.py</p>
-
 </blockquote>
 
 <p><code>python setup.py bdist</code>: 在 <code>dist</code> 目录下生成以二进制形式发布的包，如 <code>bounded_executor-0.0.3.macosx-11-x86_64.tar.gz</code>，它是平台相关的，相对于前面会把 bounded_executor/__pycache__ 目录放到包中</p>
 
 <p><code>python setup.py bdist_egg</code>: 在 <code>dist</code> 目录中生成 <code>bounded_executor-0.0.3-py3.9.egg</code>，现在不推荐用 egg 包。它也是一个 zip 文件</p>
 
-<pre class="lang:default decode:true">$ unzip -l dist/bounded_executor-0.0.3-py3.9.egg<br/>
-Archive:  dist/bounded_executor-0.0.3-py3.9.egg<br/>
-  Length      Date    Time    Name<br/>
----------  ---------- -----   ----<br/>
-      782  10-27-2021 15:19   EGG-INFO/PKG-INFO<br/>
-      238  10-27-2021 15:19   EGG-INFO/SOURCES.txt<br/>
-        1  10-27-2021 15:19   EGG-INFO/dependency_links.txt<br/>
-       17  10-27-2021 15:19   EGG-INFO/top_level.txt<br/>
-        1  10-27-2021 15:19   EGG-INFO/zip-safe<br/>
-      191  10-27-2021 11:54   bounded_executor/__init__.py<br/>
-     1010  10-27-2021 11:35   bounded_executor/executors.py<br/>
-      334  10-27-2021 15:19   bounded_executor/__pycache__/__init__.cpython-39.pyc<br/>
-     1650  10-27-2021 15:19   bounded_executor/__pycache__/executors.cpython-39.pyc<br/>
----------                     -------<br/>
-     4224                     9 files</pre>
+{{< highlight sh >}}
+$ unzip -l dist/bounded_executor-0.0.3-py3.9.egg
+Archive:  dist/bounded_executor-0.0.3-py3.9.egg
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+      782  10-27-2021 15:19   EGG-INFO/PKG-INFO
+      238  10-27-2021 15:19   EGG-INFO/SOURCES.txt
+        1  10-27-2021 15:19   EGG-INFO/dependency_links.txt
+       17  10-27-2021 15:19   EGG-INFO/top_level.txt
+        1  10-27-2021 15:19   EGG-INFO/zip-safe
+      191  10-27-2021 11:54   bounded_executor/__init__.py
+     1010  10-27-2021 11:35   bounded_executor/executors.py
+      334  10-27-2021 15:19   bounded_executor/__pycache__/__init__.cpython-39.pyc
+     1650  10-27-2021 15:19   bounded_executor/__pycache__/executors.cpython-39.pyc
+---------                     -------
+     4224                     9 files
+{{</ highlight >}}
 
 <p><code>python setup.py bdist_wheel</code>: 在 <code>dist</code> 目录中管理层成 <code>bounded_executor-0.0.3-py3-none-any.whl</code>, 它也是 zip 包</p>
 
-<pre class="lang:default decode:true">$ unzip -l dist/bounded_executor-0.0.3-py3-none-any.whl<br/>
-Archive:  dist/bounded_executor-0.0.3-py3-none-any.whl<br/>
-  Length      Date    Time    Name<br/>
----------  ---------- -----   ----<br/>
-      191  10-27-2021 16:54   bounded_executor/__init__.py<br/>
-     1010  10-27-2021 16:35   bounded_executor/executors.py<br/>
-      782  10-27-2021 20:20   bounded_executor-0.0.3.dist-info/METADATA<br/>
-       92  10-27-2021 20:20   bounded_executor-0.0.3.dist-info/WHEEL<br/>
-       17  10-27-2021 20:20   bounded_executor-0.0.3.dist-info/top_level.txt<br/>
-      503  10-27-2021 20:20   bounded_executor-0.0.3.dist-info/RECORD<br/>
----------                     -------<br/>
-     2595                     6 files</pre>
+{{< highlight sh >}}
+$ unzip -l dist/bounded_executor-0.0.3-py3-none-any.whl
+Archive:  dist/bounded_executor-0.0.3-py3-none-any.whl
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+      191  10-27-2021 16:54   bounded_executor/__init__.py
+     1010  10-27-2021 16:35   bounded_executor/executors.py
+      782  10-27-2021 20:20   bounded_executor-0.0.3.dist-info/METADATA
+       92  10-27-2021 20:20   bounded_executor-0.0.3.dist-info/WHEEL
+       17  10-27-2021 20:20   bounded_executor-0.0.3.dist-info/top_level.txt
+      503  10-27-2021 20:20   bounded_executor-0.0.3.dist-info/RECORD
+---------                     -------
+     2595                     6 files
+{{</ highlight >}}
 
 <p>egg 包文件有点老，一般我们只会生成 tar.gz 和 whl 文件, 用</p>
 
-<blockquote><br/>
+<blockquote>
 <p>$ python setup.py sdist bdist_wheel</p>
-
 </blockquote>
 
 <p>同时生成  <code>bounded_executor-0.0.3.tar.gz</code> 和 <code>bounded_executor-0.0.3-py3-none-any.whl</code> 文件，我们后面要发布到 PyPI 的包可以是其中的一个。</p>
@@ -259,53 +252,50 @@ Archive:  dist/bounded_executor-0.0.3-py3-none-any.whl<br/>
 
 <p>在正式进入发布包之前顺带看下 <code>python setup.py install</code> 发生了什么， 首先它在 dist 目录中生成了 bounded_executor-0.0.3-py3.9.egg 包，并安装(拷贝)到了虚拟环境的 <code>sit-packages</code> 中了，本例为</p>
 
-<blockquote><br/>
+<blockquote>
 <p>~/test-venv/lib/python3.9/site-packages/bounded_executor-0.0.3-py3.9.egg</p>
-
 </blockquote>
 
 <p>并在 `~/test-venv/lib/python3.9/site-packages/easy-install.pth` 文件中加上一行</p>
 
-<blockquote><br/>
+<blockquote>
 <p>./bounded_executor-0.0.3-py3.9.egg</p>
-
 </blockquote>
 
 <p>表明已加到了该虚拟环境的 <code>sys.path</code> 中去了，所以开发中还是用 <code>python setup.py develop</code> 就行了，改了源代码后能直接生效，不需要再次 <code>python setup.py install</code>。</p>
 
-<h3>发布包到 PyPI</h3><br/>
+<h3>发布包到 PyPI</h3>
 <p>终于来到了最后一步，要把前面生成的包上传到 PyPI 上，我们<strong>无须执行</strong> <code>python setup.py register</code> 进行事先注册包，直接上传就行。早先上传包是用 <code>python setup.py &lt;sdist|bdist_wheel&gt; upload</code> 的方式，这种方式也不推荐使用(可能已无法使用)，因为它采用 HTTP  传输，见 <a href="https://packaging.python.org/guides/distributing-packages-using-setuptools/#uploading-your-project-to-pypi">Uploading your Project to PyPI</a>。</p>
 
 <p>直接用 <code>twine</code> 命令发布包，我们在运行 <code>twine</code> 时会每次提示输入用户名和密码，如果可以把 PyPI 帐号信息存在  <strong>~/.pypirc</strong> 文件中。配置明文的帐号和密码</p>
 
-<pre class="lang:default decode:true ">[pypi]<br/>
-  username = &lt;username of pipi.org&gt;<br/>
-  password = &lt;password&gt;</pre>
+{{< highlight toml >}}
+[pypi]
+  username = <username of pipi.org>
+  password = <password>
+{{</ highlight >}}
 
 <p>或在 pypi.org 中为帐号设置一个 token, 然后在  <code>~/.pypirc</code> 中的 username 就是 <code>__token__</code>, password 就是那个 token</p>
 
 <p>在前面用了  <code>python setup.py sdist</code> 或 <code>python setup.py bdist_wheel</code> 在 dist 目录中生成了相应的包文件后，先运行 <code>twine check</code>  确保包是有效的</p>
 
-<blockquote><br/>
+<blockquote>
 <p>$ twine check dist/bounded_executor-0.0.3.2-py3-none-any.whl</p>
-
 </blockquote>
 
 <p>然后上传</p>
 
-<blockquote><br/>
+<blockquote>
 <p>$ twine upload dist/bounded_executor-0.0.3.2-py3-none-any.whl</p>
-
 </blockquote>
 
 <p>上传成功后就能在 https://pypi.org/project/bounded-executor/0.0.3/ 看到该包的信息，并且随时可用 <code>pip install bounded-executor</code> 来安装使用。</p>
 
 <p>对于生成的 wheel 包是完全一样的操作</p>
 
-<blockquote><br/>
+<blockquote>
 <p>$ python setup.py sdist<br /><br/>
 $ twine upload dist/bounded_executor-0.0.3.tar.gz</p>
-
 </blockquote>
 
 <p>或者用 <code>twine upload dist/*</code> 上传 <code>dist</code> 目录所有包，这在严格的构建发布过程中是不推荐的。</p>
@@ -314,64 +304,49 @@ $ twine upload dist/bounded_executor-0.0.3.tar.gz</p>
 
 <p>如果要发布到私有的 Nexus 服务器上可以用</p>
 
-<blockquote><br/>
+<blockquote>
 <p>$ twine upload --repository-url=https://nexus.example.com/repository/pypi-hosted/ dist/bounded_executor-0.0.3-py3-none-any.whl</p>
 
 </blockquote>
 
 <p>然后依照提示输入用户名和密码就能上传了。</p>
 
-<h3>同时发布了 tar.gz 和 wheel 包情况</h3><br/>
+<h3>同时发布了 tar.gz 和 wheel 包情况</h3>
 <p>相同版本的包，我们可以用 twine 发布 tar.gz 和  wheel 包，同时发布了两种类型的包进在用 <code>pip install</code> 时可以留意到它安装的是哪种类型的包，对于 tar.gz 源码包 pip install 下载后仍然要通过  <code>setup.py</code> 创建相应的  whl 包再进行安装使用。所以对于纯 Python 的包做成 universal 的 whl 包发布的话，安装效率最高，同时它实质也包含了源代码。对于使用到了其他的语言(如  C/C++, Rust) 写的 Python 包，可以用  tar.gz 发布，但 pip install 安装时需要有相应的环境进行编译，或者发布为 whl 包，这时候就要考虑为多种操作系统平台与 CPU 架构生成多个 whl 包。</p>
 
-<p><a href="https://yanbin.blog/wp-content/uploads/2021/10/pypi-1.png"><img class="aligncenter wp-image-11884" src="https://yanbin.blog/wp-content/uploads/2021/10/pypi-1-800x243.png" alt="" width="506" height="154" /></a></p>
+{{< bundle-image src="pypi-1-800x243.png" width="506px" >}}
 
 <p>每个版本下有多少个文件，什么类型的文件在 PyPI 中会列出来。</p>
 
-<h3>pip 指定仓库安装包</h3><br/>
+<h3>pip 指定仓库安装包</h3>
 <p>pip install 命令默认从 PyPI 仓库安装包，如果包上传到了别的仓库，或公司的私有仓库，应该如何用 pip install 来安装呢？那就是</p>
 
-<blockquote><br/>
+<blockquote>
 <p>$ pip install -i https://nexus.example.com/repository/pypi-hosted bounded_executor</p>
-
 </blockquote>
 
 <p>-i, --index-url &lt;url&gt;, 也可以用 --extra-index-url &lt;url&gt;, 特别是 requirements.txt 文件同时含有 PyPI 和私有仓库中包，就应该</p>
 
-<blockquote><br/>
+<blockquote>
 <p>$ pip --extra-index-url https://nexus.example.com/repository/pypi-hosted -r requirements.txt</p>
-
 </blockquote>
 
-<h3>总结</h3><br/>
+<h3>总结</h3>
 <p>最后总结一下打包发布的过程：</p>
 
 <ol>
-
 	<li>pip install twine wheel</li>
-
 	<li>配置好 setup.py 文件</li>
-
 	<li>python setup.py bdist_wheel</li>
-
 	<li>配置 <code>~/.pypirc</code>, 如果不想每次 upload 输入用户名/密码</li>
-
 	<li>twine upload dist/my-package-*.whl</li>
-
 </ol>
 
 <p>链接：</p>
 
 <ol>
-
 	<li><a href="https://blog.konghy.cn/2018/04/29/setup-dot-py/">Python 库打包分发(setup.py 编写)简易指南</a></li>
-
 	<li><a href="https://testerhome.com/articles/27052">测试开发技术 实战教程: 如何将自己的 Python 包发布到 PyPI 上</a></li>
-
 	<li><a href="https://www.bettercodebytes.com/theadpoolexecutor-with-a-bounded-queue-in-python/">TheadPoolExecutor with a bounded queue in Python</a></li>
-
 	<li><a href="https://cachetools.readthedocs.io/">Python cachetools</a></li>
-
 </ol>
-
-<!-- /wp:paragraph -->
