@@ -3,11 +3,11 @@ title: 运行时动态创建 Spring Bean
 url: /dynamic-creating-spring-bean-runtime/
 date: 2020-03-18T19:19:23-05:00
 featured: false
-draft: true
+draft: false
 toc: false
 # menu: main
 usePageBundles: true
-thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+thumbnail: "../images/logos/spring-logo.png"
 categories:
   - Spring
 tags: 
@@ -24,33 +24,39 @@ lastmod: 2020-03-27T15:40:38-05:00
 
 通常我们注册 Spring Bean 是通过像 @Named, @Bean, @Component, @Service 这样的注解来注册的，或者用更为古老的 XML 配置文件的方式。难免有时候要根据实际业务需求在 Spring  运行期间动态注册 Spring Bean, 比如基本某种形式的配置文件或系统属性来注册相应的 Bean, 这好像又回到了 XML 文件注册方式，也不尽然。<br/><br/>
 那为什么在运行期还要去注册 Spring Bean 呢，直接 new 对象不行吗？当然行得通，不过这样的话就不能更好的使用到  Spring IOC 的好处了。像待注册的 Bean 构造函数可以直接用到其他的 Spring  对象，或 @Value 引入环境变量，还有 @PostContruct 这样的行为。<br/><br/>
-最初思考如何注册 Spring Bean 时还是费了不少周折，如今清晰了许多。了当的说，不管是 Spring  初始时还是运行时，注册 Bean 的关键(应是唯一) 入口就是 <a href="https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/beans/factory/support/BeanDefinitionRegistry.html">BeanDefinitionRegistry</a> 接口的方法<!--more--><br/><br/>
-<pre class="lang:default decode:true">void registerBeanDefinition(String beanName, BeanDefinition beanDefinition)
-        throws BeanDefinitionStoreException;</pre>
+最初思考如何注册 Spring Bean 时还是费了不少周折，如今清晰了许多。了当的说，不管是 Spring  初始时还是运行时，注册 Bean 的关键(应是唯一) 入口就是 <a href="https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/beans/factory/support/BeanDefinitionRegistry.html">BeanDefinitionRegistry</a> 接口的方法<!--more--><br/>
+{{< highlight java >}}
+void registerBeanDefinition(String beanName, BeanDefinition beanDefinition)
+        throws BeanDefinitionStoreException;
+{{</ highlight >}}
 <br/>
 纵观该接口在 SpringBoot(Spring) 中的实现有以下<br/><br/>
-<a href="https://yanbin.blog/wp-content/uploads/2020/03/BeanDefinitionRegistry_interface.png"><img class="aligncenter wp-image-9860" src="https://yanbin.blog/wp-content/uploads/2020/03/BeanDefinitionRegistry_interface.png" alt="" width="595" height="191" /></a><br/><br/>
+{{< bundle-image BeanDefinitionRegistry_interface.png 595 >}}
 再翻一翻，实现了 <code>registerBeanDefinition(String beanName, BeanDefinition beanDefinition)</code> 的也就两处<br/><br/>
-其一为 GenericApplicationContext 中的<br/><br/>
-<pre class="lang:default decode:true">@Override
+其一为 GenericApplicationContext 中的<br/>
+{{< highlight java >}}
+@Override
 public void registerBeanDefinition(String beanName, BeanDefinition beanDefinition)
         throws BeanDefinitionStoreException {<br/><br/>
     this.beanFactory.registerBeanDefinition(beanName, beanDefinition);
-}</pre>
+}
+{{</ highlight >}}
 <br/>
-还有就是 DefaultListableBeanFactory 中的该方法的真正实现代码。因为总共两处，所以 GenericApplicationContext 中的<br/><br/>
+还有就是 DefaultListableBeanFactory 中的该方法的真正实现代码。因为总共两处，所以 GenericApplicationContext 中的<br/>
 <blockquote>
 this.beanFactory.registerBeanDefinition(beanName, beanDefinition)
 </blockquote>
-<br/>
+
 无疑也是委派给了 DefaultListableBeanFactory.registerBeanDefinition(...) 了。因此，终级之道，不管何时注册 Spring Bean 都得靠它。<br/><br/>
-那么现在的问题是 DefaultListableBeanFactory 在哪里，其实它是我们最为熟悉的对象，试着启动一个最简单的 SpringBoot 应用<br/><br/>
-<pre class="lang:default decode:true ">public static void main(String[] args) {
+那么现在的问题是 DefaultListableBeanFactory 在哪里，其实它是我们最为熟悉的对象，试着启动一个最简单的 SpringBoot 应用<br/>
+{{< highlight java >}}
+public static void main(String[] args) {
     ApplicationContext context = SpringApplication.run(TestBeanRegister.class, args);
     System.out.println(context);
-}</pre>
+}
+{{</ highlight >}}
 <br/>
-输出类似如下<br/><br/>
+输出类似如下<br/>
 <blockquote>
 org.springframework.context.annotation.AnnotationConfigApplicationContext@2928854b: startup date [Wed Mar 18 17:40:29 CDT 2020]; root of context hierarchy
 </blockquote>
@@ -64,23 +70,31 @@ org.springframework.context.annotation.AnnotationConfigApplicationContext@292885
 </ol>
 <br/>
 马上我们就来上面的那个 ApplicationContext 来开刷，测试下面的代码，此处备注一下，所用的测试环境为 Spring 1。<br/><br/>
-创建一个 XmlParser 类<br/><br/>
-<pre class="lang:default decode:true ">package yanbin.blog;<br/><br/>
-import org.springframework.beans.factory.annotation.Value;<br/><br/>
+创建一个 XmlParser 类<br/>
+{{< highlight java >}}
+package yanbin.blog;
+
+import org.springframework.beans.factory.annotation.Value;
+
 public class XmlParser {
-    private String charset;<br/><br/>
+    private String charset;
+
     public XmlParser(@Value("${file.encoding}") String charset) {
         this.charset = charset;
-    }<br/><br/>
+    }
+
     @Override
     public String toString() {
         return "XmlParser{" + "charset='" + charset + '\'' + '}';
     }
-}</pre>
+}
+{{</ highlight >}}
 <br/>
-由于没有任何像 @Name 这样的注解，所以不会被 Spring  自动注册为 Spring bean, 构造函数将要使用系统属性中的 file.encoding 值。<br/><br/>
-<pre class="lang:default decode:true">@SpringBootApplication
-public class TestBeanRegister {<br/><br/>
+由于没有任何像 @Name 这样的注解，所以不会被 Spring  自动注册为 Spring bean, 构造函数将要使用系统属性中的 file.encoding 值。<br/>
+{{< highlight java >}}
+@SpringBootApplication
+public class TestBeanRegister {
+
     public static void main(String[] args) {
         ApplicationContext context = SpringApplication.run(TestBeanRegister.class, args);
         for (String name : context.getBeanDefinitionNames()) {
@@ -88,10 +102,12 @@ public class TestBeanRegister {<br/><br/>
                 System.out.println("#1 " + name);
             }
         }
-        System.out.println("#2 " + context.getBeansOfType(XmlParser.class));<br/><br/>
+        System.out.println("#2 " + context.getBeansOfType(XmlParser.class));
+
         BeanDefinitionRegistry beanRegistry = (GenericApplicationContext) context;
         beanRegistry.registerBeanDefinition("runtimeXmlParser",
-            BeanDefinitionBuilder.genericBeanDefinition(XmlParser.class).getBeanDefinition());<br/><br/>
+            BeanDefinitionBuilder.genericBeanDefinition(XmlParser.class).getBeanDefinition());
+
         for (String name : context.getBeanDefinitionNames()) {
             if (context.getBean(name) instanceof XmlParser) {
                 System.out.println("#3 " + name);
@@ -100,9 +116,10 @@ public class TestBeanRegister {<br/><br/>
         System.out.println("#4 " + context.getBeansOfType(XmlParser.class));
         System.out.println("#5 " + context.getBean("runtimeXmlParser"));
         System.out.println("#6 " + context.getBean(XmlParser.class));
-}</pre>
+}
+{{</ highlight >}}
 <br/>
-执行后输出如下<br/><br/>
+执行后输出如下<br/>
 <blockquote>
 #2 {}<br />
 #3 runtimeXmlParser<br />
@@ -125,44 +142,51 @@ public class TestBeanRegister {<br/><br/>
 </ol>
 <br/>
 也就是说，这种方式注册的 Spring Bean 不是我们想要的，原因是注册的太迟了，Spring 上下文都初始化完成再注册的 Bean 意义不大。<br/><br/>
-以上只是一种尝试，真真想要有效的注册 Spring Bean 的方式是让一个自动注册的 Spring Bean 实现接口 BeanDefinitionRegistryPostProcessor，然后在其方法中注册 Spring Bean<br/><br/>
+以上只是一种尝试，真真想要有效的注册 Spring Bean 的方式是让一个自动注册的 Spring Bean 实现接口 BeanDefinitionRegistryPostProcessor，然后在其方法中注册 Spring Bean<br/>
 <blockquote>
 void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry beanRegistry)
 </blockquote>
-<br/>
-进一步验证，此处让 AppConfig 实现 BeanDefinitionRegistryPostProcessor, 因为 AppConfig 有注解 @Configuration, 所以 AppConfig 会被注册为一个 Spring Bean。实际上任意的 Spring Bean 都可以去实现 BeanDefinitionRegistryPostProcessor 并做同样的事情。<br/><br/>
-<pre class="lang:default decode:true">@Configuration
-public class AppConfig implements BeanDefinitionRegistryPostProcessor {<br/><br/>
+
+进一步验证，此处让 AppConfig 实现 BeanDefinitionRegistryPostProcessor, 因为 AppConfig 有注解 @Configuration, 所以 AppConfig 会被注册为一个 Spring Bean。实际上任意的 Spring Bean 都可以去实现 BeanDefinitionRegistryPostProcessor 并做同样的事情。<br/>
+{{< highlight java >}}
+@Configuration
+public class AppConfig implements BeanDefinitionRegistryPostProcessor {
+
     @Override
     public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry beanRegistry) throws BeansException {
         System.out.println("AppConfig method: postProcessBeanDefinitionRegistry, " + beanRegistry.getClass());
         beanRegistry.registerBeanDefinition("runtimeXmlParser",
             BeanDefinitionBuilder.genericBeanDefinition(XmlParser.class).getBeanDefinition());
-    }<br/><br/>
+    }
+
     @Override
     public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {
         System.out.println("AppConfig method: postProcessBeanFactory, " + beanFactory.getClass());
     }
 }
-</pre>
+
+{{</ highlight >}}
 <br/>
-然后 Main 方法为<br/><br/>
-<pre class="lang:default decode:true">@SpringBootApplication
-public class TestBeanRegister {<br/><br/>
+然后 Main 方法为<br/>
+{{< highlight java >}}
+@SpringBootApplication
+public class TestBeanRegister {
+
     public static void main(String[] args) {
         ApplicationContext context = SpringApplication.run(TestBeanRegister.class, args);
         System.out.println(context.getBean("runtimeXmlParser"));
         System.out.println(context.getBean(XmlParser.class));
-}</pre>
+}
+{{</ highlight >}}
 <br/>
-执行输出为<br/><br/>
+执行输出为<br/>
 <blockquote>
 AppConfig method: postProcessBeanDefinitionRegistry, class org.springframework.beans.factory.support.DefaultListableBeanFactory<br />
 AppConfig method: postProcessBeanFactory, class org.springframework.beans.factory.support.DefaultListableBeanFactory<br />
 XmlParser{charset='UTF-8'}<br />
 XmlParser{charset='UTF-8'}
 </blockquote>
-<br/>
+
 没问题，Bean 成功注册，系统属性成功注入，从 Spring 上下文获得 Bean 也没问题。 要是在 XmlParser 中加上一个 @PostContruct 方法也会在 Bean 初始化后成功执行。而且看到接口中两方法的参数类型都是 DefaultListableBeanFactory<br/><br/>
 再一次强调前面的规则：<br/><br/>
 <ol>
@@ -170,20 +194,24 @@ XmlParser{charset='UTF-8'}
     <li>有多个实现了 BeanDefinitionRegistryPostProcessor 的 Spring Bean 都不是问题，每个 postProcessBeanDefinitionRegistry(beanRegistry) 都能得到执行</li>
 </ol>
 <br/>
-下面换一种方式, 改为 AppConfig 类为<br/><br/>
-<pre class="lang:default decode:true">@Configuration
-public class AppConfig   {<br/><br/>
+下面换一种方式, 改为 AppConfig 类为<br/>
+{{< highlight java >}}
+@Configuration
+public class AppConfig   {
+
     @Bean
     BeanDefinitionRegistryPostProcessor beanPostProcessor1() {
         return new BeanDefinitionRegistryPostProcessor() {
             public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry beanRegistry) throws BeansException {
                 beanRegistry.registerBeanDefinition("runtimeXmlParser",
                     BeanDefinitionBuilder.genericBeanDefinition(XmlParser.class).getBeanDefinition());
-            }<br/><br/>
+            }
+
             public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {
             }
         };
-    }<br/><br/>
+    }
+
     @Bean
     BeanDefinitionRegistryPostProcessor beanPostProcessor2(ConfigurableEnvironment env) {
         return new BeanDefinitionRegistryPostProcessor() {
@@ -191,28 +219,34 @@ public class AppConfig   {<br/><br/>
                 AbstractBeanDefinition beanDefinition = BeanDefinitionBuilder.genericBeanDefinition(String.class)
                     .addConstructorArgValue(env.getProperty("HOME")).getBeanDefinition();
                 beanRegistry.registerBeanDefinition("homeString", beanDefinition);
-            }<br/><br/>
+            }
+
             public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {
             }
         };
-    }<br/><br/>
-}</pre>
+    }
+
+}
+{{</ highlight >}}
 <br/>
-测试类 TestBeanRegister<br/><br/>
-<pre class="lang:default decode:true">@SpringBootApplication
-public class TestBeanRegister {<br/><br/>
+测试类 TestBeanRegister<br/>
+{{< highlight java >}}
+@SpringBootApplication
+public class TestBeanRegister {
+
     public static void main(String[] args) {
         ApplicationContext context = SpringApplication.run(TestBeanRegister.class, args);
         System.out.println(context.getBean("runtimeXmlParser"));
         System.out.println(context.getBean("homeString"));
-}</pre>
+}
+{{</ highlight >}}
 <br/>
-执行后输出如下<br/><br/>
+执行后输出如下<br/>
 <blockquote>
 XmlParser{charset='UTF-8'}<br />
 /Users/yanbin
 </blockquote>
-<br/>
+
 若需深入一些<br/><br/>
 <ol>
     <li>可以用各种 @ConditionalOnXxx 加上像 beanPostProcessor1() 之上来控制有条件的来决定要不要注册 Spring Bean，比如说完成 AutoConfiguration 之类的行为</li>
@@ -220,9 +254,11 @@ XmlParser{charset='UTF-8'}<br />
     <li>在 postProcessBeanFactory() 方法中或许还能做些事情</li>
 </ol>
 <br/>
-由前面可知，其实在 postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) 中的 beanFactory 也是一个 DefaultListableBeanFactory, 所以从实现效果上，下面的 AppConfig 代码也差不多<br/><br/>
-<pre class="lang:default decode:true">@Configuration
-public class AppConfig   {<br/><br/>
+由前面可知，其实在 postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) 中的 beanFactory 也是一个 DefaultListableBeanFactory, 所以从实现效果上，下面的 AppConfig 代码也差不多<br/>
+{{< highlight java >}}
+@Configuration
+public class AppConfig   {
+
     @Bean
     BeanFactoryPostProcessor beanPostProcessor1() {
         return new BeanFactoryPostProcessor() {
@@ -233,7 +269,8 @@ public class AppConfig   {<br/><br/>
             }
         };
     }
-}</pre>
+}
+{{</ highlight >}}
 <br/>
 BeanDefinitionRegistryPostProcessor 继承自 BeanFactoryPostProcessor 接口，虽然以上代码也能成功注册 Spring Bean, 但语义上与该接口的设计相违背。因为一个强制转型，从而让该 BeanFactoryPostProcessor 做了不该做的事。我们还是应该遵从设计者的原意在 BeanDefinitionRegistryPostProcessor.postProcessBeanDefinitionRegistry(beanRegistry) 中进行 Spring Bean 的注册。<br/><br/>
 最后还是总结一下：<br/><br/>
