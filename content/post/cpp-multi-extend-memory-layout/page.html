@@ -1,0 +1,419 @@
+---
+title: "C++ 多重继承和虚继承的内存布局[转]"
+url: /cpp-multi-extend-memory-layout/
+date: 2010-10-24T11:35:49-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - C++/VB
+tags: 
+  - C#
+  - 多重继承
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2814 
+wpStatus: publish
+views: 1093
+lastmod: 2020-06-24T12:08:17-05:00
+---
+
+这篇文章主要讲解虚继承的C++对象内存分布问题，从中也引出了dynamic_cast和static_cast本质区别、虚函数表的格式等一些大部分C++程序员都似是而非的概念。原文见<a href="http://www.phpcompiler.org/articles/virtualinheritance.html">这里</a>(By Edsko de Vries, January 2006)</p>
+<br/>
+敬告: 本文是介绍C++的技术文章，假定读者对于C++有比较深入的认识，同时也需要一些汇编知识。<br/><br/>
+本文我们将阐释GCC编译器针对多重继承和虚拟继承下的对象内存布局。尽管在理想的使用环境中，一个C++程序员并不需要了解这些编译器内部实现细节，实际上，编译器针对多重继承(特别是虚拟继承)的各种实现细节对于我们编写C++代码都或多或少产生一些影响(比如downcasting pointer、pointers to pointers 以及虚基类构造函数的调用顺序)。如果你能明白多重继承是如何实现的，那么你自己就能够预见到这些影响，进而能够在你的代码中很好地应对它们。再者，如果你十分在意的代码的运行效率，正确地理解虚继承也是很有帮助的。最后嘛，这个hack的过程是很有趣的哦:)<!--more--><br/><br/>
+
+<strong>多重继承</strong><br/><br/>
+
+首先我们先来考虑一个很简单(non-virtual)的多重继承。看看下面这个C++类层次结构。<br/>
+{{< highlight cpp >}}
+class Top
+{
+    public:
+    int a;
+};
+
+class Left : public Top
+{
+    public:
+    int b;
+};
+
+class Right : public Top
+{
+    public:
+    int c;
+};
+
+class Bottom : public Left, public Right
+{
+    public:
+    int d;
+};
+{{</ highlight >}}
+<br/>
+用UML表述如下:<br/><br/>
+{{< bundle-image src="nonvirtual.png" width="217px" >}}
+
+<p style="margin-top: 5pt; margin-bottom: 5pt;">注意到Top类实际上被继承了两次，(这种机制在Eiffel中被称作<span style="font-family: 'Times New Roman';">repeated inheritance</span>)，这就意味着在一个bottom对象中实际上有两个a属性(<span style="font-family: 'Times New Roman';">attributes</span><span style="font-family: 'Times New Roman';">，可以通过bottom.Left::a和 bottom.Right::a访问</span>) 。</p>
+
+<p style="margin-top: 5pt; margin-bottom: 5pt;">那么Left、Right、Bottom在内存中如何分布的呢？我们先来看看简单的Left和Right内存分布：</p>
+<br/>
+<table cellspacing="10" align="center" style="width: 200px;">
+<tbody>
+<tr>
+<td>
+<table class="layout" width="100">
+<tbody>
+<tr>
+<th>Left</th>
+</tr>
+<tr>
+<td>Top::a</td>
+</tr>
+<tr>
+<td>Left::b</td>
+</tr>
+</tbody>
+</table>
+</td>
+<td>
+<table class="layout" width="100">
+<tbody>
+<tr>
+<th>Right</th>
+</tr>
+<tr>
+<td>Top::a</td>
+</tr>
+<tr>
+<td>Right::c</td>
+</tr>
+</tbody>
+</table>
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+[Right 类的布局和Left是一样的，因此我这里就没再画图了。刺猬]<br/><br/>
+注意到上面类各自的第一个属性都是继承自Top类，这就意味着下面两个赋值语句:<br/>
+{{< highlight cpp >}}
+Left* left = new Left();
+Top* top = left;
+{{</ highlight >}}
+<br/>
+left和top实际上是指向两个相同的地址，我们可以把Left对象当作一个Top对象(同样也可以把Right对象当Top对象来使用)。但是Botom对象呢?GCC是这样处理的：<br/><br/>
+<table class="layout" style="width: 12.48%; height: 120px;" width="100" align="center">
+<tbody>
+<tr style="height: 24px;">
+<th style="height: 24px;">Bottom</th>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">Left::Top::a</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">Left::b</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">Right::c</td>
+</tr>
+<tr style="height: 24px;">
+<td style="height: 24px;">Bottom::d</td>
+</tr>
+</tbody>
+</table>
+<p style="margin-top: 5pt; margin-bottom: 5pt;">但是现在如果我们upcast 一个Bottom指针将会有什么结果?</p>
+
+{{< highlight cpp >}}
+Bottom* bottom = new Bottom();
+Left* left = bottom;
+{{</ highlight >}}
+<p style="margin-top: 5pt; margin-bottom: 5pt;">这段代码运行正确。这是因为GCC选择的这种内存布局使得我们可以把Bottom对象当作Left对象，它们两者(Left部分)正好相同。但是，如果我们把Bottom对象指针upcast到Right对象呢?</p>
+
+{{< highlight cpp >}}
+Right* right = bottom;
+{{</ highlight >}}
+<br/>
+如果我们要使这段代码正常工作的话，我们需要调整指针指向Bottom中相应的部分。<br/><br/>
+{{< bundle-image src="memory-layout-3.png" width="208px" >}}
+<br/>
+<p style="text-align: left;">通过调整，我们可以用right指针访问Bottom对象，这时Bottom对象表现得就如Right对象。但是bottom和right指针指向了不同的内存地址。最后，我们考虑下:</p>
+
+{{< highlight cpp >}}
+Top* top = bottom;
+{{</ highlight >}}
+<br/>
+恩，什么结果也没有，这条语句实际上是有歧义(ambiguous)的，编译器会报错: error: `Top' is an ambiguous base of `Bottom'。其实这两种带有歧义的可能性可以用如下语句加以区分：<br/><br/>
+{{< highlight cpp >}}
+Top* topL = (Left*) bottom;
+Top* topR = (Right*) bottom;
+{{</ highlight >}}
+<br/>
+这两个赋值语句执行之后，<strong>topL和left指针将指向同一个地址，同样topR和right</strong><strong>也将指向同一个地址</strong>。<br/><br/>
+<strong>虚拟继承</strong><br/><br/>
+为了避免上述Top类的多次继承，我们必须虚拟继承类Top。<br/>
+{{< highlight cpp >}}
+class Top
+{
+    public:
+        int a;
+};
+
+class Left : virtual public Top
+{
+    public:
+    int b;
+};
+
+class Right : virtual public Top
+{
+    public:
+    int c;
+};
+
+class Bottom : public Left, public Right
+{
+    public:
+    int d;
+};
+{{</ highlight >}}
+<br/>
+上述代码将产生如下的类层次图(其实这可能正好是你最开始想要的继承方式)。
+{{< bundle-image src="virtual.png" width="225px" >}}
+<br/>
+<p style="margin-top: 5pt; margin-bottom: 5pt;">对于程序员来说，这种类层次图显得更加简单和清晰，不过对于一个编译器来说，这就复杂得多了。我们再用Bottom的内存布局作为例子考虑，它可能是这样的:</p>
+<br/>
+<table class="layout" width="100" align="center">
+<tbody>
+<tr>
+<th>Bottom</th>
+</tr>
+<tr>
+<td>Left::Top::a</td>
+</tr>
+<tr>
+<td>Left::b</td>
+</tr>
+<tr>
+<td>Right::c</td>
+</tr>
+<tr>
+<td>Bottom::d</td>
+</tr>
+</tbody>
+</table>
+<p style="margin-top: 5pt; margin-bottom: 5pt;">这种内存布局的优势在于它的开头部分(Left部分)和Left的布局正好相同，我们可以很轻易地通过一个Left指针访问一个Bottom对象。不过，我们再来考虑考虑Right:</p>
+<p style="margin-top: 5pt; margin-bottom: 5pt;"><span style="font-family: Courier New;"><span style="color: #804040;">1</span> Right* right = bottom;</span></p>
+<p style="margin-top: 5pt; margin-bottom: 5pt;"><span style="font-family: Courier New;">这里我们应该把什么地址赋值给right指针呢？理论上说，通过这个赋值语句，我们可以把这个right指针当作真正指向一个Right对象的指针(现在指向的是Bottom)来使用。但实际上这是不现实的！一个真正的Right对象内存布局和Bottom对象Right部分是完全不同的，所以其实我们不可能再把这个upcasted的bottom对象当作一个真正的right对象来使用了。而且，我们这种布局的设计不可能还有改进的余地了。这里我们先看看实际上内存是怎么分布的，然后再解释下为什么这么设计。</span></p>
+{{< bundle-image src="vtable.png" width="465px" >}}
+<br/>
+上图有两点值得大家注意。第一点就是类中成员分布顺序是完全不一样的(实际上可以说是正好相反)。第二点，类中增加了vptr指针，这些是被编译器在编译过程中插入到类中的(在设计类时如果使用了虚继承，虚函数都会产生相关vptr)。同时，在类的构造函数中会对相关指针做初始化，这些也是编译器完成的工作。Vptr指针指向了一个"virtual table"。在类中每个虚基类都会存在与之对应的一个vptr指针。为了给大家展示virtual table作用，考虑下如下代码。<br/>
+{{< highlight cpp >}}
+Bottom* bottom = new Bottom();
+Left* left = bottom;
+int p = left->a;
+{{</ highlight >}}
+<br/>
+
+第二条的赋值语句让left指针指向和bottom同样的起始地址(即它指向Bottom对象的"顶部")。我们来考虑下第三条的赋值语句。<br/>
+{{< highlight asm >}}
+movl left, %eax # %eax = left
+movl (%eax), %eax # %eax = left.vptr.Left
+movl (%eax), %eax # %eax = virtual base offset
+addl left, %eax # %eax = left + virtual base offset
+movl (%eax), %eax # %eax = left.a
+movl %eax, p # p = left.a
+{{</ highlight >}}
+<br/>
+总结下，<strong>我们用left指针去索引(找到)virtual table，然后在virtual table中获取</strong><strong>到虚基类的偏移(<span style="font-family: 'Times New Roman';">virtual base offset</span></strong><span style="font-family: 'Times New Roman';"><strong>, vbase)，然后在left指针上加上这个偏移量，这样我们就获取到了Bottom类中Top</strong><strong>类的开始地址。</strong>从上图中，我们可以看到对于Left指针，它的</span><span style="font-family: 'Times New Roman';">virtual base offset</span><span style="font-family: 'Times New Roman';">是20，如果我们假设Bottom中每个成员都是4字节大小，那么Left指针加上20字节正好是成员a的地址。</span><br/><br/>
+<span style="font-family: 'Times New Roman';"><span style="font-family: 'Times New Roman';">我们同样可以用相同的方式访问Bottom中Right部分。</span></span><br/>
+{{< highlight cpp >}}
+Bottom* bottom = new Bottom();
+Right* right = bottom;
+int p = right->a;
+{{</ highlight >}}
+<br/>
+<span style="font-family: 'Times New Roman';"><span style="font-family: 'Times New Roman';"><span style="font-family: Courier New;"><span style="font-family: 'Times New Roman';">right指针就会指向在Bottom对象中相应的位置。</span></span></span></span><br/><br/>
+{{< bundle-image src="memory-layout-1.png" width="200px" >}}
+<br/>
+<span style="font-family: 'Times New Roman';">这里对于p的赋值语句最终会被编译成和上述left相同的方式访问a。唯一的不同是就是vptr，我们访问的vptr现在指向了virtual table另一个地址，我们得到的virtual base offset也变为12。我们画图总结下：</span><br/><br/>
+{{< bundle-image src="vtable3.png" width="500px" >}}
+<br/>
+<span style="font-family: 'Times New Roman';"><span style="font-family: 'Times New Roman';"><span style="font-family: Courier New;">当然，关键点在于我们希望能够让访问一个真正单独的Right对象也如同访问一个经过upcasted（到Right对象）的Bottom对象一样。这里我们也在Right对象中引入vptrs。</span></span></span><br/><br/>
+{{< bundle-image src="vtable2.png" width="371px" >}}
+<br/>
+OK，现在这样的设计终于让我们可以通过一个Right指针访问Bottom对象了。不过，需要提醒的是以上设计需要承担一个相当大的代价：我们需要引入虚函数表，对象底层也必须扩展以支持一个或多个虚函数指针，原来一个简单的成员访问现在需要通过虚函数表两次间接寻址(编译器优化可以在一定程度上减轻性能损失)。<br/><br/>
+<strong><span style="font-family: andale mono,times;">Downcasting</span></strong><br/><br/>
+<span style="font-family: 'Times New Roman';"><span style="font-family: 'Times New Roman';"><span style="font-family: Courier New;">如我们猜想，将一个指针从一个派生类到一个基类的转换(casting)会涉及到在指针上添加偏移量。可能有朋友猜想，downcasting一个指针仅仅减去一些偏移量就行了吧。实际上，非虚继承情况下确实是这样，但是，对于虚继承来说，又不得不引入其它的复杂问题。这里我们在上面的例子中添加一些继承关系:</span></span></span><br/>
+{{< highlight cpp >}}
+class AnotherBottom : public Left, public Right
+{
+    public:
+        int e;
+        int f;
+};
+{{</ highlight >}}
+<br/>
+这个继承关系如下图所示:<br/>
+{{< bundle-image src="virtual2.png" width="228px" >}}
+<br/>
+那么现在考虑如下代码<br/>
+{{< highlight cpp >}}
+Bottom* bottom1 = new Bottom();
+AnotherBottom* bottom2 = new AnotherBottom();
+Top* top1 = bottom1;
+Top* top2 = bottom2;
+Left* left = static_cast<Left*>(top1);
+{{</ highlight >}}
+<br/>
+下面这图展示了Bottom和AnotherBottom的内存布局，同时也展示了各自top指针所指向的位置。<br/>
+{{< bundle-image src="memory-layout-2.png" width="480px" >}}
+<br/>
+现在我们来考虑考虑从top1到left的static_cast，注意这里我们并不清楚对于top1指针指向的对象是Bottom还是AnotherBottom。这里是根本不能编译通过的！因为根本不能确认top1运行时需要调整的偏移量(对于Bottom是20，对于AnotherBottom是24)。所以编译器将会提出错误: error: cannot convert from base `Top' to derived type `Left' via virtual base `Top'。这里我们需要知道运行时信息，所以我们需要使用dynamic_cast：<br/>
+{{< highlight cpp >}}
+Left* left = dynamic_cast<Left*>(top1);
+{{</ highlight >}}
+<br/>
+不过，编译器仍然会报错的 error: cannot dynamic_cast `top' (of type `class Top*') to type `class Left*' (source type is not polymorphic)。<strong>关键问题在于使用dynamic_cast（和使用typeid</strong><strong>一样）需要知道指针所指对象的运行时信息。</strong>但是，回头看看上面的结构图，我们就会发现top1指针所指的仅仅是一个整数成员a。编译器没有在Bottom类中包含针对top的vptr，它认为这完全没有必要。为了强制编译器在Bottom中包含top的vptr，我们可以在top类里面添加一个虚析构函数。<br/>
+{{< highlight cpp >}}
+class Top
+{
+    public:
+    virtual ~Top() {}
+    int a;
+};
+{{</ highlight >}}
+<br/>
+这就迫使编译器为Top类添加了一个vptr。下面来看看Bottom新的内存布局：<br/><br/>
+{{< bundle-image src="vtable4.png" width="428px" >}}
+<br/>
+是的，其它派生类(Left、Right)都会添加一个vptr.top，编译器为dynamic_cast生成了一个库函数调用。<br/>
+{{< highlight cpp >}}
+left = __dynamic_cast(top1, typeinfo_for_Top, typeinfo_for_Left, -1);
+{{</ highlight >}}
+<br/>
+__dynamic_cast定义在libstdc++(对应的头文件是cxxabi.h)，有了Top、Left和Bottom的类型信息，转换得以执行。其中，参数-1代表的是类Left和类Top之间的关系未明。如果想详细了解，请参看<a href="http://www.codesourcery.com/public/cxx-abi/gcc-tinfo.cc">tinfo.cc</a>的实现。<br/><br/>
+<span style="font-family: andale mono,times;"><strong>总结</strong></span><br/><br/>
+最后，我们再聊聊一些相关内容。<br/><br/>
+<strong>二级指针</strong><br/><br/>
+这里的问题初看摸不着头脑，但是细细想来有些问题还是显而易见的。这里我们考虑一个问题，还是以上节的Downcasting中的类继承结构图作为例子。<br/>
+{{< highlight cpp >}}
+Bottom* b = new Bottom();
+Right* r = b;
+{{</ highlight >}}
+<br/>
+<span style="font-family: Courier New;">(在把b指针的值赋值给指针r时，b指针将加上8字节，这样r指针才指向Bottom对象中Right部分)。因此我们可以把Bottom*类型的值赋值给Right*对象。但是Bottom**和Right**两种类型的指针之间赋值呢？</span><br/>
+{{< highlight cpp >}}
+Bottom** bb = &b;
+Right** rr = bb;
+{{</ highlight >}}
+<br/>
+编译器能通过这两条语句吗？实际上编译器会报错: error: invalid conversion from `Bottom**' to `Right**'<br />
+为什么? 不妨反过来想想，如果能够将bb赋值给rr，如下图所示。所以这里bb和rr两个指针都指向了b，b和r都指向了Bottom对象的相应部分。那么现在考虑考虑如果给*rr赋值将会发生什么。<br/>
+{{< highlight cpp >}}
+*rr = b;
+{{</ highlight >}}
+<br/>
+注意*rr是Right*类型(一级)的指针，所以这个赋值是有效的！<br/><br/>
+{{< bundle-image src="doublepointers.png" width="362px" >}}
+<br/>
+这个就和我们上面给r指针赋值一样(*rr是一级的Right*类型指针，而r同样是一级Right*指针)。所以，编译器将采用相同的方式实现对*rr的赋值操作。实际上，我们又要调整b的值，加上8字节，然后赋值给*rr，但是现在**rr其实是指向b的!如下图<br/><br/>
+{{< bundle-image src="doublepointers2.png" width="362px" >}}
+<br/>
+呃，如果我们通过rr访问Bottom对象，那么按照上图结构我们能够完成对Bottom对象的访问，但是如果是用b来访问Bottom对象呢，所有的对象引用实际上都偏移了8字节--明显是错误的！<br/><br/>
+总而言之，尽管*a和*b之间能依靠类继承关系相互转化，而**a和**b不能有这种推论。<br/><br/>
+<p style="margin-top: 5pt; margin-bottom: 5pt;"><strong>虚基类的构造函数</strong></p>
+
+<p style="margin-top: 5pt; margin-bottom: 5pt;">编译器必须要保证所有的虚函数指针要被正确的初始化。<strong>特别是要保证类中所有虚基类的构造函数都要被调用，而且还只能调用一次。</strong>如果你写代码时自己不显示调用构造函数，编译器会自动插入一段构造函数调用代码。这将会导致一些奇怪的结果，同样考虑下上面的类继承结构图，不过要加入构造函数。</p>
+
+{{< highlight cpp >}}
+class Top
+{
+    public:
+     Top() { a = -1; }
+     Top(int _a) { a = _a; }
+     int a;
+};
+
+class Left : public Top
+{
+     public:
+     Left() { b = -2; }
+     Left(int _a, int _b) : Top(_a) { b = _b; }
+     int b;
+};
+
+class Right : public Top
+{
+     public:
+    Right() { c = -3; }
+     Right(int _a, int _c) : Top(_a) { c = _c; }
+     int c;
+};
+
+class Bottom : public Left, public Right
+{
+     public:
+     Bottom() { d = -4; }
+     Bottom(int _a, int _b, int _c, int _d) : Left(_a, _b), Right(_a, _c)
+     {
+     d = _d;
+     }
+     int d;
+};
+{{</ highlight >}}
+<p style="margin-top: 5pt; margin-bottom: 5pt;"><br />
+先来考虑下不包含虚函数的情况，下面这段代码输出什么?</p>
+
+{{< highlight cpp >}}
+Bottom bottom(1,2,3,4);
+printf("%d %d %d %d %d\n", bottom.Left::a, bottom.Right::a, bottom.b, bottom.c, bottom.d);
+{{</ highlight >}}
+<p style="margin-top: 5pt; margin-bottom: 5pt;">
+你可能猜想会有这样结果：</p>
+<p style="margin-top: 5pt; margin-bottom: 5pt;">1 1 2 3 4<br />
+但是，如果我们考虑下包含虚函数的情况呢，如果我们从Top虚继承派生出子类，那么我们将得到如下结果：</p>
+<p style="margin-top: 5pt; margin-bottom: 5pt;">-1 -1 2 3 4<br />
+如本节开头所讲，编译器在Bottom中插入了一个Top的默认构造函数，而且这个默认构造函数安排在其他的构造函数之前，当Left开始调用它的基类构造函数时，我们发现Top已经构造初始化好了，所以相应的构造函数不会被调用。如果跟踪构造函数，我们将会看到</p>
+<p style="margin-top: 5pt; margin-bottom: 5pt;">Top::Top()<br />
+Left::Left(1,2)<br />
+Right::Right(1,3)<br />
+Bottom::Bottom(1,2,3,4)<br />
+为了避免这种情况，我们应该显示地调用虚基类的构造函数</p>
+{{< highlight cpp >}}
+Bottom(int _a, int _b, int _c, int _d): Top(_a), Left(_a,_b), Right(_a,_c)
+{
+    d = _d;
+}
+{{</ highlight >}}
+<br/>
+<p style="margin-top: 5pt; margin-bottom: 5pt;"><strong>到void* 的转换</strong></p>
+<br/>
+<span style="font-family: Courier New;"><span style="color: #804040;">1 <strong>dynamic_cast</strong></span>&lt;<span style="color: #2e8b57;"><strong>void</strong></span>*&gt;(b);</span><br/><br/>
+最后我们来考虑下把一个指针转换到void *。编译器会把指针调整到对象的开始地址。通过查vtable，这个应该是很容易实现。看看上面的vtable结构图，其中offset to top就是vptr到对象开始地址。另外因为要查阅vtable，所以需要使用dynamic_cast。<br/><br/>
+<strong>指针的比较</strong><br/><br/>
+再以上面Bottom类继承关系为例讨论，下面这段代码会打印Equal吗？<br/>
+{{< highlight cpp >}}
+Bottom* b = new Bottom();
+Right* r = b;
+
+if(r == b)
+    printf("Equal!\n");
+{{</ highlight >}}
+<br/>
+
+<strong>先明确下这两个指针实际上是指向不同地址的，r指针实际上在b指针所指地址上偏移8字节</strong>，但是，这些C++内部细节不能告诉C++程序员，所以C++编译器在比较r和b时，会把r减去8字节，然后再来比较，所以打印出的值是"Equal".<br/><br/>
+<p style="margin-top: 5pt; margin-bottom: 5pt;"><span style="font-family: '宋体';"><strong>参考文献</strong></span></p>
+<p style="margin-top: 5pt; margin-bottom: 5pt;"><span style="font-family: andale mono,times;">[1]</span> <a href="http://www.codesourcery.com/"><span style="font-family: andale mono,times;">CodeSourcery</span></a><span style="font-family: andale mono,times;">, in particular the</span> <a href="http://www.codesourcery.com/public/cxx-abi/"><span style="font-family: andale mono,times;">C++ ABI Summary</span></a><span style="font-family: andale mono,times;">, the</span> <a href="http://www.codesourcery.com/public/cxx-abi/abi.html"><span style="font-family: andale mono,times;">Itanium C++ ABI</span></a><span style="font-family: andale mono,times;">(despite the name, this document is referenced in a platform-independent context; in particular, the</span> <a href="http://www.codesourcery.com/public/cxx-abi/abi.html#vtable"><span style="font-family: andale mono,times;">structure of the vtables</span></a><span style="font-family: andale mono,times;">is detailed here). The <tt>libstdc++</tt> implementation of dynamic casts, as well RTTI and name unmangling/demangling, is defined in</span> <a href="http://www.codesourcery.com/public/cxx-abi/gcc-tinfo.cc"><span style="font-family: andale mono,times;">tinfo.cc</span></a><span style="font-family: andale mono,times;">.</span></p>
+<br/>
+<span style="font-family: andale mono,times;">[2] The</span> <a href="http://gcc.gnu.org/libstdc++/"><span style="font-family: andale mono,times;">libstdc++</span></a><span style="font-family: andale mono,times;">website, in particular the section on the</span> <a href="http://gcc.gnu.org/onlinedocs/libstdc++/api.html"><span style="font-family: andale mono,times;">C++ Standard Library API</span></a><span style="font-family: andale mono,times;">.</span><br/><br/>
+<span style="font-family: andale mono,times;">[3]</span> <a href="http://www.openrce.org/articles/files/jangrayhood.pdf"><span style="font-family: andale mono,times;">C++: Under the Hood</span></a><span style="font-family: andale mono,times;">by Jan Gray.</span><br/><br/>
+<!-- "http://msdn.microsoft.com/archive/default.asp?url=/archive/en-us/dnarvc/html/jangrayhood.asp" isnt valid, use archived version. --><br/><br/>
+<span style="font-family: andale mono,times;">[4] Chapter 9, "Multiple Inheritance" of <em>Thinking in C++ (volume 2)</em> by</span> <a href="http://www.bruceeckel.com/"><span style="font-family: andale mono,times;">Bruce Eckel</span></a><span style="font-family: andale mono,times;">. The author has made this book available for</span> <a href="http://mindview.net/Books/DownloadSites"><span style="font-family: andale mono,times;">download</span></a><span style="font-family: andale mono,times;">.</span><br/><br/>
+<span style="font-family: andale mono,times;">本文转自：<a href="http://blog.csdn.net/littlehedgehog/archive/2010/04/01/5442430.aspx">http://blog.csdn.net/littlehedgehog/archive/2010/04/01/5442430.aspx</a></span><br/><br/>
+<hr /><br/>
+原文已找不到，查看这个归档 <a href="http://web.archive.org/web/20160413064252/http://www.phpcompiler.org/articles/virtualinheritance.html">http://web.archive.org/web/20160413064252/http://www.phpcompiler.org/articles/virtualinheritance.html</a>

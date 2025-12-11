@@ -1,0 +1,211 @@
+---
+title: 转换  Iterator 为 Java 8 的 Stream
+url: /convert-iterator-to-java-8-stream/
+date: 2019-07-03T21:20:27-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/java8-Logo.png"
+categories:
+  - Java8
+tags: 
+  - Stream
+  - Iterator
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9469 
+wpStatus: publish
+views: 1604
+lastmod: 2019-07-03T21:20:27-05:00
+---
+
+<p>Java 中有关抽象的可遍历的对象有 Iterator, Iterable 和 Java 8 的 Stream, Iterable 可简单的用如下代码转换为 Stream</p>
+
+<blockquote>
+<p>StreamSupport.stream(iterable.spliterator(), false)</p>
+</blockquote>
+
+<p>再回过头来，为什么要把 Iterator 或 Iterable 转换为 Stream, 因为 Iterator 和 Iterable 只提供有限的遍历操作，如 Iterator 接口的全部四个方法</p>
+
+<blockquote>
+<p>hasNext()<br />
+next()<br />
+forEachRemaining(consumer)<br />
+remove()</p>
+</blockquote>
+
+<p>同样 Iterable 也只有 <code>iterator()</code>, <code>forEach(consumer)</code>, 和 <code>spliterator()</code> 方法。而 Java 8 的 Stream 就大不一样的，带有大量的链式操作方法，如 filter, map, flatMap, collect 等。</p>
+
+<p>因此如果我们已有一个 Iterator 类型，能够被转换为 Stream 类型的话将会大大简化后续的转换，处理操作。具体的从 Iterator 到 Stream 的转换方式有两种<!--more--></p>
+
+<h3>通过 Spliterators.spliteratorUnknownSize(...) 方法变 Iterator 为 Stream</h3>
+<p>由于 Iterator 的大小是不确定的，有多少个元素完全由 hasNext() 决定的，<code>spliteratorUnknownSize()</code> 方法正好应了这一情景。代码如下</p>
+
+{{< highlight java >}}
+Iterator<Integer> sourceIterator = Arrays.asList(3, 1, 2, null, 2).iterator();
+Stream<Integer> targetStream = StreamSupport.stream(
+    Spliterators.spliteratorUnknownSize(sourceIterator, Spliterator.SORTED), false);
+
+System.out.println(Arrays.toString(targetStream.toArray()));
+{{</ highlight >}}
+
+<p>输出会是</p>
+
+<blockquote>
+<p>[3, 1, 2, null, 2]</p>
+</blockquote>
+
+<p>前面的 Spliterator.SORTED 参数值是 <code>characteristics</code>, 预定义了七个常量值，但是对于 <code>Spliterators.splieratorUnknownSize(...)</code> 方法来说无论传什么都不会影响到最终的结果。比如我们可以做下面一个测试</p>
+
+{{< highlight java >}}
+    public void test(int characteristics) {
+        System.out.printf("characteristics %5d: ", characteristics);
+        Iterator<Integer> sourceIterator = Arrays.asList(3, 1, 2, null, 2).iterator();
+        Stream<Integer> targetStream = StreamSupport.stream(
+            Spliterators.spliteratorUnknownSize(sourceIterator, characteristics), false);
+        System.out.println(Arrays.toString(targetStream.toArray()));
+    }
+
+    Arrays.asList(
+        Spliterator.CONCURRENT,
+        Spliterator.DISTINCT,
+        Spliterator.IMMUTABLE,
+        Spliterator.NONNULL,
+        Spliterator.SIZED,
+        Spliterator.SORTED,
+        Spliterator.SUBSIZED).forEach(this::test);
+{{</ highlight >}}
+
+<p>输出结果如下：</p>
+
+<blockquote>
+<p>characteristics 4096: [3, 1, 2, null, 2]<br />
+characteristics 1: [3, 1, 2, null, 2]<br />
+characteristics 1024: [3, 1, 2, null, 2]<br />
+characteristics 256: [3, 1, 2, null, 2]<br />
+characteristics 64: [3, 1, 2, null, 2]<br />
+characteristics 4: [3, 1, 2, null, 2]<br />
+characteristics 16384: [3, 1, 2, null, 2]</p>
+</blockquote>
+
+<p>这里的 characteristics 传什么都行。</p>
+
+<p>根据下面的分析，characteristics 用不着从常量定义中挑选，直接给 <code>0</code> 就行，写成下面那样</p>
+
+<blockquote>
+<p>Spliterators.spliteratorUnknownSize(sourceIterator, 0)</p>
+</blockquote>
+
+<h3>经由 Iterable 把 Iterator 转换为 Stream</h3>
+<p>像最前面那样 Iterable 可以轻松转换为 Stream, 所以先把 Iterator 变为 Iterable 再转化为 Stream。</p>
+
+{{< highlight java >}}
+Iterator<Integer> sourceIterator = Arrays.asList(3, 1, 2, null, 2).iterator();
+Iterable<Integer> iterable = () -> sourceIterator;
+Stream<Integer> targetStream = StreamSupport.stream(iterable.spliterator(), false);
+
+System.out.println(Arrays.toString(targetStream.toArray()));
+{{</ highlight >}}
+
+<p>注意到上面由一个 Lambda 变 Iterator 为 Iterable 了，看 Iterable 接口的源代码</p>
+
+{{< highlight java >}}
+public interface Iterable<T> {
+    Iterator<T> iterator();
+
+    default void forEach(Consumer<? super T> action) {
+        Objects.requireNonNull(action);
+        for (T t : this) {
+            action.accept(t);
+        }
+    }
+
+    default Spliterator<T> spliterator() {
+        return Spliterators.spliteratorUnknownSize(iterator(), 0);
+    }
+}
+{{</ highlight >}}
+
+<p>只有一个抽象方法(其他两个为默认方法)，所以可用</p>
+
+<blockquote>
+<p>Iterable&lt;Integer&gt; iterable = () -&gt; sourceIterator</p>
+</blockquote>
+
+<p>声明一个 iterator() 返回 sourceIterator 的 Iterable 类型。</p>
+
+<p>再看 Iterable 的默认方法 spliterator() 的实现，同样是调用的</p>
+
+<blockquote>
+<p>Spliterators.spliteratorUnknownsSize(iterator(), 0)</p>
+</blockquote>
+
+<p>这里的第二个参数 <code>0</code> 实际上不是 Spliterator 中的 <code>CONCURRENT</code>, <code>DISTINCT</code>, <code>IMMUTABLE</code>, <code>NONNULL</code>, <code>SIZED</code>, <code>SORTED</code>, <code>SUBSIZED</code> 中的任何一个值。</p>
+
+<p>写到这里，通过参源代码阅读，前面所述的两种方式实质上没有一点区别。</p>
+
+<h3>对由 Iterator 转换为 Stream 的一个测试</h3>
+<p>下面例子创建一个无限大小的 Iterator (hasNext() 永远返回 true)，然后由它转换成 Stream, 再调用 Stream 的 filter 和 limit 来检验它是一个真正的 Stream</p>
+
+{{< highlight java >}}
+    public Stream<Integer> convert(Iterator<Integer> sourceIterator) {
+        Iterable<Integer> iterable = () -> sourceIterator;
+        return StreamSupport.stream(iterable.spliterator(), false);
+    }
+
+    @Test
+    public void test() {
+        Iterator<Integer> sourceIterator = new Iterator<Integer>() {
+            private AtomicInteger count = new AtomicInteger(0);
+            private Random random = new Random();
+
+            @Override
+            public boolean hasNext() {
+                return true;
+            }
+
+            @Override
+            public Integer next() {
+                System.out.println("next: " + count.incrementAndGet()); //每一次遍历将会打印计数
+                return random.nextInt(99999);
+            }
+        };
+
+        //无条件的获得 3 个元素即可
+        System.out.println(Arrays.toString(convert(sourceIterator).limit(3).toArray()));
+        System.out.println();
+
+        //从流中过虑出小于 30000 的 3 个元素
+        System.out.println(Arrays.toString(convert(sourceIterator).filter(a -> a < 30000).limit(3).toArray()));
+    }
+{{</ highlight >}}
+
+<p>下面是某一次的执行输出</p>
+
+<blockquote>
+<p>next: 1<br />
+next: 2<br />
+next: 3<br />
+[11430, 20177, 64297]</p>
+
+<p>next: 4<br />
+next: 5<br />
+next: 6<br />
+next: 7<br />
+next: 8<br />
+next: 9<br />
+next: 10<br />
+next: 11<br />
+next: 12<br />
+next: 13<br />
+next: 14<br />
+next: 15<br />
+next: 16<br />
+next: 17<br />
+[19378, 16142, 9354]</p>
+</blockquote>
+
+<p>该行为与 Stream 是相吻合的，因为 Stream 是一个 Lazy 的，它确实是一个流，无需事选知道流中将会有多少元素。</p>
