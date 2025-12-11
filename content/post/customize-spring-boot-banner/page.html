@@ -1,0 +1,91 @@
+---
+title: 如何定制 Spring Boot 的 Banner
+url: /customize-spring-boot-banner/
+date: 2016-10-12T23:07:15-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/spring-logo.png"
+categories:
+  - Spring
+tags: 
+  - Spring Boot
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7466 
+wpStatus: publish
+views: 2960
+lastmod: 2021-09-03T17:07:51-05:00
+---
+
+当我们启动一个 Spring Boot 的 Hello World 程序, 可以看到 Spring 会在控制台下输出一段 ASCII 字符组成的 Spring 字样, 像这个图中的样子,
+{{< bundle-image src="spring-boot-banner.png" width="302px" >}}
+并且 ":: Spring Boot ::" 是绿色显示, 版本号灰色. 如果每个 Spring Boot 做的应用都用默认的 Banner 就不好玩了, 无外乎只在声明我正在用 Spring Boot. 好在 Spring 提供了多种方式让我们定制自己的 Banner.<br/><br/>
+官方文档: <a href="http://docs.spring.io/spring-boot/docs/1.3.8.RELEASE/reference/htmlsingle/#boot-features-banner">http://docs.spring.io/spring-boot/docs/1.3.8.RELEASE/reference/htmlsingle/#boot-features-banner</a><br/><br/>
+初始 Banner 的代码是 <a href="https://github.com/spring-projects/spring-boot/blob/master/spring-boot/src/main/java/org/springframework/boot/SpringApplicationBannerPrinter.java">SpringApplicationBannerPrinter</a> 类.<br/><br/>
+Spring Boot 默认寻找 Banner 的顺序是:<br/><br/>
+<ol>
+    <li>依次在 Classpath 下找 文件 <code>banner.gif</code>, <code>banner.jpg</code>, 和 <code>banner.png</code>, 先找到谁就用谁</li>
+    <li>继续 Classpath 下找 <code>banner.txt</code></li>
+    <li>上面都没有找到的话, 用默认的 <a href="https://github.com/spring-projects/spring-boot/blob/master/spring-boot/src/main/java/org/springframework/boot/SpringBootBanner.java">SpringBootBanner</a>, 就是我们最常见到的那个</li>
+</ol>
+<!--more--><br/>
+既然是 Classpath 的资源, 我们按照 Maven 项目的惯例, 是把 <code>banner.*</code> 文件放在 <code>src/main/resources/</code> 目录下.<br/><br/>
+我们可以用属性 <code>banner.location</code> 设定 Spring Boot 在不同于 Classpath  下找以上 <code>banner.txt</code> 文件. <code>banner.charset</code> 设定 <code>banner.txt</code> 的字符集, 默认为 <code>UTF-8</code>. 属性. <code>banner.image.location</code> 用于指定寻找 <code>banner.(gif|jpg|png)</code> 文件的位置.<br/><br/>
+如果同时存在图片(如 banner.jpg) 和 <code>banner.txt</code>, 则它们会同时显示出来, 先图片后文字. 但同时存在多个图片 <code>banner.(gif|jpg|png)</code>, 则只会显示第一张图片.<br/><br/>
+下面依次介绍 图片 Banner, 文字 Banner, 和代码定制法, <span style="color: #0000ff;">其中 文字 Banner 只须在 <code>src/main/resources</code> 加上 <code>banner.txt</code> 应该是最简单实用的, 其次就是用简洁的 banner 图片</span>.<br/><br/>
+<h2>图片 Banner</h2>
+我们或许有疑问了, 对于图片文件 <code>banner.(gif|jpg|png)</code> 文件, Spring Boot 该如何在控制台显示. 由于我们的控制台只管显示字符, 所以 Spring Boot 会尽力把这三种图片文件转换成字符表示, 还带有 <a href="http://pueblo.sourceforge.net/doc/manual/ansi_color_codes.html">AnsiColor</a> 颜色的.<br/><br/>
+想要知道 Spring Boot 的  <code>ImageBanner</code> 对图片的理解程序到底有多强, 可以试下把这张图片放到 <code>src/main/resources/</code> 下, <br/><br/>
+{{< bundle-image src="banner.gif" width="500px" >}}
+然后重新启动一下我们的 Spring Boot 程序, 可以看到如下效果<br/><br/>
+{{< bundle-image src="spring-boot-image-banner.png" width="557px" >}}
+把图片转换成带色的字符显示已经很不错的了, 当然你不能太难为 Spring Boot 了, 图片色彩稍复杂肯定是一团糟. 图片到文字的转换的实际效果可以尝试 Spring Boot 官方的 <a href="https://spring-boot-banner-gen.cfapps.io/banner">Banner Generator</a>.<br/><br/>
+<h2>文字 Banner</h2>
+如果使用 <code>banner.txt</code>  定义 Banner 的话, 里面可以使用如下变量<br/><br/>
+<code>${application.version}</code>, <code>${application.formatted-version}</code>, <code>${spring-boot.version}</code>, <code>${Ansi.NAME}</code> 或  <code>${AnsiColor .NAME}</code>, <code>${AnsiBackground.NAME}</code>, <code>${AnsiStyle.NAME}</code>, <code>${application.title}</code>, 这些具体定义请参考 Spring Boot 的官方文档 <a href="http://docs.spring.io/spring-boot/docs/1.3.8.RELEASE/reference/htmlsingle/#boot-features-banner">Customizing the Banner</a>.<br/><br/>
+这里说一下 <code>AnsiColor</code>, <code>AnsiStyle</code>, 和 <code>AnsiBackground</code> 的用法, 它们是各种 Ansi  控制符 , 见 Wiki <a href="https://en.wikipedia.org/wiki/ANSI_escape_code">ANSI escape code</a>. 可取值请参考各自相应的类, <code>org.springframework.boot.ansi.(AnsiColor|AnsiStyle|AnsiStyle)</code>. 分别用于定义字符在控制台下显示的颜色, 风格与背景色.<br/><br/>
+这里有一个 <code>banner.txt</code>, 内容是<br/>
+{{< highlight text >}}
+${AnsiColor.RED}${AnsiStyle.ITALIC}I'm Red and italic ${AnsiStyle.NORMAL}${AnsiColor.DEFAULT}
+${AnsiColor.BLUE}${AnsiBackground.YELLOW}I'm Blue with yellow background${AnsiBackground.DEFAULT}${AnsiColor.DEFAULT}
+${AnsiColor.GREEN}Powered by ${spring-boot.formatted-version}${AnsiColor.DEFAULT}
+{{</ highlight >}}
+<br/>
+执行 Spring Boot 应用后输出对应的 Banner 如下图<br/>
+{{< bundle-image src="springboot-ansi-banner.png" width="227px" >}}
+ 另外, 如果我们不满足于定义在  <code>banner.txt</code> 中的文字原本平实的显示出来, 也可以像默认的 Spring Boot 的 Banner 那样, 把字符串转换为特殊字符组成的艺术字体, 这还有一个专用名词 TAAG(Text to ASCII Art Generator). 有许多在线网站能帮你转换, 只要 Google 搜索 <a href="https://www.google.com/search?espv=2&amp;q=text+to+ascii+art+generator&amp;oq=text+to+ascii+art+gener&amp;gs_l=serp.3.0.0j0i22i30k1l5.273983.279974.0.281776.25.24.1.0.0.0.128.2211.19j5.24.0....0...1.1.64.serp..0.25.2204...35i39k1j0i131i155k1j0i131k1j0i20k1j0i10k1.TtmUDSwLLSE" target="_blank" rel="noopener">text to ascii art generator</a>. 举几个例子:<br/><br/>
+<ol>
+    <li><a href="http://patorjk.com/software/taag/#p=display&amp;f=Jacky&amp;t=unmi.cc">http://patorjk.com/software/taag/#p=display&amp;f=Jacky&amp;t=unmi.cc</a></li>
+    <li><a href="http://www.desmoulins.fr/index_us.php?pg=scripts!online!asciiart">http://www.desmoulins.fr/index_us.php?pg=scripts!online!asciiart</a></li>
+    <li><a href="http://asciiset.com/figletserver.html">http://asciiset.com/figletserver.html</a></li>
+    <li><a href="http://www.askapache.com/online-tools/figlet-ascii/">http://www.askapache.com/online-tools/figlet-ascii/</a></li>
+    <li>h<a href="http://picascii.com/">ttp://picascii.com/</a>   图片转换为 ASCII</li>
+</ol>
+<br/>
+把喜欢的文字转换一下, 贴到 <code>banner.txt</code> 中即可, 高兴的话再用 <code>${AnsiColor.NAME}</code> 等再加润色.<br/><br/>
+<h2>其他 Banner 定制</h2>
+或者可以完全定制 Banner, 通过代码<br/>
+{{< highlight java >}}
+ SpringApplication bootstrap = new SpringApplication(SampleController.class);
+ bootstrap.setBanner(new Banner() {
+   @Override
+   public void printBanner(Environment environment, Class<?> aClass, PrintStream printStream) {
+     //往 printStream 中输出吧, 可从 environment 中取属性配置 
+   }
+ });
+// bootstrap.setBannerMode(Banner.Mode.LOG);
+ bootstrap.run(args);
+{{</ highlight >}}
+<br/>
+<code>Banner.Mode</code> 有三个值 CONSOLE, LOG, OFF, 默认为 CONSOLE, 可以用 OFF 关闭 Banner 显示, 或是 LOG 让 Banner 在应用 log 中显示. 可支持用属性 <code>spring.main.banner-mode=off</code> 来控制.<br/><br/>
+因为前面两种图片和文字 Banner 已经非常强大了, 所以本人觉得完全用 <code>setBanner(banner)</code> 来定制没多大必要, 至多在不想要任何 Banner 的时候可以用 <code>spring.main.banner-mode=off</code> 进行关闭.<br/><br/>
+或使用 Fluent builder API<br/>
+{{< highlight java >}}
+new SpringApplicationBuilder(Xxx.class)
+  .bannerMode(Banner.Mode.OFF)
+  .run(args);
+{{</ highlight >}}

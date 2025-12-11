@@ -1,0 +1,219 @@
+---
+title: 自定义 Jackson 注解与禁用某一特定的注解
+url: /customize-jackson-annotation-and-disable-specific-annotation/
+date: 2015-08-03T15:06:09-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - json
+  - jackson
+  - Annotation
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6987 
+wpStatus: publish
+views: 7182
+lastmod: 2021-09-04T12:16:47-05:00
+---
+
+Jackson 是 <a href="http://www.playframewok.com" target="_blank" rel="noopener">Playfrmework</a> 2 中默认的 JSON 处理框架，先前是  GSON，JSON 是 Playframework 中的第一等公民，可见 Jackson 在 Playframewok 中的重要地位。Jackson 提供了一系列的<a href="https://github.com/FasterXML/jackson-annotations" target="_blank" rel="noopener">注解</a>可用，像 @JsonIgnore, @JsonProperty, @JsonUnwrapped, @JsonFilter 等。人的需求总是很难得到满足，所以免不了还是要定义自己的注解。比如有这样一个需求，JavaBean 中被 @MaskField(这个即将成为我第一个自定义的注解) 标记的属性或 getter 方法，总是输出为 <code>******</code>, 无此标记的属性或方法输出原始值。</p>
+
+我尝试过 @JsonFilter  或是单纯的自定义  JsonSerializer, 并不怎么如意。本人最终的实现方式涉及到<br/><br/>
+<ul>
+    <li>@JacksonAnnotationsInside -- 用来创建自己的 @MaskField 注解</li>
+    <li>JsonSerializer  -- 被 @MaskField 标记的字段采用自定义的 JsonSerializer 来序列化</li>
+    <li>JacksonAnnotationIntrospector  -- 禁用某一特定的注解，这样可以在做任意时候启用或禁用 @MaskField<!--more--></li>
+</ul><br/>
+再次重复需求，对于下面的 Person 类生成的对象<br/>
+{{< highlight java >}}
+class Person {
+
+  public String name  = "Yanbin";
+
+  public String getPhone () {
+    return "(312)666-8888";
+  }
+
+  public int age = 100;
+
+  @JsonProperty("city")
+  public String location = "Chicago";
+
+}
+{{</ highlight >}}
+<br/>
+想要对于某些用户生成<br/><br/>
+<span style="color: #800000;">{"name":"Yanbin","age":"******","city":"Chicago","phone":"******"}</span><br/><br/>
+其他用户生成<br/><br/>
+<span style="color: #800000;">{"name":"Yanbin","age":100,"city":"Chicago"}</span><br/><br/>
+即有条件的隐藏某些敏感信息。<br/><br/>
+希望自定义 @MaskField 来标 name 属性和 getPhone() 方法。<br/><br/>
+定义 @MaskField<br/>
+{{< highlight java >}}
+@Retention(RetentionPolicy.RUNTIME)
+@Target({ElementType.FIELD, ElementType.METHOD})
+@JacksonAnnotationsInside
+@JsonSerialize(using = MaskFieldSerializer.class)
+@interface MaskField {
+}
+{{</ highlight >}}
+<br/>
+上面指示了标记为 @MaskField 字段或 getter 方法奖应用  MaskFieldSerializer 为序列化，总是输出为 ******<br/><br/>
+MaskFieldSerializer 类<br/>
+{{< highlight java >}}
+class MaskFieldSerializer extends JsonSerializer<Object> {
+
+  @Override
+  public void serialize(Object value, JsonGenerator jgen, SerializerProvider provider)
+    throws IOException {
+    jgen.writeString("******");
+  }
+}
+{{</ highlight >}}
+<br/>
+现在把 @MaskField 应用到  Person 类<br/>
+{{< highlight java >}}
+class Person {
+
+  public String name  = "Yanbin";
+
+  @MaskField
+  public String phone () {
+    return "(312)666-8888";
+  }
+
+  @MaskField
+  public int age = 100;
+
+  @JsonProperty("city")
+  public String location = "Chicago";
+
+}
+{{</ highlight >}}
+<br/>
+用代码测试一下<br/>
+{{< highlight java >}}
+ObjectMapper maskMapper = new ObjectMapper();
+System.out.println(maskMapper.writeValueAsString(new Person()));
+{{</ highlight >}}
+<br/>
+输出结果没错了，就是<br/><br/>
+<span style="color: #800000;">{"name":"Yanbin","age":"******","city":"Chicago","phone":"******"}</span><br/><br/>
+凡是标记了 @MaskField 的字段或 getter 方法最终输出统统为 ******, 还记得还有个需求是对于某些时候还希望看到原貌，即<br/><br/>
+<span style="color: #800000;">{"name":"Yanbin","age":100,"city":"Chicago"}</span><br/><br/>
+也就是有时要只禁用 @MaskField 注解。Jackson 可以调用<br/><br/>
+<span style="color: #800000;">maskMapper.configure(MapperFeature.USE_ANNOTATIONS, false);</span><br/><br/>
+来禁用所有的注解，那么像 @JsonProperty, @JsonIgnore 这样的注解如何是好，肯定不能一棍子打死，所以这里只是需要适时的把  @MaskField 禁用即可。这时候要用到 JacksonAnnotationIntrospector 来选择某个 Annotation 来禁用了。<br/><br/>
+因而自定义 DisablingMaskFieldIntrospector<br/>
+{{< highlight java >}}
+class DisablingMaskFieldIntrospector extends JacksonAnnotationIntrospector {
+
+  @Override
+  public boolean isAnnotationBundle(Annotation ann) {
+    if (ann.annotationType().equals(MaskField.class)) {
+      return false;
+    } else {
+      return super.isAnnotationBundle(ann);
+    }
+  }
+
+}
+{{</ highlight >}}
+<br/>
+如果是 MaskField 就 return false, 禁用  @MaskField 注解<br/><br/>
+该告诉你的 ObjectMapper 使用这个自定义 AnnotationIntrospector，下面的测试代码<br/>
+{{< highlight java >}}
+ObjectMapper showAllMapper = new ObjectMapper();
+showAllMapper.setAnnotationIntrospector(new DisablingMaskFieldIntrospector());
+System.out.println(showAllMapper.writeValueAsString(new Person()));
+{{</ highlight >}}
+<br/>
+输出为<br/><br/>
+<span style="color: #800000;">{"name":"Yanbin","age":100,"city":"Chicago"}</span><br/><br/>
+也就是要不要采用 DisablingMaskFieldIntrospector 就决定了我们禁止还是启用 @MaskField 注解的功能。<br/>
+<hr /><br/>
+浪费点篇幅，上面完整的代码如下<br/>
+{{< highlight java >}}
+import com.fasterxml.jackson.annotation.*;
+import com.fasterxml.jackson.core.*;
+import com.fasterxml.jackson.databind.*;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.introspect.JacksonAnnotationIntrospector;
+
+import java.io.IOException;
+import java.lang.annotation.*;
+
+public class TestJacksonAnnotation {
+
+  private static ObjectMapper maskMapper = new ObjectMapper();
+
+  private static ObjectMapper showAllMapper = new ObjectMapper() {{
+    setAnnotationIntrospector(new DisablingMaskFieldIntrospector());
+  }};
+
+  public static void main(String[] args) throws JsonProcessingException {
+    System.out.println(maskMapper.writeValueAsString(new Person()));
+    System.out.println(showAllMapper.writeValueAsString(new Person()));
+  }
+}
+
+class Person {
+
+  public String name  = "Yanbin";
+
+  @MaskField
+  public String phone () {
+    return "(312)666-8888";
+  }
+
+  @MaskField
+  public int age = 100;
+
+  @JsonProperty("city")
+  public String location = "Chicago";
+
+}
+
+class MaskFieldSerializer extends JsonSerializer<Object> {
+
+  @Override
+  public void serialize(Object value, JsonGenerator jgen, SerializerProvider provider)
+    throws IOException {
+    jgen.writeString("******");
+  }
+}
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target({ElementType.FIELD, ElementType.METHOD})
+@JacksonAnnotationsInside
+@JsonSerialize(using = MaskFieldSerializer.class)
+@interface MaskField {
+
+}
+
+class DisablingMaskFieldIntrospector extends JacksonAnnotationIntrospector {
+
+  @Override
+  public boolean isAnnotationBundle(Annotation ann) {
+    if (ann.annotationType().equals(MaskField.class)) {
+      return false;
+    } else {
+      return super.isAnnotationBundle(ann);
+    }
+  }
+
+}
+{{</ highlight >}}
+<br/>
+执行后输出为<br/><br/>
+<span style="color: #800000;">{"name":"Yanbin","age":"******","city":"Chicago","phone":"******"}</span><br />
+<span style="color: #800000;">{"name":"Yanbin","age":100,"city":"Chicago"}</span><br/><br/>
+实际的操作就是根据不同的条件使用  maskMapper 或是 showAllMapper 来进行序列化。<br/><br/>
+参考：1. <a href="https://github.com/swagger-api/swagger-core/issues/982" target="_blank" rel="noopener">https://github.com/swagger-api/swagger-core/issues/982<br />
+</a>        2. <a href="http://stackoverflow.com/questions/12921812/create-a-custom-jackson-annotation" target="_blank" rel="noopener">http://stackoverflow.com/questions/12921812/create-a-custom-jackson-annotation</a>
