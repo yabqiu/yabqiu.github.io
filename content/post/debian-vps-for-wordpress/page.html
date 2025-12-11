@@ -1,0 +1,204 @@
+---
+title: Debian Linux VPS 为 Wordpress 的系统准备
+url: /debian-vps-for-wordpress/
+date: 2014-01-05T03:32:57-06:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - WordPress
+  - Linux/Unix
+tags: 
+  - wordpress
+  - Linux
+  - Debian
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 5973 
+wpStatus: publish
+views: 639
+lastmod: 2021-09-04T12:00:38-05:00
+---
+
+本人博客几经周折，最初 BPS，到独立的域名、空间，每一次也是为向更自由的管理迈进一步。现在终于搞了个 VPS，不过是在美国的，慢是慢了点，不过自己想怎么弄就怎么弄，现也无需经常性的找客服了。<br/><br/>
+VPS 是 768M RAM, 1536 的交换空间，40G硬盘空间，2500G带宽，两固定 IP，其实我只要一个就行了。服务器是在我所在的城市，所以管理起来应该要快些，至少感觉会有点。<br/><br/>
+基于系统资源和稳定性的考虑，我选择了 Debian 系统，Ubuntu 就是基于它的。在一个干净的系统上要搭建 Wordpress 需要预先准备好 Apache2+PHP5+MySQL5 这样的环境，Apache2 是以 worker 模式运行，PHP 是 FastCGI 方式，Wordpress 连接 MySQL 可以本地 Socket 方式。下面是步骤：<br/><br/>
+<h3><span style="color: #000080;"><strong>一. 系统设置</strong></span></h3>
+配置时区，方便查看日志能对应上你当地的时间<br/>
+<blockquote>
+#dpkg-reconfigure tzdata
+</blockquote>
+
+选择相应的城市，这步会修改 /etc/timezone 和 /etc/localtime 文件<!--more--><br/><br/>
+要能让 Wordpress 发送外部邮件，使用的是 exim4, 要修改文件 /etc/exim4/update-exim4.conf.conf, 把<br/>
+<blockquote>
+dc_eximconfig_configtype 的值由 local 改成 internet
+</blockquote>
+
+保存，然后重启 exim4 服务。关于此可参见 <a href="http://bensonzy.blog.51cto.com/227860/567721" target="_blank" rel="noopener noreferrer">debian 无法向外发送邮件</a><br/><br/>
+<h3><span style="color: #000080;">二. Apache2 安装</span></h3>
+<blockquote>
+#apt install apache2
+</blockquote>
+
+Apache2 的控制命令是<br/>
+<blockquote>
+# /etc/init.d/apache2 {start|stop|graceful-stop|restart|reload|force-reload|start-htcacheclean|stop-htcacheclean|status}
+</blockquote>
+
+要停掉所有的 Apache2 进程，使用命令<br/>
+<blockquote>
+#killall apache2
+</blockquote>
+
+Apache2 所有配置文件在 /etc/apache2 目录下<br/><br/>
+Apache2 默认的字符集配置在 /etc/apache2/conf.d/charset 文件中，如果不用默认的 utf-8 的话就修改为其他的值<br/><br/>
+和许多系统下的 Apache2 不一样，/etc/apache2/httpd.conf 是个空文件，你会发现某些原来在 httpd.conf 中的内容移入到了 apche2.conf 中了，多数的配置分散在了众多的文件中去了，这样做更好理解了。<br/><br/>
+比如环境配置在 evnvars 中，启用的模块在 mods-enabled 目录中，启用的站点在 sites-enabled 目录中等等，用<br/>
+<blockquote>
+#ls -l /etc/apache2
+</blockquote>
+
+看下就知道了，这里的 apache2.conf 才是所有配置文件的统领，每个配置文件都打开来瞧一瞧就知道它们是怎么分担任务的。<span style="line-height: 1.5em;"><br />
+</span><br/>
+我们的 Wordpress 一般会用到 rewrite 模块，需要启用它，命令是<br/>
+<blockquote>
+#a2enmod rewrite
+</blockquote>
+
+Apache2 的命令，a2dismod, a2ensite, a2dissite 再上前面的 a2enmod 都在 /usr/sbin 目录中，可能需要手动在 ~/.profile 中把 /usr/sbin 加到 PATH 上去<br/><br/>
+前面步骤安装的 Apache2 是随系统自动启动的，Debian 也有一个像 RedHat 中的 chkconfig 那样的工具，能查看和设置自动启动的程序，非系统自带，要安装<br/>
+<blockquote>
+#apt install sysv-rc-conf<br />
+#sysv-rc-conf --help
+</blockquote>
+
+如果启动 apache2 时提示你如下的话语<br/><br/>
+<span style="color: #800000;">apache2apache2 Could not reliably determine the server's fully qualified domain name ....</span><br/><br/>
+那就创建一个文件 /etc/apache2/conf.d/fqdn，在其中配置一个 ServerName，参考：<br/>
+<blockquote>
+ServerName unmi.cc
+</blockquote>
+
+这里有两篇文章很有用 <a href="http://www.cnblogs.com/hicome/archive/2008/09/13/1290256.html" target="_blank" rel="noopener noreferrer">Debian 下Apache2安装与设置 一 ZT</a>  和 <a href="http://www.cnblogs.com/hicome/archive/2008/09/13/1290262.html" target="_blank" rel="noopener noreferrer">Debian下Apache 2 配置指令 二 ZT</a><br/><br/>
+<h3><span style="color: #000080;"><strong>三. 安装 MySQL 5</strong></span></h3>
+<blockquote>
+#apt install mysql-server
+</blockquote>
+
+这步会自动安装上 mysql-client，安装好 MySQL 后也是自动启动的<br/><br/>
+MySQL 的控制命令是<br/>
+<blockquote>
+/etc/init.d/mysql start|stop|restart|reload|force-reload|status
+</blockquote>
+
+酌情而定是否要改下 MySQL 的默认字符集为 utf8，因为可以指定当前数据库的字符集。有这个必要的话请修改 /etc/mysql/my.cnf，相应的位置处加下如下内容：<br/>
+<blockquote>
+[client]<br />
+default-character-set=utf8
+[mysqld]<br />
+character-set-server=utf8<br />
+collation-server=utf8_general_ci
+</blockquote>
+
+改后重启 MySQL 可用命令看看字符集<br/>
+<blockquote>
+mysql&gt; show varaibles like 'character_set_%'
+</blockquote>
+
+记得创建数据库时指定好参数<br/>
+<blockquote>
+mysql&gt; create database wordpress character set utf8 collate utf8_general_ci
+</blockquote>
+
+可能在导入数据时需指定字符集，像下面的命令来导入数据<br/><br/>
+#mysql -uusername -p --default-character-set=utf8 wordpress &lt; wordpress.sql<br/><br/>
+MySQL 的乱码有时也会让人头疼一下，只要统一成 utf8 总是办法。参考下 <a href="http://www.pc6.com/infoview/Article_63586.html" target="_blank" rel="noopener noreferrer">彻底解决mysql中文乱码的办法</a>。<br/><br/>
+<h3><span style="color: #000080;"><strong>四. PHP5 的安装配置</strong></span></h3>
+<blockquote>
+#apt install libapache2-mod-fcgid
+</blockquote>
+
+fcgid 模块的配置，编辑 /etc/apache2/mods-available/fcgid.conf，完整内容如下：<br/>
+<blockquote>
+&lt;IfModule mod_fcgid.c&gt;<br />
+     AddHandler fcgid-script .php .py .pl .fcgi<br />
+     SocketPath /var/lib/apache2/fcgid/sock<br />
+     IPCConnecTimeout 20<br />
+     FcgidMaxRequestLen 10485760<br />
+&lt;/IfModule&gt;
+#apt install php5-cgi
+</blockquote>
+
+如果上面 FcgidMaxRequestLen 的默认值为 131072, 需要设置一个合适的请求数据的最大长度，如若不然，基本上传图片都是显示 HTTP Error, 原因是<br/>
+<blockquote>
+mod_fcgid: HTTP request length 132478 (so far) exceeds MaxRequestLen (131072), referer: http://unmi.cc/wp-admin/post.php?post=Xxx&amp;action=edit&amp;message=6
+</blockquote>
+
+编辑相应的站点文件，如编辑 /etc/apache2/sites-available/default，相应位置加上或改成紫色内容<br/>
+<blockquote>
+   &lt;Directory /&gt;<br />
+<span style="color: #800000;">            FCGIWrapper /usr/bin/php5-cgi .php</span><br />
+            Options FollowSymLinks<br />
+            AllowOverride <span style="color: #800000;">All</span><br />
+   &lt;/Directory&gt;<br />
+   &lt;Directory /var/www/&gt;<br />
+            Options Indexes FollowSymLinks  <span style="color: #800000;">ExecCGI</span><br />
+            AllowOverride <span style="color: #800000;">All</span><br />
+            Order allow,deny<br />
+            allow from all<br />
+   &lt;/Directory&gt;
+</blockquote>
+
+FCGIWrapper 是处理 php 的需要，AllowOverride 设置为 All 是为了启用 .htaccess 的功能。<br/>
+<blockquote>
+#apt php5-mysql php5-curl        ......任何你想要的 php 模块，或以后缺什么被会都行
+</blockquote>
+
+如果上一步有提示把 apche2-mpm-worker 给卸了的话，就重新安上它<br/>
+<blockquote>
+#apt install apache2-mpm-worker
+</blockquote>
+
+重启下 apache 后在 /var/www/ 目录下建个 index.php 文件测试下，是否运行正常，是否是 FastCGI 方式，并支持了前面安装的模块。<br/><br/>
+Apache 性能初步调优可参考（<a href="http://linxucn.blog.51cto.com/1360306/736322" target="_blank" rel="noopener noreferrer">http://linxucn.blog.51cto.com/1360306/736322</a>）<br/>
+{{< highlight apache >}}
+Timeout 30
+KeepAlive On
+MaxKeepAliveRequests 100
+KeepAliveTimeout 2
+<IfModule prefork.c>
+  ServerLimit 150
+  StartServers      4
+  MinSpareServers   4
+  MaxSpareServers   10
+  MaxClients       150
+  MaxRequestsPerChild 100
+</IfModule>
+{{</ highlight >}}
+<br/>
+特别留意 MaxRequestPerChild 默认为 0 表示永不重启 Apache 服务进程不退出，很要命。这里设置为一个 Apache 服务进程处理完 100 次请求之后自动重启。然后就是 Timeout 选择一个合适的值。<br/><br/>
+<h3><strong><span style="color: #000080;">五. Wordpress 相关</span></strong></h3>
+这里不是介绍 Wordpress 的安装，只把碰到的几个问题解决一下。其实前面有说 Wordpress 中发不了邮件，必须把某个 local 值改为 internet。<br/><br/>
+再就是在线安装 Wordpress 插件时，如果收到要进行 FTP 的配置的话，是因为目录权限的问题。Debian 运行 Apache2 的用户是 www-data 组，www-data 用户，可在 /etc/apache/envvars 中看到，所以需更改目录所属组和用户<br/>
+<blockquote>
+#chown -R www-data:www-data /var/www
+</blockquote>
+
+另外一个，因为这里 MySQL 是运行在同一机器上，所以在 Wordpress 的 wp-config.php 中的 MySQL hostname 可定义为<br/>
+<blockquote>
+#define('DB_HOST', 'localhost:/var/run/mysqld/mysqld.sock');
+</blockquote>
+
+这个 sock 文件可在 /etc/mysql/my.cnf 中找到。<br/><br/>
+这样配置的效率上有多少改善还未可知，感觉好象连接数据库没绕那么一下，可能根本就毫无差别。<br/>
+<hr /><br/>
+好啦，现在服务器基本上处在我们自己的控制之下了，你可以完全动用系统资源为我们服务，出什么状况自己进行处理。对系统的资源，各类日志的监控等，快速定位真正的问题。系统想怎么配置就怎么配置，只要系统资源允许的情况下，挂多少个域名，数据库都是随意的。也可以不依赖于插件，直接在系统一级用 cron 进行定时备份文件和数据库。<br/><br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>
+<br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>
+<br/>
+<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>

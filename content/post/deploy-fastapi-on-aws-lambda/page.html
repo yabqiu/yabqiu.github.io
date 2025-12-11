@@ -1,0 +1,228 @@
+---
+title: 应用 AWS Lambda 部署 FastAPI
+url: /deploy-fastapi-on-aws-lambda/
+date: 2023-05-01T14:31:45-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/aws-logo.png"
+categories:
+  - AWS
+tags: 
+  - lambda
+  - Python
+  - FastAPI
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13114 
+wpStatus: publish
+views: 628
+lastmod: 2023-05-01T23:06:16-05:00
+---
+
+前两年用 AWS Lambda 搭配 API Gateway 使用是为了省钱，因为没有请求时不花钱。又由于是 Rest API, 所以实现部分用了 FastAPI 的装饰器，但不实际启动 FastAPI 的 Web 服务，Lambda 的 handler 方法根据 routeKey 手动映射到 FastAPI 的装饰方法。大概实现是</p>
+
+<blockquote>
+def lambda_handler(event: dict, context):<br />
+    fastapi_function = locate_fastapi_function(event['routeKey'])<br />
+    return fastapi_function(&lt;extract parameters from event&gt;)
+</blockquote>
+
+当时也思考着能不能把 Lambda 的请求与 FastAPI 的 Web 服务桥接起来，却又不能真正启动一个  Web 服务，否则 Lambda 调用不能结束。比如说 AWS Lambda 收到请求时快速启动 FastAPI 服务，该服务绑定到  TCP 端口或 Socket 文件都行，然后 Lambda 请求代理到 FastAPI 服务，最后关闭 FastAPI 服务，但是想来都不那么容易实现。<!--more--><br/><br/>
+所以就在最近(前几周)把 Lambda + API Gateway 的应用迁移到了 ECS 上，这样带来的便利有<br/><br/>
+<ol>
+    <li>纯粹的 FastAPI 应用开发</li>
+    <li>方便使用 FastAPI 的 /docs Swagger UI</li>
+    <li>不再有 Lambda 的 Payload 6M 的限制。API Gateway 的 Payload 限制为 10M</li>
+</ol>
+<br/>
+而坏处是费钱，ELB 和 EC2 每月有数十美元的支出，Lambda 的调用次数极少，这部分费用可忽略不计。部署方面的复杂性差不了多少, Lambda + API Gateway 和 ECS 都可以使用自定义的域名。<br/><br/>
+其实被迫从 Lambda 迁移到 ECS 的一切一切的根源是太晚结识 Python 库 <a href="https://mangum.io/">Mangum</a>, 它最早的 Release 版本是 2020-05-09 的 v0.9.0。Mangum 是一个适配器，使得 AWS Lambda 运行 ASGI 应用能处理 Function URL, API Gateway, ALB 和 Lambda@Edge 事件。其中一个支持特性就是兼容 ASGI 应用框架，如 Starlette, FastAPI, Quart 和 Django。<br/><br/>
+下面就花点时间亲自体验一下 Mangum 部署 FastAPI 到 AWS Lambda 的功能<br/><br/>
+<h2>准备代码及部署 Lambda</h2>
+在 Mangum 官方 FastAPI 应用示例中增加一个文件上传的功能，完整的操作步骤如下<br/>
+<blockquote>
+$ mkdir fastapi-lambda<br />
+$ python3.9 -m venv .venv<br />
+$ source .venv/bin/activate<br />
+$ cd fastapi-lambda<br />
+$ pip install --target ./ fastapi python-multipart mangum<br />
+$ vi main.py
+</blockquote>
+
+main.py 文件内容为<br/>
+{{< highlight python >}}
+from fastapi import FastAPI, UploadFile
+from mangum import Mangum
+
+app = FastAPI()
+
+
+@app.get("/")
+def read_root():
+    return {"Hello": "World"}
+
+
+@app.get("/items/{item_id}")
+def read_item(item_id: int, q: str = None):
+    return {"item_id": item_id, "q": q}
+
+
+@app.post("/uploadfile")
+def upload_file(upload_file: UploadFile):
+    return {"filename": upload_file.filename, "content": upload_file.file.read().decode()}
+
+handler = Mangum(app, lifespan="off")
+{{</ highlight >}}
+
+然后打成 zip 包，仍然在 <code>fastapi-lambda</code> 目录中<br/>
+<blockquote>
+$ zip -r fastapi-lambda.zip -r *
+</blockquote>
+
+现在可以部署一个 AWS Lambda 了，基本要素是<br/><br/>
+<ol>
+    <li>Code：上传前面的  fastapi-lambda.zip 压缩包</li>
+    <li>Runtime: Python 3.9</li>
+    <li>Handler: main.handler</li>
+    <li>启用  Lambda 的 Function URL</li>
+</ol>
+<br/>
+部署完后我们可进行多种集成方式集成测试<br/><br/>
+<h2>通过 Lambda Function URL 访问</h2>
+比如我们启用了 Function URL 之后得到一个链接 https://emfb4cust6hbntfwuev5bz6jna0wyinr.lambda-url.us-east-1.on.aws/，访问 https://emfb4cust6hbntfwuev5bz6jna0wyinr.lambda-url.us-east-1.on.aws/docs 打开了 FastAPI 的 Swagger UI<br/><br/>
+{{< bundle-image mangum-fastapi-lambda-800x365.png 850 >}}
+测试部署到 Lambda 中 FastAPI，可以直接用 Swagger UI 操作或用 curl 命令<br/>
+<blockquote>
+➜ / curl https://emfb4cust6hbntfwuev5bz6jna0wyinr.lambda-url.us-east-1.on.aws/<br />
+{"Hello":"World"}%<br />
+➜ / curl https://emfb4cust6hbntfwuev5bz6jna0wyinr.lambda-url.us-east-1.on.aws/items/123\?q\=abc<br />
+{"item_id":123,"q":"abc"}%<br />
+➜ / curl https://emfb4cust6hbntfwuev5bz6jna0wyinr.lambda-url.us-east-1.on.aws/uploadfile \<br />
+-F "upload_file=@/Users/yanbin/demo/fastapi-lambda/main.py"<br />
+{"filename":"main.py","content":"from fastapi import FastAPI, UploadFile\nfrom mangum import Mangum\n\napp = FastAPI()\n\n\n@app.get(\"/\")\ndef read_root():\n return {\"Hello\": \"World\"}\n\n\n@app.get(\"/items/{item_id}\")\ndef read_item(item_id: int, q: str = None):\n return {\"item_id\": item_id, \"q\": q}\n\n\n@app.post(\"/uploadfile\")\ndef upload_file(upload_file: UploadFile):\n return {\"filename\": upload_file.filename, \"content\": upload_file.file.read().decode()}\n\nhandler = Mangum(app, lifespan=\"off\")\n"}%
+</blockquote>
+
+本人所用的 shell 为 zsh, 所以 <code>?</code> 和 <code>=</code> 会用 <code>\?</code> 和 <code>\=</code> 进行转义，上传时直接上传 main.py 文件，在服务端读出文件的内容。<br/><br/>
+<h2>API Gateway + HTTP 集成</h2>
+创建 API Gateway 时选择 HTTP API，选择集成 HTTP, 然后创建一个 route<br/>
+<blockquote>
+Route and method: ANY   /{proxy+}
+</blockquote>
+
+集成到 Lambda Function URL<br/>
+<blockquote>
+/{path+}  ANY  -&gt; HTTP URL <code>ANY https://emfb4cust6hbntfwuev5bz6jna0wyinr.lambda-url.us-east-1.on.aws/{proxy}</code>
+</blockquote>
+
+即任何 HTTP_METHOD 对任意路径的访问全都代理到 Lambda Function URL<br/><br/>
+部署了 $default Stage 后，产生一个 API Gateway 的 URL, 如 https://dd11zks36i.execute-api.us-east-1.amazonaws.com/， 访问<br/><br/>
+{{< bundle-image mangum-fastapi-lambda-apigateway-800x365.png 850 >}}
+执行上面的 curl 命令，全部通过。<br/><br/>
+<h2>API Gateway + Lambda 集成</h2>
+创建 API Gateway 同样选择  HTTP API，选择集成 Lambda，版本选择 2.0。创建一样的 route<br/>
+<blockquote>
+route: ANY /{proxy+}
+</blockquote>
+
+集成到 Lambda<br/>
+<blockquote>
+/{proxy+} ANY -&gt; Lambda function: fastapi-lambda
+</blockquote>
+
+部署到 $default Stage 后产生 API Gateway URL, 如 https://2mgr5mplc1.execute-api.us-east-1.amazonaws.com/。 同样，可经由该 URL 访问 Swagger UI，通过相同的 curl 命令测试。<br/><br/>
+<h2>API Gateway REST API + Lambda 集成</h2>
+创建 API Gateway 时选择 REST API, 创建 Resource/Action<br/>
+<blockquote>
+<code>/ ANY</code>  -&gt; Integration type: Lambda Function, Use Lambda proxy Integration, 选择 fastapi-lambda
+<code>/{proxy+} ANY</code>, proxy resource -&gt; Integration type: Lambda Fucntion proxy, 选择 fastapi-lambda
+</blockquote>
+
+完后部署到 test Stage, 产生一个 URL，如 https://gos0owi9r4.execute-api.us-east-1.amazonaws.com/test, 测试<br/>
+<blockquote>
+ ➜ curl https://gos0owi9r4.execute-api.us-east-1.amazonaws.com/test<br />
+{"Hello":"World"}%<br />
+ ➜ curl https://gos0owi9r4.execute-api.us-east-1.amazonaws.com/test/items/123\?q\=abc<br />
+{"item_id":123,"q":"abc"}%<br />
+ ➜  curl https://gos0owi9r4.execute-api.us-east-1.amazonaws.com/test/uploadfile \<br />
+-F "upload_file=@/Users/yanbin/demo/fastapi-lambda/main.py"<br />
+{"filename":"main.py","content":"from fastapi import FastAPI, UploadFile\nfrom mangum import Mangum\n\napp = FastAPI()\n\n\n@app.get(\"/\")\ndef read_root():\n return {\"Hello\": \"World\"}\n\n\n@app.get(\"/items/{item_id}\")\ndef read_item(item_id: int, q: str = None):\n return {\"item_id\": item_id, \"q\": q}\n\n\n@app.post(\"/uploadfile\")\ndef upload_file(upload_file: UploadFile):\n return {\"filename\": upload_file.filename, \"content\": upload_file.file.read().decode()}\n\nhandler = Mangum(app, lifespan=\"off\")\n"}
+</blockquote>
+
+但在浏览器中直接访问 https://gos0owi9r4.execute-api.us-east-1.amazonaws.com/test/docs 就有问题了<br/><br/>
+{{< bundle-image mangum-fastapi-apigateway-2-800x365.png 850 >}}
+原因是虽然我们部署 API Gateway 在 /test Stage 上，但 openapi.json 的路径仍然在 / 根目录上。即使我们在 <code>main.py</code> 中指定 openapi_url<br/>
+{{< highlight python >}}
+app = FastAPI(openapi_url="/test/openapi.json")
+{{</ highlight >}}
+<br/>
+也无济于事，因为 Swagger UI 加载 openapi.json 时变成了 https://gos0owi9r4.execute-api.us-east-1.amazonaws.com/test/openapi.json, 替换掉其中的 /test 访问的是 FastAPI 的 /openapi.json，而 FastAPI 产生的  openapi.json 的 URL 是 /test/openapi.json. Swgger UI 加载与 FastAPI 产生的 openjson.json 不能错位。<br/><br/>
+解决办法可以在本地启动 FastAPI Web 服务，把生成的 openapi.json 内容保存为 openapi.json 文件，然后在 main.app 中新增 API<br/>
+{{< highlight python >}}
+@app.get("/openapi.json")
+def openapi_json():
+    with open('openapi.json') as f:
+        return f.read()
+{{</ highlight >}}
+<br/>
+前面的指定 openapi_url="/test/openapi.json" 依然需要，/test 与 APIGateway 的 Stage 名相匹配，如有不同的 Stage 名可在 openapi_json() 函数中根据当前 URL 灵活处理。<br/><br/>
+部署后，访问 https://gos0owi9r4.execute-api.us-east-1.amazonaws.com/test/docs，熟悉的界面又回来了<br/><br/>
+{{< bundle-image mangum-fastapi-apigateway-3-800x365.png 850>}}
+这都是由于 REST API 与 Lambda 集成时没有默认的 Stage 名造成的。<br/><br/>
+<h2>FastAPI 的静态文件</h2>
+最后测试一下 Lambda 中部署 FastAPI 的静态文件，在 fastapi-lambda 目录中创建目录及文件<br/>
+<blockquote>
+static<br />
+├── index.html<br />
+├── main.css<br />
+└── main.js
+</blockquote>
+
+index.html 的内容如下<br/>
+{{< highlight html >}}
+<html>
+  <head>
+    <link rel="stylesheet" href="main.css">
+    <script src="main.js"></script>
+    <title>Test FastAPI static file in Lambda</title>
+  </head>
+  <body>
+    <div style="text-align: center">
+      <h1>Hello FastAPI</h1>
+      <button onclick="btn_click()">click me</button>
+    </div>
+  </body>
+</html>
+{{</ highlight >}}
+<br/>
+main.css 中定义了 button 的样式<br/>
+{{< highlight css >}}
+button {
+  background-color: lightblue
+}
+{{</ highlight >}}
+<br/>
+main.js 中定义了 btn_click 函数<br/>
+{{< highlight js >}}
+function btn_click() {
+  alert("button clicked");
+}
+{{</ highlight >}}
+<br/>
+重新打包<br/>
+<blockquote>
+$ zip -r fastapi-lambda.zip *
+</blockquote>
+
+部署到 Lambda, 然后用 Lambda 的 Function URL 访问 https://onbfbzsxxrdsirutnrpbz32qfm0cxbgc.lambda-url.us-east-1.on.aws/static/index.html，符合预期<br/><br/>
+{{< bundle-image mangum-fastapi-lambda-static-800x329.png 620 >}}
+<br/>
+整个验证下来，Mangum + FastAPI + AWS Lambda 不仅能实现 RestAPI, 做个正常的网站都没问题。<br/><br/>
+<h2>总结：</h2>
+Mangum + FastAPI 部署到 Lambda 使得 FastAPI 也是一个 Serverless 服务，同时具有了完备的功能，编程方式也未曾改变。<br/><br/>
+综上几种应用集成的方式，最简单的方式莫过于启用 Lambda Function URL, 然后用 API Gateway 通过 HTTP 与 Lambda Function URL 集成。使用了 API Gateway 的好处是可以给 API Gateway 使用自定义域名，使得 API 更友好。<br/><br/>
+另外，在使用 API Gateway  集成 AWS Lambda 请留意相应的访问权限配置，如果通过 AWS 控制台操作的话都是自动配置的，用 Terraform 等工具的会多一点工作，简单起见，能用通配符就用通配符，安全访问控制可在 Python 代码中处理。<br/><br/>
+如果能接受 Lambda Payload 6M 的限制和最大 30 秒的响应限制话，使用 API Gateway + Lambda (Mangum + FastAPI) 还是很划算的，部署后不用的话零成本，而且还能更简单的用上访问认证，配额监控，API Gateway 想公开或是私有(Regional)的都更随意。
