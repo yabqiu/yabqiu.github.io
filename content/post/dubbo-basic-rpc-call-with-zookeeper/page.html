@@ -1,0 +1,457 @@
+---
+title: Dubbo 最基础的 RPC 应用(使用 ZooKeeper)
+url: /dubbo-basic-rpc-call-with-zookeeper/
+date: 2024-08-23T11:17:39-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/dubbo-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - ZooKeeper
+  - Dubbo
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13719 
+wpStatus: publish
+views: 156
+lastmod: 2024-08-23T12:25:41-05:00
+---
+
+看国内的一些项目时 Dubbo 这个词经常闪现，一直也不以为然，未作搜索，当然也不知道它是做什么用的。直到最近阅读关于大型网站架构相关的书中反复提到 Dubbo 后，觉得不能再对它视而不见。Google 了一下，它是在阿里巴巴创建贡献给了 Apache 的开源项目，在阿里巴巴的大型应用中久经考验过的。Dubbo 是什么呢？借用官方 <a href="https://dubbo.apache.org/zh-cn/overview/what/">Dubbo 介绍</a></p>
+
+<blockquote>
+Apache Dubbo 是一款 RPC 服务开发框架，用于解决微服务架构下的服务治理与通信问题，官方提供了 Java、Golang 等多语言 SDK 实现。使用 Dubbo 开发的微服务原生具备相互之间的远程地址发现与通信能力， 利用 Dubbo 提供的丰富服务治理特性，可以实现诸如服务发现、负载均衡、流量调度等服务治理诉求。Dubbo 被设计为高度可扩展，用户可以方便的实现流量拦截、选址的各种定制逻辑。
+</blockquote>
+
+Dubbo 是国内企业贡献的，所以官方有原生的中文文档，它某些时候与 Spring Cloud 齐名，又有些像 AWS 的 ECS Service Discovery, Service Connect 加上 ELB 的功能。<!--more--><br/><br/>
+Dubbo 可以与 Spring/Spring Boot 中很好的工作，不过本文只想完全脱离 Spring 框架，实际操作一个最基本的 Dubbo RPC 应用来理解 Dubbo 的架构。熟悉之后，Spring 的介入不外乎就是把本来代码实现的内容移入到配置文件或 Java 注解，不会是难事。<br/><br/>
+{{< bundle-image dubbo-architecture.jpg 450 >}}
+这是一个 Dubbo 服务的基本架构<br/><br/>
+<ol>
+    <li>服务注册器是一个 Zookeeper</li>
+    <li>Provider 启动时向 Registry 注册自己的服务，下线后 Zookeeper 会清除该服务注册</li>
+    <li>Consumer 从 Registry  获得可用的服务列表，然后直接向对应的 Provider 发起远程调用</li>
+</ol>
+<br/>
+可以是多个不同的 Provider 提供不同的服务，或者相同的 Provider 启动多个副本提供相同的服务(集群)，Consumer 获得服务后按一定的规则(比如轮询，失败重试下一个服务等规则)调用某个 Provider 实例上的服务。<br/><br/>
+首先大体上介绍本试验的内容<br/><br/>
+<ol>
+    <li>启动一个 ZooKeeper 服务器</li>
+    <li>向 ZooKeeper 注册 user-service 的两个副本 [192.168.86.49:50053, 192.168.86.49:50054]</li>
+    <li>再向 ZooKeeper 注册 order-service 一份 [192.168.86.49:50052]</li>
+    <li>user-service 客户端从 ZooKeeper 找到有两个副本 [192.168.86.49:50053, 192.168.86.49:50054] 提供服务，多个调用会 user-service 时，请求会均衡到这两个副本上。如是其中的一个副本(如 192.168.86.49:50053) 下线，则只会调用剩下的 192.168.86.49:50054。假如调用某个服务失败(出现异常)也能重试另一个副本(192.168.86.49:50054)</li>
+    <li>order-service 客户端从 ZooKeeper 找到 192.168.86.49:50052 服务进行调用</li>
+    <li>我们将用 ZooKeeper 客户端 zkCli.sh 观察服务注册和下线后在 ZooKeeper 中发生了什么</li>
+</ol>
+<br/>
+下面试验开始<br/><br/>
+<h3>启动一个 ZooKeeper 作为服务注册器</h3>
+使用 Docker<br/>
+<blockquote>
+$ docker run -p 2181:2181 zookeeper:3.9.2
+</blockquote>
+
+从容器中暴露出 2181 端口号<br/><br/>
+<h3>Maven 项目引入所需的依赖</h3>
+不管是 Java 的服务端还是客户端都需要引入 Dubbo 依赖，假设是用 Maven 管理项目。<br/><br/>
+当前 Dubbo 的正式版本是 3.2.15, 经过一番测试后发现它实际支持的 Java 版本是 1.8。用高版本的 JDK 如 11, 17, 21 的话，服务端能启动成功并完成向 ZooKeeper 的注册，但时而也会出现如下错误<br/>
+<blockquote>
+java.lang.reflect.InaccessibleObjectException: Unable to make field private java.lang.String java.lang.StackTraceElement.fileName accessible: module java.base does not "opens java.lang" to unnamed module
+</blockquote>
+
+但客户端用 Dubbo 3.2.15 + 高于 JDK 1.8 的版本调用服务总是失败的<br/><br/>
+所以如果用 Dubbo 3.2.15 的版本，请用 JDK 1.8, 在 pom.xml 中需要的依赖是<br/>
+{{< highlight xml >}}
+<dependency>
+    <groupId>org.apache.dubbo</groupId>
+    <artifactId>dubbo</artifactId>
+    <version>3.2.15</version>
+</dependency>
+<dependency>
+    <groupId>org.apache.curator</groupId>
+    <artifactId>curator-framework</artifactId>
+    <version>5.7.0</version>
+</dependency>
+<dependency>
+    <groupId>org.apache.curator</groupId>
+    <artifactId>curator-x-discovery</artifactId>
+    <version>5.7.0</version>
+</dependency>
+<dependency>
+    <groupId>com.google.protobuf</groupId>
+    <artifactId>protobuf-java</artifactId>
+    <version>3.21.1</version>
+&lt;/dependency>
+{{</ highlight >}}
+<br/>
+(官方的例子用的组合是 Dubbo 3.2.0-beta.4 + JDK 17，读者可自行尝试)<br/><br/>
+Dubbo 会引入其他许多的运行时依赖，如 spring-beans,  spring-conext, spring-aop, spring-core, spring-jcl, spring-expression, spring 组件的版本是 5.3.37; io.netty 等一系列通信用的组件, alibaba:hessian 以及其他<br/><br/>
+没有 curator-framework 可能出现错误  java.lang.NoClassDefFoundError: org/apache/curator/framework/api/ACLProvider 或 java.lang.NoClassDefFoundError: org/apache/curator/framework/CuratorFrameworkFactory<br/><br/>
+没有 curator-x-discovery 可能会出现错误 java.lang.ClassNotFoundException: org.apache.curator.x.discovery.ServiceDiscoveryBuilder<br/><br/>
+但从 Dubbo 3.3.0 开始可完美支持 Java 21, 当前尚处于 beta.5 的版本<br/><br/>
+如果在高于 Java 1.8 的 JDK(如 Java 21) 中使用 Dubbo, 就可以引入如下依赖<br/>
+{{< highlight xml >}}
+<dependency>
+    <groupId>org.apache.dubbo</groupId>
+    <artifactId>dubbo</artifactId>
+    <version>3.3.0-beta.5</version>
+</dependency>
+<dependency>
+    <groupId>commons-logging</groupId>
+    <artifactId>commons-logging</artifactId>
+    <version>1.3.3</version>
+</dependency>
+<dependency>
+    <groupId>org.apache.curator</groupId>
+    <artifactId>curator-framework</artifactId>
+    <version>5.7.0</version>
+</dependency>
+<dependency>
+    <groupId>org.apache.curator</groupId>
+    <artifactId>curator-x-discovery</artifactId>
+    <version>5.7.0</version>
+</dependency>
+{{</ highlight >}}
+<br/>
+而且我们发现，使用 Dubbo 3.3.0-beta.5 让整个项目更干净了，因为它不引用任何 Spring 相关的依赖<br/><br/>
+<h3>定义并实现服务</h3>
+UserService<br/><br/>
+其中定义两个实现方法<br/>
+{{< highlight java >}}
+package blog.yanbin.dubbo.providers;
+
+public interface UserService {
+    boolean login(String username, String password);
+    String userInfo(String username);
+}
+{{</ highlight >}}
+<br/>
+OrderService<br/>
+{{< highlight java >}}
+package blog.yanbin.dubbo.providers;
+
+public interface OrderService {
+    int addOrder(String productName, int number);
+}
+{{</ highlight >}}
+<br/>
+然后是它们的模拟实现类<br/>
+{{< highlight java >}}
+package blog.yanbin.dubbo.providers;
+
+import java.util.Objects;
+
+public class UserServiceImpl implements UserService {
+
+    private final int servicePort;
+
+    public UserServiceImpl(int servicePort) {
+        this.servicePort = servicePort;
+    }
+
+    @Override
+    public boolean login(String username, String password) {
+        System.out.printf("userService %d get called%n", servicePort);
+        return Objects.equals(username, "admin") && Objects.equals(password, "666");
+    }
+
+    @Override
+    public String userInfo(String username) {
+        return String.format("Detailed information of %s from %s", username, servicePort);
+    }
+}
+{{</ highlight >}}
+<br/>
+计划在不同的端口上启动两个 user-service 服务，以此来测试服务的集群。用 servicePort 区分出来，在调用 login 接口时将从控制台输出分辨出谁被调用<br/>
+{{< highlight java >}}
+package blog.yanbin.dubbo.providers;
+
+import java.util.Random;
+
+public class OrderServiceImpl implements OrderService {
+
+    @Override
+    public int addOrder(String productName, int number) {
+        return Math.abs(new Random().nextInt());
+    }
+}
+{{</ highlight >}}
+<br/>
+<h3>实现服务启动程序</h3>
+有了前面的接口方法和实现类，还要用主程序把它们启动后并注册到 ZooKeeper 上供客户端查询，若是用 Spring/SpringBoot 的话，这些任务可通过配置文件和框架来实现<br/><br/>
+UserServiceStarter<br/>
+{{< highlight java >}}
+package blog.yanbin.dubbo.providers;
+
+import org.apache.dubbo.config.ProtocolConfig;
+import org.apache.dubbo.config.RegistryConfig;
+import org.apache.dubbo.config.ServiceConfig;
+import org.apache.dubbo.config.bootstrap.DubboBootstrap;
+import org.apache.dubbo.config.bootstrap.builders.ServiceBuilder;
+
+public class UserServiceStarter {
+    public static void main(String[] args) {
+        int servicePort = Integer.parseInt(args[0]);
+        ServiceConfig<UserService> serviceConfig = ServiceBuilder.<UserService>newBuilder()
+            .interfaceClass(UserService.class).ref(new UserServiceImpl(servicePort)).build();
+
+        DubboBootstrap.getInstance()
+            .application("user-service")
+            .registry(new RegistryConfig("zookeeper://localhost:2181"))
+            .protocol(new ProtocolConfig("tri", servicePort))
+            .service(serviceConfig)
+            .start()
+            .await();
+    }
+}
+{{</ highlight >}}
+<br/>
+由于将在本机上不同的端口上启动 user-serivce 服务, 所以可通过参数指定端口号。如果上面未指定 registry，则服务不会注册到 ZooKeeper 上，但服务仍能启动，启动在 localhost:&lt;servicePort&gt; 上，客户端也能跳过 ZooKeeper 直接调用 tri://localhost:&lt;servicePort&gt;<br/><br/>
+如果不指定 protocol 的端口号，默认为 50051; 端口号置为 <code>-1</code> , 协议为 <code>tri</code> 的话，则会从 50051 开始自增选择端口号，如 protocol(new ProtocolConfig("tri", -1), 这样就可以一个服务在本机上启动多次，端口号依次为 50051, 50052, 50053,....。不同协议的起始端口号是不一样的。<br/><br/>
+Dubbo 支持的协议有 dubbo, rest, http, hessian, redis, thrift, grpc, memcached, rmi, webservice. 默认协议是 <code>dubbo</code>, 因此也可以完全省略 protocol() 方法调用。希望在 Dubbo 客户端中从 ZooKeeper 中发现并调用 redis, memcached 等服务，则需要预先把它们注册到 ZooKeeper 中。<br/><br/>
+OrderServiceStarter<br/>
+{{< highlight java >}}
+package blog.yanbin.dubbo.providers;
+
+import org.apache.dubbo.config.ProtocolConfig;
+import org.apache.dubbo.config.RegistryConfig;
+import org.apache.dubbo.config.ServiceConfig;
+import org.apache.dubbo.config.bootstrap.DubboBootstrap;
+import org.apache.dubbo.config.bootstrap.builders.ServiceBuilder;
+
+public class OrderServiceStarter {
+
+    public static void main(String[] args) {
+        ServiceConfig<OrderService> serviceConfig = ServiceBuilder.<OrderService>newBuilder()
+            .interfaceClass(OrderService.class).ref(new OrderServiceImpl()).build();
+
+        DubboBootstrap.getInstance()
+            .application("order-service")
+            .registry(new RegistryConfig("zookeeper://localhost:2181"))
+            .protocol(new ProtocolConfig("tri", 50052))
+            .service(serviceConfig)
+            .start()
+            .await();
+    }
+}
+{{</ highlight >}}
+<br/>
+<h3>启动服务并注册到 ZooKeeper 上</h3>
+因为使用了 Maven 来管理项目依赖，编译后用 java 命令来启动服务必须为 classpath 指定众多的 jar 包(除非用 Maven 的  Assembly 或 SpringBoot 插件做成 fat.jar )，所以用 Maven 的 exec 插件来启动主程序方便些<br/><br/>
+<h4>在 50053 端口号上启动 user-service</h4>
+<blockquote>
+mvn compile exec:java -Dexec.mainClass=blog.yanbin.dubbo.providers.UserServiceStarter -Dexec.args=50053
+</blockquote>
+
+服务启动后在 Zookeeper 中增加了几个键，用 zkCli 查看下<br/>
+<blockquote>
+zkCli -server localhost:2181
+</blockquote>
+
+连上后执行 zookeeper 命令 <br/>
+{{< highlight text >}}
+[zk: localhost:2181(CONNECTED) 0] ls /
+[dubbo, services, zookeeper]
+[zk: localhost:2181(CONNECTED) 1] ls /dubbo
+[blog.yanbin.dubbo.providers.UserService]
+[zk: localhost:2181(CONNECTED) 2] ls /dubbo/blog.yanbin.dubbo.providers.UserService
+[configurators, providers]
+[zk: localhost:2181(CONNECTED) 3] ls /dubbo/blog.yanbin.dubbo.providers.UserService/configurators
+[]
+[zk: localhost:2181(CONNECTED) 9] get /dubbo/blog.yanbin.dubbo.providers.UserService/configurators
+192.168.86.49
+[zk: localhost:2181(CONNECTED) 4] ls /dubbo/blog.yanbin.dubbo.providers.UserService/providers
+[tri%3A%2F%2F192.168.86.49%3A50053%2Fblog.yanbin.dubbo.providers.UserService%3Fapplication%3Duser-service%26deprecated%3Dfalse%26dubbo%3D2.0.2%26dynamic%3Dtrue%26environment%3Dproduct%26generic%3Dfalse%26interface%3Dblog.yanbin.dubbo.providers.UserService%26logger%3Djcl%26methods%3Dlogin%2CuserInfo%26prefer.serialization%3Dfastjson2%2Chessian2%26release%3D3.2.15%26service-name-mapping%3Dtrue%26side%3Dprovider%26timestamp%3D1724384955118]
+[zk: localhost:2181(CONNECTED) 5] ls /services
+[user-service]
+[zk: localhost:2181(CONNECTED) 6] ls /services/user-service
+[192.168.86.49:50053]
+[zk: localhost:2181(CONNECTED) 7] ls /services/user-service/192.168.86.49:50053
+[]
+[zk: localhost:2181(CONNECTED) 8] get /services/user-service/192.168.86.49:50053
+{"name":"user-service","id":"192.168.86.49:50053","address":"192.168.86.49","port":50053,"sslPort":null,"payload":{"@class":"org.apache.dubbo.registry.zookeeper.ZookeeperInstance","id":"192.168.86.49:50053","name":"user-service","metadata":{"dubbo.endpoints":"[{\"port\":50053,\"protocol\":\"tri\"}]","dubbo.metadata-service.url-params":"{\"prefer.serialization\":\"fastjson2,hessian2\",\"version\":\"1.0.0\",\"dubbo\":\"2.0.2\",\"release\":\"3.2.15\",\"side\":\"provider\",\"port\":\"50053\",\"protocol\":\"tri\"}","dubbo.metadata.revision":"228dd49adee966aa56da7a27a4ec9dff","dubbo.metadata.storage-type":null,"timestamp":"1724384955118"}},"registrationTimeUTC":1724384956129,"serviceType":"DYNAMIC","uriSpec":null}
+{{</ highlight >}}
+<br/>
+/dubbo/blog.yanbin.dubbo.providers.UserService/providers 的内容要进行 URL Decode<br/>
+<blockquote>
+tri://192.168.86.49:50053/blog.yanbin.dubbo.providers.UserService?application=user-service&amp;deprecated=false&amp;dubbo=2.0.2&amp;dynamic=true&amp;environment=product&amp;generic=false&amp;interface=blog.yanbin.dubbo.providers.UserService&amp;logger=jcl&amp;methods=login,userInfo&amp;prefer.serialization=fastjson2,hessian2&amp;release=3.2.15&amp;service-name-mapping=true&amp;side=provider&amp;timestamp=1724384955118
+</blockquote>
+
+<h4>再 50054 端口上启动另一份 user-service 服务</h4>
+<blockquote>
+mvn compile exec:java -Dexec.mainClass=blog.yanbin.dubbo.providers.UserServiceStarter -Dexec.args=50054
+</blockquote>
+
+查看 ZooKeeper 上的值<br/>
+{{< highlight text >}}
+[zk: localhost:2181(CONNECTED) 14] ls /services/user-service
+[192.168.86.49:50053, 192.168.86.49:50054]
+[zk: localhost:2181(CONNECTED) 15] get /services/user-service/192.168.86.49:50054
+{"name":"user-service","id":"192.168.86.49:50054","address":"192.168.86.49","port":50054,"sslPort":null,"payload":{"@class":"org.apache.dubbo.registry.zookeeper.ZookeeperInstance","id":"192.168.86.49:50054","name":"user-service","metadata":{"dubbo.endpoints":"[{\"port\":50054,\"protocol\":\"tri\"}]","dubbo.metadata-service.url-params":"{\"prefer.serialization\":\"fastjson2,hessian2\",\"version\":\"1.0.0\",\"dubbo\":\"2.0.2\",\"release\":\"3.2.15\",\"side\":\"provider\",\"port\":\"50054\",\"protocol\":\"tri\"}","dubbo.metadata.revision":"ab021a032ce32d362bf3b653a27050c1","dubbo.metadata.storage-type":null,"timestamp":"1724385567323"}},"registrationTimeUTC":1724385568323,"serviceType":"DYNAMIC","uriSpec":null}
+[zk: localhost:2181(CONNECTED) 24] ls /dubbo/blog.yanbin.dubbo.providers.UserService/providers
+[tri%3A%2F%2F192.168.86.49%3A50053%2Fblog.yanbin.dubbo.providers.UserService%3Fapplication%3Duser-service%26deprecated%3Dfalse%26dubbo%3D2.0.2%26dynamic%3Dtrue%26environment%3Dproduct%26generic%3Dfalse%26interface%3Dblog.yanbin.dubbo.providers.UserService%26logger%3Djcl%26methods%3Dlogin%2CuserInfo%26prefer.serialization%3Dfastjson2%2Chessian2%26release%3D3.2.15%26service-name-mapping%3Dtrue%26side%3Dprovider%26timestamp%3D1724384955118, tri%3A%2F%2F192.168.86.49%3A50054%2Fblog.yanbin.dubbo.providers.UserService%3Fapplication%3Duser-service%26deprecated%3Dfalse%26dubbo%3D2.0.2%26dynamic%3Dtrue%26environment%3Dproduct%26generic%3Dfalse%26interface%3Dblog.yanbin.dubbo.providers.UserService%26logger%3Djcl%26methods%3Dlogin%2CuserInfo%26prefer.serialization%3Dfastjson2%2Chessian2%26release%3D3.2.15%26service-name-mapping%3Dtrue%26side%3Dprovider%26timestamp%3D1724385567323]{{</ highlight >}}
+<br/>
+user-service 服务有两个，分别是 192.168.86.49:50053 和 192.168.86.49.50053<br/><br/>
+看 URL Decoded /dubbo/blog.yanbin.dubbo.providers.UserService/providers<br/>
+<blockquote>
+tri://192.168.86.49:50053/blog.yanbin.dubbo.providers.UserService?application=user-service&amp;deprecated=false&amp;dubbo=2.0.2&amp;dynamic=true&amp;environment=product&amp;generic=false&amp;interface=blog.yanbin.dubbo.providers.UserService&amp;logger=jcl&amp;methods=login,userInfo&amp;prefer.serialization=fastjson2,hessian2&amp;release=3.2.15&amp;service-name-mapping=true&amp;side=provider&amp;timestamp=1724384955118,tri://192.168.86.49:50054/blog.yanbin.dubbo.providers.UserService?application=user-service&amp;deprecated=false&amp;dubbo=2.0.2&amp;dynamic=true&amp;environment=product&amp;generic=false&amp;interface=blog.yanbin.dubbo.providers.UserService&amp;logger=jcl&amp;methods=login,userInfo&amp;prefer.serialization=fastjson2,hessian2&amp;release=3.2.15&amp;service-name-mapping=true&amp;side=provider&amp;timestamp=1724385567323
+</blockquote>
+
+<h4>启动 OrderService 服务</h4>
+<blockquote>
+mvn compile exec:java -Dexec.mainClass=blog.yanbin.dubbo.providers.OrderServiceStarter
+</blockquote>
+
+查看 ZooKeeper<br/>
+{{< highlight text >}}
+[zk: localhost:2181(CONNECTED) 21] ls /dubbo
+[blog.yanbin.dubbo.providers.OrderService, blog.yanbin.dubbo.providers.UserService]
+[zk: localhost:2181(CONNECTED) 22] get /dubbo/blog.yanbin.dubbo.providers.OrderService/configurators
+192.168.86.49
+[zk: localhost:2181(CONNECTED) 25] ls /dubbo/blog.yanbin.dubbo.providers.OrderService/providers
+[tri%3A%2F%2F192.168.86.49%3A50052%2Fblog.yanbin.dubbo.providers.OrderService%3Fapplication%3Dorder-service%26deprecated%3Dfalse%26dubbo%3D2.0.2%26dynamic%3Dtrue%26environment%3Dproduct%26generic%3Dfalse%26interface%3Dblog.yanbin.dubbo.providers.OrderService%26logger%3Djcl%26methods%3DaddOrder%26prefer.serialization%3Dfastjson2%2Chessian2%26release%3D3.2.15%26service-name-mapping%3Dtrue%26side%3Dprovider%26timestamp%3D1724385905085]
+[zk: localhost:2181(CONNECTED) 26] ls /services
+[order-service, user-service]
+[zk: localhost:2181(CONNECTED) 27] ls /services/order-service
+[192.168.86.49:50052]
+[zk: localhost:2181(CONNECTED) 29] get /services/order-service/192.168.86.49:50052
+{"name":"order-service","id":"192.168.86.49:50052","address":"192.168.86.49","port":50052,"sslPort":null,"payload":{"@class":"org.apache.dubbo.registry.zookeeper.ZookeeperInstance","id":"192.168.86.49:50052","name":"order-service","metadata":{"dubbo.endpoints":"[{\"port\":50052,\"protocol\":\"tri\"}]","dubbo.metadata-service.url-params":"{\"prefer.serialization\":\"fastjson2,hessian2\",\"version\":\"1.0.0\",\"dubbo\":\"2.0.2\",\"release\":\"3.2.15\",\"side\":\"provider\",\"port\":\"50052\",\"protocol\":\"tri\"}","dubbo.metadata.revision":"f0d8ba04b6cebfa43ce7893de4acbbe0","dubbo.metadata.storage-type":null,"timestamp":"1724385905085"}},"registrationTimeUTC":1724385905985,"serviceType":"DYNAMIC","uriSpec":null}{{</ highlight >}}
+<br/>
+URL decoded /dubbo/blog.yanbin.dubbo.providers.OrderService/providers<br/>
+<blockquote>
+tri://192.168.86.49:50052/blog.yanbin.dubbo.providers.OrderService?application=order-service&amp;deprecated=false&amp;dubbo=2.0.2&amp;dynamic=true&amp;environment=product&amp;generic=false&amp;interface=blog.yanbin.dubbo.providers.OrderService&amp;logger=jcl&amp;methods=addOrder&amp;prefer.serialization=fastjson2,hessian2&amp;release=3.2.15&amp;service-name-mapping=true&amp;side=provider&amp;timestamp=1724385905085
+</blockquote>
+
+现在 Zookeeper 上注册有 user-service 和 order-service 服务<br/><br/>
+<h3>客户端调用测试</h3>
+UserServiceClient<br/>
+{{< highlight java >}}
+package blog.yanbin.dubbo.clients;
+
+import blog.yanbin.dubbo.providers.UserService;
+import org.apache.dubbo.config.ApplicationConfig;
+import org.apache.dubbo.config.ReferenceConfig;
+import org.apache.dubbo.config.RegistryConfig;
+import org.apache.dubbo.config.bootstrap.DubboBootstrap;
+import org.apache.dubbo.config.bootstrap.builders.ReferenceBuilder;
+
+import java.util.Collections;
+
+public class UserServiceClient {
+    public static void main(String[] args) {
+        ReferenceConfig<UserService> reference = ReferenceBuilder.<UserService>newBuilder()
+                .interfaceClass(UserService.class)
+                .application(new ApplicationConfig("userServiceClient"))
+                .addRegistries(Collections.singletonList(new RegistryConfig("zookeeper://localhost:2181")))
+//                .url("tri://localhost:50053")
+                .build();
+
+        DubboBootstrap.getInstance().reference(reference);
+        UserService service = reference.get();
+
+        boolean loggedIn = service.login("admin", "666");
+        System.out.println("login result: " + loggedIn);
+
+        loggedIn = service.login("admin", "www");
+        System.out.println("login result: " + loggedIn);
+
+        for (int i = 0; i < 5; i++) {
+            String userInfo = service.userInfo("admin");
+            System.out.println("userInfo: " + userInfo);
+        }
+
+        System.exit(0);
+    }
+}
+{{</ highlight >}}
+<br/>
+调用<br/>
+<blockquote>
+$ mvn compile exec:java -Dexec.mainClass=blog.yanbin.dubbo.clients.UserServiceClient<br />
+login result: true<br />
+login result: false<br />
+userInfo: Detailed information of admin from 50053<br />
+userInfo: Detailed information of admin from 50054<br />
+userInfo: Detailed information of admin from 50053<br />
+userInfo: Detailed information of admin from 50053<br />
+userInfo: Detailed information of admin from 50054
+</blockquote>
+
+上面的 UserServiceClient 如果不用 <code>addRegistries(...)</code> 代码而启用 <code>.url("tri://localhost:50053")</code> 则不从 Zookeeper 中查询服务直接调用 localhost:50053 上的服务<br/><br/>
+如果关掉 50053 端口上对应的服务进程(Mac 下用 cmd + z)，进程处在 suspended 状态，在 Zookeeper 上的  50053 也马上消失掉。如果用 kill -9 &lt;pid&gt; 来强杀进服务进程，在 ZooKeeper 上仍然有一会儿能看到 /services/user-service/192.168.86.49:50053 这个服务，但过个大约一分钟也就消失了。<br/>
+{{< highlight text >}}
+[zk: localhost:2181(CONNECTED) 39] ls /services/user-service
+[192.168.86.49:50054]{{</ highlight >}}
+<br/>
+测试<br/>
+<blockquote>
+$ mvn clean compile exec:java -Dexec.mainClass=blog.yanbin.dubbo.clients.UserServiceClient<br />
+login result: true<br />
+login result: false<br />
+userInfo: Detailed information of admin from 50054<br />
+userInfo: Detailed information of admin from 50054<br />
+userInfo: Detailed information of admin from 50054<br />
+userInfo: Detailed information of admin from 50054<br />
+userInfo: Detailed information of admin from 50054
+</blockquote>
+<br/>
+本例中未模拟调用失败重试下一次服务的情况，如调用 192.168.86.49:50053 失败，再重试 192.168.86.49:50054 上的 user-service。Dubbo 有更多的调用策略设置，实战时可进一步深究。<br/><br/>
+测试 OrderService<br/>
+{{< highlight java >}}
+package blog.yanbin.dubbo.clients;
+
+import blog.yanbin.dubbo.providers.OrderService;
+import org.apache.dubbo.config.ReferenceConfig;
+import org.apache.dubbo.config.RegistryConfig;
+import org.apache.dubbo.config.bootstrap.DubboBootstrap;
+import org.apache.dubbo.config.bootstrap.builders.ReferenceBuilder;
+
+public class OrderServiceClient {
+    public static void main(String[] args) {
+        ReferenceConfig<OrderService> reference = ReferenceBuilder.<OrderService>newBuilder()
+                .interfaceClass(OrderService.class).build();
+
+        DubboBootstrap.getInstance().reference(reference)
+            .application("orderServiceClient")
+            .registry(new RegistryConfig("zookeeper://localhost:2181"));
+        OrderService service = reference.get();
+
+        int orderId = service.addOrder("laptop", 1);
+        System.out.println("new orderId: " + orderId);
+        System.exit(0);
+    }
+}
+{{</ highlight >}}
+<br/>
+运行<br/>
+<blockquote>
+$mvn clean compile exec:java -Dexec.mainClass=blog.yanbin.dubbo.clients.OrderServiceClient<br />
+new orderId: 525400174
+</blockquote>
+
+<h3>Dubbo 3.2.15 与 高于 Java 1.8 的兼容问题</h3>
+前面提到过 Dubbo 3.2.15 只能用 JDK 1.8, 实测时在运行客户端时，使用  Dubbo 3.2.15 时，如果用的 JDK 版本是 11, 17, 或 21 的话，会出都类似如下各种情形的错误<br/>
+<blockquote>
+java.lang.reflect.InaccessibleObjectException: Unable to make field private java.lang.String java.lang.StackTraceElement.fileName accessible: module java.base does not "opens java.lang" to unnamed module<br />
+......<br />
+java.lang.reflect.InaccessibleObjectException: Unable to make field final int java.math.BigInteger.signum accessible<br />
+....<br />
+org.apache.dubbo.rpc.RpcException: java.util.concurrent.ExecutionException: org.apache.dubbo.rpc.StatusRpcException: CANCELLED : Canceled by remote peer, errorCode=8<br />
+......<br />
+java.lang.NoClassDefFoundError: io/netty/util/concurrent/DefaultPromise$1
+</blockquote>
+
+配置的 JDK_JAVA_OPTIONS 环境变量也不管用<br/>
+<blockquote>
+export JDK_JAVA_OPTIONS="--add-opens java.base/java.util=ALL-UNNAMED --add-opens=java.base/java.net=ALL-UNNAMED"
+</blockquote>
+
+最后一步步从 Java 21 降级到 Java 1.8 才跑通<br/><br/>
+<h3>链接</h3>
+本文主要参考是官方的 <a href="https://dubbo.apache.org/en/docs3-v2/java-sdk/quick-start/api/">Develop microservice applications based on Dubbo API</a>，其中用的版本组合是 Dubbo 3.2.0-beta.4 + JDK 17。而本人使用 Dubbo 3.2.15 + JDK 1.8+ 都不行，或许是其他依赖的问题，还是因为通信协议是 dubbo 的缘故？以上试验中遇到的各种问题都是通过 Google 找到答案，感谢 Google。<br/><br/>
+以上只是一个简单的 RPC 远程调用的实例，实际不过是 Dubbo 功能的一小部分，它能做的远比这个丰富。一次粗浅的体验，就看现实中是否有机会用到才会去进一步深入。
