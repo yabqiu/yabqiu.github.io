@@ -1,0 +1,228 @@
+---
+title: Docker 容器内进程与 Namespace
+url: /docker-process-namespace/
+date: 2020-03-29T15:20:43-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/docker-logo.png"
+categories:
+  - Docker
+tags: 
+  - NameSpace
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 10012 
+wpStatus: publish
+views: 1511
+lastmod: 2020-03-29T17:17:34-05:00
+---
+
+原本是继续阅读《每天5分钟玩转Kubernetes》一书的，发现该书所用的 Kubernetes 版本着实有点老旧( 1.7), 当前版本是 1.18。操作起来有些不同，所以找来了最新的 《Kubernetes in Action》第二版 来看，该书还在写作当中。第二章全是讲 Docker 的内容，本人读书有个不好的习惯，就是不喜欢跳过跳过。看了总会有收获的，这不，就从中稍微理清了 Docker 容器内进程与 Namespace 的关系。<br/><br/>
+Docker 容器间的进程本质上是宿主主上的一个进程，它能相互隔离靠的是 chroot, namespace 和 cgroup(对 CPU, 内存，磁盘，带宽等的配额)。千万不要认为启动一个 Docker 容器就是启动了一个虚拟机。<br/><br/>
+其中 namespace 实现了以下几项资源的隔离<br/><br/>
+<ol>
+    <li>Mount: 挂载点(文件系统)</li>
+    <li>PID: 进程 ID</li>
+    <li>Network: 网络设备，网络栈，端口等</li>
+    <li>IPC： 进程间通信，信号量，消息队列和共享等</li>
+    <li>UTS： 主机名和域名</li>
+    <li>User ID: 用户和组 ID</li>
+</ol>
+<br/>
+<!--more--><br/>
+我们下载来检验 Docker 容器中的进程是否是宿主机的进程，还可以作个测试让两个容器共享相同的 Network 和 UTS 两个 Namespace. 由此也可以想像一下 Kubernetes 把多个容器放到一个 Pod 中，它们应该也是共享了 Namespace 的。<br/><br/>
+<h3>创建测试 Docker 镜像</h3>
+在测试之前我们创建一个自己的 Docker 镜像，需两个文件，app.py 和 Dockerfile，它们的内容分别为<br/><br/>
+app.py<br/>
+{{< highlight python >}}
+import sys
+import socket
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers();
+        self.wfile.write(('You hit: ' + socket.gethostname() + '\n').encode())
+
+port = int(sys.argv[1])
+httpd = HTTPServer(('', port), SimpleHTTPRequestHandler);
+httpd.serve_forever()
+{{</ highlight >}}
+<br/>
+Dockerfile<br/>
+{{< highlight docker >}}
+FROM python:3.7.7-alpine3.10
+ADD app.py /app.py
+ENTRYPOINT ["python", "app.py"]
+{{</ highlight >}}
+<br/>
+然后运行 <code>docker build -t python-web .</code> 创建镜像 <code>python-web</code><br/><br/>
+<h3>启动容器</h3>
+现在用刚刚创建的 <code>python-web</code> 启动两个容器，命令为 <code>docker run -d --name web1 -p8000:8000 python-web 8000</code><br/><br/>
+{{< bundle-image docker-namespace-1-800x164.png 800 >}}
+<h3>查看容器中的进程</h3>
+容器启动后用 <code>docker exec -it 69 sh</code> 登陆到该容器的 shell 查看容器内的进程<br/>
+<blockquote>
+ubuntu# docker exec -it 82 sh<br />
+/ # ps aux<br />
+PID USER TIME COMMAND<br />
+1 root 0:00 python app.py<br />
+6 root 0:00 sh<br />
+11 root 0:00 ps aux<br />
+/ # netstat -nlp | grep 8000<br />
+tcp 0 0 0.0.0.0:8000 0.0.0.0:* LISTEN 1/python
+</blockquote>
+
+在容器内我们所看到的 <code>python app.py</code> 进程 ID 为 1<br/><br/>
+<h3>查看宿主机上的进程</h3>
+{{< bundle-image docker-namespace-2-800x97.png 592 >}}
+这就验证了容器中的进程实质是宿主机上的一个进程，如果在宿主机上的那个进程用 <code>kill 22763</code> 杀了，这时候发现相应的 Docker 容器也被杀掉了，因为 22763  对应的是容器内的 ID 为 1 的进程。<br/><br/>
+在宿主机上看下这两个进程对应的 namespace<br/>
+<blockquote>
+ubuntu# ls -l /proc/22763/ns<br />
+total 0<br />
+lrwxrwxrwx 1 root root 0 Mar 29 13:44 cgroup -&gt; 'cgroup:[4026531835]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 13:44 ipc -&gt; 'ipc:[4026532360]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 13:44 mnt -&gt; 'mnt:[4026532358]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 13:39 net -&gt; 'net:[4026532363]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 13:44 pid -&gt; 'pid:[4026532361]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 13:44 pid_for_children -&gt; 'pid:[4026532361]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 13:44 user -&gt; 'user:[4026531837]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 13:44 uts -&gt; 'uts:[4026532359]'<br />
+ubuntu# ls -l /proc/22889/ns<br />
+total 0<br />
+lrwxrwxrwx 1 root root 0 Mar 29 13:44 cgroup -&gt; 'cgroup:[4026531835]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 13:44 ipc -&gt; 'ipc:[4026532475]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 13:44 mnt -&gt; 'mnt:[4026532473]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 13:40 net -&gt; 'net:[4026532478]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 13:44 pid -&gt; 'pid:[4026532476]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 13:44 pid_for_children -&gt; 'pid:[4026532476]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 13:44 user -&gt; 'user:[4026531837]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 13:44 uts -&gt; 'uts:[4026532474]'
+</blockquote>
+
+每个 <code>python app.py</code> 都有自己的 namespace, 其中 user  共用了相同的 user:[4026531837], 其他的都不同。<br/><br/>
+注：操作系统是 Linux 下的话，宿主机就是自己，如果是用的 Mac OS X 或 Windows 用的 Dock Desktop, 那么宿主机是中间隔着的那个 Linux 虚拟机，可以如下命令进入那个虚拟机<br/>
+<blockquote>
+$ docker run --net=host --ipc=host --uts=host --pid=host -it --security-opt=seccomp=unconfined --privileged --rm -v /:/host alpine chroot /host<br />
+/ # uname -a<br />
+Linux docker-desktop 4.19.76-linuxkit #1 SMP Thu Oct 17 19:31:58 UTC 2019 x86_64 GNU/Linux
+</blockquote>
+
+此处运行一个  alpine 容器，充分利用了 Namespace 的好处，把 net, ipc, uts, pid, mnt(-v) 的 Namespace 全部指向到 host(即宿主机), chroot 也更改到了宿主机的主目录，并有完全的系统权限，所以进去看到的是宿主机的内容。<br/><br/>
+<h3>多个容器共用 Network 和 UTS</h3>
+了解了容器内进程之间的隔离是通过 namespace 达到的，并且所谓的容器内的进程实质上是宿主机上的进程。那么接下来我们让两个容器共用相同的 Network 和 UTS<br/><br/>
+用下面两个命令来启动容器<br/>
+<blockquote>
+# docker run -d --name=web1 -p8000:8000 -p 8001:8001 --uts=host python-web 8000<br />
+# docker run -d --name=web2 --network=container:web1 --uts=host python-web 8001
+</blockquote>
+
+{{< bundle-image docker-namespace-share-1-800x112.png 800 >}}
+docker run  命令有大量的命令来定制化容器的运行，用 docker run --help 查看帮助<br/><br/>
+启动 web2 时用  --network=container:web1 指定它用与  web1 相同的网络，所以端口映射必须在启动 web1 时全部指定好。假如启动 web2 同时用  --network 和 -p 或  -P 启动不会成功，它的 --network 用了  web1 的所有的端口映射关系必须会部在 web1  上设定好。 <br/><br/>
+现在在验证它们是不是真的使用了相同的网络<br/>
+<blockquote>
+ubuntu# curl http://localhost:8000<br />
+You hit: ubuntu<br />
+ubuntu# curl http://localhost:8001<br />
+You hit: ubuntu
+</blockquote>
+
+它们用了宿主机的 UTS<br/><br/>
+检查它们的 IP 地址<br/>
+<blockquote>
+ubuntu# docker exec -t web1 ifconfig<br />
+eth0 Link encap:Ethernet HWaddr 02:42:AC:11:00:02<br />
+inet addr:172.17.0.2 Bcast:172.17.255.255 Mask:255.255.0.0<br />
+UP BROADCAST RUNNING MULTICAST MTU:1500 Metric:1<br />
+RX packets:62 errors:0 dropped:0 overruns:0 frame:0<br />
+TX packets:32 errors:0 dropped:0 overruns:0 carrier:0<br />
+collisions:0 txqueuelen:0<br />
+RX bytes:6064 (5.9 KiB) TX bytes:2580 (2.5 KiB)
+lo Link encap:Local Loopback<br />
+inet addr:127.0.0.1 Mask:255.0.0.0<br />
+......
+ubuntu# docker exec -t web2 ifconfig<br />
+eth0 Link encap:Ethernet HWaddr 02:42:AC:11:00:02<br />
+inet addr:172.17.0.2 Bcast:172.17.255.255 Mask:255.255.0.0<br />
+UP BROADCAST RUNNING MULTICAST MTU:1500 Metric:1<br />
+RX packets:62 errors:0 dropped:0 overruns:0 frame:0<br />
+TX packets:32 errors:0 dropped:0 overruns:0 carrier:0<br />
+collisions:0 txqueuelen:0<br />
+RX bytes:6064 (5.9 KiB) TX bytes:2580 (2.5 KiB)
+lo Link encap:Local Loopback<br />
+inet addr:127.0.0.1 Mask:255.0.0.0<br />
+......
+</blockquote>
+
+它们的 IP  地址一样的。会是完全同一个容器吗？当然不是，它们启动服务的端口就不一样，或者下面那样验证<br/>
+<blockquote>
+ubuntu# docker exec -t web1 touch /a<br />
+ubuntu# docker exec -t web2 ls /a<br />
+ls: /a: No such file or directory<br />
+ubuntu# docker exec -t web2 ls /
+</blockquote>
+
+再来看它们的 namespace，在宿主机上找到它们的进程 ID<br/>
+<blockquote>
+ubuntu# ps aux|grep 'python app.py'<br />
+root 26259 0.1 0.0 18036 15120 ? Ss 14:35 0:00 python app.py 8000<br />
+root 26343 0.0 0.0 18036 15152 ? Ss 14:35 0:00 python app.py 8001<br />
+root 27272 0.0 0.0 8988 908 pts/0 S+ 14:42 0:00 grep python app.py<br />
+ubuntu# ls -l /proc/26259/ns<br />
+total 0<br />
+lrwxrwxrwx 1 root root 0 Mar 29 14:42 cgroup -&gt; 'cgroup:[4026531835]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 14:38 ipc -&gt; 'ipc:[4026532359]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 14:38 mnt -&gt; 'mnt:[4026532358]'<br />
+<span style="color: #0000ff;">lrwxrwxrwx 1 root root 0 Mar 29 14:35 net -&gt; 'net:[4026532362]'</span><br />
+lrwxrwxrwx 1 root root 0 Mar 29 14:38 pid -&gt; 'pid:[4026532360]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 14:42 pid_for_children -&gt; 'pid:[4026532360]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 14:42 user -&gt; 'user:[4026531837]'<br />
+<span style="color: #0000ff;">lrwxrwxrwx 1 root root 0 Mar 29 14:42 uts -&gt; 'uts:[4026531838]'</span><br />
+ubuntu# ls -l /proc/26343/ns<br />
+total 0<br />
+lrwxrwxrwx 1 root root 0 Mar 29 14:43 cgroup -&gt; 'cgroup:[4026531835]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 14:38 ipc -&gt; 'ipc:[4026532471]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 14:38 mnt -&gt; 'mnt:[4026532470]'<br />
+<span style="color: #0000ff;">lrwxrwxrwx 1 root root 0 Mar 29 14:38 net -&gt; 'net:[4026532362]'</span><br />
+lrwxrwxrwx 1 root root 0 Mar 29 14:38 pid -&gt; 'pid:[4026532472]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 14:43 pid_for_children -&gt; 'pid:[4026532472]'<br />
+lrwxrwxrwx 1 root root 0 Mar 29 14:43 user -&gt; 'user:[4026531837]'<br />
+<span style="color: #0000ff;">lrwxrwxrwx 1 root root 0 Mar 29 14:43 uts -&gt; 'uts:[4026531838]'</span>
+</blockquote>
+
+这也能看到它们使用了相同的 Network namespace.<br/><br/>
+不指 --uts  再来测试一下<br/>
+<blockquote>
+ubuntu# docker run -d --name=web1 -p8000:8000 -p 8001:8001 python-web 8000<br />
+046cedf0b7276c8c7aa37191c42a8b9e5fa159ca634d80074dce7470fa61f00e<br />
+ubuntu# docker run -d --name=web2 --network=container:web1 python-web 8001<br />
+af2c5eb278792ea6dc3d6071996cfa8ea7223dd243bf5ab359bb4fa79e7f6f19<br />
+<br />
+ubuntu# curl http://localhost:8000<br />
+You hit: 046cedf0b727<br />
+ubuntu# curl http://localhost:8001<br />
+You hit: 046cedf0b727
+</blockquote>
+
+只共享了 Network, 去掉了 --uts 后，看它们的 /proc/&lt;PID&gt;/ns 也能发现 uts namespace 不一样了。<br/><br/>
+另一个关于端口重定向的发现，docker 是通过  docker-proxy 实现的<br/><br/>
+{{< bundle-image docker-port-forwarding-800x61.png 692 >}}
+<h3>理解 Docker Namespace 的好处</h3>
+明白了 Docker 容器与 Namespace 的关系后，我们能够对  docker run 进行更多的控制，比如共享 Mount 空间能使两个容器看到相同的外部文件系统，共享了 PID 空间的话，两个容器中可以看到相同的进程<br/><br/>
+{{< bundle-image docker-namespace-pid-800x142.png 670 >}}
+还比如像前面的命令：docker run --net=host --ipc=host --uts=host --pid=host -it --security-opt=seccomp=unconfined --privileged --rm -v /:/host alpine chroot /host， 类似 Impersonate 的方式进入另一个容器中。<br/><br/>
+还有，因为容器中的进程实质是一个宿主机上的进程，也就可以联接相应的宿主机进程进行单步断点调试，或都用 --pid=host 让容器中的进程 ID 与外部的 ID 保持一样的。<br/><br/>
+当然，更多发挥想像力的地方......<br/><br/>
+链接：<br/>
+<ol>
+    <li><a href="https://docs.docker.com/engine/reference/commandline/run/">docker run</a></li>
+    <li><a href="https://blog.mikesir87.io/2019/03/sharing-network-namespaces-in-docker/">Sharing Network Namespaces in Docker</a></li>
+    <li><a href="https://www.cnblogs.com/bakari/p/8560437.html">Docker 基础技术之 Linux namespace 详解</a></li>
+</ol>
