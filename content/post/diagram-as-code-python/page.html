@@ -1,0 +1,123 @@
+---
+title: Diagram as Code -- 用 Python 画框架图
+url: /diagram-as-code-python/
+date: 2022-08-10T23:41:04-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/diagrams-logo.png"
+categories:
+  - Python
+tags: 
+  - diagram
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12510 
+wpStatus: publish
+views: 1407
+lastmod: 2022-09-19T17:12:53-05:00
+---
+
+最近注意到一个很有意思的项目 <a href="https://diagrams.mingrammer.com/">Diagrams</a>, 用 Python 代码来绘制架构或流程图,
+以前基本用 <a href="https://www.gliffy.com/">Gliffy</a> 来画。继一系列 X as X, 如 PaaS, SaaS, IaaS, CaC(Configuration as Code),
+IaC(Infrastructure as Code) 等，Diagrams 喊出了 Diagram as Code 的口号。其实，在这之前, Markdown 就做了许多 Diagram as Code 的事情，
+也许更准确说是 Diagram as Document。</p>
+<br/>
+熟练的程序员大概不喜欢用可视化设计器来生成 GUI 代码，那会让代码变得极不简洁，而是直接写，眼中看到的是代码，头脑中即时产生映像。<br/><br/>
+Diagrams 就是这样一款写 Python 代码产生架构或流程图的库，它绘制的架构图支持主要的云服务提供商，如<br/><br/>
+<ol>
+    <li>知名的(本人认为的): AWS, Azure, GCP, IBM, DigitalOcean, AlibabaCloud, OCI(Oracle Cloud Infrastructure, 不是 Open Container Initiative), OpenStack</li>
+    <li>刚了解到的: Google 的 Firebase, Elastic(ElasticSearch 出品方也有自己的平台), Outscale</li>
+    <li>以及应用平台 K8S, Saas 和 OnPrem 中的元素</li>
+    <li>通用元素，编程语言及流程图，还能定制自己的节点图</li>
+</ol>
+<!--more-->
+<h3>Diagrams 的安装需求</h3>
+<ol>
+    <li>Python 3.6 或以上</li>
+    <li>用 <a href="https://www.graphviz.org/">Graphviz</a> 渲染图，根据平台用不同的安装命令 <code>brew install graphviz</code>
+        或 <code>choco install graphviz</code> 等</li>
+    <li>安装本尊: <code>pip install diagrams</code>，注意不是 <code>diagram</code></li>
+</ol>
+<br/>
+<h3>立即体验</h3>
+不用官方 Quick Start 的例子，直接上一个稍显复杂点的。创建 diagram.py 文件, 代码为<br/>
+{{< highlight python >}}
+from diagrams import Cluster, Diagram
+from diagrams.aws.compute import ECS
+from diagrams.aws.database import ElastiCache, RDS
+from diagrams.aws.network import ELB
+from diagrams.aws.network import Route53
+
+with Diagram("Clustered Web Services"):
+    dns = Route53("dns")
+    lb = ELB("lb")
+
+    with Cluster("Services"):
+        svc_group = [ECS("web1"),
+                     ECS("web2"),
+                     ECS("web3")]
+
+    with Cluster("DB Cluster"):
+        db_primary = RDS("userdb")
+        db_primary - [RDS("userdb ro")]
+
+    memcached = ElastiCache("memcached")
+
+    dns >> lb >> svc_group
+    svc_group >> db_primary
+    svc_group >> memcached
+{{</ highlight >}}
+<br/>
+留意组件分组用 Cluster, 组件之间依赖关系的运算符 <code>&gt;&gt;</code>, 这与 Apache Airflow 表示任务之间的依赖是类似的。<br/><br/>
+执行 <code>python diagram.py</code>, 它会在当前目录中产生图片文件 <code>clustered_web_services.png</code> 并会在系统当前的看图软件中打开预览。
+{{< bundle-image clustered_web_services-800x674.png 683 >}}
+图片文件名的规则是由 Diagram 的第一个 name 参数转换的，或者可它的 filename 参数指定文件名; 默认的 <code>show</code>
+参数是 True，即执行后会立即打开生成的图片，设置为 False 的话只会在当前目录中生成图片文件。<br/><br/>
+其他的 Diagram 生成图片的定制功能, 如字体, 背景颜色, 线条等就参考官方文档或看 API 及源代码。更多例子请参考官方的
+<a href="https://diagrams.mingrammer.com/docs/getting-started/examples">Diagrams Examples</a>。<br/><br/>
+<h3>Jupyter Notebook 中使用 Diagrams</h3>
+Diagram 除了在本地生成图片文件，在 Jupyter Notebook(或 JupyterLab) 中使用它的话，由于是在 Web UI 中，所以能直接在当前浏览器中显示生成的图片文件<br/>
+{{< highlight python >}}
+from diagrams import Diagram
+from diagrams.k8s.clusterconfig import HPA
+from diagrams.k8s.compute import Deployment, Pod, ReplicaSet
+from diagrams.k8s.network import Ingress, Service
+
+with Diagram("Exposed Pod with 3 Replicas", show=False) as diag:
+    net = Ingress("domain.com") >> Service("svc")
+    net >> [Pod("pod1"),
+            Pod("pod2"),
+            Pod("pod3")] << ReplicaSet("rs") << Deployment("dp") << HPA("hpa")
+    
+diag
+{{</ highlight >}}
+<br/>
+注意用 with Diagram(...) as diag 的方式，最后记得用 <code>diag</code> 才是在 Jupyter Notebook 中显示相应的图片<br/><br/>
+{{< bundle-image python-diagams-1-800x536.png 850 >}}
+<br/>
+Diagram 总是会在磁盘上先产生一个图片文件<br/><br/>
+如果把 Diagram 的 show 赋值为 True, 除了在 JupyterLab 中显示图片外，还会用系统当前的图片浏览程序打开的图片。<br/><br/>
+<h3>后话</h3>
+对 Diagrams 的粗略了解也差不多了，更多内容请随时关注它的 <a href="https://diagrams.mingrammer.com/">Diagrams 官网</a>。<br/><br/>
+前面提到 Markdown 中也能画复杂的流程图，以及高级的数学公式。关于 Markdown 相关的图形组件可以看这里
+<a href="https://gist.github.com/blackcater/1701e845a963216541591106c1bb9d3b">
+    https://gist.github.com/blackcater/1701e845a963216541591106c1bb9d3b</a>. 其中列出如下 Markdown 应用<br/><br/>
+<ol>
+    <li><a href="http://flowchart.js.org/">flowchart.js</a>,</li>
+    <li><a href="https://bramp.github.io/js-sequence-diagrams/">js-sequence-diagrams</a></li>
+    <li> <a href="https://github.com/knsv/mermaid">mermaid</a></li>
+    <li><a href="http://plantuml.com/">PlantUML</a></li>
+    <li><a href="http://wavedrom.com/">WaveDrom</a></li>
+    <li>使用到了 GraphViz 的 <a href="https://github.com/mdaines/viz.js">Viz.js</a></li>
+    <li><a href="https://vega.github.io/vega/">vega</a> 和 <a href="https://vega.github.io/vega-lite/">vega-lite</a></li>
+    <li><a href="https://github.com/stathissideris/ditaa">ditaa</a></li>
+</ol>
+<br/>
+其中的 <a href="https://github.com/stathissideris/ditaa">js-sequence-diagrams</a> 产生的手绘风格图是我曾经寻找很久想要的<br/><br/>
+{{< bundle-image js-sequence-diagrams-1-800x384.png 800 >}}
+<br/>
+又找到几个画手绘风格图的项目 <a href="https://excalidraw.com/">Excalidraw</a>, <a href="https://roughjs.com/">Rough.js</a>,
