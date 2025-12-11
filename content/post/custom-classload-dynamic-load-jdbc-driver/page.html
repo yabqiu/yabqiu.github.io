@@ -3,7 +3,7 @@ title: 自定义类加载器动态加载 JDBC 驱动
 url: /custom-classload-dynamic-load-jdbc-driver/
 date: 2017-08-14T02:42:25-05:00
 featured: false
-draft: true
+draft: false
 toc: false
 # menu: main
 usePageBundles: true
@@ -22,9 +22,8 @@ lastmod: 2017-08-14T02:45:27-05:00
 
 <p>我们可以用自定义的 URLClassLoader 从外部动态加载类，并使用它。但数据库驱动的管理类 DriverManager 却不比较苛刻，不承认非当前应用系统加载器加载的驱动类。见 <a href="https://docs.oracle.com/javase/8/docs/api/java/sql/DriverManager.html">DriverManager</a> 的 JavaDoc </p>
 
-<blockquote><br/>
+<blockquote>
 <p>When the method <code>getConnection</code> is called, the <code>DriverManager</code> will attempt to locate a suitable driver from amongst those loaded at initialization and those loaded explicitly using the same classloader as the current applet or application</p>
-
 </blockquote>
 
 <p>对于有有应用自定义类加载器加载数据库驱动类的需求时，就要对原 Driver 简单包装一下。继续往后会说介绍为什么要这么做。</p>
@@ -33,49 +32,47 @@ lastmod: 2017-08-14T02:45:27-05:00
 
 <p>先看 DriverManager 在应用外部驱动类时会出现什么情况<!--more--></p>
 
-<pre class="brush:java">package cc.unmi;<br/>
-<br/>
-public class JdbcDriverLoader {<br/>
-    public static void main(String[] args) {<br/>
-        notWork();<br/>
-    }<br/>
-  <br/>
-    public static void notWork() throws Exception {<br/>
-        URL url = new URL("file:~/drivers/mysql-connector-java-5.1.43.jar");<br/>
-        String driverClass = "com.mysql.jdbc.Driver";<br/>
-        URLClassLoader classLoader = new URLClassLoader(new URL[] {url});<br/>
-        Class.forName(driverClass, true, classLoader);<br/>
-        DriverManager.getConnection("jdbc:mysql://localhost:3306/test?useSSL=false", "root", "");<br/>
-    }<br/>
-}</pre>
+{{< highlight java >}}
+package cc.unmi;
+
+public class JdbcDriverLoader {
+    public static void main(String[] args) {
+        notWork();
+    }
+
+    public static void notWork() throws Exception {
+        URL url = new URL("file:~/drivers/mysql-connector-java-5.1.43.jar");
+        String driverClass = "com.mysql.jdbc.Driver";
+        URLClassLoader classLoader = new URLClassLoader(new URL[] {url});
+        Class.forName(driverClass, true, classLoader);
+        DriverManager.getConnection("jdbc:mysql://localhost:3306/test?useSSL=false", "root", "");
+    }
+}
+{{</ highlight >}}
 
 <p>上面的代码在执行最后一行获取数据库连接时报出的异常是</p>
 
-<blockquote><br/>
+<blockquote>
 <p>java.sql.SQLException: No suitable driver found for jdbc:mysql://localhost:3306/test?useSSL=false</p>
-
 </blockquote>
 
 <p>但是能正确用自定义的类加载器加载到驱动类 com.mysql.jdbc.Driver, 否则会报出 ClassNotFound 的异常。把上面代码中的</p>
 
-<blockquote><br/>
+<blockquote>
 <p>Class.forName(driverClass, true, classLoader)</p>
-
 </blockquote>
 
 <p>改成</p>
 
-<blockquote><br/>
+<blockquote>
 <p>Driver driver = (Driver) Class.forName(driverClass, true, classLoader).newInstance();<br /><br/>
  DriverManager.registerDriver(driver);</p>
-
 </blockquote>
 
 <p>也无济于事。但是只要是系统加载器的数据库驱动就没问题，下面执行命令正常</p>
 
-<blockquote><br/>
+<blockquote>
 <p>java -cp ~/drivers/mysql-connector-java-5.1.43.jar cc.unmi.JdbcDriverLoader</p>
-
 </blockquote>
 
 <p>到底发生了什么呢？还是那个  DriverManager, 进到它的 getConnection(....) 方法，有兴趣的可以去阅读 DriverManager 类的源代码，这里不细究的，简单来讲就是</p>
@@ -84,56 +81,58 @@ public class JdbcDriverLoader {<br/>
 
 <p>为了解决能动态的加载外部数据库驱动，我们需要引入下面那个 DriverShim 包装类</p>
 
-<pre class="brush:java">import java.sql.*;<br/>
-<br/>
-class DriverShim implements Driver {<br/>
-    private Driver driver;<br/>
-<br/>
-    DriverShim(Driver d) {<br/>
-        this.driver = d;<br/>
-    }<br/>
-<br/>
-    public boolean acceptsURL(String u) throws SQLException {<br/>
-        return this.driver.acceptsURL(u);<br/>
-    }<br/>
-<br/>
-    public Connection connect(String u, Properties p) throws SQLException {<br/>
-        return this.driver.connect(u, p);<br/>
-    }<br/>
-<br/>
-    public int getMajorVersion() {<br/>
-        return this.driver.getMajorVersion();<br/>
-    }<br/>
-<br/>
-    public int getMinorVersion() {<br/>
-        return this.driver.getMinorVersion();<br/>
-    }<br/>
-<br/>
-    public DriverPropertyInfo[] getPropertyInfo(String u, Properties p) throws SQLException {<br/>
-        return this.driver.getPropertyInfo(u, p);<br/>
-    }<br/>
-<br/>
-    public boolean jdbcCompliant() {<br/>
-        return this.driver.jdbcCompliant();<br/>
-    }<br/>
-<br/>
-    public Logger getParentLogger() throws SQLFeatureNotSupportedException {<br/>
-        return null;<br/>
-    }<br/>
-}<br/>
-</pre>
+{{< highlight java >}}
+import java.sql.*;
+
+class DriverShim implements Driver {
+    private Driver driver;
+
+    DriverShim(Driver d) {
+        this.driver = d;
+    }
+
+    public boolean acceptsURL(String u) throws SQLException {
+        return this.driver.acceptsURL(u);
+    }
+
+    public Connection connect(String u, Properties p) throws SQLException {
+        return this.driver.connect(u, p);
+    }
+
+    public int getMajorVersion() {
+        return this.driver.getMajorVersion();
+    }
+
+    public int getMinorVersion() {
+        return this.driver.getMinorVersion();
+    }
+
+    public DriverPropertyInfo[] getPropertyInfo(String u, Properties p) throws SQLException {
+        return this.driver.getPropertyInfo(u, p);
+    }
+
+    public boolean jdbcCompliant() {
+        return this.driver.jdbcCompliant();
+    }
+
+    public Logger getParentLogger() throws SQLFeatureNotSupportedException {
+        return null;
+    }
+}
+{{</ highlight >}}
 
 <p>然后加从外部加载驱动时应该是 DriverShim 包装类型</p>
 
-<pre class="brush:java">public static void notWork() throws Exception {<br/>
-    URL url = new URL("file:~/drivers/mysql-connector-java-5.1.43.jar");<br/>
-    String driverClass = "com.mysql.jdbc.Driver";<br/>
-    URLClassLoader classLoader = new URLClassLoader(new URL[] {url});<br/>
-    Driver driver = (Driver) Class.forName(driverClass, true, classLoader).newInstance();<br/>
-    DriverManager.registerDriver(new DriverShim(driver));<br/>
-    DriverManager.getConnection("jdbc:mysql://localhost:3306/test?useSSL=false", "root", "");<br/>
-}<br/>
-</pre>
+{{< highlight java >}}
+public static void notWork() throws Exception {
+    URL url = new URL("file:~/drivers/mysql-connector-java-5.1.43.jar");
+    String driverClass = "com.mysql.jdbc.Driver";
+    URLClassLoader classLoader = new URLClassLoader(new URL[] {url});
+    Driver driver = (Driver) Class.forName(driverClass, true, classLoader).newInstance();
+    DriverManager.registerDriver(new DriverShim(driver));
+    DriverManager.getConnection("jdbc:mysql://localhost:3306/test?useSSL=false", "root", "");
+}
+{{</ highlight >}}
 
 <p>这样就行了，可以正确找到 "com.mysql.jdbc.Driver", 为什么如此简单的包装就把骄傲的 DriverManager 给骗了呢？就这么简单。</p>
 

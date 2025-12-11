@@ -1,0 +1,269 @@
+---
+title: 为 FastAPI 的 SwaggerUI 定制 CSS 样式
+url: /customize-fastapi-swaggerui-css/
+date: 2025-03-14T23:54:18-05:00
+featured: false
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/fastapi-logo.png"
+categories:
+  - FastAPI
+tags: 
+  - Swagger
+  - FastAPI
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14094 
+wpStatus: publish
+views: 235
+lastmod: 2025-03-15T00:12:50-05:00
+---
+
+FastAPI 比起 Flask 而言一个十分便利的功能是它内置对 Swagger UI 文档的支持，然而默认生成的 Swagger UI 也总不尽如人意，于是就有了如何通过引入自己的样式(或样式文件)对默认 Swagger UI 进行定制化的需求。在 ChatGPT 之前，Google 和阅读源代码是齐头并进的选择，自己有了 ChatGPT 之类的 AI, 人们一下就把身段放低了许多，再也不像使用 Google 那样的心态去使用 AI 了。所以呢，第一次支持付了 $8 问问当前号称最厉害的 Grok 3(也算是对 DOGE 的支持吧), 得到答案如下</p>
+
+{{< highlight python >}}
+app.mount("/static", StaticFiles(directory="static"), name="static")<br/><br/>
+app = FastAPI(
+    swagger_ui_parameters={
+        "css_url": "/static/custom_swagger.css"
+    }
+)
+{{</ highlight >}}
+<br/>
+在网站的 /static 目录下也创建了 custom_swagger.css 文件，然而根本就没有效果，Inspect 浏览器后发现 FastAPI 的 /docs 根本就有加载 /static/custom_swagger.css 文件。<!--more--><br/><br/>
+再追问一下去，又给出了下面的答案<br/>
+{{< highlight python >}}
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html():
+    return get_swagger_ui_html(
+        .... # 此处省略
+        custom_css="""
+            &lt;style&gt;
+                body { background-color: #f0f0f0; }
+            &lt;/style&gt;
+        """
+    )
+{{</ highlight >}}
+<br/>
+这样跟随着 AI 坠入了它的自我幻觉当中。上面两个答案都是 AI 在无中生有的，为迎合人类而进行的创造。<br/><br/>
+对于第一个答案，SwaggerUI 根本就不支持 "css_url" 这个参数，完整的支持参数可参考：<a href="https://swagger.io/docs/open-source-tools/swagger-ui/usage/configuration/">Swagger UI Configuration Docs</a>.<br/><br/>
+而第二个答案，也类似，AI 为 FastAPI 的 get_swagger_ui_html() 函数莫名的新加了一个 "custom_css" 参数，FastAPI 的 get_swagger_ui_html() 函数原型在这里 <a href="https://github.com/fastapi/fastapi/blob/master/fastapi/openapi/docs.py#L26">fastapi/fastapi/openapi/docs.py</a><br/><br/>
+经过此番 AI 的实践，更是浪费了不少的时间，如果运气好些找到了有效的答案，对于掌握相应的知识基本是鲜有帮助。<br/><br/>
+要说上面唯一线索只有，定制 <code>/docs</code> 可以显式的调用 <code>get_swagger_ui_html()</code> 函数，这就是我们能发挥的地方。<br/><br/>
+首先再次回到 Grok 3 给出的答案一，加在 FastAPI 的 swagger_ui_parameters 参数中的属性会加到 <code>/docs</code> 页面的 <code>SwaggerUIBundler()</code> 调用<br/>
+{{< highlight html >}}
+    <script>
+    const ui = SwaggerUIBundle({
+        url: '/openapi.json',
+    "dom_id": "#swagger-ui",
+"layout": "BaseLayout",
+"deepLinking": true,
+"showExtensions": true,
+"showCommonExtensions": true,
+"css_url": "/static/custom_swagger.css",
+oauth2RedirectUrl: window.location.origin + '/docs/oauth2-redirect',
+    presets: [
+        SwaggerUIBundle.presets.apis,
+        SwaggerUIBundle.SwaggerUIStandalonePreset
+        ],
+    })
+    </script>
+{{</ highlight >}}
+<br/>
+由于 SwaggerUIBundle() 并不支持 "css_url" 属性，在 <a href="https://swagger.io/docs/open-source-tools/swagger-ui/usage/configuration/">Swagger UI Configuration Docs</a> 中也没有找到定制 CSS 文件的解决方案。<br/><br/>
+下面展开如何利用 <code>get_swagger_ui_html()</code> 函数来定制 CSS，从一个完整的 FastAPI 例子开讲。本例不用 fastapi 命令 + main.py 的方式启动 Web 服务，而是显式的用 uvicorn 在代码中启动服务。<br/><br/>
+本例所需安装的 Python 依赖是<br/>
+<blockquote>
+pip install "fastapi[standard]"
+</blockquote>
+
+完整的 main.py 代码是<br/>
+{{< highlight python >}}
+from fastapi import FastAPI, Security, Path
+from fastapi.security.api_key import APIKeyHeader
+from pydantic import BaseModel
+import uvicorn
+
+app = FastAPI()
+
+api_key_header = APIKeyHeader(name="x-api-key")
+
+
+class User(BaseModel):
+    userId: int
+    userName: str
+
+
+@app.get("/users/{userId}", response_model=User)
+def get_user(user_id: str = Path(..., alias="userId"), api_key=Security(api_key_header)):
+    return {"userId": 0, "userName": "Scott"}
+
+
+if __name__ == '__main__':
+    uvicorn.run(app, host="0.0.0.0", port=8080)
+
+{{</ highlight >}}
+<br/>
+启动之后，打开 http://0.0.0.0:8080/docs 看到 SwaggerUI 界面是<br/><br/>
+{{< bundle-image src="fastapi-swagger-ui-custom-css-1-800x527.png" width="850px" >}}
+这个界面有点拉胯，想要通过 CSS 定制实现如面更为紧凑的 UI, 同时去除 Schemas<br/><br/>
+{{< bundle-image src="fastapi-swagger-ui-custom-css-2-800x269.png" width="850px" >}}
+</p>
+<br/>
+<p style="text-align: center;"><strong>图 2</strong></p>
+<br/>
+如果能简单的通过某个属性或参数引用自定义的 css, 进而调整 UI 的 Authorize 按钮的 margin-top: -120px, 再把  'openapi.json' 链接隐去就好，实际上还有些曲折。在这里隐去 "Schemas"  部分可在声明 FastAPI 时指定属性<br/>
+{{< highlight python >}}
+app = FastAPI(
+    swagger_ui_parameters={
+        "defaultModelsExpandDepth": -1   # 这样便不在 SwaggerUI 中显示 Schemas
+    }
+)
+{{</ highlight >}}
+<br/>
+通过 Google 或 AI, 我们定位到访问 FastAPI 的 <code>/docs</code> 实际就是调用了 get_swagger_ui_html() 函数，可以覆盖 <code>/docs</code> 接口。于是等效的 <code>/docs</code> 就是<br/>
+{{< highlight python >}}
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import HTMLResponse
+
+app = FastAPI(docs_url=None)
+
+@app.get("/docs", include_in_schema=False)
+def custom_swagger_ui_html() -> HTMLResponse:
+   return get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title="FastAPI",
+        swagger_ui_parameters={
+            "defaultModelsExpandDepth": -1,
+        }
+    )
+{{</ highlight >}}
+<br/>
+注意，我们在覆盖 <code>/docs</code> 时需要在声明 FastAPI 时用 <code>docs_url=None</code> 把默认的 <code>/docs</code> 禁用掉。访问 http://0.0.0.0:8080/docs 就是<br/><br/>
+{{< bundle-image src="fastapi-swagger-ui-custom-css-3-800x401.png" width="850px" >}}
+后面的工作就要了解 <code>get_swagger_ui_html()</code> 方法原型了。<br/>
+{{< highlight python >}}
+def get_swagger_ui_html(
+    *,
+    openapi_url,
+    title: ,
+    swagger_js_url = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js",
+    swagger_css_url = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css",
+    swagger_favicon_url = "https://fastapi.tiangolo.com/img/favicon.png",
+    oauth2_redirect_url = None,
+    init_oauth = None,
+    swagger_ui_parameters = None,
+) -> HTMLResponse:
+{{</ highlight >}}
+<br/>
+这里有两条思路<br/><br/>
+<ol>
+    <li>用 <code>swagger_css_url</code> 指定自己的 custom_swagger.css, 然后把默认样式 https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css 内容复制 custom_swagger.css 文件中，然后添加自己的内容。这种方式必须时刻留意默认的 swagger-ui.css 内容有列新。</li>
+    <li>该函数返回了一个 HTMLResponse, 我们可以去其中的 HTML 进行后处理，然后再返回一个重新包装的 HTMLResponse</li>
+</ol>
+<br/>
+本文采用第二种方式。思路理通了，那就开始实际，修改 main.py 后完整的代码如下<br/>
+{{< highlight python >}}
+from fastapi import FastAPI, Security, Path
+from fastapi.security.api_key import APIKeyHeader
+from pydantic import BaseModel
+import uvicorn
+import re
+
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+
+app = FastAPI(docs_url=None)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.get("/docs", include_in_schema=False)
+def custom_swagger_ui_html() -> HTMLResponse:
+    res: HTMLResponse = get_swagger_ui_html(
+        openapi_url="/openapi.json",
+        title="FastAPI",
+        swagger_ui_parameters={
+            "defaultModelsExpandDepth": -1
+        }
+    )
+
+    new_body = re.sub(
+        r'(<link type="text/css" rel="stylesheet"[^>]+>)',
+        r'\1\n    <link type="text/css" rel="stylesheet" href="./static/custom_swagger.css">',
+        res.body.decode())
+    return HTMLResponse(new_body)
+
+
+api_key_header = APIKeyHeader(name="x-api-key")
+
+
+class User(BaseModel):
+    userId: int
+    userName: str
+
+
+@app.get("/users/{userId}", response_model=User)
+def get_user(user_id: str = Path(..., alias="userId"), api_key=Security(api_key_header)):
+    return {"userId": 0, "userName": "Scott"}
+
+
+if __name__ == '__main__':
+    uvicorn.run(app, host="0.0.0.0", port=8080)
+
+{{</ highlight >}}
+<br/>
+我们需要支持静态文件，所以需要在工程目录中创建文件 static/custom_swagger.css, 其中加入需要的样式定义，本实例的内容是<br/>
+{{< highlight css >}}
+div.scheme-container {
+    margin-top: -120px !important;
+}
+
+div.info span.url {
+    display: none;
+}
+{{</ highlight >}}
+<br/>
+如此我们最终就是实现 <code>图 2</code> 中的简洁效果。<br/><br/>
+最后我们不妨查看一下修改后 http://0.0.0.0:8080/docs 的网页源文件，没多少行，所以列在下面<br/>
+{{< highlight html >}}
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <link type="text/css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+    <link type="text/css" rel="stylesheet" href="./static/custom_swagger.css">
+    <link rel="shortcut icon" href="https://fastapi.tiangolo.com/img/favicon.png">
+    <title>FastAPI</title>
+    </head>
+    <body>
+    <div id="swagger-ui">
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <!-- `SwaggerUIBundle` is now available on the page -->
+    <script>
+    const ui = SwaggerUIBundle({
+        url: '/openapi.json',
+    "dom_id": "#swagger-ui",
+"layout": "BaseLayout",
+"deepLinking": true,
+"showExtensions": true,
+"showCommonExtensions": true,
+"defaultModelsExpandDepth": -1,<br/><br/>
+    presets: [
+        SwaggerUIBundle.presets.apis,
+        SwaggerUIBundle.SwaggerUIStandalonePreset
+        ],
+    })
+    </script>
+    </body>
+    </html>
+{{</ highlight >}}
+<br/>
+从中可以看到我们通过正则表达式在原有的 swagger-ui.css link 后加上了自己的 /static/custom_sagger.css, 仅此而已。同时注意到 JS 函数 SwaggerUIBundle 的参数值，有助于我们理解如 FastAPI 的函数 <code>get_swagger_ui_html()</code> 是怎么影响到 JS 的 SwaggerUIBundler 函数的调用。<br/><br/>
+<h2>后记：关于 AI</h2>
+确实很久没更新博客了，一则原来的 VPS 三天两头宕机，好像数据库哪出了问题，现在已迁到 AWS，内存增加到了 2G 稍好些了，但仍未治本，还得努力找原因。再则如今 AI 大行其道，似乎要完全代替人的思考了，很多不再通过搜索引擎访问到博客站点了。以前的 “内事不决问百度，外事不决问谷歌，房事不决问天涯”，恐怕要改成 “万事不决问 AI” 了，不管是 ChatGPT, Grok, Claude, Gemini 或是其他的。如果产生了对 AI 的严重依赖，同样了问题问过 AI 十来遍，会发现它答案基本就没经过大脑，只有一次次的复制粘贴过程。<br/><br/>
+从前有人一个同样的问题询问我三五遍，心里头就有过起伏 -- 即便是记忆差吧，那用笔记或记事本记录录下来也不至于此吧。现今自己用 AI 不断的重复问相同的问题就是同样的感觉。Google 即使不像书籍那样可以系统性的学习新技能，那怎么着还会让我们有提炼关键字，寻找线索，不断探索的过程。而用 AI 连基本的思考都省了，把有用没用的信息全丢给 AI 处理，经常会得到幻觉式的信息。AI 有时候就像是鸦片，产生了依赖便时时离不开它，Google 搜索后链接不设置为 <code>target="_blank"</code> 的用意(找到答案，快速离开)有所不同。难怪 AI 要上升为一个国家战略，因为某些时候极有用。<br/><br/>
+程序员当初被称作 Google 或 StackOver 的搬运工，那 AI 时代如何称呼呢？StackOver 怎么着也是真实的人的求索，验证的过程。最初 AI 的内容也是来自 Wikipedia, StackOver, Reddit 那样的由人产生的内容，现在可好，机器也会产生大量的内容，吐到各个社区，而后又被机器吃回去。试想一下，如果那些社区全被机器占领了，AI 一本正经说假话，进入幻觉模式的机会就更大了。 
