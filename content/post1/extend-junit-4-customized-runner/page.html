@@ -3,7 +3,7 @@ title: 扩展 JUnit 4，使用定制的 Runner
 url: /extend-junit-4-customized-runner/
 date: 2013-04-17T02:59:19-05:00
 featured: false
-draft: true
+draft: false
 type: post
 toc: false
 # menu: main
@@ -30,23 +30,29 @@ JUnit 的测试用例总是由 Runner 去执行，JUnit 提供了 @RunWith 
 现在用个例子来说明定制化 Runner  的表现功力，需继承自 BlockJUnit4ClassRunner, 这又是继承自 ParentRunner。可自定义那些 with 开头的方法来截获相应的事件，如：<br/><br/>
 来自  ParentRunner  的 withBeforeClasses, withAfterClasses<br />
 和定义的 BlockJUnit4ClassRunner 中的  withBefores, withAfters, withPotentialTimeout<br/><br/>
-等等，总之祖先类中的  protected 方法一般就是给大家开的口，看例子：<br/><br/>
-<pre class="lang:default decode:true">package cc.unmi;<br/><br/>
+等等，总之祖先类中的  protected 方法一般就是给大家开的口，看例子：<br/>
+{{< highlight java >}}
+package cc.unmi;
+
 import org.junit.runners.BlockJUnit4ClassRunner;
 import org.junit.runners.model.FrameworkMethod;
 import org.junit.runners.model.InitializationError;
-import org.junit.runners.model.Statement;<br/><br/>
+import org.junit.runners.model.Statement;
+
 /** 
- * @author Unmi
- * @created 2013-04-17
- */
+* @author Unmi
+* @created 2013-04-17
+*/
 @SuppressWarnings("deprecation")
-public class MyTestRunner extends BlockJUnit4ClassRunner {<br/><br/>
-    private Class&lt;?&gt; clazz;<br/><br/>
-    public MyTestRunner(Class&lt;?&gt; klass) throws InitializationError {
+public class MyTestRunner extends BlockJUnit4ClassRunner {
+
+    private Class<?> clazz;
+
+    public MyTestRunner(Class<?> klass) throws InitializationError {
         super(klass);
         this.clazz = klass;
-    }<br/><br/>
+    }
+
     // 拦截 BeforeClass 事件
     protected Statement withBeforeClasses(final Statement statement) {
         final Statement junitStatement = super.withBeforeClasses(statement);
@@ -55,11 +61,14 @@ public class MyTestRunner extends BlockJUnit4ClassRunner {<br/><br/>
             public void evaluate() throws Throwable {
                 System.out.println("Before Class: " + clazz.getName());
                 junitStatement.evaluate();
-            }<br/><br/>
+            }
+
         };
-    }<br/><br/>
+    }
+
     // 拦截每一个方法的 Before 事件
-    protected Statement withBefores(final FrameworkMethod method, Object target, final Statement statement) {<br/><br/>
+    protected Statement withBefores(final FrameworkMethod method, Object target, final Statement statement) {
+
         final Statement junitStatement = super.withBefores(method, target, statement);
         return new Statement() {
             @Override
@@ -69,7 +78,8 @@ public class MyTestRunner extends BlockJUnit4ClassRunner {<br/><br/>
                 System.out.println("After before method: " + method.getName());
             }
         };
-    }<br/><br/>
+    }
+
     // 截获每一个测试方法的 after 事件
     protected Statement withAfters(final FrameworkMethod method, Object target, final Statement statement) {
         final Statement junitStatement = super.withAfters(method, target, statement);
@@ -78,9 +88,11 @@ public class MyTestRunner extends BlockJUnit4ClassRunner {<br/><br/>
             public void evaluate() throws Throwable {
                 System.out.println("After method: " + method.getName());
                 junitStatement.evaluate();
-            }<br/><br/>
+            }
+
         };
-    }<br/><br/>
+    }
+
     // 截获测试类的 after 事件
     protected Statement withAfterClasses(final Statement statement) {
         final Statement junitStatement = super.withAfterClasses(statement);
@@ -93,51 +105,53 @@ public class MyTestRunner extends BlockJUnit4ClassRunner {<br/><br/>
         };
     }
 }
-</pre>
+{{</ highlight >}}
 <br/>
 上面的  junitStatement.evaluate() 才是真正去执行相应的用 @Before, @After, @BeforeClass, @AfterClass 和 @Test 标的方法，所以可以在执行真正方法前面植入点什么。<br/><br/>
-看测试类：<br/><br/>
-<pre class="lang:default decode:true ">package cc.unmi;<br/><br/>
+看测试类：<br/>
+{{< highlight java >}}
+package cc.unmi;
+
 import org.junit.After;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-  
+
 /** 
- * @author Unmi
- * @created 2013-04-17
- */
+* @author Unmi
+* @created 2013-04-17
+*/
 @RunWith(MyTestRunner.class)  
 public class MyTest {  
-  
-    @BeforeClass  
-    public static void beforeClass() {  
-        System.out.println("execute beforeClass");  
-    }  
-  
-    @Before  
-    public void before() {  
-        System.out.println("execute before");  
-    }  
-      
-    @Test  
-    public void should_return_something_if_age_equals_18() {  
-        System.out.println("execute should_return_something_if_age_equals_18");  
-    }  
-      
-    @After  
-    public void after() {  
-        System.out.println("execute after");  
-    }  
-  
-    @AfterClass  
-    public static void afterClass() {  
-        System.out.println("execute afterClass");  
-    }  
-} 
-</pre>
+
+    @BeforeClass
+    public static void beforeClass() {
+        System.out.println("execute beforeClass");
+    }
+
+    @Before
+    public void before() {
+        System.out.println("execute before");
+    }
+
+    @Test
+    public void should_return_something_if_age_equals_18() {
+        System.out.println("execute should_return_something_if_age_equals_18");
+    }
+
+    @After
+    public void after() {
+        System.out.println("execute after");
+    }
+
+        @AfterClass
+        public static void afterClass() {
+            System.out.println("execute afterClass");
+        }
+    }
+{{</ highlight >}}
 <br/>
 看执行效果吧：<br/><br/>
 <span style="color: #800000;">Before Class: cc.unmi.MyTest</span><br />
