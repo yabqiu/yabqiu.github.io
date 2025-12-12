@@ -3,12 +3,12 @@ title: 找到 Linux 后台程序的打印输出
 url: /find-linux-backend-process-output/
 date: 2021-09-30T00:27:19-05:00
 featured: false
-draft: true
+draft: false
 type: post
 toc: false
 # menu: main
 usePageBundles: true
-thumbnail: "../images/logos/https://unmi.cc/wp-content/uploads/2018/05/linux-logo.png"
+thumbnail: "../images/logos/linux-logo.png"
 categories:
   - Linux/Unix
 tags: 
@@ -24,7 +24,7 @@ lastmod: 2021-09-30T00:27:19-05:00
 ---
 
 最近才狠命的折腾数码日购入的一个  DS920+ NAS，在上面用计划任务来同步两个目录的文件，似乎是在登陆它的 SSH 后的 rsync 同步命令与放在计划任务里的执行效果不一样。于是想看看计划任务里的 <code>rsync -av --delete folder1 folder</code> 时的控制台输出。到哪里去找呢？登陆到 SSH 于只能用 <code>ps</code> 命令看到它的进程 ID</p>
-<br/>
+
 <blockquote>
 <div data-pm-slice="1 1 []" data-en-clipboard="true">yanbin@nas:~$ ps -ef|grep rsync<br />
 SynoRsy+ 10270 1 0 Sep28 ? 00:00:00 /usr/bin/rsync --daemon<br />
@@ -32,10 +32,9 @@ root 14067 14066 51 23:03 ? 00:00:02 rsync -av folder1/ folder2/<br />
 root 14076 14067 0 23:03 ? 00:00:00 rsync -av folder1/ folder2/<br />
 root 14077 14076 58 23:03 ? 00:00:02 rsync -av folder1/ folder2/</div>
 </blockquote>
-<br/>
+
 <div data-pm-slice="1 1 []" data-en-clipboard="true">Google 了一下找到了这篇 <a href="https://unix.stackexchange.com/questions/15693/see-the-stdout-redirect-of-a-running-process">See the STDOUT redirect of a running process</a>， 关键就是用 <code>ls -l /proc/&lt;pid&gt;/fd</code> 列出进程所有打开的文件描述符</div>
-<br/>
-<!--more--><br/><br/>
+<!--more-->
 <blockquote>
 <div data-pm-slice="1 1 []" data-en-clipboard="true">yanbin@nas:~$ sudo ls -l /proc/14067/fd<br />
 total 0<br />
@@ -47,18 +46,18 @@ lr-x------+ 1 root root 64 Sep 29 23:04 4 -&gt; /volume1/folder1/files/2021-04-1
 l-wx------ 1 root root 64 Sep 29 23:04 5 -&gt; 'pipe:[15890693]'<br />
 lr-x------ 1 root root 64 Sep 29 23:04 6 -&gt; 'pipe:[15890694]'</div>
 </blockquote>
-<br/>
+
 <div>注：Synology 的 DSM 计划任务只有选择了发送邮件通知时 <code>1 -&gt;</code> 和 <code>2 -&gt;</code> 才有指向实际的文件，否则它们也都是 <code>/dev/null</code></div>
 <br/>
 从上面的文件描述符列表也可以想见像服务端程序如 Web 服务或数据库服务的 <code>/proc/&lt;pid&gt;/fd</code> 一定会是个很大的列表，实际上也确实是，本站的 MySQL 服务进程 <code>ls -l /proc/862/fd | wc -l</code> 显示的是 344。<br/><br/>
 文件描述符的 0, 1 和 2 分别是标准输入(stdin), 标准输出(stdout) 和标准错误输出(stderr)，其他的为非标准的。<br/><br/>
-有了 <code>1 -&gt; /volume1/@tmp/synoscheduler/logs/@14057/output.log</code>, 我们就知道标准输出被重定向到了这个文件中去了，所以查看前面 <code>rsync</code> 后台任务的实时输出就能够用下面的命令<br/><br/>
+有了 <code>1 -&gt; /volume1/@tmp/synoscheduler/logs/@14057/output.log</code>, 我们就知道标准输出被重定向到了这个文件中去了，所以查看前面 <code>rsync</code> 后台任务的实时输出就能够用下面的命令<br/>
 <blockquote>
 $ tail -f /volume1/@tmp/synoscheduler/logs/@14057/output.log
 </blockquote>
-<br/>
+
 执行当中有什么问题也就一目了然了。<br/><br/>
-<h2>问题的延伸</h2><br/><br/>
+<h2>问题的延伸</h2>
 知道了往哪里找标准输入输出的源头与目的地后，其他的一些有关输入输出重定向的问题就好理解了，像下面的那些<br/><br/>
 <ol>
     <li>nohup CMD &amp;</li>
@@ -67,20 +66,23 @@ $ tail -f /volume1/@tmp/synoscheduler/logs/@14057/output.log
     <li>像编程语言中的输入输出重定向，如 Python 的 sys.stdout = open('log.txt', 'w')</li>
 </ol>
 <br/>
-欲查看它们最终的输入输出是什么都可以通过查看文件描述符的方式找到<br/><br/>
+欲查看它们最终的输入输出是什么都可以通过查看文件描述符的方式找到<br/>
 <blockquote>
 $ sudo ls -l /proc/&lt;pid&gt;/fd
 </blockquote>
-<br/>
-接下来看几个例子，将要执行下方的 Python 代码<br/><br/>
-test.py<br/><br/>
-<pre class="lang:default decode:true">from datetime import datetime
-import time<br/><br/>
+
+接下来看几个例子，将要执行下方的 Python 代码<br/>
+test.py<br/>
+{{< highlight python >}}
+from datetime import datetime
+import time
+
 while True:
     print(datetime.now(), flush=True)
-    time.sleep(2)</pre>
+    time.sleep(2)
+{{</ highlight >}}
 <br/>
-<h3>nohup CMD &amp;</h3><br/><br/>
+<h3>nohup CMD &amp;</h3>
 <blockquote>
 # nohup python3 test.py &amp;
 # nohup python3 test.py&amp;<br />
@@ -92,13 +94,13 @@ l-wx------ 1 root root 64 Sep 29 23:33 0 -&gt; /dev/null<br />
 l-wx------ 1 root root 64 Sep 29 23:33 1 -&gt; /root/nohup.out<br />
 l-wx------ 1 root root 64 Sep 29 23:33 2 -&gt; /root/nohup.out
 </blockquote>
-<br/>
-其实 nohup 就是 <code>nohup python3 test.py &gt; nohup.out &amp;</code> 的省略形式, 所以需要重定向到别的文件只需<br/><br/>
+
+其实 nohup 就是 <code>nohup python3 test.py &gt; nohup.out &amp;</code> 的省略形式, 所以需要重定向到别的文件只需<br/>
 <blockquote>
 # nohup python3 test.py &gt; log.txt &amp;
 </blockquote>
-<br/>
-查看它的文件描述符将会是<br/><br/>
+
+查看它的文件描述符将会是<br/>
 <blockquote>
 # ls -l /proc/14029/fd<br />
 total 0<br />
@@ -106,16 +108,16 @@ l-wx------ 1 root root 64 Sep 29 23:37 0 -&gt; /dev/null<br />
 l-wx------ 1 root root 64 Sep 29 23:37 1 -&gt; /root/log.txt<br />
 l-wx------ 1 root root 64 Sep 29 23:37 2 -&gt; /root/log.txt
 </blockquote>
-<br/>
-当重定输出到文件中时，标准错误输出也会进到同一个文件中去，所以和下面的命令是一样的<br/><br/>
+
+当重定输出到文件中时，标准错误输出也会进到同一个文件中去，所以和下面的命令是一样的<br/>
 <blockquote>
 # nohup python3 test.py 1&gt;&amp;2 &gt; log.txt &amp;<br />
 # nohup python3 test.py 2&gt;12 &gt; log.txt &amp;
 </blockquote>
-<br/>
+
 注：nohup 命令的功能这里主要是当终端断开后，用 nohup 放置到后台的进程仍然被运行的 -- 原来是这么认为的，其实 nohup 还兼具输出重定向的功能。<br/><br/>
-<h3>&gt;file 2&gt;&amp;1</h3><br/><br/>
-学习到这里，发现先前看到的 1&gt;&amp;2 还是 2&gt;&amp;1 好像是多余的。再试了下以下几种情况<br/><br/>
+<h3>&gt;file 2&gt;&amp;1</h3>
+学习到这里，发现先前看到的 1&gt;&amp;2 还是 2&gt;&amp;1 好像是多余的。再试了下以下几种情况<br/>
 <blockquote>
 # nohup python3 test.py &gt; /dev/null &amp;                                       ---------- 有 nohup 时标准输出与标准错误输出都为 /dev/null<br />
 [2] 14041<br />
@@ -149,18 +151,22 @@ lrwx------ 1 root root 64 Sep 29 23:51 0 -&gt; /dev/pts/0<br />
 l-wx------ 1 root root 64 Sep 29 23:51 1 -&gt; /dev/null<br />
 lrwx------ 1 root root 64 Sep 29 23:51 2 -&gt; /dev/pts/0
 </blockquote>
-<br/>
-<h3>编程中的重定向</h3><br/><br/>
-测试一个 Python 中的 sys.stdout 重定向到文件中的例子，把前面的 Python 代码改为如下<br/><br/>
-<pre class="lang:default decode:true ">from datetime import datetime
+
+<h3>编程中的重定向</h3>
+测试一个 Python 中的 sys.stdout 重定向到文件中的例子，把前面的 Python 代码改为如下<br/>
+{{< highlight python >}}
+from datetime import datetime
 import time
-import sys<br/><br/>
-sys.stdout = open('log.txt', 'w')<br/><br/>
+import sys
+
+sys.stdout = open('log.txt', 'w')
+
 while True:
     print(datetime.now(), flush=True)
-    time.sleep(2)</pre>
+    time.sleep(2)
+{{</ highlight >}}
 <br/>
-再来执行，然后看文件描述符<br/><br/>
+再来执行，然后看文件描述符<br/>
 <blockquote>
 # nohup python3 test.py &amp;<br />
 [1] 14150<br />
@@ -182,10 +188,10 @@ lrwx------ 1 root root 64 Sep 30 00:05 1 -&gt; /dev/pts/0<br />
 lrwx------ 1 root root 64 Sep 30 00:05 2 -&gt; /dev/pts/0<br />
 l-wx------ 1 root root 64 Sep 30 00:05 3 -&gt; /root/log.txt
 </blockquote>
-<br/>
+
 Python 创建了一个新的文件描述符编号 <code>3</code>, 查看 <code>/root/nohup.out</code> 和 <code>/root/log.txt</code>, 实际只有在 <code>/root/log.txt</code> 中才能看到输出。不知道用 Java 语言的 System.setOut() 是不是一样的效果。<br/><br/>
-<h3>标准输入的重定向</h3><br/><br/>
-快速看一下输入重定向的情形<br/><br/>
+<h3>标准输入的重定向</h3>
+快速看一下输入重定向的情形<br/>
 <blockquote>
 # python3 test.py &lt; input.txt &amp;<br />
 [5] 14167<br />
@@ -195,11 +201,11 @@ lr-x------ 1 root root 64 Sep 30 00:12 0 -&gt; /root/input.txt<br />
 lrwx------ 1 root root 64 Sep 30 00:12 1 -&gt; /dev/pts/0<br />
 lrwx------ 1 root root 64 Sep 30 00:12 2 -&gt; /dev/pts/0
 </blockquote>
-<br/>
+
 改变的是标准输入文件描述符 <code>0</code> 指向到 <code>/root/input.txt</code> 文件，这还是好理解。<br/><br/>
-<h3>最后的最后</h3><br/><br/>
+<h3>最后的最后</h3>
 最后一句话就是 Linux 进程的数据从哪里来往哪里去，只要找到进程 ID, 用 <code>ls -l /proc/&lt;pid&gt;/fd</code> 查看它打开所有的文件描述符就行。<br/><br/>
-网络程序也不例外，比如一个 Docker 服务进程 dockerd<br/><br/>
+网络程序也不例外，比如一个 Docker 服务进程 dockerd<br/>
 <blockquote>
 $ ps -ef|grep dockerd<br />
 root 667 1 0 Sep29 ? 00:00:01 /usr/bin/dockerd -H unix:///var/run/docker.sock -H tcp://0.0.0.0:2375<br />
@@ -229,13 +235,13 @@ lrwx------ 1 root root 64 Sep 29 22:09 7 -&gt; 'socket:[24206]'<br />
 lrwx------ 1 root root 64 Sep 29 22:09 8 -&gt; 'socket:[24374]'<br />
 lrwx------ 1 root root 64 Sep 29 22:09 9 -&gt; 'socket:[23206]'
 </blockquote>
-<br/>
-从中摘出 0, 1, 2 来<br/><br/>
+
+从中摘出 0, 1, 2 来<br/>
 <blockquote>
 0 -&gt; /dev/null<br />
 1 -&gt; 'socket:[23694]<br />
 2 -&gt; 'socket:[23694]
 </blockquote>
-<br/>
+
 Docker 是一个 C/S 应用，确切说 docker 服务端提供的是 HTTP 服务，所以它的标准输出和标准错误输出定向到了一个网络连接。<br/><br/>
-曾经也研究过 Linux 下输入输出重定向的问题,  <a href="https://yanbin.blog/linux-input-output-redirection/">Linux 输入输出重定向, &amp;&gt;file, 2&gt;&amp;1, 1&gt;&amp;2 等</a>, 但当时并未从文件描述符方面去理解，因此理解的也没那么深。
+曾经也研究过 Linux 下输入输出重定向的问题,  <a href="/linux-input-output-redirection/">Linux 输入输出重定向, &amp;&gt;file, 2&gt;&amp;1, 1&gt;&amp;2 等</a>, 但当时并未从文件描述符方面去理解，因此理解的也没那么深。

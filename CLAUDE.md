@@ -69,7 +69,6 @@ yabqiu.github.io/
 
 ### Blog Functionality
 - **Full-text Search**: Client-side search powered by Fuse.js
-- **Dark/Light Mode**: User preference toggle with persistence
 - **Comments System**: Giscus integration using GitHub Discussions
 - **Table of Contents**: Auto-generated, collapsible TOC for articles
 - **Series Support**: Group related articles via taxonomy
@@ -152,7 +151,7 @@ draft: true
 ### WordPress Integration
 - **Migration Tools**: Located in `wp2hugo/` directory
 - **Export Data**: WordPress content converted to Hugo-compatible markdown
-- **Configuration**: `.env` and `.db_config.json` (gitignored for security)
+- **Configuration**: `.db_config.json` (gitignored for security)
 - **Status**: 200+ historical posts successfully migrated
 
 ## Customization Points

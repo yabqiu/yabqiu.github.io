@@ -1,0 +1,113 @@
+---
+title: ExtJs 中使用 TaskRunner 和 DelayedTask 如何传参数到 run() 方法
+url: /extjs-taskrunner-delayedtask-run-method/
+date: 2009-07-21T09:20:00-05:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Web/JS
+tags: 
+  - javascript
+  - ExtJs
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 241 
+wpStatus: publish
+views: 778
+lastmod: 2021-09-02T11:24:55-05:00
+---
+
+在 ExtJs 中支持多线程的类有 Ext.util.TaskRunner 和 Ext.util.DelayedTask。TaskRunner 提供了多线程的定时服务，DelayedTask 允许你延时多久在新建线程中执行一个任务。Ext.TaskMgr 是一个 TaskRunner 实例，在 TaskMgr.js 源码中可以看到最后一行是：</p>
+<br/>
+Ext.TaskMgr = new Ext.util.TaskRunner();<br/><br/>
+实质上不管是 TaskRunner 还是 DelayedTask，它们都是通过 setInterval() 来执行任务的，TaskRunner 能多次重复的执行一个方法，而 DelayedTask 是延时执行完一次任务后就会调用 clearInterval() 来保证只执行一次。所以这里所说如何向任务的 run() 方法传递参数，本质上就是向 setInterval() 中方法传递参数。<!--more--><br/><br/>
+我们到 <a href="http://extjs.com/deploy/dev/docs/output/Ext.util.TaskRunner.html">http://extjs.com/deploy/dev/docs/output/Ext.util.TaskRunner.html</a> 看 TaskRunner 的 API，start(Object task) 中 task 参数是一个配置对象，这里关注它的两个属性：<br/><br/>
+run : Function  定时执行的方法<br />
+args : Array 传递给上面 run 方法的参数<br/><br/>
+来看一个基本使用方法，下面是不带 args 属性参数的使用：<br/>
+{{< highlight js >}}
+Ext.onReady(function(){
+    var runner = new Ext.util.TaskRunner();
+    runner.start({      //任务被调用的方法
+        run: function(){
+            alert('run() 方法被执行.')
+        },
+        interval: 1000, //一秒执行一次
+        repeat: 5       //重复执行 5 次
+    });
+});
+{{</ highlight >}}
+<br/>
+上面没有向 run() 方法提供参数，那么应该如何向 run() 传入参数，run() 方法此时的原型是怎么样，又该如何获得传入的参数？办法是：js 函数的固有属性 arguments。看代码：<br/>
+{{< highlight js >}}
+Ext.onReady(function(){
+    var runner = new Ext.util.TaskRunner();
+    runner.start({      //任务被调用的方法
+        run: function(){ //run 方法原型不变，实际可以去遍历这个 arguments 参数数组
+            alert('run() 方法被执行. 传入参数个数：' + arguments.length + ", 分别是："
+                + arguments[0] +"," + arguments[1] +"," + arguments[2]);
+            return false;  //不返回 false，run() 方法会被永无止境的调用
+        },
+        args:[100,200,300],
+        interval: 1000, //一秒执行一次，本例中 run() 只在 1 秒后调用一次
+        repeat: 2       //重复执行 2 次, 这个参数已不再启作用了
+    });
+});
+{{</ highlight >}}
+<br/>
+如果不在 run() 方法中返回 false，你会发现会不停的弹出窗口，有了 args 属性时，repeat 根本不管用。原因还得从 TaskMgr 源代码中去发现：<br/>
+{{< highlight js >}}
+if(t.interval <= itime){
+    var rt = t.run.apply(t.scope || t, t.args || [++t.taskRunCount]);
+    t.taskRunTime = now;
+    if(rt === false || t.taskRunCount === t.repeat){
+        removeTask(t);
+        return;
+    }
+}
+if(t.duration && t.duration <= (now - t.taskStartTime)){
+    removeTask(t);
+}
+{{</ highlight >}}
+<br/>
+上面是 TaskRunner 的 runTasks 方法，当有了 args 参数，t.taskRunCount 永远都是 0，不会到达 t.taskRunCount === t.repeat，所以只能让 run() 方法返回 fasle 来终止，即满足 rt === false 时就会 removeTask(t)，当然你也可以设定一个 duration 期限。<br/><br/>
+想不太明白，为什么 ExtJs 不能让 args 和 repeat 同时有效，即让 ++t.taskRunCount 总是能得到执行。如果指定了 args 即传它，否则把当前被调用次数传递给 run() 方法。<br/><br/>
+前面看到 run() 方法是通过　Function.apply(obj: Object, args: Array) 来调用的，它是通过数组来传递参数，方法中用 arguments 取得。JS 中另一调用函数的方法是 Function.call(obj: Object, arg1, arg2, arg3,...)，相当于变长参数的形式。<br/>
+{{< highlight js >}}
+Ext.onReady(function(){
+    var runner = new Ext.util.TaskRunner();
+    runner.start({      //任务被调用的方法
+        run: function(arg){ //run 方法原型有变，有一个参数
+            //同样能用 arguments 取到 args 中的所有元素
+            alert('run() 方法被执行. 传入参数个数：' + arguments.length + ", 分别是："
+                + arguments[0] +"," + arguments[1] +"," + arguments[2] +
+                ", arg 的值是：" + arg); //arg 对应 args 中的第一个元素
+            return false;  //不返回 false，run() 方法会被永无止境的调用
+        },
+        args:[100,200,300],
+        interval: 1000, //一秒执行一次，本例中 run() 只在 1 秒后调用一次
+        repeat: 2       //重复执行 2 次, 这个参数已不再启作用了
+    });
+});
+{{</ highlight >}}
+<br/>
+关于 <a href="http://extjs.com/deploy/dev/docs/output/Ext.util.DelayedTask.html" target="_blank" rel="noopener">DelayedTask</a> 传参数的用法也是同理，而且它还不存在 repeat 和 args  的不和谐之音。同样可有两种方式，arguments 数组中取和 run() 方法加个 arg 参数取得 args 的第一个元素。直接看代码：<br/>
+{{< highlight js >}}
+var delayedTask = new Ext.util.DelayedTask();//你也可以在初始化时传入 fn,scope,args
+delayedTask.delay(1000,function(arg){//没有 arg 参数也是能用 arguments 的
+    //同样能用 arguments 取到 args 中的所有元素
+    alert('run() 方法被执行. 传入参数个数：' + arguments.length + ", 分别是："
+            + arguments[0] +"," + arguments[1] +"," + arguments[2] +
+            ", arg 的值是：" + arg); //arg 对应 args 中的第一个元素
+
+},this,[100,200,300]);
+{{</ highlight >}}
+<br/>
+从 DelayedTask 中可看到它也是通过 apply 来调用 run() 方法的，fn.apply(scope, args || []); 没有指定参数则传空参。<br/><br/>
+参考：1. <a href="http://www.cnblogs.com/moge/archive/2009/03/01/1400998.html" target="_blank" rel="noopener">Javascript中的apply和call函数</a><br />
+        2. <a href="/liuwentao253/archive/2009/03/17/260171.html" target="_blank" rel="noopener">ExtJS 2.2定时任务</a>
