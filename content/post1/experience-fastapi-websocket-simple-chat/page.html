@@ -1,0 +1,227 @@
+---
+title: 尝试 FastAPI WebSocket 写简单的聊天应用
+url: /experience-fastapi-websocket-simple-chat/
+date: 2025-06-11T00:43:03-05:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - FastAPI
+tags: 
+  - FastAPI
+  - WebSocket
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 14244 
+wpStatus: publish
+views: 135
+lastmod: 2025-06-11T10:40:17-05:00
+---
+
+听说 WebSocket 那么一个东西已经很久很久了，但始终未曾尝试，大概对它的了解就是它可以让服务与客户端之间保持一个通道，并实现 Server Push 的功能，这样客户端就无需使用长连接或轮询来与服务端交互，更重要是 WebSocket 能复用 Web 的 80 或 443 端口号，通常是防火墙友好的端口。最近在为 WebSocket 配置 Nginx 反射代理时意识到要加上 Upgrade, Connection 头，加之各种流行的 Web 框架都提供了 WebSocket 的支持，所以又不得不对它重视起来。</p>
+<br/>
+下面以 Python 的 FastAPI 框架为例，实现一个简单的聊天站点，主要是参考自 FastAPI 的 <a href="https://fastapi.tiangolo.com/advanced/websockets/">WebSockets</a> 官方样例。 当然如果从一开始就询问 ChatGPT: Create a simple chat web app with Python FastAPI framework + WebSocket, 肯定能让你获得一个不错的实现。但本人仍然希望能自我深度思考，而不是让 AI 帮我深度思考，而不是深度思考如何向 ChatGPT 问问题。记得多年前看过一位台湾历史老师讲《史记》, 经常说当看到哪一段时，把课本扣过来，然后思考碰到书中的情形之下自己会怎么想，所以觉得学任何东西当如此。<!--more--><br/><br/>
+记得在读当前明月的《明朝那些事》，作者常常这么做，特别是碰到皇帝问话时，如果是他本人应该如何应对，如何回答的不偏不倚，妥当得体，漏不透风，这也符合他的公务员的谨慎思维，所以最后他抑郁了。<br/><br/>
+要完成本文的简单聊天网站，在 Python 虚拟环境中需安装如下组件<br/>
+<blockquote>
+pip install fastapi uvicorn websockets
+</blockquote>
+<br/>
+然后是服务端代码 ws_demo.py<br/>
+{{< highlight python >}}
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
+import uvicorn
+
+app = FastAPI()
+
+websockets = {}
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    print("WebSocket connection established")
+    try:
+        while True:
+            data = await websocket.receive_text()
+            if data.startswith("@setName"):
+                user_name = data.split(" ", 1)[1]
+                websockets[user_name] = websocket
+                continue
+
+            from_who = next((name for name, ws in websockets.items() if ws == websocket), "Unknown")
+            if data.startswith("@"):
+                to_who, message = data[1:].split(" ", 1)
+                out_msg = f"{from_who}: {message}"
+                await websockets[to_who].send_text(out_msg)
+                await websocket.send_text(out_msg)
+            else:
+                for ws in websockets.values():
+                    await ws.send_text(f"{from_who}: {data}")
+    except WebSocketDisconnect:
+        print("WebSocket closed by client")
+        websockets.pop(next((name for name, ws in websockets.items() if ws == websocket), None), None)
+    except KeyError:
+        pass
+
+@app.get("/")
+async def index():
+    with open("app.html", 'r') as f:
+        return HTMLResponse(content=f.read())
+
+if __name__ == '__main__':
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+{{</ highlight >}}
+<br/>
+实现了一个非常粗陋的 WebSocket 连接管理器，让用户名与相应的 WebSocket 关联起来。主要功能是<br/><br/>
+<ol>
+    <li>当客户端发送消息 <code>@setName &lt;username&gt;</code>, 把 &lt;username&gt; 与当前连接的 WebSocket 关联</li>
+    <li>客户端发送不带 @&lt;username&gt; 为首的消息将把消息广播到所有客户端</li>
+    <li>当客户端发送以 <code>@&lt;username&gt; &lt;message content&gt;</code> 格式的消息时，只把消息投送到 <code>@&lt;username&gt;</code> 相对应的客户端，同时给自己来一份</li>
+</ol>
+<br/>
+用命令 <code>python ws_demo.py</code> 起动服务，WebSocket 服务是 <code>ws://localhost:8000/ws</code><br/><br/>
+客户端网页代码 app.html<br/>
+{{< highlight html >}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>WebSocket Chat</title>
+</head>
+<body>
+<h3>WebSocket Chat</h3>
+<form action="" onsubmit="sendMessage(event)">
+    <label for="messageText" id="name"></label>
+    <input type="text" id="messageText" placeholder="input name" autocomplete="off"/>
+    <button>Send</button>
+</form>
+<ul id='messages'>
+</ul>
+<script>
+    let ws = new WebSocket("ws://localhost:8000/ws");
+    let userName = ""
+    ws.onmessage = function (event) {
+        let msgLis = document.querySelectorAll("#messages li")
+        if (msgLis.length === 5) {
+            msgLis[0].remove()
+        }
+        let messages = document.getElementById('messages')
+        let message = document.createElement('li')
+        let content = document.createTextNode(event.data)
+        message.appendChild(content)
+        messages.appendChild(message)
+    };
+
+    function sendMessage(event) {
+        event.preventDefault()
+        let input = document.getElementById("messageText")
+        let message = input.value
+        if(userName === "") {
+            userName = input.value
+            input.setAttribute("placeholder", "input message")
+            document.getElementById("name").innerHTML = input.value
+            message = "@setName " + userName
+        }
+        ws.send(message)
+        input.value = ""
+    }
+</script>
+</body>
+</html>
+{{</ highlight >}}
+<br/>
+我们三个浏览器窗口中打开 http://localhost:8000/, 没有输入用户名的话看到的输入框是 <code>input name</code><br/><br/>
+{{< bundle-image fastapi-websocket-1-800x165.png 485 >}}
+在第一个浏览器中输入 user1, 然后看到 <code>user1 [input message] (Send)</code> 的式样。<br/><br/>
+在另两个窗口中分别输入 user2 或 user3, 以此来标识各自的用户名分别是 user1, user2 和 user3.<br/><br/>
+下图是我们在不同窗口中按序操作的结果<br/><br/>
+<ol>
+    <li>user3 窗口中输入 hello to all, 看到三个窗口中都显示 user3: hello to all</li>
+    <li>user3 窗口中继续输入 @user1 send to user1, 在 user1 和 user3 窗口同时显示了 user3: send to user1</li>
+    <li>user3 窗口接着输入 @user2 send to user2, 在 user2 和 user3 窗口同时显示了 user: send to user2</li>
+    <li>最后在 user1 窗口中输入 hello to all, 同样在三个窗口中都马上显示了 user1: hello to all</li>
+</ol>
+<br/>
+{{< bundle-image fastapi-websocket-2-800x524.png 800 >}}
+这样一个多用户聊天的 Web 站点略具雏形，我们可以润色更丰富的功能，如用户注册，则进入聊天室自动显示用户名。更强的连接管理，如用户加入与退出的通知，聊天消息的 LocalStorage 存储，更漂亮的聊天页面展示。由于 WebSocket 可传送二进制，浏览器能访问麦克风，实现语音聊天都不是难事，或者语音编码为 Base64 传送都行。<br/><br/>
+<h3>WebSocket 协议分析</h3>
+下面我们简单分析下由 http 协议如何升级到 ws 协议的，使用 Wireshark 抓包工具，对 WebSocket 中的关键包进行分析。与 HTTP, WebSocket 相关的包<br/><br/>
+{{< bundle-image fastapi-websocket-7-800x558.png 870 >}}
+在 Wireshark 中能很好的识别出 WebSocket 协议, 下面分析几个关键报文<br/><br/>
+浏览器在执行<br/>
+{{< highlight js >}}
+let ws = new WebSocket("ws://localhost:8000/ws");{{</ highlight >}}
+<br/>
+相应的 HTTP 协议文本为<br/>
+{{< highlight text >}}
+GET /ws HTTP/1.1
+Host: localhost:8000
+Connection: Upgrade
+Pragma: no-cache
+Cache-Control: no-cache
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36
+Upgrade: websocket
+Origin: http://localhost:8000
+Sec-WebSocket-Version: 13
+Accept-Encoding: gzip, deflate, br, zstd
+Accept-Language: en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7
+Sec-WebSocket-Key: A3+6KUIiYQSSwVf+9Ec+ag==
+Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits
+
+{{</ highlight >}}
+<br/>
+请求协议升级到 websocket<br/><br/>
+从服务端回过来的 HTTP 报文是<br/>
+{{< highlight text >}}
+HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Accept: wsjTAriES7avXQbPbdm7cvo9C98=
+Sec-WebSocket-Extensions: permessage-deflate
+date: Wed, 11 Jun 2025 05:06:11 GMT
+server: uvicorn
+
+{{</ highlight >}}
+<br/>
+通知协议成功切换到 websocket，并建立起了 WebSocket 连接, 这可认为是 WebSocket 的握手过程。后面的通信与 HTTP 协议没有什么关系了，应用层协议由 HTTP 切换到了 WebSocket 二进制协议了。<br/><br/>
+从这里的协议切换过程可以理解为什么在为 WebSocket 配置反射代理时需考虑到 Upgrade: websocket 和 Connection: Upgrade 这两个头。<br/><br/>
+后面就是服务端与客户端之间的 WebSocket 通信，当客户端执行<br/>
+{{< highlight python >}}
+ws.send("@setName user1"){{</ highlight >}}
+<br/>
+时，WebSocket 报文是<br/><br/>
+{{< bundle-image fastapi-websocket-8.png 370 >}}
+注意，WebSocket 不像 HTTP, 它是一个二进制的协议<br/><br/>
+看下一个客户端向服务端发送 <code>hello to all</code> 的 WebSocket 报文<br/><br/>
+{{< bundle-image fastapi-websocket-9.png 370 >}}
+下面是服务端向客户端回送 <code>hello to all</code> 的 WebSocket 报文<br/><br/>
+{{< bundle-image fastapi-websocket-10.png 370 >}}
+最后是关闭 WebSocket 连接的包。<br/><br/>
+在浏览器中用 Inspect 功能可以看到由 HTTP 升级到 WebSocket 的请求响应包，之后的 WebSocket 通信就无从知晓了。<br/><br/>
+关于 WebSocket 协议本身的 RFC 参考文件请见 <a href="https://datatracker.ietf.org/doc/html/rfc6455">RFC 6455 - The WebSocket Protocol</a> 和 <a href="https://datatracker.ietf.org/doc/html/rfc7936">RFC 7963 - Clarifying Registry Procedures for the WebSocket Suprotocol Name Registry</a>.<br/><br/>
+<h3>最后</h3>
+WebSocket 是与 HTTP 处于对等位置的应用程协议，由 HTTP 切换过来的，除了复用了相同的端口号就没有别的关系了. WebSocket 的 URL 格式为<br/><br/>
+<ol>
+    <li>ws://host[:port]/path 或</li>
+    <li>wss://host[:port]/path</li>
+</ol>
+<br/>
+wss 对应于 HTTPS 的安全协议, ws 默认端口为 80, wss  默认端口为 443<br/><br/>
+从 Wireshark 中观察到当从 HTTP 协议升级到 WebSocket 协议，它们所用的本地端口号都是一样的，即 WebSocket 复用了 TCP 连接<br/><br/>
+当我们刷新或关掉浏览器的时候，在服务端的 WebSocket 连接会自动关闭，即<br/>
+{{< highlight python >}}
+try:
+    while True:
+        data = await websocket.receive_text()
+except WebSocketDisconnect:
+    print("WebSocket closed by client")       
+{{</ highlight >}}
+<br/>
+会触发 WebSocketDisconnect 中的代码执行。<br/><br/>
+WebSocket 是二进制协议，所以可用来传送任何类型的数据。<br/><br/>
+WebSocket 的数据是按帧传输的，它的 Opcode 标志是 4 位，有以下选择<br/><br/>
+%x0: 帧继续，%x1: 表示文本帧，%x2 表示二进制帧，%3-7 保留为非控制帧用途, %x8 表示关闭连接，%x9 心跳 ping, %xA 心跳 pong, %xB-F 保留为控制帧用途。
