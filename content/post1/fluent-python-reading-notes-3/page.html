@@ -1,0 +1,108 @@
+---
+title: 流畅的 Python 读书笔记(三)
+url: /fluent-python-reading-notes-3/
+date: 2022-02-04T10:23:58-06:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/python-logo.png"
+categories:
+  - Python
+tags: 
+  - utf-8
+  - encoding
+  - Unicode
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 12243 
+wpStatus: publish
+views: 296
+lastmod: 2022-02-04T10:23:58-06:00
+---
+
+书中的数据结构还差文本和字节序列那一章未阅读完。Python 的 str 是 unicode 类型，编码在应用方面基本上就是 .decode(), .encode() 方法的调用，默认编解码时用 UTF-8 就行，差不多就不用太深入了。</p>
+<br/>
+Python 的 bytes 和 bytearray 中的元素都是介于 0 ~ 255(含) 之间的整数，即一个字节，bytes 的切片是 bytes, bytearray 的切片还是 bytearray。bytes 和 bytearray 的输出(__repl__) <br/><br/>
+<ol>
+    <li>可打印的 ASCII 码以 ASCII 字符贵</li>
+    <li>特殊字转义，如 \r, \n, \r, 和 \\</li>
+    <li>其他字符以十六进制转义输出，如 \xc3</li>
+</ol>
+<br/>
+像 endswith, replace, strip, translate, upper 等函数可以直接用来处理 bytes,如<!--more--><br/>
+{{< highlight python >}}
+a=b'abc'         # 或者下面那种方式也是一样的
+# a = bytearray(b'abc')
+# a = bytearray('abc', encoding='utf-8')
+type(a)           # bytes
+a.upper()         # b'ABC'
+a.endswith(b'c')  # True
+{{</ highlight >}}
+<br/>
+re 正则表达式模块也能处理二进制序列<br/><br/>
+bytes/bytearray 与 16 进制之间的转换<br/>
+{{< highlight python >}}
+a=b'xyz'
+a.hex()                   # 78797a
+bytes.fromhex('78797a')   # b'xyz'
+bytearray.fromhex('78 79 7a') # b'xyz'
+
+
+{{</ highlight >}}
+<br/>
+bytes 和 bytearray 很多时候可通用。<br/><br/>
+memoryview + struct 解析字节数据的用法<br/>
+{{< highlight python >}}
+import struct
+fmt = '<3s3sHH'
+
+with open ('rotating_earth.gif', 'rb') as fp:
+    img = memoryview(fp.read())
+    
+header = img[:10]
+struct.unpack(fmt, header) # (b'GIF', b'89a', 400, 400)
+{{</ highlight >}}
+<br/>
+但为什么要用 memoryview 呢，直接读取 10 个字节就行了<br/>
+{{< highlight python >}}
+header = fp.read(10)
+{{</ highlight >}}
+<br/>
+顺便学习下 struct 的用法。<br/><br/>
+Python 自带超 100 种编码 <a href="https://docs.python.org/3/library/codecs.html#standard-encodings">standard encodings</a>，每个编码有多个名称，如 utf-8, utf8, utf_8, U8 都一样，在 codec 中定义了很多 xxx_encode, xxx_decode 函数。<br/><br/>
+bytes 与 str 之间的转换，有不兼容的字符时可能抛出 UnicodeEncodeError 和 UnicodeDecodeError 异常，编解码时可指定如何处理错误<br/><br/>
+a_bytes.encode('cp437', errors='ignore')  # 还可选 errors='replace', errors='xmlcharrefreplace'.<br/><br/>
+不同字符集间转换也会产生奇怪的字符(鬼符 gremlin 或 mojibake)，如 \xe9 在 KOI8-R 是 И， 在 latin1 中是 é， 如果被字符的超集处理都没问题。经常看到被 replace 错误处理时，无法正常处理全用 �（码位是U+FFFD) 表示，还记得那时候的 <code>烫烫烫</code>,  <code>屯屯屯</code> 吗？恰好对应到 GB2312 的 <code>\xcc\xcc</code>(未初始化的栈内存)和 <code>\xcd\xcd</code>(未初始化的堆内存)。<br/><br/>
+如果 Python 源码文件使用的编码无法被解释就会报出 SyntaxError: Non-UTF-8 code 这样的错误，解决的办法就是用 utf-8, 或者文件头加上<br/>
+{{< highlight python >}}
+# coding: cp1252
+...
+{{</ highlight >}}
+<br/>
+字符集侦测包 <a href="https://pypi.org/project/chardet/">Chardet</a> 可帮助我们找到某个文件使用了什么编码，它支持 30 种编码，用 pip 安装，使用命令 chardetect filename<br/><br/>
+BOM: 字节序标记(byte-order mark)，指示文件编码用的小字节序还是大字节序，UTF-16 可能会在文本前加上这个标记 <code>\xff\xfe</code> 为小字节序，没有 BOM 就假定用大字节序。Intel x86 用的小字节序，很多文件即使不带 BOM 也用小字节序。UTF-16 有两个变种，UTF-16LE(little end) 和 UTF-16BE(big end), 如果直接指定变种名就不需要 BOM。<br/><br/>
+多字节的字符集，像 UTF-16, UTF-32 才有字节序的问题，像 UTF-8 没有字节序的考虑，不用 BOM。但 Windows 也可能给 UTF-8 加上 BOM 来确定是不是 UTF-8, 像 \xef\xbb\xbf, Python 不认它们。<br/><br/>
+Python 处理文本的是佳实践是：<span style="color: #000080;"><strong>尽早把字节转换成字符串，程序中尽量处理字符串，尽量晚的把字符串编码成字节序列</strong></span>. -- 俗称 Unicode 三明治<br/><br/>
+Python 选用何种编码，有不同的状态<br/><br/>
+<ol>
+    <li>打开文件时由 locale.getpreferredencode() 确定</li>
+    <li>stdout/stdin/stderr 用 PYTHONIOENCODING 环境变量设置，没有则继承自控制台</li>
+    <li>标准输入输出重定到文件用 locale.getpreferedencode() 确定</li>
+    <li>bytes 与 str 间转换用 sys.getdefaultencoding() 获得编码，在 GNU Linux 和 OSX 中是 UTF-8</li>
+    <li>文件名的编解码用 sys.getfilesystemencoding() 确定，比如 open() 打开文件，在 GNU Linux 和 OSX 中是 UTF-8</li>
+</ol>
+<br/>
+Unicode 涉及到文本的规范化，如利于搜索，比较。如 <code>½</code> 也要能用 1/2 搜索出来，规范化用到 NFC, NFD, NFKC, NFKD 等。Unicode 在不同区域会有不同的排序，非 ASCII 文本排序可能要用到的函数是 local.strxfrm()。<br/><br/>
+Unicode 数据库，如标示每一个字符的 isprintable(), isnumeric(), isdecimal() 等，比如 <br/>
+{{< highlight python >}}
+>>> '1\u3285\u2480\u216b\u00bc'
+'1㊅⒀Ⅻ¼'
+{{</ highlight >}}
+<br/>
+上面那些都是 isnumeric()<br/><br/>
+Python 的 re 模块对 Unicode 支持不充分，可用 PyPI 的 regex 模块。re 应用于字节序列，\d, \w 只能匹配 ASCII 字符，字符串模式，\d 还能匹配到 \u3285 那样不同语言中的数字。<br/><br/>
+就让本文全是关于字符集的内容，后面开始 Python 编程方面的特性了 -- 函数。
