@@ -2,6 +2,7 @@
 author: Hugo Authors
 title: Using Notices
 date: 1900-08-20
+draft: true
 description: Using Notices functionality within this theme
 ---
 

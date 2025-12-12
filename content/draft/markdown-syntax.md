@@ -4,6 +4,7 @@ title = "Markdown Syntax Guide"
 date = "1900-03-11"
 description = "Sample article showcasing basic Markdown syntax and formatting for HTML elements."
 featured = true
+draft = true
 tags = [
     "markdown",
     "css",

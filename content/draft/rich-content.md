@@ -2,6 +2,7 @@
 author = "Hugo Authors"
 title = "Rich Content"
 date = "1900-03-10"
+draft = true
 description = "A brief description of Hugo Shortcodes"
 tags = [
     "shortcodes",

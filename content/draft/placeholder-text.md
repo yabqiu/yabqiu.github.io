@@ -4,6 +4,7 @@ title = "Placeholder Text"
 date = "1900-03-09"
 description = "Lorem Ipsum Dolor Si Amet"
 type = "post"
+draft = true
 tags = [
     "markdown",
     "text",
