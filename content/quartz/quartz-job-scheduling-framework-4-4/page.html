@@ -1,0 +1,541 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第四章. 部署 Job (第四部分)
+url: /quartz-job-scheduling-framework-4-4/
+date: 2008-01-08T09:07:00-06:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 451 
+wpStatus: publish
+views: 657
+lastmod: 2021-09-03T21:35:33-05:00
+---
+
+<strong>七. 线程在 Quartz 中的用法</strong></p>
+<br/>
+线程与 Quartz 来说尤为重要，因为 Quartz  就是设计为支持同时运行多个 Job。为达到此效果，Quartz 非常倚重于内建于 Java 语言的线程，借助于自己的类和借口还有所增强。你已经在本章或前面章节中看到过这方面的例子。<br/><br/>
+当 Quartz Schduler 首次由某个工厂方法创建时，工厂配置了 Scheduler 会在它的整个生命周期中用到的几个重要的资源。其中一些重要的资源是与线程相关的。<br/><br/>
+<strong>·主处理线程：<span style="color: #800080;">QuartzSchedulerThread</span><br />
+</strong><br />
+Quartz 应用第一次运行时，<span style="color: #800080;">main</span> 线程会启动 Scheduler。<span style="color: #800080;">QuartzScheduler</span> 被创建并创建一个 <span style="color: #800080;">org.quartz.core.QuartzSchedulerThread</span> 类的实例。QuartzSchedulerThread 包含有决定何时下一个 Job 将被触发的处理循环。顾名思义，<span style="color: #800080;">QuartzSchedulerThread</span> 是一个 Java 线程。它作为一个非守护线程运行在正常优先级下。<!--more--><br/><br/>
+<span style="color: #800080;">QuartzSchedulerThread</span> 的主处理循环的职责描述如下：<br/><br/>
+1. 当 Scheduler 正在运行时：<br/><br/>
+    A. 检查是否有转换为 standby 模式的请求。<br/><br/>
+       1. 假如 standby 方法被调用，等待继续的信号<br/><br/>
+    B. 询问 <span style="color: #800080;">JobStore</span> 下次要被触发的 Trigger.<br/><br/>
+       1. 如果没有 Trigger 待触发，等候一小段时间后再次检查<br/><br/>
+2. 假如有一个可用的 Trigger，等待触发它的确切时间的到来<br/><br/>
+    D. 时间到了，为 Trigger 获取到 <span style="color: #800080;">triggerFiredBundle</span>.<br/><br/>
+    E. 使用 Scheduler 和 <span style="color: #800080;">triggerFiredBundle</span> 为 Job 创建一个 <span style="color: #800080;">JobRunShell</span> 实例<br/><br/>
+    F. 告诉 <span style="color: #800080;">ThreadPool</span> 可能时运行 <span style="color: #800080;">JobRunShell</span>.<br/><br/>
+这个逻辑存在于 <span style="color: #800080;">QuartzSchedulerThread</span> 的 <span style="color: #800080;">run()</span> 方法中。<br/><br/>
+<strong>·<span style="color: #800080;">QuartzSchedulerResources</span><br />
+</strong><br />
+当工厂创建 Scheduler 实例时，它还会传递给 Scheduler 一个 <span style="color: #800080;">org.quartz.core.QuartzSchedulerResoures</span> 实例。<span style="color: #800080;">QuartzSchedulerResourecs</span> 除包含以上东西之后，还有一个 ThreadPool 实例，它提供了一个工作者线程池来负责执行 Job。在 Quartz 中，<span style="color: #800080;">ThreadPool</span> 是由 <span style="color: #800080;">org.quartz.spi.ThreadPool</span> 接口 (因为 Quartz 是在 JDK 1.5 之前产生的，所以需要自己的 <span style="color: #800080;">ThreadPool</span> 类确保向后的兼容性，Quartz 仍然用自己的 <span style="color: #800080;">ThreadPool</span> 替代 Java 的) 表示的，并提供一个名为 <span style="color: #800080;">org.quartz.simp.SimpleThreadPool</span> 的具体实现类。<span style="color: #800080;">SimpleThreadPool</span> 有一个固定数目的工作者线程，在加载之后就不再减少或增多。图 4.6 是在框架启动时与线程相关的时序图。<br/><br/>
+<div>
+<p style="text-align: center;"><strong>图 4.6. 在 Quartz 启动时创建的几个与线程相关的资源<br />
+</strong></p>
+<p style="text-align: center;">[<a href="{{< bundle-resource QuartzFigure4.6.JPG >}}" target="_blank" rel="noopener noreferrer">看全尺寸图</a>]</p>
+{{< bundle-image src="QuartzFigure4.6.JPG" width="500px" >}}
+</div>
+<br/>
+<strong>·什么是 Quartz 工作者线程？<br />
+</strong><br/><br/>
+Quartz 不会在 <span style="color: #800080;">main</span> 线程中处理你的 Job。如果这么做，会严重降低应用的可扩展性。相应的，Quartz 把线程管理的职责委托给分散的组件。对于一般的 Quartz 设置 (这部分还是很费功夫的)，都是用<span style="color: #800080;">SimpleThreadPool</span>  类处理线程的管理。<span style="color: #800080;">SimpleThreadPool </span>创建了一定数量的 <span style="color: #800080;">WorkerThread</span> 实例来使得 Job 能够在分散的线程中进行处理。WorkerThread 是定义在 <span style="color: #800080;">SimpleThreadPool</span> 类中的内部类，它实质上就是一个线程。要创建 <span style="color: #800080;">WorkerThread</span> 的数量以及为他们的优先级是配置在文件 <span style="color: #800080;">quartz.properties</span> 中并传入工厂的。<br/><br/>
+当 <span style="color: #800080;">QuartzSchedulerThread</span> 请求 <span style="color: #800080;">ThreadPool</span> 去运行 <span style="color: #800080;">JobRunShell</span> 实例，<span style="color: #800080;">ThreadPool</span> 就检查看是否有一个可用的工作者线程。假如所以已配置的工作者线程都是忙的，<span style="color: #800080;">ThreadPool</span> 就等待直到有一个变为可用。当一个工作者线程是可用的，并且有一个 <span style="color: #800080;">JobRunShell</span> 等待执行，工作者线程就会调用 <span style="color: #800080;">JobRunShell</span> 类的 <span style="color: #800080;">run()</span> 方法。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>配置可选择的 <span style="color: #800080;">ThreadPool</span></strong>Quartz 框架允许你改变所用的 <span style="color: #800080;">ThreadPool</span> 实现。替换类必须实现 <span style="color: #800080;">org.quartz.spi.ThreadPool</span> 接口，但是框架只支持通过在文件中配置的方式改变 ThreadPool 的实现类。例如，你可以使用更为高级的 <span style="color: #800080;">ThreadPool</span> 实现－－随时基于需求改变线程的数量，甚至是从应用服务器中获得工作者线程。对于大多数用户，默认的实现就足够了。</td>
+</tr>
+</tbody>
+</table>
+<div> </div>
+<strong>·<span style="color: #800080;">JobRunShell</span> 的 <span style="color: #800080;">run()</span> 方法</strong><br/><br/>
+虽然 <span style="color: #800080;">WorkerThread</span> 是真正的 Java 线程，<span style="color: #800080;">JobRunShell</span> 类也还是实现了 Runable。那意味着它可以作为一个线程并包含一个 run() 方法。在本章前面讨论过，<span style="color: #800080;">JobRunShell</span> 的目的是调用 Job 的 <span style="color: #800080;">execute()</span> 方法。不仅如此，它还要负责通知 Job 和 Trigger 监听器，在运行完成后还得更新此次执行的 Trigger 的信息。<br/><br/>
+<strong>八. 理解 Quartz 的 Trigger<br />
+</strong><br />
+Job 包含了要执行任务的逻辑，但是 Job 对何时该执行却一无所知。这个事情留给了 Trigger。Quartz Trigger 继承了抽象的 <span style="color: #800080;">org.quartz.Trigger</span> 类。当前，Quartz 有三个可用的 Trigger：<br/><br/>
+    ·<span style="color: #800080;">org.quartz.SimpleTrigger<br />
+</span><br />
+    ·<span style="color: #800080;">org.quartz.CronTrigger<br />
+</span><br />
+    ·<span style="color: #800080;">org.quartz.NthIncludeDayTrigger</span><br/><br/>
+还有第四个 Trigger，叫做 <span style="color: #800080;">UICronTrigger</span>，但是到 Quartz 1.5 就不推荐使用了。它主要是用在 Quartz 的 Web 程序中，而不是用于 Quartz 自身中。[译者注：在 Quartz 1.6 中，<span style="color: #800080;">UICronTrigger</span> 已被彻底摈弃]<br/><br/>
+<strong>·使用 <span style="color: #800080;">org.quartz.SimpleTrigger</span><br />
+</strong><br />
+正如其名所示，<span style="color: #800080;">SimpleTrigger</span> 对于设置和使用是最为简单的一种 Quartz Trigger。它是为那种需要在特定的日期/时间启动，且以一个可能的间隔时间重复执行 <em>n</em>  次的 Job 所设计的。代码 4.9 提供了一个使用 <span style="color: #800080;">SimpleTrigger</span> 的例子。<br/><br/>
+<strong>代码 4.9. 使用 <span style="color: #800080;">SimpleTrigger</span> 部署一个 Job<br />
+</strong>
+{{< highlight java >}}
+public class Listing_4_9 {
+     static Log logger = LogFactory.getLog(Listing_4_9.class);
+
+     public static void main(String[] args) {
+          Listing_4_9 example = new Listing_4_9();
+          example.startScheduler();
+     }
+
+     public void startScheduler() {
+          try {
+               // Create and start the scheduler
+               Scheduler scheduler =
+                             StdSchedulerFactory.getDefaultScheduler();
+               scheduler.start();
+              logger.info("Scheduler has been started");
+
+               JobDetail jobDetail =
+                         new JobDetail("PrintInfoJob",
+                              Scheduler.DEFAULT_GROUP,
+                                     PrintInfoJob.class);
+               /*
+                * Create a SimpleTrigger that starts immediately,
+                * with a null end date/time, repeats forever and has
+                * 1 minute (60000 ms) between each firing.
+                */
+                Trigger trigger =
+                               new SimpleTrigger("myTrigger",
+                                      Scheduler.DEFAULT_GROUP, new Date(), null,
+                                             SimpleTrigger.REPEAT_INDEFINITELY,
+                                             60000L);
+
+                scheduler.scheduleJob(jobDetail, trigger );
+
+           } catch (SchedulerException ex) {
+                logger.error(ex);
+           }
+      }
+  }
+{{</ highlight >}}
+<br/>
+SimpleTrigger 存在几个变种的构造方法。他们是从无参的版本一路到带全部参数的版本。下面代码版断显示了一个仅带有 trigger 的名字和组的简单构造方法<br />
+ <br/>
+{{< highlight java >}}
+//No Argument Constructor
+SimpleTrigger sTrigger =
+   new SimpleTrigger("myTrigger", Scheduler.DEFAULT_GROUP);
+{{</ highlight >}}
+<br/>
+这个 Trigger 会立即执行，而不重复。还有一个构造方法带有多个参数，配置 Triiger 在某一特定时刻触发，重复执行多次，和两次触发间的延迟时间。<br/>
+{{< highlight java >}}
+public SimpleTrigger(String name, String group,
+   String jobName, String jobGroup, Date startTime,
+   Date endTime, int repeatCount, long repeatInterval);
+{{</ highlight >}}
+<br/>
+<strong>·使用 <span style="color: #800080;">org.quartz.CronTrigger</span></strong><br/><br/>
+<span style="color: #800080;">CronTrigger</span> 允许设定非常复杂的触发时间表。然而有时也许不得不使用两个或多个 <span style="color: #800080;">SimpleTrigger</span> 来满足你的触发需求，这时候，你仅仅需要一个 <span style="color: #800080;">CronTrigger</span> 实例就够了。<br/><br/>
+顾名思义，<span style="color: #800080;">CronTrigger</span> 是基于 Unix 类似于 cron 的表达式。例如，你也许有一个 Job，要它在星期一和星期五的上午 8:00-9:00 间每五分钟执行一次。假如你试图用 <span style="color: #800080;">SimpleTrigger</span> 来实现，你或许要为这个 Job 配置多个 Trigger。然而，你可以使用如下的表达式来产生一个遵照这个时间表触发的 Trigger：<br/><br/>
+<span style="color: #800080;">"0 0/5 8 ? * MON,FRI"<br />
+</span><br/>
+{{< highlight java >}}
+try {
+     CronTrigger cTrigger = new CronTrigger("myTrigger",
+               Scheduler.DEFAULT_GROUP, "0 0/5 8 ? *
+MON,FRI");
+} catch (ParseException ex) {
+    ex.printStackTrace();
+}
+{{</ highlight >}}
+<br/>
+因为 CronTrigger 内建的如此强的灵活性，也与生俱来可用于创建几乎无所限制的表达式，所以下一章专注于你想知道的关于 <span style="color: #800080;">CronTrigger</span> 的东西及 cron 表达式。第五章，"<span style="color: #800080;">CronTrigger</span> 及更多" 也列了一系列的关于如何为特定触发时间表创建的 <span style="color: #800080;">CronTrigger</span> 的例子。<br/><br/>
+<strong>·使用 </strong><span style="color: #800080;"><strong>org.quartz.NthIncludedDayTrigger<br />
+</strong></span><br />
+<span style="color: #800080;">org.quartz.NthIncludedDayTrigger</span> 是 Quartz 开发团队最新加入到框架中的一个 Trigger。它设计用于在每一间隔类型的第几天执行 Job。例如，你要在每个月的 15 号执行开票的 Job，用 <span style="color: #800080;">NthIncludedDayTrigger</span> 就再合适不过了。Quartz 的 <span style="color: #800080;">Caldendar</span> 也可与 Trigger 关联以此把周末与节假日考虑进来，并在必要时跳开这些日期。接下来的代码片断描绘了如何创建一个 <span style="color: #800080;">NthIncludedDayTrigger</span>.<br/>
+{{< highlight java >}}
+NthIncludedDayTrigger trigger =
+     new NthIncludedDayTrigger(
+          "MyTrigger", Scheduler.DEFAULT_GROUP);
+               trigger.setN(15);
+trigger.setIntervalType(
+     NthIncludedDayTrigger.INTERVAL_TYPE_MONTHLY);
+{{</ highlight >}}
+<br/>
+<strong><br />
+·为一个 Job 使用多个 Trigger<br />
+</strong><br />
+你并未被强制要接受单个 Trigger 每个 Job。如果你需要一个更复杂的触发计划，你可以创建多个 Trigger 并指派它们给同一个 Job。Scheduler 是基于配置在 Job 上的 Trigger 来决定正确的执行计划的。为同一个 JobDetail 使用多个 Trigger 方法片断如下：<br/>
+{{< highlight java >}}
+try {
+     // Create and start the scheduler
+     Scheduler scheduler =
+          StdSchedulerFactory.getDefaultScheduler();
+     scheduler.start();
+     logger.info("Scheduler has been started");
+
+     JobDetail jobDetail =
+          new JobDetail("PrintInfoJob",
+               Scheduler.DEFAULT_GROUP,
+               PrintInfoJob.class);
+
+     // A trigger that fires every 5 seconds
+     Trigger trigger1 =
+          TriggerUtils.makeSecondlyTrigger("trigger1",
+               5000, SimpleTrigger.REPEAT_INDEFINITELY);
+
+    // A trigger that fires every 10 minutes
+     Trigger trigger2 =
+          TriggerUtils.makeMinutelyTrigger("trigger2", 10,
+               SimpleTrigger.REPEAT_INDEFINITELY);
+
+    // Schedule job with first trigger
+     scheduler.scheduleJob(jobDetail, trigger1);
+
+    // Schedule job with second trigger
+     scheduler.scheduleJob(jobDetail, trigger2);
+
+  } catch (SchedulerException ex) {
+       logger.error(ex);
+  }
+{{</ highlight >}}
+<br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>每 Trigger 一个 Job<br />
+</strong><br />
+虽然单个 JobDetail 能够支持多个 Trigger，但一个 Trigger 只能被指派给一个 Job。</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<strong>·Quartz Calendar</strong><br/><br/>
+不要混淆了 Quartz 的 Calendar 对象与 Java API 的 <span style="color: #800080;">java.util.Calendar</span>。它们是应用于不同目的不一样的组件。正如你大概所知，Java 的 Calender 对象是通用的日期和时间工具；许多过去由 Java 的 Date 类提供的功能现在加到了 Calendar 类中了。<br/><br/>
+另一方面，Quartz 的 Calender 专门用于屏闭一个时间区间，使 Trigger 在这个区间中不被触发。例如，让我们假如你是为一个财务机构（如银行）工作。对于银行普遍的都有许多 "银行节日"。假设你不需要（或不想） Job 在那些日子里运行。你可以采用以下几种方法中的一种来实现：<br/><br/>
+    ·让你的 Job 总是运行。(这会让银行一团糟)<br/><br/>
+    ·在节假日期间手动停止你的 Job。(需要专门的人来负责做这个事情)<br/><br/>
+    ·创建不包含这些日子的多个 Trigger。(这对于设置和维护会较耗时的)<br/><br/>
+    ·设立一个排除这些日子的银行节日的 Calendar。(很轻松的实现)<br/><br/>
+虽然你可以用其中的一个方法来解决这样的问题，Quartz 的 Calender 却是特意为此而设计的。<br/><br/>
+<strong>·<span style="color: #800080;">org.quartz.Calender</span> 接口</strong><br/><br/>
+Quartz 定义了 <span style="color: #800080;">org.quartz.Calendar</span> 接口，所有的 Quartz Calendar 必须实现它。它包含了几个方法，但是有两个是最重要的：<br/>
+{{< highlight java >}}
+public long getNextIncludedTime(long timeStamp);
+public boolean isTimeIncluded(long timeStamp);
+{{</ highlight >}}
+<br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>Calender 排除时间的粒度</strong>Calendar 接口方法参数的类型是 Long。这说明 Quartz Calender 能够排除的时间细致毫秒级。你很可能永远都不需要这么细小的位度，因为大部分的 Job 只需要排除特别的日期或许会是小时。然而，假如你真需要排除到毫秒一级的，Calender 能帮你做到。</td>
+</tr>
+</tbody>
+</table>
+<br/>
+作为一个 Quartz Job 的创建者和开发者，你可不必去熟悉 Calender 接口。这主要是因为已有的 Calendar (Quartz 自带的) 需要应付的情况就不够多。开箱即用的，Quartz 包括许多的 Calender 实现足以满足你的要求。表 4.1 列出了 Quartz 自带的随时可用的 Calendar。<br/><br/>
+<table border="0" width="650">
+<caption><strong>表 4.1. Quartz 包含了你的应用可用的许多的 Calender 类型</strong></caption>
+<tbody>
+<tr>
+<td><strong>Calender 名称</strong></td>
+<td><strong>类</strong></td>
+<td><strong>用法</strong></td>
+</tr>
+<tr>
+<td><span style="color: #800080;">BaseCalender</span></td>
+<td><span style="color: #800080;">org.quartz.impl.calendar.BaseCalender</span></td>
+<td>为高级的 Calender 实现了基本的功能，实现了 <span style="color: #800080;">org.quartz.Calender</span> 接口</td>
+</tr>
+<tr>
+<td>
+<p class="docText"><tt><span style="color: #800080;">WeeklyCalendar</span></tt></p>
+</td>
+<td>
+<p class="docText"><tt><span style="color: #800080;">org.quartz.impl.calendar.WeeklyCalendar</span></tt></p>
+</td>
+<td>排除星期中的一天或多天，例如，可用于排除周末</td>
+</tr>
+<tr>
+<td>
+<p class="docText"><tt><span style="color: #800080;">MonthlyCalendar</span></tt></p>
+</td>
+<td>
+<p class="docText"><tt><span style="color: #800080;">org.quartz.impl.calendar.MonthlyCalendar</span></tt></p>
+</td>
+<td>排除月份中的数天，例如，可用于排除每月的最后一天</td>
+</tr>
+<tr>
+<td>
+<p class="docText"><tt><span style="color: #800080;">AnnualCalendar</span></tt></p>
+</td>
+<td>
+<p class="docText"><tt><span style="color: #800080;">org.quartz.impl.calendar.AnnualCalendar</span></tt></p>
+</td>
+<td>排除年中一天或多天</td>
+</tr>
+<tr>
+<td>
+<p class="docText"><tt><span style="color: #800080;">HolidayCalendar</span></tt></p>
+</td>
+<td>
+<p class="docText"><tt><span style="color: #800080;">org.quartz.impl.calendar.HolidayCalendar</span></tt></p>
+</td>
+<td>特别的用于从 Trigger 中排除节假日</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<strong>·使用 Quartz 的 Calendar</strong><br/><br/>
+要使用 Quartz Calendar，你只需简单的实例化，并加入你要排除的日期，然后用 Scheduler 注册它。最后把这个 Calender 实例与你想要使用该 Calender 的每一个 Trigger 实例关联起来。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>多个 Job 共同一个 Calendar<br />
+</strong><br />
+你不能仅仅是把 Calendar 加入到 Scheduler 来为所有 Job 安排 Calendar。你需让 Calendar 实例关联到每一个 Trigger。Calender 实例被加到 Scheduler 中后，它只允许由使用中的 <span style="color: #800080;">JobStore</span> 存储；你必须让 Calender 依附于 Trigger 实例。</td>
+</tr>
+</tbody>
+</table>
+<br/>
+代码 4.10 显示的是一个使用 Quartz <span style="color: #800080;">AnnualCalender</span> 类执行银行节日的例子。<br/><br/>
+<strong>代码 4.10. 使用 <span style="color: #800080;">AnnualCalender</span> 来排除银行节日<br />
+</strong>
+{{< highlight java >}}
+public class Listing_4_10 {
+     static Log logger = LogFactory.getLog(Listing_4_10.class);
+
+     public static void main(String[] args) {
+          Listing_4_10 example = new Listing_4_10();
+          example.startScheduler();
+     }
+
+     public void startScheduler() {
+          try {
+              // Create and start the scheduler
+              Scheduler scheduler =
+                             StdSchedulerFactory.getDefaultScheduler();
+              scheduler.start();
+
+              scheduleJob(scheduler, PrintInfoJob.class);
+
+              logger.info("Scheduler starting up...");
+              scheduler.start();
+
+         } catch (SchedulerException ex) {
+              logger.error(ex);
+         }
+    }
+
+    private void scheduleJob(Scheduler scheduler, Class jobClass) {
+         try {
+              // Create an instance of the Quartz AnnualCalendar
+              AnnualCalendar cal = new AnnualCalendar();
+
+              // exclude July 4th
+              Calendar gCal = GregorianCalendar.getInstance();
+              gCal.set(Calendar.MONTH, Calendar.JULY);
+              gCal.set(Calendar.DATE, 4);
+
+              cal.setDayExcluded(gCal, true);
+
+              // Add to scheduler, replace existing, update triggers
+              scheduler.
+                             addCalendar("bankHolidays", cal, true, true);
+
+              /*
+                       * Set up a trigger to start firing now, repeat forever
+                       * and have (60000 ms) between each firing.
+               */
+              Trigger trigger =
+                             TriggerUtils.makeImmediateTrigger("myTrigger",
+                     -1,60000);
+
+              // Trigger will use Calendar to exclude firing times
+              trigger.setCalendarName("bankHolidays");
+
+              JobDetail jobDetail =
+                             new JobDetail(jobClass.getName(),
+                        Scheduler.DEFAULT_GROUP, jobClass);
+
+              // Associate the trigger with the job in the scheduler
+              scheduler.scheduleJob(jobDetail, trigger);
+
+         } catch (SchedulerException ex) {
+              logger.error(ex);
+         }
+    }
+}
+{{</ highlight >}}
+<br/>
+当你运行代码 4.10 中的例子时，除 7 月 4 号之外，你都可以看到 Job 会执行。作为一个留下来给你做的练习，在方法 <span style="color: #800080;">scheduleJob()</span> 中改变被排除的日期为你当前的日期。假如你再次跑这段代码，你将会看到当前日期被排除了，下次被触发的时间会是明天了。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>为什么我们不用 <span style="color: #800080;">HolidayCalender</span> ?</strong>你也许会有所疑惑，为什么我们在上个例子中不选择使用 <span style="color: #800080;">HolidayCalender</span> 呢？HolidayCalender 类考虑的是年份。因此，如果你希望在后续三年中排除 7 月 4 日，你需要把三年中的每个日期都作为要排除的项。而 <span style="color: #800080;">AnnualCalender</span> 可简单的为每年设定要排除的日期，也就更容易的应用于这种情况</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<strong>·创建你自己的 Calender<br />
+</strong><br />
+这最后一节演示了创建你自己的 Calender 类是多么的容易。假定你需要一个 Calender 去排除小时当中的某分钟。例如，假定你需要排除每小时中的前 5 分钟或者后 15 分钟。你能创建一个新的 Calender 来支持这种功能。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>我们也许可以使用 <span style="color: #800080;">CronTrigger</span><br />
+</strong><br />
+我们也许可以写出一个 Cron 表达式来排除这些时间，但那样就没了创建一个新 <span style="color: #800080;">Calender</span> 的乐趣了。</td>
+</tr>
+</tbody>
+</table>
+<br/>
+代码 4.11 是 <span style="color: #800080;">HourlyCalender</span>，我们能用它让排除小时中的一些分钟。<br/><br/>
+<strong>代码 4.11. <span style="color: #800080;">HourlyCalender</span> 能从每小中排除某些分钟</strong><br/>
+{{< highlight java >}}
+public class HourlyCalendar extends BaseCalendar {
+
+     // Array of Integer from 0 to 59
+     private List excludedMinutes = new ArrayList();
+
+     public HourlyCalendar() {
+          super();
+     }
+     public HourlyCalendar(Calendar baseCalendar) {
+          super(baseCalendar);
+     }
+
+     public List getMinutesExcluded() {
+          return excludedMinutes;
+     }
+
+     public boolean isMinuteExcluded(int minute) {
+
+          Iterator iter = excludedMinutes.iterator();
+          while (iter.hasNext()) {
+               Integer excludedMin = (Integer) iter.next();
+
+               if (minute == excludedMin.intValue()) {
+                    return true;
+               }
+
+               continue;
+          }
+          return false;
+     }
+
+     public void setMinutesExcluded(List minutes) {
+          if (minutes == null)
+               return;
+
+          excludedMinutes.addAll(minutes);
+     }
+
+     public void setMinuteExcluded(int minute) {
+
+          if (isMinuteExcluded(minute))
+               return;
+
+          excludedMinutes.add(new Integer(minute));
+     }
+
+     public boolean isTimeIncluded(long timeStamp) {
+
+          if (super.isTimeIncluded(timeStamp) == false) {
+               return false;
+          }
+
+          java.util.Calendar cal = getJavaCalendar(timeStamp);
+          int minute = cal.get(java.util.Calendar.MINUTE);
+
+          return !(isMinuteExcluded(minute));
+     }
+
+     public long getNextIncludedTime(long timeStamp) {
+          // Call base calendar implementation first
+          long baseTime = super.getNextIncludedTime(timeStamp);
+          if ((baseTime > 0) && (baseTime > timeStamp))
+              timeStamp = baseTime;
+
+          // Get timestamp for 00:00:00
+          long newTimeStamp = buildHoliday(timeStamp);
+          java.util.Calendar cal = getJavaCalendar(newTimeStamp);
+          int minute = cal.get(java.util.Calendar.MINUTE);
+
+          if (isMinuteExcluded(minute) == false)
+               return timeStamp; // return the
+          // original value
+
+          while (isMinuteExcluded(minute) == true) {
+               cal.add(java.util.Calendar.MINUTE, 1);
+          }
+          return cal.getTime().getTime();
+    }
+}
+{{</ highlight >}}
+<br/>
+如果你使用 <span style="color: #800080;">HourlyCalender</span> 去部署 Job，需要你做的事情是设置小时中你希望排除的分钟；由 Calender 和 Scheduler 做剩下的事情。你能看到在代码 4.12 中对 <span style="color: #800080;">HourlyCalender</span> 的演示。<br/><br/>
+ <strong>代码 4.12. <span style="color: #800080;">HourlyCalender</span> 基于小时中排除某些分钟来执行<br />
+</strong><br/>
+{{< highlight java >}}
+public class Listing_4_12 {
+     static Log logger = LogFactory.getLog(Listing_4_12.class);
+
+     public static void main(String[] args) {
+          Listing_4_12 example = new Listing_4_12();
+          example.startScheduler();
+     }
+
+     public void startScheduler() {
+          try {
+               // Create a default instance of the Scheduler
+               Scheduler scheduler =
+                        StdSchedulerFactory.getDefaultScheduler();
+
+               // Using the NoOpJob, but could have been any
+               scheduleJob(scheduler, PrintInfoJob.class);
+
+               logger.info("Scheduler starting up...");
+               scheduler.start();
+
+          } catch (SchedulerException ex) {
+               logger.error(ex);
+          }
+     }
+
+     private void scheduleJob(Scheduler scheduler, Class jobClass) {
+          try {
+               // Create an instance of the Quartz AnnualCalendar
+               HourlyCalendar cal = new HourlyCalendar();
+               cal.setMinuteExcluded(47);
+               cal.setMinuteExcluded(48);
+               cal.setMinuteExcluded(49);
+               cal.setMinuteExcluded(50);
+
+               // Add Calendar to the Scheduler
+               scheduler.
+                         addCalendar("hourlyExample", cal, true, true);
+
+               Trigger trigger =
+                         TriggerUtils.makeImmediateTrigger("myTrigger",
+                         -1, 10000);
+
+               // Trigger will use Calendar to exclude firing times
+               trigger.setCalendarName("hourlyExample");
+
+               JobDetail jobDetail =
+                         new JobDetail(jobClass.getName(),
+                         Scheduler.DEFAULT_GROUP, jobClass);
+
+               // Associate the trigger with the job in the scheduler
+               scheduler.scheduleJob(jobDetail, trigger);
+
+          } catch (SchedulerException ex) {
+               logger.error(ex);
+          }
+     }
+ }
+{{</ highlight >}}
+<br/>
+当你运行 4.12 中的代码，你会看到 <span style="color: #800080;">PrintInfoJob</span> 在被排除的分钟是不被执行，在方法 <span style="color: #800080;">setMinuteExcluded()</span> 方法中依你要求改变需排除的分钟，来看看新的 Calender 是如何工作的。

@@ -1,0 +1,214 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第六章. Job 存储和持久化 (第三部分)
+url: /quartz-job-scheduling-framework-6-3/
+date: 2008-05-16T23:03:00-05:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 394 
+wpStatus: publish
+views: 1244
+lastmod: 2020-03-22T11:40:19-05:00
+---
+
+<strong>七. 使用 <span style="color: #800080;">JobStoreTX</span></strong><br/><br/>
+我们首先要讨论的持久性 <span style="color: #800080;">JobStore</span> 是 <span style="color: #800080;">JobStoreTX</span>。名字中的 "TX" 代表着 "事物"。我们在前面提过，<span style="color: #800080;">JobStoreTX</span> 是设计用于想要 Quartz 来管理事物的环境中。例如，假如你正构建一个 J2EE 应用，并且不使用到应用服务器，如 WebLogic 或者 JBoss 等，那么 <span style="color: #800080;">JobStoreTX</span> 会是持久性 <span style="color: #800080;">JobStore</span> 正确的选择。<br/><br/>
+在之前章节中，我们看到配置 <span style="color: #800080;">RAMJobStore</span> 是多么的容易。我们提到 <span style="color: #800080;">RAMJobStore</span> 的其中一个优点就是易于配置。我们已经讨论过让数据库准备就绪该做的事情；现在我们讲述使 Quartz 应用支持 JDBC <span style="color: #800080;">JobStore</span> 需要对它配置些什么。<!--more--><br/><br/>
+<strong>·配置 <span style="color: #800080;">JobStoreTX</span></strong><br/><br/>
+要告诉 Quartz 运行环境你想使用一个别的 <span style="color: #800080;">JobStore</span> 而不是默认的 <span style="color: #800080;">RAMJobStore</span>，你必须配置几个属性。配置它们的顺序无关紧要，只要保证在第一次运行程序之前都做了设置。<br/><br/>
+<strong>设置 JobStore 属性</strong><br/><br/>
+欲告知 Scheduler 应该使用 <span style="color: #800080;">JobStoreTX</span>，你必须加上下面一行到 <span style="color: #800080;">quartz.properties</span> 文件中：<br/><br/>
+<span style="color: #800080;">org.quartz.jobStore.class = org.quartz.ompl.jdbcjobstore.JobStoreTX<br />
+</span><br />
+在切换到 <span style="color: #800080;">JobStoreTX</span> 时确保移动了 <span style="color: #800080;">RAMJobStore</span> 行(假如存在)。<br/><br/>
+<strong>配置驱动代理</strong><br/><br/>
+JDBC API 依赖于专属于某个数据库平台的 JDBC 驱动，同样的，Quartz 依赖于某个 <span style="color: #800080;">DriverDelegate</span> 来与给定数据库进行通信。顾名思义，从 Scheduler 通过 <span style="color: #800080;">JobStore</span> 对数据库的调用是委托给一个预配置的 <span style="color: #800080;">DriverDelegate</span> 实例。这个代理承担起所有与 JDBC driver 也就是数据库的通信。<br/><br/>
+所有的 <span style="color: #800080;">DriverDelegate</span> 类都继承自 <span style="color: #800080;">org.quartz.impl.jdbcjobstore.StdDriverDelegate</span> 类。<span style="color: #800080;">StdDriverDelegte</span> 只有所有代理可用的，平台无关性的基本功能。然而，在不同的数据库平台间还是存在太多的差异，因此需要为某个平台创建特定的代理。表 6.2 列出特定的代理。<br/><br/>
+<table border="0" width="650" cellspacing="5">
+<caption><strong>表 6.2. 你必须为你的平台配置其中一个 <span style="color: #800080;">DriverDelegate</span><br />
+  <br/>
+</strong></caption>
+<tbody>
+<tr>
+<td><strong>数据库平台</strong></td>
+<td><strong>Quartz 代理类</strong></td>
+</tr>
+<tr>
+<td>Cloudscape/Derby</td>
+<td><span style="color: #800080;">org.quartz.impl.jdbcjobstore.CloudscapeDelegate</span></td>
+</tr>
+<tr>
+<td>DB2 (version 6.x)</td>
+<td><span style="color: #800080;">org.quartz.impl.jdbcjobstore.DB2v6Delegate</span></td>
+</tr>
+<tr>
+<td>DB2 (version 7.x)</td>
+<td><span style="color: #800080;">org.quartz.impl.jdbcjobstore.DB2v7Delegate</span></td>
+</tr>
+<tr>
+<td>DB2 (version 8.x)</td>
+<td><span style="color: #800080;">org.quartz.impl.jdbcjobstore.DB2v8Delegate</span></td>
+</tr>
+<tr>
+<td>HSQLDB</td>
+<td><span style="color: #800080;">org.quartz.impl.jdbcjobstore.PostgreSQLDelegate</span></td>
+</tr>
+<tr>
+<td>MS SQL Server</td>
+<td><span style="color: #800080;">org.quartz.impl.jdbcjobstore.MSSQLDelegate</span></td>
+</tr>
+<tr>
+<td>Pointbase</td>
+<td><span style="color: #800080;">org.quartz.impl.jdbcjobstore.PointbaseDelegate</span></td>
+</tr>
+<tr>
+<td>PostgreSQL</td>
+<td><span style="color: #800080;">org.quartz.impl.jdbcjobstore.PostgreSQLDelegate</span></td>
+</tr>
+<tr>
+<td>(WebLogic JDBC Driver)</td>
+<td><span style="color: #800080;">org.quartz.impl.jdbcjobstore.WebLogicDelegate</span></td>
+</tr>
+<tr>
+<td>(WebLogic 8.1 with Oracle)</td>
+<td><span style="color: #800080;">org.quartz.impl.jdbcjobstore.oracle.weblogic.WebLogicOracleDelegate</span></td>
+</tr>
+<tr>
+<td>Oracle</td>
+<td><span style="color: #800080;">org.quartz.impl.jdbcjobstore.oracle.OracleDelegate</span></td>
+</tr>
+</tbody>
+</table>
+<br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td>
+<strong>假如我的数据库平台在表 6.2 中未列出该怎么办</strong>？
+如果你的 RDBMS 没在上面列出，那么最好的选择就是，直接使用标准的 JDBC 代理 <span style="color: #800080;">org.quartz.impl.jdbcjobstore.StdDriverDelegate</span> 就能正常的工作。
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+在你决定好了基于你的数据库平台使用哪个代理，你就需要加入下面的行到 <span style="color: #800080;">quartz.properties</span> 文件中：<br/><br/>
+<span style="color: #800080;">org.quartz.jobStore.driverDelegateClass = &lt;FQN of driver delegate class&gt;</span><br/><br/>
+例如，假如你使用 MS SQL Server 作为一你的数据库平台，你就需要加下面这行到属性文件中：<br/><br/>
+<span style="color: #800080;">org.quartz.jobStore.driverDelegateClass = org.quartz.impl.jdbcjobstore.MSSQLDelegate</span><br/><br/>
+<strong>配置数据库表的前缀</strong><br/><br/>
+前面我们首先讨论 Quartz 要用的数据库表的时候，我们提到所有的表都加有一个前缀 <span style="color: #800080;">QRTZ_</span>。在某些情况下，你也许需要创建多套的 Quartz 数据库表。在这时候，你就需要改变每一套表的前缀。<br/><br/>
+表名的前缀配置在 <span style="color: #800080;">quartz.properties</span> 文件中，使用属性 <span style="color: #800080;">org.quartz.jobStore.tablePrefix</span>。要改变这一前缀，只要设置这个属性为不同的值：<br/><br/>
+<span style="color: #800080;">org.quartz.jobStore.tablePrefix = SCHEDULER2_</span><br/><br/>
+确定所有的表名都开始于这一前缀。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td>
+<strong>数据库表和列的命名</strong>
+假使你还有所疑惑，数据库表的名字(除却前缀) 和表的列名定义在 <span style="color: #800080;">org.quartz.impl.jdbcjobstore.Constants</span> 接口中。这个接口为 <span style="color: #800080;">JobStoreSupport</span> 类所实现，因而那些常量值在 <span style="color: #800080;">JobStoreTX</span> 或 <span style="color: #800080;">JobStoreCMT</span> 类中是可用的。
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+表 6.3 显示了一系列的属性可用于调节 <span style="color: #800080;">JobStoreTX</span>。<br/><br/>
+<table border="0" width="650" cellspacing="5">
+<caption><strong>表 6.3. 可用于设置 <span style="color: #800080;">JobStoreTX</span> 的配置属性<br />
+  <br/>
+</strong></caption>
+<tbody>
+<tr>
+<td><strong>属性</strong></td>
+<td><strong>默认值</strong></td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.driverDelegateClass</span></td>
+<td>&nbsp;</td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述</strong>：能理解不同数据库系统中某一特定方言的驱动代理</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.dataSource</span></td>
+<td>&nbsp;</td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述</strong>：用于 <span style="color: #800080;">quartz.properties</span> 中数据源的名称</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.tablePrefix</span></td>
+<td><span style="color: #800080;">QRTZ_</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述</strong>：指定用于 Scheduler 的一套数据库表名的前缀。假如有不同的前缀，Scheduler 就能在同一数据库中使用不同的表。</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.userProperties</span></td>
+<td><span style="color: #800080;">False</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>"use properties" 标记指示着持久性 <span style="color: #800080;">JobStore</span> 所有在 <span style="color: #800080;">JobDataMap</span> 中的值都是<span style="color: #800080;">字符串</span>，因此能以 名-值 对的形式存储，而不用让更复杂的对象以序列化的形式存入 BLOB 列中。这样会更方便，因为让你避免了发生于序列化你的非字符串的类到 BLOB 时的有关类版本的问题。</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.misfireThreshold</span></td>
+<td><span style="color: #800080;">60000</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述</strong>：在 Trigger 被认为是错过触发之前，Scheduler 还容许 Trigger 通过它的下次触发时间的毫秒数(译者注：据原文翻译，真的不好理解，实际效果可参看：<a href="http://www.blogjava.net/Unmi/archive/2007/10/23/153413.html" target="_blank" rel="noopener noreferrer">http://www.blogjava.net/Unmi/archive/2007/10/23/153413.html</a> 我在评论中的实验)。默认值(假如你未在配置中存在这一属性条目) 是 <span style="color: #800080;">60000</span>(60 秒)。这个不仅限于 <span style="color: #800080;">JDBC-JobStore</span>；它也可作为 <span style="color: #800080;">RAMJobStore</span> 的参数</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.isClustered</span></td>
+<td><span style="color: #800080;">False</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述</strong>：设置为 true 打开集群特性。如果你有多个 Quartz 实例在用同一套数据库时，这个属性就必须设置为 true。</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.clusterCheckinInterval</span></td>
+<td><span style="color: #800080;">15000</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述</strong>：设置一个频度(毫秒)，用于实例报告给集群中的其他实例。这会影响到侦测失败实例的敏捷度。它只用于设置了 <span style="color: #800080;">isClustered</span> 为 true 的时候。</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.maxMisfiresToHandleAtATime</span></td>
+<td><span style="color: #800080;">20</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述</strong>：这是 <span style="color: #800080;">JobStore</span> 能处理的错过触发的 Trigger 的最大数量。处理太多(超过两打) 很快会导致数据库表被锁定够长的时间，这样就妨碍了触发别的(还未错过触发) trigger 执行的性能。</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.dontSetAutoCommitFalse</span></td>
+<td><span style="color: #800080;">False</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述</strong>：设置这个参数为 true 会告诉 Quartz 从数据源获取的连接后不要调用它的 <span style="color: #800080;">setAutoCommit(false)</span> 方法。这在少些情况下是有帮助的，比如假如你有这样一个驱动，它会抱怨本来就是关闭的又来调用这个方法。这个属性默认值是 false，因为大多数的驱动都要求调用 <span style="color: #800080;">setAutoCommit(false)</span>。</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.selectWithLockSQL</span></td>
+<td><span style="color: #800080;">SELECT * FROM {0}LOCKS WHERE LOCK_NAME = ? FOR UPDATE</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述</strong>：这必须是一个从 LOCKS 表查询一行并对这行记录加锁的 SQL 语句。假如未设置，默认值就是 <span style="color: #800080;">SELECT * FROM {0}LOCKS WHERE LOCK_NAME = ? FOR UPDATE</span><span style="color: #000000;">，这能在大部分数据库上工作。{0} 会在运行期间被前面你配置的 <span style="color: #800080;">TABLE_PREFIX</span> 所替换。</span></td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.jobStore.txIsolationLevelSerializable</span></td>
+<td><span style="color: #800080;">False</span></td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述</strong>：值为 true 时告知 Quartz(当使用 <span style="color: #800080;">JobStoreTX</span> 或 CMT) 调用 JDBC 连接的 <span style="color: #800080;">setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE)</span> 方法。这有助于阻止某些数据库在高负载和长时间事物时锁的超时。</td>
+</tr>
+</tbody>
+</table>

@@ -1,0 +1,65 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第六章. Job 存储和持久化 (第七部分)
+url: /quartz-job-scheduling-framework-6-7/
+date: 2008-06-21T23:22:00-05:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - 翻译，Quartz
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 381 
+wpStatus: publish
+views: 462
+lastmod: 2020-03-22T11:42:31-05:00
+---
+
+<strong>十三. 改善持久性 <span style="color: #800080;">JobStore</span> 的性能</strong></p>
+<br/>
+当在只有最少量时间做任何相关事情的时候，性能是一个广受人瞩目的课题。作为有经验的开发者，我们知道从项目之初它就成为一个需要考虑的事。<br/><br/>
+在使用 Quartz 的 <span style="color: #800080;">JobStore</span> 时，最大的关注面就是有关于与关系型数据库的交互。数据库 I/O(就像文件 I/O) 通常不是很快。你可以通过采取一些措施，如调优 SQL、增加索引和操作表和列等来改善性能。因为性能问题在写 Quartz 框架的时候就已有考虑到，而你又不想在未出现实际的性能问题时扎入到 Quartz 中做些手脚，那么可试图通过配置来解决它，或者尝试所有可能的方式，只要不是维护源代码。最好的消息是 Quartz 是开源的，你完全可以窥入其中了解它做了什么和如何实现的。假如你不喜欢它现有的查询数据库的方式，你有权去修正它。不过，在你采取行动之前，确定检查了 Quartz 论坛上的用户和开发者，看看是否其他人也遇到了相关的问题并浏览推荐的做法。<!--more--><br/><br/>
+一个很简单(也是很有效的) 改善性能的方式是确保在所有适当的列上创建了索引。Quartz 所带的某些数据库创建脚本已有创建索引的命令。如果你的没有，你可以简单参考定义在 <span style="color: #800080;">tables_oracle_sql</span> 底端的语句并针对你的 RDBM 需要作些语法上改变。<br/><br/>
+不管你怎么做的，假如你修改了 Quartz 来改善性，一定要反馈到社区和 Quartz 项目。<br/><br/>
+<strong>十四. 创建新的 JobStore<br />
+</strong><br />
+对于多数用户，<span style="color: #800080;">JobStore</span> 所提供开箱即用的实现已是足够了。当你的应用在重启之间不需要维护状态，那么 <span style="color: #800080;">RAMJobStore</span> 就是你的第一选择。它速度快，易于配置，也不会带来什么麻烦。另一方面，如果你需要在重启之间维护 Scheduler 的状态，且正使用一个数据库或可以访问数据，那么用一个 JDBC <span style="color: #800080;">JobStore</span> 或许是你最后的选择。<br/><br/>
+那会在什么时候你需要一个完全不同的 <span style="color: #800080;">JobStore</span> 类型？你将需要创建一个新的类型。本节讨论几种途径，并针对如何创建一个新的 <span style="color: #800080;">JobStore</span> ，在所提供的方案无法满足你时给出一些主意。<br/><br/>
+<strong>·实现 <span style="color: #800080;">JobStore</span> 接口</strong><br/><br/>
+无论它们是否是用的数据库、文件系统、甚至是内存，所有的 <span style="color: #800080;">JobStore</span> 必须实现 <span style="color: #800080;">JobStore</span> 接口。你创建的新的 <span style="color: #800080;">JobStore</span> 也不例外。回头看本章前面部分，你会发现 <span style="color: #800080;">RAMJobStore</span> 直接实现了 <span style="color: #800080;">JobStore</span> 接口，JDBC <span style="color: #800080;">JobStore</span> 是 <span style="color: #800080;">JobStroeSupport</span> 的子类，它本身实现了 <span style="color: #800080;">JobStore</span> 接口。<br/><br/>
+<span style="color: #800080;">JobStore</span> 接口有 40 个方法，它要求任何 <span style="color: #800080;">JobStroe</span> 实现都必须实现这些方法，你的也一样。你如何实现那些方法完全依赖于你正构建的 <span style="color: #800080;">JobStore</span> 的类型。那不是说你的 <span style="color: #800080;">JobStore</span> 将只能有 40 个方法；这仅仅是接口需要的最小数量。这 40 个方法体现 <span style="color: #800080;">JobStore</span> 和 Scheduler 之间的公共契约。<br/><br/>
+让我们拣出其中一个方法来简短的讨论它。我们就选 <span style="color: #800080;">JobStore</span> 接口方法：<br/><br/>
+<span style="color: #800080;">public void schedulerStarted() throws SchedulerException;<br />
+</span><br />
+Scheduler 调用 <span style="color: #800080;">JobStore</span> 的 <span style="color: #800080;">SchedulerStarted()</span> 方法去通知 <span style="color: #800080;">JobStore</span> Scheduler 已经启动了。如果你看了 <span style="color: #800080;">RAMJobStore</span> 的实现，你能发现它在这个方法实现中什么也没做：<br/><br/>
+<span style="color: #800080;">public void schedulerStarted() throws SchedulerException{<br />
+    // nothing to do<br />
+}<br />
+</span><br />
+然而，假如你去看那两个 <span style="color: #800080;">JobStore</span> 的实现，你会看到在 Scheduler 在首次启动时进行了一些工作：<br/>
+{{< highlight java >}}
+public void schedulerStarted() throws SchedulerException {
+
+    if (isClustered()) {
+        clusterManagementThread = new ClusterManager(this);
+        clusterManagementThread.initialize();
+    } else {
+        try {
+            recoverJobs();
+        } catch (SchedulerException se) {
+            throw new SchedulerConfigException("Failure occurred during job recovery.", se);
+        }
+    }
+    misfireHandler = new MisfireHandler(this);
+    misfireHandler.initialize();
+}
+{{</ highlight >}}
+<br/>
+每一个 <span style="color: #800080;">JobStore</span> 实现会是唯一的，在接口方法内部实现的功能也是不同的。如果你是认真的去创建你自己的 <span style="color: #800080;">JobStore</span>，你就应当好好看看 <span style="color: #800080;">RAMJobStore</span> 的源代码来完全理解 <span style="color: #800080;">JobStore</span> 所有职责。<span style="color: #800080;">RAMJobStore</span> 应该作为你需要定制任何 <span style="color: #800080;">JobStore</span> 时的指南。

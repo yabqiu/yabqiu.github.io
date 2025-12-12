@@ -1,0 +1,268 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第十三章. Quartz 和 Web 应用 (第三部分)
+url: /quartz-job-scheduling-framework-13-3/
+date: 2008-04-29T12:26:00-05:00
+featured: false
+type: post
+draft: false
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/https://yanbin.blog/wp-content/uploads/2007/10/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 408 
+wpStatus: publish
+views: 553
+lastmod: 2021-09-03T21:28:32-05:00
+---
+
+<strong>四. <span style="color: #800080;">QuartzInitializerServlet</span> 可谓救命草</strong></p>
+<br/>
+Quartz 框架包括一个叫做 <span style="color: #800080;">org.quartz.ee.servlet.QuartzInitializerServlet</span> 的 Java 类，它继承自标准的 <span style="color: #800080;">HttpServlet</span>。你可应用这个 servlet 于你的 Web 应用中，它将会创建一个 <span style="color: #800080;">StdSchedulerFactory</span> 实例并在你的程序后续中一直可用。通常的，它就是做了命令行版本的 Quartz 程序的 <span style="color: #800080;">main()</span> 方法所做的事性。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong><br />
+<span style="color: #800080;">QuartzInitializerServlet </span>在 Quartz 1.5 中有所改变</strong>在 Quartz 的 1.5 发布版中，<span style="color: #800080;">QuartzInitializerServlet</span> 被修改为会存储 <span style="color: #800080;">StdSchedulerFactory</span> 实例到 Web 应用的 <span style="color: #800080;">ServletContext</span> 中。这就允许你的程序在任何地方都能访问到 Scheduler 实例，只要获取到了 <span style="color: #800080;">HttpServletRequest</span> 或 <span style="color: #800080;">HttpSession</span> 对象，调用工厂的 <span style="color: #800080;">getScheduler()</span> 就访问到了 Scheduler 实例。<br/><br/>
+还新增了一个 <span style="color: #800080;">start-scheduler-on-load</span> 的 Servlet 初始化参数。这一参数指定 Scheduler 是否随 <span style="color: #800080;">QuartzInitializerServlet</span> 启动或是别处启动。假如未设置时默认为 <span style="color: #800080;">True</span>，Sheduler 将随 <span style="color: #800080;">QuartzInitializerServlet</span> 起来。否则，你的应用将不得不自己去获得 Scheduler 实例然后调用 <span style="color: #800080;">start()</span> 方法。
+</td>
+</tr>
+</tbody>
+</table>
+<br/>
+当容器加载 <span style="color: #800080;">QuartzInitializerServlet</span>，该 Servlet 的 init() 方法将被调用。这个 Servlet 读取几个初始化参数，创建 <span style="color: #800080;">StdSchedulerFactory</span> 类的实例，并使用指定(或默认) 的 Quartz 属性文件来初始化 Scheduler。<!--more--><br/><br/>
+工厂创建之后，<span style="color: #800080;">init()</span> 方法就会决定 Scheduler 是否立即启动，或是让程序来决定何时启动它。代码 3.1 列出了 <span style="color: #800080;">QuartzInitializerServlet</span> 的 <span style="color: #800080;">init()</span> 方法。<br/><br/>
+<strong>代码 13.1. <span style="color: #800080;">QuartzIniializerServlet</span> 类的 <span style="color: #800080;">init()</span> 方法</strong>
+{{< highlight java >}}
+public void init(ServletConfig cfg) throws ServletException {
+ super.init(cfg);
+
+ log("Quartz Initializer Servlet loaded, initializing Scheduler...");
+
+ StdSchedulerFactory factory;
+ try {
+
+   String configFile = cfg.getInitParameter("config-file");
+   String shutdownPref = cfg.getInitParameter("shutdown-on-unload");
+
+   if (shutdownPref != null)
+
+     performShutdown = Boolean.valueOf(shutdownPref).booleanValue();
+
+   // get Properties
+   if (configFile != null) {
+     factory = new StdSchedulerFactory(configFile);
+   } else {
+     factory = new StdSchedulerFactory();
+   }
+
+   // Should the Scheduler being started now or later
+   String startOnLoad =
+     cfg.getInitParameter("start-scheduler-on-load");
+
+   /*
+    * If the "start-scheduler-on-load" init-parameter is not specified,
+    * the
+    * scheduler will be started. This is to maintain backwards
+    * compatability.
+    */
+
+    if (startOnLoad == null ||
+     (Boolean.valueOf(startOnLoad).booleanValue())) {
+     // Start now
+     scheduler = factory.getScheduler();
+     scheduler.start();
+     log("Scheduler has been started...");
+   } else {
+     log("Scheduler has not been started. Use scheduler.start()");
+   }
+
+   log(
+    "Storing the Quartz Scheduler Factory in the servlet context at key: " +
+ QUARTZ_FACTORY_KEY);
+   cfg.getServletContext().setAttribute(QUARTZ_FACTORY_KEY, factory);
+
+ } catch (Exception e) {
+   log("Quartz Scheduler failed to initialize: " +
+e.toString());
+   throw new ServletException(e);
+ }
+}
+{{</ highlight >}}
+<br/>
+<span style="color: #800080;">QuartzInitializerServlet</span> 是 Quartz JAR 文件的一部分。只要你 Web 应用的 <span style="color: #800080;">WEB-INF/lib</span> 中有了 <span style="color: #800080;">quartz.jar</span>，这个 Servlet 在你的应用中就是可用的了。<br/><br/>
+<strong>·配置 Web 部署描述文件<br />
+</strong><br />
+Java Servlet 规范规定了每个 Web 应用都必须包含一个 Web 部署描述文件。部署文件(<span style="color: #800080;">web.xml</span>) 中包含了以下类型的信息：<br/><br/>
+<strong>    ·</strong>初始化参数<br/><br/>
+<strong>    ·</strong>Session 配置<br/><br/>
+<strong>    ·</strong>Servlet/JSP 定义<br/><br/>
+<strong>    ·</strong>Servlet/JSP 映射<br/><br/>
+<strong>    ·</strong>MIME 类型映射<br/><br/>
+<strong>    ·</strong>欢迎文件<br/><br/>
+<strong>    ·</strong>错误页面<br/><br/>
+<strong>    ·</strong>安全性<br/><br/>
+因为 <span style="color: #800080;">QuartzInitializerServlet</span> 是一个 Java Servlet，它必须配置到部署描述文件中让容器来加载它。代码 13.2 描绘了怎样在 web.xml 文件中配置 QuartzInitializerServlet。<br/><br/>
+<strong>代码 13.2. QuartzInitializerServlet 需要对 web.xml 文件作相应的修改</strong>
+{{< highlight xml >}}
+<web-app>
+<servlet>
+ <servlet-name>QuartzInitializer</servlet-name>
+ <display-name>Quartz Initializer Servlet</display-name>
+
+ <servlet-class>
+   org.quartz.ee.servlet.QuartzInitializerServlet
+ </servlet-class>
+
+ <load-on-startup>1</load-on-startup>
+
+ <init-param>
+   <param-name>config-file</param-name>
+   <param-value>/some/path/my_quartz.properties</param-value>
+ </init-param>
+
+ <init-param>
+   <param-name>shutdown-on-unload</param-name>
+   <param-value>true</param-value>
+ </init-param>
+
+ <init-param>
+   <param-name>start-scheduler-on-load</param-name>
+   <param-value>true</param-value>
+ </init-param>
+
+</servlet>
+
+<! other web.xml items here >
+
+</web-app>
+{{</ highlight >}}
+<br/>
+<span style="color: #800080;">QuartzInitializerServlet</span> 支持三个 Quartz 规范的初始化参数<br/><br/>
+<strong>初始化参数 config-file</strong><br/><br/>
+config-file 参数用来指定 Quartz 属性文件的路径和文件名。<span style="color: #800080;">StdSchedulerFactory</span> 使用这个文件配置 Scheduler 实例。这个参数是可选的；假如未指定，就会用默认的 <span style="color: #800080;">quartz.properties</span> 文件。使用此参数最简单的方式(假定你想提供自己的属性文件) 是把你的属性文件放到 <span style="color: #800080;">WEB-INF/classes</span> 目录中，然后如下方式指定 init-param：<br/>
+{{< highlight xml >}}
+<init-param>
+ <param-name>config-file</param-name>
+  <param-value>/my_quartz.properties</param-value>
+</init-param>
+{{</ highlight >}}
+<br/>
+<strong>初始化参数 shutdown-on-unload<br />
+</strong><br />
+<span style="color: #800080;">shutdown-on-unload</span> 参数用于在容器卸载本 Servlet 时引起 scheduler.shutdown() 方法的调用。一个容器在关闭，或某种条件时，在一个热部署环境中重新加载时就会卸载这个 Servlet。这个参数是可选的，默认值是 <span style="color: #800080;">true</span>。<br/><br/>
+<strong>初始化参数 <span style="color: #800080;">start-scheduler-on-load</span></strong><br/><br/>
+<span style="color: #800080;">start-scheduler-on-load</span> 参数用于告诉 Servlet 调用 Scheduler 实例的 <span style="color: #800080;">start()</span> 方法。假如它没有启动，Scheduler 就需要由程序在晚些时候来启动，在 <span style="color: #800080;">start()</span> 未被调用之前是不会有 Job 运行的。这一参数是可选的，如果未指定时默认为 <span style="color: #800080;">true</span>。这个参数是在 1.5 发行版中加载来，不存在于早期版本中。<br/><br/>
+<strong>·访问 <span style="color: #800080;">SchedulerFactory</span> 和 Scheduler<br />
+</strong><br />
+自 Quartz 1.5 开始，<span style="color: #800080;">QuartzInitializerservlet</span> 将自动将 <span style="color: #800080;">StdSchedulerFactory</span> 实例以某一预定义键存放于 <span style="color: #800080;">ServletContext</span> 中。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>早期 Quartz 版本中的 <span style="color: #800080;">QuartzInitializerServlet</span><br />
+</strong><br />
+<span style="color: #800080;">QuartzInitializerServlet</span> 在早期版本的框架中就出现了。在以往版本中，<span style="color: #800080;">StdSchedulerFactory</span> 不会存放到 <span style="color: #800080;">ServletContext</span> 中。Sheduler 在 Servlet 的 <span style="color: #800080;">init()</span> 方法中初始化后即启动。欲从你的代码中获取 Scheduler 实例，你必须使用 <span style="color: #800080;">StdSchedulerFactory</span> 的某个 get 方法访问该 Servlet  创建的 Scheduler。从 <span style="color: #800080;">ServletContext</span> 中访问 Scheduler 的改变是在 1.5 版中加进来的。</td>
+</tr>
+</tbody>
+</table>
+<br/>
+你可在代码 13.1 的 <span style="color: #800080;">init()</span> 方法结束部分看出来。一旦工厂被存入 <span style="color: #800080;">ServletContext</span>，有多种方式可以获取访问到它。最简单的方式，尤其是你在用 Struts 框架的时候，是使用 request 对象。代码 13.3 展示了一个 Struts Action 类，叫做 <span style="color: #800080;">StartSchedulerAction</span>。当这个 Action 被调用(假定是通过 <span style="color: #800080;">/startscheduler.do</span> 这样的 URL 来访问)，SchedulerFactory 就能获取取，接着可以调用 <span style="color: #800080;">getScheduler()</span> 方法。<br/><br/>
+<strong>代码 13.3. <span style="color: #800080;">SchedulerFactory</span> 和 Scheduler 能简单的被访问</strong><br/>
+{{< highlight java >}}
+import javax.servlet.ServletContext;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+import org.apache.struts.action.Action;
+import org.apache.struts.action.ActionForm;
+import org.apache.struts.action.ActionForward;
+import org.apache.struts.action.ActionMapping;
+import org.cavaness.jobconsole.web.QuartzFactoryServlet;
+import org.cavaness.jobconsole.web.WebConstants;
+import org.quartz.Scheduler;
+import org.quartz.impl.StdSchedulerFactory;
+
+public class StartSchedulerAction extends Action {
+    public ActionForward execute(ActionMapping mapping,
+    ActionForm form, HttpServletRequest request,
+    HttpServletResponse response) throws Exception {
+
+         // Retrieve the ServletContext
+         ServletContext ctx =
+              request.getSession().getServletContext();
+
+         // Retrieve the factory from the ServletContext
+         StdSchedulerFactory factory =
+               (StdSchedulerFactory)
+              ctx.getAttribute(
+                 QuartzFactoryServlet.QUARTZ_FACTORY_KEY);
+
+         // Retrieve the scheduler from the factory
+         Scheduler scheduler = factory.getScheduler();
+
+         // Start the scheduler
+         scheduler.start();
+
+         // Forward to success page
+         return mapping.findForward(WebConstants.SUCCESS);
+    }
+}
+{{</ highlight >}}
+<br/>
+当从 <span style="color: #800080;">SchedulerFactory</span> 获取到 Scheduler 之后，你就可以按正常方式般调用 Scheduler 实例的方法。在代码 13.3 中，Scheduler 是使用 <span style="color: #800080;">start()</span> 方法来启动的，这是你所习惯的。<br/><br/>
+把 <span style="color: #800080;">StdSchedulerFactory</span> 存于 <span style="color: #800080;">ServletContext</span> 中的优点是避免了你重复创建它。实际上，你可以使得访问 Scheduler 甚至更简单，做法是把所有访问 <span style="color: #800080;">ServletContext</span> 和创建 Scheduler 的逻辑放到一个工具类中。代码 13.4 展示了这样一个名为 ActionUtil 的类，它简化了获得一个 Scheduler 对象的引用。<br/><br/>
+<strong>代码 13.4. <span style="color: #800080;">ActionUtil</span> 类方便了访问 Scheduler<br />
+</strong>
+{{< highlight java >}}
+import javax.servlet.ServletContext;
+import javax.servlet.http.HttpServletRequest;
+
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.impl.StdSchedulerFactory;
+
+public class ActionUtil {
+
+    public static Scheduler getScheduler(HttpServletRequest request)
+         throws SchedulerException {
+
+         ServletContext ctx =
+              request.getSession().getServletContext();
+
+         StdSchedulerFactory factory =
+               (StdSchedulerFactory) ctx.getAttribute(
+               QuartzFactoryServlet.QUARTZ_FACTORY_KEY);
+
+         return factory.getScheduler();
+    }
+}
+{{</ highlight >}}
+<br/>
+你能使用 <span style="color: #800080;">ActionUtil.getScheduler()</span> 方法很方便的获取到 Scheduler 实例。代码 13.3 中接下来的片断就是类 <span style="color: #800080;">StartSchedulerAction</span> 如何使用 <span style="color: #800080;">Action.getScheduler()</span> 方法了：<br/>
+{{< highlight java >}}
+public class StartSchedulerAction extends Action {
+    public ActionForward execute(ActionMapping mapping,
+    ActionForm form, HttpServletRequest request,
+    HttpServletResponse response) throws Exception {
+
+         // Retrieve the scheduler from the factory
+         Scheduler scheduler = ActionUtil.getScheduler();
+
+         // Start the scheduler
+         scheduler.start();
+
+         // Forward to success page
+         return mapping.findForward(WebConstants.SUCCESS);
+
+    }
+}
+{{</ highlight >}}
+<br/>
+代码 13.4 中的 <span style="color: #800080;">ActionUtil</span> 并非 Quartz 框架的一部份，但它或许会被加入到将来的版本中。你可在你的应用中需要的时候加入相同的东西。

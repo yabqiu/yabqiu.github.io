@@ -1,0 +1,117 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第六章. Job 存储和持久化 (第六部分)
+url: /quartz-job-scheduling-framework-6-6/
+date: 2008-06-20T21:49:00-05:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 382 
+wpStatus: publish
+views: 1011
+lastmod: 2020-03-22T11:42:42-05:00
+---
+
+<strong>十二. 为 <span style="color: #800080;">JobStoreCMT</span> 配置数据源<br />
+</strong></p>
+<br/>
+跟 <span style="color: #800080;">JobStoreTX</span> 一样，我们需要配置一个 <span style="color: #800080;">Datasource</span> 才能使用 <span style="color: #800080;">JobStoreCMT</span>。然而，<span style="color: #800080;">JobStoreCMT</span> 需要两个 <span style="color: #800080;">Datasource</span> 而不是像 <span style="color: #800080;">JobStoreTX</span> 只要一个。其中一个 <span style="color: #800080;">Datasource</span> 和我们为 <span style="color: #800080;">JobStoreTX</span> 设置的类同：作为不受管理的数据源。同时呢，我们还需配置第二个数据源，是作为受管理的数据源，它由应用服务器来进行管理。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>为什么 <span style="color: #800080;">JobStoreCMT</span> 需要两个 <span style="color: #800080;">Datasource</span> 呢？</strong><span style="color: #800080;">JobStoreCMT</span> 的原始作者，Jeffrey Wescott，设计 <span style="color: #800080;">JobStoreCMT</span> 使用一个标准的 JDBC 连接来做它“自己的工作”，同时，代表客户端(如部署 Job) 的工作在执行时是使用一个在容器控制之下有自身事物的 JDBC 连接。即使 Quartz 处在一个大事物中，这种设计也允许用户与 Quartz 交互，而无需 JobStoreCMT 非得使用应用服务器的事物管理器(例如，经由 <span style="color: #800080;">UserTransaction</span>) 在做自己内部工作时(如处理已错过执行的 Trigger) 来创建和终止事物。如果是 <span style="color: #800080;">JobStoreCMT</span> 使用 <span style="color: #800080;">UserTransation</span> 只给它配置一个数据源，从配置方面来看确实方便。然而，在相比于别的特性需求和改进的必要性时，作此变化并不会成为团队中首要的问题，因而 <span style="color: #800080;">JobStoreCMT</span> 还是继续要两个数据源。</td>
+</tr>
+</tbody>
+</table>
+<br/>
+<strong><!--more-->·配置不受管理的数据源<br />
+</strong><br />
+我们在设置不受管理的数据源的多数操作与为 <span style="color: #800080;">JobStoreTX</span> 所做是相同的，只是我们还要加上一行来指定这是 <span style="color: #800080;">nonManagedTXDataSource</span>:<br/><br/>
+<span style="color: #800080;"># Add the property for the nonManagedTXDataSource<br />
+org.quartz.jobStore.nonManagedTXDataSource = myDS</span><br/><br/>
+<span style="color: #800080;">org.quartz.dataSource.myDS.driver = net.sourceforge.jtds.jdbc.Driver<br />
+org.quartz.dataSource.myDS.URL = jdbc:jtds:sqlserver://localhost:1433/quartz<br />
+org.quartz.dataSource.myDS.user = admin<br />
+org.quartz.dataSource.myDS.password = myPassword<br />
+org.quartz.dataSource.myDS.maxConnections = 10<br />
+</span><br />
+这是配置不受管理的数据源，并让 JobStore 知道这个 <span style="color: #800080;">nonManagedTXDataSource</span> 叫做 "myDS"。<br/><br/>
+<strong>·配置受管理的 <span style="color: #800080;">Datasource</span></strong><br/><br/>
+第二个数据源需配置为一个受管理的 <span style="color: #800080;">Datasource</span>。这意味着 Quartz 在执行 Scheduler 操作时使用一个容器已创建好的 <span style="color: #800080;">Datasorce</span> 与数据库交互。当 Quartz 从 <span style="color: #800080;">Datasource</span> 上取得了连接后，在 Quartz 部署 Job 和 Trigger 时应有一个 JTA 事物。例如，代码要求 Quartz 在 <span style="color: #800080;">SessionBean</span> 的一个方法上的事物描述符设置为 <span style="color: #800080;">REQUIRED</span>。另一个应用是客户端程序要通过使用 <span style="color: #800080;">javax.transaction.UserTransaction</span> 直接启动一个事物。<br/><br/>
+和不受管理的 Datasoure 一样，也是要在 <span style="color: #800080;">quartz.properties</span> 文件中配置容器管理的 <span style="color: #800080;">Datasource</span>。下面的例子描述了如何设置受管理的 <span style="color: #800080;">Datasource</span>:<br/><br/>
+<span style="color: #800080;">org.quartz.dataSource.NAME.jndiURL=jdbc/quartzDS</span><br/><br/>
+<span style="color: #800080;">org.quartz.dataSource.NAME.java.naming.factory.initial=weblogic.jndi.WLInitialContextFactory</span><br/><br/>
+<span style="color: #800080;">org.quartz.dataSource.NAME.java.naming.provider.url=t3://localhost:7001<br />
+org.quartz.dataSource.NAME.java.naming.security.principal=weblogic<br />
+org.quartz.dataSource.NAME.java.naming.security.credentials=weblogic</span><br/><br/>
+表 6.6 列出了受管理的 <span style="color: #800080;">Datasource</span> 可用的属性。<br/><br/>
+<table border="0" width="560" cellpadding="5">
+<caption><strong>表 6.6. 在应用服务器上所用的 <span style="color: #800080;">Datasource</span> 的属性</strong></caption>
+<tbody>
+<tr>
+<td><strong>属性</strong></td>
+<td><strong>必须</strong> </td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.dataSource.NAME.jndiURL</span></td>
+<td>是</td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>受你的应用服务器管理的 <span style="color: #800080;">DataSource</span> 的 <span style="color: #800080;">JNDI URL</span></td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.dataSource.NAME.java.naming.factory.initial</span></td>
+<td>否</td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>可选项，你想用的 <span style="color: #800080;">JNDI InitialContextFactory</span> 的类名称</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.dataSource.NAME.java.naming.provider.url</span></td>
+<td>否</td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>可选项，连接到 JNDI 上下文的 URL</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.dataSource.NAME.java.naming.security.principal</span></td>
+<td>否</td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>可选项，连接到 JNDI 上下文的用户主体(Unmi 注：用户名)</td>
+</tr>
+<tr>
+<td><span style="color: #800080;">org.quartz.dataSource.NAME.java.naming.security.credential</span></td>
+<td>否</td>
+</tr>
+<tr>
+<td colspan="2"><strong>描述：</strong>可选项，连接到 JNDI 上下文的用户凭证(Unmi 注：密码)</td>
+</tr>
+</tbody>
+</table>
+<br/>
+使用到表 6.6 中的属性，这儿有一个在 <span style="color: #800080;">quartz.properties</span> 中配置受管理的 <span style="color: #800080;">Datasource</span> 的例子。<br/><br/>
+<span style="color: #800080;">org.quartz.dataSource.WL.jndiURL = OraDataSource<br />
+org.quartz.dataSource.WL.jndiAlwaysLookup = DB_JNDI_ALWAYS_LOOKUP<br />
+org.quartz.dataSource.WL.java.naming.factory.initial = weblogic.jndi.WLInitialContextFactory<br />
+org.quartz.dataSource.WL.java.naming.provider.url = t3://localhost:7001<br />
+org.quartz.dataSource.WL.java.naming.security.principal = weblogic<br />
+org.quartz.dataSource.WL.java.naming.security.credentials = weblogic</span><br/><br/>
+------------------------------------------------<br />
+[Unmi 后记] 又半月有途未动笔墨了，不过仍然保持着只要有机会上网就一定到 BlogJava 来阅读最新本章的习惯。部门人员锐减，事情也就杂乱不堪起来，对于开发技术的选择上客观上完全能由我自行决断，没有人与我争议了，甚是悲凉。<br/><br/>
+起初对 Quartz 这个系列的翻译只为一时之兴，一路过来翻译工作其实蛮费时间的。一篇英文阅读完之后，还需花费几近于 20 倍的时间才能用中文记录下来。因为阅读总是眼观六路，一知半解的，完全转换成中文就要字句斟酌了。<br/><br/>
+翻译进行到这个阶段，我当然还会继续坚持，从其中获得的好处也是不言而喻的。主要表现在两方面：<br/><br/>
+1. 对技术把握的更精细。阅读是放眼而瞟，只求个大概；翻译则不同，本身未能理解个相当，何以能用中文向他人解译的清楚呢？蕴责任于其中。对于多数例子，并非照搬了事，都有再次测试感受过的。译章置于网上之后，亦有许多朋友就 Quartz 使用时的疑问，本人也会带着某种责任心，尽我能力作解答，也非常有助于自身对该项技术的掌握。<br/><br/>
+2. 阅读与翻译的速度提升也是显而易见的。最初时的每字每句的爬梳，须频繁请求各方资源才能完成一篇，现在与那时相比，可谓顺畅多了。许多篇章纵使离开英文词典也无碍了。用数据来说吧，现在翻译一篇的速度大概是以前的四至五倍。以后的前行中需要面对更多的英文资料，通过对 Quartz 这个手册翻译扎实锤炼了自己的英文阅读能力，写作能力亦在其内。<br/><br/>
+之于以上两点能对我产生的影响，尤其是 Quartz 手册的翻译已完成大部分时，我一定还会继续完成它，也非常感谢网络上各位朋友们的支持。

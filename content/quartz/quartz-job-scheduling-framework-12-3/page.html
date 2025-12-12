@@ -1,0 +1,277 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第十二章. Quartz Cookbook (第三部分)
+url: /quartz-job-scheduling-framework-12-3/
+date: 2008-04-06T00:30:00-05:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 419 
+wpStatus: publish
+views: 505
+lastmod: 2021-09-02T20:48:53-05:00
+---
+
+<strong>·替换已部署的 Job</strong></p>
+<br/>
+Quartz 提供了对已部署 Job 进行修改的灵活性。它是通过允许用修改后的 <span style="color: #800080;">JobDetail</span> 替换已有的 <span style="color: #800080;">JobDetail</span> 来支持这一特性的。为展未这一例子，让我们更新代码 12.4 中的 <span style="color: #800080;">CheckEmailJob</span> 类。代码 12.4 是硬编码了邮件属性值到 Job 类中的。更好的做法是传入那些属性，如此则可以随意的改变它们；那让我们改动 <span style="color: #800080;">CheckEmailJob</span> 来做到这一点。代码 12.7 显示的是那个 Job 的更新后的版本。<br/><br/>
+<strong>代码 12.7. 更新后的允许传入属性的 CheckEmailJob<!--more--><br />
+</strong>
+{{< highlight java >}}
+package org.cavaness.quartzbook.chapter12;
+
+import java.util.Properties;
+
+import javax.mail.Folder;
+import javax.mail.Message;
+import javax.mail.MessagingException;
+import javax.mail.NoSuchProviderException;
+import javax.mail.Session;
+import javax.mail.Store;
+import org.quartz.Job;
+import org.quartz.JobDataMap;
+import org.quartz.JobExecutionContext;
+import org.quartz.JobExecutionException;
+
+public class CheckEmailJob implements Job {
+  public static String HOST_KEY = "mailHost" ;
+  public static String USERNAME_KEY = "username";
+  public static String PASSWORD_KEY = "password";
+
+  String mailHost = "some.mail.host";
+  String username = "aUsername";
+  String password = "aPassword";
+
+  public CheckEmailJob() {
+    super();
+  }
+  public void execute(JobExecutionContext context) throws JobExecutionException {
+    loadMailProperties(context.getJobDetail().getJobDataMap());
+    checkMail();
+  }
+
+  protected void loadMailProperties(JobDataMap map) {
+    if (map.getString(HOST_KEY) != null) {
+      mailHost = map.getString(HOST_KEY);
+    }
+
+    if (map.getString(USERNAME_KEY) != null) {
+      username = map.getString(USERNAME_KEY);
+    }
+
+    if (map.getString(PASSWORD_KEY) != null) {
+      password = map.getString(PASSWORD_KEY);
+    }
+  }
+  protected void checkMail() {
+    // Get session
+    Session session = null;
+
+    try {
+      // Get system properties
+      Properties props = System.getProperties();
+
+      session = Session.getDefaultInstance(props, null);
+
+      // Get the store
+      Store store = session.getStore("pop3");
+      store.connect(mailHost, username, password);
+
+      // Get folder
+      Folder folder = store.getFolder("INBOX");
+      folder.open(Folder.READ_ONLY);
+
+      // Get directory
+      Message message[] = folder.getMessages();
+      int numOfMsgs = message.length;
+      if (numOfMsgs &gt; 0) {
+        for (int i = 0, n = numOfMsgs; i &lt; n; i++) {
+          System.out.println("(" + i + " of " + numOfMsgs + "): "
+              + message[i].getFrom()[0] + "\t"
+              + message[i].getSubject());
+        }
+      } else {
+        System.out.println("No Messages for user");
+      }
+
+      // Close connection
+      folder.close(false);
+      store.close();
+    } catch (NoSuchProviderException e) {
+      // TODO Auto-generated catch block
+      e.printStackTrace();
+    } catch (MessagingException e) {
+      // TODO Auto-generated catch block
+      e.printStackTrace();
+    }
+  }
+  public static void main(String[] args) {
+    CheckEmailJob job = new CheckEmailJob();
+    job.checkMail();
+  }
+}
+{{</ highlight >}}
+<br/>
+代码 12.7 的 <span style="color: #800080;">CheckEmailJob</span> 与 12.4 中版本主要的不同是 <span style="color: #800080;">loadMailProperties()</span> 方法。这个方法在 Job 首先执行的时候被调用，并检查 <span style="color: #800080;">JobDataMap</span> 看邮件属性是否有设置在这个 Map 中。假如有就用已设值，如果没有的话就使用 Job 类中的默认值。<br/><br/>
+代码 12.8 展示了属性值是如何被设置到 <span style="color: #800080;">JobDataMap</span> 中并传递给 Job 的。这些代码也显示了你怎么样才能用修改后的 <span style="color: #800080;">JobDetail</span> 实例替换已有实例来改变 Job 的。<br/><br/>
+<strong>代码 12.8. 显示如何更新一个已部署 Job 的例子</strong>
+{{< highlight java >}}
+package org.cavaness.quartzbook.chapter12;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.quartz.JobDetail;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.Trigger;
+import org.quartz.TriggerUtils;
+import org.quartz.impl.StdSchedulerFactory;
+ public class Listing_12_8 {
+  static Log logger = LogFactory.getLog(Listing_12_8.class);
+
+  public static void main(String[] args) {
+    Listing_12_8 example = new Listing_12_8();
+    example.runScheduler();
+  }
+
+  public void runScheduler() {
+    Scheduler scheduler = null;
+
+    try {
+      // Get a Scheduler instance from the Factory
+      scheduler = StdSchedulerFactory.getDefaultScheduler();
+
+      // Start the scheduler
+      scheduler.start();
+
+      // Create a JobDetail for the Job
+      JobDetail jobDetail = new JobDetail("CheckEmailJob",
+          Scheduler.DEFAULT_GROUP, CheckEmailJob.class);
+
+      // Set the properties used by the job
+      jobDetail.getJobDataMap().put(CheckEmailJob.HOST_KEY, "host1");
+      jobDetail.getJobDataMap().put(CheckEmailJob.USERNAME_KEY, "username");
+      jobDetail.getJobDataMap().put(CheckEmailJob.PASSWORD_KEY, "password");
+
+      // Create a trigger that fires at 11:30pm every day
+      Trigger trigger = TriggerUtils.makeDailyTrigger(23, 30);
+      trigger.setName("emailJobTrigger");
+
+      // Associate the trigger with the job in the scheduler
+      scheduler.scheduleJob(jobDetail, trigger);
+
+      // Update the Job with a different mail host
+      jobDetail.getJobDataMap().put(CheckEmailJob.HOST_KEY, "host2");
+      scheduler.addJob(jobDetail, true);
+
+    } catch (SchedulerException ex) {
+      // deal with any exceptions
+      logger.error(ex);
+    }
+  }
+}
+{{</ highlight >}}
+<br/>
+代码 12.8 中内容显示了两件事。其一，它向你展示了如何能通过 <span style="color: #800080;">JobDataMap</span> 向 Job 类传递邮件属性。其二，它描绘了你如何能使用 <span style="color: #800080;">addJob()</span> 方法去更新一个已部署 Job 的 <span style="color: #800080;">JobDetail</span>。<span style="color: #800080;">addJob()</span> 方法有一个布尔型的参数，用来告诉 Scheduler 是否用将要传入的 <span style="color: #800080;">JobDetail</span> 替换已部署的 <span style="color: #800080;">JobDetail</span>。Job 名和组必须与 Scheduler 中相匹配，这样才能用新的替换掉旧的。典型的做法是，你的代码会获取到已存在的 Job，然后修改它的 <span style="color: #800080;">JobDataMap</span> 中的内容，最后重新保存即可。<br/><br/>
+<strong>·更新已存在的 Trigger<br />
+</strong><br />
+你或许也需要更新某个 Job 更新已存在的 Trigger。你能用另一个来替换某个 Trigger，只要它是应用于同一个 Job。你可以通过使用 Scheduler 的 <span style="color: #800080;">reschedulerJob()</span>  方法来替换某个已有的 Trigger。<br/><br/>
+<span style="color: #800080;">Trigger newTrigger = // Create a new Trigger<span style="color: #800080;"><span style="color: #800080;">// Replace the old trigger with a new one<br />
+sched.rescheduleJob(jobName, Scheduler.DEFAULT_GROUP, newTrigger);</span></span></span><br/><br/>
+<strong>·列示出 Scheduler 中的所有 Job<br />
+</strong><br />
+假如你正为 Quartz 构造一个 GUI，你可能需要列出已注册到 Scheduler 的所有 Job。代码 12.9 呈现了这个需求的一个应用。<br/><br/>
+<strong>代码 12.9. 列示出 Scheduler 中的所有 Job 的例子</strong>
+{{< highlight java >}}
+package org.cavaness.quartzbook.chapter12;
+
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
+import org.quartz.JobDetail;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.Trigger;
+import org.quartz.TriggerUtils;
+import org.quartz.impl.StdSchedulerFactory;
+
+public class Listing_12_9 {
+  static Log logger = LogFactory.getLog(Listing_12_9.class);
+
+  public static void main(String[] args) {
+    Listing_12_9 example = new Listing_12_9();
+    example.runScheduler();
+  }
+
+  public void runScheduler() {
+    Scheduler scheduler = null;
+
+    try {
+      // Get a Scheduler instance from the Factory
+      scheduler = StdSchedulerFactory.getDefaultScheduler();
+
+      // Start the scheduler
+      scheduler.start();
+
+      // Create a JobDetail for the Job
+      JobDetail jobDetail = new JobDetail("CheckEmailJob",
+          Scheduler.DEFAULT_GROUP, CheckEmailJob.class);
+
+      // Create a trigger that fires at 11:30pm every day
+      Trigger trigger = TriggerUtils.makeDailyTrigger(23, 30);
+      trigger.setName("emailJobTrigger");
+
+      // Associate the trigger with the job in the scheduler
+      scheduler.scheduleJob(jobDetail, trigger);
+
+      String[] jobGroups = scheduler.getJobGroupNames();
+      int numOfJobGroups = jobGroups.length;
+
+      for (int i = 0; i < numOfJobGroups; i++) {
+        System.out.println("Group: "  + jobGroups[i]
+            + " contains the following jobs");
+
+        String[] jobsInGroup = scheduler.getJobNames(jobGroups[i]);
+        int numOfJobsInGroup = jobsInGroup.length;
+
+        for (int j = 0; j < numOfJobsInGroup; j++) {
+          System.out.println(" - "  + jobsInGroup[j]);
+
+        }
+      }
+
+    } catch (SchedulerException ex) {
+      // deal with any exceptions
+      logger.error(ex);
+    }
+  }
+}
+{{</ highlight >}}
+<br/>
+代码 12.9 中只注册了一个 Job，就是代码 12.7 中的 <span style="color: #800080;">CheckEmailJob</span>，且演示了如何循环 <span style="color: #800080;">JobGroups</span> 并罗列出每一个 group 下的所有 Job。在 GUI 中，罗列的结果可以呈现在列表框中或者是下拉列表中。<br/><br/>
+<strong>·列示出 Scheduler 中的所有 Trigger<br />
+</strong><br />
+你也能用类似于代码 12.9 中的方式罗列出所有 Trigger 来。下面的代码看起来十分相似，只是替换为 Trigger 而已。<br/><br/>
+<span style="color: #800080;">String[] triggerGroups = sched.getTriggerGroupNames();<br />
+int numOfTriggerGroups = triggerGroups.length;<br />
+for (i = 0; i &lt; numOfTriggerGroups; i++) {<br />
+   System.out.println("Group: "<br />
+      + triggerGroups[i]<br />
+      + " contains the following triggers");<span style="color: #800080;"><span style="color: #800080;">   String[] triggersInGroup = sched.getTriggerNames(triggerGroups[i]);<br />
+   int numOfTriggersInGroup = triggersInGroup.length;<br />
+   for (j = 0; j &lt; numOfTriggersInGroup; j++) {<br />
+      System.out.println("- " + triggersInGroup[j]);<br />
+   }<br />
+}</span></span></span><br/><br/>
+<br />
+如果你需要罗列出单个 Job 的所有 Trigger，你可用 Scheduler 的 <span style="color: #800080;">getTriggersOfJob()</span> 方法。这个方法返回一个与此 Job 相关联的 <span style="color: #800080;">Trigger[]</span> 数组。

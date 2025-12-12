@@ -1,0 +1,79 @@
+---
+title: Quartz Job Scheduling Framework［翻译］第八章. 使用 Quartz 插件 (第一部分)
+url: /quartz-job-scheduling-framework-8-1/
+date: 2008-07-18T23:46:00-05:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/quartz-logo.jpeg"
+categories:
+  - Quartz
+tags: 
+  - Quartz
+  - 翻译
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 368 
+wpStatus: publish
+views: 428
+lastmod: 2020-03-22T12:15:43-05:00
+---
+
+<strong>第八章. 使用 Quartz 插件</strong><br/><br/>
+Quartz 框架提供了几种用于扩展平台能力的方式。通过使用各种 "钩子" (通常指的就是扩展点)，Quartz 变得很容易被扩展和定制化来适应你的需要。其中一个最简单的扩展框架的方法就是使用 Quartz 插件。本章就来看看如何使用插件机制让 Quartz 进入到之前 Quartz 用户没去过的领域。<br/><br/>
+<strong>一. 什么是插件？</strong><br/><br/>
+假如你使用过其他的开源框架，例如 Apache Struts，你应该已经熟悉了插件的概念和它们的用法。非常简单，一个 Quartz 插件就是一个实现了 <span style="color: #800080;">org.quartz.spi.SchedulerPlugin</span> 接口的 Java 类，并且被作为插件注册给了 Scheduler。这个插件接口包含了三个方法，显示在代码 8.1 中。<!--more--><br/><br/>
+<strong>代码 8.1. Quartz 插件必须实现的 <span style="color: #800080;">SchedulerPlugin</span> 接口<br />
+</strong>
+{{< highlight java >}}
+public interface SchedulerPlugin {
+
+     public void initialize(String name, Scheduler scheduler)
+               throws SchedulerException;
+
+     public void start();
+     public void shutdown();
+
+}
+{{</ highlight >}}
+<br/>
+<span style="color: #800080;">SchedulerPlugin</span> 的方法是在 Scheduler 的初始化和启动期间被调用。Scheduler 会调用每一个已注册插件的这三个方法。下面的几节描述了插件的每一个方法会在什么时候被调用。<br/><br/>
+<strong>·initialize() 方法</strong><br/><br/>
+<span style="color: #800080;">initialize()</span> 方法在 Scheduler 的创建期间被调用。当 <span style="color: #800080;">StdSchedulerFactory</span> 的 <span style="color: #800080;">getScheduler()</span> 方法被调用后，这个工厂就调用所有注册的插件的 <span style="color: #800080;">initialize()</span> 方法。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>插件不能同 DirectSchedulerFactory 正常工作<br />
+</strong><br />
+插件只是设计来用与 <span style="color: #800080;">StdSchedulerFactory</span> 的。这是在框架中的限制。如果你想要用插件，那么就需要使用 <span style="color: #800080;">StdSchedulerFactory</span> 来获取你的 Scheduler 实例。</td>
+</tr>
+</tbody>
+</table>
+<br/>
+每个插注册为一个唯一的名字。这个给定的名字和 Scheduler 实例被包含在对 <span style="color: #800080;">initialize()</span> 方法的调用中。你需要在你的插件初始化的时候做些事情。如，你的插件也许需要从文件或数据库中读取并解析数据。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>Scheduler 在 <span style="color: #800080;">initialize()</span> 时并未完全创建好</strong>当这个方法在调用的时候，Scheduler 还未完全初始化好，因此它和 Scheduler 的交互应保持在尽量短的时间。例如，你不应该试图在 <span style="color: #800080;">initialize()</span> 方法中去部署任何 Job。</td>
+</tr>
+</tbody>
+</table>
+<br/>
+假如在初始化插件的时候发生了问题，你应当抛出一个 <span style="color: #800080;">org.quartz.SchedulerConfigException</span> 异常，这个异常是 <span style="color: #800080;">SchedulerException</span> 的子类。这能阻止插件的继续加载，并停止了它与 Scheduler 后面的交互。<br/><br/>
+<strong>·<span style="color: #800080;">start()</span> 方法<br />
+</strong><br />
+Scheduler 实例调用 <span style="color: #800080;">start()</span> 方法让插件知道它可以执行任何需要的启动动作了。例如，假如你有 Job 要部署，那这个时候就可以部署他们了。<br/><br/>
+<strong>·<span style="color: #800080;">shutdown()</span> 方法<br />
+</strong><br />
+<span style="color: #800080;">shutdown()</span> 方法被调用来通知插件 Scheduler 将要关闭了。这是给插件的一个机会去清理任何打开的资源。例如，数据库连接或是打开的文件应该要关闭。<br/><br/>
+<table style="border: 1px;" border="1" width="70%" align="center">
+<tbody>
+<tr>
+<td><strong>Scheduler 实例不会传递给 <span style="color: #800080;">start()</span> 或 <span style="color: #800080;">shutdown()</span></strong>注意到，Scheduler 实例并不会作为参数传递给 <span style="color: #800080;">start()</span> 或 <span style="color: #800080;">shutdown()</span> 方法。如果你的插件需要在 <span style="color: #800080;">start()</span> 或 <span style="color: #800080;">shutdown()</span> 中访问 Scheduler，你必须把 Scheduler 存放在插件的一个实例变量中。</td>
+</tr>
+</tbody>
+</table>
