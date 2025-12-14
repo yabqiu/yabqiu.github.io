@@ -1,0 +1,127 @@
+---
+title: HttpClient 模拟登陆，保持会话并进行后续操作
+url: /httpclient-login-session/
+date: 2011-03-09T20:02:53-06:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - session
+  - httpclient
+  - cookie
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 3293 
+wpStatus: publish
+views: 15728
+lastmod: 2011-03-09T20:23:24-06:00
+---
+
+<a href="http://hc.apache.org/" target="_blank">Apache HttpClient</a> 是很方便的 Java 开源的访问 HTTP 资源的组件。网站上的资源不总是能匿名访问的，很多都需要登陆后才能操作，且不说论坛里登陆后才能发言，就是某些稍显敏感的 XML 等信息也是登陆后才能获取到的。<br/>
+<br/>
+没问题，HttpClient 能让你做到，它提供了 Basic 和 Form-Based 两种验证方式。登陆后获得服务器端发来的 Cookie 作为下一次访问的凭证, 让服务端认为你还是个合法用户。服务端不是用 Session 来维护会话的吗？是的，Session 也要有个载体，Cookie 了。或有时 Java Web 会用 jsessionid 参数在服务端与客户端来回关联 Session 信息，也没问题，HttpClient 同样能胜任。<br/>
+<br/>
+下面主要说明 Form-Based 的验证方式，Basic 的验证简单列了几行代码，还未实践，具体可参考文后的链接。<!--more--><br/>
+<br/>
+看 Form-Based 方式的演示代码，如果登陆时需要一个验证码的话，那只有自己想办法怎么得到这个码了，登陆时谁都想无码：<br/>
+{{< highlight java >}}
+package cc.unmi.httpclient;
+
+import org.apache.commons.httpclient.Cookie;
+import org.apache.commons.httpclient.HttpClient;
+import org.apache.commons.httpclient.NameValuePair;
+import org.apache.commons.httpclient.cookie.CookiePolicy;
+import org.apache.commons.httpclient.methods.GetMethod;
+import org.apache.commons.httpclient.methods.PostMethod;
+import org.junit.Test;
+
+public class HttpClientLogin {
+
+    public static void main(String[] args){
+        //登陆 Url
+        String loginUrl = "http://localhost/unmi/login.html";
+
+        //需登陆后访问的 Url
+        String dataUrl = "http://localhost/unmi/user_info.html?userid=123456";
+
+        HttpClient httpClient = new HttpClient();
+
+        //模拟登陆，按实际服务器端要求选用 Post 或 Get 请求方式
+        PostMethod postMethod = new PostMethod(loginUrl);
+
+        //设置登陆时要求的信息，一般就用户名和密码，验证码自己处理了
+        NameValuePair[] data = {
+                new NameValuePair("username", "Unmi"),
+                new NameValuePair("password", "123456"),
+                new NameValuePair("code", "anyany")
+        };
+        postMethod.setRequestBody(data);
+
+        try {
+            //设置 HttpClient 接收 Cookie,用与浏览器一样的策略
+            httpClient.getParams().setCookiePolicy(CookiePolicy.BROWSER_COMPATIBILITY);
+            httpClient.executeMethod(postMethod);
+
+            //获得登陆后的 Cookie
+            Cookie[] cookies=httpClient.getState().getCookies();
+            String tmpcookies= "";
+            for(Cookie c:cookies){
+                tmpcookies += c.toString()+";";
+            }
+
+            //进行登陆后的操作
+            GetMethod getMethod = new GetMethod(dataUrl);
+
+            //每次访问需授权的网址时需带上前面的 cookie 作为通行证
+            getMethod.setRequestHeader("cookie",tmpcookies);
+
+            //你还可以通过 PostMethod/GetMethod 设置更多的请求后数据
+            //例如，referer 从哪里来的，UA 像搜索引擎都会表名自己是谁，无良搜索引擎除外
+            postMethod.setRequestHeader("Referer", "http://unmi.cc");
+            postMethod.setRequestHeader("User-Agent","Unmi Spot");
+
+            httpClient.executeMethod(getMethod);
+
+            //打印出返回数据，检验一下是否成功
+            String text = getMethod.getResponseBodyAsString();
+            System.out.println(text);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+{{</ highlight >}}
+
+Basic 验证的简单代码导引，还未亲试：<br/>
+{{< highlight java >}}
+HttpClient client = new HttpClient();
+
+// 1
+client.getState().setCredentials(
+    new AuthScope("unmi.cc", 80, AuthScope.ANY_REALM),
+    new UsernamePasswordCredentials("username", "password")
+);
+
+// 2
+client.getParams().setAuthenticationPreemptive(true);
+
+// 3
+GetMethod getMothod = new GetMethod("http://unmi.cc/twitter");
+
+// 4
+getMothod.setDoAuthentication( true );
+
+// 5
+int status = client.executeMethod( getMothod );
+{{</ highlight >}}
+
+参考：1. <a href="http://xvm03.javaeye.com/blog/894135" target="_blank">ZT---httpclient如何保持session会话模拟登录后的操作 </a><br/>
+         2. <a href="http://blog.sealyu.com/2010/12/23/%E4%BD%BF%E7%94%A8-apache-httpclient-%E7%AA%81%E7%A0%B4-j2ee-%E7%AB%99%E7%82%B9%E8%AE%A4%E8%AF%81/" target="_blank">使用 Apache HttpClient 突破 J2EE 站点认证</a>  <br/>
+        3. <a href="http://svn.apache.org/viewvc/httpcomponents/oac.hc3x/trunk/src/examples/BasicAuthenticationExample.java?view=markup" target="_blank">官方例子，BasicAuthenticationExample.java</a>
