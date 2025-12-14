@@ -1,0 +1,77 @@
+---
+title: Java 的匿名类初始化块中如何访问同名参数?
+url: /java-anonymous-class-access-same-name-parameter/
+date: 2014-08-26T23:54:44-05:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - Java
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 6562 
+wpStatus: publish
+views: 263
+lastmod: 2014-08-26T23:54:44-05:00
+---
+
+因为写过类似下面的一段代码来实始化一个匿名实例<br/>
+{{< highlight java >}}
+package cc.unmi;
+
+public class Test {
+  public String name;
+
+  public static Test buildTest(final String name) {
+    Test test = new Test(){{
+        this.name = name; //希望把 buildTest() 方法参数中的 name 赋给 this.name
+    }};
+    System.out.println(test.name); // 仍然是 null
+    return test;
+  }
+}
+{{</ highlight >}}
+
+看上面的 <code>buildTest()</code> 方法中的 <code>this.name = name</code> 希望能把方法参数 final String name 中的 name 值赋值给 this.name, 但是无效，this.name = name 是在把自己赋给自己。<!--more--><br/>
+<br/>
+因为想像通常的 setter 方法的写法那样<br/>
+{{< highlight java >}}
+public void setName(String name) {
+    this.name = name;  //这里不带 this 的 name 就是 setName 方法参数中的 name
+}
+{{</ highlight >}}
+
+实例方法中即使声明了与实例或类变量同名的局部变量，不带 this 或类名前缀就能访问到局部变量。<br/>
+<br/>
+回到第一个例子中，<code>new Test(){{...}}</code> 声明的是一个匿名类，这其实是涉及到的是在匿名类中如何访问外面的局部变量，如果把 buildTest() 参数名变换一下就没问题的<br/>
+{{< highlight java >}}
+public static Test buildTest(final String theName) {
+    return new Test() {{
+        this.name = theName;
+    }};
+}
+{{</ highlight >}}
+
+目前还未找到第一个例子的匿名类初始块中如何访问重名的 buildTest() 参数 name，似乎是被彻底覆盖掉了。<br/>
+<br/>
+或者像下面这个例子<br/>
+{{< highlight java >}}
+  public static Test buildTest() {
+    String name = "123";
+    return new Test(){
+      {
+        this.name = name; //也是无法用 name 访问到外层的值为 "123" 的 name 变量
+      }
+    };
+  }
+{{</ highlight >}}
+
+代码规范上最好不要这么写，命名上最好区分开来，但怕由此可能造成的 bug.<br/>
+<br/>
+不知是否有办法在匿名类中访问到外层同名变量？
