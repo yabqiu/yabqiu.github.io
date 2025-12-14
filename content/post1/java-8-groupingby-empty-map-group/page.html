@@ -1,0 +1,127 @@
+---
+title: Java 8 的 groupingBy 产生空的 Map 分组
+url: /java-8-groupingby-empty-map-group/
+date: 2015-12-25T22:25:49-06:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+  - Java8
+tags: 
+  - java8
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 7119 
+wpStatus: publish
+views: 1776
+lastmod: 2021-09-03T17:29:27-05:00
+---
+
+前面一篇 <a href="/java-8-groupingby-howto-generate-empty-map/" target="_blank" rel="noopener">Java 8 的 groupingBy 能否产生空的 Map 分组</a> 是提出来的思考，本篇就是上一篇的答案。</p>
+<br/>
+由于在 Java 8 中用 Collectors.groupingBy 对 List 进行分组时每个组里都必须存在元素，也就是<br/>
+<blockquote>
+Stream&lt;Person&gt; stream = Stream.of(new Person("Tom", "male"), new Person("Jerry", "male"));<br />
+System.out.println(stream.collect(Collectors.groupingBy(person -&gt; person.gender)));
+</blockquote>
+
+只能得到结果<br/>
+<blockquote>
+{male=[Tom, Jerry]}
+</blockquote>
+
+而无法表示存在其他 gender 的可能性，并且 female=[] 的情况，即想要结果<br/>
+<blockquote>
+{male=[Tom, Jerry], female=[]}
+</blockquote>
+
+如果想得到以上的结果该当如何呢? stream.collect() 接受一个 Collector, Collectors 中只是定义了许多常用的 Collector 实现，如果不够用的话我们可以实现自己的 Collector. 下面就来定义一个 GroupingWithKeys, 它需要实现 java.util.stream.Collector 接口，有五个接口方法. 事成之后我们写<!--more--><br/>
+{{< highlight java >}}
+Stream<Person> stream = Stream.of(new Person("Tom", "male"), new Person("Jerry", "male"));
+System.out.println(stream.collect(new GroupingWithKeys<>(person -> person.gender, "male", "female")));
+{{</ highlight >}}
+<br/>
+能够得到输出<br/>
+<blockquote>
+{male=[Tom, Jerry], female=[]}
+</blockquote>
+
+下面是 Person 和 GroupingWithKeys 两个类的完整代码<br/><br/>
+<strong>GroupingWithKeys.java</strong><br/>
+{{< highlight java >}}
+class GroupingWithKeys<T, K> implements Collector<T, Map<K, List<T>>, Map<K, List<T>>> {
+
+  private List<K> possibleKeys = Collections.emptyList();
+  private Function<T, K> keyGenerator;
+
+  public GroupingWithKeys(Function<T, K> keyGenerator, K...possibleKeys) {  //构造时传入 Key 生成器和可能的 Keys
+    if(possibleKeys != null) {
+      this.possibleKeys = Arrays.asList(possibleKeys);
+    }
+    this.keyGenerator = keyGenerator;
+  }
+
+  @Override
+  public Supplier<Map<K, List<T>>> supplier() {
+    return () -> {
+      Map<K, List<T>> map = new LinkedHashMap<>();
+      possibleKeys.forEach(s -> map.put(s, new ArrayList<T>())); //按 possibleKeys 依次用空列表填充 Map
+      return map;
+    };
+  }
+
+  @Override
+  public BiConsumer<Map<K, List<T>>, T> accumulator() {
+    return (map, t) -> {
+      List<T> list = map.getOrDefault(keyGenerator.apply(t), new ArrayList<T>());
+      list.add(t);
+      map.put(keyGenerator.apply(t), list);
+    };
+  }
+
+  @Override
+  public BinaryOperator<Map<K, List<T>>> combiner() {
+    return (map1, map2) -> {
+      map1.putAll(map2);
+      return map1;
+    };
+  }
+
+  @Override
+  public Function<Map<K, List<T>>, Map<K, List<T>>> finisher() {
+    return Function.identity();
+  }
+
+  @Override
+  public Set<Characteristics> characteristics() {
+    return Collections.unmodifiableSet(EnumSet.of(IDENTITY_FINISH, CONCURRENT));
+  }
+}
+{{</ highlight >}}
+<br/>
+在上面的 supplier() 方法中为所有可能的 Keys 准备好一个空的 List, 然后填充好 Map .<br/><br/>
+<strong>Person.java</strong><br/>
+{{< highlight java >}}
+class Person {
+
+  public final String name;
+  public final String gender;
+
+  public Person(String name, String gender) {
+    this.name = name;
+    this.gender = gender;
+  }
+
+  @Override
+  public String toString() {
+    return name;
+  }
+}
+{{</ highlight >}}
+<br/>
+Java 既然提供了 java.util.stream.Collector 接口让我们扩展，那么想要什么样的 Collector 就自己创建吧。
