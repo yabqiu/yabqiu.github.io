@@ -3,7 +3,7 @@ title: 创建兼容 IE/FireFox 的 event 及 event 的 srcElement、fromElement�
 url: /ie-firefox-event-srcelement-fromelement-toelement/
 date: 2009-07-10T06:49:00-05:00
 featured: false
-draft: true
+draft: false
 type: post
 toc: false
 # menu: main
@@ -24,20 +24,26 @@ lastmod: 2021-09-02T11:25:29-05:00
 ---
 
 自然，我们都习惯了 IE，在 IE 中要在函数中获得各事件对象很容易，直接用 event、event.srcElemtn、event.fromElement、event.toElement 就行了。在 FireFox 中获得触发事件的元素可以用 event.target，但其他两个 fromElement 和 toElement 就要费些周折。<br/><br/>
-所以，为了保持一致的使用方式，也为了保持原有的使用习惯，我们加入以下 JS 代码(代码有些紧凑，未加注释，应该很好理解)：<!--more--><br/><br/>
-<pre class="lang:default decode:true">&lt;script language="javascript"&gt;<br/><br/>
-  if(window.addEventListener) { FixPrototypeForGecko(); }  <br/><br/>
+所以，为了保持一致的使用方式，也为了保持原有的使用习惯，我们加入以下 JS 代码(代码有些紧凑，未加注释，应该很好理解)：<!--more--><br/>
+{{< highlight html >}}
+<script language="javascript">
+
+  if(window.addEventListener) { FixPrototypeForGecko(); }
+
   function  FixPrototypeForGecko()
   {
       HTMLElement.prototype.__defineGetter__("runtimeStyle",element_prototype_get_runtimeStyle);
       window.constructor.prototype.__defineGetter__("event",window_prototype_get_event);
       Event.prototype.__defineGetter__("srcElement",event_prototype_get_srcElement);
       Event.prototype.__defineGetter__("fromElement",  element_prototype_get_fromElement);
-      Event.prototype.__defineGetter__("toElement", element_prototype_get_toElement);<br/><br/>
-  }  <br/><br/>
+      Event.prototype.__defineGetter__("toElement", element_prototype_get_toElement);
+
+  }
+
   function  element_prototype_get_runtimeStyle() { return  this.style; }
   function  window_prototype_get_event() { return  SearchEvent(); }
-  function  event_prototype_get_srcElement() { return  this.target; }  <br/><br/>
+  function  event_prototype_get_srcElement() { return  this.target; }
+
   function element_prototype_get_fromElement() {
       var node;
       if(this.type == "mouseover") node = this.relatedTarget;
@@ -46,7 +52,8 @@ lastmod: 2021-09-02T11:25:29-05:00
       while (node.nodeType != 1)
           node = node.parentNode;
       return node;
-  }<br/><br/>
+  }
+
   function  element_prototype_get_toElement() {
           var node;
           if(this.type == "mouseout")  node = this.relatedTarget;
@@ -55,13 +62,17 @@ lastmod: 2021-09-02T11:25:29-05:00
           while (node.nodeType != 1)
              node = node.parentNode;
           return node;
-  }<br/><br/>
+  }
+
   function  SearchEvent()
   {
-      if(document.all) return  window.event;  <br/><br/>
-      func = SearchEvent.caller;  <br/><br/>
+      if(document.all) return  window.event;
+
+      func = SearchEvent.caller;
+
       while(func!=null){
-          var  arg0=func.arguments[0];  <br/><br/>
+          var  arg0=func.arguments[0];
+
           if(arg0 instanceof Event) {
               return  arg0;
           }
@@ -69,19 +80,22 @@ lastmod: 2021-09-02T11:25:29-05:00
       }
       return   null;
   }
-&lt;/script&gt;</pre>
+</script>
+{{</ highlight >}}
 <br/>
-好了，现在不管是在 IE 中还是在 FireFox 中，触发事件后都有了 event、event.srcElement、event.fromElement、event.toElement 属性了。这就来做个测试吧：<br/><br/>
-<pre class="lang:default decode:true ">&lt;script&gt;
+好了，现在不管是在 IE 中还是在 FireFox 中，触发事件后都有了 event、event.srcElement、event.fromElement、event.toElement 属性了。这就来做个测试吧：<br/>
+{{< highlight html >}}
+<script>
   function test(){
       alert("event:" + event +", srcElement:"+event.srcElement.innerHTML+
         ", fromElement:"+event.fromElement.innerHTML + ", toElement:"+event.toElement.innerHTML)
   }
-&lt;/script&gt;<br/><br/>
-&lt;button onmouseout="test()"&gt;MouseOut&lt;/button&gt;&lt;button onmouseover="test()"&gt;MouseOver&lt;/button&gt;</pre>
+</script><br/><br/>
+<button onmouseout="test()">MouseOut</button><button onmouseover="test()">MouseOver</button>
+{{</ highlight >}}
 <br/>
 页面中有两个按钮 MouseOut 和 MouseOver，你掠过第一个按钮到第二个按钮上是，有看到这样内容的窗口：<br/><br/>
-<div><img src="/wp-content/uploads/2009/07/event_element.jpg" alt="" border="0" /></div>
+{{< bundle-image event_element.jpg >}}
 <br/>
 从上图可以看出，其实我是在 Google 的 Chrome 浏览器中作的测试，也是有效的。标题虽说是兼容 IE 和 FireFox，但宽松点说就是 IE  和非 IE，因为 IE 总喜欢剑起偏锋，不按规范办事，不过这种事在 IE 8 中是收敛了许多。<br/><br/>
 <div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>
