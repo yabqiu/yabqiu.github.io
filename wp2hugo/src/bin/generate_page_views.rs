@@ -9,7 +9,9 @@ use wp2hugo::Post;
 fn main() -> Result<()> {
     // The file is read from "temp/all_posts_from_mysql.json"
     let posts_str = fs::read_to_string(&Path::new("temp/all_posts_from_mysql.json"))?;
-    let post_vec: Vec<Post> = serde_json::from_str(&posts_str)?;
+    let mut post_vec: Vec<Post> = serde_json::from_str(&posts_str)?;
+
+    post_vec.sort_by_key(|p| p.id);
 
     let page_view_file = File::create("../data/wpPageViews.toml")?;
     let mut writer = BufWriter::new(page_view_file);
