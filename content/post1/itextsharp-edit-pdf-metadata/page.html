@@ -1,0 +1,67 @@
+---
+title: 用 iTextSharp 修改 PDF 文件的元信息(MetaData)
+url: /itextsharp-edit-pdf-metadata/
+date: 2010-09-21T18:52:31-05:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/pdf-logo.png"
+categories:
+  - .Net
+tags: 
+  - pdf
+  - itextsharp
+  - MetaData
+  - 元信息
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 2636 
+wpStatus: publish
+views: 3149
+lastmod: 2021-09-03T11:50:41-05:00
+---
+
+要向另一个服务程序传送 PDF 文件，同时要用另一个文件来给 PDF 文件加入一些描述信息，描述都很短，这时候那个描述文件其实是多余的，完全可以把这些描述信息写到 PDF 文件自身中去。比如在查看 PDF 文件属性 PDF 标签页中可以看到的 Title/Author/Subject/Keywords/Created/Modified/Application 这些信息都可以通过 iTextSharp 来编辑。其实不止这些，你可以加入任何命名的属性，只是它们不在属性窗口中显示而已。而且这些属性存的数据好像也不受限的，当然太大了直接就是增加 PDF 文件的体积，如果是可视属性的话，在查看文件属性时显示也要变慢，所以尽量还是在 PDF 的 MetaData 中存简短的信息。<!--more--></p>
+<br/>
+下面来看 iTextSharp 怎么来编辑 PDF 文件的元数据信息的，使用到的关键类是　PdfStamper:<br/>
+{{< highlight csharp >}}
+string pdfFile = "d:\\sample.pdf";
+
+//把文件读入内存可立即释放文件句柄，方便信息覆盖原文件
+PdfReader reader = new PdfReader(File.ReadAllBytes(pdfFile));
+
+//如果是 PDF 文件体积较大，全部载入的话太耗内存，应该持有流
+//PdfReader reader = new PdfReader(File.OpenRead(pdfFile));
+//那么下面在构造 PdfStamper 时应该用不同的文件路径了
+
+//获取到本文件的 MetaData 信息
+Dictionary<string,string> info = reader.Info;
+
+info.Remove("Author");
+info.Add("Author", "Unmi");
+info.Remove("Subject");
+info.Add("Subject", "Use iTextSharp to modify pdf metadata");
+info.Remove("Keywords");
+info.Add("Keywords", "Blog: <a href="http://unmi.cc/" data-mce-href="http://unmi.cc/">http://unmi.cc</a>");
+
+//你可以加入任何的属性，如 Email，用程序可以将它读出
+info.Add("Email", "<a href="mailto:fantasia@sina.com" data-mce-href="mailto:fantasia@sina.com">fantasia@sina.com</a>");
+
+reader.Close();
+
+//覆盖掉原 PDF 文件中
+PdfStamper stamper = new PdfStamper(reader, new FileStream(pdfFile, FileMode.Create, FileAccess.Write));
+
+stamper.MoreInfo=info;&amp;nbsp;
+
+stamper.Close();
+{{</ highlight >}}
+<br/>
+看修改之后的 PDF 文件的属性：<br/><br/>
+{{< bundle-image editpdfmeta.jpg 367 >}}
+<br/>
+把简短的描述信息附加在 PDF 文件自身中了，就再也不用搞个描述文件，不然还得考虑文件与描述同步的问题。
