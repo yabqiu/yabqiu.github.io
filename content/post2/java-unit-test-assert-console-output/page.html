@@ -3,7 +3,7 @@ title: Java 单元测试如何断言(检查)控制台输出
 url: /java-unit-test-assert-console-output/
 date: 2016-10-18T00:09:02-05:00
 featured: false
-draft: true
+draft: false
 type: post
 toc: false
 # menu: main
@@ -26,34 +26,35 @@ lastmod: 2016-10-18T00:14:40-05:00
 
 <p>我先前在项目中的办法是, 先把把标准输出定向到一个 <code>ByteArrayOutputStream</code> 中去, 完后把这个流转成字符串来断言它的内容, 最后恢复标准输出为 <code>System.out</code>, 代码如下:</p>
 
-<blockquote><br/>
-<p>ByteArrayOutputStream output = new ByteArrayOutputStream();<br /><br/>
+<blockquote>
+<p>ByteArrayOutputStream output = new ByteArrayOutputStream();<br />
  System.setOut(new PrintStream(output));</p>
 
-<p>System.out.print("Hello");<br /><br/>
-<br /><br/>
- assertThat(output.toString(), is("Hello");<br /><br/>
+<p>System.out.print("Hello");<br />
+<br />
+ assertThat(output.toString(), is("Hello");<br />
 System.setOut(System.out);</p>
 
 </blockquote>
 
 <p>这样也能完成任务, 本质也是对的, 但稍显复杂了些. 今天读 <code>Spring in Action</code> 一书, 发现它用了 <code>StandardOutputStreamLog</code> 这个 JUnit 的 <code>@Rule</code>, 来自于 <a href="http://stefanbirkner.github.io/system-rules/">System Rules</a>. 其实 <code>StandardOutputStreamLog</code> 类已不推荐使用, 取而代之的是 <a href="http://stefanbirkner.github.io/system-rules/#SystemErrAndOutRule">SystemOutRule</a>, 所以应用 <code>SystemOutRule</code> 来断言控制台输出的测试方法就是<!--more--></p>
 
-<pre class="brush:java">@Rule<br/>
-public final SystemOutRule log = new SystemOutRule().enableLog();<br/>
-<br/>
-@Test<br/>
-public void testConsoleOutput() {<br/>
-  log.clearLog();<br/>
-  System.out.print("Hello");<br/>
-  assertThat(log.getLog(), is("Hello"));<br/>
-}</pre>
+{{< highlight java >}}
+@Rule
+public final SystemOutRule log = new SystemOutRule().enableLog();
+
+@Test
+public void testConsoleOutput() {
+  log.clearLog();
+  System.out.print("Hello");
+  assertThat(log.getLog(), is("Hello"));
+}
+{{</ highlight >}}
 
 <p>上面的代码在控制台也能看到同样的输出, <code>log.getLog()</code> 也保存有标准输出的内容, 如果不想在控制台看到输出可以执行</p>
 
-<blockquote><br/>
-<p>log.mute()</p>
-
+<blockquote>
+log.mute()
 </blockquote>
 
 <p>但是再恢复让控制台的内容输出就有小麻烦了.</p>
