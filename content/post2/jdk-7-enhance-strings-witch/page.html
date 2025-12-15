@@ -1,0 +1,186 @@
+---
+title: JDK 7 中的语法增强 -- (3) swith 里用 String 类型
+url: /jdk-7-enhance-strings-witch/
+date: 2011-03-13T11:05:07-05:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Java/JEE
+tags: 
+  - jdk7
+  - jdk1.7
+comment: true
+codeMaxLines: 60
+# additional
+wpPostId: 3307 
+wpStatus: publish
+views: 403
+lastmod: 2012-03-09T08:41:26-06:00
+---
+
+java 在 switch 语句这一项上更多的是承袭了 c++，其实整个语法就是 c 风格的。java 的 switch 里只能用 byte、char、short、int 和 enum 类型，连 long 型都不能用(因为 switch 里的要被转换为 int  型，而 long 太长了)。要说不支持 float 和 double 那样的浮点那好理解，因为它们本身是不精确的，1 可能是 0.9999999999。boolean 就两值，放 switch 里无意义，因为 c++ 的 switch 里可用bool 型，但在 java 中遭摈弃。<br/>
+<br/>
+现在在 jdk7 里 switch 可以用字符串了，学了 c#，字符串的好处就是它是表意的，像 switch(action) case "create" : ...; case "delete" : .....，多写意啊，再也不用先定义一堆常量，然后再 switch(action) case Constants.ACTION_CREATE : ......; case Constants.ACTION_DELETE : ......，当然写过不少程序的尽量会避免写成 case 1... case 2 这样的写法了，会让人不知所以的。常量放在 case 中就要求我们经常要去查它定义的值是什么。<!--more--><br/>
+<br/>
+虽然 switch 里可以用字符串了，我想还是应该谨慎些，别搞得以后不易查错，看看：<br/>
+{{< highlight java >}}
+ public String getTypeOfDayWithSwitchStatement(String dayOfWeekArg) {
+     String typeOfDay;
+     switch (dayOfWeekArg) {
+         case "Monday":
+             typeOfDay = "Start of work week";
+             break;
+         case "Tuesday":
+         case "Wednesday":
+         case "Thursday":
+             typeOfDay = "Midweek";
+             break;
+         case "Friday":
+             typeOfDay = "End of work week";
+             break;
+         case "Saturday":
+         case "Sunday":
+             typeOfDay = "Weekend";
+             break;
+         default:
+             throw new IllegalArgumentException("Invalid day of the week: " + dayOfWeekArg);
+     }
+     return typeOfDay;
+}
+{{</ highlight >}}
+
+<div id="_mcePaste" class="mcePaste" style="position: absolute; width: 1px; height: 1px; overflow: hidden; top: 0px; left: -10000px;">﻿</div>
+
+原文中只是说字符串吗，会使用 equals() 方法来比较，然后决定程序的分支走向，并且字符串是区分大小写的，java 编译器对 switch 生成的字节码执行效率上要高于 if-then-else 语句。<br/>
+<br/>
+为了加深对 switch 中引入字符串支持的理解，我们再进一步，用例子来看看到底发生了什么，java 代码如下：<br/>
+{{< highlight java >}}
+/**
+ * jdk 7 switch 中使用字符串测试程序
+ * @author Unmi
+ */
+public class Test {
+
+    private static int c = 0;
+
+    public static void main(String[] args){
+        int i = 21;
+        switch(i){
+            case 3: bar();
+            case 4: bar();
+            default:bar();
+        }
+    }
+
+    public void foo(){
+        String a = "";
+        switch(a){
+            case "3": bar();
+            case "4": bar();
+            default: bar();
+        }
+    }
+
+    public static void bar(){
+    }
+}
+{{</ highlight >}}
+
+由它相应的字节码来帮助理解：<br/>
+{{< highlight java >}}
+Compiled from "Test.java"
+public class Test extends java.lang.Object {
+  public Test();
+    Code:
+       0: aload_0
+       1: invokespecial #1                  // Method java/lang/Object."":()V
+       4: return
+
+  public static void main(java.lang.String[]);
+    Code:
+       0: bipush        21
+       2: istore_1
+       3: iload_1
+       4: lookupswitch  { // 2
+                     3: 32
+                     4: 35
+               default: 38
+          }
+      32: invokestatic  #2                  // Method bar:()V
+      35: invokestatic  #2                  // Method bar:()V
+      38: invokestatic  #2                  // Method bar:()V
+      41: return
+
+  public void foo();
+    Code:
+       0: ldc           #3                  // String
+       2: astore_1
+       3: aload_1
+       4: astore_2
+       5: iconst_m1
+       6: istore_3
+       7: aload_2
+       8: invokevirtual #4                  // Method java/lang/String.hashCode:()I
+      11: lookupswitch  { // 2
+                    51: 36
+                    52: 50
+               default: 61
+          }
+      36: aload_2
+      37: ldc           #5                  // String 3
+      39: invokevirtual #6                  // Method java/lang/String.equals:(Ljava/lang/Object;)Z
+      42: ifeq          61
+      45: iconst_0
+      46: istore_3
+      47: goto          61
+      50: aload_2
+      51: ldc           #7                  // String 4
+      53: invokevirtual #6                  // Method java/lang/String.equals:(Ljava/lang/Object;)Z
+      56: ifeq          61
+      59: iconst_1
+      60: istore_3
+      61: iload_3
+      62: lookupswitch  { // 2
+                     0: 88
+                     1: 91
+               default: 94
+          }
+      88: invokestatic  #2                  // Method bar:()V
+      91: invokestatic  #2                  // Method bar:()V
+      94: invokestatic  #2                  // Method bar:()V
+      97: return
+
+  public static void bar();
+    Code:
+       0: return
+
+  static {};
+    Code:
+       0: iconst_0
+       1: putstatic     #8                  // Field c:I
+       4: return
+}
+{{</ highlight >}}
+
+在 main() 方法中的 switch 语句，判断的是 int 型，与原来的处理办法是一样，是什么值就跳到哪个指令，只会生成一个 lookupswitch 指令。<br/>
+<br/>
+而在 foo() 方法中的 switch 语句，判断的是字符串，我们看到启用了两条 lookupswitch 指令来支持这一特性，怎么理解它呢？分两步走，从字节码来看似乎有些画蛇添足。<br/>
+<br/>
+首先它把 case 中的字符串用 hashCode() 算了一些，生成一条 lookupswitch 指令，就是上面的：<br/>
+<br/>
+  8: invokevirtual #4                  // Method java/lang/String.hashCode:()I<br/>
+ 11: lookupswitch  { // 2<br/>
+               51: 36<br/>
+               52: 50<br/>
+          default: 61<br/>
+     }<br/>
+<br/>
+"3" 和 "4" 的 hashCode 分别是 51 和 52，其实这里应该可以像对待整数一样看待字符串，只需要全部转换为相应的 hashCode 即可。不过上面的字令没有那么直接，而是根据传入的 switch 参数，通过 equase() 方法来判断，对原来的 switch 语句重新设定基于 0 开始的整数为参数，也就是对原来的每一个 case 字符串全部转换为整数 0、1、2 ......，最后全部进入到新的 lookupswitch 语句中，从而实现字符串的 switch 功能。<br/>
+<br/>
+为什么不直接 hashCode 一步完成了，也许这样的效率会比较高吧。<br/>
+<br/>
+参考：1. <a href="http://download.java.net/jdk7/docs/technotes/guides/language/strings-switch.html">http://download.java.net/jdk7/docs/technotes/guides/language/strings-switch.html</a>
