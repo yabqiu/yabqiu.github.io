@@ -3,12 +3,12 @@ title: Java 元注解及 Spring 组合注解应用
 url: /java-spring-meta-annotation/
 date: 2019-05-18T00:47:17-05:00
 featured: false
-draft: true
+draft: false
 type: post
 toc: false
 # menu: main
 usePageBundles: true
-thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/10/spring-framework-project-logo-200x200.png"
+thumbnail: "../images/logos/spring-logo.png"
 categories:
   - Spring
 tags: 
@@ -45,145 +45,167 @@ void monitorTemperature() throws@Critical TemperatureException { ... }</p>
 
 <p>本文不会讲解 Java 注解的基本知识和创建自定的注解，主要关注标题中的 Java 元注解及 Spring 对元注解的广泛应用 -- 即 Spring 组合注解</p>
 
-<h2>Java 元注解(meta-annotation)</h2><br/>
+<h2>Java 元注解(meta-annotation)</h2>
 <p>所谓的元注解(meta-annotation) 也就是注解的注解，注解本身就是元数据，像 meta-data。具体到 Java 的注解就是注解可以应用到别的注解上去，@Target 包含了 ANNOTATION_TYPE。所以在我们定义普通注解时用到的 @Retention, @Target, @Documented, @Inherited, @Repeatable 就是一拨 Java 内置元注解，下面是 @Target 的定义</p>
 
-<pre class="lang:default mark:3 decode:true ">@Documented<br/>
-@Retention(RetentionPolicy.RUNTIME)<br/>
-@Target(ElementType.ANNOTATION_TYPE)<br/>
-public @interface Retention {<br/>
-    RetentionPolicy value();<br/>
-}</pre>
+{{< highlight java "hi_lines=3" >}}
+@Documented
+@Retention(RetentionPolicy.RUNTIME)
+@Target(ElementType.ANNOTATION_TYPE)
+public @interface Retention {
+    RetentionPolicy value();
+}
+{{</ highlight >}}
 
-<h3>体验一下 @Inherited 注解的作用</h3><br/>
+<h3>体验一下 @Inherited 注解的作用</h3>
 <p>@Inherited 标明注解是能够被传递到子类的，即注解在父类的注解也会作用到它的子类上去，比如 Spring 的 @Transactional 注解就被 @Inherited 标识了</p>
 
-<pre class="lang:default decode:true ">@Target({ElementType.METHOD, ElementType.TYPE})<br/>
-@Retention(RetentionPolicy.RUNTIME)<br/>
-@Inherited<br/>
-@Documented<br/>
-public @interface Transactional {<br/>
-    ......<br/>
-}</pre>
+{{< highlight java >}}
+@Target({ElementType.METHOD, ElementType.TYPE})
+@Retention(RetentionPolicy.RUNTIME)
+@Inherited
+@Documented
+public @interface Transactional {
+    ......
+}
+{{</ highlight >}}
 
 <p>具体表现就是</p>
 
-<pre class="lang:default decode:true ">@Transactional<br/>
-public class BaseRepository {<br/>
-    ......<br/>
-}<br/>
-<br/>
-public class UserRepository extends BaseRepository {<br/>
-    ......<br/>
-}</pre>
+{{< highlight java >}}
+@Transactional
+public class BaseRepository {
+    ......
+}
+
+public class UserRepository extends BaseRepository {
+    ......
+}
+{{</ highlight >}}
 
 <p>UserRepository 继承了 BaseRepository, 所以 UserRepository 也就启用了事物。</p>
 
 <p>自己来一下</p>
 
-<pre class="lang:default decode:true">@Target({ElementType.TYPE})<br/>
-@Retention(RetentionPolicy.RUNTIME)<br/>
-@Inherited<br/>
-@interface BB {<br/>
-}<br/>
-<br/>
-@BB<br/>
-class Parent {<br/>
-}<br/>
-<br/>
-class Child extends Parent {<br/>
-}<br/>
-<br/>
-public class Test {<br/>
-    public static void main(String[] args) {<br/>
-        BB bb = Child.class.getAnnotation(BB.class);<br/>
-        System.out.println(bb); //BB 注解没有 @Inherited 的话，bb 将为 null<br/>
-    }<br/>
-}</pre>
+{{< highlight java >}}
+@Target({ElementType.TYPE})
+@Retention(RetentionPolicy.RUNTIME)
+@Inherited
+@interface BB {
+}
+
+@BB
+class Parent {
+}
+
+class Child extends Parent {
+}
+
+public class Test {
+    public static void main(String[] args) {
+        BB bb = Child.class.getAnnotation(BB.class);
+        System.out.println(bb); //BB 注解没有 @Inherited 的话，bb 将为 null
+    }
+}
+{{</ highlight >}}
 
 <p>在注解中如果去掉 <code>@Inherited</code>, 上面的 <code>Child.class.getAnnotation(BB.class)</code> 将返回 <code>null</code>.</p>
 
 <p>要是换成实现一个接口，事情就不一样了</p>
 
-<pre class="lang:default decode:true">@BB<br/>
-interface Parent {<br/>
-}<br/>
-<br/>
-class Child implements Parent {<br/>
-}<br/>
-<br/>
-//Child.class.getAnnotation(BB.class) 总是为 null 值</pre>
+{{< highlight java >}}
+@BB
+interface Parent {
+}
+
+class Child implements Parent {
+}
+
+//Child.class.getAnnotation(BB.class) 总是为 null 值
+{{</ highlight >}}
 
 <p>Child 不管是在 <code>@BB</code> 有没有 <code>@Inherited</code> 标识都继承不到 <code>@BB</code> 注解。</p>
 
-<h3>@Target({ElementType.ANNOTATION_TYPE})</h3><br/>
+<h3>@Target({ElementType.ANNOTATION_TYPE})</h3>
 <p>ElementType.ANNOTATION_TYPE 的用处，好像也就是一个约束，只限定被它声明了注解只能用于其他的注解类型上去，看下面的图片</p>
 
-<p><a href="https://yanbin.blog/wp-content/uploads/2019/05/annotation_type_1.png"><img class="aligncenter wp-image-9383" src="https://yanbin.blog/wp-content/uploads/2019/05/annotation_type_1.png" alt="" width="297" height="270" /></a></p>
+{{< bundle-image annotation_type_1.png 297 >}}
 
 <p>User 类上的 @BB 处报错: '@BB' not applicable to type. 就是说 @Target 为 ElementType.ANNOTATION_TYPE 的注解只能用于其他注解上，而 @Target 为 ElementType.TYPE 可以用在许多地方，类，接口，枚举或其他注解上。除此之外，ElementType.ANNOTATION_TYPE 也没别的太多意思，它与下面的组合注解没有什么关系。</p>
 
-<h2>Spring 中的元注解与组合注解</h2><br/>
+<h2>Spring 中的元注解与组合注解</h2>
 <p>再重新回味一下，Java 原生的元注解(Meta-annotations) 基本就是指内置的 @Retention, @Target, @Documented, @Inherited, @Repeatable 那一干注解，以及自定义注解加上 @Target({ElementType.ANNOTATION_TYPE}) 实现的自定义元注解。而 Spring 的元注解概念是不一样的，它认为能用于注解的注解就是元注解，即 @Target({ElementType.Type}) 标识的也是元注解，因为其他的注解也是 Type.</p>
 
 <p>Spring 中元注解与组合注解又是很紧密的两个概念，从官方的文档中</p>
 
-<pre class="lang:default decode:true ">@Target({ElementType.TYPE})<br/>
-@Retention(RetentionPolicy.RUNTIME)<br/>
-@Documented<br/>
-@Component<br/>
-public @interface Service {<br/>
-    String value() default "";<br/>
-}</pre>
+{{< highlight java >}}
+@Target({ElementType.TYPE})
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@Component
+public @interface Service {
+    String value() default "";
+}
+{{</ highlight >}}
 
 <p>由于 @Component 注解到了 @Service 注解，所以这里的 @Component 称之元注解，而 @Service 而称之为组合注解，即组合了 @Component 的注解，当然还能组合更多的元注解。在 Spring 中有大量组合注解的例子，像 <code>@GetMapping</code></p>
 
-<pre class="lang:default decode:true">@Target({ElementType.METHOD})<br/>
-@Retention(RetentionPolicy.RUNTIME)<br/>
-@Documented<br/>
-@RequestMapping(     //这里的 @RequestMapping 就是 @GetMapping 的元注解<br/>
-    method = {RequestMethod.GET}<br/>
-)<br/>
-public @interface GetMapping {<br/>
-    ....<br/>
-}</pre>
+{{< highlight java >}}
+@Target({ElementType.METHOD})
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@RequestMapping(     //这里的 @RequestMapping 就是 @GetMapping 的元注解
+    method = {RequestMethod.GET}
+)
+public @interface GetMapping {
+    ....
+}
+{{</ highlight >}}
 
 <p>为什么说 @Component 和 @RequestMapping 不是一般意义上 Java 的元注解呢，只要查看下 @Component 的定义就知道，</p>
 
-<pre class="lang:default decode:true">@Target({ElementType.TYPE})    //它的 Target 并不需要有 ElementType.ANNOTATION_TYPE, 这不并妨碍它应用于别的注解上<br/>
-@Retention(RetentionPolicy.RUNTIME)<br/>
-@Documented<br/>
-public @interface Component {<br/>
-    String value() default "";<br/>
-}</pre>
+{{< highlight java >}}
+@Target({ElementType.TYPE})    //它的 Target 并不需要有 ElementType.ANNOTATION_TYPE, 这不并妨碍它应用于别的注解上
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+public @interface Component {
+    String value() default "";
+}
+{{</ highlight >}}
 
-<h3>创建自己的组合注解</h3><br/>
+<h3>创建自己的组合注解</h3>
 <p>比如想要声明一个 Lazy 的 Bean，在 JavaConfig 方法上要同时用到两个注解 @Lazy 和 @Bean</p>
 
-<pre class="lang:default decode:true ">@Lazy<br/>
-@Bean(name = "newName")<br/>
-public String testLazyBean() {<br/>
-    return "hello world";<br/>
-}</pre>
+{{< highlight java >}}
+@Lazy
+@Bean(name = "newName")
+public String testLazyBean() {
+    return "hello world";
+}
+{{</ highlight >}}
 
 <p>那么我们是否能创建一个组合注解，只用一个注解就能声明出一个 Lazy 的 Bean 来呢，没问题，就是下面的 @LazyBean</p>
 
-<pre class="lang:default decode:true">@Target({ElementType.METHOD})<br/>
-@Retention(RetentionPolicy.RUNTIME)<br/>
-@Bean<br/>
-@Lazy<br/>
-public @interface LazyBean {<br/>
-<br/>
-    @AliasFor(annotation = Bean.class, attribute = "value")<br/>
-    String[] name() default {};<br/>
-}</pre>
+{{< highlight java >}}
+@Target({ElementType.METHOD})
+@Retention(RetentionPolicy.RUNTIME)
+@Bean
+@Lazy
+public @interface LazyBean {
+
+    @AliasFor(annotation = Bean.class, attribute = "value")
+    String[] name() default {};
+}
+{{</ highlight >}}
 
 <p>然后前面的声明 Bean 的代码就能够写成</p>
 
-<pre class="lang:default decode:true">@LazyBean(name = "newName")<br/>
-public String testLazyBean() {<br/>
-    return "hello world";<br/>
-}</pre>
+{{< highlight java >}}
+@LazyBean(name = "newName")
+public String testLazyBean() {
+    return "hello world";
+}
+{{</ highlight >}}
 
 <p>节约了一行代码，简洁明了，表现力也增强了。如果需要组合更多的元注解时，代码效果上就会更佳了。</p>
 
@@ -192,97 +214,104 @@ public String testLazyBean() {<br/>
 <p>借机加强理解一下 Spring 中元注解与组合注解的概念：</p>
 
 <ol>
-
 	<li>这儿的 @Bean 和 @Lazy 是用来注解 @LazyBean 的，所以 @Bean 和 @Lazy  称之为元注解</li>
-
 	<li>@LazyBean 是由 @Bean 和  @Lazy 组合而成的，因此 @LazyBean 就是一个组合注解</li>
-
 </ol>
 
-<h3>Spring 的组合注解是如何工作的</h3><br/>
+<h3>Spring 的组合注解是如何工作的</h3>
 <p>如果使用正常的 Java 注解反射 API <code>getAnnotation()</code> 和 <code>isAnnotationPresent()</code> 只能发现组合后的注解 @LazyBean, 而元注解是这样得不到的。但 Spring 在发现注解的时候走入的更深，注解的注解(元注解)和组合后的注解都能捞出来。看下面的例子</p>
 
-<pre class="lang:default decode:true">@Retention(RetentionPolicy.RUNTIME)<br/>
-@Target({ElementType.TYPE})<br/>
-@interface AA {<br/>
-}<br/>
-<br/>
-@Retention(RetentionPolicy.RUNTIME)<br/>
-@Target({ElementType.TYPE})<br/>
-@interface BB {<br/>
-}<br/>
-<br/>
-@Retention(RetentionPolicy.RUNTIME)<br/>
-@AA<br/>
-@BB<br/>
-@interface CC {<br/>
-}<br/>
-<br/>
-@CC<br/>
-class User {<br/>
-}<br/>
-<br/>
-public class Test {<br/>
-    public static void main(String[] args) {<br/>
-        User.class.getAnnotation(CC.class);       // @yanbin.blog.CC()<br/>
-        User.class.getAnnotation(AA.class);       // null<br/>
-        User.class.getAnnotation(BB.class);       // null<br/>
-<br/>
-        User.class.isAnnotationPresent(CC.class); //true<br/>
-        User.class.isAnnotationPresent(AA.class); //false<br/>
-        User.class.isAnnotationPresent(BB.class); //false<br/>
-    }<br/>
-}</pre>
+{{< highlight java >}}
+@Retention(RetentionPolicy.RUNTIME)
+@Target({ElementType.TYPE})
+@interface AA {
+}
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target({ElementType.TYPE})
+@interface BB {
+}
+
+@Retention(RetentionPolicy.RUNTIME)
+@AA
+@BB
+@interface CC {
+}
+
+@CC
+class User {
+}
+
+public class Test {
+    public static void main(String[] args) {
+        User.class.getAnnotation(CC.class);       // @yanbin.blog.CC()
+        User.class.getAnnotation(AA.class);       // null
+        User.class.getAnnotation(BB.class);       // null
+
+        User.class.isAnnotationPresent(CC.class); //true
+        User.class.isAnnotationPresent(AA.class); //false
+        User.class.isAnnotationPresent(BB.class); //false
+    }
+}
+{{</ highlight >}}
 
 <p>上面的 @CC 由 @AA 和 @BB 组合而成，用 @CC 注解到 User 类上，常规的 Java 反射类只能找到 @CC，要反射出 @AA 和 @BB，必须对 @CC 类进一步反射。而 Spring 提供了 <code>AnnotationUtils</code> 和 <code>AnnotatedElementUtils</code> 工具类来查找注解类，如下</p>
 
-<pre class="lang:default decode:true">AnnotationUtils.findAnnotation(User.class, CC.class);               // @yanbin.blog.CC()<br/>
-AnnotationUtils.findAnnotation(User.class, AA.class);               // @yanbin.blog.AA()<br/>
-AnnotationUtils.findAnnotation(User.class, BB.class);               // @yanbin.blog.BB()<br/>
-<br/>
-AnnotationUtils.isAnnotationMetaPresent(CC.class, AA.class);        // true<br/>
-AnnotationUtils.isAnnotationMetaPresent(CC.class, BB.class);        // true<br/>
-<br/>
-AnnotatedElementUtils.getMergedAnnotation(User.class, CC.class);    // @yanbin.blog.CC()<br/>
-AnnotatedElementUtils.getMergedAnnotation(User.class, AA.class);    // @yanbin.blog.AA()<br/>
-AnnotatedElementUtils.getMergedAnnotation(User.class, BB.class);    // @yanbin.blog.BB()<br/>
-<br/>
-AnnotatedElementUtils.findMergedAnnotation(User.class, CC.class);   // @yanbin.blog.CC()<br/>
-AnnotatedElementUtils.findMergedAnnotation(User.class, AA.class);   // @yanbin.blog.AA()<br/>
-AnnotatedElementUtils.findMergedAnnotation(User.class, BB.class);   // @yanbin.blog.BB()</pre>
+{{< highlight java >}}
+AnnotationUtils.findAnnotation(User.class, CC.class);               // @yanbin.blog.CC()
+AnnotationUtils.findAnnotation(User.class, AA.class);               // @yanbin.blog.AA()
+AnnotationUtils.findAnnotation(User.class, BB.class);               // @yanbin.blog.BB()
+
+AnnotationUtils.isAnnotationMetaPresent(CC.class, AA.class);        // true
+AnnotationUtils.isAnnotationMetaPresent(CC.class, BB.class);        // true
+
+AnnotatedElementUtils.getMergedAnnotation(User.class, CC.class);    // @yanbin.blog.CC()
+AnnotatedElementUtils.getMergedAnnotation(User.class, AA.class);    // @yanbin.blog.AA()
+AnnotatedElementUtils.getMergedAnnotation(User.class, BB.class);    // @yanbin.blog.BB()
+
+AnnotatedElementUtils.findMergedAnnotation(User.class, CC.class);   // @yanbin.blog.CC()
+AnnotatedElementUtils.findMergedAnnotation(User.class, AA.class);   // @yanbin.blog.AA()
+AnnotatedElementUtils.findMergedAnnotation(User.class, BB.class);   // @yanbin.blog.BB()
+{{</ highlight >}}
 
 <p>如某个类(User) 被某个组合注解(@CC) 修饰了，Spring 认该类(User) 被组成 @CC 的所有元注解(@AA 和 @BB) 修饰了。</p>
 
-<h3>组合注解时的属性值传递与覆盖 </h3><br/>
+<h3>组合注解时的属性值传递与覆盖 </h3>
 <p>如果组合注解的元注解有属性值时，直接写就行了，例如：</p>
 
-<pre class="lang:default decode:true">@Target({ElementType.METHOD})<br/>
-@Retention(RetentionPolicy.RUNTIME)<br/>
-@Bean("FixedLazyBean")<br/>
-@Lazy<br/>
-public @interface LazyBean {<br/>
-}</pre>
+{{< highlight java >}}
+@Target({ElementType.METHOD})
+@Retention(RetentionPolicy.RUNTIME)
+@Bean("FixedLazyBean")
+@Lazy
+public @interface LazyBean {
+}
+{{</ highlight >}}
 
 <p>用上面的组合注解 @LazyBean 标注到某个方法上，注册 SpringBean 时的名称就是 @Bean("FixedLazyBean") 中的 "FixedLazyBean"。</p>
 
 <p>假如在使用 @LazyBean 注解时还要能够动态指定 Spring bean 名称，那么 @LazyBean 中就需要一个属性覆盖 @Bean 的 value 属性(或者说传递给 @Bean 的 value 属性)，这时修又要用到一个 Spring 特定的注解 <code>@AliasFor</code> -- Spring 4.2 新加的特性(<a href="https://docs.spring.io/spring/docs/4.2.x/spring-framework-reference/html/new-in-4.2.html#new-in-4.2">New Features and Enhancements in Spring Framework 4.2</a>)。对合并属性的获得也是用 <code>AnnotatedElementUtils</code> 中的方法 <code>findMergedAnnotationAttributes(...)</code>, 还是看例子：</p>
 
-<pre class="lang:default decode:true">@Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})<br/>
-@Retention(RetentionPolicy.RUNTIME)<br/>
-@Bean<br/>
-@Lazy<br/>
-public @interface LazyBean {<br/>
-<br/>
-    @AliasFor(annotation = Bean.class, attribute = "name")<br/>
-    String[] name() default {};      //@LazyBean 的 name 值传递给元注解 @Bean 的 name 属性<br/>
-}</pre>
+{{< highlight java >}}
+@Target({ElementType.METHOD, ElementType.ANNOTATION_TYPE})
+@Retention(RetentionPolicy.RUNTIME)
+@Bean
+@Lazy
+public @interface LazyBean {
+
+    @AliasFor(annotation = Bean.class, attribute = "name")
+    String[] name() default {};      //@LazyBean 的 name 值传递给元注解 @Bean 的 name 属性
+}
+{{</ highlight >}}
 
 <p>应用 @LazyBean 时指定 Bean name </p>
 
-<pre class="lang:default decode:true">@LazyBean(name = "newName")<br/>
-public String testLazyBean() {<br/>
-    return "hello";<br/>
-}</pre>
+{{< highlight java >}}
+@LazyBean(name = "newName")
+public String testLazyBean() {
+    return "hello";
+}
+{{</ highlight >}}
 
 <p>这样就会向 Spring 上下文中注册一个名称为 "newName" 的字符串。</p>
 
@@ -291,15 +320,9 @@ public String testLazyBean() {<br/>
 <p>链接：</p>
 
 <ol>
-
 	<li><a href="https://blog.yeskery.com/articles/316793003">Java 8 新特性：扩展注解（类型注解和重复注解）</a></li>
-
 	<li><a href="https://docs.spring.io/spring/docs/current/spring-framework-reference/core.html#beans-meta-annotations">1.10.2. Using Meta-annotations and Composed Annotations</a></li>
-
 	<li><a href="https://sdqali.in/blog/2015/12/06/implementing-custom-annotations-for-spring-mvc/#fnref:1">Implementing custom annotations for Spring MVC</a></li>
-
 	<li><a href="https://github.com/spring-projects/spring-framework/wiki/Spring-Annotation-Programming-Model#composed-annotations">Spring Annotation Programming Model</a></li>
-
 	<li><a href="https://www.intertech.com/Blog/spring-4-meta-annotations/">Spring 4 Meta Annotations</a></li>
-
 </ol>
