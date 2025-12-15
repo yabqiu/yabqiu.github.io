@@ -3,7 +3,7 @@ title: 是同步方法还是 synchronized 代码？– 详解多线程同步规�
 url: /java-synchronized-method-codes/
 date: 2010-03-22T11:55:00-05:00
 featured: false
-draft: true
+draft: false
 type: post
 toc: false
 # menu: main
@@ -43,105 +43,113 @@ lastmod: 2010-08-09T21:22:31-05:00
 2) 保存在方法区中的类变量。<br/>
 <br/>
 现实点说呢就是某个方法会触及到的同一个变量，如类变量或单态实例的实例变量。避免冲突的最容易想到的办法就是同一时刻只让一个线程去执行某段代码块或方法，于是我们就要给一段代码块或整个方法体标记出来，被保护的代码块或方法体在 Java 里叫做监视区域(Monitor Region)，类似的东西在 C++ 中叫做临界区(Critical Section)。<br/>
-<br/>
+
 比如说一段代码:<br/>
-<pre class="brush:java">	public void operate() {<br/>
-		flag ++;<br/>
-		try {<br/>
-			//休眠一个随机时间，让不同线程能在此交替执行<br/>
-			Thread.sleep(new Random().nextInt(10));<br/>
-		} catch (InterruptedException e) {<br/>
-			e.printStackTrace();<br/>
-		}<br/>
-		flag --;<br/>
-		System.out.println("Current flag: " + flag);<br/>
-	}</pre>
+{{< highlight java >}}
+public void operate() {
+    flag ++;
+    try {
+    	//休眠一个随机时间，让不同线程能在此交替执行
+    	Thread.sleep(new Random().nextInt(10));
+    } catch (InterruptedException e) {
+    	e.printStackTrace();
+    }
+    flag --;
+    System.out.println("Current flag: " + flag);
+}
+{{</ highlight >}}
 
 用 synchronized 标记起来的话，可以写成：<br/>
-<pre class="brush:java">	public void operate() {<br/>
-		synchronized(this){//只需要把可能造成麻烦的代码标记起来<br/>
-			flag ++;<br/>
-			try {<br/>
-				//休眠一个随机时间，让不同线程能在此交替执行<br/>
-				Thread.sleep(new Random().nextInt(5));<br/>
-			} catch (InterruptedException e) {<br/>
-				e.printStackTrace();<br/>
-			}<br/>
-			flag --;<br/>
-<br/>
-			System.out.println("Current flag: " + flag);<br/>
-		}<br/>
-<br/>
-		//some code out of the monitor region<br/>
-		System.out.println("线程安全的代码放外面就行啦");<br/>
-<br/>
-	}</pre>
+{{< highlight java >}}
+public void operate() {
+    synchronized(this){//只需要把可能造成麻烦的代码标记起来
+    	flag ++;
+    	try {
+    		//休眠一个随机时间，让不同线程能在此交替执行
+    		Thread.sleep(new Random().nextInt(5));
+    	} catch (InterruptedException e) {
+    		e.printStackTrace();
+    	}
+    	flag --;
+
+    	System.out.println("Current flag: " + flag);
+    }
+
+    //some code out of the monitor region
+    System.out.println("线程安全的代码放外面就行啦");
+
+}
+{{</ highlight >}}
 
 那如果我们悲观，或许是偷点懒，直接给方法加个 synchronized 关键字就行，就是这样：<br/>
-<pre class="brush:java">	public synchronized void operate() {<br/>
-		flag ++;<br/>
-		try {<br/>
-			//休眠一个随机时间，让不同线程能在此交替执行<br/>
-			Thread.sleep(new Random().nextInt(10));<br/>
-		} catch (InterruptedException e) {<br/>
-			e.printStackTrace();<br/>
-		}<br/>
-		flag --;<br/>
-		System.out.println("Current flag: " + flag);<br/>
-	}</pre>
+{{< highlight java >}}
+public synchronized void operate() {
+    flag ++;
+    try {
+    	//休眠一个随机时间，让不同线程能在此交替执行
+    	Thread.sleep(new Random().nextInt(10));
+    } catch (InterruptedException e) {
+    	e.printStackTrace();
+    }
+    flag --;
+    System.out.println("Current flag: " + flag);
+}
+{{</ highlight >}}
 
 给方法加个关键字 synchronized 其实就是相当于把方法中的所有代码行框到了 synchronized(xxx) 块中。同步肯定会影响到效率，这也是大家知道的，因为它会造成方法调用的等待。方法中有些代码可能是线程安全的，所以可不用包裹在 synchronized(xxx) 中。<br/>
 <br/>
 那么<u>只要给方法加上关键字 synchronized，或者 synchronized(this) 括起一段代码一定就是线程安全的吗？</u>现在来看个例子，比如类 TestMultiThread：<br/>
- <br/>
-<pre class="brush:java">package com.unmi;<br/>
-<br/>
-import java.util.Random;<br/>
-<br/>
-/**<br/>
- * 多线程测试程序<br/>
- *<br/>
- * @author Unmi<br/>
- */<br/>
-public class TestMultiThread {<br/>
-<br/>
-	// 一个标志值<br/>
-	private static int flag = 1;<br/>
-<br/>
-	/**<br/>
-	 * @param args<br/>
-	 */<br/>
-	public static void main(String[] args) {<br/>
-		new Thread("Thread-01") {<br/>
-			public void run() {<br/>
-				new TestMultiThread().operate();<br/>
-			}<br/>
-		}.start(); // 启动第一个线程<br/>
-<br/>
-		new Thread("Thread-02") {<br/>
-			public void run() {<br/>
-				new TestMultiThread().operate();<br/>
-			}<br/>
-		}.start(); // 启动第二个线程<br/>
-	}<br/>
-<br/>
-	/**<br/>
-	 * 对 flag 进行一个自增，然后自减的操作，正常情况下 flag 还应是 1<br/>
-	 */<br/>
-	public void operate() {<br/>
-		flag++;<br/>
-		try {<br/>
-			// 增加随机性，让不同线程能在此交替执行<br/>
-			Thread.sleep(new Random().nextInt(5));<br/>
-		} catch (InterruptedException e) {<br/>
-			e.printStackTrace();<br/>
-		}<br/>
-		flag--;<br/>
-<br/>
-		System.out.println("Thread: " + Thread.currentThread().getName()<br/>
-				+ " /Current flag: " + flag);<br/>
-	}<br/>
-}</pre>
+
+{{< highlight java >}}
+package com.unmi;
+
+import java.util.Random;
+
+/**
+ * 多线程测试程序
+ *
+ * @author Unmi
+ */
+public class TestMultiThread {
+
+    // 一个标志值
+    private static int flag = 1;
+
+    /**
+     * @param args
+     */
+    public static void main(String[] args) {
+    	new Thread("Thread-01") {
+    		public void run() {
+    			new TestMultiThread().operate();
+    		}
+    	}.start(); // 启动第一个线程
+
+    	new Thread("Thread-02") {
+    		public void run() {
+    			new TestMultiThread().operate();
+    		}
+    	}.start(); // 启动第二个线程
+    }
+
+    /**
+     * 对 flag 进行一个自增，然后自减的操作，正常情况下 flag 还应是 1
+     */
+    public void operate() {
+    	flag++;
+    	try {
+    		// 增加随机性，让不同线程能在此交替执行
+    		Thread.sleep(new Random().nextInt(5));
+    	} catch (InterruptedException e) {
+    		e.printStackTrace();
+    	}
+    	flag--;
+
+    	System.out.println("Thread: " + Thread.currentThread().getName()
+    			+ " /Current flag: " + flag);
+    }
+}
+{{</ highlight >}}
 
 有一个静态变量 flag = 1，还有一个实例方法 operate() 方法，对 flag 进行 flag ++，然后 flag -- 操作，最后输出当前的 flag 值，理想情况下，输出的 flag 应该仍然是 1。可实际上是两个线程执行行的输出很大的机会得到：<br/>
 <br/>
@@ -171,24 +179,26 @@ Thread: Thread-01 /Current flag: 1<br/>
 Thread: Thread-02 /Current flag: 1<br/>
 <br/>
 出现不同状况的可能性都好理解。为确保 flag 的完整性，于是加上 synchronized(this) 把代码 flag ++ 和 flag -- 代码块同步了，最后的 operate() 方法的代码如下：<br/>
-<pre class="brush:java">	public void operate() {<br/>
-		synchronized(this){//只需要把可能制造麻烦的代码标记起来<br/>
-			flag ++;<br/>
-			try {<br/>
-				//增加随机性，让不同线程能在此交替执行<br/>
-				Thread.sleep(new Random().nextInt(5));<br/>
-			} catch (InterruptedException e) {<br/>
-				e.printStackTrace();<br/>
-			}<br/>
-			flag --;<br/>
-<br/>
-			System.out.println("Thread: "+ Thread.currentThread().getName() +<br/>
-					" /Current flag: " + flag);<br/>
-		}<br/>
-<br/>
-		//some code out of the monitor region<br/>
-		System.out.print("");<br/>
-	}</pre>
+{{< highlight java >}}
+public void operate() {
+    synchronized(this){//只需要把可能制造麻烦的代码标记起来
+    	flag ++;
+    	try {
+    		//增加随机性，让不同线程能在此交替执行
+    		Thread.sleep(new Random().nextInt(5));
+    	} catch (InterruptedException e) {
+    		e.printStackTrace();
+    	}
+    	flag --;
+
+    	System.out.println("Thread: "+ Thread.currentThread().getName() +
+    			" /Current flag: " + flag);
+    }
+
+    //some code out of the monitor region
+    System.out.print("");
+}
+{{</ highlight >}}
 
 再次执行上面的测试代码，仍然会看到如下的输出：<br/>
 <br/>
@@ -204,10 +214,8 @@ Thread: Thread-02 /Current flag: 1<br/>
 3) 不同线程在进入同一监视区域不能对关联对象加锁多次。意即 A 线程在进入 M 监视区域时，获得了关联对象 O 的锁，在未释放该锁之前，另一线程 B 无法获得 M 监视区域的对象锁，此时就要等待 A 线程释放锁。但是 A 线程可能对 O 加锁多次(递归调用就可能出现这种情况)。<br/>
 <br/>
 <span style="color: #0000ff;"><font color="#0000ff">4) 线程只能获得了监视区域相关联的对象锁，才能执行监视区域内的代码，否则等待。JVM 维护了一个监视区域相关联的对象锁的计数，比如 A 线程对监视区域 M 相关联的 O 对象加锁了 N 次，计数则为一，要等锁全部释放了，计数即为零，此时另一线程 B 才能获得该对象锁。<br/>
-<br/>
-</font></span> <br/>
-<br/>
-</span><br/>
+</font></span>
+</span>
 <br/>
 好了，明白了线程，监视区域，相关联对象，对象锁的关系之后，我们就可以理解上面的程序为何加了 synchronized(this)  后还是未能如我们所愿呢？<br/>
 <br/>
@@ -236,16 +244,17 @@ synchronized(object){...}<br/>
 那么我们现在来看前面的第四个疑问：<u>对方法加 synchronized 关键字与用 synchronized(xxx) 同步代码块两种规避方法又有什么分别和联系呢？</u>如果您是一路读下来的，就很清楚，synchronized(xxx) 是把危险的代码同步起来，即框起来，使之同时只能一个线程执行这块代码(监视区域)，并为该代码块关联一个对象。不妨从字节码的角度来分析下，比如我们来看看 operate() 方法产生的字节码<br/>
 <br/>
 代码为：<br/>
-<br/>
- public void operate() {<br/>
-  synchronized(this){<br/>
-   flag ++;<br/>
-   flag --;<br/>
-  }<br/>
- }<br/>
+{{< highlight java >}}
+public void operate() {
+	synchronized(this){
+		flag ++;
+		flag --;
+	}
+}
+{{</ highlight >}}
 <br/>
 字节码如下：<br/>
-<br/>
+<blockquote>
 public void operate();<br/>
   Code:<br/>
    0:   aload_0         //位置为0的局部变量，即方法的第一个参数 this 压栈<br/>
@@ -271,31 +280,31 @@ public void operate();<br/>
    from   to  target type<br/>
      4    22    25   any<br/>
     25    27    25   any<br/>
-<br/>
+</blockquote>
+
 4 到 17 是正常的方法体部分，用 synchronized(xxx) 来同步代码块会使用 monitoenter...monitorexit 制造一个监视区域，该监视区域会与栈顶的对象进行关联。这里用的是 this，如果你写成的是 synchronized(object)，那么该监视区域则会与 object 关联。附：在 C++ 中分别用 EnterCriticalSection() 和 LeaveCriticalSection() 方法来进入和离开临界区代码的。<br/>
 <br/>
 直接给方法加个 synchronized 关键字(public synchronized void operate() {......}) 会有什么功效呢？只要稍稍发挥一下想像力，既然 synchronized(xxx) 是给代码块做了个监视区，并与 xxx 对象关联，那么给方法加个关键字就应该是把方法体的所有代码行放到监视区域了。我们说监视区域总是会与某一个对象相关联，然而方法加 synchronized 关键要与什么隐式对象关联，我们有如下规则：<br/>
 <br/>
 <span style="color: #0000ff;">1) 如果是非静态的同步方法，关联对象就是 this，相当于 synchronized(this) 括起了方法所有代码<span style="color: #0000ff;"><font color="#0000ff">2) 如果是静态的同步方法，方法无法访问到 this(不存在)，此时关联对象就是该类的 Class 实例，比如对于 TestMultiThread 就相当于用 synchronized(TestMultiThread.class) 括起了方法所有代码<br/>
-<br/>
 </font></span> <br/>
-<br/>
-</span><br/>
-<br/>
+</span>
 当你看到第一条规则，非静态方法，加上 synchronized 关键字也就相当于 synchronized(this)，是不是也意识到了单纯给方法加个关键字 synchronized 有时候也解决不了问题，何不亲手把上面的 operate() 方法写成如下：<br/>
-<pre class="brush:java">	public synchronized void operate() {<br/>
-		flag++;<br/>
-		try {<br/>
-			// 增加随机性，让不同线程能在此交替执行<br/>
-			Thread.sleep(new Random().nextInt(5));<br/>
-		} catch (InterruptedException e) {<br/>
-			e.printStackTrace();<br/>
-		}<br/>
-		flag--;<br/>
-<br/>
-		System.out.println("Thread: " + Thread.currentThread().getName()<br/>
-				+ " /Current flag: " + flag);<br/>
-	}</pre>
+{{< highlight java >}}
+public synchronized void operate() {
+	flag++;
+	try {
+		// 增加随机性，让不同线程能在此交替执行
+		Thread.sleep(new Random().nextInt(5));
+	} catch (InterruptedException e) {
+		e.printStackTrace();
+	}
+	flag--;
+
+	System.out.println("Thread: " + Thread.currentThread().getName()
+			+ " /Current flag: " + flag);
+}
+{{</ highlight >}}
 
 执行下 TestMultiThread 程序看看，你仍然会得到这个你不想要的结果：<br/>
 <br/>
