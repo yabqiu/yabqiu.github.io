@@ -4,6 +4,7 @@ url: "archives"
 date: 2025-12-07T18:56:02+06:00
 type: "page"
 comments: false
+noCopyright: true
 ---
 <hr/>
 <div class="archive">
