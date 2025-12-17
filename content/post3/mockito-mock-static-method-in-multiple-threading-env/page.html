@@ -1,0 +1,191 @@
+---
+title: 多线程环境中使用 Mockito 来 Mock 静态方法
+url: /mockito-mock-static-method-in-multiple-threading-env/
+date: 2024-10-10T11:26:03-05:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/rockito-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - mockito
+  - JUnit5
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13770 
+wpStatus: publish
+views: 622
+lastmod: 2024-10-10T11:26:03-05:00
+---
+
+回看三年前的一篇日志 <a href="/mockito-3-4-0-mock-static-method/">Mockito 3.4.0 开始可 Mock  静态方法</a>，最后对 Mockito 产生的缺憾是它无法用来 Mock 非测试线程(主线程)中的静态方法调用。其实这也是可以变通的，下面慢慢道来。</p>
+<br/>
+首先回顾一下 Mockito  的静态方法 Mock 的使用方法，随着 Mockito 版本的升级，引入依赖的方式也发生了些许的变化，以 Maven 项目为例，如果在 JUnit 5 下用 Mockito 的 pom.xml 依赖中为<br/><br/>
+{{< highlight xml >}}
+<dependency>
+    <groupId>org.mockito</groupId>
+    <artifactId>mockito-junit-jupiter</artifactId>
+    <version>5.14.1</version>
+    <scope>test</scope>
+</dependency>
+{{</ highlight >}}
+<br/>
+由它引入的全部相关依赖<br/>
+{{< bundle-image mockito-dependencies-800x435.png 405 >}}
+<!--more-->
+如今不再使用 mockito-inline 依赖了，以及它的 mockito-extensions/org.mockito.plugins.MockMaker(mock-make-inline) 和 mockito-extensions/org.mockito.plugins.MemberAccessor(memer-accessor-module)。<br/><br/>
+测试代码<br/>
+{{< highlight java >}}
+public class MockitoDemoTest {
+
+    @Test
+    public void testMockitoMockStatic() {
+        LocalDate yearOf1970 = LocalDate.of(1970, 1, 1);
+        try (MockedStatic<LocalDate> theMock = Mockito.mockStatic(LocalDate.class)) {
+            theMock.when(() -> LocalDate.of(anyInt(), anyInt(), anyInt())).thenReturn(yearOf1970);
+
+            LocalDate localDate = LocalDate.of(2024, 10, 10);
+            assertEquals(1970, localDate.getYear());   // Ok
+        }
+    }
+}
+
+{{</ highlight >}}
+<br/>
+Mock 了静态方法 LocalDate.of(year, month, day), 所以在 try(MockedStatic) 块中无论传入什么参数给 LocalDate.of() 方法返回的都是 1970-01-01<br/><br/>
+try(MockedStatic) 块只对它所在的线程起作用，如果 LocalDate.of() 是在其他线程中调用就无能为力了。<br/><br/>
+比如用下方的代码演示非主线程(测试线程)中调用 LocalDate.of()时不能被 Mock 的效果<br/>
+{{< highlight java >}}
+public class MockitoDemoTest {
+
+    @Test
+    public void testMockitoMockStatic() {
+        LocalDate yearOf1970 = LocalDate.of(1970, 1, 1);
+        try (MockedStatic<LocalDate> theMock = Mockito.mockStatic(LocalDate.class)) {
+            theMock.when(() -> LocalDate.of(anyInt(), anyInt(), anyInt())).thenReturn(yearOf1970);
+
+            AtomicReference<LocalDate> localDateRef = new AtomicReference<>();
+            Thread thread = new Thread(() -> localDateRef.set(LocalDate.of(2024, 10, 10)));
+            thread.start();
+            thread.join();
+
+            assertEquals(1970, localDateRef.get().getYear());  // Failed
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+
+{{</ highlight >}}
+<br/>
+这个测试就会失败了<br/>
+<blockquote>
+MockitoDemoTest.testMockitoMockStatic:49 expected: &lt;1970&gt; but was: &lt;2024&gt;
+</blockquote>
+
+不过实际应用中我们多用线程池，不是说 try(MockedStatic) 只对它所在的线程起作用吗，那么我们可以对线程池来个腾龙换鸟，把主线程作为线程池中的唯一线程，这样所有的代码都会在 try(MockedStatic) 所在的线程(主线程)中执行了。<br/><br/>
+为演示全过程，先创建一个待测试的类 MockitoDemo<br/>
+{{< highlight java >}}
+public class MockitoDemo {
+
+    private ExecutorService threadPool;
+
+    public MockitoDemo(ExecutorService threadPool) {
+        this.threadPool = threadPool;
+    }
+
+    public LocalDate getLocalDate() {
+        Future<LocalDate> future = threadPool.submit(() -> LocalDate.of(2024, 10, 10));
+        try {
+            return future.get();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+
+{{</ highlight >}}
+<br/>
+如果不管不顾线程池的角色，写如下的测试代码<br/>
+{{< highlight java >}}
+public class MockitoDemoTest {
+
+    @Test
+    public void testMockitoMockStatic() {
+        MockitoDemo mockitoDemo = new MockitoDemo(Executors.newFixedThreadPool(2));
+
+        LocalDate yearOf1970 = LocalDate.of(1970, 1, 1);
+        try (MockedStatic<LocalDate> theMock = Mockito.mockStatic(LocalDate.class)) {
+            theMock.when(() -> LocalDate.of(anyInt(), anyInt(), anyInt())).thenReturn(yearOf1970);
+            LocalDate localDate = mockitoDemo.getLocalDate();
+            assertEquals(1970, localDate.getYear());  // Failed
+        }
+    }
+}
+{{</ highlight >}}
+<br/>
+测试也将无法通过<br/>
+<blockquote>
+MockitoDemoTest.testMockitoMockStatic:46 expected: &lt;1970&gt; but was: &lt;2024&gt;
+</blockquote>
+
+变通要来了，针对线程池下手，用当前线程作为唯一线程的线程池替代它就行，完整的实现是<br/>
+{{< highlight java >}}
+public class MockitoDemoTest {
+
+    @Test
+    public void testMockitoMockStatic() {
+        ThreadPoolExecutor threadPool = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new LinkedBlockingQueue<>()) {
+            @Override
+            public void execute(Runnable command) {
+                command.run();
+            }
+        };
+        MockitoDemo mockitoDemo = new MockitoDemo(threadPool);
+
+        LocalDate yearOf1970 = LocalDate.of(1970, 1, 1);
+        try (MockedStatic<LocalDate> theMock = Mockito.mockStatic(LocalDate.class)) {
+            theMock.when(() -> LocalDate.of(anyInt(), anyInt(), anyInt())).thenReturn(yearOf1970);
+            LocalDate localDate = mockitoDemo.getLocalDate();
+            assertEquals(1970, localDate.getYear());   // Ok
+        }
+    }
+}
+{{</ highlight >}}
+<br/>
+测试通过<br/><br/>
+主要的行为就是覆盖了 execute(Runnable command) 方法，直接执行 command.run(), 所起的作用就是提交到 threadPool 的任务全部直接调用创建该 threadPool 实例的线程去执行，即实现了一个只有主线程(测试线程)的线程池，从而使得 try(MockedStatic) 与 MockitoDemo.getLocalDate() 中的 LocalDate.of(2024, 10, 10) 由同一个线程执行。<br/><br/>
+<h3>话外</h3>
+Maven 中使用当前的 Mockito 5.14.1 版本时，运行 mvn test 会看到如下控制台输出<br/><br/>
+<blockquote>
+Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. Please add Mockito as an agent to your build what is described in Mockito's documentation: https://javadoc.io/doc/org.mockito/mockito-core/latest/org/mockito/Mockito.html#0.3
+</blockquote>
+
+此篇测试用的 JDK 版本为 21, 参考信息所指引的链接 <a href="https://javadoc.io/doc/org.mockito/mockito-core/latest/org/mockito/Mockito.html#0.3">https://javadoc.io/doc/org.mockito/mockito-core/latest/org/mockito/Mockito.html#0.3</a>，在 pom.xml 中加上<br/>
+{{< highlight xml >}}
+ <plugin>
+     <groupId>org.apache.maven.plugins</groupId>
+     <artifactId>maven-dependency-plugin</artifactId>
+     <executions>
+         <execution>
+             <goals>
+                 <goal>properties</goal>
+             </goals>
+         </execution>
+     </executions>
+ </plugin>
+ <plugin>
+     <groupId>org.apache.maven.plugins</groupId>
+     <artifactId>maven-surefire-plugin</artifactId>
+     <configuration>
+         <argLine>@{argLine} -javaagent:${org.mockito:mockito-core:jar}</argLine>
+     </configuration>
+ </plugin>
+{{</ highlight >}}
+<br/>
+再次运行 <code>mvn test</code>, 提示信息便消失了。

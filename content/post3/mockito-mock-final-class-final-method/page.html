@@ -1,0 +1,230 @@
+---
+title: Mockito 也能 Mock final 类和 final 方法了
+url: /mockito-mock-final-class-final-method/
+date: 2018-05-14T22:58:28-05:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/mockito-logo.png"
+categories:
+  - Java/JEE
+tags: 
+  - Unit Test
+  - JUnit
+  - mockito
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 8703 
+wpStatus: publish
+views: 12264
+lastmod: 2021-02-03T11:40:06-06:00
+---
+
+以实际 Java 项目中的单元测试 Mock 框架基本是 Mockito 2 了，因为它有一个十分流畅的 API。Mockito  2也为 JUnit 5 配上了 MockitoExtension, 所以 JUnit 5 下使用 Mockito 2 的关节也打通了。但在我们享受 Mockito 2 便利的同时，与 JMockit 相比局限性就很明显，因为 Mockito 2 是通过创建匿名子类来进行 Mock 的，所以任何子类对父类无法突破的方面它都存在。譬如，final 类, final 方法, 私有方法, 静态方法, 构造函数都是无法通过子类型进行重写的。所以除非特别需要，在 Mockito 2 无法胜任时都求助于 JMockit，JMockit 借助于 javaagent 取得了 JVM 的高控制权才得已为所欲为。</p>
+<br/>
+当 Mockito 来到了 2.1.0 版本，它也觉得不能对以上所有的限制置若罔闻, 首先带给我们的突破是它也可以 Mock final 类和 final 方法，虽然仍处于孵化器中，但毕竟是应用在单元测试中，能用就很不错了，只要以后不被拿走就行。这是官方对它的介绍 <a href="https://github.com/mockito/mockito/wiki/What's-new-in-Mockito-2#mock-the-unmockable-opt-in-mocking-of-final-classesmethods">Mock the unmockable: opt-in mocking of final classes/methods</a><br/><br/>
+下面我亲自操作一遍，并给出更全方位的测试样例<!--more--><br/><br/>
+<h3>待测试类(final 类与 final 方法的组合)</h3>
+{{< highlight java >}}
+class NonFinalClassWithFinalMethod {
+    final String finalMethod() {
+        return "something";
+    }
+}
+
+final class FinalClassWitnNonFinalMethod {
+    String nonFinalMethod() {
+        return "somthing";
+    }
+}
+
+final class FinalClassWithFinalMethod {
+    final String finalMethod() {
+        return "something";
+    }
+}
+{{</ highlight >}}
+<br/>
+<h3>对 final 修饰符视而不见的 Mock 测试</h3>
+{{< highlight java >}}
+package cc.unmi;
+
+import org.hamcrest.CoreMatchers;
+import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.Mockito;
+import org.mockito.junit.MockitoJUnitRunner;
+
+import static org.junit.Assert.assertThat;
+import static org.mockito.Mockito.when;
+
+@RunWith(MockitoJUnitRunner.class)
+public class FinalClassTest {
+
+    @Test
+    public void testNonFinalClassWithFinalMethod() {
+        NonFinalClassWithFinalMethod testMe = Mockito.mock(NonFinalClassWithFinalMethod.class);
+        when(testMe.finalMethod()).thenReturn("hello");
+        assertThat(testMe.finalMethod(), CoreMatchers.equalTo("hello"));
+    }
+
+    @Test
+    public void testFinalClassWithNonFinalMethod() {
+        FinalClassWitnNonFinalMethod testMe = Mockito.mock(FinalClassWitnNonFinalMethod.class);
+        when(testMe.nonFinalMethod()).thenReturn("hello");
+        assertThat(testMe.nonFinalMethod(), CoreMatchers.equalTo("hello"));
+    }
+
+    @Test
+    public void testFinalClassWithFinalMethod() {
+        FinalClassWithFinalMethod testMe = Mockito.mock(FinalClassWithFinalMethod.class);
+        when(testMe.finalMethod()).thenReturn("hello");
+        assertThat(testMe.finalMethod(), CoreMatchers.equalTo("hello"));
+    }
+}
+{{</ highlight >}}
+<br/>
+如果上面的待测试类没有 final 类和 final 方法，上面三个测试用例都能成功通过。然而基于待测试类存在 final 修饰符的事实，以上测试用例将全部失败，它们的错误信息将分别是<br/>
+<blockquote>
+<strong>testNonFinalClassWithFinalMethod():</strong>
+org.mockito.exceptions.misusing.MissingMethodInvocationException: <br />
+    when() requires an argument which has to be 'a method call on a mock'.<br />
+For example:<br />
+    when(mock.getArticles()).thenReturn(articles);
+Also, this error might show up because:<br />
+1. you stub either of: final/private/equals()/hashCode() methods.<br />
+    Those methods *cannot* be stubbed/verified.<br />
+    Mocking methods declared on non-public parent classes is not supported.<br />
+2. inside when() you don't call method on mock but on some other object.
+<strong>testFinalClassWithNonFinalMethod():</strong>
+org.mockito.exceptions.base.MockitoException: <br />
+Cannot mock/spy class cc.unmi.FinalClassWitnNonFinalMethod<br />
+Mockito cannot mock/spy because :<br />
+  - final class
+<strong>testFinalClassWithFinalMethod:</strong>
+org.mockito.exceptions.base.MockitoException: <br />
+Cannot mock/spy class cc.unmi.FinalClassWitnNonFinalMethod<br />
+Mockito cannot mock/spy because :<br />
+  - final class
+</blockquote>
+
+就是说正常情况下 final class, final method 等是不受 Mockito 待见的。<br/><br/>
+{{< bundle-image mockito-final-1-800x395.png 800 >}}
+但是当再加上一个待测试类<br/>
+{{< highlight java >}}
+class NonFinalClassWithNonFinalMethod {
+    String nonFinalMethod() {
+        return "something";
+    }
+}
+{{</ highlight >}}
+<br/>
+和测试用例<br/>
+{{< highlight java >}}
+    @Test
+    public void testNonFinalClassWithNonFinalMethod() {
+        NonFinalClassWithNonFinalMethod testMe = Mockito.mock(NonFinalClassWithNonFinalMethod.class);
+        when(testMe.nonFinalMethod()).thenReturn("hello");
+        assertThat(testMe.nonFinalMethod(), CoreMatchers.equalTo("hello"));
+    }
+{{</ highlight >}}
+<br/>
+四个测试用例一起运行结果又不一样了<br/><br/>
+{{< bundle-image mockito-final-3.png 711 >}}
+此时单独运行 <code>testNonFinalClassWithFinalMethod</code> 还是提示与之前一样的错误<br/>
+<blockquote>
+org.mockito.exceptions.misusing.MissingMethodInvocationException: <br />
+    when() requires an argument which has to be 'a method call on a mock'.<br />
+For example:<br />
+    when(mock.getArticles()).thenReturn(articles);
+Also, this error might show up because:<br />
+1. you stub either of: final/private/equals()/hashCode() methods.<br />
+    Those methods *cannot* be stubbed/verified.<br />
+    Mocking methods declared on non-public parent classes is not supported.<br />
+2. inside when() you don't call method on mock but on some other object.
+</blockquote>
+
+<h3>添加配置文件达成对 final 类 final 方法的 Mock</h3>
+那么 Mockito 声称能 Mock final 类和 final 方法的角决之道在哪里呢？一个额外的配置文件，对于 Maven 标准布局的项目，创建这个文件<br/>
+<blockquote>
+src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker
+</blockquote>
+
+如果是其他项目的话，应该只需保证在 classpath 下有文件 <code>mockito-extensions/org.mockito.plugins.MockMaker</code><br/><br/>
+该文件的内容是<br/>
+<blockquote>
+mock-maker-inline
+</blockquote>
+
+对，它就像是 SPI 模式的类似 <code>META-INF/services/org.junit.platform.engine.TestEngine</code> 文件。<br/><br/>
+有了 <code>src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker</code> 文件，及内容 <code>mock-maker-inline</code> 后，再次运行上面的测试用例<br/><br/>
+{{< bundle-image mockio-final-4.png 530 >}}
+全绿，说明 Mockito 能对 final 类和 final 方法进行 Mock 了。这已经是 Mockito 的一大进步，先别对 private, static 有所奢欲。<br/><br/>
+<h3>MockMaker 让 Mockito 发生了什么</h3>
+我们可以通过以下几张图来了解在 <code>src/test/resources/mockio-extensions/org.mockito.plugins.MockMaker</code> (<code>mock-maker-inline</code>) 前后发生了什么<br/><br/>
+<h4>前前，考查 Mock 的对象</h4>
+{{< bundle-image mockito-final-5.png 584 >}}
+<p style="text-align: center;">Mock 非 final 类创建子类</p>
+<br/>
+<p style="text-align: center;">
+    {{< bundle-image mockito-final-6-800x145.png 800 >}}
+    不能 Mock final 类</p>
+<br/>
+<h4>后后，再次考查 Mock 的对象</h4>
+{{< bundle-image mockito-final-7.png 353 >}}
+<p style="text-align: center;">终于 final 类也可以 Mock 了, 不能生成子类，像是直接生成它的实例，也无可非</p>
+<br/>
+{{< bundle-image mockito-final-8.png 411 >}}
+<p style="text-align: center;">可是对于非 final 类型也不再生成子类了，和 mock final 类一样的行为了</p>
+<br/>
+基于 <code>Mockito.mock(clazz)</code> 直接创建实例这一事实，原理上我们可以使用 Mockito 来 Mock 构造函数的。<br/><br/>
+<h4>前前后后，针对接口和抽象类</h4>
+<p style="text-align: center;">
+    {{< bundle-image mockito-final-abstract.png 485 >}}
+    为抽象类创建子类型
+    {{< bundle-image mockito-final-interface.png 432 >}}
+    为接口也是创建子类型</p>
+<br/>
+对于接口和抽象类的 Mock 行为始终没变，总是必须创建它们的子类型。<br/><br/>
+<h3>为什么是 <code>mock-maker-inline</code></h3>
+既然前面猜测 <code>src/resources/mockito-extensions/org.mockito.plugins.MockMaker</code> 像是 SPI 模式，那么它大约就真的是了，的确是。其中可以写 <code>mock-maker-inline</code>, 必定也可以写上别的什么，自然要查找下 <code>MockMaker</code> 接口有哪些实现<br/><br/>
+{{< bundle-image mockito-final-9.png 638 >}}
+有三个实现可选，<code>mock-maker-inline</code> 毫无疑问对应的就是 <code>InlineByteBuddyMockMaker</code>, 默认的实现方式也很容易想像得出来就是 <code>SubclassByteBuddyMockMaker</code>, 猜测配置为 <code>mock-maker-subclass</code>, 经验证不对。如果要显式的指定采用 <code>SubclassByteBuddyMockMaker</code>, 那么 <code>src/resource/mockto-extensions/org.mockito.plugins.MockMaker</code> 文件的内容是<br/>
+<blockquote>
+org.mockito.internal.creation.bytebuddy.SubclassByteBuddyMockMaker
+</blockquote>
+
+而要用 <code>ByteBuddyMockMaker</code> 的话，该文件内容是<br/>
+<blockquote>
+org.mockito.internal.creation.bytebuddy.ByteBuddyMockMaker
+</blockquote>
+
+Mockito 目前提供的所有三个 MockMaker 实现，只有 <code>InlineByteBuddyMockMaker</code> 能用来 Mock final 类和 final 方法，<code>mock-maker-inline</code> 也可以配置为完整的类名<br/>
+<blockquote>
+org.mockito.internal.creation.bytebuddy.InlineByteBuddyMockMaker
+</blockquote>
+
+细看 <code>org.mockito.internal.creation.bytebuddy.InlineByteBuddyMockMaker</code> 类能发现它其中使用到了 JDK 的 Instrumentation API 和 ByteBuddyAgent 在生成实例时对方法实现进行了替换。<br/><br/>
+<h3>PowerMockito(PowerMock) 是什么来头</h3>
+根据 Mockito 预留下来的 <code>MockMaker</code> 的实现，实际上给了第三方实现进行扩展对静态或私有方法的 Mock 了，这也就是让 Mockito 让 PowerMock 有可乘之机。因此，如果要 Mock 静态或私有方法的话，除 JMockit 外还有另一选择，那就是 PowerMock，而且还能继续使用 Mockito 的 API。<br/><br/>
+有了一个基本的推测后，顺道看一下 PowerMock 带来了什么 MockMaker 实现，在 <code>pom.xml</code> 加入当前最新的 <code>powermock-api-mockito</code> 模块<br/>
+{{< highlight xml >}}
+<dependency>
+    <groupId>org.powermock</groupId>
+    <artifactId>powermock-api-mockito2</artifactId>
+    <version>1.7.4</version>
+    <scope>test</scope>
+</dependency>
+{{</ highlight >}}
+<br/>
+<code>powermock-api-mockito2</code> 在Maven 中央仓库正式版当前为 1.7.4, 所带的 Mockito 还是  2.8.9, 当前 Mockito 版本是 2.18.3, 落后也并不大。在 Maven 中央仓库还有 <code>2.0.0-beta.5</code> 的 <code>powermock-api-mockito2</code>, 所带的 Mockito 2 是 2.10.0 版本。<br/><br/>
+<code>powermock-api-mockito2</code> 为 Mockito 2 提供了 <code>MockMaker</code> 的一个第三方实现是<br/>
+<blockquote>
+org.powermock.api.mockito.mockmaker.PowerMockMaker
+</blockquote>
+
+也正是它完善了 Mockito 2 对静态方法，私有方法，以及构造函数的 Mock 的，所以说本质上 <code>powermock-api-mockito2</code> 就是 Mockito 2 的一个扩展。
