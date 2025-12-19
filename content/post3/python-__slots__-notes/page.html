@@ -1,0 +1,267 @@
+---
+title: Python __slots__ 的用法笔记
+url: /python-__slots__-notes/
+date: 2023-02-28T00:13:24-06:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/python-logo.png"
+categories:
+  - Python
+tags: 
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 13012 
+wpStatus: publish
+views: 529
+lastmod: 2023-02-28T00:13:24-06:00
+---
+
+Python 是一个动态语言，可以动态的给实例或类增减属性或方法，给类添加的属性会影响到前后所有创建的实例。但是使用 <code>__slots__</code> 属性可以限定类或实例属性和方法，如果没有 <code>__slots__</code> 的话实例的属性和方法包含在实例的 <code>__dict__</code> 字典中，类的属性和方法包含在类的 <code>__dict__</code> 字典中。</p>
+<br/>
+在使用 <code>__slots__</code> 按常规写法可能会出现的问题大概有<br/>
+<ol>
+    <li>AttributeError: 'Xxx' object has no attribute 'yyy'</li>
+    <li>AttributeError: 'Xxx' object attribute 'yyy' is read-only</li>
+    <li>ValueError: 'yyy' in __slots__ conflicts with class variable</li>
+</ol>
+<br/>
+我们来看下面的例子<!--more--><br/>
+{{< highlight python >}}
+>>> class Cat:
+...     lags = 4
+...     def __init__(self):
+...         self.eyes = 2
+...
+...     def walk(self):
+...         pass
+...
+...
+>>> Cat.__dict__
+mappingproxy({'__module__': '__main__', 'lags': 4, '__init__': <function Cat.__init__ at 0x106816700>, 'walk': <function Cat.walk at 0x106817920>, '__dict__': <attribute
+'__dict__' of 'Cat' objects>, '__weakref__': <attribute '__weakref__' of 'Cat' objects>, '__doc__': None})
+>>> c1 = Cat()
+>>> c1.__dict__
+{'eyes': 2}
+>>> c1.miaow = lambda: 'hello'
+>>> c1.__dict__
+{'eyes': 2, 'miaow': <function <lambda> at 0x106d6fce0>}
+>>> Cat.ears = 2
+>>> c1.ears
+2
+>>> c1.__dict__
+{'eyes': 2, 'miaow': <function <lambda> at 0x106d6fce0>}
+>>> Cat.__dict__
+mappingproxy({'__module__': '__main__', 'lags': 4, '__init__': <function Cat.__init__ at 0x106816700>, 'walk': <function Cat.walk at 0x106817920>, '__dict__': <attribute
+'__dict__' of 'Cat' objects>, '__weakref__': <attribute '__weakref__' of 'Cat' objects>, '__doc__': None, '__getattribute__': <slot wrapper '__getattribute__' of 'object'
+ objects>, 'ears': 2})
+{{</ highlight >}}
+<br/>
+类或实例可以随意的添加属性和方法<br/><br/>
+如果我们引入 <code>__slots__</code> 来限定属性或方法<br/>
+{{< highlight python >}}
+>>> class Cat:
+...     __slots__ = ('lags', 'eyes')
+...     def __init__(self):
+...         self.eyes = 2
+...
+...
+...
+>>> Cat.__dict__
+mappingproxy({'__module__': '__main__', '__slots__': ('lags', 'eyes'), '__init__': <function Cat.__init__ at 0x10699ef20>, 'eyes': <member 'eyes' of 'Cat' objects>, 'lags
+': <member 'lags' of 'Cat' objects>, '__doc__': None})
+>>> c1 = Cat()
+>>> c1.__dict__
+Traceback (most recent call last):
+  File "<input>", line 1, in <module>
+    c1.__dict__
+AttributeError: 'Cat' object has no attribute '__dict__'
+>>> c1.lags
+Traceback (most recent call last):
+  File "<input>", line 1, in <module>
+    c1.lags
+AttributeError: 'Cat' object has no attribute 'lags'
+>>> c1.eyes
+2
+>>> c1.lags = 4
+>>> c1.ears = 2
+Traceback (most recent call last):
+  File "<input>", line 1, in <module>
+    c1.ears = 2
+     ^^^^^^^
+AttributeError: 'Cat' object has no attribute 'ears'
+>>> c1.miaow = lambda: 'hello'
+Traceback (most recent call last):
+  File "<input>", line 1, in <module>
+    c1.miaow = lambda: 'hello'
+     ^^^^^^^^
+AttributeError: 'Cat' object has no attribute 'miaow'
+>>> c1.lags = lambda: 'hello'
+>>> c1.lags
+<function <lambda> at 0x106d6c7c0>
+{{</ highlight >}}
+<br/>
+引入了 <code>__slots__</code> 后实例不再有 <code>__dict__</code> 属性，只能添加在 <code>__slots__</code> 中列出的属性或方法。添加没在 <code>__slots__</code> 中的属性或方法时会报错误<br/>
+<blockquote>
+AttributeError: 'Xxx' object has no attribute 'yyy'
+</blockquote>
+
+在初始化函数中 <code>__init__(self)</code> 中也是一样的，如<br/>
+{{< highlight python >}}
+>>> class Cat:
+...     __slots__ = ('lags', 'eyes')
+...     def __init__(self):
+...         self.ears = 2
+...
+...
+...
+>>> c1 = Cat()
+Traceback (most recent call last):
+  File "<input>", line 1, in <module>
+    c1 = Cat()
+          ^^^^^
+  File "<input>", line 4, in __init__
+    self.ears = 2
+    ^^^^^^^^^
+AttributeError: 'Cat' object has no attribute 'ears'
+{{</ highlight >}}
+<br/>
+<code>__slots__</code> 中没有 <code>ears</code>, 所以不能在初始化方法或外部动态添加该属性<br/><br/>
+但是定义类时声明的方法不在 <code>__slots__</code> 约束内<br/>
+{{< highlight python >}}
+>>> class Cat:
+...     __slots__ = ('lags', 'eyes')
+...     def walk(self):
+...         pass
+...
+...
+>>> c1 = Cat()
+>>> c1.walk()
+{{</ highlight >}}
+<br/>
+<code>__slots__</code> 也不约束通过类动态添加属性或方法<br/>
+{{< highlight python >}}
+>>> class Cat:
+...     __slots__ = ('lags', 'eyes')
+...
+...
+>>> Cat.ears = 2
+>>>
+{{</ highlight >}}
+<br/>
+在 <code>__slots__</code> 中不能包含类变量，比如<br/>
+{{< highlight python >}}
+>>> class Cat:
+...     __slots__ = ('lags')
+...     lags = 4
+...
+...
+Traceback (most recent call last):
+  File "<input>", line 1, in <module>
+    class Cat:
+ValueError: 'lags' in __slots__ conflicts with class variable
+{{</ highlight >}}
+<br/>
+声明的没定义在 <code>__slots__</code> 中的类变量对实例方法是只读的<br/>
+{{< highlight python >}}
+>>> class Cat:
+...     __slots__ = ('lags')
+...     eyes = 2
+...     def __init__(self):
+...         self.eyes = 3
+...
+...
+...
+>>> c1 = Cat()
+Traceback (most recent call last):
+  File "<input>", line 1, in <module>
+    c1 = Cat()
+          ^^^^^
+  File "<input>", line 5, in __init__
+    self.eyes = 3
+    ^^^^^^^^^
+AttributeError: 'Cat' object attribute 'eyes' is read-only
+{{</ highlight >}}
+<br/>
+但是声明在没定义在 <code>__slots__</code> 中的类变量通过实例来修改也不行，但可以通过类属性来修改<br/>
+{{< highlight python >}}
+>>> class Cat:
+...     __slots__ = ('lags')
+...     eyes = 2
+...
+...
+>>> c1 = Cat()
+>>> c1.eyes = 3
+Traceback (most recent call last):
+  File "<input>", line 1, in <module>
+    c1.eyes = 3
+     ^^^^^^^
+AttributeError: 'Cat' object attribute 'eyes' is read-only
+>>> Cat.eyes = 3
+>>> c1.eyes
+3
+{{</ highlight >}}
+<br/>
+定义在 <code>__slots__</code> 中的属性或方法在 IDE 中会有智能提示。<br/><br/>
+<code>__slots__</code> 只能作用在当前类中，不会影响到子类，子类需定义自己的 <code>__slots__</code>.<br/>
+{{< highlight python >}}
+>>> class Animal:
+...     __slots__ = ('lags')
+...
+...
+>>> class Cat(Animal):
+...     pass
+...
+>>> Animal.__slots__
+'lags'
+>>> Cat.__slots__
+'lags'
+>>> c = Cat()
+>>> c.eyes = 2
+{{</ highlight >}}
+<br/>
+<code>__slots__</code> 对于实例是只读的，通过类的 <code>__slots__</code> 属性可修改，但不改变原有的约束<br/>
+{{< highlight python >}}
+>>> class Cat:
+...     __slots__ = ('lags', 'eyes')
+...
+...
+>>> c.__slots__ = ('lags', 'eyes', 'ears')
+Traceback (most recent call last):
+  File "<input>", line 1, in <module>
+    c.__slots__ = ('lags', 'eyes', 'ears')
+     ^^^^^^^^^^^
+AttributeError: 'Cat' object attribute '__slots__' is read-only
+>>> Cat.__slots__ = ('lags', 'eyes', 'ears')
+>>> c = Cat()
+>>> c.ears = 2
+Traceback (most recent call last):
+  File "<input>", line 1, in <module>
+    c.ears = 2
+     ^^^^^^
+AttributeError: 'Cat' object has no attribute 'ears'
+>>> c.__slots__
+('lags', 'eyes', 'ears')
+>>> Cat.__slots__
+('lags', 'eyes', 'ears')
+{{</ highlight >}}
+<br/>
+<code>__slots__</code> 还可声明为 list, 或省略圆括号的 tuple 形式<br/>
+{{< highlight python >}}
+>>> class Cat:
+...     __slots__ = ['lags', 'eyes']
+...
+...
+>>> class Cat:
+...     __slots__ = 'lags', 'eyes'
+...
+...
+>>> type(Cat.__slots__)
+<class 'tuple'>
+{{</ highlight >}}
+<br/>
+另外，用 <code>__slots__</code> 避免了使用 <code>__dict__</code> 记录实例属性和方法，可节约一些内存
