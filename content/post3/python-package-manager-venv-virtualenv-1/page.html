@@ -3,12 +3,12 @@ title: "Python 包管理及虚拟环境的应用(一: pip)"
 url: /python-package-manager-venv-virtualenv-1/
 date: 2019-01-03T01:14:49-06:00
 featured: false
-draft: true
+draft: false
 type: post
 toc: false
 # menu: main
 usePageBundles: true
-thumbnail: "../images/logos/http://unmi.cc/wp-content/uploads/2016/06/python-icon-200x200.png"
+thumbnail: "../images/logos/python-logo.png"
 categories:
   - Python
 tags: 
@@ -26,11 +26,11 @@ lastmod: 2020-07-31T02:31:57-05:00
 ---
 
 话说 Python 的哲学之一就是: 用一种方法，最好是只有一种方法来做一件事。可以用 <code>python -m this</code> 或在  python 交互界面下 <code>import this</code> 看到 <code>The Zen of Python</code> 有一句：</p>
-<br/>
+
 <blockquote>
 There should be one-- and preferably only one --obvious way to do it.
 </blockquote>
-<br/>
+
 然而 Python 在关于包管理(依赖管理)一事上却让人面临了众多的选择。<br/><br/>
 即使是 Java 日趋发展庞大的今天，包管理工具也没有如今的 Python 复杂，Java 的包管理工具经历了手工下载 jar 包，Maven, Ant+Ivy, Gradle, sbt, 但主流的也就 Maven 和 Gradle, 并且它们兼具项目构建的功能。<br/><br/>
 这里有一个 Python 包管理工具变迁的视频: <a href="https://www.youtube.com/watch?v=GBQAKldqgZs">Kenneth Reitz - Pipenv: The Future of Python Dependency Management - PyCon 2018</a>。再更早的 Python 依赖管理的方式不说，视频中提到了<!--more--><br/><br/>
@@ -43,33 +43,35 @@ There should be one-- and preferably only one --obvious way to do it.
 </ol>
 <br/>
 下面体验一下 <code>pip</code>(将以 <code>pip3</code> 为例), <code>venv</code> 和 <code>virtualenv</code>, 以及 <code>pyvenv</code> 的应用。系统环境是 Ubuntu 18.04 + Python 3.6.7，当前用户是 <code>vagrant</code>。<br/><br/>
-<h2>1. pip3 依赖管理</h2><br/><br/>
-首先 <code>pip3</code> 没有的话需要通过下面的命令进行安装<br/><br/>
+<h2>1. pip3 依赖管理</h2>
+首先 <code>pip3</code> 没有的话需要通过下面的命令进行安装<br/>
 <blockquote>
 sudo apt-get install python3-pip
 </blockquote>
-<br/>
-pip 安装的模块可以是全局的或用户独立的，回忆一下 <a href="https://yanbin.blog/python-module-search-path/">Python 的模块搜索路径</a>，安装后模块总是要能被 Python 程序搜索到才有用，Python 搜索模块的路径是依照 <code>sys.path</code> 的列表值顺序。我们用 <code>python3 -c "import sys; print(str(sys.path).replace(',', '\n'))"</code> 查看 Python3 交互界面下的路径列表：<br/><br/>
-<pre class="lang:default mark:5,6 decode:true">[''
+
+pip 安装的模块可以是全局的或用户独立的，回忆一下 <a href="/python-module-search-path/">Python 的模块搜索路径</a>，安装后模块总是要能被 Python 程序搜索到才有用，Python 搜索模块的路径是依照 <code>sys.path</code> 的列表值顺序。我们用 <code>python3 -c "import sys; print(str(sys.path).replace(',', '\n'))"</code> 查看 Python3 交互界面下的路径列表：<br/>
+{{< highlight text >}}
+[''
  '/usr/lib/python36.zip'
  '/usr/lib/python3.6'
  '/usr/lib/python3.6/lib-dynload'
  '/home/vagrant/.local/lib/python3.6/site-packages'
  '/usr/local/lib/python3.6/dist-packages'
- '/usr/lib/python3/dist-packages']</pre>
+ '/usr/lib/python3/dist-packages']
+{{</ highlight >}}
 <br/>
-重来没有安装过用户独立的模块的话，第五行可能看不到，说下区别<br/><br/>
+重来没有安装过用户独立的模块的话，第五行可能看不到，说下区别<br/>
 <blockquote>
 sudo pip3 install requests
 </blockquote>
-<br/>
-使用了 <code>sudo</code> , 但没有带  <code>--user</code> 参数情况下 pip 安装模块到全局路径中，即 <code>requests</code> 及其依赖将被安装到 <code>/usr/local/lib/python3.6/dist-packages</code> 目录中，对任何用户可见。<br/><br/>
+
+使用了 <code>sudo</code> , 但没有带  <code>--user</code> 参数情况下 pip 安装模块到全局路径中，即 <code>requests</code> 及其依赖将被安装到 <code>/usr/local/lib/python3.6/dist-packages</code> 目录中，对任何用户可见。<br/>
 <blockquote>
 pip3 install requests<br />
 或 pip3 install requests --user<br />
 或 sudo pip3 install requests --user
 </blockquote>
-<br/>
+
 未用 <code>sudo</code> 或指定了 <code>--user</code> 参数，模块 <code>requests</code> 及其依赖将被安装到当前用户目录 <code>/home/vagrant/.local/lib/python3.6/site-packages</code> 中，对其他用户不可见。<br/><br/>
 相的模块先安装到全局目录 <code>/usr/local/lib/python3.6/dist-packages</code> 中，然而再次安装到用户目录 <code>/home/vagrant/.local/lib/python3.6/site-packages</code>, 反过来就不允许。<br/><br/>
 在没有虚拟环境下使用 <code>pip</code> 时，无论模块是安装到全局或用户目录中，都有以下弊端<br/><br/>
