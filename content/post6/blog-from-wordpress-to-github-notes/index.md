@@ -70,3 +70,13 @@ use bundle-image
 {{< bundle-image wp-hugo-1.png 611 >}}
 
 还有很多 http://unmi.cc/xxx 遗留链接，图片链接
+
+代码有多种方式
+```
+<pre class="lang:default decode:true ">
+<pre class="brush:bash">
+<blockquote>
+```
+
+为了在 WordPress 中输入方便很多时候选择了没有语法高亮和保持换行，空格, HTML 实体的 blockquote, 而用 Markdown 时
+则不用担心这个，都是三个撇号

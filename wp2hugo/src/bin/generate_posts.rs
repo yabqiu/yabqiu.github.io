@@ -25,8 +25,9 @@ fn main() -> Result<()> {
 fn get_processed_ids() -> Result<Vec<u32>> {
     let mut processed_id : Vec<u32>= Vec::new();
     // let post_types = vec!["draft", "post", "quartz", "post1"];
-    let post_types = vec!["post", "post1", "post2", "post3"];
+    let post_types = vec!["post", "post1", "post2", "post3", "post4"];
     for folder in post_types {
+        let mut count = 0;
         for entry in fs::read_dir(format!("../content/{}", folder))? {
             let path = entry?.path();
             if path.is_dir() {
@@ -38,9 +39,15 @@ fn get_processed_ids() -> Result<Vec<u32>> {
                     if let Some(wp_post_id) = front_matter.get("wpPostId") {
                         processed_id.push(wp_post_id.as_u64().unwrap() as u32)
                     }
+                    count += 1;
+                } else {
+                    println!("folder {}, no page.html", folder)
                 }
+            } else {
+                println!("{:?} is not a folder", path);
             }
         }
+        println!("folder {}: count: {}", folder, count)
     }
     Ok(processed_id)
 }
