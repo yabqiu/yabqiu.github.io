@@ -3,7 +3,7 @@ title: 简单例子演示如何进行类的热加载(Hot Deployment)
 url: /simple-java-hot-deployment/
 date: 2008-10-21T11:38:00-05:00
 featured: false
-draft: true
+draft: false
 type: post
 toc: false
 # menu: main
@@ -32,121 +32,127 @@ lastmod: 2017-11-10T23:26:22-06:00
 
 <p>说明：这只是标准 Java 启动器运行程序时的类加载器层次，像应用服务器中的类加载器通常会多一两层，也是在这个基础上的延伸。上面的类加载层次存在自上而下的委托关系，委托加载不在这里细讲。<!--more--></p>
 
-<p><strong>类加载器的规则有三<br /><br/>
- </strong><br /><br/>
+<p><strong>类加载器的规则有三</strong>
+	<br/><br/>
  1. 一致性规则：类加载器不能多次加载同一个类<br /><br/>
  2. 委托规则  ：在加载一个类之前，类加载器总参考父类加载器<br /><br/>
  3. 可见性规则：类只能看到由其类加载器的委托加载的其他类，委托是类的加载器及其所有父类加载器的递归集。(这个规则可能不太好理解，要举个例子就很容易理解的，这里也不细说)</p>
 
-<h3><strong>实际的例子演示热加载<br /><br/>
- </strong><br /><br/>
- <em><span style="color: #0000ff;"><u>1. 建立工程，编写代码</u></span></em></h3><br/>
+<h3><strong>实际的例子演示热加载</strong><br /><br/>
+ <em><span style="color: #0000ff;"><u>1. 建立工程，编写代码</u></span></em>
+</h3>
 <p>前面铺垫的应该够厚了，开始用个例子来说明感受类的热加载(又名热部署 Hot Deployment)。这个例子采用 Eclipse 来做，首先要建立两个普通的 Java 工程，分别是 TestHotDeployInf 和 TestHotDeployImpl。让 TestHotDeployImpl 依赖于 TestHotDeployInf 工程，即在 TestHotDeployImpl 的 Build Path 中，Projects 标签页里把 TestHotDeployInf 工程选进来，因为编译 TestHotDeployImpl 中的类要用到 TestHotDeployInf 中的类。</p>
 
 <p>然后在工程式 TestHotDeployInf 中新建一个接口(Cat.java) 和一个类(Client.java)，内容分别是：</p>
 
 <p>Cat.java(Cat 接口类，也可以用抽象类，用来引用需热加载的实现类的实例)</p>
 
-<pre class="brush:java">package com.unmi;<br/>
-<br/>
-/**<br/>
- * Cat 接口，要热加载的类一定要有一个接口或基类引用<br/>
- * @author Unmi<br/>
- */<br/>
-public interface Cat {<br/>
-	public void miaow();<br/>
-}</pre>
+{{< highlight java >}}
+package com.unmi;
+
+/**
+ * Cat 接口，要热加载的类一定要有一个接口或基类引用
+ * @author Unmi
+ */
+public interface Cat {
+	public void miaow();
+}
+{{</ highlight >}}
 
 <p>Client.java(测试热加载的客户端类)</p>
 
-<pre class="brush:java">package com.unmi;<br/>
-<br/>
-import java.io.BufferedReader;<br/>
-import java.io.InputStreamReader;<br/>
-import java.net.URL;<br/>
-import java.net.URLClassLoader;<br/>
-<br/>
-/**<br/>
- * 测试热部署 Hot Deployment 的客户端类<br/>
- * @author Unmi<br/>
- */<br/>
-public class Client {<br/>
-<br/>
-	private static ClassLoader cl;<br/>
-	private static Class catClass;<br/>
-<br/>
-	/**<br/>
-	 * @param args<br/>
-	 */<br/>
-	public static void main(String[] args) throws Exception{<br/>
-		BufferedReader br = new BufferedReader(new InputStreamReader(System.in));<br/>
-		Cat cat = createCat();<br/>
-		System.out.println("miaow, reload, or exit");<br/>
-		while(true){<br/>
-			String cmd = br.readLine();<br/>
-			if(cmd.equalsIgnoreCase("exit")){<br/>
-				return;<br/>
-			} else if(cmd.equalsIgnoreCase("reload")){<br/>
-				reloadImpl();<br/>
-				cat = createCat();<br/>
-				System.out.println("CatImpl reloaded.");<br/>
-			} else if(cmd.equalsIgnoreCase("miaow")){<br/>
-				cat.miaow();<br/>
-			}<br/>
-		}<br/>
-	}<br/>
-<br/>
-	/**<br/>
-	 * 使用加载的类 Cat 类创建 Cat 实例<br/>
-	 * @return Cat 实例<br/>
-	 * @throws Exception<br/>
-	 */<br/>
-	public static synchronized Cat createCat() throws Exception{<br/>
-		if(catClass==null){<br/>
-			reloadImpl();<br/>
-		}<br/>
-		Cat newCat = (Cat)catClass.newInstance();<br/>
-		return newCat;<br/>
-	}<br/>
-<br/>
-	/**<br/>
-	 * 用自定义的类加载器重新加载 ../TestHotDeployImpl/bin 目录中的 CatImpl 实现类<br/>
-	 * 注意这里的 ../TestHotDeployImpl/bin，方便直接读取 TestHotDeployImpl 下随时<br/>
-	 * 修改后编译成的新的 com.unmi.CatImpl 类，避免了 class 文件编译后拷贝到别处<br/>
-	 * @throws Exception<br/>
-	 */<br/>
-	public static synchronized void reloadImpl() throws Exception{<br/>
-		URL[] externalURLs = new URL[]{new URL("file:../TestHotDeployImpl/bin/")};<br/>
-		cl = new URLClassLoader(externalURLs);<br/>
-		catClass = cl.loadClass("com.unmi.CatImpl");<br/>
-	}<br/>
-}</pre>
+{{< highlight java >}}
+package com.unmi;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.URL;
+import java.net.URLClassLoader;
+
+/**
+ * 测试热部署 Hot Deployment 的客户端类
+ * @author Unmi
+ */
+public class Client {
+
+	private static ClassLoader cl;
+	private static Class catClass;
+
+	/**
+	 * @param args
+	 */
+	public static void main(String[] args) throws Exception{
+		BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
+		Cat cat = createCat();
+		System.out.println("miaow, reload, or exit");
+		while(true){
+			String cmd = br.readLine();
+			if(cmd.equalsIgnoreCase("exit")){
+				return;
+			} else if(cmd.equalsIgnoreCase("reload")){
+				reloadImpl();
+				cat = createCat();
+				System.out.println("CatImpl reloaded.");
+			} else if(cmd.equalsIgnoreCase("miaow")){
+				cat.miaow();
+			}
+		}
+	}
+
+	/**
+	 * 使用加载的类 Cat 类创建 Cat 实例
+	 * @return Cat 实例
+	 * @throws Exception
+	 */
+	public static synchronized Cat createCat() throws Exception{
+		if(catClass==null){
+			reloadImpl();
+		}
+		Cat newCat = (Cat)catClass.newInstance();
+		return newCat;
+	}
+
+	/**
+	 * 用自定义的类加载器重新加载 ../TestHotDeployImpl/bin 目录中的 CatImpl 实现类
+	 * 注意这里的 ../TestHotDeployImpl/bin，方便直接读取 TestHotDeployImpl 下随时
+	 * 修改后编译成的新的 com.unmi.CatImpl 类，避免了 class 文件编译后拷贝到别处
+	 * @throws Exception
+	 */
+	public static synchronized void reloadImpl() throws Exception{
+		URL[] externalURLs = new URL[]{new URL("file:../TestHotDeployImpl/bin/")};
+		cl = new URLClassLoader(externalURLs);
+		catClass = cl.loadClass("com.unmi.CatImpl");
+	}
+}
+{{</ highlight >}}
 
 <p>还要在 TestHotDeployImpl 中添加一个 Cat 的实现类 CatImpl</p>
 
-<pre class="brush:java">package com.unmi;<br/>
-<br/>
-/**<br/>
- * Cat 的实现类，观察是否加载了最新代码，可通过改变 miaow() 方法的输出<br/>
- * @author Unmi<br/>
- */<br/>
-public class CatImpl implements Cat {<br/>
-<br/>
-	@Override<br/>
-	public void miaow() {<br/>
-		System.out.println("I'm Hello Kity, I like play with you.");<br/>
-		//System.out.println("I'm Tom, Jerry always kids me.");<br/>
-	}<br/>
-}</pre>
+{{< highlight java >}}
+package com.unmi;
 
-<h3><em><u><span style="color: #0000ff;">2. 进行测试</span></u></em></h3><br/>
+/**
+ * Cat 的实现类，观察是否加载了最新代码，可通过改变 miaow() 方法的输出
+ * @author Unmi
+ */
+public class CatImpl implements Cat {
+
+	@Override
+	public void miaow() {
+		System.out.println("I'm Hello Kity, I like play with you.");
+		//System.out.println("I'm Tom, Jerry always kids me.");
+	}
+}
+{{</ highlight >}}
+
+<h3><em><u><span style="color: #0000ff;">2. 进行测试</span></u></em></h3>
 <p>运行 TestHotDeployInf 中的 Client 程序，按照下图中的指令说明，可观察到热加载的过程：</p>
 
-<div><a href="http://unmi.cc/wp-content/uploads/2008/10/HotDeployment.jpg"><img class="aligncenter" src="http://unmi.cc/wp-content/uploads/2008/10/HotDeployment.jpg" alt="HotDeployment.jpg" width="750" height="326" border="0" /></a></div>
+{{< bundle-image HotDeployment.jpg 750 >}}
 
-<h3><span style="color: #0000ff;"><em><u>3. 几个问题</u></em></span></h3><br/>
-<p>1) 为什么要在单独的工程里放置 CatImpl 类(重要)<br /><br/>
-       <br /><br/>
+<h3><span style="color: #0000ff;"><em><u>3. 几个问题</u></em></span></h3>
+<p>1) 为什么要在单独的工程里放置 CatImpl 类(重要)<br />
+<br/>
          主要是为了编译成的 CatImpl 类对于 TestHotDeployInf 的系统加载类不可见，就是不能放在 TestHotDeployInf 的程序的 classpath 中。<br /><br/>
          这个问题可以说大，本应该提高一个层次来说明它。前面提过标准 Java 启动器加载器层次中有三个加载器，而在上面的 Client.java 中，我们看到用了一个自定义的 cl = new URLClassLoader(externalURLs) 类加载器来加载 com.unmi.CatImpl。也就是标准的类加载器又多了一层，这里估且把它叫做应用程序加载器(AppClassloader)。</p>
 
