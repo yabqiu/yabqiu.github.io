@@ -1,0 +1,236 @@
+---
+title: Spring ServiceLocator 介绍及应用
+url: /spring-servicelocator-pattern/
+date: 2019-04-02T22:24:57-05:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+thumbnail: "../images/logos/spring-logo.png"
+categories:
+  - Spring
+tags: 
+  - Spring
+  - ServiceLocation
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 9323 
+wpStatus: publish
+views: 1811
+lastmod: 2019-04-02T22:24:57-05:00
+---
+
+<p>在 Spring 中应用 ServiceLocator 方式来获取 Spring Bean 的介绍参考了那么多，其实还是数官方的 <a href="https://docs.spring.io/spring-framework/docs/current/javadoc-api/org/springframework/beans/factory/config/ServiceLocatorFactoryBean.html">ServiceLocatorFactoryBean</a> JavaDoc 文档最言简意该了。Spring 的 ServiceLocator 仿佛用处不大，说到底就是类似于下方找寻某个 Spring Bean 一样：</p>
+
+<blockquote>
+ApplicationContext context = ...;
+Service service = context.getBean(ServiceImpl.class);
+Service service = context.getBean("myService");
+</blockquote>
+
+<p>只是有了 ServiceLocatorFactoryBean(它本质上就是一个 FactoryBean) 后我们不需要直接与 ApplicationContext 打交道，且多个的 Spring Bean 可以从相关的一个 FactoryBean 获得。下面用两个例子来演示(代码中刨去了 package 和 import 部分的代码)</p>
+
+<h3>一：实现类只有一个 Spring Bean 时</h3>
+<p>接口类 Parser(我们要定位就是它的实现类)<!--more--></p>
+
+{{< highlight java >}}
+public interface Parser {
+    <T> T parse(String content);
+}
+{{</ highlight >}}
+
+<p>Parser 的一个实现类 JsonParser, 并且用 @Named 注册到了 Spring  上下文</p>
+
+{{< highlight java >}}
+@Named
+public class JsonParser implements Parser {
+
+    @Override
+    public JsonNode parse(String content) {
+        try {
+            return new ObjectMapper().readTree(content);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+}
+{{</ highlight >}}
+
+<p>用于查找 Parser 实现的接口(我们无需为它提供实现)</p>
+
+{{< highlight java >}}
+public interface ParserFactory {
+   Parser getParser();
+}
+{{</ highlight >}}
+
+<p>声明用于查找 Parser 实现的 FactoryBean(即 ServiceLocatorFactoryBean)</p>
+
+{{< highlight java >}}
+@Configuration
+public class AppConfig {
+
+    @Bean
+    public FactoryBean parserFactory() {
+        ServiceLocatorFactoryBean factoryBean = new ServiceLocatorFactoryBean();
+        factoryBean.setServiceLocatorInterface(ParserFactory.class); //指定的是 ParserFactory 接口
+        return factoryBean;
+    }
+}
+{{</ highlight >}}
+
+<p>最后是应用 ServiceLocatorFacoryBean 的客户端代码</p>
+
+{{< highlight java >}}
+@SpringBootApplication
+public class Client implements CommandLineRunner {
+
+    @Inject
+    private ParserFactory parserFactory;
+
+    public static void main(String[] args) {
+        SpringApplication.run(Client.class, args);
+    }
+
+    @Override
+    public void run(String... args) throws Exception {
+        Parser parser = parserFactory.getParser();  //通过 ParserFactory 的 getParser() 定位到相应类型的 Parser 实例
+        JsonNode json = parser.parse("{\"gretting\": \"Hello World!\"}");
+        System.out.println(json.at("/gretting").asText());
+    }
+}
+{{</ highlight >}}
+
+<p>执行上面的代码，输出为解析后 JSON 的 gretting 值</p>
+
+<blockquote>
+Hello World!
+</blockquote>
+
+<p>上面发生了什么</p>
+
+<p>进到 ServiceLocatorFactoryBean 的内部类 ServiceLocatorInvocationHandler, 关键代码如下：</p>
+
+{{< highlight java >}}
+private class ServiceLocatorInvocationHandler implements InvocationHandler {
+
+    private Object invokeServiceLocatorMethod(Method method, Object[] args) throws Exception {
+        Class<?> serviceLocatorMethodReturnType = getServiceLocatorMethodReturnType(method);
+        try {
+            String beanName = tryGetBeanName(args);
+            if (StringUtils.hasLength(beanName)) {
+                // Service locator for a specific bean name
+                return beanFactory.getBean(beanName, serviceLocatorMethodReturnType);
+            }
+            else {
+                // Service locator for a bean type
+                return beanFactory.getBean(serviceLocatorMethodReturnType);
+            }
+        }
+        catch (BeansException ex) {
+            ......
+        }
+    }
+{{</ highlight >}}
+
+<ol>
+	<li>ParserFactory.getParser() 不带参数的方式会找到一个指定相应类型的 Bean，如果 Spring 上下文中注册了两个 Parser 将会出错</li>
+	<li>ParserFactory.getParser(beanName) 如果是带了参数，将以此参数作为 Spring Bean 的名称去 Spring 上下文中查找</li>
+</ol>
+
+<p>现在可以测试一下第一种情况有多个 Parser 实现时的异常，再加一个 Parser 的 XML 实现 XmlParser</p>
+
+{{< highlight java >}}
+@Named
+public class XmlParser implements Parser {
+
+    @Override
+    public Document parse(String content) {
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+
+        try {
+            DocumentBuilder builder = factory.newDocumentBuilder();
+            return builder.parse(new InputSource(new StringReader(content)));
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+{{</ highlight >}}
+
+<p>运行之前相同的 <code>Client</code> 代码，Spring 应用无法启动，异常是</p>
+
+<blockquote>
+Caused by: org.springframework.beans.factory.NoUniqueBeanDefinitionException: No qualifying bean of type 'yanbin.blog.Parser' available: expected single matching bean but found 2: jsonParser,xmlParser<br />
+    at org.springframework.beans.factory.support.DefaultListableBeanFactory.resolveNamedBean(DefaultListableBeanFactory.java:1039)<br />
+    at org.springframework.beans.factory.support.DefaultListableBeanFactory.getBean(DefaultListableBeanFactory.java:344)<br />
+    at org.springframework.beans.factory.support.DefaultListableBeanFactory.getBean(DefaultListableBeanFactory.java:339)<br />
+    at org.springframework.beans.factory.config.ServiceLocatorFactoryBean$ServiceLocatorInvocationHandler.invokeServiceLocatorMethod(ServiceLocatorFactoryBean.java:377)<br />
+    at org.springframework.beans.factory.config.ServiceLocatorFactoryBean$ServiceLocatorInvocationHandler.invoke(ServiceLocatorFactoryBean.java:363)<br />
+    at com.sun.proxy.$Proxy35.getParser(Unknown Source)<br />
+    at yanbin.blog.Client.run(Client.java:22)
+</blockquote>
+
+<p>原因是找到两个 Parser 实现 jsonParser 和 xmlParser, 不知道该注入哪一个，所以报错。这时候就要用带参数的  ServiceLocator 方式，即</p>
+
+<h3>二：实现类有多个 Spring Bean 时</h3>
+<p>多个实现类时就必须用 Bean Name 来区分了，在有了前面的 Parser 的两个实现 jsonParser 和  xmlParser 时，ParserFactory 相应的方法要带上一个 Bean Name 参数了</p>
+
+<p>新的 ParserFactory 类代码变为</p>
+
+{{< highlight java >}}
+public interface ParserFactory {
+   Parser getParser(String beanName);
+}
+{{</ highlight >}}
+
+<p>Client 类中相关应用代码现在是</p>
+
+{{< highlight java >}}
+@SpringBootApplication
+public class Client implements CommandLineRunner {
+
+    @Inject
+    private ParserFactory parserFactory;
+
+    @Override
+    public void run(String... args) throws Exception {
+        Parser xmlParser = parserFactory.getParser("xmlParser");
+        Document doc = xmlParser.parse("<greeting>Hello World!</greeting>");
+        System.out.println(xmlParser.getClass().getSimpleName() + ": " + doc.getElementsByTagName("greeting").item(0).getTextContent());
+
+        Parser jsonParser = parserFactory.getParser("jsonParser");
+        JsonNode json = jsonParser.parse("{\"gretting\": \"Hello World!\"}");
+        System.out.println(jsonParser.getClass().getSimpleName() + ": " + json.at("/gretting").asText());
+    }
+}
+{{</ highlight >}}
+
+<p>执行后输出如下：</p>
+
+<blockquote>
+XmlParser: Hello World!<br />
+JsonParser: Hello World!
+</blockquote>
+
+<h3>Spring Bean name 映射</h3>
+<p>默认时带参数的定位方法(如 parserFactory.getParser(beanName) 的参数是 Spring Bean 的名称，我们也可以在声明 ServiceLocatorFactoryBean 时自定义名称映射关系。比如在前面的 AppConfig 中 parserFactory() 方法中为 factoryBean 调用 setServiceMappings() 方法</p>
+
+{{< highlight java >}}
+    Properties properties = new Properties();
+    properties.setProperty("j", "jsonParser");
+    properties.setProperty("x", "xmlParser");
+    factoryBean.setServiceMappings(properties);
+{{</ highlight >}}
+
+<p>那么在获取 jsonParser 或 xmlParser 实例时可以分别用 "j" 和  "x" 来获得</p>
+
+{{< highlight java >}}
+    Parser xmlParser = parserFactory.getParser("x");
+    Parser jsonParser = parserFactory.getParser("j");
+{{</ highlight >}}
+
+<p>这样体验下来 ServiceLocatorFactoryBean 意义真的不是那么的大。如果我们在通过注入或实现 ApplicationContextAware 接口后获得了 <code>ApplicationContext</code>(BeanFactory) 后，就可直接调用 <code>BeanFactory</code> 的各个 <code>getBean(...)</code> 方法来得到任意想要的 Spring Bean。唯一能想到的好处就是前面提到过的，用于把类似的 Spring Bean 组织到一起来，由一个 ServiceLocator 来提供。</p>

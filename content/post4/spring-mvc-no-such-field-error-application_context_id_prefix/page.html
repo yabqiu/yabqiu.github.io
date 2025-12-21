@@ -3,7 +3,7 @@ title: "Spring MVC 碰到 java.lang.NoSuchFieldError: APPLICATION_CONTEXT_ID_PRE
 url: /spring-mvc-no-such-field-error-application_context_id_prefix/
 date: 2011-05-23T10:02:31-05:00
 featured: false
-draft: true
+draft: false
 type: post
 toc: false
 # menu: main
@@ -52,36 +52,42 @@ Spring MVC 应用在 Tomcat 启动的时候出现了下面的错误：</p>
 <span style="color: #ff0000;">2011-5-23 22:39:21 org.apache.coyote.http11.Http11Protocol start</span><br/><br/>
 查到网上 <a href="http://www.kissrain.org/2011-03-21-246.html">http://www.kissrain.org/2011-03-21-246.html</a> 别人是说“依赖的Spring jar包有问题，解决方案：清空M2_REPO目录下的Spring jar包，重新mvn eclipse:eclipse当前工程即可。”<br/><br/>
 不过我清掉了目录 \repository\org\springframework\spring 下的文件，让 m2eclipse 重新下载，里面又是只有 2.5.6 的 spring jar 文件，这就有点奇怪了，明明我在 pom.xml 中是引入的 spring 3.0.5 的 spring 包。于是找找这个 2.5.6  版本是谁引进来，想起来了：<br/><br/>
-之前所做了的事情是在项目的 pom.xml 文件中加了：<br/><br/>
-<pre class="lang:default decode:true">&lt;dependency&gt;
-   &lt;groupId&gt;net.sf.spring-json&lt;/groupId&gt;
-   &lt;artifactId&gt;spring-json&lt;/artifactId&gt;
-   &lt;version&gt;1.3.1&lt;/version&gt;
-&lt;/dependency&gt;</pre>
+之前所做了的事情是在项目的 pom.xml 文件中加了：<br/>
+{{< highlight xml >}}
+<dependency>
+   <groupId>net.sf.spring-json</groupId>
+   <artifactId>spring-json</artifactId>
+   <version>1.3.1</version>
+</dependency>
+{{</ highlight >}}
 <br/>
- 因为要用 JsonView，即在 spring-servlet.xml 文件里配置了：<br/><br/>
-<pre class="lang:default decode:true">&lt;beans:bean name="jsonView"&gt;
-    &lt;beans:property name="jsonWriter"&gt;
-         &lt;beans:ref bean="jsonlibJsonWriter"/&gt;
-    &lt;/beans:property&gt;
-&lt;/beans:bean&gt;
-        
-&lt;beans:bean name="jsonlibJsonWriter" 
-     class="org.springframework.web.servlet.view.json.writer.jsonlib.JsonlibJsonStringWriter"/&gt;
-</pre>
+ 因为要用 JsonView，即在 spring-servlet.xml 文件里配置了：<br/>
+{{< highlight xml >}}
+<beans:bean name="jsonView">
+    <beans:property name="jsonWriter">
+         <beans:ref bean="jsonlibJsonWriter"/>
+    </beans:property>
+</beans:bean>
+
+<beans:bean name="jsonlibJsonWriter"
+     class="org.springframework.web.servlet.view.json.writer.jsonlib.JsonlibJsonStringWriter"/>
+
+{{</ highlight >}}
 <br/>
-这个2.5.6 的 spring jar 文件是由 spring-json 引进来的，这时必须用 &lt;excludes&gt; 把它所依赖的 spring 2.5.6 的排除掉。因为存在 spring 2.5.6 的时候，这个版本的 spring 相关类被悲剧的先加载了。把 spring-json 的 &lt;dependency&gt; 部分改成如下：<br/><br/>
-<pre class="lang:default decode:true ">&lt;dependency&gt;
-    &lt;groupId&gt;net.sf.spring-json&lt;/groupId&gt;
-    &lt;artifactId&gt;spring-json&lt;/artifactId&gt;
-    &lt;version&gt;1.3.1&lt;/version&gt;
-    &lt;exclusions&gt;
-        &lt;exclusion&gt;
-            &lt;groupId&gt;org.springframework&lt;/groupId&gt;
-            &lt;artifactId&gt;spring&lt;/artifactId&gt;
-        &lt;/exclusion&gt;
-    &lt;/exclusions&gt;
-&lt;/dependency&gt;</pre>
+这个2.5.6 的 spring jar 文件是由 spring-json 引进来的，这时必须用 &lt;excludes&gt; 把它所依赖的 spring 2.5.6 的排除掉。因为存在 spring 2.5.6 的时候，这个版本的 spring 相关类被悲剧的先加载了。把 spring-json 的 &lt;dependency&gt; 部分改成如下：<br/>
+{{< highlight xml >}}
+<dependency>
+    <groupId>net.sf.spring-json</groupId>
+    <artifactId>spring-json</artifactId>
+    <version>1.3.1</version>
+    <exclusions>
+        <exclusion>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring</artifactId>
+        </exclusion>
+    </exclusions>
+</dependency>
+{{</ highlight >}}
 <br/>
  完了之后再启动 Tomcat，这个问题可以解决了。<br/><br/>
 只是我又碰上问题，跟上面是无关的：<br/><br/>
