@@ -25,7 +25,7 @@ fn main() -> Result<()> {
 fn get_processed_ids() -> Result<Vec<u32>> {
     let mut processed_id : Vec<u32>= Vec::new();
     // let post_types = vec!["draft", "post", "quartz", "post1"];
-    let post_types = vec!["post", "post1", "post2", "post3", "post4"];
+    let post_types = vec!["quartz", "post", "post1", "post2", "post3", "post4", "stage"];
     for folder in post_types {
         let mut count = 0;
         for entry in fs::read_dir(format!("../content/{}", folder))? {
