@@ -3,7 +3,7 @@ title: 任务列表分派给多个线程的策略及方法(含完整代码和演
 url: /task-dispatch-strategy-demo/
 date: 2008-03-25T11:27:00-05:00
 featured: false
-draft: true
+draft: false
 type: post
 toc: false
 # menu: main
@@ -26,82 +26,98 @@ lastmod: 2021-09-02T20:51:38-05:00
 只研究有用的，工作中的需求：要把多个任务分派给多个线程去执行，这其中就会有一个任务列表指派到线程的策略思考：已知：1. 一个待执行的任务列表，2. 指定要启动的线程数；问题是：每个线程实际要执行哪些任务。<br/><br/>
 策略是：任务列表连续按线程数分段，先保证每线程平均能分配到的任务数，余下的任务从前至后依次附加到线程中--只是数量上，实际每个线程执行的任务都还是连续的。如果出现那种僧多(线程) 粥(任务) 少的情况，实际启动的线程数就等于任务数，一挑一。这里只实现了每个线程各扫自家门前雪，动作快的完成后眼见别的线程再累都是爱莫能助。<!--more--><br/><br/>
 实现及演示代码如下：由三个类实现，写在了一个 java 文件中：TaskDistributor 为任务分发器，Task 为待执行的任务，WorkThread 为自定的工作线程。代码中运用了命令模式，如若能配以监听器，用上观察者模式来控制 UI 显示就更绝妙不过了，就能实现像下载中的区块着色跳跃的动感了，在此定义下一步的着眼点了。<br/><br/>
-代码中有较为详细的注释，看这些注释和执行结果就很容易理解的。main() 是测试方法<br/><br/>
-<pre class="lang:default decode:true ">package com.unmi.common;<br/><br/>
+代码中有较为详细的注释，看这些注释和执行结果就很容易理解的。main() 是测试方法<br/>
+{{< highlight java >}}
+package com.unmi.common;
+
 import java.util.ArrayList;
-import java.util.List;<br/><br/>
+import java.util.List;
+
 /**
  * 指派任务列表给线程的分发器
  * @author Unmi
  * QQ: 1125535 Email: fantasia@sina.com
  * MSN: kypfos@msn.com 2008-03-25
  */
-public class TaskDistributor {<br/><br/>
+public class TaskDistributor {
+
     /**
      * 测试方法
      * @param args
      */
     public static void main(String[] args) {
         //初始化要执行的任务列表
-        List&lt;Task&gt; taskList = new ArrayList&lt;Task&gt;();
-        for (int i = 0; i &lt; 108; i++) {
+        List<Task> taskList = new ArrayList<Task>();
+        for (int i = 0; i < 108; i++) {
             taskList.add(new Task(i));
-        }<br/><br/>
+        }
+
         //设定要启动的工作线程数为 5 个
         int threadCount = 5;
-        List&lt;Task&gt;[] taskListPerThread = distributeTasks(taskList, threadCount);
+        List<Task>[] taskListPerThread = distributeTasks(taskList, threadCount);
         System.out.println("实际要启动的工作线程数："+taskListPerThread.length);
-        for (int i = 0; i &lt; taskListPerThread.length; i++) {
+        for (int i = 0; i < taskListPerThread.length; i++) {
             Thread workThread = new WorkThread(taskListPerThread[i],i);
             workThread.start();
         }
-    }<br/><br/>
+    }
+
     /**
      * 把 List 中的任务分配给每个线程，先平均分配，剩于的依次附加给前面的线程
-     * 返回的数组有多少个元素 (List&lt;Task&gt;) 就表明将启动多少个工作线程
+     * 返回的数组有多少个元素 (List<Task>) 就表明将启动多少个工作线程
      * @param taskList 待分派的任务列表
      * @param threadCount   线程数
      * @return 列表的数组，每个数组中存有该线程要执行的任务列表
      */
-    public static List&lt;Task&gt;[] distributeTasks(List&lt;Task&gt; taskList, int threadCount) {<br/><br/>
+    public static List<Task>[] distributeTasks(List<Task> taskList, int threadCount) {
+
         // 每个线程至少要执行的任务数,假如不为零则表示每个线程都会分配到任务
-        int minTaskCount = taskList.size() / threadCount;<br/><br/>
+        int minTaskCount = taskList.size() / threadCount;
+
         // 平均分配后还剩下的任务数，不为零则还有任务依个附加到前面的线程中
-        int remainTaskCount = taskList.size() % threadCount;<br/><br/>
+        int remainTaskCount = taskList.size() % threadCount;
+
         // 实际要启动的线程数,如果工作线程比任务还多
         // 自然只需要启动与任务相同个数的工作线程，一对一的执行
         // 毕竟不打算实现了线程池，所以用不着预先初始化好休眠的线程
-        int actualThreadCount = minTaskCount &gt; 0 ? threadCount : remainTaskCount;<br/><br/>
+        int actualThreadCount = minTaskCount > 0 ? threadCount : remainTaskCount;
+
         // 要启动的线程数组，以及每个线程要执行的任务列表
-        List&lt;Task&gt;[] taskListPerThread = new List[actualThreadCount];<br/><br/>
-        int taskIndex = 0;<br/><br/>
+        List<Task>[] taskListPerThread = new List[actualThreadCount];
+
+        int taskIndex = 0;
+
         //平均分配后多余任务，每附加给一个线程后的剩余数，重新声明与 remainTaskCount
         //相同的变量，不然会在执行中改变 remainTaskCount 原有值，产生麻烦
         int remainIndces = remainTaskCount;
-        for (int i = 0; i &lt; taskListPerThread.length; i++) {
-            taskListPerThread[i] = new ArrayList&lt;Task&gt;();<br/><br/>
+        for (int i = 0; i < taskListPerThread.length; i++) {
+            taskListPerThread[i] = new ArrayList<Task>();
+
             // 如果大于零，线程要分配到基本的任务
-            if (minTaskCount &gt; 0) {
-                for (int j = taskIndex; j &lt; minTaskCount + taskIndex; j++) {
+            if (minTaskCount > 0) {
+                for (int j = taskIndex; j < minTaskCount + taskIndex; j++) {
                     taskListPerThread[i].add(taskList.get(j));
                 }
                 taskIndex += minTaskCount;
             }
             // 假如还有剩下的，则补一个到这个线程中
-            if (remainIndces &gt; 0) {
+            if (remainIndces > 0) {
                 taskListPerThread[i].add(taskList.get(taskIndex++));
                 remainIndces--;
             }
-        }<br/><br/>
+        }
+
         // 打印任务的分配情况
-        for (int i = 0; i &lt; taskListPerThread.length; i++) {
+        for (int i = 0; i < taskListPerThread.length; i++) {
             System.out.println("线程 " + i + " 的任务数：" + taskListPerThread[i].size() + "  区间["
                     + taskListPerThread[i].get(0).getTaskId() + ","
                     + taskListPerThread[i].get(taskListPerThread[i].size() - 1).getTaskId() + "]");
-        }<br/><br/>
+        }
+
         return taskListPerThread;
     }
-}<br/><br/>
+}
+
 /**
  * 要执行的任务，可在执行时改变它的某个状态或调用它的某个操作
  * 例如任务有三个状态，就绪，运行，完成，默认为就绪态
@@ -111,14 +127,17 @@ class Task {
     public static final int READY = 0;
     public static final int RUNNING = 1;
     public static final int FINISHED = 2;
-    private int status;<br/><br/>
+    private int status;
+
     //声明一个任务的自有业务含义的变量，用于标识任务
-    private int taskId;<br/><br/>
+    private int taskId;
+
     //任务的初始化方法
     public Task(int taskId){
         this.status = READY;
         this.taskId = taskId;
-    }<br/><br/>
+    }
+
     /**
      * 执行任务
      */
@@ -135,30 +154,36 @@ class Task {
         }
         // 执行完成，改状态为完成
         setStatus(FINISHED);
-    }<br/><br/>
+    }
+
     public void setStatus(int status) {
         this.status = status;
-    }<br/><br/>
+    }
+
     public int getTaskId() {
         return taskId;
     }
-}<br/><br/>
+}
+
 /**
  * 自定义的工作线程，持有分派给它执行的任务列表
  */
-class WorkThread extends Thread {<br/><br/>
+class WorkThread extends Thread {
+
     //本线程待执行的任务列表，你也可以指为任务索引的起始值
-    private List&lt;Task&gt; taskList = null;
-    private int threadId;<br/><br/>
+    private List<Task> taskList = null;
+    private int threadId;
+
     /**
      * 构造工作线程，为其指派任务列表，及命名线程 ID
      * @param taskList 欲执行的任务列表
      * @param threadId 线程 ID
      */
-    public WorkThread(List&lt;Task&gt; taskList,int threadId) {
+    public WorkThread(List<Task> taskList,int threadId) {
         this.taskList = taskList;
         this.threadId = threadId;
-    }<br/><br/>
+    }
+
     /**
      * 执行被指派的所有任务
      */
@@ -167,7 +192,8 @@ class WorkThread extends Thread {<br/><br/>
             task.execute();
         }
     }
-}</pre>
+}
+{{</ highlight >}}
 <br/>
 执行结果如下，注意观察每个线程分配到的任务数量及区间。直到所有的线程完成了所分配到的任务后程序结束：<br/><br/>
 线程 0 的任务数：22  区间[0,21]<br />
