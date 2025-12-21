@@ -3,7 +3,7 @@ title: TLS 与 mTLS 的私钥交换过程
 url: /tls-and-mtls-private-key-exchange/
 date: 2024-11-25T16:16:36-06:00
 featured: false
-draft: true
+draft: false
 type: post
 toc: false
 # menu: main
@@ -14,7 +14,7 @@ tags:
   - SSL
   - TLS
 comment: true
-codeMaxLines: 50
+codeMaxLines: 70
 # additional
 wpPostId: 13892 
 wpStatus: publish
@@ -27,18 +27,17 @@ lastmod: 2024-11-27T12:48:26-06:00
 提到 SSL 和 TLS, 顺便了解一下它们的极简史<br/><br/>
 SSL 由 Netscape 于 90 年代开发，SSL1.0(94 年，未公开), SSL 2.0(95 年发布), SSL 3.0(96 年发布), 后来 IETF 出了个 TLS 1.0 作为 SSL 3.0 的继承者，再就是后面的 TLS 1.1(2006), 1.2(2008), 1.3(2018)。2015 年 TLS 正式的取代了 SSL，从此江湖不再有 SSL 了，而我们习惯说的 SSL 只是在向曾经的 Netscape 致敬，其实指代的就是 TLS。<br/><br/>
 HTTPS 并非一直使用非对称加密进行数据通信，而只是用 TLS 安全的交换密钥，而后的数据通信使用私钥进行对称加密。如果数据通信都用非对称的方式性能是不允许的，所以只用非对称的方式进行密钥交换。<!--more--><br/><br/>
-说到公钥(public key) 私钥(private key)，必须清楚两个关系：<br/><br/>
+说到公钥(public key) 私钥(private key)，必须清楚两个关系：<br/>
 <ol>
     <li>公钥加密的数据只能用私钥解密</li>
     <li>私钥加密码的数据也只能用私服钥解密</li>
 </ol>
 <br/>
 TLS 触及了三个概念：公钥，私钥，密钥。公私钥的产生可以用命令 <code>ssh-keygen -t rsa</code>， <code>openssl genrsa</code>, 或第三方的证书颁发机构(CA)。公钥之所谓之公钥，可以明文传输，被截取了问题也不大，因为用它加密的数据只有掌握了私钥的一方才能解密读出来<br/><br/>
-关于非对称加密可参考本人之前写过的一篇 <a href="https://yanbin.blog/python-implement-rsa-encryption/">Python 实现 RSA 非对称加解密</a><br/><br/>
+关于非对称加密可参考本人之前写过的一篇 <a href="/python-implement-rsa-encryption/">Python 实现 RSA 非对称加解密</a><br/><br/>
 TLS 单向与 mTLS 多向认证过程，从网络上 <a href="https://koca.szkingdom.com/forum/t/topic/213">基于证书的双向认证（mTLS）技术方案</a> 找了两张容易理解的过程图<br/><br/>
-<h3>TLS 单向认证过程</h3><br/><br/>
-&nbsp;<br/><br/>
-<a href="https://yanbin.blog/wp-content/uploads/2024/11/TLS.jpeg"><img class="aligncenter wp-image-13894 size-full" src="https://yanbin.blog/wp-content/uploads/2024/11/TLS.jpeg" alt="" width="694" height="674" /></a><br/><br/>
+<h3>TLS 单向认证过程</h3>
+{{< bundle-image TLS.jpeg 694 >}}
 要点<br/><br/>
 <ol>
     <li>只需要客户端单向信任服务端的证书，以获服务端公钥</li>
@@ -47,9 +46,9 @@ TLS 单向与 mTLS 多向认证过程，从网络上 <a href="https://koca.szkin
     <li>服务端用本地私钥解开密钥，用于将来的对称加密通信</li>
 </ol>
 <br/>
-<h3>mTLS 双向认证过程</h3><br/><br/>
+<h3>mTLS 双向认证过程</h3>
 &nbsp;<br/><br/>
-<a href="https://yanbin.blog/wp-content/uploads/2024/11/mTLS.png"><img class="aligncenter wp-image-13895 size-full" src="https://yanbin.blog/wp-content/uploads/2024/11/mTLS.png" alt="" width="678" height="696" /></a><br/><br/>
+{{< bundle-image mTLS.png 678 >}}
 要点<br/><br/>
 <ol>
     <li>服务端与客户端需互相信息证书，及交换各自的公钥</li>
@@ -58,10 +57,11 @@ TLS 单向与 mTLS 多向认证过程，从网络上 <a href="https://koca.szkin
     <li>服务端用本地私钥解开密钥，用于将来的对称加密通信</li>
 </ol>
 <br/>
-<h3>TLS 与 mTLS 的主要区别</h3><br/><br/>
+<h3>TLS 与 mTLS 的主要区别</h3>
 除了客户端要信息服务端的证书外，mTLS 客户端也有自己的证书和公钥需发送给服务端，让服务端信任。服务端确定要加密方式后用客户外公钥进行加密，更安全的方式发送给客户端。与 TLS 单向认证相比，不仅要求客户端的密钥用非对称的方式确定，而且加密方式也是用非对称的方式确定的，这进一步增加了破解的难度，因为对称加密方式在当前的 Linux, mac OS 下都有 60 种之多。<br/><br/>
 在 Linux/mac OS 下用命令 openssl ciphers -v 可列出所有支持的对称加密方式<br/><br/>
-<pre class="height-set:true height:300 lang:default decode:true">openssl ciphers -v
+{{< highlight text >}}
+openssl ciphers -v
 TLS_AES_256_GCM_SHA384         TLSv1.3 Kx=any      Au=any   Enc=AESGCM(256)            Mac=AEAD
 TLS_CHACHA20_POLY1305_SHA256   TLSv1.3 Kx=any      Au=any   Enc=CHACHA20/POLY1305(256) Mac=AEAD
 TLS_AES_128_GCM_SHA256         TLSv1.3 Kx=any      Au=any   Enc=AESGCM(128)            Mac=AEAD
@@ -121,7 +121,8 @@ RSA-PSK-AES128-CBC-SHA         SSLv3   Kx=RSAPSK   Au=RSA   Enc=AES(128)        
 DHE-PSK-AES128-CBC-SHA         SSLv3   Kx=DHEPSK   Au=PSK   Enc=AES(128)               Mac=SHA1
 AES128-SHA                     SSLv3   Kx=RSA      Au=RSA   Enc=AES(128)               Mac=SHA1
 PSK-AES128-CBC-SHA256          TLSv1   Kx=PSK      Au=PSK   Enc=AES(128)               Mac=SHA256
-PSK-AES128-CBC-SHA             SSLv3   Kx=PSK      Au=PSK   Enc=AES(128)               Mac=SHA1</pre>
+PSK-AES128-CBC-SHA             SSLv3   Kx=PSK      Au=PSK   Enc=AES(128)               Mac=SHA1
+{{</ highlight >}}
 <br/>
 接下将使用自签证书和可信任的证书颁发机构(CA)签发的证书来体验 HTTPS 单向 TLS 和双向(mTLS) 认证的实际就用场景。<br/><br/>
 链接：<br/><br/>
