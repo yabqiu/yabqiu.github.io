@@ -3,7 +3,7 @@ title: Scala + JUnit 怎么使用 @Rule
 url: /scala-junit-how-to-rule/
 date: 2014-09-06T20:42:14-05:00
 featured: false
-draft: true
+draft: false
 type: post
 toc: false
 # menu: main
@@ -29,19 +29,21 @@ JUnit 提供给我们有两个扩展点，<a href="http://junit.org/javadoc/4.11
 Rule 的要求是: Annotates fields that reference rules or methods that return a rule. A field must be public, not static, and a subtype of <a title="interface in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/TestRule.html"><code>TestRule</code></a> (preferred) or <a title="interface in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/MethodRule.html"><code>MethodRule</code></a>. A method must be public, not static, and must return a subtype of <a title="interface in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/TestRule.html"><code>TestRule</code></a> (preferred) or <a title="interface in org.junit.rules" href="http://junit.org/javadoc/4.11/org/junit/rules/MethodRule.html"><code>MethodRule</code></a>. 属性或方法必须是 public 非静态的，它们的类型或返回类型必须分别是 <a href="http://junit.org/javadoc/4.11/org/junit/rules/TestRule.html" target="_blank">TestRule</a> 和 <a href="http://junit.org/javadoc/4.11/org/junit/rules/MethodRule.html" target="_blank">MethedRule</a>。<br/>
 <br/>
 这里尝试以 Java 的方式使用另一个 Rule，<a href="http://junit.org/javadoc/4.11/org/junit/rules/TestName.html" target="_blank">TestName</a>, 可以得到当前测试方法的名称<!--more--><br/>
-<pre class="brush:scala">import org.junit.{Assert, Test, Rule}<br/>
-import org.junit.rules.TestName<br/>
-<br/>
-class RuleTest {<br/>
-<br/>
-    @Rule<br/>
-    val name = new TestName<br/>
-<br/>
-    @Test<br/>
-    def testTestName {<br/>
-        Assert.assertEquals("testTestName", name.getMethodName());<br/>
-    }<br/>
-}</pre>
+{{< highlight scala >}}
+import org.junit.{Assert, Test, Rule}
+import org.junit.rules.TestName
+
+class RuleTest {
+
+    @Rule
+    val name = new TestName
+
+    @Test
+    def testTestName {
+        Assert.assertEquals("testTestName", name.getMethodName());
+    }
+}
+{{</ highlight >}}
 
 运行上面的测试，得到错误<br/>
 <br/>
@@ -62,19 +64,23 @@ class RuleTest {<br/>
 Scala 为 <code>val name</code>  生成 <code>public TestName name()</code> 方法，为 <code>var name</code> 生成 <code>public TestName name()</code> 和 <code>public void name_$eq(TestName arg)</code> 方法。<br/>
 <br/>
 而 JUnit 需要一个 public 的 name 属性该怎么办呢，得曲线救援。Scala 的方法是 public 的，而且 Scala 是符合 <a href="http://unmi.cc/scala-parameterless-uniform-acces-principle/" target="_blank">统一访问原则</a> 的，所以可以让 @Rule 标在方法上，写成<br/>
-<pre class="brush:scala">    val name = new TestName<br/>
-    @Rule<br/>
-    def nameRef = new name;<br/>
-<br/>
-    @Test<br/>
-    def testTestName {<br/>
-        Assert.assertEquals("testTestName", name.getMethodName());<br/>
-        Assert.assertEquals("testTestName", nameRef.getMethodName());<br/>
-    }</pre>
+{{< highlight scala >}}
+    val name = new TestName
+    @Rule
+    def nameRef = new name;
+
+    @Test
+    def testTestName {
+        Assert.assertEquals("testTestName", name.getMethodName());
+        Assert.assertEquals("testTestName", nameRef.getMethodName());
+    }
+{{</ highlight >}}
 
 这时候 name 和 nameRef 都能得到当前测试方法名。上面必须要两行，一行定义 name，另一行 @Rule 指向前面声明的 name，我们却不能把这两行写成<br/>
-<pre class="brush:scala">@Rule<br/>
-def name = new TestName</pre>
+{{< highlight scala >}}
+@Rule
+def name = new TestName
+{{</ highlight >}}
 
 这样的话断言会失败<br/>
 <br/>
@@ -92,11 +98,8 @@ MethodRule: <a title="class in org.junit.rules" href="http://junit.org/javadoc/4
 <br/>
 参考：<br/>
 <ol>
-
 	<li><a href="http://www.scottlogic.com/blog/2013/07/18/betamax-in-scala.html" target="_blank">http://www.scottlogic.com/blog/2013/07/18/betamax-in-scala.html</a></li>
-
 	<li><a href="http://randomallsorts.blogspot.com/2012/11/junit-411-whats-new-rules.html" target="_blank">http://randomallsorts.blogspot.com/2012/11/junit-411-whats-new-rules.html</a></li>
-
 	<li><a href="http://blog.jiffle.net/post/41125006846/extending-junit-functionality-with-additional" target="_blank">http://blog.jiffle.net/post/41125006846/extending-junit-functionality-with-additional</a></li>
 
 </ol>
