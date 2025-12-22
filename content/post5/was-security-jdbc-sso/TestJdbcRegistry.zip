@@ -1,0 +1,594 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<title>WAS 安全性中定制用注册表，通过 JDBC 验证用户实现 SSO | 隔叶黄莺 Unmi Blog - 软件编程实践</title>
+<link rel="shortcut icon" href="http://unmi.cc/wp-content/themes/garland-revisited/favicon.ico" />
+<link rel="pingback" href="http://unmi.cc/xmlrpc.php" />
+<style type="text/css" media="screen">
+
+@import "http://unmi.cc/wp-content/themes/garland-revisited/style.php";
+@import "http://unmi.cc/wp-content/themes/garland-revisited/css/style-full.css";</style>
+
+<!-- All in One SEO Pack 2.2.7 by Michael Torbert of Semper Fi Web Design[255,319] -->
+<meta name="description"  content="通常 Websphere Application Server (WAS) 都是结合 LDAP 来对用户对行验证，实现单点登陆的。因为 LDAP 有着一个得天独厚的优势，它对查询进行了优化，因此 WAS 理所当然的提供了对 LDAP 十分完善的支持。从 WAS 控制台进" />
+
+<meta name="keywords"  content="jdbc,sso,was,mid-ware" />
+
+<link rel="canonical" href="http://unmi.cc/was-security-jdbc-sso/" />
+<!-- /all in one seo pack -->
+<link rel="alternate" type="application/rss+xml" title="隔叶黄莺 Unmi Blog &raquo; Feed" href="http://unmi.cc/feed/" />
+<link rel="alternate" type="application/rss+xml" title="隔叶黄莺 Unmi Blog &raquo; Comments Feed" href="http://unmi.cc/comments/feed/" />
+<link rel="alternate" type="application/rss+xml" title="隔叶黄莺 Unmi Blog &raquo; WAS 安全性中定制用注册表，通过 JDBC 验证用户实现 SSO Comments Feed" href="http://unmi.cc/was-security-jdbc-sso/feed/" />
+		<script type="text/javascript">
+			window._wpemojiSettings = {"baseUrl":"http:\/\/s.w.org\/images\/core\/emoji\/72x72\/","ext":".png","source":{"concatemoji":"http:\/\/unmi.cc\/wp-includes\/js\/wp-emoji-release.min.js?ver=4.2.2"}};
+			!function(a,b,c){function d(a){var c=b.createElement("canvas"),d=c.getContext&&c.getContext("2d");return d&&d.fillText?(d.textBaseline="top",d.font="600 32px Arial","flag"===a?(d.fillText(String.fromCharCode(55356,56812,55356,56807),0,0),c.toDataURL().length>3e3):(d.fillText(String.fromCharCode(55357,56835),0,0),0!==d.getImageData(16,16,1,1).data[0])):!1}function e(a){var c=b.createElement("script");c.src=a,c.type="text/javascript",b.getElementsByTagName("head")[0].appendChild(c)}var f,g;c.supports={simple:d("simple"),flag:d("flag")},c.DOMReady=!1,c.readyCallback=function(){c.DOMReady=!0},c.supports.simple&&c.supports.flag||(g=function(){c.readyCallback()},b.addEventListener?(b.addEventListener("DOMContentLoaded",g,!1),a.addEventListener("load",g,!1)):(a.attachEvent("onload",g),b.attachEvent("onreadystatechange",function(){"complete"===b.readyState&&c.readyCallback()})),f=c.source||{},f.concatemoji?e(f.concatemoji):f.wpemoji&&f.twemoji&&(e(f.twemoji),e(f.wpemoji)))}(window,document,window._wpemojiSettings);
+		</script>
+		<style type="text/css">
+img.wp-smiley,
+img.emoji {
+	display: inline !important;
+	border: none !important;
+	box-shadow: none !important;
+	height: 1em !important;
+	width: 1em !important;
+	margin: 0 .07em !important;
+	vertical-align: -0.1em !important;
+	background: none !important;
+	padding: 0 !important;
+}
+</style>
+<link rel='stylesheet' id='yarppWidgetCss-css'  href='http://unmi.cc/wp-content/plugins/yet-another-related-posts-plugin/style/widget.css?ver=4.2.2' type='text/css' media='all' />
+<link rel='stylesheet' id='wp-recentcomments-css'  href='http://unmi.cc/wp-content/plugins/wp-recentcomments/css/wp-recentcomments.css?ver=2.2.7' type='text/css' media='screen' />
+<link rel='stylesheet' id='wp-pagenavi-css'  href='http://unmi.cc/wp-content/plugins/wp-pagenavi/pagenavi-css.css?ver=2.70' type='text/css' media='all' />
+<link rel='stylesheet' id='avhec-widget-css'  href='http://unmi.cc/wp-content/plugins/extended-categories-widget/4.2/css/avh-ec.widget.css?ver=3.10.0-dev.1' type='text/css' media='all' />
+<script type="text/javascript">
+var duoshuoQuery = {"short_name":"unmi","sso":{"login":"http:\/\/unmi.cc\/wp-login.php?action=duoshuo_login","logout":"http:\/\/unmi.cc\/wp-login.php?action=logout&_wpnonce=e1f54dd324"},"theme":"default","stylePatch":"wordpress\/Garland-revisited"};
+duoshuoQuery.sso.login += '&redirect_to=' + encodeURIComponent(window.location.href);
+duoshuoQuery.sso.logout += '&redirect_to=' + encodeURIComponent(window.location.href);
+</script>
+<script type="text/javascript" src="http://static.duoshuo.com/embed.js" charset="UTF-8" async="async"></script>
+<script type='text/javascript' src='http://unmi.cc/wp-includes/js/jquery/jquery.js?ver=1.11.2'></script>
+<script type='text/javascript' src='http://unmi.cc/wp-includes/js/jquery/jquery-migrate.min.js?ver=1.2.1'></script>
+<link rel="EditURI" type="application/rsd+xml" title="RSD" href="http://unmi.cc/xmlrpc.php?rsd" />
+<link rel="wlwmanifest" type="application/wlwmanifest+xml" href="http://unmi.cc/wp-includes/wlwmanifest.xml" /> 
+<link rel='prev' title='Java 执行 SQL 脚本文件' href='http://unmi.cc/java-execute-sql-script-file/' />
+<link rel='next' title='关于 Java 程序访问 Ldap 的可选方式（策略）' href='http://unmi.cc/java-access-ldap-strategy/' />
+<meta name="generator" content="WordPress 4.2.2" />
+<link rel='shortlink' href='http://wp.me/p11aRw-7c' />
+
+<link rel="stylesheet" href="http://unmi.cc/wp-content/plugins/dd-formmailer/dd-formmailer.css" type="text/css" media="screen" />
+
+<script type="text/javascript" src="http://unmi.cc/wp-content/plugins/dd-formmailer/date_chooser.js"></script>
+	<script src="http://unmi.cc/wp-content/plugins/enhanced-categories/js/enhanced-categories.js" type="text/javascript" ></script>
+		<script type="text/javascript" src="http://unmi.cc/wp-content/plugins/search-permalink.php?out=js"> </script>
+ 
+	<script type="text/javascript">
+	 //<![CDATA[ 
+	function toggleLinkGrp(id) {
+	   var e = document.getElementById(id);
+	   if(e.style.display == 'block')
+			e.style.display = 'none';
+	   else
+			e.style.display = 'block';
+	}
+	// ]]>
+	</script> 
+	
+	<!-- Clean Archives Reloaded v3.2.0 | http://www.viper007bond.com/wordpress-plugins/clean-archives-reloaded/ -->
+	<style type="text/css">.car-collapse .car-yearmonth { cursor: s-resize; } </style>
+	<script type="text/javascript">
+		/* <![CDATA[ */
+			jQuery(document).ready(function() {
+				jQuery('.car-collapse').find('.car-monthlisting').hide();
+				jQuery('.car-collapse').find('.car-monthlisting:first').show();
+				jQuery('.car-collapse').find('.car-yearmonth').click(function() {
+					jQuery(this).next('ul').slideToggle('fast');
+				});
+				jQuery('.car-collapse').find('.car-toggler').click(function() {
+					if ( 'Expand All' == jQuery(this).text() ) {
+						jQuery(this).parent('.car-container').find('.car-monthlisting').show();
+						jQuery(this).text('Collapse All');
+					}
+					else {
+						jQuery(this).parent('.car-container').find('.car-monthlisting').hide();
+						jQuery(this).text('Expand All');
+					}
+					return false;
+				});
+			});
+		/* ]]> */
+	</script>
+
+<meta id="syntaxhighlighteranchor" name="syntaxhighlighter-version" content="3.1.3" />
+			<link rel="stylesheet" id="custom-css-css" type="text/css" href="http://unmi.cc/?custom-css=1&#038;csblog=1&#038;cscache=6&#038;csrev=97" />
+			</head>
+<body class="single single-post postid-446 single-format-standard sidebars">
+<div id="navigation"></div>
+<div id="wrapper">
+<div id="container" class="clear-block">
+<div id="header">
+<div id="logo-floater">
+<h1 style="display:inline">
+<a href="http://unmi.cc/">隔叶黄莺 Unmi Blog</a> <span style="font-style: italic; font-size: 60%;"></span>
+</h1>
+&nbsp;&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp<script type="text/javascript"><!--
+google_ad_client = "ca-pub-1353471013336561";
+/* Slim Header Banner */
+google_ad_slot = "6551213536";
+google_ad_width = 468;
+google_ad_height = 60;
+//-->
+</script>
+<script type="text/javascript"
+src="//pagead2.googlesyndication.com/pagead/show_ads.js">
+</script></div>
+<!-- <ul class="links primary-links"> -->
+<ul id="dropmenu">
+<li class="page_item page-item-10"><a href="http://unmi.cc/home/">首页</a></li>
+<li class="page_item page-item-6838"><a href="http://unmi.cc/favorite/">收藏</a></li>
+<li class="page_item page-item-2502"><a href="http://unmi.cc/guestbook/">留言</a></li>
+<li class="page_item page-item-6836"><a href="http://unmi.cc/contact/">联系</a></li>
+</ul>                
+</div> <!-- /header -->
+<div id="sidebar-left" class="sidebar">
+<ul class="menu">
+<li id="text-13" class="widget widget_text">			<div class="textwidget"><div style="margin-bottom:40px;color:#666666; padding-left:232px;width:600px;">
+站点又一次迁移到了 ConoHa 的 VPS 上了，不知国内用户访问速度如何......
+</div></div>
+		</li>
+<li id="ajax-calendar-4" class="widget ajax_calendar_widget"><h2 class="widgettitle">日历</h2>
+<table id="wp-calendar">
+	<caption>June 2015</caption>
+	<thead>
+	<tr>
+		<th scope="col" title="Monday">M</th>
+		<th scope="col" title="Tuesday">T</th>
+		<th scope="col" title="Wednesday">W</th>
+		<th scope="col" title="Thursday">T</th>
+		<th scope="col" title="Friday">F</th>
+		<th scope="col" title="Saturday">S</th>
+		<th scope="col" title="Sunday">S</th>
+	</tr>
+	</thead>
+
+	<tfoot>
+	<tr>
+		<td colspan="3" id="prev"><a onclick="microAjax(this.href + '?ajax=true',show_micro_ajax); return false" href="http://unmi.cc/2015/05/">&laquo; May</a></td>
+		<td class="pad">&nbsp;</td>
+		<td colspan="3" id="next" class="pad">&nbsp;</td>
+	</tr>
+	</tfoot>
+
+	<tbody>
+	<tr><td>1</td><td>2</td><td>3</td><td>4</td><td>5</td><td>6</td><td>7</td>
+	</tr>
+	<tr>
+		<td>8</td><td>9</td><td>10</td><td>11</td><td>12</td><td>13</td><td>14</td>
+	</tr>
+	<tr>
+		<td>15</td><td>16</td><td>17</td><td>18</td><td>19</td><td>20</td><td>21</td>
+	</tr>
+	<tr>
+		<td>22</td><td>23</td><td>24</td><td id="today"><a href="http://unmi.cc/2015/06/25/" title="Java 反射修改 final 属性值">25</a></td><td>26</td><td>27</td><td>28</td>
+	</tr>
+	<tr>
+		<td>29</td><td>30</td>
+		<td class="pad" colspan="5">&nbsp;</td>
+	</tr>
+	</tbody>
+	</table><script type="text/javascript">
+function show_micro_ajax(response){document.getElementById('wp-calendar').innerHTML=response;}
+function microAjax(url,cF){this.bF=function(caller,object){return function(){return caller.apply(object,new Array(object));}};
+this.sC=function(object){if(this.r.readyState==4){this.cF(this.r.responseText);}};
+this.gR=function(){if(window.ActiveXObject)
+return new ActiveXObject('Microsoft.XMLHTTP');else if(window.XMLHttpRequest)
+return new XMLHttpRequest();else return false;};
+if(arguments[2])this.pb=arguments[2];else this.pb="";this.cF=cF;this.url=url;this.r=this.gR();if(this.r){this.r.onreadystatechange=this.bF(this.sC,this);if(this.pb!=""){this.r.open("POST",url,true);this.r.setRequestHeader('Content-type','application/x-www-form-urlencoded');this.r.setRequestHeader('Connection','close');}else{this.r.open("GET",url,true);}
+this.r.send(this.pb);}}
+</script>
+</li>
+<li id="extended-categories-8" class="widget widget_extended-categories"><!-- AVH Extended Categories version 3.10.0-dev.1 | http://blog.avirtualhome.com/wordpress-plugins/ --><h2 class="widgettitle">日志分类</h2>
+<ul>	<li class="cat-item cat-item-417"><div class="avhec-widget-line"><a href="http://unmi.cc/category/mobile/" title="View all posts filed under Mobile">Mobile</a><div class="avhec-widget-count"> (53)</div></div>
+<ul class="children">
+	<li class="cat-item cat-item-418"><div class="avhec-widget-line"><a href="http://unmi.cc/category/mobile/android-mobile/" title="View all posts filed under Android">Android</a><div class="avhec-widget-count"> (7)</div></div>
+</li>
+	<li class="cat-item cat-item-433"><div class="avhec-widget-line"><a href="http://unmi.cc/category/mobile/ios/" title="View all posts filed under iOS">iOS</a><div class="avhec-widget-count"> (44)</div></div>
+</li>
+</ul>
+</li>
+	<li class="cat-item cat-item-697"><div class="avhec-widget-line"><a href="http://unmi.cc/category/others/" title="View all posts filed under Others">Others</a><div class="avhec-widget-count"> (5)</div></div>
+</li>
+	<li class="cat-item cat-item-158"><div class="avhec-widget-line"><a href="http://unmi.cc/category/perl/" title="View all posts filed under Perl">Perl</a><div class="avhec-widget-count"> (6)</div></div>
+</li>
+	<li class="cat-item cat-item-458"><div class="avhec-widget-line"><a href="http://unmi.cc/category/ruby/" title="View all posts filed under Ruby">Ruby</a><div class="avhec-widget-count"> (7)</div></div>
+</li>
+	<li class="cat-item cat-item-713"><div class="avhec-widget-line"><a href="http://unmi.cc/category/nodejs/" title="View all posts filed under NodeJS">NodeJS</a><div class="avhec-widget-count"> (7)</div></div>
+</li>
+	<li class="cat-item cat-item-32"><div class="avhec-widget-line"><a href="http://unmi.cc/category/php/" title="View all posts filed under PHP">PHP</a><div class="avhec-widget-count"> (58)</div></div>
+<ul class="children">
+	<li class="cat-item cat-item-109"><div class="avhec-widget-line"><a href="http://unmi.cc/category/php/joomla/" title="View all posts filed under Joomla">Joomla</a><div class="avhec-widget-count"> (10)</div></div>
+</li>
+	<li class="cat-item cat-item-4"><div class="avhec-widget-line"><a href="http://unmi.cc/category/php/wordpress/" title="View all posts filed under WordPress">WordPress</a><div class="avhec-widget-count"> (39)</div></div>
+</li>
+</ul>
+</li>
+	<li class="cat-item cat-item-26"><div class="avhec-widget-line"><a href="http://unmi.cc/category/windows/" title="View all posts filed under Windows">Windows</a><div class="avhec-widget-count"> (14)</div></div>
+</li>
+	<li class="cat-item cat-item-40"><div class="avhec-widget-line"><a href="http://unmi.cc/category/xmldom/" title="View all posts filed under XML/DOM">XML/DOM</a><div class="avhec-widget-count"> (14)</div></div>
+</li>
+	<li class="cat-item cat-item-110"><div class="avhec-widget-line"><a href="http://unmi.cc/category/groovy/" title="View all posts filed under Groovy">Groovy</a><div class="avhec-widget-count"> (17)</div></div>
+</li>
+	<li class="cat-item cat-item-281"><div class="avhec-widget-line"><a href="http://unmi.cc/category/cvb/" title="View all posts filed under C++/VB">C++/VB</a><div class="avhec-widget-count"> (21)</div></div>
+</li>
+	<li class="cat-item cat-item-74 current-cat"><div class="avhec-widget-line"><a href="http://unmi.cc/category/mid-ware/" title="View all posts filed under Mid-Ware">Mid-Ware</a><div class="avhec-widget-count"> (23)</div></div>
+</li>
+	<li class="cat-item cat-item-9"><div class="avhec-widget-line"><a href="http://unmi.cc/category/dotnet/" title="View all posts filed under .Net">.Net</a><div class="avhec-widget-count"> (25)</div></div>
+</li>
+	<li class="cat-item cat-item-106"><div class="avhec-widget-line"><a href="http://unmi.cc/category/database/" title="View all posts filed under Database">Database</a><div class="avhec-widget-count"> (31)</div></div>
+</li>
+	<li class="cat-item cat-item-20"><div class="avhec-widget-line"><a href="http://unmi.cc/category/linuxunix/" title="View all posts filed under Linux/Unix">Linux/Unix</a><div class="avhec-widget-count"> (40)</div></div>
+</li>
+	<li class="cat-item cat-item-3"><div class="avhec-widget-line"><a href="http://unmi.cc/category/quartz/" title="View all posts filed under Quartz">Quartz</a><div class="avhec-widget-count"> (65)</div></div>
+</li>
+	<li class="cat-item cat-item-83"><div class="avhec-widget-line"><a href="http://unmi.cc/category/web-js/" title="View all posts filed under Web/JS">Web/JS</a><div class="avhec-widget-count"> (68)</div></div>
+</li>
+	<li class="cat-item cat-item-67"><div class="avhec-widget-line"><a href="http://unmi.cc/category/javajee/" title="View all posts filed under Java/JEE">Java/JEE</a><div class="avhec-widget-count"> (320)</div></div>
+<ul class="children">
+	<li class="cat-item cat-item-126"><div class="avhec-widget-line"><a href="http://unmi.cc/category/javajee/ibatis/" title="View all posts filed under iBatis">iBatis</a><div class="avhec-widget-count"> (4)</div></div>
+</li>
+	<li class="cat-item cat-item-198"><div class="avhec-widget-line"><a href="http://unmi.cc/category/javajee/hibernate/" title="View all posts filed under Hibernate">Hibernate</a><div class="avhec-widget-count"> (11)</div></div>
+</li>
+	<li class="cat-item cat-item-171"><div class="avhec-widget-line"><a href="http://unmi.cc/category/javajee/jvm/" title="View all posts filed under JVM">JVM</a><div class="avhec-widget-count"> (15)</div></div>
+</li>
+	<li class="cat-item cat-item-197"><div class="avhec-widget-line"><a href="http://unmi.cc/category/javajee/spring/" title="View all posts filed under Spring">Spring</a><div class="avhec-widget-count"> (20)</div></div>
+</li>
+	<li class="cat-item cat-item-152"><div class="avhec-widget-line"><a href="http://unmi.cc/category/javajee/struts/" title="View all posts filed under Struts">Struts</a><div class="avhec-widget-count"> (36)</div></div>
+</li>
+	<li class="cat-item cat-item-554"><div class="avhec-widget-line"><a href="http://unmi.cc/category/javajee/playframework/" title="View all posts filed under PlayFramework">PlayFramework</a><div class="avhec-widget-count"> (37)</div></div>
+</li>
+	<li class="cat-item cat-item-111"><div class="avhec-widget-line"><a href="http://unmi.cc/category/javajee/scala/" title="View all posts filed under Scala">Scala</a><div class="avhec-widget-count"> (41)</div></div>
+</li>
+</ul>
+</li>
+</ul></li>
+<li id="text-12" class="widget widget_text"><h2 class="widgettitle">友情链接</h2>
+			<div class="textwidget">
+		<!-- start[WP Render Blogroll Links 2.1.7] -->
+<div class="linkcat"><h2 class="linkcattitle"> </h2>
+			<ul class="xoxo blogroll" id="catid">
+				<li class="brlink"><a href="http://ericxiong.javaeye.com" rel="external" target="_blank">Eric&#039;s Blog</a></li>
+				<li class="brlink"><a href="http://www.webspherechina.net/" rel="external" target="_blank">WebSphere开发与应用社区</a></li>
+				<li class="brlink"><a href="http://www.cnblogs.com/simonshi2012/" rel="external" target="_blank">放飞梦想，专注于Mobile开发</a></li>
+				<li class="brlink"><a href="http://www.monring.com" rel="external" target="_blank">Arain前端学习日志</a></li>
+				<li class="brlink"><a href="http://www.chunfengxiyu.com" rel="external" target="_blank">春风细雨</a></li>
+
+			</ul>
+		</div>
+
+
+		<!-- end[WP Render Blogroll Links 2.1.7] --></div>
+		</li>
+<li id="recentcomments" class="widget widget_recentcomments"><h2 class="widgettitle">最近评论</h2>
+<ul><li class="rc-navi rc-clearfix"><span class="rc-loading">Loading...</span></li><li id="rc-comment-temp" class="rc-item rc-comment rc-clearfix"><div class="rc-info"></div><div class="rc-timestamp"></div><div class="rc-excerpt"></div></li><li id="rc-ping-temp" class="rc-item rc-ping rc-clearfix"><span class="rc-label"></span></li></ul></li>
+<li id="views-3" class="widget widget_views"><h2 class="widgettitle">阅读排行</h2>
+<ul>
+<li><a href="http://unmi.cc/vmware9-install-mac-os-x-mountain-lion/"  title="VMware 9 安装 Mac OS X 10.8 Mountain Lion 图文全程">VMware 9 安装 Mac OS X 10.8 Mountain Lion 图文全程</a>(53,451)</li><li><a href="http://unmi.cc/ios-coreplot-chart-started/"  title="iOS 使用 Core Plot 绘制统计图表入门">iOS 使用 Core Plot 绘制统计图表入门</a>(15,092)</li><li><a href="http://unmi.cc/ios-bounds-frame/"  title="iOS开发 frame 与 bounds 的区别与关系">iOS开发 frame 与 bounds 的区别与关系</a>(13,253)</li><li><a href="http://unmi.cc/objective-c-urlencode/"  title="Objective-C 对 URL 进行 URLEncode 编码">Objective-C 对 URL 进行 URLEncode 编码</a>(11,719)</li><li><a href="http://unmi.cc/jackson-java-object-json-string/"  title="使用 Jackson 把 Java 对象转换成 JSON 字串">使用 Jackson 把 Java 对象转换成 JSON 字串</a>(11,244)</li></ul>
+</li>
+<li id="simpletags-4" class="widget widget-simpletags"><h2 class="widgettitle">标签云</h2>
+
+<!-- Generated by Simple Tags 2.4 - http://wordpress.org/extend/plugins/simple-tags -->
+	<div class="st-tag-cloud">
+	<a href="http://unmi.cc/tag/spring/" id="tag-link-197" class="st-tags t2" title="23 topics" rel="tag" style="font-size:9.56pt; color:#b5b5b5;">Spring</a>
+<a href="http://unmi.cc/tag/mac/" id="tag-link-436" class="st-tags t1" title="9 topics" rel="tag" style="font-size:8pt; color:#cccccc;">mac</a>
+<a href="http://unmi.cc/tag/plugin/" id="tag-link-23" class="st-tags t1" title="12 topics" rel="tag" style="font-size:8pt; color:#cccccc;">plugin</a>
+<a href="http://unmi.cc/tag/struts2/" id="tag-link-153" class="st-tags t4" title="36 topics" rel="tag" style="font-size:12.67pt; color:#888888;">Struts2</a>
+<a href="http://unmi.cc/tag/oracle/" id="tag-link-173" class="st-tags t2" title="22 topics" rel="tag" style="font-size:9.56pt; color:#b5b5b5;">Oracle</a>
+<a href="http://unmi.cc/tag/jvm/" id="tag-link-171" class="st-tags t1" title="13 topics" rel="tag" style="font-size:8pt; color:#cccccc;">JVM</a>
+<a href="http://unmi.cc/tag/quartz/" id="tag-link-3" class="st-tags t7" title="62 topics" rel="tag" style="font-size:17.33pt; color:#434343;">Quartz</a>
+<a href="http://unmi.cc/tag/playframework/" id="tag-link-554" class="st-tags t2" title="23 topics" rel="tag" style="font-size:9.56pt; color:#b5b5b5;">PlayFramework</a>
+<a href="http://unmi.cc/tag/scala/" id="tag-link-111" class="st-tags t6" title="54 topics" rel="tag" style="font-size:15.78pt; color:#5a5a5a;">Scala</a>
+<a href="http://unmi.cc/tag/logback/" id="tag-link-89" class="st-tags t1" title="7 topics" rel="tag" style="font-size:8pt; color:#cccccc;">Logback</a>
+<a href="http://unmi.cc/tag/vi/" id="tag-link-147" class="st-tags t1" title="9 topics" rel="tag" style="font-size:8pt; color:#cccccc;">vi</a>
+<a href="http://unmi.cc/tag/ios-2/" id="tag-link-434" class="st-tags t3" title="27 topics" rel="tag" style="font-size:11.11pt; color:#9e9e9e;">ios</a>
+<a href="http://unmi.cc/tag/database-2/" id="tag-link-107" class="st-tags t2" title="16 topics" rel="tag" style="font-size:9.56pt; color:#b5b5b5;">database</a>
+<a href="http://unmi.cc/tag/vc/" id="tag-link-265" class="st-tags t1" title="10 topics" rel="tag" style="font-size:8pt; color:#cccccc;">VC</a>
+<a href="http://unmi.cc/tag/linux/" id="tag-link-22" class="st-tags t3" title="28 topics" rel="tag" style="font-size:11.11pt; color:#9e9e9e;">Linux</a>
+<a href="http://unmi.cc/tag/css/" id="tag-link-19" class="st-tags t1" title="11 topics" rel="tag" style="font-size:8pt; color:#cccccc;">css</a>
+<a href="http://unmi.cc/tag/wordpress-2/" id="tag-link-5" class="st-tags t4" title="39 topics" rel="tag" style="font-size:12.67pt; color:#888888;">wordpress</a>
+<a href="http://unmi.cc/tag/jquery/" id="tag-link-46" class="st-tags t1" title="11 topics" rel="tag" style="font-size:8pt; color:#cccccc;">jQuery</a>
+<a href="http://unmi.cc/tag/junit/" id="tag-link-310" class="st-tags t1" title="8 topics" rel="tag" style="font-size:8pt; color:#cccccc;">JUnit</a>
+<a href="http://unmi.cc/tag/ant/" id="tag-link-213" class="st-tags t1" title="8 topics" rel="tag" style="font-size:8pt; color:#cccccc;">ant</a>
+<a href="http://unmi.cc/tag/xml/" id="tag-link-130" class="st-tags t1" title="14 topics" rel="tag" style="font-size:8pt; color:#cccccc;">xml</a>
+<a href="http://unmi.cc/tag/asp-net/" id="tag-link-37" class="st-tags t1" title="9 topics" rel="tag" style="font-size:8pt; color:#cccccc;">Asp.Net</a>
+<a href="http://unmi.cc/tag/sql/" id="tag-link-174" class="st-tags t1" title="9 topics" rel="tag" style="font-size:8pt; color:#cccccc;">Sql</a>
+<a href="http://unmi.cc/tag/hibernate/" id="tag-link-198" class="st-tags t1" title="13 topics" rel="tag" style="font-size:8pt; color:#cccccc;">Hibernate</a>
+<a href="http://unmi.cc/tag/web/" id="tag-link-63" class="st-tags t2" title="16 topics" rel="tag" style="font-size:9.56pt; color:#b5b5b5;">web</a>
+<a href="http://unmi.cc/tag/javascript/" id="tag-link-62" class="st-tags t4" title="35 topics" rel="tag" style="font-size:12.67pt; color:#888888;">javascript</a>
+<a href="http://unmi.cc/tag/english/" id="tag-link-66" class="st-tags t1" title="10 topics" rel="tag" style="font-size:8pt; color:#cccccc;">English</a>
+<a href="http://unmi.cc/tag/php-2/" id="tag-link-33" class="st-tags t2" title="16 topics" rel="tag" style="font-size:9.56pt; color:#b5b5b5;">php</a>
+<a href="http://unmi.cc/tag/xslt/" id="tag-link-41" class="st-tags t1" title="9 topics" rel="tag" style="font-size:8pt; color:#cccccc;">xslt</a>
+<a href="http://unmi.cc/tag/java/" id="tag-link-68" class="st-tags t9" title="84 topics" rel="tag" style="font-size:20.44pt; color:#161616;">Java</a>
+<a href="http://unmi.cc/tag/%e7%bf%bb%e8%af%91/" id="tag-link-16" class="st-tags t10" title="86 topics" rel="tag" style="font-size:22pt; color:#000000;">翻译</a>
+<a href="http://unmi.cc/tag/lambda/" id="tag-link-672" class="st-tags t1" title="8 topics" rel="tag" style="font-size:8pt; color:#cccccc;">lambda</a>
+<a href="http://unmi.cc/tag/struts/" id="tag-link-152" class="st-tags t2" title="16 topics" rel="tag" style="font-size:9.56pt; color:#b5b5b5;">Struts</a>
+<a href="http://unmi.cc/tag/joomla/" id="tag-link-109" class="st-tags t1" title="10 topics" rel="tag" style="font-size:8pt; color:#cccccc;">Joomla</a>
+<a href="http://unmi.cc/tag/html/" id="tag-link-84" class="st-tags t1" title="7 topics" rel="tag" style="font-size:8pt; color:#cccccc;">html</a>
+<a href="http://unmi.cc/tag/groovy/" id="tag-link-110" class="st-tags t2" title="19 topics" rel="tag" style="font-size:9.56pt; color:#b5b5b5;">Groovy</a>
+<a href="http://unmi.cc/tag/video/" id="tag-link-707" class="st-tags t1" title="11 topics" rel="tag" style="font-size:8pt; color:#cccccc;">Video</a>
+<a href="http://unmi.cc/tag/mvc/" id="tag-link-65" class="st-tags t1" title="7 topics" rel="tag" style="font-size:8pt; color:#cccccc;">mvc</a>
+<a href="http://unmi.cc/tag/jdk8/" id="tag-link-670" class="st-tags t1" title="10 topics" rel="tag" style="font-size:8pt; color:#cccccc;">jdk8</a>
+<a href="http://unmi.cc/tag/c/" id="tag-link-13" class="st-tags t1" title="10 topics" rel="tag" style="font-size:8pt; color:#cccccc;">C#</a>
+<a href="http://unmi.cc/tag/ubuntu/" id="tag-link-164" class="st-tags t1" title="9 topics" rel="tag" style="font-size:8pt; color:#cccccc;">Ubuntu</a>
+<a href="http://unmi.cc/tag/tomcat/" id="tag-link-187" class="st-tags t1" title="11 topics" rel="tag" style="font-size:8pt; color:#cccccc;">Tomcat</a>
+<a href="http://unmi.cc/tag/objective-c/" id="tag-link-437" class="st-tags t2" title="23 topics" rel="tag" style="font-size:9.56pt; color:#b5b5b5;">objective-c</a>
+<a href="http://unmi.cc/tag/unit-test/" id="tag-link-221" class="st-tags t1" title="8 topics" rel="tag" style="font-size:8pt; color:#cccccc;">Unit Test</a>
+<a href="http://unmi.cc/tag/log/" id="tag-link-168" class="st-tags t1" title="9 topics" rel="tag" style="font-size:8pt; color:#cccccc;">Log</a></div>
+
+</li>
+ </ul>
+</div>
+<div id="center"><div id="squeeze"><div class="right-corner"><div class="left-corner">
+<!-- begin content -->
+<div class="node"><div class="post-446 post type-post status-publish format-standard hentry category-mid-ware tag-jdbc tag-sso tag-was">
+<h2>WAS 安全性中定制用注册表，通过 JDBC 验证用户实现 SSO</h2>
+<span class="submitted">2008-01-27 &#8212; Yanbin </span>
+<div class="content">
+<!-- Easy AdSense<br/>(Modified by Unmi) V3.01 -->
+<!-- Post[count: 1] -->
+<div class="ezAdsense adsense adsense-leadin" style="float:left;margin:12px;"><script type="text/javascript"><!--
+google_ad_client = "ca-pub-1353471013336561";
+/* Left Rectangle */
+google_ad_slot = "7543595535";
+google_ad_width = 250;
+google_ad_height = 250;
+//-->
+</script>
+<script type="text/javascript"
+src="//pagead2.googlesyndication.com/pagead/show_ads.js">
+</script></div>
+<!-- Easy AdSense<br/>(Modified by Unmi) V3.01 -->
+
+<p>通常 Websphere Application Server (WAS) 都是结合 LDAP 来对用户对行验证，实现单点登陆的。因为 LDAP 有着一个得天独厚的优势，它对查询进行了优化，因此 WAS 理所当然的提供了对 LDAP 十分完善的支持。从 WAS 控制台进 <strong>安全性</strong>－＞<strong>用户注册表</strong>－＞<strong>LDAP</strong>，在类型里可以看到支持 IBM_Directory_Server、SecureWay、Sun ONE、Domino、Active_Directory、eDirectory 还可定制 LDAP 连接。</p>
+<p>好，就此打住，我在这里要介绍的是如何配置 WAS 控制台和应用通过 JDBC 来验证用户。这一想法产生的背景是：公司原所有系统是通过 Portal 做的集成，配置 LDAP 便能实现 SSO，但有一个新的项目暂不能通过 LDAP 来验证，但也要能实现 SSO，于是就意思到要用 JDBC 来进行用户验证。你也许已注意到在 <strong>安全性</strong>－＞<strong>用户注册表</strong> 下除了 本地 <strong>OS</strong> 和 <strong>LDAP</strong> 外，还有一个 <strong>定制</strong>。我们就是要在这个 "<strong>定制</strong>" 上做文章的。下面详细具体步骤。<span id="more-446"></span></p>
+<p>刚装好的 WAS 是没有启动安全性的，所以可以在 WAS 启动后，输入任意用户名进入到控制台。在 WAS 控制台中，我们进到 <strong>安全性</strong>－＞<strong>用户注册表</strong>－＞<strong>定制</strong> 页面，定制注册表类名 文本框中是 <span style="color: #800080;">com.ibm.websphere.security.FileRegistrySample</span>，以及说明中提到这个类要实现 <span style="color: #800080;">com.ibm.websphere.security.UserRegistry</span> 接口。在 eclipse 中用 Jar Search 目录指向到 WAS_HOME/lib 目录查找到 FileRegistrySample 类在 wssec.jar 包中，用工具反编译出这个类作为参考。同样找到接口类在 sas.jar 包中，可以看到这个接口类中有多少个方法要实现，在我们编译用户定制注册表类是要引入 WAS_HOME/sas.jar 包。</p>
+<p><strong>1. 编写 JdbcRegistry.java 类</strong> (假定我们用 Oracle 数据库并用 Oracle 驱动包提供的连接池)</p>
+<p>因为代码行太多，不在此列出，见附件 <a href="/Files/Unmi/was_security.rar">http://www.blogjava.net/Files/Unmi/was_security.rar</a>&nbsp;中的 JdbcRegistry.java 源文件。&nbsp;</p>
+<p>注意类 JdbcRegistry 中注释，每个方法中都加了一个 System.out.println() 语句，方便观察哪些方法会被何时执行。本篇的测试只看到前几个方法能得到执行。关于使用 Oracle 自带连接池实现可以参考之前的一篇日志：<a href="http://www.blogjava.net/Unmi/archive/2008/01/16/175683.html" target="_blank">为何不直接使用 Oracle 提供的连接池实现</a>。编译时需引入 WAS_HOME/lib/sas.jar 和 ORACLE_HOME/jdbc/lib/classes12.jar(或别的 Oracle 驱动包)。</p>
+<p><strong>2. 拷贝类 JdbcRegistry.class 文件</strong></p>
+<p>JdbcRegistry.java 编译后会在 com\unmi\websphere\security 目录下产生 JdbcRegistry.class 文件（命令行用 javac 编译须带上 -d 才能生成目录结构的）。把这个 com 目录整个拷贝到 WAS_HOME/classes 目录下，当然，你也可以把这个 com 目录打到一个包，如 JdbcSec.jar 中，然后把这个包放到 WAS_HOME/lib 目录下，不过要明白 WAS_HOME/classes 下的类文件要优先于 WAS_HOME/lib 下 jar 包中的类被加载。</p>
+<p><strong>3. WAS 控制台设置</strong></p>
+<p>① 为 JdbcRegistry 定制属性，<strong>安全性</strong>－＞<strong>用户注册表</strong>－＞<strong>定制</strong> 进到定制页面，点 <strong>定制属性</strong> 进入到属性定制页面。参考下图及你的实际输入正确的属性值。</p>
+<div align="center"><img src="http://www.blogjava.net/images/blogjava_net/Unmi/WindowsLiveWriter/WASJDBCSSO_95EF/WasJdbcRegistryProps_2.jpg" alt="" /></div>
+<p>定制完属性后，保存，控制台又会回到欢迎页面</p>
+<p>② 配置用户注册表类，在 <strong>安全性</strong>－＞<strong>用户注册表</strong>－＞<strong>定制</strong> 页面,如下图</p>
+<div align="center"><img src="http://www.blogjava.net/images/blogjava_net/Unmi/WindowsLiveWriter/WASJDBCSSO_95EF/WasJdbcRegistry_2.jpg" alt="" /></div>
+<p><strong>服务器用户标识 </strong>和 <strong>服务器用户密码 </strong>中输入数据库中存在的用户名和密码；<strong>定制注册表类名 </strong>中输入刚刚建立的类的全限名 <span style="color: #800080;">com.unmi.websphere.security.JdbcRegistry</span>；<strong>忽略大小写</strong> 选项随意，因为代码中未作相应处理。</p>
+<p>完成后点击 <strong>应用</strong>，会提示保存，请保存。如果点击的是 <strong>确定</strong> 按扭，则会定向到 <strong>全局安全性</strong> 页面，我们下面会讲到 <strong>全局安全性</strong> 设置。这里建议点 <strong>应用</strong> 按钮，感觉 WAS 的向导顺序有点乱。</p>
+<p>如果前面输入的用户名和密码不匹配将不能完成保存。还有这里输入的用户和也可启用安全性后登陆 WAS 控制台的用户。</p>
+<p>③ 配置 LTPA 及 SSO (这一步非必要的，别以为这里有 SSO 就是必须的)</p>
+<p>进到 <strong>安全性</strong>－＞<strong>认证机制</strong>－＞<strong>LTPA</strong> 页面，这一步就不贴图了，设置任意的密码。再在该页的下方点 <strong>单次注册（SSO）</strong>，然后只勾选上<strong> 已启用</strong>，<strong>确定</strong>、<strong>保存</strong> 就 OK 啦。</p>
+<p>LTPA 是轻量级第三方认证(Lightweight Thrid Party Authertication)。启用了 LTPA 后会在请求中生成 LTPA Token (令牌).</p>
+<!-- Easy AdSense<br/>(Modified by Unmi) V3.01 -->
+<!-- Post[count: 2] -->
+<div class="ezAdsense adsense adsense-midtext" style="float:left;margin:12px;"><span class="inner_copyright">本文原始链接 <a href='http://unmi.cc/was-security-jdbc-sso/'>http://unmi.cc/was-security-jdbc-sso/</a>, 来自 <a href='http://unmi.cc/'>隔叶黄莺 Unmi Blog</a></span></div>
+<!-- Easy AdSense<br/>(Modified by Unmi) V3.01 -->
+
+<p>④ 最后要启用 全局安全限，进 <strong>安全性</strong>－＞<strong>全局安全限</strong> 页面，照图中设置：</p>
+<div align="center"><img src="http://www.blogjava.net/images/blogjava_net/Unmi/WindowsLiveWriter/WASJDBCSSO_95EF/GlobalSecurity_2.jpg" alt="" /></div>
+<p>关键选项：</p>
+<p><strong>已启用</strong>　勾上<br />
+<strong>执行 Java 2 安全性</strong> 不选<br />
+<strong>活动协议</strong> CSI 和 SAS<br />
+<strong>活动认证机制</strong> 如果配置了 LTPA 则可选 LTPA，也可选 SWAM<br />
+<strong>活动用户注册表</strong> 选 定制</p>
+<p><strong>确定</strong>、<strong>保存</strong>后，控制台的设置就完成了。</p>
+<p><strong>4. 应用安全性，实现 Jdbc 用户验证和 SSO</strong></p>
+<p>① 进入控制台</p>
+<p>前面的步骤完成后，可以 stopServer.bat server1 停掉 WAS 了，然后可以用 startServer.bat server1 启动 WAS，也可以带上用户名和密码参数来启动 WAS，完整命令是：startServer.bat server1 -username unmi -password 123456。(用在控制台中为定制 JdbcRegistry 配置的用户名)。</p>
+<p>但是切记，配置好了安全性的 WAS 在停止服务时，一定要加上用户名和参数，如 stopServer.bat server1 -username unmi -password 123456，否则无法结束服务。</p>
+<p>再次打开控制台：<a href="http://localhost:9090/admin">http://localhost:9090/admin</a>，这时你会发现会弹出一个安全警告，接受后，请求自动定向到 9043 (HTTP协议端口上，这个端口依赖你的配置，默认为 9043)，然后要求输入用户名和密码，你只有输入为 JdbcRegistry 指定的用户密及相应密码方能进入控制台。届此，我们已经成功了半步。</p>
+<p>② 部署测试应用</p>
+<p>下载 <a title="WasJdbcRegistry.zip" href="/Files/Unmi/TestJdbcRegistry.zip">TestJdbcRegistry.zip</a>，改名为 TestJdbcRegistry1.war，然后部署到 WAS 的 server1 服务器上，取上下文根为 <strong>test1,</strong> 部署过程只有第 4 步与通常不同。如下图，需要勾选上 <strong>所有已认证的用户</strong>。其他都一样的。</p>
+<div align="center"><img src="http://www.blogjava.net/images/blogjava_net/Unmi/WindowsLiveWriter/WASJDBCSSO_95EF/DeployWasJdbcRegistry_2.jpg" alt="" /></div>
+<p>然后启动 WasJdbcRegistry 应用.</p>
+<p>③ 感受 SSO，单点登陆</p>
+<p>未完，待续。。。。。。</p>
+<p>参考资料：1. <a href="http://publib.boulder.ibm.com/infocenter/wasinfo/v5r1//index.jsp?topic=/com.ibm.websphere.base.doc/info/aes/ae/usec_tdaman.html">Configuring custom user registries</a><br />
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 2. <a href="http://www.blogjava.net/Unmi/archive/2008/01/16/175683.html">为何不直接使用 Oracle 提供的连接池实现</a><br />
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 3. <a href="http://www.blogjava.net/Unmi/archive/2008/01/03/172031.html">Tomcat 和 OpenLDAP, 从配置到应用</a></p>
+<p>控制台登录验证用户时执行的方法<br />
+checkPassword<br />
+getUniqueUserId<br />
+getUniqueGroupIds</p>
+<p><a href="http://swingchen.bokee.com/3194578.html">http://swingchen.bokee.com/3194578.html</a><br/></p>
+<div style="margin-top:20px;font-style:italic;color:red">
+<p>本文链接 <a href="http://unmi.cc/was-security-jdbc-sso/">http://unmi.cc/was-security-jdbc-sso/</a>, 来自 <a href="http://unmi.cc/">隔叶黄莺 Unmi Blog</a></p>
+<p>[版权声明] <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/2.5/deed.zh"><img alt="Creative Commons License" style="border-width:0" src="http://i.creativecommons.org/l/by-nc-sa/2.5/80x15.png" /></a> 本文采用 <a rel="license" href="http://creativecommons.org/licenses/by-nc-sa/2.5/deed.zh">署名-非商业性使用-相同方式共享 2.5 通用 (CC BY-NC-SA 2.5)</a> 进行许可。</div>
+<!-- Easy AdSense<br/>(Modified by Unmi) V3.01 -->
+<!-- Post[count: 3] -->
+<div class="ezAdsense adsense adsense-leadout" style="text-align:center;margin:12px;"><style>
+.footer { width: 260px; height: 50px; }
+@media(min-width: 500px) { .footer { width: 468px; height: 60px; } }
+@media(min-width: 800px) { .footer { width: 728px; height: 90px; } }
+</style>
+<script async src="//pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"></script>
+<!-- footer -->
+<ins class="adsbygoogle footer"
+     style="display:inline-block"
+     data-ad-client="ca-pub-1353471013336561"
+     data-ad-slot="1757853138"></ins>
+<script>
+(adsbygoogle = window.adsbygoogle || []).push({});
+</script></div>
+<!-- Easy AdSense<br/>(Modified by Unmi) V3.01 -->
+
+
+<table id="related_random" style="border:1px dashed green;border-collapse:collapse;" width="100%">
+<tr><td width="50%" style="vertical-align:top;padding-left:3px;">
+<div class='yarpp-related'>
+<p><b>相关文章:</b></p><ol>
+<li><a href="http://unmi.cc/use-oracle-carried-connection-pool/" rel="bookmark" title="为何不直接使用 Oracle 提供的连接池实现">为何不直接使用 Oracle 提供的连接池实现 </a></li>
+<li><a href="http://unmi.cc/hibernate-was-dead-lock/" rel="bookmark" title="Hibernate应用程序部署在WebSphere AS 上出现记录死锁的分析与解决">Hibernate应用程序部署在WebSphere AS 上出现记录死锁的分析与解决 </a></li>
+<li><a href="http://unmi.cc/ant-auto-deploy-application-was-5-x/" rel="bookmark" title="利用 ANT 实现自动化部署管理 WebSphere Application Server 5.x 下的应用">利用 ANT 实现自动化部署管理 WebSphere Application Server 5.x 下的应用 </a></li>
+<li><a href="http://unmi.cc/myeclipse51-generating-artifacts/" rel="bookmark" title="MyEclipse5.1生成映射文件出现Generating Artifacts错误">MyEclipse5.1生成映射文件出现Generating Artifacts错误 </a></li>
+<li><a href="http://unmi.cc/oracle-java-permissions/" rel="bookmark" title="Oracle中的Java存储过程的操作权限">Oracle中的Java存储过程的操作权限 </a></li>
+</ol>
+</div>
+</td><td style="vertical-align:top;padding-left:3px;border-left:1px dashed green;">
+<p><b>随机文章:</b></p>
+<ol class="advanced-random-posts"><li><a href="http://unmi.cc/play2-0-tutorials-cn-writing-functional-tests/" title="Play 2.0 中文资料 - 编写功能性测试" >Play 2.0 中文资料 - 编写功能性测试</a></li>
+<li><a href="http://unmi.cc/my-cellnum-locator/" title="也写了一个手机号码归属地查询软件，晒一下" >也写了一个手机号码归属地查询软件，晒一下</a></li>
+<li><a href="http://unmi.cc/everyday-english-2005-10-31/" title="Every day English（2005-10-31–2005-11-7）" >Every day English（2005-10-31–2005-11-7）</a></li>
+<li><a href="http://unmi.cc/log4j-patternlayout-all-parameters/" title="Log4j输出格式控制--log4j的PatternLayout参数含义[转]" >Log4j输出格式控制--log4j的PatternLayout参数含义[转]</a></li>
+<li><a href="http://unmi.cc/restful-colors-for-http-methods/" title="如果要给 RESTful 每种 HTTP Method 类型指示一种颜色" >如果要给 RESTful 每种 HTTP Method 类型指示一种颜色</a></li>
+</ol></td></tr></table>
+
+</div>
+<div class="meta">
+类别: <a href="http://unmi.cc/category/mid-ware/" rel="category tag">Mid-Ware</a>. 标签:<span class="tags"> <a href="http://unmi.cc/tag/jdbc/" rel="tag">JDBC</a>, <a href="http://unmi.cc/tag/sso/" rel="tag">sso</a>, <a href="http://unmi.cc/tag/was/" rel="tag">WAS</a></span>. 阅读(118). <a href='http://unmi.cc/was-security-jdbc-sso/feed/'><abbr title="Really Simple Syndication">订阅评论</abbr></a>. <a href="http://unmi.cc/was-security-jdbc-sso/trackback/" rel="trackback"><abbr title="Universal Resource Locator">TrackBack</abbr></a>.
+</div>
+</div>
+<a name="comments"></a>
+
+<div class="ds-thread" data-thread-key="446" data-author-key="1" data-title="WAS 安全性中定制用注册表，通过 JDBC 验证用户实现 SSO" data-url="http://unmi.cc/was-security-jdbc-sso/"></div>
+
+<script type="text/javascript">
+	if (typeof DUOSHUO !== 'undefined')
+		DUOSHUO.EmbedThread('.ds-thread');
+</script>
+	<div id="ds-ssr">
+
+		
+            <ol id="commentlist">
+                            </ol>
+
+		            
+    </div><div class="nextprev">
+<div class="alignleft"> &laquo; <a href="http://unmi.cc/java-execute-sql-script-file/" rel="prev">Java 执行 SQL 脚本文件</a></div>
+<div class="alignright"> <a href="http://unmi.cc/java-access-ldap-strategy/" rel="next">关于 Java 程序访问 Ldap 的可选方式（策略）</a> &raquo;</div>
+</div>
+</div><!-- end content -->    
+<span class="clear"></span>
+<div id="footer">
+Copyright &copy; <a href="http://unmi.cc">Unmi 隔叶黄莺</a> 2010.8 
+<br />
+<a href="/about">关于本站</a> | <a href="/archives">文章归档</a> | <a href="/guestbook">敬请留言</a> | <a href="/feed">RSS 订阅</a> | <a href="/sitemap">网站地图</a><br>Email: <a href="mailto:fantasia@sina.com">fantasia@sina.com</a>。<span style='color:red'>QQ 群</span> <a rel="external" href="http://qun.qq.com/air/#8431580">软件编程实践-8431580</a>, <a rel="external" href="http://qun.qq.com/air/#60047619">Scala&Play-60047619</a></div>
+</div></div></div></div> <!-- /.left-corner, /.right-corner, /#squeeze, /#center -->
+<div id="sidebar-right" class="sidebar">
+</div></div> <!-- /container -->
+</div>
+<!-- /layout -->
+<script type="text/javascript">
+  //Google-Analytics
+  var _gaq = _gaq || [];
+  _gaq.push(['_setAccount', 'UA-5377249-2']);
+  _gaq.push(['_trackPageview']);
+  _gaq.push(['_addOrganic','soso', 'w']);
+  _gaq.push(['_addOrganic','sogou', 'query']);
+  _gaq.push(['_addOrganic','yodao', 'q']);
+  _gaq.push(['_addOrganic','bing', 'q']);
+  _gaq.push(['_addOrganic','gougou', 'search']);
+  (function() {
+    var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+    ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+  })();
+</script>
+
+<!-- Piwik -->
+<script type="text/javascript">
+  var _paq = _paq || [];
+  _paq.push(['trackPageView']);
+  _paq.push(['enableLinkTracking']);
+  (function() {
+    var u="//stats.unmi.cc/";
+    _paq.push(['setTrackerUrl', u+'piwik.php']);
+    _paq.push(['setSiteId', 1]);
+    var d=document, g=d.createElement('script'), s=d.getElementsByTagName('script')[0];
+    g.type='text/javascript'; g.async=true; g.defer=true; g.src=u+'piwik.js'; s.parentNode.insertBefore(g,s);
+  })();
+</script>
+<noscript><p><img src="//stats.unmi.cc/piwik.php?idsite=1" style="border:0;" alt="" /></p></noscript>
+<!-- End Piwik Code --><script>
+/* <![CDATA[ */
+var rcGlobal = {
+	serverUrl		:'http://unmi.cc',
+	infoTemp		:'%REVIEWER% on %POST%',
+	loadingText		:'Loading',
+	noCommentsText	:'No comments',
+	newestText		:'&laquo; Newest',
+	newerText		:'&laquo; Newer',
+	olderText		:'Older &raquo;',
+	showContent		:'',
+	external		:'1',
+	avatarSize		:'25',
+	avatarPosition	:'left',
+	anonymous		:'Anonymous'
+};
+/* ]]> */
+</script>
+<script type='text/javascript' src='http://unmi.cc/wp-content/plugins/syntaxhighlighter/syntaxhighlighter3/scripts/shCore.js?ver=3.0.83c'></script>
+<script type='text/javascript' src='http://unmi.cc/wp-content/plugins/syntaxhighlighter/syntaxhighlighter3/shBrushAll.js?ver=3.0.83c'></script>
+<script type='text/javascript'>
+	(function(){
+		var corecss = document.createElement('link');
+		var themecss = document.createElement('link');
+		var corecssurl = "http://unmi.cc/wp-content/plugins/syntaxhighlighter/syntaxhighlighter3/styles/shCore.css?ver=3.0.83c";
+		if ( corecss.setAttribute ) {
+				corecss.setAttribute( "rel", "stylesheet" );
+				corecss.setAttribute( "type", "text/css" );
+				corecss.setAttribute( "href", corecssurl );
+		} else {
+				corecss.rel = "stylesheet";
+				corecss.href = corecssurl;
+		}
+		document.getElementsByTagName("head")[0].insertBefore( corecss, document.getElementById("syntaxhighlighteranchor") );
+		var themecssurl = "http://unmi.cc/wp-content/plugins/syntaxhighlighter/syntaxhighlighter3/styles/shThemeEclipse.css?ver=3.0.83c";
+		if ( themecss.setAttribute ) {
+				themecss.setAttribute( "rel", "stylesheet" );
+				themecss.setAttribute( "type", "text/css" );
+				themecss.setAttribute( "href", themecssurl );
+		} else {
+				themecss.rel = "stylesheet";
+				themecss.href = themecssurl;
+		}
+		//document.getElementById("syntaxhighlighteranchor").appendChild(themecss);
+		document.getElementsByTagName("head")[0].insertBefore( themecss, document.getElementById("syntaxhighlighteranchor") );
+	})();
+	SyntaxHighlighter.config.strings.expandSource = '+ expand source';
+	SyntaxHighlighter.config.strings.help = '?';
+	SyntaxHighlighter.config.strings.alert = 'SyntaxHighlighter\n\n';
+	SyntaxHighlighter.config.strings.noBrush = 'Can\'t find brush for: ';
+	SyntaxHighlighter.config.strings.brushNotHtmlScript = 'Brush wasn\'t configured for html-script option: ';
+	SyntaxHighlighter.defaults['auto-links'] = false;
+	SyntaxHighlighter.defaults['class-name'] = 'code_border';
+	SyntaxHighlighter.defaults['pad-line-numbers'] = true;
+	SyntaxHighlighter.defaults['toolbar'] = false;
+	SyntaxHighlighter.all();
+</script>
+<link rel='stylesheet' id='yarppRelatedCss-css'  href='http://unmi.cc/wp-content/plugins/yet-another-related-posts-plugin/style/related.css?ver=4.2.2' type='text/css' media='all' />
+<script type='text/javascript' src='http://unmi.cc/wp-content/plugins/wp-recentcomments/js/wp-recentcomments-jquery.js?ver=2.2.7'></script>
+<script type='text/javascript' src='http://unmi.cc/wp-includes/js/comment-reply.min.js?ver=4.2.2'></script>
+<script type='text/javascript'>
+/* <![CDATA[ */
+var viewsCacheL10n = {"admin_ajax_url":"http:\/\/unmi.cc\/wp-admin\/admin-ajax.php","post_id":"446"};
+/* ]]> */
+</script>
+<script type='text/javascript' src='http://unmi.cc/wp-content/plugins/wp-postviews/postviews-cache.js?ver=1.68'></script>
+<script type='text/javascript' src='http://s0.wp.com/wp-content/js/devicepx-jetpack.js?ver=201526'></script>
+<script type='text/javascript' src='http://stats.wp.com/e-201526.js' async defer></script>
+<script type='text/javascript'>
+	_stq = window._stq || [];
+	_stq.push([ 'view', {v:'ext',j:'1:3.5.3',blog:'15056422',post:'446',tz:'-5',srv:'unmi.cc'} ]);
+	_stq.push([ 'clickTrackerInit', '15056422', '446' ]);
+</script>
+
+</body>
+</html>
+<!-- Dynamic page generated in 0.515 seconds. -->
+<!-- Cached page generated by WP-Super-Cache on 2015-06-25 20:12:22 -->
+
+<!-- Compression = gzip -->
+<!-- super cache -->
