@@ -1,0 +1,212 @@
+---
+title: Unmi 学习 Groovy 之 Groovy 和 Swt
+url: /unmi-study-groovy-swt/
+date: 2008-12-08T23:03:00-06:00
+featured: false
+draft: false
+type: post
+toc: false
+# menu: main
+usePageBundles: true
+categories:
+  - Groovy
+tags: 
+  - Groovy
+  - SWT
+comment: true
+codeMaxLines: 50
+# additional
+wpPostId: 310 
+wpStatus: publish
+views: 550
+lastmod: 2018-03-02T20:38:20-06:00
+---
+
+<p>如上篇：<a href="/unmi-groovy-swing/" target="_blank" rel="noopener">Unmi 学习 Groovy 之 Groovy 和 Swing</a>，Groovy 应用 Markup、命名参数、匿名构造和闭包很好的支持了 Swing 开发。然而 IBM 当初考虑到 Swing 的表现自行开发了一个界面框架，并已广受开发者青睐，也在 RCP 中得到了发展。Groovy 自然也看到了这一点，有了实际动作，见 <a href="http://groovy.codehaus.org/GroovySWT">http://groovy.codehaus.org/GroovySWT</a>。它通过 SwtBuilder 和 JFaceBuilder 不令提供了对 Swt 的支持，还支持了 Swt 更上一层的 JFace。</p>
+
+<p>要使用 GroovySWT，必须先下载到 <a href="http://docs.codehaus.org/download/attachments/17022/groovy-swt-0.3.jar" target="_blank" rel="noopener">groovy-swt-0.3.jar</a>，或用 Eclipse 自带的 swt.jar，或从 Swt 官方网站(<a href="http://www.eclipse.org/swt/">http://www.eclipse.org/swt/</a>) 上下载最新的 swt.jar。或者直接下载打包的 <a href="http://docs.codehaus.org/download/attachments/17022/groovy-swt-0.3-including-Eclipse-libs.ZIP+" target="_blank" rel="noopener">groovy-swt-0.3-including-Eclipse-libs.ZIP</a>，其中包含有 groovy-swt-0.3 和 swt/jface 等包。swt/jface 工程的 classpath 设置这里不多说，本文假定你对 Swt 有一定的了解，最好能理解 Swt 的 HelloWorld 程序。下面还是以例子进行说明吧。<!--more--></p>
+
+<p><strong>Java-Swt 传统方式翻译为 groovy 的写法</strong></p>
+
+<table style="width: 100%;" border="0" align="center">
+
+<tbody>
+
+<tr valign="top">
+
+<td valign="top">
+
+{{< highlight groovy >}}
+import org.eclipse.swt.SWT
+import org.eclipse.swt.widgets.*
+import org.eclipse.swt.layout.RowLayout as Layout
+
+def display = new Display()
+def shell = new Shell(display)
+
+shell.layout = new Layout(SWT.VERTICAL)
+
+shell.text = 'Groovy / SWT Test'
+
+def label = new Label(shell, SWT.NONE)
+label.text = 'Simple demo of Groovy and SWT'
+shell.defaultButton = new Button(shell, SWT.PUSH)
+shell.defaultButton.text = '  Push Me  '
+
+shell.pack()
+shell.open()
+
+while (!shell.disposed) {
+    if (!shell.display.readAndDispatch()) shell.display.sleep()
+}
+{{</ highlight >}}
+
+</td>
+
+<td valign="top"><strong>执行该程序的界面如下：</strong>
+{{< bundle-image GroovySwt1.JPG >}}
+</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<p><strong>使用 SwtBuilder 改写上面的程序，并加上了按钮事件处理的功能</strong></p>
+
+<table style="width: 100%;" border="0" align="center">
+
+<tbody>
+
+<tr valign="top">
+
+<td valign="top">
+
+{{< highlight groovy >}}
+import org.eclipse.swt.SWT
+import org.eclipse.swt.widgets.*
+
+def swt = new groovy.swt.SwtBuilder()
+def shell = swt.shell(text:'Groovy / SWT Test') {
+    rowLayout()
+    label(style:"none", text:'Simple demo of Groovy and SWT')
+    button(style:"push", text:'  Push Me  ') {
+        onEvent(type:"Selection", closure:{ println "Hello" })
+    }
+}
+
+//对于下面这块代码并未能作出简化
+shell.pack()
+shell.open()
+
+while (!shell.disposed) {
+    if (!shell.display.readAndDispatch()) shell.display.sleep()
+}
+{{</ highlight >}}
+
+</td>
+
+<td valign="top"><strong>执行该程序的界面如下：</strong>
+{{< bundle-image GroovySwt2.JPG 237 >}}
+    在 button 的闭包中用 onEvent 指示了什么<br /><br/>
+ 类型的事件执行什么闭包。</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<p>从上面的程序对比上可看出使用了 SwtBuilder 只简化了界面构造的代码，并加上了处理按钮点击的闭包。闭包是作为 shell 的参数，在布局管理方面的代码写法不同于 SwingBuilder，如上篇的</p>
+
+<p>tableLayout{    <br /><br/>
+     tr{    <br /><br/>
+         td(align:'center'){ label(text:'Username') }   <br /><br/>
+         td(align:'center'){ label(text:'Balance') }  <br /><br/>
+     } <br /><br/>
+ }</p>
+
+<p>而在 SwtBuilder 中 rowLayout() 和 Label() 是平级的，需要注意到这一点。</p>
+
+<p>最后看一下 Groovy 结合 JFace 应用的例子，JFace 对于 Swt 就如 MFC 和 Windows SDK 的关系。其中用到了 JFaceBuilder。</p>
+
+<table style="width: 100%;" border="0" align="center">
+
+<tbody>
+
+<tr valign="top">
+
+<td style="width: 24.4228%;" valign="top">
+
+{{< highlight groovy >}}
+import groovy.jface.JFaceBuilder
+
+def  jface = new JFaceBuilder()
+def  mainapp
+//如果把 mainapp 定义和声明合在一起(def mainapp = jface.applicationWindows()，
+//则会在中间的 mainapp.setStatus('Hello ...') 引用 mainapp 时出错，
+//提示找不到当前类的 mainapp 属性
+
+//主应用程序窗口
+mainapp = jface.applicationWindow(title:"Groovy JFace Demo",
+    location:[400,300], size:[300, 200]) {
+
+	//主菜单
+	menuManager( text:"File" ) {//action: 就是一个菜单项，closure 为处理事件的闭包
+		action ( text:"Very Nice", closure:{ println "Very Nice !!!" } )
+	    separator()  //分隔线
+	    action ( text:"Check me", checked:true,
+                  closure:{ println "I've been checked" } )
+	}
+
+	menuManager( text:"Edit" ) {
+	    action ( text:"Say Hi Statusbar",
+                  closure:{ mainapp.setStatus('Hello ...') } )
+	    action ( text:"Clear Statusbar",
+                  closure:{ mainapp.setStatus('') } )
+    }
+
+	//工具栏
+	toolBarManager() {
+		action ( text:"&Open", closure:{ println "Open file pressed" } )
+		action ( text:"&C", closure:{ println "C pressed" } )
+		action ( text:"&R", closure:{ println "R pressed" } )
+		action ( text:"&A", closure:{ println "A pressed" } )
+		separator()
+		action ( text:"&Z", closure:{ println "Z pressed" } )
+		action ( text:"&Y", closure:{ println "Y pressed" } )
+		separator()
+		def act1 = action ( closure:{ println "last one" } )
+	  }
+
+    fillLayout ( type:"vertical" )
+	label( text:"A big red label", background:[204, 0, 0] )
+    label( text:"I can barelly read this", foreground:[0,200,0] )
+	label( text:"It sure looks like the dutch flag",
+               foreground:[255,255,255], background:[0, 0, 153] )
+}
+
+mainapp.getMenuBarManager().updateAll(true)
+mainapp.getToolBarManager().update(true)
+mainapp.getShell().layout()
+mainapp.open()
+{{</ highlight >}}
+
+</td>
+
+<td style="width: 300px;" valign="top"><strong>执行该程序的界面如下</strong>：
+{{< bundle-image GroovySwt3.JPG >}}
+    一个基本的 JFace 应用框架，有主菜单栏，工具栏，主<br /><br/>
+ 显示区域和状态栏，可点击菜单看看效果，工具栏上的<br /><br/>
+ 按钮设置了快捷方式</td>
+
+</tr>
+
+</tbody>
+
+</table>
+
+<p>更多的关天 GroovySwt 的例子请参见 <a href="http://svn.codehaus.org/groovy/trunk/groovy/modules/groovy-swt/src/examples/">http://svn.codehaus.org/groovy/trunk/groovy/modules/groovy-swt/src/examples/</a> 中的演示代码。上面的代码比较分散，为方便下载，本人特地整理打成一个包放在了这里：<a href="/Files/Unmi/groovy-swt-examples.rar" target="_blank" rel="noopener">groovy-swt-examples.rar</a>。</p>
+
+<p>参考：<a href="http://groovy.codehaus.org/GroovySWT">http://groovy.codehaus.org/GroovySWT</a> 及其中的例子。</p>
