@@ -15,6 +15,7 @@ tags:
   - lambda
   - DLQ
 comment: true
+codeMaxLines: 50
 # additional
 wpPostId: 8984 
 wpStatus: publish
@@ -37,7 +38,8 @@ lastmod: 2018-10-01T10:54:08-05:00
 
 <p>最感观的理解就是来做一个测试，创建一个 Lambda <code>test-dlq-lambda</code>, 该 Lambda 由 SNS topic <code>sns-test-topic</code> 触发，并且设置 Lambda 的 DLQ 为另一个 SNS topic <code>sns-test-dlq-topic</code>。为方便测试，我们用同样的 Lambda 来接收 <code>sns-test-dlq-topic</code> 中的消息验证 DLQ 中的内容。</p>
 <h3>Lambda 的代码</h3>
-<pre class="lang:default decode:true ">public class Handler implements RequestHandler&lt;SNSEvent, Object&gt; {
+{{< highlight java >}}
+public class Handler implements RequestHandler<SNSEvent, Object> {
 
     @Override
     public Object handleRequest(SNSEvent snsEvent, Context context) {
@@ -54,11 +56,12 @@ lastmod: 2018-10-01T10:54:08-05:00
         SNSEvent.SNS sns = snsEvent.getRecords().get(0).getSNS();
 
         //如果消息包含 dlq, 但不是从 dlq 主题中来的消息抛出异常
-        if(sns.getMessage().contains("dlq") &amp;&amp; !sns.getTopicArn().contains("dlq")) {
+        if(sns.getMessage().contains("dlq") && !sns.getTopicArn().contains("dlq")) {
             throw new RuntimeException("test dlq");
         }
     }
-}</pre>
+}
+{{</ highlight >}}
 
 <p>以上代码打包成一个可部署的 Lambda jar 包，并且部署为两个  Lambda</p>
 
@@ -69,21 +72,23 @@ lastmod: 2018-10-01T10:54:08-05:00
 <h3>发送消息给 test-dlq-lambda</h3>
 <p>发送消息的代码</p>
 
-<pre class="lang:default decode:true">    public static void main(String[] args) {
+{{< highlight java >}}
+    public static void main(String[] args) {
         AmazonSNS amazonSNS = AmazonSNSClientBuilder.defaultClient();
 
         MessageAttributeValue messageAttributeValue = new MessageAttributeValue()
             .withDataType("String").withStringValue("1234");
-        HashMap&lt;String, MessageAttributeValue&gt; attributeHashMap = new HashMap&lt;&gt;();
+        HashMap<String, MessageAttributeValue> attributeHashMap = new HashMap<>();
         attributeHashMap.put("id", messageAttributeValue);
 
         PublishRequest publishRequest = new PublishRequest().withMessage("dlq")
-            .withTopicArn("&lt;topic-arn-of-sns-test-topic")
+            .withTopicArn("<topic-arn-of-sns-test-topic")
             .withMessageAttributes(attributeHashMap);
 
         PublishResult publishResult = amazonSNS.publish(publishRequest);
         System.out.println(publishResult.getMessageId());
-    }</pre>
+    }
+{{</ highlight >}}
 
 <p>消息中含有 <code>dql</code>，所以 <code>test-dlq-lambda</code> 将会触发 <code>RuntimeException</code> 异常，异常消息是 <code>test dlq</code>。</p>
 
@@ -100,7 +105,8 @@ lastmod: 2018-10-01T10:54:08-05:00
 </ol>
 <p>这里 Lambda 接收到的 SNS 消息是</p>
 
-<pre class="lang:default decode:true">received:
+{{< highlight json >}}
+received:
 {
     "records": [
         {
@@ -124,19 +130,21 @@ lastmod: 2018-10-01T10:54:08-05:00
                     "dayOfMonth": 1,
                     //.... 省略 timstamp 的细节
                 },
-                "topicArn": "arn:aws:sns:us-east-1:&lt;account-id&gt;:sns-test-topic"
+                "topicArn": "arn:aws:sns:us-east-1:<account-id>:sns-test-topic"
             },
             "eventVersion": "1.0",
             "eventSource": "aws:sns",
             "eventSubscriptionArn": "arn:aws:sns:........:sns-test-topic:459bb1e5-3282-4d20-8b9a-24e36b4a3228"
         }
     ]
-}</pre>
+}
+{{</ highlight >}}
 
 <h3>DLQ <code>sns-test-dlq-topic</code> 中的消息</h3>
 <p>我们通过 <code>test-dlq-receiver-lambda</code> 的日志来了解前面 Lambda 三次重试后送到 DLQ 中的内容。它所收到的消息是</p>
 
-<pre class="lang:default decode:true">received:
+{{< highlight json >}}
+received:
 {
     "records": [
         {
@@ -168,14 +176,15 @@ lastmod: 2018-10-01T10:54:08-05:00
                     "dayOfMonth": 1,
                     //....省略 timestamp 的细节
                 },
-                "topicArn": "arn:aws:sns:us-east-1:&lt;account-id&gt;:sns-test-dlq-topic"
+                "topicArn": "arn:aws:sns:us-east-1:<account-id>:sns-test-dlq-topic"
             },
             "eventVersion": "1.0",
             "eventSource": "aws:sns",
             "eventSubscriptionArn": "arn:aws:。。。。:sns-test-dlq-topic:332608d0-0092-408a-9d96-edba86e55685"
         }
     ]
-}</pre>
+}
+{{</ highlight >}}
 
 <p><code>sns-test-dlq-topic</code> 中的 SNS 消息条目包含以下关键内容(前面说过，在此重复一遍)</p>
 
@@ -190,7 +199,8 @@ lastmod: 2018-10-01T10:54:08-05:00
 <h3>利用 DLQ 的 <code>ErrorMessage</code> 传递异常栈信息</h3>
 <p>从前面了解到 DLQ 中信息的 <code>ErrorMessage</code> 字段只是取了原 Lambda 异常的 getMessage() 消息，可能并不太助于定位错误点，所以我们也许希望用它来展示完整的异常栈信息。这需要在原始 Lambda 捕获异常后作些文章</p>
 
-<pre class="lang:default decode:true  ">public class Handler implements RequestHandler&lt;SNSEvent, Object&gt; {
+{{< highlight java >}}
+public class Handler implements RequestHandler<SNSEvent, Object> {
 
     @Override
     public Object handleRequest(SNSEvent snsEvent, Context context) {
@@ -208,25 +218,26 @@ lastmod: 2018-10-01T10:54:08-05:00
 
     private void process(SNSEvent snsEvent) {
         SNSEvent.SNS sns = snsEvent.getRecords().get(0).getSNS();
-        if(sns.getMessage().contains("dlq") &amp;&amp; !sns.getTopicArn().contains("dlq")) {
+        if(sns.getMessage().contains("dlq") && !sns.getTopicArn().contains("dlq")) {
             throw new RuntimeException("dlq");
         }
     }
-}</pre>
+}
+{{</ highlight >}}
 
 <p>把异常栈的信息转换为一个字符串作为新 <code>RuntimeException</code> 的 message, 现在来看 DLQ 中的消息的 <code>ErrorMessage</code> 部分的内容就是</p>
 
 <blockquote>
-<p>"ErrorMessage": {<br />
+"ErrorMessage": {<br />
 "type": "String",<br />
 "value": "Function: yanbin-test-dlq\njava.lang.RuntimeException: dlq\n\tat com.serverless.Handler.process(Handler.java:41)\n\tat com.serverless.Handler.handleRequest(Handler.java:29)\n\tat com.serverless.Handler.handleRequest(Handler.java:18)\n\tat lambdainternal.EventHandlerLoader$PojoHandlerAsStreamHandler.handleRequest(EventHandlerLoader.java:178)\n\tat lambdainternal.EventHandlerLoader$2.call(EventHandlerLoader.java:888)\n\tat lambdainternal.AWSLambda.startRuntime(AWSLambda.java:286)\n\tat lambdainternal.AWSLambda.&lt;clinit&gt;(AWSLambda.java:64)\n\tat java.lang.Class.forName0(Native Method)\n\tat java.lang.Class.forName(Class.java:348)\n\tat lambdainternal.LambdaRTEntry.main(LambdaRTEntry.java:94)\n"<br />
-}</p>
-
+}
 </blockquote>
 
 <p><strong>原 Lambda 函数名</strong>也有了，并且带上了完整的异常信息。唯有不足的地方就是原始 Lambda 在输出该异常信息日志时重复了一遍异常栈</p>
 
-<pre class="lang:default decode:true ">Function: yanbin-test-dlq
+{{< highlight java >}}
+Function: yanbin-test-dlq
 java.lang.RuntimeException: dlq
     at com.serverless.Handler.process(Handler.java:41)
     at com.serverless.Handler.handleRequest(Handler.java:29)
@@ -234,7 +245,7 @@ java.lang.RuntimeException: dlq
     at lambdainternal.EventHandlerLoader$PojoHandlerAsStreamHandler.handleRequest(EventHandlerLoader.java:178)
     at lambdainternal.EventHandlerLoader$2.call(EventHandlerLoader.java:888)
     at lambdainternal.AWSLambda.startRuntime(AWSLambda.java:286)
-    at lambdainternal.AWSLambda.&lt;clinit&gt;(AWSLambda.java:64)
+    at lambdainternal.AWSLambda.<clinit>(AWSLambda.java:64)
     at java.lang.Class.forName0(Native Method)
     at java.lang.Class.forName(Class.java:348)
     at lambdainternal.LambdaRTEntry.main(LambdaRTEntry.java:94)
@@ -247,14 +258,15 @@ java.lang.RuntimeException: dlq
     at lambdainternal.EventHandlerLoader$PojoHandlerAsStreamHandler.handleRequest(EventHandlerLoader.java:178)
     at lambdainternal.EventHandlerLoader$2.call(EventHandlerLoader.java:888)
     at lambdainternal.AWSLambda.startRuntime(AWSLambda.java:286)
-    at lambdainternal.AWSLambda.&lt;clinit&gt;(AWSLambda.java:64)
+    at lambdainternal.AWSLambda.<clinit>(AWSLambda.java:64)
     at java.lang.Class.forName0(Native Method)
     at java.lang.Class.forName(Class.java:348)
     at lambdainternal.LambdaRTEntry.main(LambdaRTEntry.java:94)
 
     at com.serverless.Handler.handleRequest(Handler.java:33)
     at com.serverless.Handler.handleRequest(Handler.java:18)
-</pre>
+
+{{</ highlight >}}
 
 <p>不过呢，应该不太碍事，每次 Lambda 失败只有一次重复出现。</p>
 
@@ -271,7 +283,9 @@ java.lang.RuntimeException: dlq
 
 <p>Message Body 内容：</p>
 
-<pre class="lang:default decode:true">{"Records":[{"EventSource":"aws:sns","EventVersion":"1.0","EventSubscriptionArn":"arn:aws:sns:us-east-1:...原始消息内容}</pre>
+{{< highlight text >}}
+{"Records":[{"EventSource":"aws:sns","EventVersion":"1.0","EventSubscriptionArn":"arn:aws:sns:us-east-1:...原始消息内容}
+{{</ highlight >}}
 
 <p>就是原始的 SNS 消息内容</p>
 
@@ -279,7 +293,7 @@ java.lang.RuntimeException: dlq
 
 <p>同样包含以上列举的三个字段。</p>
 
-<h3>对本文有必要小结一下：</h3><br/>
+<h3>对本文有必要小结一下：</h3>
 <ol>
 	<li>SNS 触发的 Lambda 重试总共为三次，间隔时间分别为 1 分钟后，两分钟后</li>
 	<li>Lambda 对 SNS 消息的多次重试所记录的  RequestId 是一样的</li>

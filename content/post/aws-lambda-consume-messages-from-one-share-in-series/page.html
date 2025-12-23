@@ -15,6 +15,7 @@ tags:
   - lambda
   - Kinesis
 comment: true
+codeMaxLines: 50
 # additional
 wpPostId: 8074 
 wpStatus: publish
@@ -30,21 +31,25 @@ The Amazon Kinesis and DynamoDB Streams records sent to your AWS Lambda function
 从 Kinesis 和 DynamoDB 单个 Shard 上的记录会被 Lambda 严格的按序处理。这意味着如果你送两条记录到相同的 Shard, Lambda 将会保证第一条记录成功处理后才会处理第二条记录。假如处理第一条记录时超时，或超过资源使用上限，或碰到任何错误， Lambda 将会不断重试直到成功(或记录在 24 小时后过期), 而后才会去处理下一条记录。跨 Shard 的记录不保证到达顺序，且是并行处理多个 Shard 来的记录。
 </blockquote>
 可以做几个试验，下面的代码可以保证消息总是被发送到同一个 Kinesis Shard，因为 PartitionKey 参数是一个常量<!--more--><br/>
-<pre class="lang:default decode:true">AmazonKinesis kinesis = AmazonKinesisClientBuilder.defaultClient();
-for (int i = 0; i &lt; 10; i++) {
+{{< highlight java >}}
+AmazonKinesis kinesis = AmazonKinesisClientBuilder.defaultClient();
+for (int i = 0; i < 10; i++) {
     PutRecordResult result = kinesis.putRecord(kinesisStream, ByteBuffer.wrap(
         (i + ", time: " + LocalDateTime.now()).getBytes()), "key");
     System.out.println("ShardId: " + result.getShardId() + ", #Seq: " + result.getSequenceNumber());
-}</pre>
+}
+{{</ highlight >}}
 Lambda 的基础代码如下：<br/>
-<pre class="lang:default decode:true">@Override
+{{< highlight java >}}
+@Override
 public String handleRequest(KinesisEvent event, Context context) {
     LOG.info("Received messages: " + event.getRecords().size());
-    event.getRecords().forEach(record -&gt; {
+    event.getRecords().forEach(record -> {
         LOG.info("Get message content: " + new String(record.getKinesis().getData().array()));
     });
     return "";
-}</pre>
+}
+{{</ highlight >}}
 测试环境： Kinesis stream 分配了 2 个 Shards, 每次都运行上面的代码始终向同一个 Shard 发送十条消息<br/><br/>
 <strong>试验一：Lambda 能正常处理每一条 Kinesis 消息，Trigger batchSize: 10, 执行上面代码两次向同一个 Shard 发送了 20 条消息</strong><br/><br/>
 结果，只启动了一个 Lambda 实例，消息总是按序到达，不管是否在同一个 Batch 中。<br/><br/>
@@ -70,22 +75,22 @@ public String handleRequest(KinesisEvent event, Context context) {
 在试验中试图在 Lambda 处理方法中做一个 1 秒延时(Thread.sleep(1000))，但是测试结果是只要用了 Thread.sleep(...) 延时，只发送消息到同一个 Shard 的话只会启动一个 Lambda 实例，无论 batchSize 是 2 还是 1, 这个很让我惊讶，Thread.sleep(...) 具有某种特异功能。<br/><br/>
 不管是跨 Lambda 实例，只要发往同一个 Kinesis Shard 的消息总是被顺序处理，这里要注意个问题，不仅仅是按顺序接收到，而是只有前面的消息被 Lambda <span style="color: #0000ff;"><strong>成功</strong></span>处理完才接受后续的消息。如果前面的消息未被成功处理，将会重试直到成功，而后才能接收处理后续的消息，可以在 Lambda 抛出一个异常来测试<br/><br/>
 <strong>试验四：Lambda 抛出异常，观察是否能接收后面的消息</strong><br/><br/>
-在 Lambda 处理方法最后的 return 语句替换为抛出异常，如下<br/><br/>
+在 Lambda 处理方法最后的 return 语句替换为抛出异常，如下<br/>
 <blockquote>
 throw new RuntimeException("test");
 </blockquote>
-<br/>
+
 这时候往同一个 Shard 发送 10 条消息后，发现只会有一个 Lambda 实例在运行，因为处理 #0, #1 消息无法成功，所以没有机会接收后续消息如 #2, #3 等。从日志中可以看出 Lambda 不断在重试处理 #0, #1
 {{< bundle-image src="Lambda-Kinesis-Shard-9-800x314.png" width="800px" >}}
 重试多少次呢？没有限制，如果总是不成功的话，这个 Lambda 实例基本是废掉了，一直重试到这条消息过期了才放弃(最少24小时), 重试的间隔时间当然不是每隔几秒钟，目测像是一个斐波那契序列，也就是说越来越疏。我们仍然可以继续往这个 Shard 上发送消息，也能立即触发那个 Lambda, 只是每次触发都是消费最初的老记录，下面的图可以辅助理解 Kinesis Stream Shard 上的消息的处理流程。<br/><br/>
 {{< bundle-image src="aws-kinesis-shard-11-800x819.png" width="800px" >}}
 1） 每个 Kinesis Shard 会有一个线程从中轮询数据，如指定 Trigger 的 batchSize 是 10 的话，会每次最多取 10 条记录，只有 2 条的就只会取到 2 条记录，得到记录后选择一个 Lambda 实例来处理它们<br />
 2）同一个 Shard 中的记录总是按序处理，如上图所示，只有 #0, #1 被成功处理后，才会从 Stream 中删除它们，然后取后续的 #2, #3。#0, #1 失败一直重试，直到成功或记录到期，这时队列阻塞住了<br/><br/>
-这是 AWS Lambda 关于重试策略 <a href="http://docs.aws.amazon.com/lambda/latest/dg/retries-on-errors.html">http://docs.aws.amazon.com/lambda/latest/dg/retries-on-errors.html</a> 的一段<br/><br/>
+这是 AWS Lambda 关于重试策略 <a href="http://docs.aws.amazon.com/lambda/latest/dg/retries-on-errors.html">http://docs.aws.amazon.com/lambda/latest/dg/retries-on-errors.html</a> 的一段<br/>
 <blockquote>
 <b>Stream-based event sources</b> – For stream-based event sources (Amazon Kinesis Streams and DynamoDB streams), AWS Lambda polls your stream and invokes your Lambda function. Therefore, if a Lambda function fails, AWS Lambda attempts to process the erring batch of records until the time the data expires, which can be up to seven days for Amazon Kinesis Streams. The exception is treated as blocking, and AWS Lambda will not read any new records from the stream until the failed batch of records either expires or processed successfully. This ensures that AWS Lambda processes the stream events in order.
 </blockquote>
-<br/>
+
 不完整翻译了，大体上说的是为了保证顺序，一旦出错重试的话相当于那个 Stream(确切的讲是 Shard, 像个队列) 就阻塞了，Lambda 无法从那个  Shard 上获取新的数据。所以你继续往那个 Shard 送消息都无法被 Lambda 处理。<br/><br/>
 关于 Lambda 出错重试，还需要更深入些。<br/>
 <hr /><br/>
