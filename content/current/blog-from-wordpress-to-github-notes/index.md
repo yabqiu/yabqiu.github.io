@@ -25,6 +25,7 @@ comment: true
 快速回顾一下本博客的历史，2006 年前 QQ 空间，后来 blogcn.com, 再到 blogjava.net，2010 年始声请了 unmi.cc 域名, 租 VPS 自搭 WordPress 
 服务，后面就不断的换 VPS 提供商，也出现过数据少量丢失的现象，所以有些图片或附件不可考。由于 unmi.cc 无法顺利迁出才有了新的 yanbin.blog 域名,
 所以博文中还有不少 unmi.cc 的影子，以至于 unmi.cc 被人注册了，并且还堂而皇之的建立了一个李鬼网站，其中很多标题是盗用我的，内容全是 AI 生成。
+<!--more-->
 
 考虑使用静态页面博客的优点有
 
@@ -196,75 +197,165 @@ public/post/my-second-post     # 跟随 bundle(目录) 名
 
 对于 Bundle 使用了自定义 url 之后图片等资源访问就稍有不同了.
 
+使用 `index.html` 能让编译后的 `index.html` 和其他资源文件都在一起, 但实际运行时会产生许多的 `public/post/{1,2,3,...17} 这样奇怪的目录.
+所以对于从 WordPress 迁移过来的文件还是选择了用 `page.html`, 而非 `index.html` 文件.
 
+#### 关于 IntelliJ IDEA `Hugo fix` 插件
+
+刚开始对于产生的每一个 `page.html` 文件真是纯手工打造, 用下面各种 Vim 命令替换
+
+```Vim
+'<,'>s/&lt;/</g
+'<,'>s/&gt;/>/g
+'<,'>s/&amp;/\&/g
+'<,'>s/\%u00a0/ /g
+'<,'>s#<br/><br/>#\r#g
+'<,'>s#<br/>##
+'<,'>s#<br />##
 ```
-  <br/><br/>
+对选择区域用 `gv` 反复操作. 然后在 IntelliJ 中查找 `<pre>` 和 `</pre>` 进行相应的替换. 大约进行到 400 多篇后, 需要些更自动化且可靠的操作.
+纯 AI 系统提示词让它对剩下的 800 多篇进行操作是信不过的, 但是可以做一个 IntelliJ 插件啊. 于是用 Claude Code CLI 以 Vibe Coding
+的方式做一个 `Hugo fix` 插件, 在 IntelliJ IDEA 中使用上下文菜单和快捷键操作
+
+{{< bundle-image wp-hugo-1.png 500 >}}
+
+这是第一次完全用提示词创建的一个 IntelliJ IDEA 插件, 在这里不是吹嘘什么没写一行代码, 或者零 IntelliJ IDEA 插件开发经验就做成了一个可用的产品,
+而是在使用 Claude Code CLI 过程中人自动懒惰的根本不想去看它生成的代码, 所以做完之后仍然是零编程经验, 学习到的知识也是零, 也没有经历过任何的思考,
+只是每一步问 `process?` 的时候回签 `yes`. 但是经常人的一番调教之后, AI 变得更聪明了, 当前系统只有 JDK 25 的情况下, 它自行分析错误, 
+然后主动下载 JDK 17 解决了构建问题, 然而使用 AI 的人却变得更愚蠢了.
+
+下面的该插件完成之后, 用  `list the menu` 显示出来的功能
+
+```text
+> list the menu
+
+⏺ Here's the complete menu structure for the Hugo fix plugin:
+
+  Menu Structure
+
+  ┌─────────────────────┐
+  │ Hugo fix        ►   │──┬─► fix entities
+  └─────────────────────┘  ├─► replace </pre>
+                           ├─► select <pre>
+                           ├─► remove last <br/>
+                           ├─► rewrite <img>
+                           ├─► toggle draft
+                           └─► copy url
+
+  All Menu Items with Shortcuts
+
+  | #   | Menu Item    | Shortcut | Description                                                                          |
+  |-----|--------------|----------|--------------------------------------------------------------------------------------|
+  | 1   | fix entities | ⌃⌘⇧Z     | Decode HTML entities in entire file (&lt; → <, &gt; → >, &amp; → &, <br/><br/> → \n) |
+  | 2   | replace      | ⌃⇧⌘R     | Replace </pre> tags with \n{{</*/ highlight */>}} in entire file                         |
+  | 3   | select       | ⌃⌘⇧S     | Search and select next <pre[^>]*?> tag                                               |
+  | 4   | remove last  | ⌃⇧⌘B     | Remove last <br/> from current line if it ends with <br/><br/>                       |
+  | 5   | rewrite      | ⌃⇧⌘I     | Convert <img src="path/file.jpg" width="600"> to {{</* bundle-image file.jpg 600 */>}}   |
+  | 6   | toggle draft | ⌃⇧⌘D     | Toggle first occurrence of draft: true ↔ draft: false                                |
+  | 7   | copy url     | ⌃⇧⌘C     | Copy first url: <value> with prefix http://localhost:1313<value> to clipboard        |
+
+  Keyboard Shortcut Quick Reference
+
+  - ⌃⌘⇧Z - fix entities
+  - ⌃⇧⌘R - replace
+  - ⌃⌘⇧S - select
+  - ⌃⇧⌘B - remove last
+  - ⌃⇧⌘I - rewrite
+  - ⌃⇧⌘D - toggle draft
+  - ⌃⇧⌘C - copy url
+
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+> test the plugin in RustRover                                                                                      ↵ send
+───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ? for shortcuts
 ```
-代码片段从 &lt;pre&gt; 转换成
 
-<pre>
-&#123;&#123;&lt; highlight java &gt;&#125;&#125;
-</pre>
+上面也是差不多用过的提示词, 每一个子菜单是经过多次迭代增加的.
 
-有很多 &lt; &gt; &amp; 要替换
+后面使用该插件进行修改其余的 `page.html` 文件效率高了 10X 以上. 这才得已在昨天完成最后的收尾工作, 把域名管理移到 Cloudflare 上, 
+绑定老域名到新的静态博客站点.
 
-想直接用 Rust 或 Python 组件转换 html 到 markdown, 但都不准:确. 所以用 bundle/page.html, 
-不能为 bundle/index.html 否则在 public/ 目录中会生成不一样的内容
+#### 启用 giscus 评论
 
-引用 bundle 中的图片与其他次资源
-引入评论，访问计数
+即使是静态站点, 评论也还是必要的, 方便于各种交流. `Clarity` 主题内置支持的评论组件有 `giscus` 和 `utterances`. `giscus` 使用的是 GitHub
+Repo 的 `Discussions` 功能来存储关连日志评论的.  启用 `giscu` 的步骤大致为
 
-第一次完全用 Claude Code CLI Vibe coding 了一个 'Hugo Fix' 插件
+1. GitHub repo 启用 `Discussions` 功能
+2. https://github.com/apps/giscus 由安装 `giscus` 到 GitHub Pages 对应的 Repo
+3. https://giscus.app/ 配置得到参数, 并配置到 `/config/_default/params.toml` 中
 
-HTML 是设计为浏览器渲染的语法结构，不利于人工阅读，例如有些日志被无端的压缩成了一行，对浏览器没有任何压力，要人工修改就难了。
-而且还有大量的 HTML entities，而 Markdown 是适于人工编写与阅读的，没有多余的标签，可用拆行增加阅读性，中间两行才是实际
-显示的换行
+#### 启用 Page view
 
-Bundle 方便于组织与日志相关的资源
+在 WordPress 中每篇日志都有页面查看计数, 在导出 WordPress 数据时每篇日志的 Page view 也获取到了. 网站统计功能使用了
+[GoatCounter](https://www.goatcounter.com/). GoatCounter 除了可统计每个页面被访问的次数, 还能由 API 获得相应 URL 被访问的次数.
 
-{{< bundle-image wp-hugo-1.png 611 >}}
+```shell
+curl <goatcounter-url>/counter/study-rust-workspace-package-crate-module.json
+{
+  "count": "8",
+  "count_unique": "8"
+}
+```
 
-{{< figure src="wp-hugo-1.png" width="611px" >}}
+基于这个功能, 就能实现每个页面显示访问计数, 加上在 WordPress 中的页面原始计数就是总是访问次数. 显示样式为
+{{< bundle-image page-view.png 200 inline >}}, `135` 为 WordPress 和新页面访问总和.
 
-[hugo figure shortcode](https://gohugo.io/shortcodes/figure/)
+#### 一些自定义的功能
 
-<pre>
-&#123;&#123;&lt; figure
+基于主题 `Clarity` 自定义了一些 layouts 下的 partials, shortcodes 页面, 主要有
+
+1. 去除了白色, 黑色主题的选择功能, 强制为白色主题. 现阶段各种应用至少还有白色主题可选, 不知是谁设定的很多地方默认主题为黑色
+2. `归档` 页面按年显示日志条目, 通过自定义的 ShortCode `archive.html` 实现
+3. 右边栏增加 `Blog Stats` 显示几个统计数据, 包括日志总数, 标签总计, 日志分类, 和最后构建时间
+4. 列表页(如首页, 分类或标签列表页面) 中显示每篇日志 `<!--more-->` 之前的内容, 并且正确按格式分行显示
+5. `/assets/sass/_custom.sass` 中定义代码白色主题显示, 和其他更多的样式定义
+6. 原创日志后加上了 `CC BY-NC-SA 4.0` 许可声明, 不过基本是意思一下, 别人怎么用也拦不住
+7. 两个重要自定义 ShortCode, `bundle-image` 和 `bundle-resource`
+
+显示图片虽然在 Markdown 文件中可以用 
+
+```markdown
+![python](python3.14-new-features-1.png)  
+```
+
+或者用 [`figure`](https://gohugo.io/shortcodes/figure/) ShortCode, 它完整的参数是
+
+```html
+{{</* figure
     src="/images/examples/zion-national-park.jpg"
     alt="A photograph of Zion National Park"
     link="https://www.nps.gov/zion/index.htm"
     caption="Zion National Park"
     class="ma0 w-75"
-&gt;&#125;&#125;
-</pre>
-
-{{< figure src="wp-hugo-1.png" width="611px" alt="Image Alt" caption="Image Caption" >}}
-
-bundle/page.html 与 bundle/index.md(bundle/index.html) 时, Hugo 会编译 bundle 内资源到不同的目录中
-
-
-use bundle-image
-{{< bundle-image wp-hugo-1.png 611 >}}
-
-还有很多 http://unmi.cc/xxx 遗留链接，图片链接
-
-代码有多种方式
-```
-<pre class="lang:default decode:true ">
-<pre class="brush:bash">
-<blockquote>
+*/>}}
 ```
 
-为了在 WordPress 中输入方便很多时候选择了没有语法高亮和保持换行，空格, HTML 实体的 blockquote, 而用 Markdown 时
-则不用担心这个，都是三个撇号
+参数是可选的, 所以能因地制宜的写上必须的项, 如
 
-还有不少 post 在几经辗转之后产生了乱码
-```text
-特性还�欢际谴悠渌镅阅嵌韫吹摹Ｏ喾碈#也从Ja
+```html
+{{</* figure src="wp-hugo-1.png" */>}}
+{{</* figure src="wp-hugo-1.png" width="611px" */>}}
 ```
 
-不少图片或文件也找不到了, 引用的一些第三方网站的图片链接也失效了，当初没有存储下来
+为了进一步简化, 定义了 `bundle-image`, 因为基本上日志都是在引用当前 Bundle 中的资源, 它的完整参数是
 
-trigger build
+```html
+{{</* bundle-image src="a.jpg"  width="800px" class="aligncenter" */>}}
+```
 
-urvanov-syntax-highlighter
+也能基于位置来传入参数, 如
+
+```html
+{{</* bundle-image a.jpg */>}}
+{{</* bundle-image a.jpg 800 */>}}
+{{</* bundle-image a.jpg 800 inline */>}}
+```
+
+`bundle-resource` 与 `bundle-image` 的功能类似, 只是它用来引用 Bundle 目录中的其他资源, 如
+
+```html
+<a href="{{</* bundle-resource tools.jar */>}}">tools.jar</a>
+```
+
+迁移完所有的 WordPress 日志到 Hugo 之后, 这是写下的第一篇日志, 用 Markdown 写日志果然是清爽了许多. 再也不用打开网页来编辑文章了, 
+也不会写作过程中提示该页无法响应了.
