@@ -152,8 +152,10 @@ Hugo 标签时必须确定语言, 如果在 HTML 中有 mark 行也须手工填�
  `<div id="xunlei_com_thunder_helper_plugin_d462f475-c18e-46be-bd10-327458d045bd"> </div>`, 也作了相应的清理
 8. `page.html` 中有大量的原本为 `&nbsp;` 对应的空格显示为 {{< bundle-image nbsps.png 210 inline >}}. 对于 `<blockquote>` 
 中的 NBSP 保留, 在 `{{/* highligth xxx */>}}` 中的全部用 Vim `s/\%u00a0/ /g` 进行替换
-8. 还有些日志在几经辗转之后居然产生了乱码, 像 `特性还�欢际谴悠渌镅阅嵌韫吹摹Ｏ喾碈#也从Ja`, 暂时难以恢复, 除非进行 encode/decode 尝试
+9. 还有些日志在几经辗转之后居然产生了乱码, 像 `特性还�欢际谴悠渌镅阅嵌韫吹摹Ｏ喾碈#也从Ja`, 暂时难以恢复, 除非进行 encode/decode 尝试
 10. 把有些整篇日志 HTML 内容全揉成了一行的内容进行简单的分行, 不然对以上替换操作不易进行, 分成多行后稍稍利于人工阅读
+11. 把 `<!--more-->` 从标签内部移出, 例如有些日志 `<!--more-->` 在 `<strong>..</strong>` 之间, 造成列表页面其他日志概要全变粗.  
+WordPress WYSIWYG 编辑器选择 More 按钮把不少的 `<!--more-->` 加到的标签中间
 
 #### 为什么选择用 `page.html`
 
