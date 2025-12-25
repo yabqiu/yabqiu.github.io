@@ -2,7 +2,7 @@
 title: 关于本人与本站
 description: 关于自己
 date: 2025-12-03T12:00:00-06:00
-comments: false
+comments: true
 noCopyright: true
 ---
 
