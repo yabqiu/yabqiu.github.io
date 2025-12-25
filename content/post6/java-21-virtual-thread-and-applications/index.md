@@ -16,6 +16,7 @@ tags:
   - virtual threads
   - thread
   - java 21
+series: Java New Features
 comment: true
 codeMaxLines: 50
 # additional
