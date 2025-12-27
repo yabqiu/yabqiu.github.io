@@ -36,21 +36,31 @@ Java 25 LTS 版本已发布, 按正常节奏应该要切换到该版本.
 
 把那些关键的新特性列出来就是
 
-- 430: [String Templates (Preview)](https://openjdk.org/jeps/430) *
-- 431: [Sequenced Collections](https://openjdk.org/jeps/431) *
-- 439: [Generational ZGC](https://openjdk.org/jeps/439) *
-- 440: [Record Patterns](https://openjdk.org/jeps/440) *
-- 441: [Pattern Matching for switch](https://openjdk.org/jeps/441) *
-- 442: [Foreign Function & Memory API (Third Preview)](https://openjdk.org/jeps/442)
-- 443: [Unnamed Patterns and Variables (Preview)](https://openjdk.org/jeps/443)
-- 444: [Virtual Threads](https://openjdk.org/jeps/444)
-- 445: [Unnamed Classes and Instance Main Methods (Preview)](https://openjdk.org/jeps/445)
-- 446: [Scoped Values (Preview)](https://openjdk.org/jeps/446)
-- 448: [Vector API (Sixth Incubator)](https://openjdk.org/jeps/448)
-- 449: [Deprecate the Windows 32-bit x86 Port for Removal](https://openjdk.org/jeps/449)
-- 451: [Prepare to Disallow the Dynamic Loading of Agents](https://openjdk.org/jeps/451)
-- 452: [Key Encapsulation Mechanism API](https://openjdk.org/jeps/452)
-- 453: [Structured Concurrency (Preview)](https://openjdk.org/jeps/453)
+<div style="display: flex;">
+   <div style="flex: 1;">
+      <ul>
+         <li>430: <a href="https://openjdk.org/jeps/430">String Templates (Preview)</a> <strong style="color: red">*</strong></li>
+         <li>431: <a href="https://openjdk.org/jeps/431">Sequenced Collections</a> <strong style="color: red">*</strong></li>
+         <li>439: <a href="https://openjdk.org/jeps/439">Generational ZGC</a> <strong style="color: red">*</strong></li>
+         <li>440: <a href="https://openjdk.org/jeps/440">Record Patterns</a> <strong style="color: red">*</strong></li>
+         <li>441: <a href="https://openjdk.org/jeps/441">Pattern Matching for switch</a> <strong style="color: red">*</strong></li>
+         <li>442: <a href="https://openjdk.org/jeps/442">Foreign Function & Memory API (Third Preview)</a></li>
+         <li>443: <a href="https://openjdk.org/jeps/443">Unnamed Patterns and Variables (Preview)</a></li>
+         <li>444: <a href="https://openjdk.org/jeps/444">Virtual Threads</a></li>
+      </ul>
+   </div>
+   <div style="flex: 1;">
+      <ul>
+         <li>445: <a href="https://openjdk.org/jeps/445">Unnamed Classes and Instance Main Methods (Preview)</a></li>
+         <li>446: <a href="https://openjdk.org/jeps/446">Scoped Values (Preview)</a></li>
+         <li>448: <a href="https://openjdk.org/jeps/448">Vector API (Sixth Incubator)</a></li>
+         <li>449: <a href="https://openjdk.org/jeps/449">Deprecate the Windows 32-bit x86 Port for Removal</a> <strong style="color: red">*</strong></li>
+         <li>451: <a href="https://openjdk.org/jeps/451">Prepare to Disallow the Dynamic Loading of Agents</a> <strong style="color: red">*</strong></li>
+         <li>452: <a href="https://openjdk.org/jeps/452">Key Encapsulation Mechanism API</a></li>
+         <li>453: <a href="">Structured Concurrency (Preview)</a></li>
+      </ul>
+   </div>
+</div>
 
 其中 444 虚拟线程最 Java 21 最受关注的新特性, 所以单独写过一篇日志 [Java 21 虚拟线程外其他新特性](/java-21-new-features-other-than-virtual-thread/), 
 在另一篇 [Java 19, 20 新特性学习](/java-19-20-new-features/) 也简单介绍了非正式的 440 Record Patterns, 446 Scoped Values,
@@ -259,7 +269,8 @@ GC 算法一直在演化, 与之相关的概念有串行, 并行, 标识清除, 
 2. ZGC 几乎所有工作都并发进行, 使用染色指针(Colored Pointers), 读屏障(Load Barriers) 技术, 支持更短的暂停时间(< 10ms),
    支持超大堆内存(16TB). 需要足够的 CPU 资源.
 
-ZGC 在 Java 21 之前是非分代收集, 如果要启用 ZGC 和分代式 ZGC, 要使用启动参数
+ZGC 在 Java 21 之前是非分代收集, 如果要启用 ZGC 和分代式 ZGC, 要使用启动参数 `-XX:+ZGenerational`. ZGC 已不再固执了, 还是需要分代收集机制,
+而且非分代模式在 Java 23 默认为 `ZGC` 启用分代模式, 还进一步在 Java 24 移除了 `ZGC` 的非分代模式.
 
 ```java
 -XX:+UseZGC -XX:+ZGenerational
@@ -476,6 +487,77 @@ final class Main {
 ```
 
 当然也能用 `java Main.java` 直接运行. 只是这种特性在正式的项目中是不会采用的.
+
+### 449: Deprecate the Windows 32-bit x86 Port for Removal *
+
+Windows 32 位 x86 的支持标记为将移除, 除了一些老旧的服务, 不知道还有谁在用 32 位的 x86 Windows 系统.
+
+### 451: Prepare to Disallow the Dynamic Loading of Agents
+
+Agent 是通过 JVM Tool Interface(JVM TI Agent) 在类加载阶段对实现代码进行修改的机制, 主要是用于 Profiler. 但是这一机制被聪明的开发者当一种
+AOP 注入机制用以改变程序的行为, 比如像 Mockito 那样的 Mocking 库.
+
+这就是为什么我们在用 Mockito 时, 比如下面的代码
+
+```java
+@ExtendWith(MockitoExtension.class)
+public class ExampleTest {
+
+    @Test
+    void testSomething() {
+    }
+}
+```
+
+运行后会看到如下警告
+
+<blockquote style="color: red">
+Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK.
+Please add Mockito as an agent to your build as described in Mockito's documentation: 
+https://javadoc.io/doc/org.mockito/mockito-core/latest/org.mockito/org/mockito/Mockito.html#0.3<br/>
+WARNING: A Java agent has been loaded dynamically (/Users/yanbin/.m2/repository/net/bytebuddy/byte-buddy-agent/1.17.8/byte-buddy-agent-1.17.8.jar)<br/>
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning<br/>
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information<br/>
+WARNING: Dynamic loading of agents will be disallowed by default in a future release<br/>
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+</blockquote>
+
+因为 Java 21 现阶段是对 Agent 动态加载到 JVM 运行时警告提示, 并准备在以后默认禁止动态加载 Agent. 但是通过 `-javaagent` 或 `-agentlib`
+命令行方式加载不会收到这个警告.
+
+不想看到上面警告信息的办法有, 用 `-javaagent` 或 `-agentlib` 来导入 `Mockito`, 当前 `JMockit` 就是通过这一命令行方式导入, 但需要额外的路径配置.
+另一种办法就是加上 `-XX:+EnableDynamicAgentLoading` 参数隐藏上面的警告信息.
+
+如果 Maven 项目中, 在 pom.xml 中对用于测试的 `maven-surefire-plugin` 配置为
+
+```xml
+<build>
+    <plugins>
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <version>3.0.0</version>
+            <configuration>
+                <argLine>-XX:+EnableDynamicAgentLoading -Xshare:off </argLine>
+            </configuration>
+        </plugin>
+    </plugins>
+</build>
+```
+
+再执行就消除了一大段, 只剩下一行警告
+
+<blockquote style="color: red">
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+</blockquote>
+
+如果觉得这也碍眼, 就修改如上 `maven-surefire-plugin` 的 `argLine` 为
+
+```xml
+<argLine>-XX:+EnableDynamicAgentLoading -Xshare:off</argLine>
+```
+
+再运行测试用例, 整个世界都清净了.
 
 ### 其他值得一提的杂项变化
 
