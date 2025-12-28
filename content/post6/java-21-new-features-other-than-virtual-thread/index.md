@@ -204,6 +204,27 @@ R process(StringTemplate stringTemplate) throws E;
 
 从 StringTemplate 中可得到任意的数据类型.
 
+还可以自定义的 `ABC.""` 用法, 如
+
+```java
+   var INTER = StringTemplate.Processor.of((StringTemplate st) -> {
+       StringBuilder sb = new StringBuilder();
+       Iterator<String> fragIter = st.fragments().iterator();
+       for (Object value : st.values()) {
+           sb.append(fragIter.next());
+           sb.append(value);
+       }
+       sb.append(fragIter.next());
+       return sb.toString();
+   });
+
+   int x = 10, y = 20;
+   String s = INTER."\{x} plus \{y} equals \{x + y}";
+   System.out.println(s);  // Output: 10 plus 20 equals 30
+```
+
+有了前面的 INTER 变量, 就能使用 `INTER."..."`, 或 `INTER."""..."""`.
+
 最后使用 String Template 时要注意安全, 小心像 SQL Injection 那样被注入了恶意代码.
 
 ### 431: Sequenced Collections
