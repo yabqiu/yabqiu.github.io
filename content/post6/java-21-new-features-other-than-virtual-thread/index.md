@@ -57,7 +57,7 @@ Java 25 LTS 版本已发布, 按正常节奏应该要切换到该版本.
          <li>449: <a href="https://openjdk.org/jeps/449">Deprecate the Windows 32-bit x86 Port for Removal</a> <strong style="color: red">*</strong></li>
          <li>451: <a href="https://openjdk.org/jeps/451">Prepare to Disallow the Dynamic Loading of Agents</a> <strong style="color: red">*</strong></li>
          <li>452: <a href="https://openjdk.org/jeps/452">Key Encapsulation Mechanism API</a></li>
-         <li>453: <a href="">Structured Concurrency (Preview)</a></li>
+         <li>453: <a href="https://openjdk.org/jeps/453">Structured Concurrency (Preview)</a></li>
       </ul>
    </div>
 </div>
@@ -264,10 +264,11 @@ GC 算法一直在演化, 与之相关的概念有串行, 并行, 标识清除, 
 
 下面简单对比 G1 和 ZGC
 
-1. G1 仍用分代收集, Young Generation 和 Old Generation, 但它划分了若干 Region, 进行可预测暂停, 渐进式回收. 支持的堆大小在 4-64GB 之间, 
+1. G1 仍用分代收集, Young Generation 和 Old Generation, 但它划分了若干 Region, 进行可预测暂停, 渐进式回收. 
    可接受暂停时间在 100-200ms 之间. 比 ZGC 拥有更高的吞量
-2. ZGC 几乎所有工作都并发进行, 使用染色指针(Colored Pointers), 读屏障(Load Barriers) 技术, 支持更短的暂停时间(< 10ms),
-   支持超大堆内存(16TB). 需要足够的 CPU 资源.
+2. ZGC 几乎所有工作都并发进行, 使用染色指针(Colored Pointers), 读屏障(Load Barriers) 技术, 支持更短的暂停时间(< 10ms), 需要足够的 CPU 资源.
+3. AI 搜索说 G1 支持的堆大小在 4-64GB 之间, ZGC 支持超大堆内存(16TB), 但我没看到准确的相关文档, G1 曾经调整过 region 可选最大值 32M 到 512M, 
+   按 2048 的 region 来算, 512M * 2048 = 1TB. 从隐约的资料来看, ZGC 应该还是支持更多的内存堆.
 
 ZGC 在 Java 21 之前是非分代收集, 如果要启用 ZGC 和分代式 ZGC, 要使用启动参数 `-XX:+ZGenerational`. ZGC 已不再固执了, 还是需要分代收集机制,
 而且非分代模式在 Java 23 默认为 `ZGC` 启用分代模式, 还进一步在 Java 24 移除了 `ZGC` 的非分代模式.
