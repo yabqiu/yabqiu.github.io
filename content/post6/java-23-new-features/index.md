@@ -163,7 +163,7 @@ javadoc --syntax-highlight *.java
 
 而且在 IntelliJ IDEA 已对 Markdown 的代码块很友好
 
-{{< bundle-image javadoc-syntax-highlight3.png 480 >}}
+{{< bundle-image javadoc-markdown-intellij-idea.png 480 >}}
 
 另外, Java 还提供了相应的 JavaDoc API, 在 [com.sun.source.doctree](https://docs.oracle.com/en/java/javase/22/docs/api/jdk.compiler/com/sun/source/doctree/package-summary.html)
 包的 [Compiler Tree API](https://docs.oracle.com/en/java/javase/22/docs/api/jdk.compiler/module-summary.html#CompilerTreeAPI).
