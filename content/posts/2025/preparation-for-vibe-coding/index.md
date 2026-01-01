@@ -1,7 +1,7 @@
 ---
 title: 准备迎接 Vibe Coding - 相关工具与资源
 url: /preparation-for-vibe-coding/
-date: 2025-12-29T15:21:00-05:00
+date: 2025-12-31T23:21:00-05:00
 featured: false
 type: post
 draft: false
@@ -521,7 +521,7 @@ spec-kit-demo
 我们可能需要事先用
 
 1. npm create vue@latest
-2. npm create-react-app my-react-app
+2. npx create-react-app my-react-app
 3. npx create-next-app@latest
 
 创建好脚手架后, 然后让 Vibe Coding 介入.
