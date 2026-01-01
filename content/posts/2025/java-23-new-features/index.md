@@ -8,7 +8,7 @@ draft: false
 toc: false
 # menu: main
 usePageBundles: true
-thumbnail: "../images/logos/java-logo.png"
+thumbnail: "/images/logos/java-logo.png"
 categories:
   - java
   - new features
