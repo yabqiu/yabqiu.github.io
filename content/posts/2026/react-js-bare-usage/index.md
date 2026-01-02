@@ -103,7 +103,45 @@ root.render(<h2>Hello, React!</h2>);
 </html>
 ```
 
-这样页面也能正确显示 `Hello, React!` 了, 支持了 `JSX` 语法. 下面的演示将基于这个最简 HTML 进行扩展.
+这样页面也能正确显示 `Hello, React!` 了, 支持了 `JSX` 语法. 在此我们可对比一下 `Vue.js` 和极简代码, 代码中省去了不影响页面显示的元素
+
+{{< bundle-image vue2-vue3-basic.png 1048 >}}
+
+<!-- 注释掉的 vue2 和 vue3 代码块
+```vue
+<script src="https://unpkg.com/vue@2/dist/vue.js"></script>
+
+<div id="app">{{ message }}</div>
+
+<script>
+    const vm = new Vue({
+        el: '#app',
+        data: {
+            message: 'Hello, Vue.js 2!'
+        }
+    });
+</script>
+```
+
+```vue
+<script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+
+<div id="app">{{ message }}</div>
+
+<script>
+    const { createApp } = Vue;
+    const app = createApp({
+        data() {
+            return {
+                message: 'Hello, Vue.js 3!'
+            }
+        }
+    }).mount('#app');
+</script>
+```
+-->
+
+下面将演示 `React.js` 一些功能性扩展.
 
 ### 自定义组件
 
