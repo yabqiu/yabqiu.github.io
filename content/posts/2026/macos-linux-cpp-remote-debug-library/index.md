@@ -1,5 +1,5 @@
 ---
-title: "MacOS/Linux C++ GDB 远程调试动态库，静态库"
+title: "MacOS/Linux C++ GDB 远程调试动态库和静态库"
 url: /macos-linux-cpp-remote-debug-library/
 date: 2026-01-04T17:03:41-05:00
 featured: false
