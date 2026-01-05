@@ -270,3 +270,8 @@ docker run -it -v /work:/work -p 6379:6379 --privileged gcc:custom bash
 不过这种文件的同步操作都可以通过配置 Clion 来完成。
 
 下篇预告：在使用了自定义静态库和动态库的 C++ 程序应如何远程单步调试。
+
+链接
+
+1. [使用Clion远程自动同步和远程调试c++](https://juejin.cn/post/7185063838016864317)
+2. [CLion 实现远程调试](https://leehao.me/CLion-%E5%AE%9E%E7%8E%B0%E8%BF%9C%E7%A8%8B%E8%B0%83%E8%AF%95/)
