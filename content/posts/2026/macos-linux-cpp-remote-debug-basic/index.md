@@ -265,7 +265,7 @@ docker run -it -v /work:/work -p 6379:6379 --privileged gcc:custom bash
 > 10.255.61.50:6379:<containter>:6379
 
 我们需要自己实现的是要把本地的文件与 `10.255.61.50`  之间同步，如用 `rsync` 命令(前提是要 10.255.61.50 开启了 SSH), 或用 Clion 的
-`Build, Execution, Deployment / Deployment/ SFTP` 自动部署上传到远端，或都更笨拙的 `docker cp` 命令。
+`Build, Execution, Deployment / Deployment/ SFTP` 在本地与远端间自动同步，或都更笨拙的 `docker cp` 命令。
 
 不过这种文件的同步操作都可以通过配置 Clion 来完成。
 

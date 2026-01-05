@@ -88,7 +88,7 @@ rsync -avz -e "ssh -i ~/ssh.pem" --exclude '.idea' ./ ec2-user@10.255.61.50:~/ya
 
 如果要从远程机器上同步文件到本用 `rsync` 反过来就行了。
 
-或用 Clion 的 `Build, Execution, Deployment / Deployment/ SFTP` 自动部署上传到远端.
+或用 Clion 的 `Build, Execution, Deployment / Deployment/ SFTP` 在本地与远端间自动同步.
 
 ### 在远程 Linux 机器上编译
 
