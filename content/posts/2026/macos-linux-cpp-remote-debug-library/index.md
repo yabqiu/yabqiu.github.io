@@ -88,6 +88,8 @@ rsync -avz -e "ssh -i ~/ssh.pem" --exclude '.idea' ./ ec2-user@10.255.61.50:~/ya
 
 如果要从远程机器上同步文件到本用 `rsync` 反过来就行了。
 
+或用 Clion 的 `Build, Execution, Deployment / Deployment/ SFTP` 自动部署上传到远端.
+
 ### 在远程 Linux 机器上编译
 
 `SSH` 登陆到远程机器， 并切换到目录 `~/yanbin/work`, 执行下面的命令
@@ -172,6 +174,8 @@ objcopy --only-keep-debug main main.dSYM
 为什么不需要静态库或是动态库的符号信息呢？因为 `Linux` 上的动态库和静态库的符号信息都包含在可执行文件中，我们在后面将会实际体验到，
 所以只需要下载可执行文件或从中剥离出来的符号信息文件即可。
 
+*如果不下载符号文件, Clion 也能在调试的时候通过远程的 gdbserver 取得符号信息, 但这样每次调试都会慢一些。*
+
 ### 在 macOS 上用 CLion 配置远程调试
 
 在 CLion 中选择 `Remote Debug`, 采用与上一篇完全一样的配置
@@ -180,6 +184,9 @@ objcopy --only-keep-debug main main.dSYM
 
 这里只指定了符号文件为 `/Users/yanbin.qiu/CLionProjects/linux-remote/main`。如果有用 `objcopy` 从 `main` 中剥离出来的符号信息文件
 `main.dSYM` 则指定 `main.dSYM` 文件也行。
+
+*如果只是指定 `target remote' args` 为 `tcp:10.255.61.50:6379`, 而不指定 `Symbol file`， `Sysroot`, 也是可以的, 但每次调试时
+Clion 都要从远程的 gdbserver 取得符号信息, 会慢一些。*
 
 在 `add.cpp`, `sub.cpp` 和 `main.cpp` 中分别打上断点，开始调试。
 

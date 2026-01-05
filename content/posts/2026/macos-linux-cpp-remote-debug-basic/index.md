@@ -96,6 +96,8 @@ objcopy --only-keep-debug main main.debug
 如果二进制文件中包含符号信息，可直接下载二进制文件本身，如这里的 `main`, 如果有单独的符号文件，如从 `main` 中分离出来的 `main.debug`, 
 只要下载它就行
 
+*如果不下载符号文件, Clion 也能在调试时通过远程的 gdbserver 取得符号信息, 但这样每次调试都会慢一些。*
+
 #### 远程 Linux 上启动 gdbserver
 
 首先确定一个可用的不被防火墙拦截的端口，这里用端口号 `6379`, 然后执行 `gdbserver` 命令
@@ -128,6 +130,9 @@ Listening on port 6379
 - `Sysroot`: 我填入的是本地项目的路径
 
 有时需要配置 `Path mappings` 配置在本地与远程 Linux 机器的路径映射, 如远程的 `/work` 与本地的 `~/ClionProjects/linux-remote` 映射。
+
+*如果只是指定 `target remote' args` 为 `tcp:10.255.61.50:6379`, 而不指定 `Symbol file`， `Sysroot`, 也是可以的, 但每次调试时
+Clion 都要从远程的 gdbserver 取得符号信息, 会慢一些。*
 
 #### 启动 Clion 调试
 
@@ -259,8 +264,8 @@ docker run -it -v /work:/work -p 6379:6379 --privileged gcc:custom bash
 > 10.255.61.50:/work:<containter>/work
 > 10.255.61.50:6379:<containter>:6379
 
-我们需要自己实现的是要把本地的文件与 `10.255.61.50`  这间同步，如用 `rsync` 命令(前提是要 10.255.61.50 开启了 SSH),  或都更笨拙的
-`docker cp` 命令。
+我们需要自己实现的是要把本地的文件与 `10.255.61.50`  之间同步，如用 `rsync` 命令(前提是要 10.255.61.50 开启了 SSH), 或用 Clion 的
+`Build, Execution, Deployment / Deployment/ SFTP` 自动部署上传到远端，或都更笨拙的 `docker cp` 命令。
 
 不过这种文件的同步操作都可以通过配置 Clion 来完成。
 
