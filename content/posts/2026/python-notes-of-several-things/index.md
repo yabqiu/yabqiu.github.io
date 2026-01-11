@@ -1,7 +1,7 @@
 ---
 title: "Python 编程过程碰到的几个问题"
 url: /python-notes-of-several-things/
-date: 2026-01-10T17:03:41-05:00
+date: 2026-01-10T17:18:12-05:00
 featured: false
 draft: false
 type: post
@@ -332,6 +332,10 @@ C/C++ 风格的语言还能通过匹配大括号来确定层次关系，而 Pyth
 ```python
         for i in range(10):
             # ....
+            # 上一屏的内容
+```
+
+```python
             # 这里有无数行，想象一下这个 for 已显示在屏幕之外了，由 for 没有 c/c++ 那样开闭符号 {
         ......    
         # 下面本来是作为嵌套的循环可能写到同一层次上去了
