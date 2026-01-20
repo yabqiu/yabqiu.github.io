@@ -1,7 +1,7 @@
 ---
 title: "React.js 原始用法 - 掌握核心语法"
 url: /react-js-bare-usage/
-date: 2026-01-01T19:40:41-05:00
+date: 2026-01-01T19:40:41-06:00
 featured: false
 draft: false
 type: post

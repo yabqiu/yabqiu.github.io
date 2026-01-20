@@ -1,7 +1,7 @@
 ---
 title: "如何定义 Copilot 斜线命令"
 url: /how-to-customize-copilot-slash-command/
-date: 2026-01-20T13:15:55-05:00
+date: 2026-01-20T13:15:55-06:00
 featured: false
 draft: false
 type: post

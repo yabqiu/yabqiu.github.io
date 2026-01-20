@@ -1,7 +1,7 @@
 ---
 title: "Python 编程过程碰到的几个问题"
 url: /python-notes-of-several-things/
-date: 2026-01-10T17:18:12-05:00
+date: 2026-01-10T17:18:12-06:00
 featured: false
 draft: false
 type: post
