@@ -19,7 +19,8 @@ codeMaxLines: 50
 lastmod: 
 ---
 各种 AI 编程工具，如 Codex, Claude Code, Gemini 等提供了一些类似的斜线命令，每个斜线命令大约也是对应着一段特定的提示词。由于工作中更方便的使用
-Copilot, 所以本文来探讨如何定义自己的 Copilot 斜线命令。比如想要定义一个命令 `/c2py-dataclass` 用于实现如下的提示词
+Copilot, 所以本文来探讨如何定义自己的 Copilot 斜线命令。比如想要定义一个命令 `/c2py-dataclass` 用于实现把 C/C++ 的类或结构转换成 Python 
+的 @dataclass 类，并遵循 Python 的命名规则和设置默认字段值, 也就是采用如下提示词
 
 > Covert following C/C++ class/struct to Python dataclass, following Python naming convention, and set default field values.<br/>
 > <C/C++ source code goes here>
