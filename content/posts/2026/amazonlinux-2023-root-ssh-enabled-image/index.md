@@ -97,7 +97,8 @@ root@localhost's password:
 
 ### 其他相关话题
 
-想要免密码登陆的话，那就直接参考 [创建可直接用 root 用户 ssh 登陆的 Docker 镜像](/create-root-ssh-docker-image/) 中 `创建免密登陆的镜像`
+想要免密码登陆的话，那就直接参考 [创建可直接用 root 用户 ssh 登陆的 Docker 镜像](/create-root-ssh-docker-image/) 中 
+[创建免密登陆的镜像](/create-root-ssh-docker-image/#no-password-ssh)
 一节，主动就是在构建时把本地的用 `keygen` 命令产生的 `~/.ssh/id_rsa.pub` 内容拷入到 Docker 镜像的 `/root/.ssh/authorized_keys` 文件中。
 
 像用 JetBrains 之类的 IDE 连接 Docker 容器后要能远程调试，它们会在容器中安装必要的代理软件，我们可以在容器不使用时 `docker stop`, 需要用的时候再
