@@ -13,6 +13,7 @@ categories:
   - ai
 tags: 
   - copilot
+  - vibe coding
 comment: true
 codeMaxLines: 50
 # additional
@@ -290,6 +291,18 @@ agent: c2py-dataclass
 复杂的命令需求可参照 `Spec Kit` 的风格, 使用 `.github/agents/my-command.agent.md` 和 
 `.github/prompts/my-command.prompt.md` 两个文件配合使用, 好像基本没这个必要，因为这时候 `my-command.prompt.md` 文件没什么内容。
 
+### 认识更多 IntelliJ IDEA 的 Copilot 配置
+
+从 IntelliJ IDEA 的 Copilot 插件 Chat 窗口的 `Ask ⌄` 下拉菜单中选择 `Configure Agents...`
+
+{{< bundle-image copilot-configure-agents.png 426 >}}
+
+或者通过 IntelliJ IDEA 的设置菜单 `Settings/Tools/GitHub Copilot/Customizations` 进到相同的窗口。
+
+{{< bundle-image copilot-configure-agents-dialog.png 800 >}}
+
+从打开的配置窗口中很清楚的看到 Copilot 可以配置何种类型与不同级别的 `Instructions`, `Prompt` 和 `Chat Agent`。 
+
 ### 官方相关的文档
 
 官方关于自定义斜线命令的主题是 [Using prompt files](https://docs.github.com/en/enterprise-cloud@latest/copilot/how-tos/configure-custom-instructions/add-repository-instructions#using-prompt-files-2).
@@ -304,3 +317,8 @@ agent: c2py-dataclass
 另外 Copilot 也学着 Claude Code 那样官方支持 [Skills](https://code.visualstudio.com/docs/copilot/customization/agent-skills) 了。
 Claude Code 真是大方， 像它制定的 MCP, Skills 都向大家开放了，Copilot 的 skills 放在 `.github/skills/xyz/SKILL.md`(仓库) 或
 `~/.copilot/skills/xyz/SKILL.md`(用户级别).
+
+注意到官方提供了两个不同来源的文档, 分别为通用的与 VS Code 专用的文档。
+
+1. [GitHub Copilot documentation](https://docs.github.com/en/copilot)
+2. [GitHub Copilot in VS Code](https://code.visualstudio.com/docs/copilot/overview)
