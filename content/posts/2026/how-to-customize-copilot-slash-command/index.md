@@ -297,3 +297,10 @@ agent: c2py-dataclass
 更详细内容参考 [Use prompt files in VS Code](https://code.visualstudio.com/docs/copilot/customization/prompt-files). 
 在 `.github/prompts/my-command.prompt.md` 文件的 front matter 支持 `description`, `name`, `argument-hint`, `agent`, `model`,
 `tools` 属性，所以在其中还能指定使用工具。
+
+自定义的 prompt 似乎只能是仓库级别的，如果是自定义的 instructions 可以指定为用户，仓库，和组织各种级别的。 可用
+`copilot-instructions.md` 或更多的 `*.instrutions.md` 文件，`AGENTS.md` 文件也是一种 instructions.
+
+另外 Copilot 也学着 Claude Code 那样官方支持 [Skills](https://code.visualstudio.com/docs/copilot/customization/agent-skills) 了。
+Claude Code 真是大方， 像它制定的 MCP, Skills 都向大家开放了，Copilot 的 skills 放在 `.github/skills/xyz/SKILL.md`(仓库) 或
+`~/.copilot/skills/xyz/SKILL.md`(用户级别).
