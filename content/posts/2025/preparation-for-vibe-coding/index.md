@@ -19,6 +19,7 @@ tags:
   - gemini
 comment: true
 codeMaxLines: 80
+showLastmod: true
 ---
 
 2022 年 11 月 ChatGPT 横空出世, 史称 ChatGPT 时刻, 从那一刻起, 不管你接不接受, 事情正在迅速起变化. 如果写代码从记事本, 一边查文档开始, 
@@ -249,6 +250,8 @@ curl -fsSL https://claude.ai/install.sh | bash
 
 粘贴图片和普通文件的操作与 `Codex` 是一样的, `ctrl+v` 粘贴剪贴板中的图片, 拖拽可从文件浏览器中选择一个或多个图片或普通文件.
 
+Claude Code 通过 `shift+tab` 在不同模式间来回切换，像正常模式，`accept edits`, `plan mode`。
+
 `/` 命令选项比 `Codex` 和 `Cursor` 都丰富的多, 这里是[所有 Claude Code CLI 命令](https://code.claude.com/docs/en/slash-commands).
 以下是主要的一些命令
 
@@ -304,7 +307,8 @@ curl -fsSL https://claude.ai/install.sh | bash
    2. plugin:context7:context7  ✔ connected · Enter to view details
 ```
 
-`plugin:context7:context7` 是用 `/plugin` 命令从列表中选择安装的.
+`plugin:context7:context7` 是用 `/plugin` 命令从列表中选择安装的. Claude 的插件不仅仅是 MCP Server, 许多可定制的东西都可以打包成插件，
+例如 Agent, Prompt, 或 Skills.
 
 如果我们查看用户目录下的 `~/.claude/` 目录, 其中有很多相关的配置文件.
 
@@ -403,9 +407,7 @@ brew install copilot-cli
 
 /model 显示目前 $10 每月可选的模型有 `Claude Haiku 4.5`, `GPT-5 mini`, `GPT-4.1`, 加钱后可选的模型有  `Claude Sonet 4.5`, 
 `Claude Opus 4.5`, `Claude Sonnet 4`, `GPT-5.1-Codex-Max`, `GPT-5.1-Codex`, `GPT-5.2`, `GPT-5.1`, `GPT-5`,
-`GPT-5.1-Codex-Mini` 和 `Gemini 3 Prod (Preview)`.
-
-`GPT-5.1-Codex`
+`GPT-5.1-Codex-Mini` 和 `Gemini 3 Pro (Preview)`.
 
 也介绍一下它的 MCP 管理与使用.
 
