@@ -560,7 +560,7 @@ OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader clas
             <artifactId>maven-surefire-plugin</artifactId>
             <version>3.0.0</version>
             <configuration>
-                <argLine>-XX:+EnableDynamicAgentLoading -Xshare:off </argLine>
+                <argLine>-XX:+EnableDynamicAgentLoading</argLine>
             </configuration>
         </plugin>
     </plugins>
