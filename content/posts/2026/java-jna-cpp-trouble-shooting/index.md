@@ -35,12 +35,12 @@ codeMaxLines: 50
 
 1. `ulimit -c unlimited` 或某个足够大的值才会产生 core dump 文件， 对应的配置文件是 `/etc/security/limits.conf`
 2. `sysctl -w kernel.core_pattern=/crash_logs/core.%p.%t` 配置直接生成 core dump 文件到某个具体的目录，而不是用 coredumpctl 来管理，
-它对应的配置文件是 `/etc/sysctl.conf`，运行时文件是 `/proc/sys/kernel/core_pattern`。
+它对应的配置文件是 `/etc/sysctl.conf`(直接修改后，需 sysctl -p)，运行时文件是 `/proc/sys/kernel/core_pattern`。
 
 有了这两个知识储备后，以后如果应用程序运行在 Docker 容器中的话，比如 ECS Container，就可以通过配置 Docker 容器的参数来实现，
 比如 `--ulimit core=-1` 来开启 core dump，`--sysctl kernel.core_pattern=/crash_logs/core.%p.%`。
 
-### 准备参触发 Crash 的动态库
+### 准备能触发 Crash 的动态库
 
 C++ 动态还是用上篇一样的例子，当输入为 `devil` 时产生重复释放内存从而导致 Crash。
 

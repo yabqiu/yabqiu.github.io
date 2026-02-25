@@ -255,6 +255,18 @@ g++ -g -shared -fPIC -o libhello.so hello.cpp
 
 由于编译 `test.cpp` 时带了 `-g` 参数，所以能看到出错时 test.cpp 的行号为 11，在动态库 `libhello.so` 中就一无所知了。
 
+用 `gdb` 调试的时候要确保产生 crash 的动态在运行时相同的位置，这样 `bt` 才能从动态库加载到符号信息，定位到错误行。不在原处的话，在 `(gdb)`
+提示符下可用 
+
+```shell
+set solib-search-path /path/to/your/libs
+set sysroot /path/to/sysroot
+```
+
+重新指定动态库的搜索路径，最好是能在出现问题的环境中调试。另外 gdb 的 `info sharedlibrary` 命令可以看到当前加载的动态库
+
+```shell
+
 ### core dump 文件的清理
 
 命令如下
@@ -370,6 +382,6 @@ SUPPORT_END="2029-06-30"
 
 - `ulimit -c` 限制了 core dump 文件的大小，如果为 0 则禁止生成 core dump 文件，设置为 `unlimited` 则不限制大小
 - `kernel.core_pattern` 决定了 core dump 文件的生成路径和文件名，如果为 `core` 则生成在当前目录下，文件名为 `core
-- `ulimit -c` 要永久生效需修改 `/etc/security/limits.conf` 文件
+- `ulimit -c` 要永久生效需修改 `/etc/security/limits.conf` 文件, 改后重新登录 Session 或重启机器使之生效。
 - `kernel.core_pattern` 的修改会临时影响到 `/proc/sys/kernel/core_pattern` 的内容，我们知道 `/proc` 下的内容是动态的。要让
-   `kernel.core_pattern` 的修改要永久生效需修改 `/etc/sysctl.conf` 文件
+   `kernel.core_pattern` 的修改要永久生效需修改 `/etc/sysctl.conf` 文件, 修改后运行 `sysctl -p` 使之立即生效。
