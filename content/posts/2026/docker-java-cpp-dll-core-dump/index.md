@@ -412,11 +412,11 @@ docker run -p 8080:8080 java-web
 
 ```shell
 [root@lin-0aff3de6 ~]# journalctl -u "systemd-coredump*" --no-pager
-Feb 24 03:04:12 lin-0aff3de6.mstarext.com systemd[1]: systemd-coredump.socket: Deactivated successfully.
-Feb 24 03:04:12 lin-0aff3de6.mstarext.com systemd[1]: Closed systemd-coredump.socket - Process Core Dump Socket.
+Feb 24 03:04:12 lin-0aff3de6.example.com systemd[1]: systemd-coredump.socket: Deactivated successfully.
+Feb 24 03:04:12 lin-0aff3de6.example.com systemd[1]: Closed systemd-coredump.socket - Process Core Dump Socket.
 -- Boot 5bcfe0586e0643dbbef47fe92eb6483e --
-Feb 25 03:03:33 lin-0aff3de6.mstarext.com systemd[1]: systemd-coredump.socket: Deactivated successfully.
-Feb 25 03:03:33 lin-0aff3de6.mstarext.com systemd[1]: Closed systemd-coredump.socket - Process Core Dump Socket.
+Feb 25 03:03:33 lin-0aff3de6.example.com systemd[1]: systemd-coredump.socket: Deactivated successfully.
+Feb 25 03:03:33 lin-0aff3de6.example.com systemd[1]: Closed systemd-coredump.socket - Process Core Dump Socket.
 ```
 
 大概是 Java 进程退的太快了。
