@@ -15,7 +15,7 @@ tags:
   - JNA
   - Docker
 comment: true
-codeMaxLines: 50
+codeMaxLines: 30
 ---
 
 本想用一篇日志记录下在 Docker 容器中使用 Java 调用 C++ 动态库时，当 C++ Crash 时如何自动生成 core dump, 不想分成了至少三篇来完成这一研究。
