@@ -1,5 +1,5 @@
 ---
-title: C++ 调用 C++ 动态库时问题诊断 
+title: C++ 调用 C++ 动态库出错时生成 core dump
 url: /cpp-shared-library-trouble-shooting/
 date: 2026-02-22T16:40:26-06:00
 featured: false

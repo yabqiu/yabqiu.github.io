@@ -1,5 +1,5 @@
 ---
-title: Java 使用 JNA 调用 C++ 动态库问题诊断 
+title: Java 通过 JNA 调用 C++ 动态库定位错误
 url: /java-jna-cpp-trouble-shooting/
 date: 2026-02-22T22:29:37-06:00
 featured: false
