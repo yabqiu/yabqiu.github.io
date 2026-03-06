@@ -439,7 +439,9 @@ systemctl cat systemd-coredump@.service | grep RuntimeMaxSec
 
 ### -fsanitize=address 仍然有效
 
-在编译 `hello.cpp` 时加上 `-fsanitize=address` 参数，生成的动态库在触发 Crash 后能看到更详细的错误信息
+在编译 `hello.cpp` 时加上 `-fsanitize=address` 参数，生成的动态库在触发 Crash 后能看到更详细的错误信息. `-fsanitize=address` 
+要避免和高优化的 `-O2` 或 `-O3` 一起使用，通常还会与 `-fno-omit-frame-pointer` 一同使用，保留桢指针。`-fsanitize` 除了有 `address`,
+还支持 `leak`, `thread`, `undefined`, `memory`， 如 `-fsanitize=address,leak`.
 
 ```shell
 g++ -shared -fPIC -fsanitize=address -g -o libhello.so hello.cpp
