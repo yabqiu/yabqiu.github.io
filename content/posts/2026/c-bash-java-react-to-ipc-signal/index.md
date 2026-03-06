@@ -1,7 +1,7 @@
 ---
 title: "C 语言，Bash, Java 如何响应 Linux Signal" 
 url: /c-bash-java-react-to-ipc-signal/
-date: 2026-03-06T05:04:20-06:00
+date: 2026-03-06T16:20:20-06:00
 featured: false
 draft: false
 type: post
