@@ -300,7 +300,7 @@ ShutdownHook 捕获到, 更不会让程序退出。
 另外在 ShutdownHook 本身是一个线程，如果在其中再启动子线程的话，还是能够得到执行，无论其是否 Daemon.
 
 ```java
-    static {
+static {
     Runtime.getRuntime().addShutdownHook(new Thread(() -> {
         System.out.println("start execute shutdown hook");
         try { Thread.sleep(3000); } catch (InterruptedException ignored) {}
