@@ -15,7 +15,7 @@ tags:
   - Docker
   - Linux
 comment: true
-codeMaxLines: 30
+codeMaxLines: 50
 ---
 
 本文主要专注在 Docker 内的应用进程如何与外部发过来的 Linux 信号进行响应。具体应用在当运行为一个 ECS 的 Docker 容器时，对 ECS 的 AutoScaling
