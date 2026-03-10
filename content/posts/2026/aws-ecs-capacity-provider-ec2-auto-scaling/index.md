@@ -15,7 +15,7 @@ tags:
   - AWS
   - Linux
 comment: true
-codeMaxLines: 80
+codeMaxLines: 20
 ---
 
 在我 X 中 [AWS 上不同应用的部署策略](https://x.com/YanbinQiu/status/2029611669068951703) 中提到过在 AWS 部署服务(特别是 Web 服务时)， 基于采用过以下演进的方式
