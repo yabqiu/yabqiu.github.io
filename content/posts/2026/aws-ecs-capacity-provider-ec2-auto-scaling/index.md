@@ -391,3 +391,6 @@ Scale Out(Up) 操作， 让 EC2 ASG 启动一个新的 EC2 实例来满足 ECS T
 
 下一篇将要尝试一下 `Capacity Provider` 的 `Managed Instances` 的方式，那种方式应该更简单，现在猜测都不需要显式的 EC2 AutoScaling.
 应该是使用 `Capacity Provider` 的趋势所在。
+
+ECS Capacity Providers 于 2019 年 12 月引入的，发布时支持了 Fargate, Fargate Spot, 和 EC2 AutoScaling. 而 Managed Instances
+在 2025-09-30 才加入的新特性，见 [Announcing Amazon ECS Managed Instances](https://aws.amazon.com/about-aws/whats-new/2025/09/amazon-ecs-managed-instances/)
