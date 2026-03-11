@@ -159,7 +159,7 @@ resource "aws_ecs_service" "main" {
 
 resource "aws_ecs_task_definition" "main" {
   family                   = "my-task"
-  requires_compatibilities = ["EC2"]
+  requires_compatibilities = ["MANAGED_INSTANCES","EC2"]
   network_mode             = "awsvpc"
 
   container_definitions = jsonencode([
