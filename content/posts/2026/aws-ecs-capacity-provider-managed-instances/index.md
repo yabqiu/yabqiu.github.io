@@ -290,3 +290,9 @@ available-memory = 3530
 {{< bundle-image ecs-capacity-provider-managed-10.png 1000 >}}
 
 而且这个是更老的 EC2 实例，Capacity Provider` 优先关闭新的 Task.
+
+如果 Container 实例卡在了 `ACTIVE` 或 `DRAINING` 状态，但无法关闭或运行任务，需要用命令强行注销，命令是
+
+```shell
+aws ecs deregister-container-instance --cluster <cluster-name>  --container-instance <id> --force
+```
