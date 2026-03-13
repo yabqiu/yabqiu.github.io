@@ -38,7 +38,22 @@ Desired Count(ECS AutoScaling), 其余的都由 Managed Instances 来管理，�
 
 相比于 ECS 直接用 EC2(ASG)，通过 Capacity Provider 使用 EC2 的方式，还有一个好处就是可以实现 Min and max running tasks:
 100% min and 200% max 的部署方式，即启动与当前等量的任务来替换全部旧任务，即使是高峰期也能较安心的部署。而 ECS 直接用 EC2 的时只能实现
-Min and max running tasks: max 最大 100%, 所以不得不在 `Rolling update`, `Blue/green`, `Canary` 和 `Linear` 之间选择。
+Min and max running tasks: max 最大 100%, 部署时不得不先关掉部分旧任务，再启动新任务来替换，造成部署过程中减少任务数影响到吞吐率.
+
+<table>
+<thead>
+<tr>
+<th>ECS 直接使用 EC2, Max running task % 锁定在 100%</th>
+<th>ECS 通过 Capacity Provider 的 EC2, 没有 100% 的限制</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>{{< bundle-image ecs-capacity-provider-managed-11.png 500 >}}</td>
+<td>{{< bundle-image ecs-capacity-provider-managed-12.png 500 >}}</td>
+</tr>
+</tbody>
+</table>
 
 Managed Instances 可以配置 vCPU, Memory, GPU 等约束条件，在运行时由 Capacity Provider 自动为你选择 EC2 实例类型. 而对于计算型的任务
 还是较倾向于直接锁定 EC2 的实例类型, 如 AMD CPU 的 c8a.4xlarge 等。
@@ -296,3 +311,7 @@ available-memory = 3530
 ```shell
 aws ecs deregister-container-instance --cluster <cluster-name>  --container-instance <id> --force
 ```
+
+在删除 `Capacity Provider` 时可能会碰到 `Cannot remove capacity provider. It is either part of the default strategy or has non stopped tasks`
+可以先把与之关联的 Service 的 Desired Count 设为 0, 等待任务都停掉了, 确保与它相关的 Container Instances 被清理掉，这时可以先删除
+Service, 再删除 `Capacity Provider` 就不会有问题了。
