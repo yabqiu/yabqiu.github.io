@@ -16,6 +16,7 @@ tags:
   - Linux
 comment: true
 codeMaxLines: 20
+lastmod:
 ---
 
 上篇 [AWS ECS 使用 EC2 Capacity Provider (EC2 Auto Scaling)](/aws-ecs-capacity-provider-ec2-auto-scaling/) 学习了如何在 ECS
@@ -315,3 +316,25 @@ aws ecs deregister-container-instance --cluster <cluster-name>  --container-inst
 在删除 `Capacity Provider` 时可能会碰到 `Cannot remove capacity provider. It is either part of the default strategy or has non stopped tasks`
 可以先把与之关联的 Service 的 Desired Count 设为 0, 等待任务都停掉了, 确保与它相关的 Container Instances 被清理掉，这时可以先删除
 Service, 再删除 `Capacity Provider` 就不会有问题了。
+
+### Task 的 `host' 和 `awsvpc` Network 模式
+
+使用 Managed Instances 时，ECS Task 的 Network 模式只支持 `host` 和 `awsvpc`. 默认为 `host` 模式。这里就有个问题了，如果启动一个 EC2，
+vCPU 和 Memory 满足多个 ECS Task 时，如何用 `host` 模式运行多个任务呢？如果是 `bridge` 模式还好说，用不同的本地端口与容器内商品，比如
+32768:8080, 32769:8080 来映射，那用 `host` 如何支持多个容器呢？
+
+总不能在 EC2 宿主机上启动两个 8080 端口吧？当然不能，所以选择 `host` 网络模式时，只能在一个 EC2 上运行一个 Task, 在已有的 EC2 实例上有足够的
+CPU/Memory 资源剩余来运行另一个 Task 也没用，相当于是 EC2 到 ECS Task 的 Daemon 模式，在 Target Group 上注册的也是 EC2 的 Instance ID.
+相比于 `bridge` 模式(Managed Instances 不支持)，`host` 的网络效率要高，因为省去了端口映射的 NAT 过程。
+
+那选择 `awsvpc` Network 模式呢？和直接使用 EC2 时用 `awsvpc` 模式类似，每个容器都会使用一个独立的 ENI 来获得一个独立的 IP 地址，每个 ENI
+上就可以使用相同的端口来运行多个 Task 了。
+
+但 AWS 在 Web 控制台界面上显示有所不同，如果是在自己管理 EC2 的上，选择 `awsvpc` 模式运行 ECS Task 时，在 EC2 实例上会显示至少两个
+`private IPv4` 地址，EC2 本身的 IP + 每个任务的 IP. 而使用 Managed Instances 时选择 `awsvpc` 时，在 EC2 实例上只会显示一个自身的 IP
+地址， 任务的独立 IP 要在任务属性中才能看到。
+
+这时，在 Target Group 上注册的就是每一个 Task 容器的 IP 地址了，而不是 EC2 实例的 IP 地址了。
+
+如果一个 Managed Instance 中只运行一个 Task, 那么用 `host` Network 模式更省事，不需要额外的 ENI, 如果要在一个 EC2 实例上运行多个任务的话，
+只能选择  `awsvpc` 网络模式。
