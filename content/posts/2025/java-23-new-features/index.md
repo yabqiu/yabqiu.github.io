@@ -20,15 +20,15 @@ codeMaxLines: 50
 showLastmod: true
 ---
  
-Java 24 也是一个过渡版本, 还是到下面两个链接中找相应的更新
+Java 23 也是一个过渡版本, 还是到下面两个链接中找相应的更新
 
 1. [JDK 23 Release Notes - Major New Functionality](https://www.oracle.com/java/technologies/javase/23all-relnotes.html#JSERN23)
 2. [OpenJDK JDK 23 Features](https://openjdk.org/projects/jdk/23/)
 
-IntelliJ IDEA 对 Java 22 Language level 描述是
+IntelliJ IDEA 对 Java 23 Language level 描述是
 
 1. 23 - Markdown document comments
-2. 22(Preview) - Primitive types in patterns, implicitly declared classes, etc.
+2. 23(Preview) - Primitive types in patterns, implicitly declared classes, etc.
 
 把上面第二个链接中的特性列出来
 
