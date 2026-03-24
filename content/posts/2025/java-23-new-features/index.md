@@ -28,7 +28,7 @@ Java 23 也是一个过渡版本, 还是到下面两个链接中找相应的更�
 IntelliJ IDEA 对 Java 23 Language level 描述是
 
 1. 23 - Markdown document comments
-2. 23(Preview) - Primitive types in patterns, implicitly declared classes, etc.
+2. 23 (Preview) - Primitive types in patterns, implicitly declared classes, etc.
 
 把上面第二个链接中的特性列出来
 

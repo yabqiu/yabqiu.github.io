@@ -1,5 +1,5 @@
 ---
-title: "Java 22 Foreign Function Memory API 与 JNA"
+title: "Java 22 - Foreign Function Memory API 与 JNA"
 url: /java-22-foreign-function-memory-api-jna/
 date: 2026-03-23T14:26:35-05:00
 featured: false
