@@ -8,7 +8,7 @@ type: post
 toc: false
 # menu: main
 usePageBundles: true
-thumbnail: "/images/logos/spring-logo.png"
+thumbnail: "/images/logos/grpc-logo.png"
 categories:
   - Java
   - Spring
