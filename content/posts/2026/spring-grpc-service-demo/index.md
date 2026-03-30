@@ -10,9 +10,11 @@ toc: false
 usePageBundles: true
 thumbnail: "/images/logos/spring-logo.png"
 categories:
-  - Web
+  - Java
+  - Spring
 tags: 
-  - React.js
+  - gRPC
+  - SpringBoot
 comment: true
 codeMaxLines: 30
 # additional
