@@ -374,14 +374,6 @@ while True:
 $ python agent1.py
 Please provide two numbers.
 
-You: 23423
-Please provide the second number.
-
-You: 344
-::: 23767 DONE
-$ python start.py
-Please provide two numbers.
-
 You: 1235.222
 I have received 1235.222. Please provide the second number.
 
