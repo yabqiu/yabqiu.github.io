@@ -492,7 +492,7 @@ $
 }
 ```
 
-这里是一个捕获的 LangChain Agent 与 LLM 完整的交互过程，点击 [LangChain-LLM-Interact](langchain-llm-interact.txt) 查看内容。
+这里是一个捕获的 LangChain Agent 与 LLM 完整的交互过程，点击 [langchain-ll-interact.txt](langchain-llm-interact.txt) 查看内容。
 
 从该本件中又发现了新的关于 `thinking` 推理的内容，比如第一个响应中
 
