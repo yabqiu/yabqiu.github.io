@@ -622,4 +622,5 @@ while True:
 
 {{< bundle-image langchain-get-started-1.png 830 >}}
 
-这是目前为止体验到的 LangChain 简单而强大的创建 AI Agent 的功能。
+这是目前为止体验到的 LangChain 简单而强大的创建 AI Agent 的功能。本文是使用 `init_chat_model` 的方式来创建一个 AI Agent, LangChain
+还提供了更快捷的方法 `langchain.agents.create_agent()`，以后慢慢学，还是要好好看看 [LangChain 官方文档](https://docs.langchain.com/oss/python/langchain).
