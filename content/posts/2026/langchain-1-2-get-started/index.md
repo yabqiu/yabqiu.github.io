@@ -360,6 +360,7 @@ while True:
     messages.append(response)
 
     if 'DONE' in response.content:  # 这里是看到标志 `DONE` 结束对话
+        print(response.content.removesuffix("DONE"))
         break
     else:
         print(response.content)
@@ -373,10 +374,19 @@ while True:
 $ python agent1.py
 Please provide two numbers.
 
+You: 23423
+Please provide the second number.
+
+You: 344
+::: 23767 DONE
+$ python start.py
+Please provide two numbers.
+
 You: 1235.222
 I have received 1235.222. Please provide the second number.
 
 You: 35232.888
+36468.11
 $
 ```
 
