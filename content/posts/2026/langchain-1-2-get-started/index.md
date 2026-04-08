@@ -18,9 +18,9 @@ codeMaxLines: 30
 lastmod:
 ---
 
-AI 界日新月异，新名词层出不穷，像 Prompt Engineering, Context Engineering, 到出现又来了 Harness Engineering. 现在最怕两个人出来搞事情，
-Dario Amodei 和 Andrej Karpathy, 前者要用 AI 替代一切，后者专造名词。在大语言模型时代，搞机器学习了，专注模型的不用多少人，多数人还能在 AI
-上蹭热点的话就剩下 AI Agent 的这个赛道了，其余就是应用了，例如 Vibe Coding，或更贴近具体业务的应用。
+AI 界日新月异，新名词层出不穷，像 Prompt Engineering, Context Engineering, 到如今又来了 Harness Engineering. 现在最怕两个人出来搞事情，
+Dario Amodei 和 Andrej Karpathy, 前者宣称 AI 可替代一切，人变得一文不值，后者专造名词。在大语言模型时代，搞机器学习了，专注模型的不用多少人，
+多数人还能在 AI 上蹭热点的话就剩下 AI Agent 的这个赛道了，其余就是应用了，例如 Vibe Coding，或更贴近具体业务的应用。
 
 像各大 AI 编程工具，如 Codex, Claude Code, OpenCode, GitHub Copilot， Gemini, Cursor, Antigravity, Trae 本质上都是在比拼各家
 AI Agent 的能力。最近火的那个 OpenClaw 也是一个学习 AI Agent 的好范例。
@@ -33,9 +33,13 @@ AI Agent 的能力。最近火的那个 OpenClaw 也是一个学习 AI Agent 的
 当前 LangChain 的版本在 PyPI 上是 1.2.15, 在关注 LangChain 的同时我们也会看到 LangGraph 和 DeepAgents, 那么这三者有何关系呢？按不同
 层次来看，它们分别代表着
 
-1. LangChain: Agent 框架, 用于基础构建模型, 万物皆链
-2. LangGraph: Agent 运行时，工作流程安排, 状态 + 有向图
+1. LangGraph: Agent 运行时，工作流程安排, 状态 + 有向图
+2. LangChain: Agent 框架, 用于基础构建模型, 万物皆链
 3. DeepAgents: Agent Harness，自主推理引擎，自治编排
+
+LangChain 官方对这三者的说明是：如果要构建一个 AI Agent, 首推 `Deep Agents`, 它提供一整套的现成解决方案，如长会话压缩，虚拟文件系统，子
+Agent 管理与上下文隔离; `Deep Agents` 是 `LangChain` Agent 的实现，若需要自己定制可用 `LangChain`; 而 `LangGraph` 在 `LangChain`
+的底层， 可进行更复杂, 灵活的定制。
 
 下面我们只用 LangChain 来体验如何连接本地模型(将用 Ollama) 和远程模型(将用 Gemini)。
 
@@ -82,9 +86,7 @@ vi /etc/systemd/system/ollama.service
 Environment="OLLAMA_HOST=0.0.0.0:11434"
 ```
 
-或者选定的网络设备，如 `OLLAMA_HOST=192.168.1.100:11434`
-
-再重载并重启服务
+或者选定的网络设备，如 `OLLAMA_HOST=192.168.1.100:11434`, 最后重载并重启服务
 
 ```bash
 sudo systemctl daemon-reload
@@ -531,7 +533,7 @@ $
 {"model":"gemma4:26b","created_at":"2026-04-08T01:45:30.471438575Z","message":{"role":"assistant","content":"."},"done":false}
 ```
 
-在输出 `Please provide the first number.` 之前其实进行了 `thinking`
+在输出 `Please provide the first number.` 之前其实进行了 `thinking`，即推理。
 
 ```text
 The user wants me to ask for two numbers and then add them.
