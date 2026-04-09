@@ -8,9 +8,10 @@ type: post
 toc: false
 # menu: main
 usePageBundles: true
-thumbnail: "../images/logos/ai-logo.png"
+thumbnail: "../images/logos/langchain-logo.png"
 categories:
   - AI
+  - LangChain
 tags: 
   - LangChain
 comment: true
