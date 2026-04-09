@@ -184,7 +184,8 @@ export http_proxy=http://127.0.0.1:9090
 ```
 
 与模型交互时，`system_prompt`, `tools`, 和 `agent.invoke()` 时的 `input` 才是传递给模型的内容，它们最终与请求的模型名称，模型参数组成
-一个输入，我们看第一次 `agent.invoke()` 它会完成两次与 LLM 的交互, 分别实现 `get_user_location` 与 `get_weather_for_location` 
+一个输入. `tools` 中的函数是 `@tools` 装饰并用在 `create_agent()` 时用 `tools` 参数指定的列表。LangChain 读取了 @tools 函数的名称，
+文档注释和参数类型。我们看第一次 `agent.invoke()` 它会完成两次与 LLM 的交互, 分别实现 `get_user_location` 与 `get_weather_for_location` 
 工具的调用。第一次请求时完整的内容(这时格式化后的内容)
 
 ```json
@@ -266,10 +267,10 @@ export http_proxy=http://127.0.0.1:9090
 我们再来看请求 Ollama 的 `/api/chat` 后第一条消息的内容, 它是一个 `Line-Delimited JSON`, 即数据由一致多行组成，每一行是一个 JSON, 
 又称 NDJSON, 所以响应的 `Content-Type` 是 `application/x-ndjson`.
 
-```json lines
+{{< highlight-wrap json >}}
 {"model":"gemma4:26b","created_at":"2026-04-08T22:58:27.002360557Z","message":{"role":"assistant","content":"","tool_calls":[{"id":"call_detex1l0","function":{"index":0,"name":"get_user_location","arguments":{}}}]},"done":false}
 {"model":"gemma4:26b","created_at":"2026-04-08T22:58:27.009025523Z","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","total_duration":840090124,"load_duration":157000665,"prompt_eval_count":255,"prompt_eval_duration":18281146,"eval_count":99,"eval_duration":624183208}
-```
+{{< /highlight-wrap >}}
 
 这是两个 JSON, 第一行通知客户端调用工具 `get_user_location`. AI 回复的 `role` 是 `assistant`.
 
@@ -316,16 +317,16 @@ export http_proxy=http://127.0.0.1:9090
 我们并没有拼接 `message`, 就因为我们在 `create_agent()` 是指定了 `checkpointer=checkpointer`, 即 `InMemorySaver`, 
 这种拼接会话的功能变成自动的了。上面的 `messages`， 在最初的
 
-"role": "system", "content": "<system prompt>"
-"role": "user", "content": "what is the weather outside?"
+>"role": "system", "content": "&lt;system prompt&gt;"<br/>
+>"role": "user", "content": "what is the weather outside?"
 
 的基础上，加上了第一次回复的内容
 
-"role": "assistant", "tool_calls": \[{"function": { "name": "get_user_location", "arguments": {}}}]
+>"role": "assistant", "tool_calls": \[{"function": { "name": "get_user_location", "arguments": {}}}]
 
 再加上新的工具调用的结果的内容
 
-"role": "tool", "content": "Florida"
+>"role": "tool", "content": "Florida"
 
 后面的请求也是由 `InMemorySaver` 持续的添加内容。
 
@@ -333,10 +334,10 @@ export http_proxy=http://127.0.0.1:9090
 
 在调用完了工具 `get_user_location` 和 `get_weather_for_location` 后，我们得到了最终的回复，这时候的回复内容是
 
-```json
+{{< highlight-wrap json >}}
 {"model":"gemma4:26b","created_at":"2026-04-08T22:58:29.288326047Z","message":{"role":"assistant","content":"","tool_calls":[{"id":"call_maio2ggd","function":{"index":0,"name":"ResponseFormat","arguments":{"pun_response":"It's looking absolutely sun-sational in Florida! You might want to grab some shades, because the forecast is looking bright!","weather_conditions":"Sunny"}}}]},"done":false}
 {"model":"gemma4:26b","created_at":"2026-04-08T22:58:29.294894197Z","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","total_duration":1364325806,"load_duration":122615522,"prompt_eval_count":312,"prompt_eval_duration":22412919,"eval_count":184,"eval_duration":1153149215}
-```
+{{< /highlight-wrap >}}
 
 这时候要求我们再调用工具 `ResponseFormat`, 并且参数是 LLM 按照 `ResponseFormat` 的参数要求的内容
 
