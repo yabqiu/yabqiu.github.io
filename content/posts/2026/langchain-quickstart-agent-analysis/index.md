@@ -272,7 +272,8 @@ export http_proxy=http://127.0.0.1:9090
 {"model":"gemma4:26b","created_at":"2026-04-08T22:58:27.009025523Z","message":{"role":"assistant","content":""},"done":true,"done_reason":"stop","total_duration":840090124,"load_duration":157000665,"prompt_eval_count":255,"prompt_eval_duration":18281146,"eval_count":99,"eval_duration":624183208}
 {{< /highlight-wrap >}}
 
-这是两个 JSON, 第一行通知客户端调用工具 `get_user_location`. AI 回复的 `role` 是 `assistant`.
+这是两个 JSON, 第一行通知客户端调用工具 `get_user_location`. AI 回复的 `role` 是 `assistant`. 第一个 JSON 的 `done` 是 `false`,
+第二个 JSON 的 `done` 是 `true`, 这说明第一次回复还没有完成，第二次回复才完成了。第一次回复的内容是在请求客户端作一个工具调用。
 
 #### 自动的会话记忆
 
