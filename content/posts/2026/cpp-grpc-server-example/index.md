@@ -1,6 +1,6 @@
 ---
 title: "一个简单的 C++ 实现的 gRPC 服务"
-url: /c++-grpc-server-example/
+url: /cpp-grpc-server-example/
 date: 2026-03-29T22:32:41-05:00
 featured: false
 draft: false
