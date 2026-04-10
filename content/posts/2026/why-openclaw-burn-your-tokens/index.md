@@ -93,6 +93,14 @@ what's up?
 这大概也是 `OpenClaw` 为了诟病的烧 `Token` 大户的原因，如果启用了 Skills 的话，还会把相应 Skill 的元信息添加到信息提示词当中去。
 了解 `OpenClaw` 的另一方面，如果还继续使用 `OpenClaw` 的话，通过仔细阅读学习该提示词，可帮助我们更有效的使用它。
 
+[OpenClaw 文档 - System Prompt](https://docs.openclaw.ai/concepts/system-prompt). `OpenClaw` 是开源的，我们也可以从源代码来了解
+它的系统提示词，可查看以下相关源码
+
+1. [openclaw/src/agents/system-prompt.ts](https://github.com/openclaw/openclaw/blob/16282171147a2918501234fe05c11012be29f988/src/agents/system-prompt.ts)
+2. [openclaw/extensions/openai/prompt-overlay.ts](https://github.com/openclaw/openclaw/blob/16282171147a2918501234fe05c11012be29f988/extensions/openai/prompt-overlay.ts)
+3. [src/agents/subagent-system-prompt.ts](https://github.com/openclaw/openclaw/blob/16282171147a2918501234fe05c11012be29f988/src/agents/subagent-system-prompt.ts)
+4. [src/agents/heartbeat-system-prompt.ts](https://github.com/openclaw/openclaw/blob/16282171147a2918501234fe05c11012be29f988/src/agents/heartbeat-system-prompt.ts)
+
 以下全部内容都来自 `OpenClaw` 的系统提示词.
 
 
