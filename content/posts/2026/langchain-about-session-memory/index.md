@@ -202,7 +202,7 @@ print(f"LLM says: \n{results["messages"][-1].content}")
 
 现在具有记忆与会话隔离的代码演变为如下
 
-```python {hl_lines=[6,10,14,16,22]}
+```python {hl_lines=[5,9,12,14,20]}
 from langchain.agents import create_agent
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
