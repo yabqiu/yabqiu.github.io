@@ -84,8 +84,8 @@ what's up?
 
 下面还有几他几种情况的提示词
 
-1 [openclaw-heatbeat-request.json](openclaw-heatbeat-request.json) 包含了多次 `heatbeat` 检测的完整的请求内容。
-2.`OpenClaw` 的 `Cron Job` 执行时的发给 LLM 的消息 [openclaw-cron-job-to-telegram-request.json](openclaw-cron-job-to-telegram-request.json).
+1. [openclaw-heatbeat-request.json](openclaw-heatbeat-request.json) 包含了多次 `heatbeat` 检测的完整的请求内容。
+2. `OpenClaw` 的 `Cron Job` 执行时的发给 LLM 的消息 [openclaw-cron-job-to-telegram-request.json](openclaw-cron-job-to-telegram-request.json).
 3. 通过 Telegram 的机器人发消息时送到 LLM 的请求 [openclaw-webchat-telegram-request.json](openclaw-webchat-telegram-request.json).
 
 它们所用的系统提示词基本是一样的，有轻微的差别，比强 `webchat` 和 `Telegram` 的系统提示词都有 `Execution Bias` 的相关内容，而 `Cron Job` 的系统提示词则没有。
