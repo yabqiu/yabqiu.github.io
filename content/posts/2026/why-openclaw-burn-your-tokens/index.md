@@ -85,7 +85,7 @@ how are you?
 文件 [openclaws-heatbeat-request.json](openclaws-heatbeat-request.json) 包含了多次 `heatbeat` 检测的完整的请求内容。请点击文件名查看内容。
 
 这大概也是 `OpenClaw` 为了诟病的烧 `Token` 大户的原因，如果启用了 Skills 的话，还会把相应 Skill 的元信息添加到信息提示词当中去。
-了解 `OpenClaw` 的另一方面，如果还继续使用 `OpenClaw` 的话，通过阅读该提示词，可帮助我们更有效的使用它。
+了解 `OpenClaw` 的另一方面，如果还继续使用 `OpenClaw` 的话，通过仔细阅读学习该提示词，可帮助我们更有效的使用它。
 
 # ----------------------- System Prompt Begin ---------------------------
 
