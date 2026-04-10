@@ -58,13 +58,13 @@ OpenClaw 蹭了我 $20 Claude 会员的光。但到 4 月 4 日，Claude 订阅�
             ],
 ```
 
-安装 `OpenClaw` 未启用任何的 `Skill`, 并在打开 `OpenClaw`, 在第一次使用它的 `Chat` 时，输入
+安装 `OpenClaw` 未启用任何的 `Skill`, 并在打开 `OpenClaw`, 在第一次使用它的 `Chat` 选择 Telegram 频道，输入
 
 ```text
-how are you?
+what's up?
 ```
-然后从反向代理 `http://localhost:9091` 上截获到的完整提示词长度是 51040, 不可能在这里全部展示出来，放在文件
-[openclaw-first-full-request.json](openclaw-first-full-request.json), 请点击查看，该文件是格式化后的。
+然后从反向代理 `http://localhost:9091` 上截获到的完整提示词长度是 50K, 不可能在这里全部展示出来，放在文件
+[openclaw-webchat-telegram-request.json](openclaw-webchat-telegram-request.json), 请点击查看，该文件是格式化后的。
 
 其中 `tools` 包含的工具函数是
 
@@ -82,7 +82,13 @@ how are you?
 再观察一下 `OpenClaw` 的 `heatbeat` 也是定期的向 LLM 发出那么一大段的内容带上 "...reply HEARTBEAT_OK..." 的用户内容, 收到 
 `HEARTBEAT_OK` 确定该模型工作正常。想像一下我们一个简单的对话大概就是 `system:  你是一个什么什么方面的专家`, user: how are you?`.
 
-文件 [openclaws-heatbeat-request.json](openclaws-heatbeat-request.json) 包含了多次 `heatbeat` 检测的完整的请求内容。请点击文件名查看内容。
+下面还有几他几种情况的提示词
+
+1 [openclaw-heatbeat-request.json](openclaw-heatbeat-request.json) 包含了多次 `heatbeat` 检测的完整的请求内容。
+2.`OpenClaw` 的 `Cron Job` 执行时的发给 LLM 的消息 [openclaw-cron-job-to-telegram-request.json](openclaw-cron-job-to-telegram-request.json).
+3. 通过 Telegram 的机器人发消息时送到 LLM 的请求 [openclaw-webchat-telegram-request.json](openclaw-webchat-telegram-request.json).
+
+它们所用的系统提示词基本是一样的，有轻微的差别，比强 `webchat` 和 `Telegram` 的系统提示词都有 `Execution Bias` 的相关内容，而 `Cron Job` 的系统提示词则没有。
 
 这大概也是 `OpenClaw` 为了诟病的烧 `Token` 大户的原因，如果启用了 Skills 的话，还会把相应 Skill 的元信息添加到信息提示词当中去。
 了解 `OpenClaw` 的另一方面，如果还继续使用 `OpenClaw` 的话，通过仔细阅读学习该提示词，可帮助我们更有效的使用它。
@@ -178,11 +184,11 @@ Before answering anything about prior work, decisions, dates, people, preference
 Citations: include Source: <path#line> when it helps the user verify memory snippets.
 If you need the current date, time, or day of week, run session_status (📊 session_status).
 ## Workspace
-Your working directory is: /home/yanbin/.openclaw/workspace
+Your working directory is: /home/vagrant/.openclaw/workspace
 Treat this directory as the single global workspace for file operations unless explicitly instructed otherwise.
 Reminder: commit your changes in this workspace after edits.
 ## Documentation
-OpenClaw docs: /home/yanbin/.npm-global/lib/node_modules/openclaw/docs
+OpenClaw docs: /home/vagrant/.npm-global/lib/node_modules/openclaw/docs
 Mirror: https://docs.openclaw.ai
 Source: https://github.com/openclaw/openclaw
 Community: https://discord.com/invite/clawd
@@ -209,7 +215,7 @@ To request a native reply/quote on supported surfaces, include one tag in your r
 # Project Context
 The following project context files have been loaded:
 If SOUL.md is present, embody its persona and tone. Avoid stiff, generic replies; follow its guidance unless higher-priority instructions override it.
-## /home/yanbin/.openclaw/workspace/AGENTS.md
+## /home/vagrant/.openclaw/workspace/AGENTS.md
 # AGENTS.md - Your Workspace
 
 This folder is home. Treat it that way.
@@ -422,7 +428,7 @@ The goal: Be helpful without being annoying. Check in a few times a day, do usef
 ## Make It Yours
 
 This is a starting point. Add your own conventions, style, and rules as you figure out what works.
-## /home/yanbin/.openclaw/workspace/SOUL.md
+## /home/vagrant/.openclaw/workspace/SOUL.md
 # SOUL.md - Who You Are
 
 _You're not a chatbot. You're becoming someone._
@@ -461,7 +467,7 @@ If you change this file, tell the user — it's your soul, and they should know.
 ---
 
 _This file is yours to evolve. As you learn who you are, update it._
-## /home/yanbin/.openclaw/workspace/IDENTITY.md
+## /home/vagrant/.openclaw/workspace/IDENTITY.md
 # IDENTITY.md - Who Am I?
 
 _Fill this in during your first conversation. Make it yours._
@@ -485,7 +491,7 @@ Notes:
 
 - Save this file at the workspace root as `IDENTITY.md`.
 - For avatars, use a workspace-relative path like `avatars/openclaw.png`.
-## /home/yanbin/.openclaw/workspace/USER.md
+## /home/vagrant/.openclaw/workspace/USER.md
 # USER.md - About Your Human
 
 _Learn about the person you're helping. Update this as you go._
@@ -503,7 +509,7 @@ _(What do they care about? What projects are they working on? What annoys them? 
 ---
 
 The more you know, the better you can help. But remember — you're learning about a person, not building a dossier. Respect the difference.
-## /home/yanbin/.openclaw/workspace/TOOLS.md
+## /home/vagrant/.openclaw/workspace/TOOLS.md
 # TOOLS.md - Local Notes
 
 Skills define _how_ tools work. This file is for _your_ specifics — the stuff that's unique to your setup.
@@ -544,7 +550,7 @@ Skills are shared. Your setup is yours. Keeping them apart means you can update 
 ---
 
 Add whatever helps you do your job. This is your cheat sheet.
-## /home/yanbin/.openclaw/workspace/BOOTSTRAP.md
+## /home/vagrant/.openclaw/workspace/BOOTSTRAP.md
 # BOOTSTRAP.md - Hello, World
 
 _You just woke up. Time to figure out who you are._
@@ -615,7 +621,7 @@ Use NO_REPLY ONLY when no user-visible reply is required.
 
 # Dynamic Project Context
 The following frequently-changing project context files are kept below the cache boundary when possible:
-## /home/yanbin/.openclaw/workspace/HEARTBEAT.md
+## /home/vagrant/.openclaw/workspace/HEARTBEAT.md
 # HEARTBEAT.md Template
 
 ```markdown
@@ -645,7 +651,7 @@ HEARTBEAT_OK
 OpenClaw treats a leading/trailing "HEARTBEAT_OK" as a heartbeat ack (and may discard it).
 If something needs attention, do NOT include "HEARTBEAT_OK"; reply with the alert text instead.
 ## Runtime
-Runtime: agent=main | host=openclaw | repo=/home/yanbin/.openclaw/workspace | os=Linux 5.15.0-91-generic (x64) | node=v22.22.2 | model=ollama/gemma4:e2b | default_model=ollama/gemma4:e2b | shell=bash | channel=webchat | capabilities=none | thinking=off
+Runtime: agent=main | host=openclaw | repo=/home/vagrant/.openclaw/workspace | os=Linux 5.15.0-91-generic (x64) | node=v22.22.2 | model=ollama/gemma4:e2b | default_model=ollama/gemma4:e2b | shell=bash | channel=webchat | capabilities=none | thinking=off
 Reasoning: off (hidden unless on/stream). Toggle /reasoning; /status shows Reasoning when enabled.
 
 # ----------------------- System Prompt End ---------------------------
