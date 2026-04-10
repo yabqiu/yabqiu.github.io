@@ -79,13 +79,13 @@ what's up?
 我们也可以学习一下 `OpenClaw` 是如何不惜 `Token` 写系统提示词的。因为要维持会话，我们可想而知从 LLM 的响应与新的用户问题不停的堆叠，会话再
 怎么压缩都只会比这个更长，不能再短了。
 
-再观察一下 `OpenClaw` 的 `heatbeat` 也是定期的向 LLM 发出那么一大段的内容带上 "...reply HEARTBEAT_OK..." 的用户内容, 收到 
+再观察一下 `OpenClaw` 的 `heartbeat` 也是定期的向 LLM 发出那么一大段的内容带上 "...reply HEARTBEAT_OK..." 的用户内容, 收到 
 `HEARTBEAT_OK` 确定该模型工作正常。想像一下我们一个简单的对话大概就是 `system:  你是一个什么什么方面的专家`, user: how are you?`.
 
 下面还有几他几种情况的提示词
 
-1. [openclaw-heatbeat-request.json](openclaw-heatbeat-request.json) 包含了多次 `heatbeat` 检测的完整的请求内容。
-2. `OpenClaw` 的 `Cron Job` 执行时的发给 LLM 的消息 [openclaw-cron-job-to-telegram-request.json](openclaw-cron-job-to-telegram-request.json).
+1. [openclaw-webchat-heartbeat-request.json](openclaw-webchat-heartbeat-request.json) 包含了多次 `heartbeat` 检测的完整的请求内容。
+2. `OpenClaw` 的 `Cron Job` 执行时的发给 LLM 的消息 [openclaw-cron-job-telegram-request.json](openclaw-cron-job-telegram-request.json).
 3. 通过 Telegram 的机器人发消息时送到 LLM 的请求 [openclaw-webchat-telegram-request.json](openclaw-webchat-telegram-request.json).
 
 它们所用的系统提示词基本是一样的，有轻微的差别，比强 `webchat` 和 `Telegram` 的系统提示词都有 `Execution Bias` 的相关内容，而 `Cron Job` 的系统提示词则没有。
