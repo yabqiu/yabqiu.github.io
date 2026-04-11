@@ -163,6 +163,16 @@ export http_proxy=http://127.0.0.1:9090
 执行后由代理记录下该 `Agent` 与 `Ollama` 的四个请求响应来回的数据，请点击 [langchain-agent-ollama.txt](langchain-agent-ollama.txt)
 查看。后面的分析中会引用其中的内容，注意，响应数据中擦除了所有 'thinking' 的内容。
 
+除了用自己的代理还截获对 Ollama 的请求响应外，也可以 Ollama 前端用反向代理来抓包，来通过配置 Ollama 的 `OLLAMA_DEBUG=1` 的环境变量开启
+Ollama 的调试日志。或者用 `LangSmith` 的 `Tracing` 功能， 先要申请一个 `LangSmith` 的 API Key(有免费选项), 只要是使用 `LangChain`
+的 `Agent`, 加上环境变量
+
+>LANGSMITH_TRACING=true<br/>
+>LANGSMITH_API_KEY=<Your LangSmith API Key>
+
+如此，与大语言模型的交互就会发送给 `LangSmith`, 就能在 [https://smith.langchain.com/](https://smith.langchain.com/) 的 `Tracing`
+中查看到详细内容了。
+
 ### 代码分析
 
 我们对照代码与请求响应数据的内容对代码进行分析。
@@ -188,7 +198,7 @@ export http_proxy=http://127.0.0.1:9090
 文档注释和参数类型。我们看第一次 `agent.invoke()` 它会完成两次与 LLM 的交互, 分别实现 `get_user_location` 与 `get_weather_for_location` 
 工具的调用。第一次请求时完整的内容(这时格式化后的内容)
 
-```json
+{{< highlight-wrap json >}}
 {
   "model": "gemma4:26b",
   "stream": true,
@@ -256,7 +266,7 @@ export http_proxy=http://127.0.0.1:9090
     }
   ]
 }
-```
+{{< /highlight-wrap >}}
 
 `system_prompt` 的 `role` 是 `system`, 用户的 `role` 是 `user`, 后面会看到 AI 响应内容的 `role` 是 `assistant`. 提示词中包含了工具
 列表，`ResponseFormat` 也是以工具函数的方式存在，`LLM` 会找到它对应的格式参数，从而可用 `response["structured_response"]`
@@ -279,7 +289,7 @@ export http_proxy=http://127.0.0.1:9090
 
 看第二个请求的内容
 
-```json
+{{< highlight-wrap json >}}
 {
   "model": "gemma4:26b",
   "stream": true,
@@ -313,7 +323,7 @@ export http_proxy=http://127.0.0.1:9090
   ],
   "tools": [ "<与上同，此处省略>" ]
 }
-```
+{{< /highlight-wrap >}}
 
 我们并没有拼接 `message`, 就因为我们在 `create_agent()` 是指定了 `checkpointer=checkpointer`, 即 `InMemorySaver`, 
 这种拼接会话的功能变成自动的了。上面的 `messages`， 在最初的
@@ -342,12 +352,12 @@ export http_proxy=http://127.0.0.1:9090
 
 这时候要求我们再调用工具 `ResponseFormat`, 并且参数是 LLM 按照 `ResponseFormat` 的参数要求的内容
 
-```json
+{{< highlight-wrap json >}}
 {
   "pun_response": "It's looking absolutely sun-sational in Florida! You might want to grab some shades, because the forecast is looking bright!",
   "weather_conditions": "Sunny"
 }
-```
+{{< /highlight-wrap >}}
 
 Agent 端实际调用一下 `ResponseFormat` 工具函数就都到我们想要的结构化响应数据了，即 `response['structured_response']` 的内容。
 
@@ -388,8 +398,8 @@ while True:
 
 执行时交互效果如下
 
-```bash
-python src/langchain_study/agent3.py
+{{< highlight-wrap bash >}}
+python agent3.py
 You: what is the weather outside?
 --- [model] ---
   AIMessage: [{'name': 'get_user_location', 'args': {}, 'id': 'ca4dd0f4-904d-4603-9a75-6dbfe281e1b3', 'type': 'tool_call'}]
@@ -406,7 +416,7 @@ Deserializing unregistered type __main__.ResponseFormat from checkpoint. This wi
 --- [model] ---
   AIMessage: You're *weather* welcome! Don't hesitate to reach out if you need another *forecast*!
 You:
-```
+{{< /highlight-wrap >}}
 
 继续丰富的话，可以自定义 `/` 命令，如 `/clear` 清理会话，`/compact` 压缩会话, `/model` 切换模型等。
 
