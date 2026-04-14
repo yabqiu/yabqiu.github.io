@@ -227,20 +227,57 @@ agent.invoke({"messages": [{"role": "user", "content": question}]},
 
 #### user_role = "admin"
 
-{{< highlight-wrap json >}}
-{"model":"gemma4:e4b","stream":true,"options":{},"messages":[{"role":"user","content":"create a file and put content xyz"}],"tools":[{"type":"function","function":{"name":"read","description":"Read data.","parameters":{"type":"object","required":["name"],"properties":{"name":{"type":"string"}}}}},{"type":"function","function":{"name":"update","description":"Update data.","parameters":{"type":"object","required":["name","new_name"],"properties":{"name":{"type":"string"},"new_name":{"type":"string"}}}}},{"type":"function","function":{"name":"write","description":"Write data.","parameters":{"type":"object","required":["name","content"],"properties":{"name":{"type":"string"},"content":{"type":"string"}}}}}]}
-{{< /highlight-wrap >}}
+```json
+{
+  "tools": [ {
+      "type": "function",
+      "function": { "name": "read", "description": "Read data.",
+        "parameters": { "type": "object", "required": [ "name" ],
+          "properties": { "name": { "type": "string" }
+          } } } },
+    {
+      "type": "function",
+      "function": { "name": "update", "description": "Update data.",
+        "parameters": { "type": "object", "required": [ "name", "new_name" ],
+          "properties": { "name": { "type": "string" }, "new_name": { "type": "string" }
+          } } } },
+    {
+      "type": "function",
+      "function": { "name": "write", "description": "Write data.",
+        "parameters": { "type": "object", "required": [ "name", "content" ],
+          "properties": { "name": { "type": "string" },
+            "content": { "type": "string" }
+          } } } }
+  ]
+}
+```
 
 #### user_role = "editor"
 
-{{< highlight-wrap json >}}
-{"model":"gemma4:e4b","stream":true,"options":{},"messages":[{"role":"user","content":"create a file and put content xyz"}],"tools":[{"type":"function","function":{"name":"update","description":"Update data.","parameters":{"type":"object","required":["name","new_name"],"properties":{"name":{"type":"string"},"new_name":{"type":"string"}}}}}]}
-{{< /highlight-wrap >}}
+```json
+{
+  "tools": [ {
+      "type": "function",
+      "function": { "name": "update", "description": "Update data.",
+        "parameters": { "type": "object", "required": [ "name", "new_name" ],
+          "properties": { "name": { "type": "string" }, "new_name": { "type": "string" } }
+        } } }
+  ]
+}
+```
 
 ### user_role = "viewer"
-{{< highlight-wrap json >}}
-{"model":"gemma4:e4b","stream":true,"options":{},"messages":[{"role":"user","content":"create a file and put content xyz"}],"tools":[{"type":"function","function":{"name":"read","description":"Read data.","parameters":{"type":"object","required":["name"],"properties":{"name":{"type":"string"}}}}}]}
-{{</ highlight-wrap >}}
+```json
+{
+  "tools": [ {
+      "type": "function",
+      "function": { "name": "read", "description": "Read data.",
+        "parameters": { "type": "object", "required": [ "name" ],
+          "properties": { "name": { "type": "string" } }
+        } } }
+  ]
+}
+```
 
 `LangChain` 的 Tools 调用使用的是 ReAct 循环模型，即 `Reasoning/Acting` 循环。
 
