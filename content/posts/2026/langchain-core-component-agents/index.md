@@ -16,6 +16,7 @@ tags:
   - LangChain
 comment: true
 codeMaxLines: 50
+showLastmod: true
 lastmod:
 ---
 
@@ -25,15 +26,14 @@ lastmod:
 
 ### 创建 Agent
 
-`create_agent` 是在正式产品中用于创建 Agent 的函数， 它返回的是一个 `langgraph.graph.state.CompiledStateGraph` 对象，而非一个 `XxxAgent`
-样的东西。所以它创建的是一个状态图，图吗，它包括顶点和边，Agent 就是这个图中移动，比如在 `Model` 和 `Tools` 之间往复, 或加入 `Middleware`,
-或者中间可以加入人的互动(Human-in-the-loop).
+`create_agent` 是可用于正式产品中创建 Agent 的函数， 它返回的是一个 `langgraph.graph.state.CompiledStateGraph` 对象，而非一个 `XxxAgent`
+样的东西。所以它创建的是一个状态图，图吗，就有顶点和边，Agent 就是这个图中移动，比如在 `Model` 和 `Tools` 之间往复, 或在中间加入的互动的(Human-in-the-loop).
 
-`LangGraph` 把与模型，工具，以及人的交互做成一个图还是很表意的，取了文档中的这个图来表示 Agent 的状态图。<!--more-->
+`LangGraph` 把与模型，工具，以及人的交互做成一个图还是很表意的，下面是来源于官方文档的表示 Agent 的状态图。<!--more-->
 
 {{< bundle-image langgraph-state-graph.png 338 >}}
 
-比如用代码
+比如下面的代码
 
 ```python
 agent = create_agent(
@@ -51,7 +51,7 @@ agent = create_agent(
 
 这实际上已经把前面的那个状态图描述出来了。
 
-在继续往下进一步了解 Model 之前有必要知道 `create_agent()` 方法的原型
+在继续进一步了解 Model 之前有必要知道 `create_agent()` 方法的原型
 
 ```python
 def create_agent(
@@ -82,8 +82,8 @@ def create_agent(
 
 ### 动态模型
 
-Model 是 Agent 的核心，没了 Model 什么也不是，它分静态和动态的 Model, 动态模型即动态的选择适合于干某类事的特定的模型。静态模型就是创建 `Agent`
-时直接指定的模型. 例如本地有两个 Ollama 下载的模型
+Model 是 Agent 的核心，没了 Model 什么也不是，它分静态和动态的 Model, 动态模型即能按条件动态的选择适合于干某类事的特定的模型。静态模型就是
+创建 `Agent` 时直接指定的模型。接下来演示如何动态的选择模型，例如本地有两个 Ollama 下载的模型
 
 ```bash
 ollama list
@@ -92,8 +92,8 @@ llama3.2:1b    baf6a787fdff    1.3 GB    31 seconds ago
 gemma4:e4b     c6eb396dbd59    9.6 GB    3 days ago
 ```
 
-现在想要简单的如 `hello`, `how are you` 这样的问题用小模型 `llama3.2:1b` 来回答，而复杂的问题用 `gemma4:e4b` 回答, 这种降智处理可以快速
-回答外，也可以为模型提供商节约成本。
+现在的需求是，复杂的问题用 `gemma4:e4b` 回答, 简单问题，如 `hello`, `how are you` 用小模型 `llama3.2:1b`, 这种降智处理可以快速给出回答外，
+也可以为模型提供商节约成本。
 
 以下例子根据官方代码进行改编的
 
@@ -131,7 +131,7 @@ print("--------------")
 chat("write python code to shutdown an ec2 instance")
 ```
 
-`LangChain` 靠 `middleware` 来选择适当模型的，以上代码执行后输出为
+`LangChain` 依靠 `middleware`，在其中根据问题或上下文特征来选择适当模型的，以上代码执行后输出为
 
 > model: llama3.2:1b<br/>
 > answer: Hello. Is there something I can help you with or would you like to chat?<br/>
@@ -142,13 +142,15 @@ chat("write python code to shutdown an ec2 instance")
 > This code assumes you have already:<br/>
 > ......
 
+问题为 `hello` 模型选择 `ollama:llama3.2:1b`, 要它写代码时换到了 `gemma4:e4b` 模型。
+
 注：如果在 `init_chat_model()` 创建模型时绑定了工具的话，则动态模型不能与结构化输出同时使用，此时应该在 `create_agent()` 时绑定工具。
 
-大语言模型发展到现在 `Tools` 是必不可少的，没有工具的话就像早期的 `ChatGPT` 只能基于训练时的知识来回答问题，对于问询天气，订票之类的根本无能为力，
-也就成不了现在的所谓的智能体。`LangChain` 支持工具方面，多个工具逐个触发，但可并发调用; 像动态模型一样，工具也可以动态的, 这就可以根据应用场景
+大语言模型发展到现在 `Tools` 是必不可少的，没有工具就像早期的 `ChatGPT` 只能基于训练时的知识来回答问题，对于问询天气，订票之类的根本无能为力，
+也就成不了现在的所谓的智能体。`LangChain` 支持工具方面，多个工具逐个触发，可并发调用工具; 像动态模型一样，工具也可以动态的, 这就可以根据应用场景
 动态的发送工具列表给模型，不用每次把所有的工具送给大模型，节约 Token; 工具调用有重试和错误处理机制; 状态可跨越不同的工具调用。
 
-静态工具的使用很简单，不再讲述，接下看 `LangChain` 如何支持动态工具调用，我们可以根据用户权限，特性标记或会话阶段来选择不同的工具集。动态选择
+静态工具的使用很简单，不再讲述，这边看 `LangChain` 如何支持动态工具调用，我们可以根据用户权限，特性标记或会话阶段来选择不同的工具集。动态选择
 工具有两种种方式
 
 1. 创建 Agent 时预注册所有的工具，在每次交互时用 `middleware` 过滤出当前会话需要的工具
@@ -223,7 +225,7 @@ agent.invoke({"messages": [{"role": "user", "content": question}]},
              context=Context(user_role="viewer"))
 ```
 
-`user_role` 为 `admin`, `editor` 和 `viewer` 时，这三个请求分别向模型发送的提示词是(从中看到相应的 tools)
+`user_role` 为 `admin`, `editor` 和 `viewer` 时，这三个请求分别向模型发送提示词中 `tools` 分别如下
 
 #### user_role = "admin"
 
@@ -278,7 +280,7 @@ agent.invoke({"messages": [{"role": "user", "content": question}]},
 }
 ```
 
-`LangChain` 的 Tools 调用使用的是 ReAct 循环模型，即 `Reasoning/Acting` 循环。
+`LangChain` 的 Tools 调用遵循了 `ReAct` 循环模型，即 `Reasoning/Acting` 循环。
 
 #### 工具调用的异常处理
 
@@ -293,9 +295,9 @@ from langchain_core.tools import tool
 
 
 @tool
-def read(name: str) -> str:
+def read(filepath: str) -> str:
     """Read file data by filepath."""
-    raise FileNotFoundError(f"File {name} not found")
+    raise FileNotFoundError(f"File {filepath} not found")
 
 
 @wrap_tool_call
@@ -324,7 +326,7 @@ for message in result["messages"]:
     print(f"{type(message)}: {message.tool_calls if isinstance(message, AIMessage) else ""}: {message.content}")
 ```
 
-调用方法 `read(name)` 时报出异常， 看下这时 `Agent` 会如何处理, 打印出上面的所有消息
+调用方法 `read(filepath)` 时报出异常， 看下这时 `Agent` 会如何处理, 打印出上面的所有消息
 
 {{< highlight-wrap text >}}
 <class 'langchain_core.messages.human.HumanMessage'>: : read file /abc.log and explain the content
@@ -333,13 +335,14 @@ for message in result["messages"]:
 <class 'langchain_core.messages.ai.AIMessage'>: []: I was unable to read the file `/abc.log` because the system returned an error stating that the file was not found.
 {{< /highlight-wrap >}}
 
-中间的 `ToolMessage` 报告了 `Tool error`.
+中间的 `ToolMessage` 报告了 `Tool error`. 也就是每个工具方法都由 `@wrap_tool_call` 装饰的拦截器来调用，有异常直接返回 `ToolMessage`，
+也相当于模型请求本地进行的方法调用结束了，只不过以异常的方式结束的。
 
 ### 系统提示词(System Prompt)
 
-系统提示词是考验使用 AI, 实现代理的功力的地方，像 [`OpenClaw` 的系统提示词参考](http://localhost:1313/why-openclaw-burn-your-token/#tooling) 就非常庞大。
-这里不是学习如何写系统提示词，当前我们也可以问 AI 帮我们生成所需的系统提示词，一切皆可 AI。而要讲的是系统提示词也可以动态，创建 agent 时不指系统提示词，
-也像 Model, Tools 那样可以根据条件动态选择。
+系统提示词是考验一个人或 Agent 使用 AI, 或实现代理所爆发出来的的功力所在方，像 [`OpenClaw` 的系统提示词参考](http://localhost:1313/why-openclaw-burn-your-token/#tooling) 就非常庞大。
+这里不是学习如何写系统提示词，当然我们也可以问 AI 帮我们生成所需的系统提示词，一切皆可 AI。而要讲的是系统提示词也可以动态，创建 agent
+时不指系统提示词，也像 Model, Tools 那样可以根据条件动态选择相匹配的系统提示词。
 
 ```python
 class Context(TypedDict):
@@ -431,7 +434,7 @@ ContactInfo(name=John Doe, email=john@example.com, phone=(555) 123-4567)
           } } } } ] }
 ```
 
-注：对不重要的信息进行了折叠
+注：以上 JSON 数据对不重要的信息进行了折叠
 
 如果是一个无法正确格式化的消息会出现什么状况呢？ 把问题换成
 
@@ -445,7 +448,7 @@ ContactInfo(name=John Doe, email=john@example.com, phone=(555) 123-4567)
 
 > {'configurable': {}, 'metadata': {'ls_integration': 'langchain_create_agent'}, 'recursion_limit': 9999}
 
-可以在创建 `agent` 是修改 `recursion_limit` 值，或在 `agent.invoke()` 时设定该值，`invoke()` 调用改成
+要么在创建 `agent` 是修改 `recursion_limit` 值，或在 `agent.invoke()` 时设定该值，`invoke()` 调用改成
 
 ```python
 result = agent.invoke({
@@ -465,7 +468,7 @@ For troubleshooting, visit: https://docs.langchain.com/oss/python/langgraph/erro
 
 实际应用中需根据工具数量来决定 `recursion_limit` 的值，工具越多，循环的可能性越大，值也要相应的增大。
 
-`ProviderStrategy` 使用模型自己的结构化输出方式，模型没有的话会使用 `ToolStrategy`
+`ProviderStrategy` 使用模型自己的结构化输出方式，模型没有这一能力的话会使用 `ToolStrategy`
 
 ```python
 agent = create_agent(
@@ -496,7 +499,7 @@ agent = create_agent(
 ```
 
 不再需要 `tools`, 而是发送了 `format`，测试了 `ollama:gemma4:e4b` 模型，可以支持，这样就省去了一次 `ToolMessage` 的调用，相当于省了
-一个消息来回，所以整个通信过程就一个 `MumanMessage` 和一个 `AIMessage` 就完事了，`AIMessage` 中直接输出格式化后的消息
+一个消息来回，所以整个通信过程就一个 `HumanMessage` 和一个 `AIMessage` 就完事了，`AIMessage` 中直接输出格式化后的消息
 
 ```text
 ContactInfo(name=John Doe, email=john@example.com, phone=(555) 123-4567)
@@ -508,11 +511,11 @@ ContactInfo(name=John Doe, email=john@example.com, phone=(555) 123-4567)
 }
 ```
 
-### Agent 状态
+### Agent 状态(Agent State)
 
 `LangChain` 的技术文档 [Agents/Memory](https://docs.langchain.com/oss/python/langchain/agents#memory) 好像不是关于记忆的内容，
-而是有关 `AgentState` 的，比如默认的 `AgentState` 有三个字段 `messages`, `jump_to`, 和 `structured_response`. 我们调用 `agent.invoke()`
-时通常用 `{"messages": [...]}` 发送消息，通过定制 `AgentState` 可以附更多的信息, 但是有什么用途呢？
+而是有关 `AgentState` 的，比如默认的 `AgentState` 有三个字段 `messages`, `jump_to`, 和 `structured_response`. 我们调用
+`agent.invoke()` 时通常用 `{"messages": [...]}` 发送消息，通过定制 `AgentState` 可以附更多的信息, 但是有什么用途呢？
 
 `LangChain` 提供两种方式来使用定制的 `AgentState`
 
@@ -537,16 +540,17 @@ agent = create_agent(
 
 result = agent.invoke({
     "messages": [{"role": "user", "content": "hello"}],
-    "user_preferences": {"task_type": "simple"},
+    "user_preferences": {"task_type": "simple"}, # 这是基于 `CustomState` 附加的信息
 })
 ```
 
-`user_preferences` 也只是让 `middleware` 看到，并不会发送到大语言模型去。
+通过对请求数据的分析，`user_preferences` 也只是让 `middleware` 看到，并不会发送到大语言模型去。
 
 ### Streaming 流式交互
 
 我们除了调用 `agent.invoke()` 等与模型交互全部完成后得到最后的结果，也可以在与模型交互过程中 通过 `agent.stream()` 来获取流式交互的结果.
-也就是要调用 `agent.stream()` 方法，它与 `model.stream()` 还不尽相同.
+在基于 `model = init_chat_model()` 创建的 model 与 LLM 模型交互时，我们用过 `model.stream()`，`agent.stream()` 也有相应的功能，
+即 `stream_mode="messages"` 时与 `model.stream()` 等效.
 
 ```python
 for chunk, metadata in agent.stream(
@@ -555,8 +559,9 @@ for chunk, metadata in agent.stream(
     print(chunk.content, end="", flush=True)
 ```
 
-这与 `model.stream()` 是一样的效果，一个一个 token 输出。`stream_mode` 的取值有 `values`, `updates`, `checkpoints`, `tasks`, 
-`debug`, `messages`, `custom`, 默认值为像是 `updates`. 不同 `stream_mode` 下 `agent.stream()` 返回值的格式不一样，需因时读取数据。
+这与 `model.stream()` 是一样的效果，最后一个 AIMessage 回复一个一个 token 输出。`stream_mode` 的取值有 `values`, `updates`, 
+`checkpoints`, `tasks`, `debug`, `messages`, `custom`, 默认值为像是 `updates`. 不同 `stream_mode` 下 `agent.stream()`
+返回值的格式不一样，需因时读取数据。
 
 ### Middleware 中单件
 
