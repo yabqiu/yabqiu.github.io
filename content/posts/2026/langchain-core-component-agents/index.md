@@ -166,21 +166,21 @@ from pydantic import BaseModel
 
 
 @tool
-def read(name: str) -> str:
-    """Read data."""
-    return f"Reading {name}"
+def read(filepath: str) -> str:
+    """Read file data by filepath."""
+    return f"Read {filepath}"
 
 
 @tool
-def update(name: str, new_name: str) -> str:
-    """Update data."""
-    return f"Updating {name} to {new_name}"
+def update(filepath: str, new_content: str) -> str:
+    """Update file data by filepath and new content."""
+    return f"Updated {filepath}"
 
 
 @tool
-def write(name: str, content: str) -> str:
-    """Write data."""
-    return f"Writing {name} with content: {content}"
+def write(filepath: str, content: str) -> str:
+    """Write file data with filepath and content."""
+    return f"Writing {filepath} with content: {content}"
 
 
 class Context(BaseModel):
@@ -231,23 +231,22 @@ agent.invoke({"messages": [{"role": "user", "content": question}]},
 {
   "tools": [ {
       "type": "function",
-      "function": { "name": "read", "description": "Read data.",
-        "parameters": { "type": "object", "required": [ "name" ],
-          "properties": { "name": { "type": "string" }
-          } } } },
+      "function": { "name": "read", "description": "Read file data by filepath.",
+        "parameters": { "type": "object", "required": [ "filepath" ],
+          "properties": { "filepath": { "type": "string" } }
+        } } },
     {
       "type": "function",
-      "function": { "name": "update", "description": "Update data.",
-        "parameters": { "type": "object", "required": [ "name", "new_name" ],
-          "properties": { "name": { "type": "string" }, "new_name": { "type": "string" }
-          } } } },
+      "function": { "name": "update", "description": "Update file data by filepath and new content.",
+        "parameters": { "type": "object", "required": [ "filepath", "new_content" ],
+          "properties": { "filepath": { "type": "string" }, "new_content": { "type": "string" } }
+        } } },
     {
       "type": "function",
-      "function": { "name": "write", "description": "Write data.",
-        "parameters": { "type": "object", "required": [ "name", "content" ],
-          "properties": { "name": { "type": "string" },
-            "content": { "type": "string" }
-          } } } }
+      "function": { "name": "write", "description": "Write file data with filepath and content.",
+        "parameters": { "type": "object", "required": [ "filepath", "content" ],
+          "properties": { "filepath": { "type": "string" }, "content": { "type": "string" } }
+        } } }
   ]
 }
 ```
@@ -258,9 +257,9 @@ agent.invoke({"messages": [{"role": "user", "content": question}]},
 {
   "tools": [ {
       "type": "function",
-      "function": { "name": "update", "description": "Update data.",
-        "parameters": { "type": "object", "required": [ "name", "new_name" ],
-          "properties": { "name": { "type": "string" }, "new_name": { "type": "string" } }
+      "function": { "name": "update", "description": "Update file data by filepath and new content.",
+        "parameters": { "type": "object", "required": [ "filepath", "new_content" ],
+          "properties": { "filepath": { "type": "string" }, "new_content": { "type": "string" } }
         } } }
   ]
 }
@@ -271,9 +270,9 @@ agent.invoke({"messages": [{"role": "user", "content": question}]},
 {
   "tools": [ {
       "type": "function",
-      "function": { "name": "read", "description": "Read data.",
-        "parameters": { "type": "object", "required": [ "name" ],
-          "properties": { "name": { "type": "string" } }
+      "function": { "name": "read", "description": "Read file data by filepath.",
+        "parameters": { "type": "object", "required": [ "filepath" ],
+          "properties": { "filepath": { "type": "string" } }
         } } }
   ]
 }
@@ -295,7 +294,7 @@ from langchain_core.tools import tool
 
 @tool
 def read(name: str) -> str:
-    """Read file content."""
+    """Read file data by filepath."""
     raise FileNotFoundError(f"File {name} not found")
 
 
