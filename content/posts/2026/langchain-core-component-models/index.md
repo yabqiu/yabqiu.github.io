@@ -802,7 +802,7 @@ model = ChatOpenAI(
 而 `Ollama` 没有 `Proxy` 相关参数，所以只有针对 Python 代码设置环境变量 `http_proxy=http://127.0.0.1:9090` 来代理，有代理的挟持就能
 观察客户端与模型之间的通信数据。本人对 `LangChain` 的学习就非常依赖代理与反向代理来理解与模型的通信过程。
 
-#### 对数概率(Log)
+#### 对数概率(Log probabilities)
 
 有些模型可以输出每个 Token 预测的概率，像 `Ollama` 的 `Gemma4` 模型就支持
 
