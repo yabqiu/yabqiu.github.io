@@ -150,6 +150,17 @@ model.invoke([
 ])
 ```
 
+`model` 除了用 `[{"role": "xxx", "content": "yyy"}]` 和 `[XxxMessage(content="xxx")]` 的形式传递会话历史外，还可以用
+`list[Tuple]` 的形式，代码如下
+
+```python
+response = model.invoke([
+    ("user", "Tell me a joke."),
+    ("assistant", "Why did the scarecrow win an award?\n\nBecause he was outstanding in his field! 😂"),
+    ("user", "another none")
+])
+```
+
 这就是模型的上下文。
 
 ### 模型的流式输出
@@ -422,7 +433,7 @@ print("content_blocks: ", response.content_blocks)
 
 问句 `hello`, 模型说请调用 `tool_1('hello.txt')`, 好像还有点相关性. 可是再跑一次相同的代码又会是下面的结果
 
-```text
+{{< highlight-wrap "json" >}}
 content:  {
   "name": "{function read_file_content_by_filepath}",
   "parameters": {
@@ -431,7 +442,7 @@ content:  {
 }
 tool_calls:  []
 content_blocks:  [{'type': 'text', 'text': '{\n  "name": "{function read_file_content_by_filepath}",\n  "parameters": {\n    "filepath": "hello"\n  }\n}'}]
-```
+{{< /highlight-wrap >}}
 
 不是要强制使用工具吗？那好，`hello` 是吧，给我任意调 `read_file_content_by_filepath("hello")` 方法，这就乱套了。
 
@@ -580,11 +591,12 @@ print("type: ", type(response), "\n", response)
    这个 `tools` 定义与使用 `TypedDict` 方式的 Schema 很相似. 既然是工具调用，就要求客户端来进行调用，并返回 `ToolMessage`, 除非用 `agent` 自动化处理。
 3. `method="json_mode"`, ``model.with_structured_output(None, method="json_mode")`
    ```python
-model_with_structure = model.with_structured_output(None, method="json_mode")
-response = model_with_structure.invoke("""Get one who won the Nobel Prize in Chemistry in 2020?, \n
-extract first_name, last_name, and birth_year and return as json""")
-print("type: ", type(response), "\n", response)
-```
+    model_with_structure = model.with_structured_output(None, method="json_mode")
+    response = model_with_structure.invoke("""Get one who won the Nobel Prize in Chemistry in 2020?, \n
+      extract first_name, last_name, and birth_year and return as json""")
+    print("type: ", type(response), "\n", response)
+    ```
+   
 这段代码返回的是一个 `AIMessage`, 其中 `response.content` 内容是
 ```text
 type:  <class 'dict'> 
@@ -617,7 +629,7 @@ print("type: ", type(response), "\n", response)
 
 得到的结果是
 
-{{< highlight-wrap json >}}
+{{< highlight-wrap text >}}
 type:  <class '__main__.Winners'>
 winners=[Winner(first_name='Omar', last_name='Atwater', birth_year=1944), Winner(first_name='Lewis', last_name='Brust', birth_year=1932), Winner(first_name='Joseph', last_name='Chrichton', birth_year=1932)]
 {{< /highlight-wrap >}}
@@ -633,30 +645,30 @@ model = init_chat_model(
     model_provider='google_genai'
 )
 
-print(model.profile)
+print(json.dumps(model.profile, indent=2))
 ```
 
 看到了模型相关数据
 
 ```json
 {
-  'max_input_tokens': 1048576,
-  'max_output_tokens': 65536,
-  'text_inputs': True,
-  'image_inputs': True,
-  'audio_inputs': True,
-  'pdf_inputs': True,
-  'video_inputs': True,
-  'text_outputs': True,
-  'image_outputs': False,
-  'audio_outputs': False,
-  'video_outputs': False,
-  'reasoning_output': True,
-  'tool_calling': True,
-  'structured_output': True,
-  'image_url_inputs': True,
-  'image_tool_message': True,
-  'tool_choice': True
+  "max_input_tokens": 1048576,
+  "max_output_tokens": 65536,
+  "text_inputs": true,
+  "image_inputs": true,
+  "audio_inputs": true,
+  "pdf_inputs": true,
+  "video_inputs": true,
+  "text_outputs": true,
+  "image_outputs": false,
+  "audio_outputs": false,
+  "video_outputs": false,
+  "reasoning_output": true,
+  "tool_calling": true,
+  "structured_output": true,
+  "image_url_inputs": true,
+  "image_tool_message": true,
+  "tool_choice": true
 }
 ```
 
@@ -843,7 +855,28 @@ with get_usage_metadata_callback() as cb:
 {'gemma4:e4b': {'total_tokens': 319, 'input_tokens': 34, 'output_tokens': 285}}
 ```
 
-就是还不知道它怎么计算的 token.
+使用 `Ollama` 时不用 `Callback` 也能从 `response.response_metadata` 中看到 `token` 的统计
+
+```python
+response = model.invoke("hello")
+print(response.response_metadata)
+```
+
+`response.response_metadata` 为
+
+{{< highlight-wrap text >}}
+{'model': 'gemma4:e4b', 'created_at': '2026-04-16T20:28:01.183718Z', 'done': True, 'done_reason': 'stop', 'total_duration': 612028791, 'load_duration': 144160541, 'prompt_eval_count': 17, 'prompt_eval_duration': 131673834, 'eval_count': 210, 'eval_duration': 328611165, 'logprobs': None, 'model_name': 'gemma4:e4b', 'model_provider': 'ollama'}
+{{< /highlight-wrap >}}
+
+其中的 `'prompt_eval_count': 17, 'eval_count': 210`
+
+输入输出大概是下面那样算出来的, 包括换行等特殊字符
+
+```text
+<start_of_turn>user
+hello<end_of_turn>
+<start_of_turn>model
+```
 
 #### 模型调用参数
 
