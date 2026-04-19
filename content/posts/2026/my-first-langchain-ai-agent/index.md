@@ -25,7 +25,7 @@ lastmod:
 Agent 的话，功能列表是
 
 >1. 使用 AWS Bedrock 上的一个 Claude 模型
->2. 用 Telegram 创建一个 Bot, 与该 AI Agent 完成配对
+>2. 用 Telegram 创建一个 Bot, 配置好 Bot Token 与 Chat ID
 >3. 工具方面，提供读文件，写文件，和更新文件的函数，web_fetch, 还有向 Telegram 发送消息的函数
 >4. AI Agent 从一个特定的网页上收集猫的信息，借助文件判定是否是新的
 >5. 发现新的猫，向 Telegram Bot 发送通知, 每只新猫一个消息，消息包含猫的基本信息，图片与链接
@@ -55,7 +55,7 @@ my-ai-agent
 └── workspace
 ```
 
-### Python 程序与 Tegertam Bot 配对
+### Python 程序向 Telegram Bot 发送消息
 
 在 `Telegram` 中找到 `BotFather`, 点击 `Open`，然后用 `Create a New Bot` 来创建一个 `Bot`, 名称 `Seek Cat`, 用户名为
 `t.me/seek_cat_bot`, 也可与 `BotFather` 对话时用 `/newbot` 命令创建。创建 Bot 后，会得到一个 `Token`, 把它存入到 `.env` 中
@@ -119,8 +119,8 @@ Telegram 中
 
 消息格式支持 `Markdown`, `MarkdownV2`, `HTML`, 发送带图片和链接的猫卡片信息就可用上相应的文本格式。
 
-Telegram API [/bot{token}/sendMessage](https://core.telegram.org/bots/api#sendmessage), 另外还能用 Python 库 `python-telegram-bot`
-来发送和接收 Telegram Bot 的消息。
+Telegram API [/bot{token}/sendMessage](https://core.telegram.org/bots/api#sendmessage), 另外还能用 Python 库 `python-telegram-bot` 来发送和接收 Telegram Bot 的消息。
+如果我们实现接收从 Telegram 发送到该 Bot 的消息, 那也就实现了能与 Telegram 双向互动的 AI Agent.
 
 ### 使用 AWS Bedrock 模型的
 
