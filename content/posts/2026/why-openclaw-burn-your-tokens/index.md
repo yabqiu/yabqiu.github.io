@@ -88,7 +88,11 @@ what's up?
 2. `OpenClaw` 的 `Cron Job` 执行时的发给 LLM 的消息 [openclaw-cron-job-telegram-request.json](openclaw-cron-job-telegram-request.json).
 3. 通过 Telegram 的机器人发消息时送到 LLM 的请求 [openclaw-webchat-telegram-request.json](openclaw-webchat-telegram-request.json).
 
-它们所用的系统提示词基本是一样的，有轻微的差别，比强 `webchat` 和 `Telegram` 的系统提示词都有 `Execution Bias` 的相关内容，而 `Cron Job` 的系统提示词则没有。
+由于模型是没有记忆的，这就意味着你每一次问话都会把该额外的约 50K 的系统提示词和其他历史对话发送给大模型，而实际上通常我们的问题很简单，也少有上
+下文相关性，所以那些随便什么都去问一下龙虾是多大的浪费啊。
+
+它们所用的系统提示词基本是一样的，有轻微的差别，比强 `webchat` 和 `Telegram` 的系统提示词都有 `Execution Bias` 的相关内容，
+而 `Cron Job` 的系统提示词则没有 `Execution Bias`。
 
 这大概也是 `OpenClaw` 为了诟病的烧 `Token` 大户的原因，如果启用了 Skills 的话，还会把相应 Skill 的元信息添加到信息提示词当中去。
 了解 `OpenClaw` 的另一方面，如果还继续使用 `OpenClaw` 的话，通过仔细阅读学习该提示词，可帮助我们更有效的使用它。
