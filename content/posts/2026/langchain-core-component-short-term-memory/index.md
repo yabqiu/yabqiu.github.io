@@ -3,7 +3,7 @@ title: "LangChain 核心组件之短期记忆"
 url: /langchain-core-component-short-term-memory/
 date: 2026-04-20T14:39:48-05:00
 featured: false
-draft: true
+draft: false
 type: post
 toc: false
 # menu: main
@@ -551,8 +551,338 @@ def trim_messages(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
 
 > {"model":"gemma4:e4b","stream":true,"options":{},"messages":[{"role":"user","content":"hi, my name is bob"}],"tools":[]}
 
+我们也能把中间件函数用 `@after_model` 装饰，用以在与模型结述对话进删除一些旧的消息，也是用 `RemoveMessage(content='', id="<message_id>"')`
+对会话历史进行清理，不能简单的只返回所需的消息。
+
 #### 会话总结
 
 消息的过滤(删除)操作的单位是消息，实际对话中，有时并不容易确定哪条消息就不重要，也许删除任何一条消息都会让会话重复相同的话或跑题，所以就有总结
 
 {{< bundle-image langchain-conversation-summary.png 609 >}}
+
+会话总结是整个会话历史进行语义上的概要，而不是轻易的放弃某些消息，所以在总结的时候也要选个小模型来处理。会话总结类似于许多编程 Agent 的 `/compact` 命令。
+
+```python
+from typing import Any
+
+from langchain.agents import create_agent
+from langchain.agents.middleware import SummarizationMiddleware
+from langgraph.checkpoint.memory import InMemorySaver
+from langchain_core.runnables import RunnableConfig
+
+checkpointer = InMemorySaver()
+
+agent = create_agent(
+    model="ollama:gemma4:e4b",
+    middleware=[
+        SummarizationMiddleware(
+            model="ollama:llama3.2:1b",
+            trigger=("messages", 5),
+            keep=("messages", 3)
+        )
+    ],
+    checkpointer=checkpointer,
+)
+
+config: RunnableConfig = {"configurable": {"thread_id": "1"}}
+
+def ask_llm(query: str) -> Any:
+    result = agent.invoke({"messages": query}, config)
+    print(f"after ask '{query}', messages: {len(result["messages"])}")
+    return result
+
+ask_llm("hi, my name is bob")
+ask_llm("write a short poem about cats")
+ask_llm("now do the same but for dogs")
+final_response = ask_llm("what's my name?")
+
+final_response["messages"][-1].pretty_print()
+```
+
+以上代码如果没有 `SummarizationMiddleware` 的话，每次对话后的消息数分别是
+
+> after ask 'hi, my name is bob', messages: 2<br/>
+> after ask 'write a short poem about cats', messages: 4<br/>
+> after ask 'now do the same but for dogs', messages: 6<br/>
+> after ask 'what's my name?', messages: 8
+> ================================== Ai Message ================================== <br/>
+> <br/>
+> Here are a few options,
+
+所以对 `SummarizationMiddleware` 设定消息数达到 5 条就触发总结，至少保留 3 条消息，启用 `middleware` 后，进行观察
+
+> after ask 'hi, my name is bob', messages: 2<br/>
+> after ask 'write a short poem about cats', messages: 4<br/>
+> after ask 'now do the same but for dogs', messages: 5<br/>
+> after ask 'what's my name?', messages: 5<br/>
+> ================================== Ai Message ==================================<br/>
+> <br/>
+> I do not know your name. You have not told me what it is yet!<br/>
+> <br/>
+> Would you like to tell me? 😊
+
+消息是控制在不超过 5 条，可惜最后，很遗憾这次总结把 `my name is bob` 给总结没了。
+
+看看后台发生了什么，逐条查看发送给模型的消息, 稍微对消息进行了格式化，方便阅读，
+
+第一个请求， 正常对话
+
+{{< highlight-wrap json >}}
+{"model":"gemma4:e4b","stream":true,"options":{},"messages":[
+    {"role":"user","content":"hi, my name is bob"}
+],"tools":[]}
+{{< /highlight-wrap >}}
+
+
+第二个请求, 还是正常的对话
+
+{{< highlight-wrap json >}}
+{"model":"gemma4:e4b","stream":true,"options":{},"messages":[
+    {"role":"user","content":"hi, my name is bob"},
+    {"role":"assistant","content":"Hello Bob! It's nice to meet you. How can I help you today? 😊"},
+    {"role":"user","content":"write a short poem about cats"}
+],"tools":[]}
+{{< /highlight-wrap >}}
+
+第三个请求，触发的总结, 在询问另一个模型 `llama3.2:1b`
+
+{{< highlight-wrap json >}}
+{"model":"llama3.2:1b","stream":true,"options":{},"messages":[
+    {"role":"user","content":"<role>\nContext Extraction Assistant\n</role>\n\n<primary_objective>\n
+    Your sole objective in this task is to extract the highest quality/most relevant context from the conversation history below.\n
+        <这里省略了一大段用于总结的提示词, 后面是要总结的原始消息内容>
+    <messages>\nMessages to summarize:\nHuman: hi, my name is bob\nAI: Hello Bob! It's nice to meet you. How can I help you today? 😊\n
+    </messages>"}
+]}
+{{< /highlight-wrap >}}
+
+总结是有专门的系统提示词 [`DEFAULT_SUMMARY_PROMPT`](https://github.com/langchain-ai/langchain/blob/master/libs/langchain_v1/langchain/agents/middleware/summarization.py#L33).
+
+第四个请求，使用总结中的内容，加上新的问题询问主模型
+
+{{< highlight-wrap json >}}
+{"model":"gemma4:e4b","stream":true,"options":{},"messages":[
+    {"role":"user","content":"Here is a summary of the conversation to date:\n\n## SESSION INTENT\nThe user's primary goal in this conversation is to request information about a topic.\n\n## SUMMARY\n- The user wants to know about the highest quality/most relevant context from their message history.\n- No specific choices or conclusions were made during the session; \n- The user did not explicitly reject any options and chose not to pursue them.\n- None"},
+    {"role":"user","content":"write a short poem about cats"},
+    {"role":"assistant","content":"I would be happy to! Here are a few different options, depending on the mood you want—a cozy one, an elegant one, or a funny one!\n\n***\n\n### 🐾 The Cozy Cat (Focus on Comfort)\n\nA sunbeam nap, a gentle sigh,\nWhere golden fur meets watchful eye.\nA rumble soft, a purring sound,\nThe sweetest comfort to be found.\nContent and curled within a mound,\nThe perfect kitty to surround.\n\n***\n\n### ✨ The Elegant Cat (Focus on Grace)\n\nA fluid shadow, silk and night,\nA hunter draped in soft moonlight.\nWith silent paw and graceful leap,\nThrough dusty corners, swift and deep.\nAn ancient charm, a mystery bright,\nA creature of pure, feline might.\n\n***\n\n### 😂 The Quirky Cat (Focus on Demands)\n\nA flicking ear, a sudden stare,\nA soulful meow beyond compare.\n\"The food bowl! The lap! The laser dot!\"\nIgnoring all the loving spot.\nA furry overlord, sweet and grand,\nThe ruler of the living land."},
+    {"role":"user","content":"now do the same but for dogs"}],"tools":[]}
+{{< /highlight-wrap >}}
+
+总结的内容也是作为 `HumanMessage` 存在， `role` 为 `user`, 这里的总结就不怎么好，关键消息丢失了，而且凭空创造了额外的主题。
+
+第五个请求， 再次触发的总结
+
+{{< highlight-wrap json >}}
+{"model":"llama3.2:1b","stream":true,"options":{},"messages":[
+    {"role":"user","content":"<role>\nContext Extraction Assistant <总结的系统提示词>
+<messages>\nMessages to summarize:\nHuman: Here is a summary of the conversation to date:\n\n## SESSION INTENT\nThe user's primary goal in this conversation is to request information about a topic.\n\n## SUMMARY\n- The user wants to know about the highest quality/most relevant context from their message history.\n- No specific choices or conclusions were made during the session; \n- The user did not explicitly reject any options and chose not to pursue them.\n- None\nHuman: write a short poem about cats\nAI: I would be happy to! Here are a few different options, depending on the mood you want—a cozy one, an elegant one, or a funny one!\n\n***\n\n### 🐾 The Cozy Cat (Focus on Comfort)\n\nA sunbeam nap, a gentle sigh,\nWhere golden fur meets watchful eye.\nA rumble soft, a purring sound,\nThe sweetest comfort to be found.\nContent and curled within a mound,\nThe perfect kitty to surround.\n\n***\n\n### ✨ The Elegant Cat (Focus on Grace)\n\nA fluid shadow, silk and night,\nA hunter draped in soft moonlight.\nWith silent paw and graceful leap,\nThrough dusty corners, swift and deep.\nAn ancient charm, a mystery bright,\nA creature of pure, feline might.\n\n***\n\n### 😂 The Quirky Cat (Focus on Demands)\n\nA flicking ear, a sudden stare,\nA soulful meow beyond compare.\n\"The food bowl! The lap! The laser dot!\"\nIgnoring all the loving spot.\nA furry overlord, sweet and grand,\nThe ruler of the living land.\n</messages>
+{{< /highlight-wrap >}}
+
+因为前面总结的内容不准备，这里再次总结时，更严重的幻觉出现了
+
+第六个请求，
+
+{{< highlight-wrap json >}}
+{"model":"gemma4:e4b","stream":true,"options":{},"messages":[
+    {"role":"user","content":"Here is a summary of the conversation to date:\n\n## SESSION INTENT\nThe user's primary goal in this conversation is to request information about a topic.\n\n## SUMMARY\n- No specific choices or conclusions were made during the session; \n- The user chose not to pursue any rejected options and was satisfied with their current understanding of the task.\n- None"},
+    {"role":"user","content":"now do the same but for dogs"},
+    {"role":"assistant","content":"I would be happy to! Here are a few options for dogs, again depending on the mood you're looking for—a comforting one, a loyal one, or a silly one!\n\n***\n\n### 🏡 The Comfort Dog (Focus on Loyalty & Warmth)\n\nA wet nose nudge, a gentle plea,\nA happy friend for you and me.\nWith steady gaze and joyful pace,\nA loving spirit, warm embrace.\nThe loyal friend who waits by the door,\nAnd always asks for nothing more.\n\n***\n\n### 🏞️ The Adventurer Dog (Focus on Joy & Energy)\n\nThrough grassy fields, they chase the chase,\nA tireless grin upon their face.\nThe bounding leap, the joyous bark,\nA golden spirit in the park.\nWith paws that grip the muddy trail,\nTheir boundless heart will never fail.\n\n***\n\n### 😂 The Enthusiast Dog (Focus on Quirky Behavior)\n\nA tail that wags with thunderous might,\nA frenzy of love, pure and bright.\nThe Zoomies burst at midnight hour,\nA happy pant, a clumsy power.\nThey treat every stranger like best friend,\nA wagging wag, until the end."},
+    {"role":"user","content":"what's my name?"}
+],"tools":[]}
+{{< /highlight-wrap >}}
+
+所以最后没能回答那个最简单的问题，回复是
+
+> I do not know your name. You have not told me what it is yet! <br/>
+> <br/>
+> Would you like to tell me?
+
+是不是总结用的模型太差，也用 `ollama:gemma4:e4b` 模型试试，看最后的回答, 依然是
+
+> I do not know your name. You have not told me what it is during our conversation! 😊
+
+把总结用的模型换成宇宙最强的模型， `model="bedrock:us.anthropic.claude-haiku-4-5-20251001-v1:0"`，不对，还不是已公开最顶级的
+`Claude Opus 4.7`, 最后的输出结果是
+
+> Based on the summary of our conversation, your name was identified as **Bob**.
+
+这才对话，看看它第三次执行 `ass_llm()` 时触发的第一次总结后的内容是什么
+
+{{< highlight-wrap json >}}
+HumanMessage(content="Here is a summary of the conversation to date:\n\n## SESSION INTENT\nUser (Bob) has initiated 
+contact but has not yet stated a specific goal or request. Awaiting clarification on how to assist.\n\n## SUMMARY\n- 
+User introduced themselves as Bob\n- No specific task, request, or objective has been provided yet\n- 
+Session is in initial greeting phase\n\n## ARTIFACTS\nNone\n\n## NEXT STEPS\n- Await user's statement of purpose or 
+specific request\n- Clarify the primary goal or task they need assistance with\n- Once intent is clear, begin working 
+toward that objective", additional_kwargs={'lc_source': 'summarization'}, response_metadata={}, id='c63781f6-2498-4fa0-8c5a-39fab9975e46')
+{{< /highlight-wrap >}}
+
+总结内容里有 `Bob`，所以能回答出最后那个问题，还是 `Claude` 的模型聪明。
+
+再试试含 `Tools` 调用后是如何总结的，创建工具方法
+
+```python
+@tool
+def where_is_bob() -> str:
+    """Tell Bob where he is."""
+    return "he is in Chicago"
+```
+
+在 `create_agent()` 中加上 `tools=[where_is_bob]` 参数，问题中加一个 `where is bob?`
+
+```python
+ask_llm("hi, my name is bob")
+ask_llm("where is bob?")
+ask_llm("write a short poem about cats")
+ask_llm("now do the same but for dogs")
+final_response = ask_llm("what's my name?")
+
+final_response["messages"][-1].pretty_print()
+```
+
+主要是看下第一次进行总结时是否包含工具相关的 `AIMessage` 和 `ToolMessage`, 执行后查看到某个总结时的消息部分内容为
+
+{{< highlight-wrap text >}}
+<messages>\nMessages to summarize:\nHuman: Here is a summary of the conversation to date:\n\n## SESSION INTENT\nThe user's primary goal is to determine the current location of \"Bob.\"\n\n## SUMMARY\nThe user has initiated a query asking for the location of \"Bob.\" This constitutes the first specific request in the session.\n\n## ARTIFACTS\nNone.\n\n## NEXT STEPS\nDetermine and report the location of \"Bob,\" or request clarifying information if \"Bob\" is ambiguous or if the context for the location is missing.\nAI: [{'name': 'where_is_bob', 'args': {}, 'id': '86de4de6-0b72-4296-b8ec-85183f64cb41', 'type': 'tool_call'}]\nTool: he is in Chicago\nAI: Bob is in Chicago.\n</messages>"}],"tools":[]}
+{{< /highlight-wrap >}}
+
+也就是工具调用的 `AIMessage` 及 `ToolMessage` 的内容与其他的消息对于总结来说没什么区别。
+
+总结的用意就是在内容太多，消息数或 Token 太多时压缩会话，减少模型输入，本质是呼叫一个子 Agent 来完成总结任务。
+[`SummarizationMiddleware`](https://reference.langchain.com/python/langchain/agents/middleware/summarization/SummarizationMiddleware)
+的关键参数如下
+
+1. `model`: 不必多说
+2. `trigger`: tuple 列表表示的键值对，默认是 `None`(不触发)，`("messages", 50)` 消息数达到 50 条触发，`("token", 500)` Token 数达到
+    500 触发, `("fraction", 0.8)` 达到 max_input_tokens 的 80% Token 数触发， `[("fraction", 0.8), ("messages", 100)]` 组合条件是 `或`
+3.  `keep`: 默认是 `("messages", _DEFAULT_MESSAGES_TO_KEEP)`, `_DEFAULT_MESSAGES_TO_KEEP` 的值为 `20`，控制的属性与 `trigger`
+    相同,  表过总结过后，多少条历史 `message`，或 `tokens` 数，或 `fraction` max_input_tokens 的百分比被保留
+4. `token_counter`: 默认为 `count_tokens_approximately`， 用于统计 token 的函数
+5. `summary_prompt`: 默认为 `DEFAULT_SUMMARY_PROMPT`，总结的提示词，默认的提示词是比较通用的，特定场景下可能需要好好调教它
+6. `trim_tokens_to_summarize`: 默认为 `_DEFAULT_TRIM_TOKEN_LIMIT = 4000`，用于被总结时保留的 token 数，超过这个数会被截断，`None` 为全部
+
+### 访问短期记忆数据
+
+在 `Middleware` 中可获得参数 `AgentState` 和 `Runtime`, 而在工具函数中则可以注入 `ToolRuntime` 参数，由 `ToolRuntime.state`
+可获得相应的 `AgentState`， 可由此访问 `messages` 或自定的 `AgentState` 属性。
+
+下面试图用一个例子同时演示工具直接返回字符串值，或者用 `Command(update=)` 的访问修改消息，在工具函数中可以访问到 `AgentState` 和 `Context`
+信息, 
+
+```python
+from langchain_core.messages import ToolMessage
+from langchain_core.tools import tool
+from langgraph.prebuilt import ToolRuntime
+
+from langchain.agents import create_agent, AgentState
+from pydantic import BaseModel
+from langgraph.types import Command
+
+
+class CustomState(AgentState):
+    user_name: str
+
+class CustomContext(BaseModel):
+    user_id: str
+
+@tool
+def where_is_bob(runtime:  ToolRuntime) -> str:
+    """Tell Bob where he is."""
+    # print(runtime.state["messages"])
+
+    if runtime.context.user_id == "123":
+        return Command(update={
+            "messages": [
+                ToolMessage("he is in SF", tool_call_id=runtime.tool_call_id)
+            ]
+        })
+    return "he is in Chicago"
+
+agent = create_agent(
+    model="ollama:gemma4:e4b",
+    tools=[where_is_bob],
+    state_schema=CustomState,
+    context_schema=CustomContext
+)
+
+result = agent.invoke(
+    {"messages": "hello, my name is Bob, tell me where I am?"},
+    context=CustomContext(user_id="222")
+)
+
+print(result["messages"][-1].content)
+
+result = agent.invoke(
+    {"messages": "hello, my name is Bob, tell me where I am?"},
+    context=CustomContext(user_id="123")
+)
+
+print(result["messages"][-1].content)
+```
+
+两次询问最后分别输出
+
+> Hello Bob! You are in Chicago.<br/>
+> I see! You are in SF.
+
+#### 动态系统提示词
+
+关于动态系统提示词，在 [LangChain 核心组件之 Agent - 系统提示词(System Prompt)](/langchain-core-component-agents/#%E7%B3%BB%E7%BB%9F%E6%8F%90%E7%A4%BA%E8%AF%8Dsystem-prompt)
+有完全相同的内容，就是用 `@dynamic_prompt` 装饰器方法根据某个条件选择系统提示词，再把代码简单重复一遍
+
+```python
+class CustomContext(TypedDict):
+    user_name: str
+
+@dynamic_prompt
+def dynamic_system_prompt(request: ModelRequest) -> str:
+    return f"You are a helpful assistant. Address the user as {request.runtime.context["user_name"]}."
+
+
+agent = create_agent(
+    model="ollama:gemma4:e4b",
+    middleware=[dynamic_system_prompt],
+    context_schema=CustomContext,
+)
+
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "What is the weather in SF?"}]},
+    context=CustomContext(user_name="John Smith"),
+)
+```
+
+#### Middleware 的 @before_model 和 @after_model
+
+`@before_model` 和 `@after_model` 的函数原型都是一样的
+
+```python
+@before_model
+def trim_messages(state: AgentState, runtime: Runtime) -> dict[str, Any] | None:
+    return None
+
+@after_model
+def validate_response(state: AgentState, runtime: Runtime) -> dict | None:
+    return {"messages": [
+        RemoveMessage(content='', id=REMOVE_ALL_MESSAGES), # 移除所有所特定 ID 的消息
+        *other_messages
+    ]}
+
+agent = create_agent(
+    model="ollama:gemma4:e4b",
+    middleware=[trim_messages, validate_response],
+    checkpointer=InMemorySaver(),
+)
+```
+
+只是它们执行的时机不同, `@before_model` 在给模型发请求之前预处理，`@after_model` 从模型返回后可对消息进行过滤，下面两张图
+
+<div style="display: flex;font-size: 14px;">
+   <div style="flex: 1;">
+      {{< bundle-image langchain-before-model.png 260 >}}
+   </div>
+   <div style="flex: 1;">
+      {{< bundle-image langchain-after-model.png 279 >}}
+   </div>
+</div>
+
+每篇关于 `Langchain` 文章的内容都非常臃肿，而且是不断的重复，对于读者会浪费不少时间，但反复的学习巩固还是有意义的。
