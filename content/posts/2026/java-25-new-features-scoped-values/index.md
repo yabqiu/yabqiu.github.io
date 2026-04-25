@@ -386,6 +386,8 @@ public class Test {
 `Scoped Values` 在一个范围中绑定多个值可以把多个 `where()` 串联起来，如
 
 ```java
+    ScopedValue<String> VALUE1 = ScopedValue.newInstance();
+    ScopedValue<String> VALUE2 = ScopedValue.newInstance();
     ScopedValue.where(VALUE1, "111").where(VALUE2, "222").run(() -> {
         System.out.println(VALUE1.get());     // 111
         System.out.println(VALUE2.get());     // 222
