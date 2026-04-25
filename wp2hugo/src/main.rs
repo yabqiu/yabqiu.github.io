@@ -29,5 +29,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     // let html = tera.render("post-template.md", &context).expect("Failed to render");
     // println!("{}", html);
 
+    let name = "Scott";
+    {
+        let name = "Tiger"; // shadowing, 遮盖了外部的 name
+        println!("{}", name); // Tiger
+    }
+    println!("{}", name); // Scott
+
     Ok(())
 }
