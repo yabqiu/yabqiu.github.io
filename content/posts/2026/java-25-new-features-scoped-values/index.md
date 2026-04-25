@@ -1,5 +1,5 @@
 ---
-title: Java 25 新特性学习
+title: Java 25 新特性学习 - Scoped Values
 url: /java-25-new-features-scoped-values/
 date: 2026-04-24T23:34:00-05:00
 featured: false
