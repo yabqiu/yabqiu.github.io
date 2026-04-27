@@ -395,3 +395,6 @@ public class Test {
 ```
 
 以后还要继续关注 `structured concurrency` 的发展，不知到后面 `Scoped Values` 能不能支持平台线程，以及传统的线程池。
+
+由于 `Scoped Values` 尚不支持平台线程和传统的线程池，在现有代码使用了 `ThreadLocal` 的情况下(如 sl4j MDC), 有时候必须手动的在
+`Scoped Values` 和 `ThreadLocal` 之间拷贝数据。
