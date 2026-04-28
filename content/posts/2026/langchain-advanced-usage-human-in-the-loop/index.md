@@ -320,4 +320,5 @@ result = agent.invoke(...)
 ...
 ```
 
-实际的应用中我们不知道会有多少次的 `agent.invoke()` 才能完成最终的会话，所以 `agent.invoke()` 应该放在循环当中，至到会话结束，退出循环。
+实际的应用中我们不知道会有多少次的 `agent.invoke()` 才能完成最终的会话，所以 `agent.invoke()` 应该放在循环当中, 或者用递归, 只要有
+`interrupts`，确认完紧接着下一个 `agent.invoke()` 调用，以此类推，直至会话结束，退出循环。
