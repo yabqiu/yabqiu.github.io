@@ -73,6 +73,8 @@ uv add langgraph-checkpoint-sqlite
   作为 namespace
 - `@after_model` 中把 `AI` 非工具调用的消息存入长期记忆，以备后面唤醒长期记忆
 
+** test-long-term-memory.py **
+
 ```python
 from typing import Any
 
@@ -230,6 +232,30 @@ I do not know your name. You haven't told me what it is.
 ```
 
 本例中，在使用长期记忆时，如果知道某个其他用户的 `user_id`，还能访问别的用户的长期记忆，这会造成严重的用户信息泄漏。
+
+### 创建 Agent 时的 store 参数显得多余
+
+重新思考 `create_agent(store=store)` 时有个疑问, 既然在创建 `Agent` 时指定的 `store` 之后为何还需要手动调用它的 API, `get`, `put`,
+`search` 来操作长期记忆存储呢, 应该像短期记忆那样, 只要 `create_agent(checkpointer=InMemorySaver())` 指定 `checkpointer` 就有了知期记忆,
+没有任何额外操作.
+
+尝试把上面的代码的如下行注释掉
+
+```python
+ middleware=[save_long_term_memory, retrieve_long_term_memory],
+```
+
+即去掉对 `store` 操作的中间件, 那么无论执行 `test-long-term-memory.py` 多少次, 回答不出第二个问题不用说, 关键是打开数据库文件
+`langchain_memory.db`, 其中没有创建任何的表, 也就是根本没有长期记忆. 
+
+可是把创建 `Agent` 时的行 `store=store,` 注释掉, 长期记忆能正常工作. `store=store` 的唯一作用就是在中间件方法或工具方法中通过
+`runtime.store` 可访问到与 `Agent` 相关联的 `store`, 此外好像没有别的用处.
+
+比如前面的代码可以把两个 `@before_model` 和 `@after_model` 两个方法移出 `with SqliteStore.from_conn_string(...) as store` 的范围,
+直接用 `runtime.store` 访问长期记忆体, 而不用捕获外部的 `store` 变量.
+
+因为 `create_agent(store=store)` 只是给 `Runtime` 关联了一个 `store`, 其余记忆操作都必须手动进行, 所以如果要 `LangChain` 与第三方的  
+长期记忆模型集成的话, 也必须通过中间件, 或是工具方法来实现.
 
 ### BaseStore 相关的 API
 
