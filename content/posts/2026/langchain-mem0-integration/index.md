@@ -294,7 +294,7 @@ memory.add(recent, user_id=user_id)
   "messages": [
     {
       "role": "system",
-      "content": "\n\n# ROLE\n\nYou are a Memory Extractor — a precise, evidence-bound processor responsible for extracting rich, contextual memories from conversations ......"
+      "content": "\n\n# ROLE\n\nYou are a Memory Extractor — a precise, evidence-bound processor responsible for extracting rich, contextual memories from conversations ......<此处省略超过 30k 字符>"
     },
     {
       "role": "user",
