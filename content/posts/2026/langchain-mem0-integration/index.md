@@ -45,8 +45,8 @@ lastmod:
 从 `add()` 方法的参数看出 `Mem0` 支持多级隔离级别: `user_id`, `agent_id`, `run_id`, 其中 `user_id`, `agent_id`, `run_id`
 至少必须指定一个，可多个组合。
 
-先从 [Mem0](https://mem0.ai/) 官方首页取到那段简短的代码，但不想用 `OpenAI` 的 `LLM`, 也不用在线的嵌入模型，数据也要存储在本地，也就  
-是改造成一个离线的 `Mem0` 记忆。 首先安装相应的 Python 依赖
+先从 [Mem0](https://mem0.ai/) 官方首页取到那段简短的代码，但不想用 `OpenAI` 的 `LLM`, 也不用在线的嵌入模型，数据也要存储在本地，
+也就是改造成一个离线的 `Mem0` 记忆。 首先安装相应的 Python 依赖
 
 ```bash
 uv add mem0ai chromadb ollama
