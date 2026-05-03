@@ -28,15 +28,19 @@ lastmod:
 在使用 `store` 的时候，无论是使用 `InMemoryStore` 还是 `PostgreSQLStore` 等，历史会话的保存与召回还有很多讲究的地方，例如哪些消息需要保存，
 消息如何保存(是否要向量化)，新旧消息如何处理等。
 
-[Mem0](https://mem0.ai/) 是一个为 AI Agent 提供长期记忆能力的开源框架，它的核心思路是把对话内容转化为结构化的 `事实` 存入向量数据库，
-并通过 `LLM` 动态维护这些事实的增删改。`Mem0` 在存入时会不存入原文，而是用 `LLM` 抽取事实，更新时能与旧记忆合并，删除矛盾记忆，记忆查询也  
-是把文本转换成向量后进行相似度匹配。向量检索擅长语义模糊匹配，关系推理时 Mem0 1.1 之后引入了图记忆(如用 Neo4j 图数据库)作为补充。 <!--more-->
+[Mem0](https://mem0.ai/) 是一个为 AI Agent 提供长期记忆能力的开源框架，它的核心思路是利用大语言模型(LLM)把对话内容转化为结构化的 `事实`
+存入向量数据库，并通过 `LLM` 动态维护这些事实的增删改。`Mem0` 在存入时会不存入原文，而是用 `LLM` 抽取事实，更新时能与旧记忆合并，删除矛盾记忆，
+记忆查询也是把文本转换成向量后进行相似度匹配。向量检索擅长语义模糊匹配，关系推理时 Mem0 1.1 之后引入了图记忆(如用 Neo4j 图数据库)作为补充。
+提供 MCP 协议支持不同 AI 应用间的记忆共享与互通。<!--more-->
 
-记忆的操作方法有
+记忆的重要操作方法有
 
 - add(messages, user_id, agent_id, run_id, ..., infer=True): 添加记忆，返回 `memory_id`. `infer=False` 不抽取，直接存原文
 - update(memory_id, data): 根据 `memory_id` 更新记忆
 - delete(memory_id): 根据 `memory_id` 删除记忆
+- search(query, top_k=20, filters=None, rerank=False, ...): 检索记忆中数据
+- get(memory_id): 根据 `memory_id` 获取记忆内容
+- get_all(*, filters=None, top_k=20, ...): 获取所有记忆为 JSON 数据格式，这可以用来迁移记忆
 
 从 `add()` 方法的参数看出 `Mem0` 支持多级隔离级别: `user_id`, `agent_id`, `run_id`, 其中 `user_id`, `agent_id`, `run_id`
 至少必须指定一个，可多个组合。
@@ -84,25 +88,34 @@ config = {
     },
 }
 
-client = Memory.from_config(config)
+memroy = Memory.from_config(config)
 
 # Add a memory
 messages = [
     {"role": "user", "content": "我不是一个素食主义者，但我喜欢吃蔬菜。"},
     {"role": "assistant", "content": "Got it! I'll remember your dietary preferences."},
 ]
-client.add(messages, user_id="user123")
+memroy.add(messages, user_id="user123")
 
 # Search memories
-results = client.search("What are my dietary restrictions?", filters={"user_id": "user123"})
+results = memroy.search("What are my dietary restrictions?", filters={"user_id": "user123"}, limit=1)
 print(results)
 ```
 
 执行后打印出来的结果
 
-{{< highlight-wrap text  >}}
+{{< highlight-wrap text >}}
 {'results': [{'id': '413d7459-cf30-4015-89ab-9db2636ae9c6', 'memory': '用户指出自己不是素食主义者，但喜欢吃蔬菜', 'hash': '1cfd6173c20814e47af50c62ab626ac6', 'metadata': None, 'score': 1.0, 'created_at': '2026-05-02T16:17:05.745485+00:00', 'updated_at': '2026-05-02T16:17:05.745485+00:00', 'user_id': 'user123'}]}
 {{< /highlight-wrap >}}
+
+`Mem0` 支持的配置请参考 [vector_stores/configs.py](https://github.com/mem0ai/mem0/blob/main/mem0/vector_stores/configs.py#L13),
+当前列表是 `QdrantConfig`, `ChromaDbConfig`, `PGVectorConfig`, `PineconeConfig`, `MongoDBConfig`, `MilvusDBConfig`,
+`BaiduDBConfig`, `CassandraConfig`, `NeptuneAnalyticsConfig`, `UpstashVectorConfig`, `AzureAISearchConfig`,
+`AzureMySQLConfig`, `RedisDBConfig`, `ValkeyConfig`, `DatabricksConfig`, `ElasticsearchConfig`, `GoogleMatchingEngineConfig`,
+`OpenSearchConfig`, `SupabaseConfig`, `WeaviateConfig`, `FAISSConfig`, `LangchainConfig`, `S3VectorsConfig`, `TurbopufferConfig` 
+
+`config` 除了以上的 `vector_store`, `llm`, `embedder` 属性外，还可配置 `history_db_path`, `reranker`, `version`, 和
+`custom_instructions`. `reranker` 对检索的内容进行更精细的排序，`custom_instructions` 是一些自定义的提示词，可以在 `LLM` 抽取事实时使用。
 
 ### 查看本地存储
 
@@ -155,7 +168,11 @@ id|key|string_value|int_value|float_value|bool_value
 
 {{< bundle-image mem0-add.png 711 >}}
 
+增加和更新记忆时都通过 `LLM` 对会话内容进行事实提取，识别关键的事实，剔除不必要的噪音信息，达到高效存储与检索。
+
 {{< bundle-image mem0-search.png 713 >}}
+
+测试 `memory.search(...)` 时并没有看到 `LLM` 抽取 `query` 的步骤。而是直接把 `query` 向量化后直接检索的。
 
 ### Mem0 与 LangChain 1.x 的集成
 
