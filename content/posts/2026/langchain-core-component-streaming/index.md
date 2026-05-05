@@ -508,7 +508,7 @@ if __name__ == "__main__":
 
 命令行下执行过程动画
 
-{{< bundle-image langchain-stream-hitl.gif 853 >}}
+{{< bundle-image langchain-stream-hitl-1.gif 900 >}}
 
 ### Streaming 子 Agent 中的消息
 
