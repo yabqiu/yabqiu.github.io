@@ -128,7 +128,7 @@ for chunk in agent.stream(
 没有指定 `stream_mode` 的话，默认为 `updates`.  `agent.stream()` 时 `stream_mode` 的默认值为 `updates`, 在 `CompiledStateGraph()`
 时设定的 `stream_mode="updates`.
 
-### stream_mode="values" 时
+### `stream_mode="values"` 时
 
 只改 `stream_mode` 为 `values`, 测试
 
@@ -227,7 +227,7 @@ for chunk in agent.stream(
 
 > The weather in SF is always sunny!
 
-### 自定义 stream_mode
+### `stream_mode="custom"` 时
 
 要在 Stream 中获得 `Tool` 中状态更新，要用到 `custom` 模式。仅仅修改上面的 `stream_mode` 为 `stream_mode="custom"`，再执行发现 `for`
 循环中没有任何输出了，因为它用来输出工具调用中的状态更新。
@@ -286,7 +286,7 @@ async def fetch(ctx: Context, url: str) -> str:
     return "I'm a cat"
 ```
 
-### 多种 stream_mode 模式
+### 多种 `stream_mode` 模式
 
 注意到用了 `stream_mode="custom"` 之后只能输出工具函数中用 `get_stream_writer()` 输出的状态更新，但是没有别的了，如果同时要输出 LLM
 和工具函数中的状态更新，可以用组合的方式
