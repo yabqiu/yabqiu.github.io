@@ -395,6 +395,14 @@ from langgraph.prebuilt import ToolRuntime
 from langgraph.types import Command
 from pydantic import BaseModel
 
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.live import Live
+from rich.prompt import Prompt
+
+console = Console()
+accumulated = ""
+live_markdown = Live(console=console, refresh_per_second=20)
 
 class Context(BaseModel):
     user_id: str
@@ -439,10 +447,14 @@ agent = create_agent(
 config: RunnableConfig = {"configurable": {"thread_id": "1"}}
 
 
+
 def show_message(chunk):
     if chunk["type"] == "messages" and isinstance((message := chunk["data"][0]), AIMessageChunk):
         if not message.tool_calls:
-            print(message.content, end="", flush=True)
+            # print(message.content, end="", flush=True)
+            global accumulated
+            accumulated += message.content
+            live_markdown.update(Markdown(accumulated))
     if chunk["type"] == "custom":
         print(chunk['data'], "\n")
 
@@ -455,12 +467,15 @@ def resume_agent(interrupt) -> None:
     )
 
     for review in interrupt.value["review_configs"]:
-        option = input(f"{'\033[90m'}Execute '{review['action_name']}?', input 'yes' to approve: {'\033[0m'}")
+        live_markdown.stop()
+        # option = input(f"{'\033[90m'}Execute '{review['action_name']}?', input 'yes' to approve: {'\033[0m'}")
+        option = Prompt.ask(f"[bold yellow]Execute '{review['action_name']}'?[/bold yellow] Input 'yes' to approve")
         if option == "yes":
             command.resume["decisions"].append({"type": "approve"})
         else:
             command.resume["decisions"].append({"type": "reject", "message": "User rejected the request."})
 
+    live_markdown.start()
     invoke_model(command)
 
 
@@ -479,18 +494,21 @@ def invoke_model(message):
 
 
 if __name__ == "__main__":
+    live_markdown.start()
     invoke_model({"messages": [
         {
             "role": "user",
             "content": "How is the weather like in my location and what kind of outdoor activities are good for me"
         }
     ]})
+    live_markdown.stop()
 ```
 
-命令行下执行
+用了 `rich` 库对模型输出进行实时 `Markdown` 渲染，需执行 `uv add rich` 安装该依赖
 
-{{< bundle-image langchain-streaming-human-in-the-loop.png 999 >}}
+命令行下执行过程动画
 
+{{< bundle-image langchain-stream-hitl.gif 853 >}}
 
 ### Streaming 子 Agent 中的消息
 
