@@ -595,3 +595,5 @@ workflow = (
 ```
 
 样板代码，比起 `create_agent()` 有了更广阔的发挥天地了。
+
+`LangChain` 的内容差不多，后面构建 `Agent` 时有必要从 `create_agent()` 跳跃到 `create_deep_agent()` 了。
