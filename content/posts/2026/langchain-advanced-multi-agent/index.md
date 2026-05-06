@@ -136,7 +136,7 @@ if __name__ == '__main__':
     print(result["messages"][-1].content)
 ```
 
-`Supervisor` 给一个最强脑，它和 `python_agent` 和 `go_agent` 所用模型分别为
+`Supervisor` 给一个最强大脑，它和 `python_agent` 和 `go_agent` 所用模型分别为
 
 1. Super Agent: bedrock:us.anthropic.claude-haiku-4-5-20251001-v1:0
 2. Python Agent: ollama:gemma4:e4b
