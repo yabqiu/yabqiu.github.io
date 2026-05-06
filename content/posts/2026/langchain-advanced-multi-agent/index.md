@@ -1,5 +1,5 @@
 ---
-title: "LangChain 高级用法之多 Agent协作"
+title: "LangChain 高级用法之多 Agent 协作"
 url: /langchain-advanced-multi-agent/
 date: 2026-05-05T17:16:48-05:00
 featured: false
