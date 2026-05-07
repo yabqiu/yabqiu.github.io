@@ -5,7 +5,187 @@ showShare: false
 noCopyright: true
 comments: false
 ---
-{{% notice info "next 41, 下在恢复中" %}}
+{{% notice info "next 62" %}}
+{{% /notice %}}
+
+{{% notice info "Orion - 2013-07-18 18:39:25" %}}
+Unmi,你在http://unmi.cc/struts2-xsltresult-string-to-document对AdapterFactory进行分析，但最后你采用的实现方式，我觉得应该可以更优些。
+
+见AdapterFactory.adaptNode，第三行代码是这样的：
+
+```java
+Class adapterClass = getAdapterForValue(value);
+if (adapterClass != null)
+    return constructAdapterInstance(adapterClass, parent, propertyName, value);
+```
+
+也就是说getAdapterForValue获得不了指定的类型才往后面执行，如你在上一篇所说只要能成功registerAdapterType，
+就不会执行strut提供的StringAdapter。那是否我们能用这样 一个小技巧：
+
+```java
+public class StringXSLTResult extends XSLTResult {
+    
+    private AdapterFactory adapterFactory;
+    
+    @Override
+    protected AdapterFactory getAdapterFactory() {
+        if (adapterFactory == null){
+            adapterFactory = new AdapterFactory();
+            adapterFactory.registerAdapterType(String.class,MyAdapter.class);//MyAdapter在其他地方自己定义
+        }
+        return adapterFactory;
+    }
+    @Override
+    protected void setAdapterFactory(AdapterFactory adapterFactory) {
+        this.adapterFactory = adapterFactory;
+        this.adapterFactory.registerAdapterType(String.class,MyAdapter.class);//MyAdapter在其他地方自己定义
+    }
+}
+```
+{{% /notice %}}
+
+{{% notice info "Komori - 2013-06-20 15:52:49" %}}
+非常感谢你的博文 第一次处理httpclient验证看了你的博文问题解决了,不过你的代码好像不怎么好复制 建议换一个代码插件可以支持复制的.
+{{% /notice %}}
+
+{{% notice info "xiaofengfeng - 2013-05-28 17:58:14" %}}
+你好，我在使用Quartz，但是在故障恢复上遇到问题。我已采用持久化方式，并设置JobDetail的RequestRecovery为true 然后，现象却是，
+停机后错过了3次某任务的触发，但重启后，却从重新执行了一次，希望是错过几次，便重新执行几次 请问，能实现吗？有合适的解决方案吗？谢谢
+{{% /notice %}}
+
+{{% notice info "郑华伟 - 2013-05-14 09:44:59" %}}
+您好，我是一名大四学生，看了您写的WordNet C#版同义词，很感兴趣，非常欣赏您的开源精神。我最近正在做毕业设计，其中涉及到一部分同义词检索的相关知识，
+我自己对这个方面知识一无所知，但是从您的文章中了解到，需要自己编写分析器和过滤器等。想问下，几个东西有可以直接使用的么？
+{{% /notice %}}
+
+{{% notice info "ming - 2013-05-07 15:01:21" %}}
+您的文章：《JavaDoc 编程，书写自定义的 Doclet，定制输出》http://unmi.cc/javadoc-customize-doclet
+
+有提到：
+
+可以为我们生成 HTML 的 JavaDoc API 文档，这就是默认的 com.sun.tools.doclets.standard.Standard 为我们做的事，
+还可以像以前那样从源文件中抽取信息生成各种 XML 文件，或是 PDF, Excel，UML 图等等任何可能的内容，或做任何有作为的事情。
+总之在 doclet 中可以感知道对任何包，类，方法，字段等的遍历。这里 Doclet.com 有大量的第三方的 doclet 供你选择
+
+doclet for excel??
+
+没找到哎，您有什么线索嘛。
+{{% /notice %}}
+
+{{% notice info "Unmi - 2013-04-25 13:35:05" %}}
+@ck 版本是不是一样的，CPU 是否支持。
+{{% /notice %}}
+
+{{% notice info "ck - 2013-04-21 11:26:19" %}}
+VMware 9 安装 Mac OS X 10.8 Mountain Lion
+
+我装MAC OS的時候停住了,只有蘋果的標誌,應該怎做??求救
+
+一直就停住,没有反應
+{{% /notice %}}
+
+{{% notice info "CK - 2013-04-21 11:22:20" %}}
+我装MAC OS的時候停住了,只有蘋果的標誌,應該怎做??求救
+{{% /notice %}}
+
+{{% notice info "Sero - 2013-03-21 11:49:34" %}}
+博主研究的东西好多啊 果然关注中。。
+{{% /notice %}}
+
+{{% notice info "史只平 - 2013-02-27 11:28:35" %}}
+朋友能发一份，把lucene中索引存到数源库的源码给我看看么，我的邮箱shizhiping2006@163.com，非常感谢
+{{% /notice %}}
+
+{{% notice info "史志平 - 2013-02-26 19:03:18" %}}
+请问《把 Lucene 索引数据存到数据库表中》这篇文章的源代码你有吗，我运行不起来，有的话能发我一分吗，万分感谢！
+{{% /notice %}}
+
+{{% notice info "Unmi - 2012-09-20 01:24:48" %}}
+@汪佰想
+
+您是指修改什么项目？
+{{% /notice %}}
+
+{{% notice info "汪佰想 - 2012-09-18 23:20:16" %}}
+你好我想知道留言板可以手工修改项目么
+{{% /notice %}}
+
+{{% notice info "Unmi - 2012-09-04 16:34:42" %}}
+@kyfxbl 在一定程度上可以说 tomcat 中的每个 app 组成的是分布式的，但是它们之间还是可以通过内存映射来直接访问的。而且，如果把类放置在每个 app 的上层的 Bootstrap
+
+|
+
+System
+
+|
+
+Common
+
+的 classload 能见到的 classpath 下，那么各个 app 就能直接共享那些类了。
+{{% /notice %}}
+
+{{% notice info "kyfxbl - 2012-08-31 11:22:07" %}}
+楼主好，非常感谢您的回答~~~~
+
+那么是不是可以这么认为：
+
+一个系统由多个APP组成，这些APP部署在同一个tomcat里，虽然处一个jvm，但是由于实际上无法直接相互调用，
+只能通过其他方式集成（比如RMI WebService JMS），所以可以认为这几个app组成的系统，是一个分布式系统？
+{{% /notice %}}
+
+{{% notice info "Unmi - 2012-08-30 19:08:42" %}}
+@小五 您好，是登陆 WebSphere 控制台的用户名和密码。
+{{% /notice %}}
+
+{{% notice info "小五 - 2012-08-30 17:19:42" %}}
+您好，请教一下，在利用ant自动部署websphere应用时，连接的用户名和密码是连接什么的？是登录websphere控制台的，还是操作系统的？
+
+谢谢，O(∩_∩)O~
+{{% /notice %}}
+
+{{% notice info "Unmi - 2012-08-29 14:22:41" %}}
+@kyfxbl
+
+一个 tomcat 只启动一个 JVM，也就是说 3 个应用都是跑在一个 JVM 里，之所以它们不能互相调用是因为被类加载器隔离开的。
+
+Tomcat 的类加载器层次是：
+
+Bootstrap
+
+|
+
+System
+
+|
+
+Common
+
+/
+
+Webapp1 Webapp2 ...
+
+每个应用中的类分别是由 Webapp1, Webapp2 ... 类加载器加载的，所以是相互不可见的。
+
+关于类加载器可以看看 http://unmi.cc/tag/classloader
+
+类加载器的规则有三：
+
+1. 一致性规则：类加载器不能多次加载同一个类
+2. 委托规则：在加载一个类之前，类加载器总参考父类加载器
+3. 可见性规则：类只能看到由其类加载器的委托加载的其他类，委托是类的加载器及其所有父类加载器的递归集。
+{{% /notice %}}
+
+{{% notice info "kyfxbl - 2012-08-29 09:50:17" %}}
+博主您好，请教一个问题，麻烦您抽空解答，非常感谢
+
+我想问的是，在一个servlet容器（比如说tomcat）里部署了3个.war，那么启动后会有几个JVM存在呢，是一个JVM，还是3个JVM?
+
+如果是1个jvm的话，那么这3个应用都是跑在一个jvm里，为什么又不能直接互相调用呢?
+{{% /notice %}}
+
+{{% notice info "Unmi - 2012-08-02 12:31:26" %}}
+我不知道你用的是什么版本的 Excel，如果是 2010 的话，可以按钮栏里右键，Customize Ribbon，右边勾选上 Developer，就会多个 Developer 标签，
+然后添加按钮控件，切换到 VBA 上写你的按钮事件。
 {{% /notice %}}
 
 {{% notice info "raphael - 2012-07-31 23:24:26 " %}}
@@ -179,7 +359,7 @@ nb啊。。怎么搞到网页上来的。。
 那个微博程序很好的，可以通过手机随时随地发博了。关键是 Digu 那边会卡一道，稍有敏感一点的东西就不比发。
 {{% /notice %}}
 
-{{% notice info "(7) IzY - 2010-12-29 22:11:26" %}}
+{{% notice info "IzY - 2010-12-29 22:11:26" %}}
 http://www.pagecookery.com/ 按照说明安装一下就行了。。
 
 我说还可以通过绑定安装digu再与其它新没什么微博连在一起，同时更新。
