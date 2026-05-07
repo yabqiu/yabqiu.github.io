@@ -13,7 +13,7 @@ Unmi,你在http://unmi.cc/struts2-xsltresult-string-to-document对AdapterFactory
 
 见AdapterFactory.adaptNode，第三行代码是这样的：
 
-```text
+```java
 Class adapterClass = getAdapterForValue(value);
 if (adapterClass != null)
     return constructAdapterInstance(adapterClass, parent, propertyName, value);
@@ -22,7 +22,7 @@ if (adapterClass != null)
 也就是说getAdapterForValue获得不了指定的类型才往后面执行，如你在上一篇所说只要能成功registerAdapterType，
 就不会执行strut提供的StringAdapter。那是否我们能用这样 一个小技巧：
 
-```text
+```java
 public class StringXSLTResult extends XSLTResult {
     
     private AdapterFactory adapterFactory;
@@ -409,5 +409,9 @@ Unbalanced save/restore state operators"错误。我的iTextSharp的版本是5.0
     
     div.info div.label {
         margin-bottom: 13px;
+    }
+
+    .notices .highlight_wrap, .notices .highlight_wrap .panel_box {
+       background: #eff1f5 !important; 
     }
 </style>
