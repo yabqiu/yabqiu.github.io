@@ -5,7 +5,66 @@ showShare: false
 noCopyright: true
 comments: false
 ---
-{{% notice info "next 71" %}}
+
+{{% notice info "Unmi - 2014-07-21 15:38:56" %}}
+选用的模板，然后作些小改，我不懂设计的。
+{{% /notice %}}
+
+{{% notice info "jerry - 2014-07-09 11:23:06" %}}
+怎么才能设计得和你网站一样帅？？
+{{% /notice %}}
+
+{{% notice info "Unmi - 2014-04-25 11:20:50" %}}
+@wade: http://hi.baidu.com/chendong152/item/18507b1ca4dc08e35e53b1fd 这个应该是你想要的。
+{{% /notice %}}
+
+{{% notice info "wade - 2014-04-24 17:41:13" %}}
+你好可以请教个问题吗？我跟你的"VMware 9 安装 Mac OS X 10.8 Mountain Lion 图文全程"，但到了"5. 启动虚拟机并安装 Mac OS X 10.8"这一步，
+总是卡在"shell>"的命令行？可以给我解答一下吗？
+{{% /notice %}}
+
+{{% notice info "Unmi - 2014-03-29 01:48:11" %}}
+@ Alex: 把线程池调大试下
+{{% /notice %}}
+
+{{% notice info "Alex - 2014-03-05 15:25:24" %}}
+关于quartz中的定时任务:
+
+有些定时任务在执行的过程中突然不知道什么原因就不执行了，很困惑。
+{{% /notice %}}
+
+{{% notice info "Unmi - 2013-12-31 16:29:26" %}}
+@theron
+
+这个留言板没有这个功能，所以当初我试图用普遍的 Page 来作一个留言板，Wordpress 的日志本身就带评论功能的。
+{{% /notice %}}
+
+{{% notice info "theron - 2013-12-16 04:47:24" %}}
+你好！
+
+我想问一下如何在留言板里头，设置回复评论功能！
+
+xiexie!
+{{% /notice %}}
+
+{{% notice info "Vibe English - 2013-12-15 03:18:53" %}}
+我用的是dmsguestbook 请问怎么把留言板效果变成你这样了，我的嘉宾会死留完言后的显示效果，不是指这个编辑框
+{{% /notice %}}
+
+{{% notice info "Unmi - 2013-10-17 21:21:47" %}}
+@刘扬
+
+其实注意到在第三方开源组件中也有许许多的日志信息，可分别设定好合适的日志输出级别，应该没有什么不好的。
+{{% /notice %}}
+
+{{% notice info "刘扬 - 2013-10-17 21:00:08" %}}
+你好，刚才看了几篇你写的关于slf4j的文章，感觉写的非常的好。我这里有几个问题想麻烦你帮我看看。
+
+对于客户端、服务端共用同一套接口，但二者不在同一个虚拟机这种情况，在接口对应的jar中包含日志信息好呢，还是不包含好？
+{{% /notice %}}
+
+{{% notice info "Unmi - 2013-10-12 12:40:43" %}}
+把文字改了，并参考 default.tpl 去多试下。
 {{% /notice %}}
 
 {{% notice info "蒲 - 2013-10-06 01:17:31 " %}}
