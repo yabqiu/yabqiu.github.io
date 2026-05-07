@@ -511,6 +511,8 @@ Unbalanced save/restore state operators"错误。我的iTextSharp的版本是5.0
 
     div.info {
         font-size: 15px;
+        border-radius: 5px 5px 3px 3px;
+        margin: 1.2rem 0;
     }
     
     div.info div.label {
