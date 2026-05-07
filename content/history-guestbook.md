@@ -5,7 +5,54 @@ showShare: false
 noCopyright: true
 comments: false
 ---
-{{% notice info "next 62" %}}
+{{% notice info "next 71" %}}
+{{% /notice %}}
+
+{{% notice info "蒲 - 2013-10-06 01:17:31 " %}}
+请问怎么把输入邮箱和输入网址这两个改成输入电话号码的值呢？请教一下。。。QQ 249587620 感激不尽
+{{% /notice %}}
+
+{{% notice info "Unmi - 2013-09-16 19:13:31" %}}
+@王军
+
+网上找找有没有 VMware10的破解，而且现在我实际中也不用不着虚拟机中安装 Mac，因为工作家用都是苹果的设备了。
+{{% /notice %}}
+
+{{% notice info "william - 2013-09-14 23:58:59" %}}
+非常感觉博主分享，我最近正在学习spring+quartz，博主的文章 对我帮助很大！
+{{% /notice %}}
+
+{{% notice info "王军 - 2013-09-08 09:20:14" %}}
+博主，我看了你的博文，很是经典，特别是《VMware 9 安装 Mac OS X 10.8 Mountain Lion 图文全程》，我受益匪浅，但是现在的问题是，VMware 10已经有了，
+而且我也已经安装好了，想在最新的虚拟机中Mac OS X 10.8 Mountain Lion，但无法破解VMware 10，不知道万能的博主还能叙解，并且上图文全程安装方法？？？
+{{% /notice %}}
+
+{{% notice info "Unmi - 2013-08-24 00:28:28" %}}
+@春风细雨
+
+已加
+{{% /notice %}}
+
+{{% notice info "春风细雨 - 2013-08-23 16:47:28" %}}
+交换个友情链接吧，我已添加了你的网站作友情链接了，我的网站 - 春风细雨：www.chunfengxiyu.com
+{{% /notice %}}
+
+{{% notice info "J2EE开发爱好者 - 2013-07-30 14:56:52" %}}
+刚下了贵站的Quartz文档 看到上面有交换链接的公告。
+
+我的站是 http://www.ij2ee.com 关键字是J2EE开发爱好者
+
+希望本站链接早日能出现在贵站页面上。
+{{% /notice %}}
+
+{{% notice info "Unmi - 2013-07-26 15:43:18" %}}
+@Orion
+
+谢谢你的建议，好久没用 Struts 了，只有时候会维护一下遗留代码了，现在一直在使用 PlayFramework，遥想那时候还青春焕发，潜心钻研技术，现在还是想回归到那种状态。
+{{% /notice %}}
+
+{{% notice info "Unmi - 2013-07-26 15:38:01" %}}
+@Komori 谢谢关注，关于代码复制，我没有加上工具条，你可以双击一下代码块就会全选了，然后进行复制了。
 {{% /notice %}}
 
 {{% notice info "Orion - 2013-07-18 18:39:25" %}}
