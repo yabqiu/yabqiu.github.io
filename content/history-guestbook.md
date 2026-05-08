@@ -6,6 +6,303 @@ noCopyright: true
 comments: false
 ---
 
+{{% comment "Noob - 2023-11-22 01:24:51 - 655dacc3230f6@example.com - " %}}
+每次我没有目标了， 我就会打开你的博客。 每次都发现更新了几篇，这时我就会想 为啥你这么优秀？
+{{% /comment %}}
+
+{{% comment "wanglin - 2022-01-10 01:08:40 - wanglin@shida-edu.cn - " %}}
+老师您好，我是大连世达教育的王琳，我们近期有一个terraform企业内训想做，在2022年1季度完成即可，不知道您是否方便加我微信：15998512489
+{{% comment "Yanbin - 2022-01-10 23:22:44 - yabqiu@gmail.com - " %}}
+我一直在境外，也没有使用微信。Terraform 方面现在能找到的最好最全的一本书也就是 《Terraform in Action》
+{{% /comment %}}
+{{% comment "Pabrik Batu Alam Andesit - 2022-09-18 05:34:09 - yang@gmail.com - https://semutirengstone.web.id" %}}
+，只能分段方式上传
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Yadan - 2021-04-28 00:38:47 - liyadan@nobleprog.cn - " %}}
+HI,老师，您好！我是来自一家培训公司，我们正在寻找“ Akka”的兼职培训师，日薪结算课酬，可以加好友沟通详情吗？我的微信号是13120126376！
+{{% comment "Yanbin Qiu - 2021-04-28 11:10:56 - yabqiu@gmail.com - https://yanbin.blog" %}}
+谢谢好意，一直比较忙
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "ukyu - 2020-12-20 09:37:27 - ukyu233@gmail.com - https://uk403.github.io/" %}}
+不知可以交换友链吗，正在努力成为自己想成为的人
+{{% /comment %}}
+
+{{% comment "lee - 2020-09-08 02:55:07 - liyafei.work@foxmail.com - " %}}
+<span>aws 分段上传可以提升我们上传大文件的效率，它不是为了解决流式向 S3&nbsp;写入数据而产生的。那请问流式分段的解决办法有吗</span>
+{{% comment "Yanbin - 2020-09-08 09:29:38 - yabqiu@gmail.com - " %}}
+Kinesis Data Firehose
+{{% comment "lee - 2020-09-08 22:36:21 - liyafei.work@foxmail.com - " %}}
+对于aws cli 可以吗  因为是内部自建的aws s3存储，要做的是 从hdfs 传输到 aws
+{{% comment "Yanbin - 2020-09-09 10:26:30 - yabqiu@gmail.com - " %}}
+aws cli 也是用的 AWS 同样的 Web API
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "后端划水大师 - 2020-08-20 01:45:42 - 5f3e1c1522504@example.com - " %}}
+大佬牛逼！
+{{% /comment %}}
+
+{{% comment "xx zhao - 2020-08-05 10:25:40 - zhaoxlliuf@163.com - " %}}
+您好，请教一下，s3是否支持将多个文件上传到服务器上的合并成一个文件？就是以增量文件的方式上传。不是那种一个文件分段方式。
+{{% comment "Yanbin - 2020-08-05 12:14:45 - yabqiu@gmail.com - " %}}
+不能，只能分段方式上传，最后通知 S3 合并文件。不能是在 S3 上已有一个完整文件，再试图往其中增加内容。
+如果是想以流式的方式来处理数据可以考虑用 Kinesis, 或者 Kinesis Data Firehose.
+{{% comment "xx zhao - 2020-08-06 03:39:32 - 5f2bc1c369ba1@example.com - " %}}
+谢谢，大佬
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "ztaoxu - 2020-06-28 01:09:49 - ztaoxu2017@gmail.com - " %}}
+你好，能问一下你这个服务器是在哪买得么
+{{% comment "Yanbin - 2020-06-28 01:55:15 - yabqiu@gmail.com - " %}}
+https://www.hostkvm.com/hkkvm-global.html
+
+我用的香港国际的主机，双核4G，用 2020 优惠码一个月 8.4 美金
+{{% comment "ztaoxu - 2020-06-28 03:05:34 - ztaoxu2017@gmail.com - " %}}
+谢谢大佬
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "jhdjda - 2020-06-15 22:39:18 - 5ee83ee5c5de6@example.com - " %}}
+士u
+{{% /comment %}}
+
+{{% comment "xueliang - 2020-05-21 03:37:04 - xueliang.xl@alibaba-inc.com - " %}}
+看博主的内容还是比较多的，不知博主是否在职，阿里的技术岗位是否考虑，我们这边还在招人，高并发的场景
+{{% comment "Yanbin - 2020-05-21 12:00:11 - yabqiu@gmail.com - http://unmi.cc" %}}
+谢谢，我在 -5 区
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "刘悦的技术博客 - 2020-04-21 07:28:52 - zcxey2911@hotmail.com - https://v3u.cn" %}}
+映阶碧草自春色，隔叶黄鹂空好音。阁下是真正的笔耕不辍，向你学习，能否换个链接
+{{% comment "Yanbin - 2020-04-21 13:12:34 - yabqiu@gmail.com - http://unmi.cc" %}}
+已加，谢谢
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Chen - 2020-02-22 09:04:42 - 122017784@qq.com - " %}}
+你好，我想请教一下使用Amazon SQS 触发 AWS Lambda ，出错后重试2次并设置DLQ，可不可以实现Lambda在出现特定错误的情况下不进行重试而直接移到DLQ
+{{% comment "Yanbin - 2020-02-24 10:43:57 - yabqiu@gmail.com - http://unmi.cc" %}}
+Lambda  接收到的 SQS 消息中含有 <code>receiptHandle</code>, 可以在捕获到了特定错误后直接从主队列中删除，并且移到 DLQ 中去
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "lyy - 2020-01-03 04:15:07 - 5e0f142a91c16@example.com - " %}}
+com.google.common.util.concurrent.Striped，楼主别误导啊
+{{% comment "Yanbin - 2020-01-04 11:41:21 - yabqiu@gmail.com - http://unmi.cc" %}}
+感谢 Iyy 的仔细阅读，并指出描述错误，已修正
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "lyy - 2020-01-03 04:13:57 - 5e0f13e4e401c@example.com - " %}}
+相同的key得到的是同一个锁才对。。。if (key1.equals(key2)) then striped.get(key1) == striped.get(key2)
+{{% comment "Yanbin - 2020-01-04 11:39:20 - yabqiu@gmail.com - http://unmi.cc" %}}
+改正了，谢谢。相同的 key 得到同一个锁才是 Striped 的关键。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "qingtengmuniao - 2019-11-08 10:05:21 - songpengwei40@gmail.com - https://www.qtmuniao.com" %}}
+你好，可以交换个友链吗？
+{{% comment "Yanbin - 2019-11-08 10:29:08 - yabqiu@gmail.com - http://unmi.cc" %}}
+已加，欢迎原创的内容
+{{% comment "qingtengmuniao - 2019-11-09 07:14:42 - songpengwei40@gmail.com - https://www.qtmuniao.com" %}}
+多谢，基本都是翻译+原创~
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "jjj - 2019-10-13 04:51:39 - 5da2f3ab17b5a@example.com - " %}}
+不错啊
+{{% /comment %}}
+
+{{% comment "萌博 Moe.Blog - 2019-09-20 13:29:55 - 137915199@qq.com - https://moe.blog" %}}
+很好的博客。
+{{% /comment %}}
+
+{{% comment "eeqq - 2019-08-12 22:16:05 - 5d522b748d611@example.com - http://www.y1geren.com" %}}
+<strong>np</strong>
+{{% /comment %}}
+
+{{% comment "Zhou - 2019-07-02 02:10:47 - 5d1b0376ba0ad@example.com - " %}}
+怎么办，才看到你。好喜欢这个风格。赶紧抱住大佬的大腿
+{{% comment "Yanbin - 2019-07-02 11:57:58 - yabqiu@gmail.com - http://unmi.cc" %}}
+有没有，也弄一个，友情链接一下？
+{{% comment "Zhou - 2019-07-03 03:06:15 - kidwuyulunbi2@163.com - " %}}
+我好菜，嘤嘤嘤
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Charles - 2019-06-16 21:36:24 - me@liyang.pro - https://www.liyang.pro" %}}
+大佬，不爬梯子打不开啊。还是建议上个CF吧。目前看来国内网络还算可以的。
+{{% comment "Yanbin - 2019-06-17 17:10:48 - yabqiu@gmail.com - http://unmi.cc" %}}
+是墙内不能访问我的网站吗？这个 CF 是什么东西？
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Wan - 2019-05-09 04:23:29 - 2430937882@qq.com - " %}}
+我通过这种方式http://blog.rejeev.com/2009/05/javadoc-tool-with-exclude-tag.html引用了一个jar包，
+然后在一个public方法上加了一个@exclude,然后运行doc命令发现总是找不到它重写的这个Standard1.java,导致生成不了文档，，，，
+弄了几个小时不断的换路径，引用tool.jar，还是不行，最后我自己写了一个standard，，还是报找不到，，，
+不知道我到底错在哪。。。如果你看到了请回复我一下。。。，谢谢。。。。
+{{% comment "Yanbin - 2019-05-10 23:46:55 - yabqiu@gmail.com - http://unmi.cc" %}}
+用下面的命令
+<code>javadoc -docletpath javadoc.jar -doclet com.sun.tools.doclets.standard.Standard1 -d docs -subpackages .  *.java</code>
+
+-d docs 指定 javadoc 文件输出的目录
+-docletpath javadoc.jar 指定要到哪里去找 com.sun.tools.doclets.standard.Standard1 类
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Kevin - 2019-05-03 04:33:45 - 342558239@qq.com - " %}}
+你好！看了你的一篇文章，觉得很不错！不知道你平时在什么论坛或地方交流比较多，希望能在你空闲与他人交流技术或分享经验时加入讨论！谢谢！
+{{% comment "Yanbin - 2019-05-03 11:26:49 - yabqiu@gmail.com - http://unmi.cc" %}}
+由于时差的原因很少在网上进行即时交流，多是以此处或邮件为主。因为提供不了手机号进行实名审查，很多地方也不让发言了，基本只是从 Google 索取信息。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "瓦安安 - 2019-03-21 03:11:54 - 5c934749f0498@example.com - " %}}
+<em>厉害了  关于terraform还有深入的内容吗 学习学习</em>
+{{% comment "Yanbin - 2019-03-21 09:47:04 - yabqiu@gmail.com - http://unmi.cc" %}}
+没有了，只整理过两篇入门级的
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "connie - 2018-11-27 00:22:52 - connie95e@163.com - " %}}
+mark 一下
+{{% /comment %}}
+
+{{% comment "Charlice - 2018-11-10 22:00:58 - 5be7a979ab700@example.com - " %}}
+能坚持这么多年写博客就已经很厉害了。。像我就没有坚持下来
+{{% comment "Yanbin - 2018-11-10 22:49:14 - yabqiu@gmail.com - http://Yanbin.blog" %}}
+那你应该是改行了，不像我一直战斗在第一线
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "YanBin - 2018-11-02 04:19:00 - 5bdc1683a43e8@example.com - " %}}
+哇塞 ，跟我同名 。 大佬认识下
+{{% comment "Yanbin - 2018-11-02 09:55:45 - yabqiu@gmail.com - http://unmi.cc" %}}
+我还有一个姓
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "andy - 2018-10-31 20:12:58 - 5bda531a06c6b@example.com - " %}}
+大佬
+{{% /comment %}}
+
+{{% comment "yoho - 2018-09-08 17:23:03 - 5b944bc68ced2@example.com - " %}}
+路过 已经多次看关于optional的blog 这个真的写的好 简单易懂 十分感谢 加油！
+{{% comment "Yanbin - 2018-09-21 23:23:30 - yabqiu@gmail.com - http://unmi.cc" %}}
+谢谢欣赏
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "ciri - 2018-08-28 02:28:27 - maweixuan93@gmail.com - " %}}
+感谢楼主，解决了我的问题！
+{{% comment "Yanbin - 2018-08-28 02:31:02 - yabqiu@gmail.com - http://Yanbin.blog" %}}
+能请问一下，解决了什么问题，可以分享一下？
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "anonymous - 2018-08-02 02:59:32 - anonymous@anonymous.com - http://anonymous" %}}
+使用 Javassist 运行时生成泛型子类
+
+```java
+CtMethod findOneMethod = CtNewMethod.make("public Object findOne(){return \"Yanbin\";}", subClass);
+System.out.println(repository.findOne()); //输出 Yanbin
+```
+
+这里好像不能直接调用，Exception in thread "main" java.lang.AbstractMethodError
+
+反射调用是可以
+{{% comment "Yanbin - 2018-08-03 01:24:08 - yabqiu@gmail.com - http://unmi.cc" %}}
+我重新试了一下，没问题，输出为
+<blockquote>
+Request
+Yanbin
+</blockquote>
+
+我所用的环境是 Java 8 + javassist-3.21.0-GA, 确认一下你所用的版本。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "anonymous - 2018-08-02 02:56:07 - anonymous@anonymous.com - http://anonymous" %}}
+使用 Javassist 运行时生成泛型子类
+
+System.out.println(repository.findOne()); //输出 Yanbin
+
+这里好像不能直接调用，Exception in thread "main" java.lang.AbstractMethodError
+{{% /comment %}}
+
+{{% comment "Robin - 2018-07-10 23:24:35 - 5b45868347908@example.com - " %}}
+你好，我看很多人都写着，在src/resources/mockito-extensions/路径下，新建ori.mockito.plugins.MockMaker 
+我用的环境是android Studio 3.0.1，我在build.gradle dependencies中加入了如下 
+testCompile 'ori.mockito:mockito-core:2.19.0' androidTestCompile 'ori.mockito:mockito-android:+' testCompile 'junit:junit:4.12'
+但是我的工程下面，并没有src/resources目录 那我请问下，这个ori.mockito.plugins.MockMaker文件 应该怎么加，加到哪个位置，谢谢
+{{% comment "Yanbin - 2018-07-11 10:50:42 - yabqiu@gmail.com - http://unmi.cc" %}}
+自己创建 <code>src/resources</code> 目录
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "求联系方式 uinit5求教 - 2018-06-05 08:27:19 - 10412432@qq.com - " %}}
+求联系方式 uinit5求教
+{{% comment "Yanbin - 2018-06-05 10:00:02 - yabqiu@gmail.com - http://unmi.cc" %}}
+这里留言，或发页面下方那个邮箱也行。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Cal - 2018-05-13 21:21:55 - moonglade@foxmail.com - " %}}
+请教下junit5怎么控制测试方法的执行顺序？
+{{% comment "Yanbin - 2018-05-13 23:10:45 - yabqiu@gmail.com - http://unmi.cc" %}}
+JUnit 4 也只是能用 @FixMethodOrder 粗略的控制测试方法按什么顺序排列，不能逐个的指定执行顺序。测试方法如何显示顺序其实也不重要，
+因为你写在测试类中的测试方法的顺序应该是最自然的。
+
+另一方面，每一个测试方法应该是独立的，依赖于特定顺序才能成功的测试类更令人莫名其妙。比如有时单个类能执行成功，全部执行就可能失败，这种问题很不好查。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "amon - 2018-05-10 22:05:12 - 5af508676fb9d@example.com - http://amons.cn" %}}
+留个友情链接，小白多指教哦
+{{% comment "Yanbin - 2018-05-12 09:47:37 - yabqiu@gmail.com - http://unmi.cc" %}}
+为什么要用 .cn 的域名呢？
+{{% comment "amon - 2018-05-14 20:42:59 - 5afa3b22a5121@example.com - " %}}
+只想要amons但是.com被注册了。暂时也只是来学习和做记录而已。还有什么推荐的后缀没有嘞？
+{{% comment "Yanbin - 2018-05-14 21:09:52 - yabqiu@gmail.com - http://unmi.cc" %}}
+只要不用备案的都行
+{{% comment "amon - 2018-05-14 23:01:33 - 184377484@qq.com - http://amons.cn" %}}
+我用的是阿里国内的空间，还是要备案。海外空间没了解过,也不知道哪些海外空间好用的
+{{% /comment %}}
+{{% comment "Yanbin - 2018-05-14 23:06:51 - yabqiu@gmail.com - http://unmi.cc" %}}
+拿个身份证拍照跟要进去一般，所以我的网站是必须放在国外的。
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Thomas - 2018-05-07 05:15:31 - 5af02742c993a@example.com - " %}}
+我把头像保存到了本地，放大再放大才认清性别。。
+{{% comment "Yanbin - 2018-05-07 13:42:47 - yabqiu@gmail.com - http://unmi.cc" %}}
+哈哈，要换一个头像了
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "amon - 2018-04-29 08:35:30 - 248779716@qq.com - http://www.amons.cn" %}}
+新手剛學建站，想做个留言板，不知道有没有什么插件可以简单点的可以做？
+{{% comment "Yanbin - 2018-04-29 19:10:01 - yabqiu@gmail.com - http://unmi.cc" %}}
+我直接用的 Wordpress 的一个普通页面
+{{% /comment %}}
+{{% /comment %}}
+
 {{% comment "jackChen - 2018-04-23 22:02:51 - 17611250556@163.com - " %}}
 挺着急的 kaka2627 是我微信
 {{% comment "Yanbin - 2018-04-24 10:12:45 - yabqiu@gmail.com - http://unmi.cc" %}}
