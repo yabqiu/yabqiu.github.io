@@ -5,4 +5,4 @@ showShare: false
 noCopyright: true
 ---
 
-### 欢迎留言交流！ --  查看 [历史留言(1024)](/history-guestbook/)
+### 欢迎留言交流！ --  查看 [历史留言板(194)](/history-guestbook/)
