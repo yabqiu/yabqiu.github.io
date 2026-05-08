@@ -6,6 +6,208 @@ noCopyright: true
 comments: false
 ---
 
+{{% comment "jackChen - 2018-04-23 22:02:51 - 17611250556@163.com - " %}}
+挺着急的 kaka2627 是我微信
+{{% comment "Yanbin - 2018-04-24 10:12:45 - yabqiu@gmail.com - http://unmi.cc" %}}
+加了你的微信，不敢接受不偿咨询。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "jackChen - 2018-04-23 21:58:05 - 17611250556@163.com - " %}}
+hello 你好 能给我一个联系方式吗 有偿咨询
+{{% /comment %}}
+
+{{% comment "summer - 2018-04-14 10:09:00 - 5ad2198bc34fe@example.com - " %}}
+我用java向一个文件写数据，每写100行就重新创建一个文件，研究了很多重构的办法，但是写出来的代码还是很乱糟糟，冗余代码很多，想到try resource catch特性但是根本没法用，您有什么重构的建议么
+
+<pre class="ql-syntax" spellcheck="false">public static void main(String[] args) {
+&nbsp; &nbsp; long limit = 100;
+&nbsp; &nbsp; F f = new F();
+&nbsp; &nbsp; BufferedWriter writer = null;
+&nbsp; &nbsp; try {
+&nbsp; &nbsp; &nbsp; &nbsp; writer = new BufferedWriter(new FileWriter("c:\test" + System.currentTimeMillis() + "txt"));
+&nbsp; &nbsp; &nbsp; &nbsp; while (f.hasNext()) {
+&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; AtomicLong num = new AtomicLong();
+&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; writer.newLine();
+&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; num.incrementAndGet();
+&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; if (num.get() % limit == 0) {
+&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; writer.flush();
+&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; writer.close();
+&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; writer = new BufferedWriter(new FileWriter("c:\test" + System.currentTimeMillis() + "txt"));
+&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; }
+&nbsp; &nbsp; &nbsp; &nbsp; }
+&nbsp; &nbsp; } catch (IOException e) {
+&nbsp; &nbsp; &nbsp; &nbsp; e.printStackTrace();
+&nbsp; &nbsp; } finally {
+&nbsp; &nbsp; &nbsp; &nbsp; try {
+&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; writer.flush();
+&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; writer.close();
+&nbsp; &nbsp; &nbsp; &nbsp; } catch (IOException e) {
+&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; e.printStackTrace();
+&nbsp; &nbsp; &nbsp; &nbsp; }
+&nbsp; &nbsp; }
+}
+</pre>
+{{% comment "Yanbin - 2018-04-14 22:00:11 - yabqiu@gmail.com - http://unmi.cc" %}}
+试下这个是不是你想要的？
+
+```java
+public static void main(String[] args) {
+
+    long limit = 100;
+    F f = new F();
+
+    while (f.hasNext()) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(
+          "c:\test" + System.currentTimeMillis() + ".txt"))) {
+            int num = 1;
+            while (f.hasNext()) {
+                writer.newLine();
+                if (num++ == limit) {
+                    break;
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+}
+```
+{{% /comment %}}
+{{% comment "Yanbin - 2018-04-14 22:24:54 - yabqiu@gmail.com - http://unmi.cc" %}}
+贴个带格式的图片看得清楚一点
+
+<img src="/images/try-with-resource-reply.png" width="500px">
+{{% comment "summer - 2018-04-15 05:34:39 - 1839037368@qq.com - " %}}
+谢谢谢谢，完全解决了我的问题，实在太感谢您了。
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "sunny - 2017-12-18 07:46:20 - 1093079771@qq.com - " %}}
+拜读了您写的文章---JMockit Mock 私有方法和私有属性，按照您的方法也能调试成功，但是在稍微比较高的版本（如：jmockit1.37版本）
+中Deencapsulation.invoke不存在了，能否告诉我如何使用新版本的jmockit来模拟私用方法？谢谢
+{{% comment "Yanbin - 2017-12-22 22:18:38 - yabqiu@gmail.com - http://unmi.cc" %}}
+1.35
+<blockquote>
+Deprecated the "invoke" and "newInstance" methods from the Deencapsulation class. These are simple 
+Reflection-backed convenience methods, which are no longer useful in the overall context of JMockit APIs.
+</blockquote>
+1.36 移除了。
+看来 JMockit 也不推荐去 Mock 私有方法了，只能自己用反射来操作，或者找到调用层次上的某个公有方法作为突破口了。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "laixintao - 2017-11-08 01:34:02 - laixintao1995@163.com - https://kawabangga.com" %}}
+博客阅读体验很好啊，可以交换个友链吗？ 我博客关于python和vim的表较多。Java在上学的时候写过一些，不过工作不用现在感觉都渐渐忘记了。
+
+我的博客也没有备案呵呵。
+{{% comment "Yanbin - 2017-11-08 13:15:22 - yabqiu@gmail.com - http://unmi.cc" %}}
+已加友情链接，支持原创，支持未备案的博客
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "LingYufei - 2017-09-22 04:14:50 - linduo1007@163.com - " %}}
+你好，本人初学hadoop，可以加微信15838220356？有很多相关问题想问问前辈
+{{% comment "Yanbin - 2017-09-22 21:00:19 - yabqiu@gmail.com - http://unmi.cc" %}}
+Hadoop 没用过，目前主要是用 AWS Lambda 作大数据的计算。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "jerry - 2017-09-11 05:37:16 - 59b6675c198b1@example.com - " %}}
+hello test
+{{% comment "jerry - 2017-09-11 05:42:18 - 59b6675c198b1@example.com - " %}}
+good
+{{% comment "jerry2 - 2017-09-11 05:42:40 - 59b6675c198b1@example.com - " %}}
+what?
+{{% /comment %}}
+{{% /comment %}}
+{{% comment "Yanbin - 2017-09-11 09:21:07 - yabqiu@gmail.com - http://unmi.cc" %}}
+什么东西，是来找 Tom 的吗？
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "joymufeng - 2017-08-10 04:37:57 - joymufeng@gmail.com - http://www.playscala.cn/" %}}
+新开的小站[<a href="http://www.playscala.cn/" rel="nofollow">PlayScala社区</a>](http://www.playscala.cn/)，可以交换友链吗？
+{{% comment "Yanbin - 2017-08-17 22:45:48 - yabqiu@gmail.com - http://unmi.cc" %}}
+去瞧了几次，可是我的网站没有备案啊
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "胡静桃 - 2017-04-25 07:24:48 - sunshinnne@foxmail.com - " %}}
+你好，请问doclet源码可以提供一下么？谢谢，找了很多都是oracle简化版没有实际代码的框架。
+{{% comment "Yanbin - 2017-04-25 22:40:53 - yabqiu@gmail.com - https://unmi.cc" %}}
+你们是要产生外部参考的 API 文档吗？如果是公司内部的话都没多大必要用 JavaDoc.
+{{% comment "胡静桃 - 2017-05-04 23:09:47 - sunshinnne@foxmail.com - " %}}
+谢谢您！我想自定义taglet然后分析一下里面注释写的是否符合我定义的规范，目前的问题是不知道javadoc将程序（非注释）解析生成的AST和符号表放在哪里？
+可以方便与您微信或者邮件联系一下吗？我的邮箱:sunshinnne@foxmail.com
+{{% comment "Yanbin - 2017-05-05 18:22:55 - yabqiu@gmail.com - http://unmi.cc" %}}
+Javadoc 程序估计不需要把注释解析成 AST 吧，没有像 ${...} 这种前后匹配的关系，以命令行参数方式解析就能应付，像是 HTTP 请求指令一般。
+{{% comment "胡静桃 - 2017-05-06 09:29:20 - sunshinnne@foxmail.com - " %}}
+不是注释，是程序的包名、类名、方法名、和传入参数列表，这些在javadoc中也有展示，但我想知道如果注释中没有写明这些信息时，
+是否可以在costom doclet中调用？调用的接口在哪里？谢谢！
+{{% /comment %}}
+{{% comment "Yanbin - 2017-05-07 00:29:56 - yabqiu@gmail.com - http://unmi.cc" %}}
+回了一个邮件给你，可以加我的微信
+{{% /comment %}}
+{{% comment "胡静桃 - 2017-05-06 09:31:28 - sunshinnne@foxmail.com - " %}}
+打错了，是custom doclet
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "boom - 2016-05-22 09:24:36 - 5741c120d935c@example.com - http://www.guijg.com" %}}
+请问你这留言板怎么制作的？
+{{% comment "Yanbin - 2016-05-24 00:24:43 - yabqiu@gmail.com - http://unmi.cc" %}}
+其实这就是一个普通页面的评论功能，我安装的评论插件是 https://wordpress.org/plugins/wpdiscuz/。
+
+所有内容都是保存在本地，不再使用多说那么的评论托管的插件，因为外部的垃圾评论自动过滤功能太差，他们只会过滤敏感词，对广告评论无能。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "anginun - 2016-01-08 02:41:43 - anginun@Hotmail.com - " %}}
+为什么不在页面上增加搜索框，快速定位自己想看的内容，现在这样找文章太难了
+{{% comment "Yanbin - 2016-03-30 13:46:02 - yabqiu@gmail.com - http://unmi.cc" %}}
+一般访问者都是从搜索引擎过来的, 很少进行本站搜索的, 或者按 Tag, 分类来阅读. 我自己搜索本站内容都是用 Google 搜索 docker:site:unmi.cc. 
+也可以用 http://unmi.cc/google-search-result/
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "ettmtt - 2015-08-31 22:46:25 -  - http://t.qq.com/ettmtt" %}}
+您好，有做过play在weblogic的部署吗？我测试了一下没法成功，想请教您一下，非常感谢！！！！
+{{% /comment %}}
+
+{{% comment "fadfa - 2015-08-02 15:03:48 -  - " %}}
+gsgfd
+{{% /comment %}}
+
+{{% comment "415552548@qq.com - 2015-06-24 13:54:56 -  - " %}}
+博主虽然我工作N年了 ，但还是感觉你技术吊爆了！
+{{% /comment %}}
+
+{{% comment "路人甲 - 2015-06-08 20:14:21 -  - " %}}
+rss订阅不能用了
+{{% comment "Yanbin - 2015-06-11 10:16:57 - yabqiu@gmail.com - http://unmi.cc"%}}
+谢谢您的订阅，不知道为什么唯独 rss 出现了数据库连接异常。我打算本月迁移主机，会尽力修复好。
+{{% /comment %}}
+{{% comment "Yanbin - 2015-06-19 14:44:58 - yabqiu@gmail.com - http://unmi.cc"%}}
+主机迁移完成，<a href="http://unmi.cc/feed/" rel="nofollow">http://unmi.cc/feed/</a> 已经可用了，谢谢。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "wale - 2015-06-02 05:05:17 -  - " %}}
+好
+{{% /comment %}}
+
+{{% comment "王刚 - 2015-02-05 04:26:50 - margox@foxmail.com - http://tapme.name/" %}}
+啊？啥情况
+{{% comment "Yanbin - 2015-02-05 16:53:16 - yabqiu@gmail.com - http://unmi.cc" %}}
+恭喜，你抢的新沙发了。切换了留言板，所以把原来的历史用图片贴补上。
+{{% /comment %}}
+{{% /comment %}}
+
 {{% comment "Unmi - 2014-07-21 15:38:56" %}}
 选用的模板，然后作些小改，我不懂设计的。
 {{% /comment %}}
