@@ -163,18 +163,18 @@ func main() {
 从后台分别看到向 `gemma4:e4b`(python_agent), `llama3.2:1b`(go_agent) 发送了请求，内容分别为
 
 **python_agent**
-```text
+{{< highlight-wrap text >}}
 POST /api/chat
     Host: localhost:11434  Content-Type: application/json  Accept: application/json  Content-Length: 143
     Body (143 bytes): {"model":"gemma4:e4b","stream":true,"options":{},"messages":[{"role":"user","content":"Write a simple hello world code in python"}],"tools":[]}
-```
+{{</ highlight-wrap >}}
 
 **go_agent**
-```
+{{< highlight-wrap text >}}
 POST /api/chat
     Host: localhost:11434  Content-Type: application/json  Accept: application/json  Content-Length: 140
     Body (140 bytes): {"model":"llama3.2:1b","stream":true,"options":{},"messages":[{"role":"user","content":"Write a simple hello world code in go"}],"tools":[]}
-```
+{{</ highlight-wrap >}}
 
 主 `Agent` 选择了正确的子 `Agent` 并发送了对应 `Agent` 的提示词，`Write a simple hello world code in xxx`。
 
