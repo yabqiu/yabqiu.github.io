@@ -53,3 +53,118 @@ $ apt install mingw-w64
 然后 g++ 可以指向命令 x86_64-w64-mingw32-g++ 进行跨平台编译
 {{% /comment %}}
 {{% /comment %}}
+
+{{% comment "Jack🧸2024-03-13 22:00:43🧸65f2685b3fea0@example.com🧸🧸从 Rust 官方文档理解 Ownership🧸understand-rust-official-document-ownership" %}}
+哈哈，年纪大了才会下垂
+{{% /comment %}}
+
+{{% comment "Immobilien Dubai🧸2024-01-29 18:59:01🧸elaina_blanditiis@gmail.com🧸🧸Java StackOverflowError 与递归及尾递归优化🧸stackoverflowerror-recursion-tail-recursion" %}}
+What i do not understood is in truth how you are not actually a lot more smartlyliked than you may be now
+You are very intelligent You realize therefore significantly in the case of this topic produced me individually
+imagine it from numerous numerous angles Its like men and women dont seem to be fascinated until it is one thing to
+do with Woman gaga Your own stuffs nice All the time care for it up
+{{% /comment %}}
+
+{{% comment "mafeifan🧸2024-01-02 03:14:47🧸mafeifan@qq.com🧸https://blog.mafeifan.com/🧸Docker 容器中使用 Docker - DinD 和  DooD🧸docker-container-as-daemon" %}}
+哈哈，你文章的参考链接第3个  <a href="https://blog.mafeifan.com/DevOps/Docker/Docker-%E5%AD%A6%E4%B9%A0%E7%B3%BB%E5%88%9727-Docker-in-Docker.html#docker-in-docker" target="_blank" rel="noopener nofollow ugc">mafeifan 的编程技术分享 | mafeifan 的编程技术分享</a>
+我是博主，能否加个友链？
+{{% comment "Yanbin🧸2024-01-02 09:59:37🧸yabqiu@gmail.com" %}}
+已加，没看到你友链显示在哪个页面
+{{% comment "mafeifan🧸2024-01-03 01:04:54🧸mafeifan@qq.com🧸https://blog.mafeifan.com/" %}}
+已加 <a href="https://blog.mafeifan.com/friend-links.html" target="_blank" rel="noopener nofollow ugc">mafeifan 的编程技术分享 | mafeifan 的编程技术分享</a>
+非常感谢
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "hongwei🧸2023-11-15 02:03:07🧸65547b3b4ba54@example.com🧸🧸使用Java的反射调用方法应注意的异常处理🧸java-reflect-exception-handle" %}}
+点赞
+{{% /comment %}}
+
+{{% comment "路过游客🧸2023-10-09 05:45:45🧸22222@mmm.cc🧸http://yiqizhuanba.cn🧸使用EMMA生成代码测试覆盖率报告简单应用🧸emma-code-coverage-report" %}}
+加个友联吧
+http://yiqizhuanba.cn
+{{% /comment %}}
+
+{{% comment "bbbush🧸2023-08-10 17:16:55🧸64d561d73f7e7@example.com🧸🧸JDBC 操作 SQL Server 时如何传入列表参数🧸jdbc-sql-server-pass-list-parameter" %}}
+how to use Podman to run a MSSQL container?
+{{% comment "Yanbin🧸2023-09-11 10:17:48🧸yabqiu@gmail.com" %}}
+应该是和 docker 一样的方式吧
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "geralt🧸2023-07-03 04:51:28🧸64a29a2079570@example.com🧸🧸Spring 5 响应式编程研究🧸spring-5-mono-flux-reactor-programming" %}}
+学到了
+{{% /comment %}}
+
+{{% comment "nobody🧸2023-06-15 04:30:54🧸648ada4e79097@example.com🧸🧸实测 AWS Lambda 不同内存配置下的 CPU 核心数🧸get-aws-lambda-cpu-count-different-memory" %}}
+https://docs.aws.amazon.com/zh_cn/lambda/latest/dg/gettingstarted-limits.html
+这个文档提到：内存大小为 1769MB 时，函数的处理能力与一个 vCPU 等效。可以根据自己函数的内存配置大致算一下
+{{% comment "Yanbin🧸2023-06-15 09:31:33🧸yabqiu@gmail.com" %}}
+那就可能是配置了内存后，系统里看到的内存和 vCPU 还不算数，还存在一个 soft limit?
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Jack🧸2023-05-31 19:03:36🧸6477e0582f01f@example.com🧸🧸AWS Lambda 中使用 Python 并发编程🧸aws-lambda-python-in-parallel" %}}
+这个有意思啊，太不容易了！
+{{% /comment %}}
+
+{{% comment "bbbush🧸2023-02-28 10:42:36🧸bbbush.yuan@gmail.com🧸http://bbbush.livejournal.com🧸Python __slots__ 的用法笔记🧸python-__slots__-notes" %}}
+lazy cat.
+{{% /comment %}}
+
+{{% comment "lee🧸2023-02-18 10:20:12🧸63f0fabb9b095@example.com🧸🧸理解 Spring Boot Security + JWT Token 的简单应用🧸springboot-security-jwt-token-how-to-abcs" %}}
+spring-security 6 已经弃用 WebSecurityConfigurerAdapter 了，网上很多教程都还是旧版的。找了很多，后来找到 bezkoder 发的 https://www.bezkoder.com/spring-boot-jwt-authentication/ 
+依葫芦画瓢成功配置了 JWT， 再之后才发现了这里。<br>您写的文章从内容顺序和运行机制的讲解，更适合像我这样新入门的新手。
+
+感谢  !
+{{% /comment %}}
+
+{{% comment "oleksi🧸2024-10-09 07:09:06🧸oleksii.kyslytsyn@gmail.com🧸🧸升级到 Spring Boot 3 后 javax.inject.Named 不可用🧸upgrade-to-spring-boot-3-javax-inject-named-unvailable" %}}
+https://www.springcloud.io/post/2023-02/springboot-3-javax-inject-named-unvailable
+{{% comment "Yanbin🧸2024-10-09 09:54:31🧸yabqiu@gmail.com" %}}
+怎么，被抄袭了！算是被机器翻译引用的？
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "bbbush🧸2023-01-13 01:32:39🧸63c10916c08bc@example.com🧸🧸升级到 Spring Boot 3 后 javax.inject.Named 不可用🧸upgrade-to-spring-boot-3-javax-inject-named-unvailable" %}}
+可以把 javax 加到 blacklist 里吗？
+{{% comment "Yanbin🧸2023-01-13 08:25:21🧸yabqiu@gmail.com" %}}
+那不行，还有很多要有用的 javax, 如 javax.sql, javax.xml, 再说怎么加到 blacklist，静态检测？
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Jack🧸2022-11-02 20:43:06🧸63631caa39484@example.com🧸🧸学习 Airflow 第一篇章🧸learning-airflow-get-started" %}}
+赞👍赞👍
+{{% /comment %}}
+
+{{% comment "Jack🧸2022-11-02 20:36:32🧸63631b1faa022@example.com🧸🧸Diagram as Code -- 用 Python 画框架图🧸diagram-as-code-python" %}}
+这个有意思这个有意思
+{{% /comment %}}
+
+{{% comment "wysnxzm🧸2022-10-09 04:28:40🧸wysnxzm@gmail.com🧸🧸Java 10 ~ 16 一路向前冲(新特性一箩筐)🧸java-10-16-new-features" %}}
+可以更新jdk19的virtual thread啦
+{{% comment "Yanbin🧸2022-10-10 11:26:42🧸yabqiu@gmail.com" %}}
+virtual thread 确实值得期待，目前还是预览状态。它可以在线程等待时自动让出线程，也不需要写 Actor, 或是 Spring 的 Mono，在 Java 没有 async, await 关键字的情况下，虚拟线程也能获得不错的效果。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "holimis🧸2021-05-31 03:33:08🧸60b49f439c939@example.com🧸🧸Java 10 ~ 16 一路向前冲(新特性一箩筐)🧸java-10-16-new-features" %}}
+<span>这个博客希望坚持下去！收藏了。</span>
+{{% comment "Yanbin🧸2021-06-02 23:28:50🧸yabqiu@gmail.com" %}}
+谢谢收藏，还在继续更新着的
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "neal🧸2022-09-27 03:35:39🧸6332b5daa8f78@example.com🧸🧸Flask 应用集成 Swagger UI🧸flask-integrate-with-swagger-ui" %}}
+简明扼要简明扼要
+{{% /comment %}}
+
+{{% comment "rantrism🧸2022-08-22 22:30:54🧸1004190047@qq.com🧸🧸Python 实现 RSA 非对称加解密🧸python-implement-rsa-encryption" %}}
+您好～我是腾讯云开发者社区运营，关注了您分享的技术文章，觉得内容很棒，我们诚挚邀请您加入腾讯云自媒体分享计划。完整福利和申请地址请见：https://cloud.tencent.com/developer/support-plan
+
+作者申请此计划后将作者的文章进行搬迁同步到社区的专栏下，你只需要简单填写一下表单申请即可，我们会给作者提供包括流量、云服务器等，另外还有些周边礼物。
+{{% comment "Yanbin🧸2022-08-23 17:23:23🧸yabqiu@gmail.com" %}}
+没用微信和QQ，也没有国内的手机号，申请不了。
+{{% /comment %}}
+{{% /comment %}}
