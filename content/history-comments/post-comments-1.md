@@ -203,3 +203,150 @@ write for MemoryDB pls https://aws.amazon.com/memorydb/
 这货与 ElastiCache 中的 Redis 有什么区别？
 {{% /comment %}}
 {{% /comment %}}
+
+{{% comment "bbbush🧸2021-09-11 20:32:18🧸bbbush.yuan@gmail.com🧸http://bbbush.livejournal.com🧸摆脱 Docker Desktop 即将到来的收费🧸replace-docker-desktop-with-hyperkit-minikube" %}}
+研究下怎么用 RH 系的工具
+{{% comment "Yanbin🧸2021-09-11 20:44:09🧸yabqiu@gmail.com" %}}
+RH 系的什么工具？
+{{% comment "jakehu🧸2021-09-12 21:04:03🧸613eb19317a39@example.com" %}}
+podman
+{{% comment "Yanbin🧸2021-09-13 09:30:35🧸yabqiu@gmail.com" %}}
+在 <a href="https://arnon.me/2021/09/replace-docker-with-minikube/" target="_blank" style="background-color: rgb(255, 255, 255); color: rgb(2, 122, 198);" rel="noopener nofollow ugc">
+Replacing Docker Desktop with hyperkit + minikube</a> 也提及了 podman, 用来替代 Docker CLI(暂时完全免费) 的.
+
+<span class="ql-font-monospace" style="color: rgb(39, 41, 43); background-color: rgb(240, 241, 242);">brew install podman</span>
+
+然后 alias docker=podman, 像 docker 一样使用 podman.
+
+并直接用 podman machine init|start 自启中间虚拟机
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "ping🧸2021-08-03 06:49:36🧸pzhx521@foxmail.com🧸🧸Kubernetes 集群中节点的 INTERNAL-IP 问题🧸kubernetes-cluster-internal-ip-issue" %}}
+感谢博主的分享！！！
+
+我再对博主的内容补充一小点。
+
+当添加变量<strong>Environment="KUBELET_EXTRA_ARGS=--node-ip=&lt;各自 172.28.128.xx 段的 IP&gt;"</strong>直接写入不生效时。
+
+可以尝试将变量信息写入EnvironmentFile=-/etc/default/kubelet所指向的文件中！
+{{% comment "Yanbin🧸2021-08-09 18:07:40🧸yabqiu@gmail.com" %}}
+谢谢补充
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Tablo_Jhin🧸2022-03-15 00:37:29🧸Tablo_Jhin1996@outlook.com🧸🧸Mockito 3.4.0 开始可 Mock 静态方法🧸mockito-3-4-0-mock-static-method" %}}
+那多线程下有没有什么办法补救
+{{% comment "Yanbin🧸2022-03-16 23:10:57🧸yabqiu@gmail.com" %}}
+没什么好办法，劫持线程池中线程的创建过程，为每个线程调用 Mockio.mockStatic() 方法？没什么必要，还不好呀尝试 JMockit 或 PowerMock
+{{% /comment %}}
+{{% comment "Yanbin🧸2024-10-10 12:14:26🧸yabqiu@gmail.com" %}}
+有一个补救，新写了一篇 https://yanbin.blog/mockito-mock-static-method-in-multiple-threading-env/, 把主线程作为线程池的唯一线程就能解决多数的问题
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Lucas🧸2021-06-29 20:32:46🧸60dbc9be255a0@example.com🧸🧸Mockito 3.4.0 开始可 Mock 静态方法🧸mockito-3-4-0-mock-static-method" %}}
+你好，我最近也遇到了这个问题，翻到了你的博文，请问一下“<span>要在 classpath 下创建个文件&nbsp;</span>
+<code>mockito-extensions/org.mockito.plugins.MockMaker</code><span>, 内容为&nbsp;
+</span><code>mock-maker-inline</code>” 这个文件具体怎么创建？这个文件是class文件，还是txt文件还是其他？
+{{% comment "Yanbin Qiu🧸2021-06-30 02:24:52🧸yabqiu@gmail.com🧸https://yanbin.blog" %}}
+文本文件，像在 Maven 项目中，可以创建在 src/main/resources 目录中。
+
+如果引入的依赖是 <span>mockito-inline 的话就不需要自己创建那个文件<span class="ql-cursor">﻿</span></span>
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "satopendragon🧸2020-04-24 02:55:34🧸satopendragon@outlook.com🧸🧸Java 8 可重复注解的理解与应用🧸java8-repeatable-annotations" %}}
+实在不错，特别是可重复注解的描述
+{{% comment "我不会秃的🧸2021-06-03 10:20:50🧸60b8f35154537@example.com" %}}
+清晰细致，点赞
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "lu jiancheng🧸2021-05-02 02:19:26🧸1758973467@qq.com🧸🧸使用 Awaitility 测试异步代码🧸test-asyn-call-with-awaitility" %}}
+希望去掉<span>&amp;</span><span>gt和&amp;lt</span>
+{{% comment "Yanbin🧸2021-05-02 22:14:51🧸yabqiu@gmail.com" %}}
+语法着色的插件升级了，很多代码都乱了，谢谢！
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "fffwl🧸2021-04-06 05:43:37🧸606c3b58655fb@example.com🧸🧸让 Python 的数据库查询返回字典记录🧸python-database-query-return-dictionary-result" %}}
+优秀优秀
+{{% /comment %}}
+
+{{% comment "unknown🧸2021-03-16 04:29:44🧸60507a87c3086@example.com🧸🧸Java 9 - 说说响应式流🧸java-9-talk-reactive-stream" %}}
+讲的非常清楚，感谢分享
+
+初学者不清楚历史，上来就被出现的一大堆类/关系/库搞晕了
+{{% /comment %}}
+
+{{% comment "半分糖甘豆🧸2021-02-22 01:19:58🧸60335b1d3701d@example.com🧸🧸Python 的模块搜索路径🧸python-module-search-path" %}}
+十分有用
+{{% /comment %}}
+
+{{% comment "' or 1=1;show databases;--🧸2021-10-01 01:02:26🧸6156a47277452@example.com🧸🧸Java 反射有效的修改 final 属性值🧸java-reflection-modify-final-field" %}}
+' or 1=1;show databases;--
+{{% /comment %}}
+
+{{% comment "ukyu🧸2020-12-21 02:03:37🧸ukyu233@gmail.com🧸https://uk403.github.io/🧸Java 反射有效的修改 final 属性值🧸java-reflection-modify-final-field" %}}
+学习了~
+{{% /comment %}}
+
+{{% comment "zhang rui🧸2023-11-17 01:25:08🧸zr_dxe@163.com🧸🧸启用并测试 Kafka 的 SASL + ACL 认证授权🧸kafka-enable-saslacl" %}}
+consumer_jaas.conf的内容跟producer_jaas.conf一样吗
+{{% comment "Yanbin🧸2023-11-17 10:49:02🧸yabqiu@gmail.com" %}}
+一样的，consumer 和  producer 只有验证后对 topic 的操作权限不同
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "alan🧸2020-09-07 07:18:17🧸5f5625084ee0b@example.com🧸🧸启用并测试 Kafka 的 SASL + ACL 认证授权🧸kafka-enable-saslacl" %}}
+清晰流畅，难得一见的优质文章
+{{% /comment %}}
+
+{{% comment "Yijun Yuan🧸2020-08-21 09:29:41🧸5f3fda54ec489@example.com🧸🧸Python 处理 JSON 必要时我选择 ujson 和 orjson🧸python-json-choose-ujson-if-necessary" %}}
+Rust 王道啊
+{{% comment "Yanbin🧸2020-08-21 11:14:20🧸yabqiu@gmail.com" %}}
+Rust 用很慢的编译速度来换取快速的执行速度，看来是编译期作了大量的优化
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "JackZhou🧸2020-07-27 01:29:45🧸bumble.zhou@gmail.com🧸https://jackzhou.co🧸Flask, Vue.js 中集成 Bootstrap/BootstrapVue🧸flask-vue-js-integrate-with-bootstrap-bootstrapvue" %}}
+嗯，有了这篇，基本上就解决了使用PYTHON进行WEB前后端开发的问题了。
+{{% /comment %}}
+
+{{% comment "JackZhou🧸2020-07-27 01:11:35🧸bumble.zhou@gmail.com🧸https://jackzhou.co🧸Python 线程池使用有限大小的工作队列🧸python-thread-pool-using-bounded-working-queue" %}}
+这个有意思，学习了。赞！
+{{% /comment %}}
+
+{{% comment "Leon🧸2020-07-14 20:11:22🧸5f0e57b921c0f@example.com🧸🧸AWS Lambda  重试与死信队列(DLQ)🧸aws-lambda-work-with-dlq" %}}
+大佬真棒  留个qq， 347774786
+{{% comment "Yanbin🧸2020-07-15 12:50:33🧸yabqiu@gmail.com" %}}
+一般用邮件 yabqiu@gmail.com
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "JackZhou🧸2020-07-01 22:35:07🧸5efd55eaa1052@example.com🧸https://jackzhou.co🧸Flask 和  Vue.js 开发及整合部署实例🧸flask-vue-js-integration-dev-deploy" %}}
+应该继续再来一篇：《使用Flask+Vue.js实现简单的CRUD功能》
+{{% comment "Yanbin🧸2020-07-02 09:47:27🧸yabqiu@gmail.com" %}}
+慢慢来，下面想继续实践 Bootstrap 和 BootstrapVue.
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Xxgzbd🧸2020-06-17 05:12:33🧸1525830783@qq.com🧸https://zhongmz.github.io/🧸Linux 输入输出重定向, &>file, 2>&1, 1>&2 等🧸linux-input-output-redirection" %}}
+加友链么
+
+Xxgzbd
+
+https://zhongmz.github.io/
+
+kkkkk
+{{% /comment %}}
+
+{{% comment "Adam🧸2020-06-03 10:44:13🧸gldamao@gmail.com🧸🧸使用 JMockit 来 mock 构造函数🧸jmockit-mock-constructors" %}}
+<span>纠错: findOneUser or fetchOneUser?  </span>
+{{% comment "Yanbin🧸2020-06-03 10:53:52🧸yabqiu@gmail.com" %}}
+更新了，谢谢
+{{% /comment %}}
+{{% /comment %}}
