@@ -168,3 +168,38 @@ virtual thread 确实值得期待，目前还是预览状态。它可以在线�
 没用微信和QQ，也没有国内的手机号，申请不了。
 {{% /comment %}}
 {{% /comment %}}
+
+{{% comment "cai🧸2022-08-18 21:45:40🧸121455545@qq.com🧸🧸理解 CompletableFuture 的任务与回调函数的线程🧸understand-completablefuture-task-callback-threads" %}}
+thenRun方法用的哪个线程，取决于方法运行时<span>runAsync</span><span>方法的是否已经执行出结果。不是jvm决定的，是代码决定的，但是我看不到，找不到这个代码在哪里， 有没大神拯救一下啊？JDK11的源码</span>
+{{% comment "Yanbin🧸2022-08-23 17:29:17🧸yabqiu@gmail.com" %}}
+<span style="background-color: rgb(255, 255, 255); color: rgb(119, 119, 119);">
+runAsync() 没有结束的话还不会执行到 thenRun() 方法，它会使用 runAsync() 中任务相同的线程池
+</span>
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "robin🧸2021-11-10 03:27:21🧸robin.lai@nike.com🧸🧸AWS Assume IAM role 的使用🧸how-to-assume-aws-iam-role" %}}
+好文，不错。baidu 里居然搜到你的文章。
+{{% comment "Yanbin Qiu🧸2021-11-10 11:29:25🧸yabqiu@gmail.com🧸https://yanbin.blog" %}}
+哪位 robin? 为什么我自己在 baidu 里搜不到这篇 “assume site:yanbin.blog”
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "bbbush🧸2021-10-07 08:01:02🧸bbbush.yuan@gmail.com🧸http://bbbush.livejournal.com🧸Lambda + API Gateway 创建需  API Key 验证的 API🧸lambda-api-gateway-with-api-key" %}}
+只是调用 lambda 的话我记得 v2 只要两个 resource (integration + lambda permission)
+{{% comment "Yanbin🧸2021-10-07 10:05:14🧸yabqiu@gmail.com" %}}
+v2 用于  HTTP/Websocket, 用来调用 Lambda 还得研究一下，它不需要逐步定义 Resources, 而是用简单定义的 Routes 替代了。
+v2 需要的元素是 routes - integration - stage - lambda permission. 它对 Lambda 的返回值要求也没那么严格了。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "xz111111111🧸2021-10-05 03:08:23🧸zxz@qq.com🧸🧸Java 运行时如何获取泛型参数的类型🧸java-how-to-get-generic-type" %}}
+oh  大佬 我爱你
+{{% /comment %}}
+
+{{% comment "bbbush🧸2021-09-20 08:53:52🧸bbbush.yuan@gmail.com🧸http://bbbush.livejournal.com🧸AWS DynamoDB 的常用操作🧸aws-dynamodb-common-operations" %}}
+write for MemoryDB pls https://aws.amazon.com/memorydb/
+{{% comment "Yanbin🧸2021-09-20 11:04:05🧸yabqiu@gmail.com" %}}
+这货与 ElastiCache 中的 Redis 有什么区别？
+{{% /comment %}}
+{{% /comment %}}
