@@ -350,3 +350,202 @@ kkkkk
 更新了，谢谢
 {{% /comment %}}
 {{% /comment %}}
+
+{{% comment "Adam🧸2020-06-03 10:21:17🧸gldamao@gmail.com🧸🧸使用 Mockito 修改私有属性🧸mockito-modify-private-field" %}}
+无意中发现这篇文章, 解决了我一直以来比较头疼的一个问题. 多谢.
+{{% comment "Yanbin🧸2020-06-03 10:49:33🧸yabqiu@gmail.com" %}}
+直接使用 powermock-reflect 的  <a href="https://javadoc.io/doc/org.powermock/powermock-reflect/latest/org/powermock/reflect/Whitebox.html" target="_blank" rel="noopener noreferrer nofollow ugc">Whitebox</a> 吧，省得自己重复。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "maomao🧸2020-06-10 21:31:55🧸5ee1979a8d2d1@example.com🧸🧸使用 Mockito 修改私有属性🧸mockito-modify-private-field" %}}
+赞一个，找了好久
+{{% /comment %}}
+
+{{% comment "JackZhou🧸2020-05-15 03:30:03🧸5ebe530a9c220@example.com🧸https://jackzhou.co🧸真正有些水准的排序算法 - 快速排序🧸real-advanced-sorting-algorithm-quick" %}}
+看到最后发现这么一个Java版的双基准快速排序的大彩蛋，顿时感觉前面的奇技淫巧啥都不是了，哈哈。
+{{% /comment %}}
+
+{{% comment "JackZhou🧸2020-05-15 02:48:47🧸5ebe495ec5a6d@example.com🧸https://jackzhou.co🧸理解 Python 类的变量,方法与属性🧸understand-python-class-definition" %}}
+这个有意思。但是工程实践中用的却不多。工程实践中更关注list,set,tuple以及map,filter,lambda,comprehension,multithreading, 
+multiprocessing,GIL,requests,stream等东西。如果一个项目过于庞大，一个好的做法是把module组织好，实现shared modules between projects，
+还有就是上面写的，使用面向对象的方式来组织业务逻辑。
+{{% /comment %}}
+
+{{% comment "JackZhou🧸2020-05-15 02:26:49🧸5ebe44387616e@example.com🧸https://jackzhou.co🧸运行时动态创建 Spring Bean🧸dynamic-creating-spring-bean-runtime" %}}
+Google因为使用了Java的API接口，还不是具体的代码实现，就被ORACLE告得鸡飞狗跳的。日本这边，
+现在很多公司已经直接不再考虑使用任何与Oracle&amp;Java&amp;Mysql相关的东西作项目了。你们那边使用Java不受影响吗？
+{{% /comment %}}
+
+{{% comment "Russ🧸2020-04-20 20:08:49🧸5e9e47a02266a@example.com🧸🧸Mockito 中捕获 mock 对象方法的调用参数🧸mockito-capture-method-paramters" %}}
+写得很好 帮了我很多 感谢博主！
+{{% /comment %}}
+
+{{% comment "tumars🧸2020-04-19 03:10:17🧸menghui9898@gmail.com🧸🧸两种最基本的排序算法: 冒泡和选择🧸two-basic-sorting-algorithms" %}}
+前两年看过这本书，最大的问题是算法在日常开发中很少用到，看完当下记住了，但很快就会忘记。
+{{% comment "Yanbin🧸2020-04-19 12:36:14🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+我一直也是这么想的，但多了解些概念与原理对现有算法的选择上就不会盲目了。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "lss🧸2020-04-08 03:55:09🧸bbhmr8@163.com🧸http://thanks🧸Python  中的  urlencode 和 urldecode 操作🧸python-urlencode-urldecode" %}}
+thanks
+{{% /comment %}}
+
+{{% comment "Yijun Yuan🧸2020-03-29 19:54:55🧸5e81435e837ff@example.com🧸🧸Docker 容器内进程与 Namespace🧸docker-process-namespace" %}}
+what replaces "--link"?
+{{% comment "Yanbin🧸2020-03-29 20:50:37🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+--link 不是 namespace, Docker compose 里也有 link, 你研究好告诉我
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "tumars🧸2020-03-23 04:31:45🧸menghui9898@gmail.com🧸🧸记录自己常用的一些 Linux Shell 脚本🧸frequently-used-linux-shell-script" %}}
+很有用==，之前都不知道grep是可以高亮显示匹配字符的。。。
+{{% /comment %}}
+
+{{% comment "hengry wang🧸2019-12-13 02:16:25🧸5df348d8e5646@example.com🧸🧸Perl 语言概览，高屋建瓴、欲招人之耳目（二）🧸perl-overview-2" %}}
+$wife = ["Leah", "Rachel", "Bilhah", "Zilpah"]; #错误
+
+这个 在perl5中不会报错的
+{{% /comment %}}
+
+
+{{% comment "cddeng🧸2019-08-26 04:04:22🧸5d63a0961bd36@example.com🧸🧸Dockerfile 中命令的两种书写方式的区别🧸dockerfile-difference-between-shell-exec-forms" %}}
+写的很好，又get了新技能，感谢
+{{% /comment %}}
+
+{{% comment "imByteCat🧸2020-02-20 02:15:47🧸imbytecat@gmail.com🧸https://imbytecat.com/🧸Dockerfile 中命令的两种书写方式的区别🧸dockerfile-difference-between-shell-exec-forms" %}}
+写得太好了，看完才恍然大悟，刚刚在打包 Spring Boot 项目到 Docker 镜像的时候就遇到了
+
+<code></code><code>Error: Could not find or load main class $JAVA_OPTS</code><code></code>
+
+非常感谢博主！
+
+请问可以转载吗 :-P
+{{% comment "Yanbin🧸2020-02-20 10:25:31🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+欢迎转载。能否加个友情链接？
+{{% comment "imByteCat🧸2020-02-27 04:24:32🧸imbytecat@gmail.com🧸https://imbytecat.com/" %}}
+哈哈，当然可以，已经加上了，见 <a href="https://imbytecat.com/links/" rel="nofollow ugc">Links</a>（这两天有点事情才看到，不好意思 :-)
+{{% comment "Yanbin🧸2020-02-27 10:12:44🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+已加友情链接，谢谢
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "denis fang🧸2021-07-13 02:18:01🧸fangzhi@encootech.com🧸🧸Dockerfile 中命令的两种书写方式的区别🧸dockerfile-difference-between-shell-exec-forms" %}}
+<span>写的很好，又get了新技能，感谢</span>
+{{% /comment %}}
+
+{{% comment "Robin🧸2019-08-06 06:53:48🧸5d496a4b7d2f7@example.com🧸🧸Terraform 使用 - 从最简单例子开始🧸terraform-get-started-with-first-sample" %}}
+Great
+{{% /comment %}}
+
+{{% comment "newbmiao🧸2019-10-17 04:38:07🧸newbvirgil@gmail.com🧸http://blog.newbmiao.com🧸Terraform 使用 - 从最简单例子开始🧸terraform-get-started-with-first-sample" %}}
+<code></code><code>tags = {
+Name        = "Created by Terrform"
+Environment = "Dev"
+}</code><code></code>
+tag这里缺了一个“=”
+
+感谢分享
+{{% comment "Yanbin🧸2019-10-17 13:57:28🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+感谢阅读，我应该加上写这篇时用的 Terraform 版本是 0.11
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "laixintao🧸2019-07-22 00:18:42🧸5d35473209c58@example.com🧸https://www.kawabangga.com🧸Python 函数声明先后顺序的问题🧸python-function-declaration-order" %}}
+其实不存在“解析”和“执行”的区别，只有一个解释的概念。
+
+Python解释器执行到 <code>def foo()</code> 就创建一个函数，并将其与 foo 绑定起来。跟创建一个变量是一样的。
+
+碰到没有绑定的名字，就遇到了 NameError
+{{% comment "Yanbin🧸2019-07-22 01:02:48🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+谢谢专家
+{{% /comment %}}
+{{% comment "Yanbin🧸2019-07-22 01:09:37🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+全部换成了解释，解释和执行对于 Python 来说是同一个概念。对的，理解为名字绑定(Name binding) 会比较准确，对变量的作用域也更好理解。在 Clojure 中也是类似的概念。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Zhou🧸2019-07-04 03:28:16🧸kidwuyulunbi2@163.com🧸🧸转换  Iterator 为 Java 8 的 Stream🧸convert-iterator-to-java-8-stream" %}}
+发现你又更新了
+{{% comment "Yanbin🧸2019-07-05 02:22:01🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+谢谢关注
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "anonymous🧸2019-03-26 22:06:15🧸5c9ae8a6984d0@example.com🧸🧸Springfox 解决在单一资源操作多个方法实现时生成 Swagger 文档的问题🧸springfox-single-resource-operation-multiple-methods-swagger-documentation" %}}
+docket配置enableUrlTemplating,
+<a href="https://github.com/springfox/springfox/issues/1053#issuecomment-157061887" rel="nofollow">
+Springfox not generating different swagger entries for operations with same base path, but one endpoint has query parameters
+</a>
+{{% comment "Yanbin🧸2019-03-27 14:22:38🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+谢谢，下回试一下
+{{% /comment %}}
+{{% comment "xkcoding🧸2020-03-17 02:55:54🧸237497819@qq.com🧸https://xkcoding.com" %}}
++1，通过配置 new Docket().enableUrlTemplating(true) 解决，感谢
+{{% comment "Yanbin🧸2020-03-17 10:27:53🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+这个办法好
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Charles🧸2019-03-04 09:03:19🧸me@liyang.pro🧸https://www.liyang.pro🧸Python 对象当函数使及动态添加方法🧸add-python-methods-dynamically" %}}
+最近也打算把学习Scala的笔记以这种形式记录一下，python也是我的最爱。
+{{% comment "Yanbin🧸2019-03-04 14:02:27🧸yabqiu@gmail.com🧸http://yanbin.blog" %}}
+给自己作个笔记用，学习后再尝试着写下来会发现许多之前未预见的问题，也是个很大的收获。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "fanmo🧸2019-02-14 04:35:18🧸5c6544661986d@example.com🧸🧸Quartz Job Scheduling Framework［翻译］第十四章. 工作流中使用 Quartz (第一部分)🧸quartz-job-scheduling-framework-14-1" %}}
+使用chain时，如果chain里需要执行两次myjob，但是两次执行需要的参数值不同，如何处理呢，jobdatamap感觉是和job类绑定的
+{{% /comment %}}
+
+{{% comment "stanfen🧸2018-12-17 18:43:53🧸5c1842c84d976@example.com🧸🧸Jackson 反序列化 "Y"/"N" 为相应的布尔值🧸jackson-yn-boolean-value-deserialization" %}}
+更新2篇。nice
+{{% comment "Yanbin🧸2018-12-17 18:45:54🧸yabqiu@gmail.com🧸https://yanbin.blog" %}}
+什么是更新2篇？
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "VictorLee🧸2022-01-25 20:50:05🧸61f0b6dcab0b1@example.com🧸🧸Mockito 也能 Mock final 类和 final 方法了🧸mockito-mock-final-class-final-method" %}}
+感谢，讲的很清楚
+{{% /comment %}}
+
+{{% comment "imtemp🧸2020-08-21 07:12:46🧸5f3fba3d4d9b9@example.com🧸🧸Mockito 也能 Mock final 类和 final 方法了🧸mockito-mock-final-class-final-method" %}}
+<span class="ql-font-monospace">这句的mockito拼写错误了，mockito-extensions/org.mockio.plugins.MockMaker</span>
+{{% comment "Yanbin🧸2020-08-21 10:54:05🧸yabqiu@gmail.com" %}}
+已更正，谢谢
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Sarah🧸2018-11-16 02:59:54🧸5bee8709e14ec@example.com🧸🧸Mockito 也能 Mock final 类和 final 方法了🧸mockito-mock-final-class-final-method" %}}
+按照官方的方法创建了文件org.mockito.plugins.MockMaker 但是仍然出现。是我创建的方式不对吗
+
+`Mockito cannot mock/spy because :
+- final class
+
+我使用的Mockito是2.8.9
+
+用PowerMock又经常出现在mock final和 whennew final的时候失败经常返回的不是我mock的对象
+{{% comment "Yanbin🧸2020-08-21 10:54:05🧸yabqiu@gmail.com" %}}
+已更正，谢谢
+{{% comment "Yanbin🧸2018-11-16 21:53:08🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+可以在跑测试用例的时候测一下是否能从 classpath 加载到这个新建的文件。
+{{% comment "Sarah🧸2018-11-19 01:08:30🧸5bf2616e46d30@example.com" %}}
+谢谢。找到原因了，因为我同时使用了PowerMock所以添加上面那个文件不起作用。后来通过添加依赖解决的。
+<code>testImplementation "org.mockito:mockito-inline:2.8.9"</code>
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Shichao🧸2018-11-12 09:41:45🧸zscself@gmail.com🧸🧸Python 的 __str__ 和 __repr__ 方法比较🧸python-__str__vs__repr__methods" %}}
+感觉Python的<a href="https://docs.python.org/3.7/reference/datamodel.html#object.__repr__" rel="nofollow">文档</a>写得挺清楚的，可以看一看。
+{{% comment "Yanbin🧸2018-11-12 09:54:23🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+是的，谢谢。
+
+本文旨在从感性上认识这两个方法的区别。
+{{% /comment %}}
+{{% /comment %}}
