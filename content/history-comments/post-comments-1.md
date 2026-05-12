@@ -549,3 +549,125 @@ Springfox not generating different swagger entries for operations with same base
 本文旨在从感性上认识这两个方法的区别。
 {{% /comment %}}
 {{% /comment %}}
+
+{{% comment "lee🧸2018-10-09 02:34:19🧸318662893@qq.com🧸🧸Linux 下配置滚动日志之 logrotate🧸linux-config-log-ratation-logrotate" %}}
+小白一枚，若若的问一下，给 httpd 进程发送一个 HUP 信号 的作用和意义？
+{{% comment "Yanbin🧸2018-10-09 09:55:13🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+对于运行着的进程，它正在向日志文件比如 test.log 输出内容，我们可以用命令 <code>echo &gt; test.log</code> 把该日志文件内容清除掉，
+但是用 <code>df -k</code> 显示磁盘使用空间时 <code>test.log</code> 文件所占用的可能并未释放出来，这时候就需要向进程发送一个 HUP 
+信号可以对文件进行复位操作，<code>test.log</code> 占用的空间就能释放出来。
+{{% comment "lee🧸2018-10-09 19:56:58🧸318662893@qq.com" %}}
+那下面这种写法是不对的吗（重启了httpd服务，导致正在运行的程序挂掉了）？
+
+`/sbin/service httpd reload &gt; /dev/null 2&gt;/dev/null || true
+{{% comment "Yanbin🧸2018-10-11 16:12:48🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+reload 会中断掉正在进行的请求，或者 session 中的数据会被清理掉。
+{{% /comment %}}
+{{% /comment %}}
+{{% comment "lee🧸2018-10-09 20:22:52🧸318662893@qq.com" %}}
+<a href="https://www.cnblogs.com/chenduzizhong/p/9009126.html" rel="nofollow">网上查看有这种说法</a>
+pkill -HUP httpd　　　　　　　　//pkill -1 httpd　　重新读取日志文件
+
+看man手册 说法如下
+Example 2: Make syslog reread its configuration file:
+unix$ pkill -HUP syslogd
+{{% comment "Yanbin🧸2018-10-11 16:12:07🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+这种可以
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "wayne🧸2018-09-14 04:53:58🧸444707088@qq.com🧸🧸如何快乐的使用 Java 8 的 Lambda🧸happy-with-java8-lambda" %}}
+发现面向对象习惯了，函数式编程能感觉到代码简洁，写起来快，不过带来到是代码看起来并不直观了，阅读理解成本提高了
+{{% comment "Yanbin🧸2018-09-14 10:01:37🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+所以 IntelliJ IDEA 中建议不要有超过 20 行代码的 Lambda 块，因为 Lambda 就是一个匿名函数，没有函数名辅助理解。个人认为 20 行都过多了，
+新版本的 IntelliJ IDEA 为助于理解 Lambda 代码，在每一级的 map 操作后都显示出当前 map 后的 Stream 内容类型。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "骑着乌龟去看海🧸2018-09-05 03:38:32🧸1608514296@qq.com🧸🧸Java8 Optional 几个常见错误用法🧸java8-optional-several-common-incorrect-usages" %}}
+这种细节问题确实需要注意，有的时候就是直接使用，没考虑太多。
+{{% /comment %}}
+
+{{% comment "Dobe🧸2018-08-25 08:54:54🧸1127657254@qq.com🧸🧸该如何从 Java 8 升级到 Java 10🧸how-to-upgrade-from-java-8-to-10" %}}
+反正还用着java6+7+8的我……。突然想起来微软也是从win8飞到了win10
+{{% comment "wayne🧸2018-06-04 22:00:40🧸444707088@qq.com" %}}
+按这个情况来看，岂不是用jdk1.8还是比较稳定的，综合感觉起来9到11都像是试验过度新功能都版本，没准到12出来到时候才是新功能大行其道到时代啊
+{{% comment "Yanbin🧸2018-06-04 23:02:07🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+1.8 是 LTS 版，9 和 10 都不是，11 会是一个 LTS 版本，可能基本上的 JDK 从 8 往后的升级会直接跳跃到 11. JDK 9 
+的模块化是一个最大的影响编程的新特性，所以以没有以往的每一个版本升级那么流畅。
+{{% comment "wayne🧸2018-06-05 02:40:23🧸444707088@qq.com" %}}
+了解了，现在个大公司来说，为了稳定必然不会换jdk版本，固定在1.8了。
+到时候11出来到时候，虽说是稳定输出版，但是改动太大，要全部重构又不见得会全部切换，还有一个是11只比8多维护1年。
+
+估计趋势来看，1.8可能近几年还是会一枝独秀啊
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "stanfen🧸2018-08-23 20:41:10🧸stanfen@126.com🧸🧸跳过构造函数创建 Java 对象(测试)🧸create-java-instance-bypass-constructor" %}}
+总感觉有外部依赖类进行单元测试，面临各种限制。用功能测试覆盖是不是更好
+{{% comment "Yanbin🧸2018-08-23 21:10:31🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+BDD 行为测试？如果单元测试能覆盖到，感觉比较可靠。
+{{% comment "stanfen🧸2018-08-28 20:21:08🧸stanfen@126.com" %}}
+如果UT能覆盖到，当然优先了。只是这个场景不具备通用性。可能的结果性价比不高。
+{{% comment "Yanbin🧸2018-08-28 23:04:38🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+UT? UAT? 那些都功能性测试，黑盒，程序员写代码较关注写完主体代码后单元测试能否通过，一般不会时时跑 UT 测试用例。
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "who🧸2018-06-19 20:23:15🧸5b29ac827c403@example.com🧸🧸一个简单的 Java 自动批处理队列🧸simple-java-auto-batch-queue" %}}
+batchQueue.shutdown();哪来呢？
+{{% comment "Yanbin🧸2018-06-19 20:48:14🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+还是你看的仔细，是 <code>completeAll()</code> 方法，不是 <code>shutdown()</code>, 改过的方法名。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "shell🧸2018-06-17 10:17:53🧸5b267ba08c031@example.com🧸🧸Linux 下仅用 iptables 实现为透明代理服务器🧸linux-iptables-transparent-proxy" %}}
+你连什么叫透明代理都不知道.....
+{{% comment "Yanbin🧸2018-06-17 23:53:01🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+客户机总不能连网关都需要吧
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "wayne🧸2018-06-12 22:32:51🧸444707088@qq.com🧸🧸Java 9 - 快速创建不可变集合🧸java-9-quick-create-immutable-collections" %}}
+这种不可变的应用场景是什么呢？在固定条目的情况下，不申请多余的空间吗 ？
+
+那如果条目固定，那普通的list也可以固定大小的，能带来性能上多大的提升吗？
+{{% comment "Yanbin🧸2018-06-12 22:50:43🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+不可变的应用场景有类似系统配置式的集合，比如可接受的输入必须是某个预设集合中的元素之一，还有配置的 Map 用于程序逻辑跳转的。
+
+固定条目的情况下，避免了随着元素的增加进行 1.5 或 2 倍的扩容，已有元素的拷贝操作，也不至于在扩容到了原来大小 2 倍后只填充了一个元素而浪费许多空间。
+{{% comment "Yanbin🧸2018-06-13 01:38:50🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+感谢您经常光顾，以后来常来的话可以通过这个链接 <a href="https://yanbin.blog/wp-login.php?action=register">注册为本站用户</a>。
+需要邮件发送邀请码才能注册，否则有大量的恶意用户涌进来。
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Charles🧸2018-11-21 00:07:02🧸me@liyang.pro🧸https://www.liyang.pro🧸本站已启用新域名 yanbin.blog🧸start-new-domain-name-yanbin-blog" %}}
+你可以等过期抢注咯，我的域名也是4年前从不知名的域名代理商那里转出来的，装孙子给续费才给转出的，于是再也不会用这些代理商了。现在直选大牌的。
+{{% comment "Yanbin🧸2018-11-21 01:28:30🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+连续用了七八年的域名过期后会被域名商保留着，很难抢注到，现在已被别人注册了。而且当时也没想再用原来的域名，所以早作打算用 301
+重定向到了现在的域名上来了。选域名一定要正规商家，国内的域名商它就是耍流氓，还没什么办法。
+{{% /comment %}}
+{{% /comment %}}
+
+
+{{% comment "laixintao🧸2018-06-12 04:27:40🧸laixintao1995@163.com🧸http://kawabangga.com🧸本站已启用新域名 yanbin.blog🧸start-new-domain-name-yanbin-blog" %}}
+还有2个月到期，对搜索引擎是够了，不过还是续上几年301比较好
+{{% comment "Yanbin🧸2018-06-12 09:51:10🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+Google 对新域名网址的收录很迅速，两天就大见成效，而 Baidu 到目前为止只收录了一个首页，其实百度也不是按常理出牌的。
+旧域名断供后看看运气好的话还能续上，如此则能跟上一段时间。
+{{% comment "Charles🧸2018-11-21 00:07:48🧸me@liyang.pro🧸https://www.liyang.pro" %}}
+我发现使用mip的话百度收录很快，你可以试试。没必要续费，等过期抢注吧。
+{{% comment "Yanbin🧸2018-11-21 01:34:29🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+没用过 mip，自己用 .htaccess 作的域名 301 重定向。原来的域名 unmi.cc 早被人注册了，不管它，也没什么可惜的。新域名都是在 GoDaddy 上注册，不用担心什么。
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
