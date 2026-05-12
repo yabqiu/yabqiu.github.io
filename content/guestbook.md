@@ -10,4 +10,5 @@ noCopyright: true
 查看历史站点和日志评论
 
 - [历史留言板(194)](/history-guestbook/)
-- [历史日志评论 - 1](/history-post-comments-1/)
+- [历史日志评论 - 1 (214)](/history-post-comments-1/)
+- [历史日志评论 - 2](/history-post-comments-2/)

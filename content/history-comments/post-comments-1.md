@@ -1,5 +1,5 @@
 ---
-title: "历史日志评论 1"
+title: "历史日志评论 1 (214)"
 url: /history-post-comments-1/
 date: 2026-04-21T19:31:40-05:00 # Date of post creation.
 showShare: false
@@ -669,5 +669,254 @@ Google 对新域名网址的收录很迅速，两天就大见成效，而 Baidu 
 没用过 mip，自己用 .htaccess 作的域名 301 重定向。原来的域名 unmi.cc 早被人注册了，不管它，也没什么可惜的。新域名都是在 GoDaddy 上注册，不用担心什么。
 {{% /comment %}}
 {{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "wayne🧸2018-06-04 22:09:02🧸444707088@qq.com🧸🧸Java 9 - 平台日志 API🧸java-9-platform-logging-api" %}}
+我现在有一个问题，一直想搞清楚
+
+我在method里面创建一个对象，这个对象是在堆里面存放到还是在栈里面存放的呢？method执行完，这个对象会被回收吗？
+
+如果我想看对象创建后在堆区还是在栈区，有没有什么工具可以跟踪到，或者说怎么去证明这个对象在堆中呢？
+
+看到您这个文章，利用这个新的logger接口，有没有可能去实现这样一个证明呢？
+{{% comment "Yanbin🧸2018-06-04 22:57:54🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+创建的对象都是放在堆中，方法里声明的变量是局部变量，方法桢一旦弹出，局部变量引用的堆中的对象便可被回收。自己的代码中不用去直接使用新的 Logger 接口。
+{{% comment "wayne🧸2018-06-05 02:33:58🧸444707088@qq.com" %}}
+最近听到一个说法，对象创建并不一定都是存放在堆中，有可能会创建在栈里面。我今天发现要证明对象存放在堆中还是可以借助jstat命令来实现，
+但是要证明不在堆中，没想到方法，有什么命令可以来监测栈吗？
+{{% comment "Yanbin🧸2018-06-05 23:28:21🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+对象都是放在堆中，只有对象引用，或原始类型才放到栈里面。
+{{% comment "wayne🧸2018-06-06 21:33:15🧸444707088@qq.com" %}}
+可以设置栈上分配，现在1.8默认就是开启的，有些对象通过逃逸分析，别认定可以逃逸的情况下，jvm默认会分配到栈上的
+{{% /comment %}}
+{{% comment "Yanbin🧸2018-06-07 02:13:48🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+这个问题有意思，找到一个参考链接：http://www.vogella.com/tutorials/JavaPerformance/article.html#escape-analysis
+<blockquote>
+2.5. Escape analysis
+As stated earlier Java objects are created and stored in the heap. The programming language does not offer the possibility to let the programmer decide if an object should be generated in the stack. But in certain cases it would be desirable to allocate an object on the stack, as the memory allocation on the stack is cheaper than the memory allocation in the heap, deallocation on the stack is free and the stack is efficiently managed by the runtime.
+
+The JVM uses therefore internally escape analysis to check if an object is used only with a thread or method. If the JVM identify this it may decide to create the object on the stack, increasing performance of the Java program.
+</blockquote>
+但是我们程序代码中是不能主动控制的。像 C/C++ 一样，分配在栈上的对象，传递给函数时会产生对象拷贝，而分配在堆中的对象，传递引用给函数时则是产生引用的拷贝。
+{{% /comment %}}
+{{% comment "wayne🧸2018-06-08 04:14:23🧸444707088@qq.com" %}}
+这块，我倒是还没有看到呢，分配在栈上的对象进行传递。
+
+这里说的对象传递是传递给另外方法吗？相当于把对象传出去？还有拷贝是拷贝到其他到栈还是到堆里面呢？
+
+其实控制逃逸分析倒是可以控制，主要是写代码到时候需要刻意去按照逃逸到方式编写，应该是可以实现的。
+{{% /comment %}}
+{{% comment "Yanbin🧸2018-06-09 21:21:59🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+栈上对象传递给另一个方法，应该也像 C++的栈上对象传递一样。
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "zhangwugui🧸2018-05-13 01:28:30🧸1608514296@qq.com🧸🧸一个最基础的 Spring 4 MVC Maven 项目🧸basic-spring-4-mvc-maven-project" %}}
+老哥的文章总是浅显易懂，佩服，希望老哥多多更博，已加入书签。
+{{% /comment %}}
+
+{{% comment "guest🧸2019-03-18 23:00:23🧸5c906957207ff@example.com🧸🧸如何向 Docker 容器传递参数🧸pass-arguments-to-docker-container" %}}
+很详细了，，不像网上各种吵来吵去的
+{{% comment "Yanbin🧸2019-03-19 18:16:23🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+也参考了不少，上面的例子都是不停的在本地 docker build, docker rmi  测试出来结果。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Gus🧸2018-05-12 03:31:35🧸5af6a6668c2e6@example.com🧸🧸如何向 Docker 容器传递参数🧸pass-arguments-to-docker-container" %}}
+网上搜资料跳到您这儿，看了您如此详尽的blog肃然起敬。
+{{% /comment %}}
+
+{{% comment "wayne🧸2018-05-04 20:26:59🧸444707088@qq.com🧸🧸Spring MVC 项目中用 SpringFox 生成 Swagger2 API 文档🧸springfox-swagger2-generate-api-documet" %}}
+我们项目中正在使用的就是这个。
+有个问题想请教，我想加载到实现某个接口所有实现类或者继承某个类的所有子类，不依赖Spring的话，有什么好的思路能读取到吗？我看到网上有一些，
+是根据当前接口文件或者抽象类的路径类获取的，这样不太靠谱。
+{{% comment "Yanbin🧸2018-05-06 09:30:45🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+用 google 搜索 "java list all subclasses", https://www.google.com/search?q=java+list+all+subclasses&oq=list+all+subclass&aqs=chrome.1.69i57j0l5.7438j1j1&sourceid=chrome&ie=UTF-8
+https://stackoverflow.com/questions/492184/how-do-you-find-all-subclasses-of-a-given-class-in-java?utm_medium=organic&utm_source=google_rich_qa&utm_campaign=google_rich_qa
+
+别告诉我作为技术人员还用百度找技术资料哦
+{{% comment "wayne🧸2018-05-07 01:18:26🧸444707088@qq.com" %}}
+?没办法，国内现在vpn都很难上都，几乎很多都被禁掉了
+{{% comment "Yanbin🧸2018-05-07 13:41:43🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+我们自己把自己束缚了起来。
+{{% /comment %}}
+{{% /comment %}}
+{{% comment "wayne🧸2018-05-07 02:09:52🧸444707088@qq.com" %}}
+<code>Field field = ClassLoader.class.getDeclaredField("classes");
+field.setAccessible(true);
+List&lt;Class&gt; vector = (List&lt;Class&gt;)field.get(ClassLoader.getSystemClassLoader());
+List&lt;Class&gt; classes = new ArrayList&lt;&gt;();
+for(Class clazz : vector){
+if(Super.class.isAssignableFrom(clazz) &amp;&amp; !clazz.equals(Super.class)){
+classes.add(clazz);
+System.out.println(clazz.getSimpleName());
+}
+}</code>  
+我现在用这种方式实现的，没有用第三方的包来实现，不知道你有没有更好的方式，如果不用第三方，如何去优化下，因为现在这种情况，会加载所有的类进来，然后要遍历把所有的子类过滤出来，感觉性能不高，虽然时间来讲很快。
+{{% comment "Yanbin🧸2018-05-07 13:40:29🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+如果是启动那一些全部加载，其实很快的，有些第三方库也是这么做的。
+{{% comment "wayne🧸2018-05-08 00:37:51🧸444707088@qq.com" %}}
+嗯，我看了一下时间，还是挺快的，暂时打算就先这样了
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "RAHUL GAUR🧸2018-05-04 08:06:37🧸5aec5adccfccb@example.com🧸🧸Vi 使用 Vundle 管理插件执行 PluginInstall 出错🧸vi-vundle-plugininstall-errors" %}}
+Thank you so much for your help!
+
+I was looking for an analogue of
+
+set shell=/bin/bash for windows.
+{{% /comment %}}
+
+{{% comment "James🧸2018-04-24 06:55:08🧸jamesscampos1@gmail.com🧸🧸关于 URL 的一些不可不知的知识🧸knowledges-about-url" %}}
+根据谷歌，你知道吗，我们通过与权重绝对相同的规范链接来传递权重，该权重传输301重定向？ 这意味着如果易于实现，我们可以使用301重定向，
+否则我们应该使用属性rel =“canonical” - <a href="https://sitechecker.pro/canonical-url/" rel="nofollow">
+sitechecker.pro/canonical-url/</a>我在博客中也提到了主要错误，以避免使用规范标记。 希望你会发现它有用！
+{{% comment "Yanbin🧸2018-04-24 09:55:02🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+谢谢
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "jjj🧸2020-08-05 04:46:24🧸5f2a7fef21afe@example.com🧸🧸Java 8 根据属性值对列表去重🧸java-8-list-deduplication-with-lambda" %}}
+哈哈哈
+{{% /comment %}}
+
+{{% comment "linhuagang🧸2020-04-27 04:23:32🧸linhuagang@foxmail.com🧸🧸Java 8 根据属性值对列表去重🧸java-8-list-deduplication-with-lambda" %}}
+可是这样子类中的成员变量就暴露出来了，无法使用private，这种要怎么解决？
+{{% comment "Yanbin🧸2020-04-27 10:08:08🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+<code>Comparator.comparing(o -&gt; o.id)</code> 中使用 getter 方法就可以。
+{{% comment "linhuagang🧸2020-04-28 01:42:12🧸linhuagang@foxmail.com" %}}
+感谢
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "xinghf🧸2019-09-27 01:02:49🧸xhf6688@126.com🧸🧸Java 8 根据属性值对列表去重🧸java-8-list-deduplication-with-lambda" %}}
+</strong>这样就可以去重了,没有直接import
+`List unique = personList.stream().collect(Collectors.collectingAndThen(
+Collectors.toCollection(()-&gt;new TreeSet(Comparator.comparing(Person::getSize))),ArrayList::new ));
+{{% comment "Yanbin🧸2019-09-27 09:54:51🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+直接 import 什么？
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "haha🧸2019-06-16 20:59:13🧸5d06f3f072434@example.com🧸🧸Java 8 根据属性值对列表去重🧸java-8-list-deduplication-with-lambda" %}}
+我也有头像吧
+{{% /comment %}}
+
+{{% comment "Russ🧸2018-08-23 02:48:18🧸5b7e66c239201@example.com🧸🧸Java 8 根据属性值对列表去重🧸java-8-list-deduplication-with-lambda" %}}
+简单一点呀，在外面 new 一个<code>Set&lt;Integer&gt; ids</code>
+<code>books.stream().filter(book -&gt; ids.add(book.getId())).collect(Collectors.toList);</code>
+如果还想过滤 name，再 new 一个 Set，然后 filter() 一次
+不过这样会有 垃圾变量
+{{% comment "Yanbin🧸2018-08-23 09:59:49🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+filter() 过滤 id 的话每次要判断 id 存不存在
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "晕红著雨🧸2018-04-18 01:48:37🧸2902058927@qq.com🧸🧸Java 8 根据属性值对列表去重🧸java-8-list-deduplication-with-lambda" %}}
+给我解决了mockito修改私有属性的问题，就是想评论一下这个神奇的博客，博主是男生还是女生呀
+{{% comment "Yanbin🧸2018-04-18 22:21:09🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+多谢光顾本博客，也就是一直延续了作笔记的习惯，能帮大家解决到问题，倍感荣幸。何来神奇之友，评论里就能看到我年轻时的头像啊，不可能存在性别难以分辨的问题吧。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "1@1.com🧸2018-04-12 20:49:30🧸1@1.com🧸http://21🧸Java 8 CompletableFuture 浅入🧸java-8-completablefuture-brief-touch" %}}
+发生大
+{{% /comment %}}
+
+{{% comment "Jermy🧸2018-04-10 22:24:52🧸10265485@qq.com🧸🧸在 WordPress 插件管理页面中引入样式或脚本文件🧸wordpress-admin-import-css-js" %}}
+不是很明白
+{{% /comment %}}
+
+{{% comment "KAM🧸2018-04-02 22:15:46🧸1479376017@qq.com🧸http://www.billson.club🧸用 grunt-contrib-connect 构建实时预览开发环境🧸grunt-contrib-connect-build-livereload-dev-env" %}}
+我想知道grunt搭配express框架使用的时候，改怎么配置，网上找的都是老版本
+{{% comment "Yanbin🧸2018-04-06 11:11:26🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+这个没弄过
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "wayne🧸2018-03-13 04:30:51🧸444707088@qq.com🧸🧸Groovy 的多重赋值和方法的多返回值🧸groovy-multiple-assignment-returns" %}}
+没有关注过groovy，它能解决什么问题的？
+{{% comment "Yanbin🧸2018-03-17 19:41:07🧸yabqiu@gmail.com🧸https://unmi.cc" %}}
+特定领域里用它，像 Jenkins, SoupUI(ReadyAPI), 就是写 Java 觉得有些罗嗦就换成 Groovy 来写。Groovy 并不是用来解决 Java 不容易解决的问题，
+而 Scala 比 Java 相对来说要高级些。看它们的生态，Groovy 有 Grails, Gradle，不足轻重，而 Scala 有 Spark, Kafka, PlayFramework, 
+Akka，在业界的影响力就不可同日而语。
+{{% comment "wayne🧸2018-03-18 23:34:51🧸444707088@qq.com" %}}
+噢，这样的，受教。
+我的理解中scala是属于函数式编程，java先jdk8开始也支持这样了，不太理解的是高级的地方是指什么方面？并没有了解scala，望见谅，可能问的有点低级。
+{{% comment "Yanbin🧸2018-03-18 23:52:51🧸yabqiu@gmail.com" %}}
+可以说是 Scala 体现在函数式，以及语法上的精练，这就为什么那些高效框架要用 Scala 来写。再一方面，实际上 Scala 写的组件完全可以在 Java 中使用，
+但会出现某些奇怪的引用方式，所以像 Spark, Akka 那样纯 Scala 写的框架最好是用 Scala 来使用它。而 Kafka, PlayFramwork 核心是用 Scala 写的，
+但针对于 Java 特别实现有 Java  类库作为中介。
+{{% comment "wayne🧸2018-03-20 04:07:56🧸444707088@qq.com" %}}
+scala相较于java，是不是也像您上面说的那样，不同的体系。scala之于spack，kafka，而java之于spring，mybatis等等，是这样的意思吗？
+
+好奇的一点是，高效框架，是指框架本身的性能比较高？还是使用scala开发的框架比较高效？还是使用scala开发程序比较高效呢？
+{{% /comment %}}
+{{% comment "Yanbin🧸2018-03-20 13:52:03🧸yabqiu@gmail.com" %}}
+Scala 语法上更趁手，更具表达力，所以那些框架采用 Scala 而不是 Java。基本不会有性能上的差异。
+{{% /comment %}}
+{{% comment "wayne🧸2018-03-24 20:59:35🧸444707088@qq.com" %}}
+噢～，受教，明白了
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "z37🧸2018-03-19 23:29:44🧸bluice.zhen@gmail.com🧸http://www.zlb37.xyz🧸RESTful, 说说 http 的 patch method🧸restful-http-patch-method" %}}
+Thank You
+{{% /comment %}}
+
+{{% comment "peter zhang🧸2024-03-06 00:32:49🧸i@ddatsh.com🧸🧸unmi.cc 博客大事记🧸events-of-this-blog" %}}
+08年看quartz过来的
+{{% comment "Yanbin🧸2024-03-06 10:58:31🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+谢谢再次光临，十来年前的回忆
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "kai🧸2018-05-01 23:30:06🧸leekay@aliyun.com🧸🧸unmi.cc 博客大事记🧸events-of-this-blog" %}}
+前辈的博客就在我的导航栏上,有闲暇时间就会经来逛你的博客,记得是2014年当时正在学习Scala时逛到你的博客,后来每隔一段时间就会来你的博格转转，
+之前也加过你的QQ群不过都很少有人在里面交流，可能聊天工具只适合聊天，技术交流还是在网站上讨论的好，讨论过程和记录都可以被后人看到。
+{{% comment "Yanbin🧸2018-05-02 17:44:28🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+谢谢收藏，有技术问题也欢迎这里讨论。您的每一次到来就像是必跳检测一样，所幸一直还活着。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Kevinb🧸2018-04-17 01:01:21🧸5ad58db160ef0@example.com🧸🧸unmi.cc 博客大事记🧸events-of-this-blog" %}}
+楼主的毅力让人佩服，加油！
+{{% /comment %}}
+
+{{% comment "wayne🧸2018-03-18 23:38:50🧸444707088@qq.com🧸🧸unmi.cc 博客大事记🧸events-of-this-blog" %}}
+unmi一路走过来也是不容易，一路跌跌撞撞，幸得楼主坚持
+{{% /comment %}}
+
+{{% comment "paul🧸2018-03-14 10:46:50🧸naihua.yang@gmail.com🧸http://paul🧸AWS 上 Java Lambda 应用记要🧸aws-java-lambda-keys" %}}
+牛逼
+{{% /comment %}}
+
+{{% comment "jackieron🧸2018-02-10 21:34:35🧸5a7fb9cb55088@example.com🧸🧸NodeJS 的 Web 服务也可以监听在 sock 文件🧸nodejs-web-server-listen-on-domain-socket" %}}
+请问： 如何在NODEJS中使用JQUERY 去更新页面元素？
+
+我现在有三个文件，index.html、APP.JS 、TCPCLIENT.JS。
+
+index.html 引用app.js, app.js 引用tcpclient.js 现在我想在tcpclient.js中socket收到数据时，直接使用JQUERY更新index.html中元素。可是一直失败。不知道您遇到过这样的问题吗，或者可以提供一个思路吗？谢谢！
+{{% comment "Yanbin🧸2018-02-11 12:32:16🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+数据能接收到的话，检查 jQuery 端什么问题，先作简单的更新操作。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "Yijun Yuan🧸2018-02-09 11:13:53🧸5a7dd6d0e247c@example.com🧸🧸并发(Concurrent) 与并行(Parallel) 的区别🧸different-between-concurrent-and-parallel" %}}
+奉天承命，这里的命可不是指的某一个人，所以革命不是杀人的意思
+{{% comment "Yanbin🧸2018-02-09 13:16:12🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+那是令的意思
 {{% /comment %}}
 {{% /comment %}}
