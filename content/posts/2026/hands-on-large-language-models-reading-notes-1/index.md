@@ -14,11 +14,13 @@ categories:
 tags: 
   - Machine Learning
   - LLM
-  - Chapter1
-  - Chapter2
 comment: true
 codeMaxLines: 50
+showLastmod: true
+lastmod:
 ---
+
+#### 第一章：大语言模型简介
 
 应该还是在前年读了 《Build a Large Language Model (From Scratch)》前面一小部分，就中断了, 如今又找来一本相关的书籍
 《Hands-On Large Language Models》试着啃一啃，能明白多少是多少。拿着中英文的两个版本对照着看，有些中文翻译最好还是不译的好。
@@ -132,7 +134,7 @@ print(output[0]["generated_text"])
 
 模型分两大类，表示模型(仅编码, 如 BERT)与生成模型(仅解码, 如 GPT 系列)，这两类都被视为 LLM, 通常面对终端用户的是生成模型。
 
----
+#### 第二章: Token 和 Embedding
 
 `Tokens` 和 `Embeddings`, 这两个词翻译成中文都怪怪的, `词元`, `嵌入`, 还是用英文吧。`Token` 就是 LLM 的词汇，`Token` 数字化即
 `Embbedding`. Token embedding 一个著名的先驱就是 `word2vec`.
