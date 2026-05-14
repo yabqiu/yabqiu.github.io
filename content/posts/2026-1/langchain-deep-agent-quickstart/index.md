@@ -31,9 +31,7 @@ lastmod:
 
 下面就来探索一下它的内置的功能, 先分析一个最简单的例子看看背后发生了什么
 
-依赖安装
-
-> uv add deepagents langchain-ollama
+依赖安装: `uv add deepagents langchain-ollama`
 
 `deepagents` 会连带安装 `langchain`, `langchain-anthropic`, `langchain-google-genai` 和 `wcmatch`。`langchain`
 会安装它的传递依赖，像 `langchain-core`, `langgraph` 之类。`langchain-ollama` 用来使用本地 `Ollama` 模型的。<!--more-->
@@ -81,7 +79,7 @@ print(result["messages"][-1].content)
 
 ```
 
-系统提示词太长，放在本文最后供参考
+默认系统提示词太长，放在本文最后供参考，[完整默认系统提示词](#deep-agent-%E7%B3%BB%E7%BB%9F%E6%8F%90%E7%A4%BA%E8%AF%8D)
 
 从这个提示词就知道 `create_deep_agent()` 内置提供的 Tools 有 `write_todos`, `ls`, `read_file`, `write_file`, `edit_file`, 
 `glob`, `grep`, `task`. `task` 是用来需要启动 `subagent`.
@@ -210,7 +208,8 @@ result = agent.invoke({"messages": [{"role": "user", "content": "write python he
 
 {{< highlight-wrap json >}}
 {"model":"llama3.2:1b","stream":true,"options":{},"messages":[
-  {"role":"system","content":"\nYou are a good python coding helper.\n\n\n## `write_todos`\n\nYou hav<后面一大段, 省略>
+  {"role":"system","content":"\nYou are a good python coding helper.\n\n\n## `write_todos`\n\nYou hav<后面一大段, 省略>"}
+]}
 {{</ highlight-wrap >}}
 
 ##### Backends
