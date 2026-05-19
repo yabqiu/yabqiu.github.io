@@ -23,23 +23,27 @@ lastmod:
 #### 第七章：高级文本生成技术与工具
 
 在上一章中已经从 `AutoModelForCausalLM`, `AutoTokenizer`, `pipeline` 过渡到了稍为高那么一层的 `llama-cpp-python` 的使用，
-这一章将继续学习 `LLM` 的使用，到真正能训练，微调模型还远着呢。本章继续学习在不作微调的情况下提升文本生成质量的方法论与技术概念。
+这一章将继续学习 `LLM` 的使用, 到真正能训练，微调模型还远着呢。 其中大部分的内容都在学习 `LangChain` 的过程中有所掌握，包括记忆机制，
+智能体工具调用等，所以这方面的内容没有具体展开。
 
-- 模型输入/输出：模型加载与调用
-- 记忆机制：增强模型的上下文记忆能力
-- 智能体系统：整合外部工具实现复杂行为
-- 链式架构：模块化方法与组件的衔接组合
+本章所覆盖的在不对模型作微调的情况下提升文本生成质量的方法论与技术:
+
+1. 模型输入/输出：模型加载与调用, 用 llama-cpp-python 演示
+2. 记忆机制：增强模型的上下文记忆能力，查看 `LangChain` 短期记忆相关日志 [LangChain 核心组件之短期记忆](/langchain-core-component-short-term-memory/)
+3. 智能体系统：整合外部工具实现复杂行为，用 `LangChain` 1.0 后的 `create_agent()` 将会很非常简单
+4. 链式架构：模块化方法与组件的衔接组合, 这是 `LangChain` 0.x 的架构，1.0 后不再使用链式架构
 
 本章进到 `LangChain` 的学习当中，本人对 `LangChain` 已经有了一定程度的了解，由于 `LangChain` 1.0 于 2025 年 10 月份才正式发布，
 显然写作本书的时候用的还是 `LangChain 0.x` 的版本，而 `LangChain` 1.0 带来了巨大的变化，所以学习当中会把书中的例子改写为 `LangChain 1.x` 的版本。
 
-下载 llama-cpp 的 GGUF 单文件模型: [Phi-3-mini-4k-instruct-q4.gguf](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf?download=true),
+下载 llama-cpp 的 GGUF 单文件模型: [Phi-3-mini-4k-instruct-q4.gguf](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf?download=true)
+<!--more-->
 
 再安装 Python 依赖
 
 > uv add langchain langchain-community llama-cpp-python
 
-以上三个组件的当前版本依次为 1.3.1, 0.4.1, 和 0.3.23<!--more-->
+以上三个组件的当前版本依次为 1.3.1, 0.4.1, 和 0.3.23
 
 ```python
 from langchain_community.llms import LlamaCpp
@@ -255,14 +259,16 @@ Important:
 - Call only one tool per step.
 - Tool names must be exactly one of: {list(TOOLS.keys())}
 - For tools with no parameters write: Action: get_my_location()
-- For tools with parameters write: Action: get_weather(<city_name>)
+- For tools with parameters write positional values only, no keyword names: Action: get_weather(Chicago)
 - Never fabricate an Observation. Always wait for the real result.
 """
 
 def parse_action(text: str):
     match = re.search(r"Action:\s*(\w+)\(([^)]*)\)", text)
     if match:
-        return match.group(1), match.group(2).strip().strip("\"'")
+        arg = match.group(2).strip().strip("\"'")
+        arg = re.sub(r"^\w+=", "", arg).strip().strip("\"'")
+        return match.group(1), arg
     return None, None
 
 def call_tool(name: str, arg: str):
