@@ -356,4 +356,4 @@ llm.close()
 #### 小结
 
 本章学习了与模型的 Token 交互，提示词的一些基本组件，推理，思维链，思维树，控制模型输出，Zero Shot, One Shot, Few Shot 应用在推理和模型输出,
-以及如何使用 `llama-cpp-python` 与模型交互并指定 `response_format={"type": "json_object"}`。
+以及如何使用 `llama-cpp-python` 与模型交互并指定 `response_format={"type": "json_object"}`。客观的讲，这一章的实用性不高。
