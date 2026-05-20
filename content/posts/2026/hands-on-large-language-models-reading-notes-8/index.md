@@ -277,8 +277,9 @@ inputs = blip_processor(text=text, images=image, return_tensors="pt").to("mps")
 Token 中的特殊符号 `Ġ`, 实际代表空格，就是当前 Token 是否与前面的 Token 紧密相连，这是为了打印时故意把空格字符(32) 加上 256 变成了 288,
 这样就能在打印时清晰地看到空格的位置了。
 
-`blip_model` 打印出来看到里面的层次
+`model` 打印出来看到里面的层次
 
+{{< expand "点击展开查看 model 的输出" >}}
 ```text
 Blip2ForConditionalGeneration(
   (vision_model): Blip2VisionModel(
@@ -706,6 +707,67 @@ Blip2ForConditionalGeneration(
   )
 )
 ```
+{{</ expand >}}
+
+把以上 model 的输出放到 `Claude` 中，得到一个 BLIP-2 很清晰的解释
+{{< expand "点击展开查看 Claude 对 model 输出的解释" >}}
+  {{< bundle-image blip2_architecture.svg 600 >}}
+
+---
+
+**整体结构**
+
+---
+
+BLIP-2 是一个视觉-语言多模态模型，由三个主要模块串联组成：
+
+**① Vision Encoder（视觉编码器）**
+
+基于 EVA-CLIP ViT-g/14，是一个大型视觉 Transformer：
+
+- 用 Conv2d(3, 1408, 14×14) 把图像切成 patch，映射到 1408 维
+- 经过 **39** 层 Transformer，每层含 self-attention（QKV: 1408→4224）+ GELU MLP（1408→6144→1408）
+- 最终通过 post_layernorm 输出视觉特征序列
+
+---
+
+**② Q-Former（查询变换器）—— 核心创新**
+
+这是 BLIP-2 的关键桥梁模块，设计目的是将高维视觉特征"压缩"成语言模型能理解的 token：
+
+维护 **32 个可学习 query token**（维度 768）
+- **12** 层交替执行两种 attention：
+
+  - **Self-attention**：query 之间相互交互（768→768）
+  - **Cross-attention**：每隔一层触发，query 去"询问"视觉特征（K/V 从 1408 压缩到 768）
+
+- MLP 维度 768→3072→768，激活函数 GELU
+- 最终输出 **32 × 768 的压缩视觉表示**
+
+这种设计让模型只用 32 个 token 就能表达整张图像的关键信息，大幅降低语言模型的计算压力。
+
+---
+
+**③ Language Model（语言模型）**
+
+基于 **OPT-2.7B**（OPTForCausalLM）：
+
+- language_projection 线性层先将 Q-Former 输出从 768 维**升维到 2560**，对齐 OPT 的隐藏维度
+- OPT Decoder 共 **32** 层，每层 self-attention（2560→2560）+ FFN（2560→10240→2560），激活函数 ReLU（注意不是 GELU）
+- 词表大小 50304，最后由 lm_head（2560→50304）输出 logits 生成文本
+
+---
+
+**几个值得注意的设计细节**
+
+**Cross-attention 的"每隔一层"模式**：Q-Former 12 层中，只有第 0、2、4、6、8、10 层（偶数层）有 cross-attention，奇数层只有 self-attention。这降低了计算量，同时让 query 在"吸收视觉信息"和"内部整合"之间交替。
+
+**维度的三级变换**：1408（视觉）→ 768（Q-Former）→ 2560（语言），每个阶段都有明确的维度对齐。
+
+**OPT 使用 ReLU 而非 GELU**：这是 OPT 系列模型的历史选择，与当时大多数 LLM 不同。
+
+**冻结策略**：训练时视觉编码器和语言模型通常是冻结的，只训练 Q-Former，这正是 BLIP-2 参数效率高的原因。
+{{</ expand >}}
 
 下面是两个带有图片时的用例，分别是给指定图片生成描述和基于聊天的多模态提示词
 

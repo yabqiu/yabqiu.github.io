@@ -444,8 +444,9 @@ register_harness_profile(
 另外还有专用的 [deepagents_code/system_propmt.md](https://github.com/langchain-ai/deepagents/blob/b3c577de9243b1dc9919f5534273667c50fd0c2d/libs/code/deepagents_code/system_prompt.md)
 [deepagents/middleware/subagents.py](https://github.com/langchain-ai/deepagents/blob/b3c577de9243b1dc9919f5534273667c50fd0c2d/libs/deepagents/deepagents/middleware/subagents.py#L171)
 
-<details>
-  <summary>点击展开阅读 BASE_AGENT_PROMPT 完整内容</summary>
+{{< expand "点击展开阅读 BASE_AGENT_PROMPT 完整内容" >}}
+
+```text
 
 ---
 
@@ -560,6 +561,6 @@ When NOT to use the task tool:
 
 Available subagent types:
 - general-purpose: General-purpose agent for researching complex questions, searching for files and content, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you. This agent has access to all tools as the main agent.
-</details>
+{{</ expand >}}
 
 `Deep Agent` 的所有的知识要领差不多都在这里，希望下一步要实现 Plan, 就可以用它做一个编程 Agent 了。
