@@ -356,3 +356,47 @@ lock还要再按一次 CAPSLOCK 才变正常  ，把 capslock 改成 tab 映射�
 如果是 Spring Boot 的话设置 debug=true 显示所有自动加载的配置看看你的 @EnableScheduling 是基于什么条件开启的。
 {{% /comment %}}
 {{% /comment %}}
+
+{{% comment "hahaha🧸2018-11-27 01:32:34🧸5bfcf3118d409@example.com🧸🧸用 PreparedStatement 向 SqlServer 中一次性插入多条记录🧸sqlserver-insert-multiple-rows-onetime" %}}
+这个留言功能的提交有点慢。。
+{{% comment "Yanbin🧸2018-11-27 01:40:38🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+好像是有点儿慢，像把插件一个个禁了才知道哪里出问题。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "hahaha🧸2018-11-27 01:31:38🧸5bfcf2d998368@example.com🧸🧸用 PreparedStatement 向 SqlServer 中一次性插入多条记录🧸sqlserver-insert-multiple-rows-onetime" %}}
+留言
+{{% /comment %}}
+
+{{% comment "UltraXiaoZi🧸2017-12-20 01:14:17🧸5a3a0dc86096d@example.com🧸🧸用 PreparedStatement 向 SqlServer 中一次性插入多条记录🧸sqlserver-insert-multiple-rows-onetime" %}}
+你这个批量插入是SqlServer特有的？
+{{% comment "Yanbin🧸2017-12-22 21:58:47🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+是的，BCP 也是 SqlServer 特有的，为了优化性能使用数据库特有的东西是很值得的，不必一味的牺牲特性而追求所谓的跨数据库，对于一个公司切换数据库的比例到例有多大？微乎其微。
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "wayne🧸2017-11-29 03:41:37🧸444707088@qq.com🧸🧸体验 Scala 2.12 支持的 Java 8 风格(SAM) Lambda🧸scala-2-12-java-8-sam-lambda" %}}
+博主，有个疑问，completablefuture和callable的差别是什么？两个都有get方法，不阻塞主要体现在哪里呢？
+{{% comment "Yanbin🧸2017-11-29 13:20:24🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+Callable 只是定义了一个接口，代表了提交给线程池的任务，并且是有返回值的，它不关心任务完成的各种状态。 而 CompletableFuture 实现了 Future,
+有着更丰富的语义，Future 有点像 Promise。 CompletableFuture 实现了任务完成，失败后怎么操作，以及如何与其他的 CompletableFuture 协调等。
+{{% comment "wayne🧸2017-11-29 20:59:08🧸444707088@qq.com" %}}
+我可能有点问错问题了，其实我想问的是，callable在实现类放到executor线程池中执行，可以返回feature的返回值，
+completablefuture也是也是可以指定放到executor中执行，返回的是completablefuture的返回值，两者其实都是异步方式执行，那这两种那个方式更优，差别在哪里呢？谢谢
+{{% comment "Yanbin🧸2017-11-29 23:57:23🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+线程池中怎么去执行任务的效率没什么区别，关键在于 CompletableFuture 对执行结果的响应性处理要方便的得多。Future 接口只有有限的 5 个方法，
+对比一下 CompletableFuture 提供了 50 多个方法来处理执行结果，及解决多个 CompletableFuture 间的依赖关系。
+{{% comment "wayne🧸2017-12-02 06:49:33🧸444707088@qq.com" %}}
+哦，这样的，是说呢，我看来着，感觉用的方式是差不多，我开始是用callable写的东西，多线程去执行，看到这个completablefuture后，是新出的api，想换这个来重写，看来我需要重新考虑下。
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+{{% /comment %}}
+
+{{% comment "crid🧸2017-11-14 09:20:08🧸5a0b09a765a1f@example.com🧸🧸用 iTextSharp 修改 PDF 文件的元信息(MetaData)🧸itextsharp-edit-pdf-metadata" %}}
+自己添加的属性，怎样可以支持中文，我发现加入中文之后成乱码
+{{% comment "Yanbin🧸2017-11-14 17:59:35🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+估计要选择字符集或字体，我现在都没有相应的开发环境了，你可以找下 API 里有没有字符集或字体的相关设置。
+{{% /comment %}}
+{{% /comment %}}
