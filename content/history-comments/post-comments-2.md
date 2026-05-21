@@ -400,3 +400,17 @@ completablefuture也是也是可以指定放到executor中执行，返回的是c
 估计要选择字符集或字体，我现在都没有相应的开发环境了，你可以找下 API 里有没有字符集或字体的相关设置。
 {{% /comment %}}
 {{% /comment %}}
+
+{{% comment "Kim🧸2022-10-31 02:29:06🧸1163927457@qq.com🧸🧸使用插件 aspectj-maven-plugin 织入 AspectJ AOP🧸maven-plugin-aspectj-weaving" %}}
+博主您好，我手里的一个项目跟文章中描述的很像，遇到一个问题请教一下。
+跟你代码不同的是，我在项目A中，通过对三方jar包进行weave，比如logback，通过拦截指定方法生成链路，然后项目A打成jar包供项目B使用，
+但是B在执行package的时候始终无法成功织入，具体代码片段麻烦看下这里：https://stackoverflow.com/questions/74233815/meet-some-problems-about-aspectj-maven-plugin-and-aspectj<br />
+麻烦大佬有空看下，谢谢
+{{% /comment %}}
+
+{{% comment "lulu🧸2017-11-01 04:56:21🧸59f99a4538d79@example.com🧸🧸使用插件 aspectj-maven-plugin 织入 AspectJ AOP🧸maven-plugin-aspectj-weaving" %}}
+估计要选择字符集或字体，我现在都没有相应的开发环境了，你可以找下 API 里有没有字符集或字体的相关设置。
+{{% comment "Yanbin🧸2017-11-02 23:17:31🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
+我也是用的 JDK 8, 试下指定编译插件的版本。
+{{% /comment %}}
+{{% /comment %}}
