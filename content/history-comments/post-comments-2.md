@@ -1,5 +1,5 @@
 ---
-title: "历史日志评论 2"
+title: "历史日志评论 2 (70)"
 url: /history-post-comments-2/
 date: 2026-04-21T19:31:40-05:00 # Date of post creation.
 showShare: false
@@ -303,8 +303,11 @@ capslock + e 行末, capslock + u 删除整行的功能, 用了几年习惯了
 还有你这个规则需要能不能做成按住不放开caps lock键，然后jkl就是方向键了，现在你这必须要同时按一下caps lock+k才是上方向键啊。
 {{% comment "Yanbin🧸2017-11-07 22:48:03🧸yabqiu@gmail.com🧸http://unmi.cc" %}}
 非常感谢关注这个日志。
+
 空格+jkli 有点奇特，可以把空格键映射为 right_command, 然后空格怎么输入呢？
+
 我的定制规则原来有些问题，已更新了，更新后的链接是 <a href="karabiner://karabiner/assets/complex_modifications/import?url=https%3A%2F%2Funmi.cc%2Fwp-content%2Fuploads%2F2017%2F07%2Fcaps_lock_hjkl_to_arrow_keys.json" rel="nofollow">karabiner://karabiner/assets/complex_modifications/import?url=https%3A%2F%2Funmi.cc%2Fwp-content%2Fuploads%2F2017%2F07%2Fcaps_lock_hjkl_to_arrow_keys.json</a>
+
 可以通过链接 <a href="https://unmi.cc/wp-content/uploads/2017/07/caps_lock_hjkl_to_arrow_keys.json">https://unmi.cc/wp-content/uploads/2017/07/caps_lock_hjkl_to_arrow_keys.json</a> 查看规则内容。
 {{% /comment %}}
 {{% comment "kai🧸2018-01-07 20:13:20🧸sting1280@hotmail.com" %}}
