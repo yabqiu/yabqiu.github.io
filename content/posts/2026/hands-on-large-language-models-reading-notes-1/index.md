@@ -40,7 +40,7 @@ lastmod:
 2. 生成模型(generative model),关注生成文本, 通常不会被训练用于生成嵌入, 像 GPT(Generative Pre-trained Transformer)<!--more-->
 
 LLM 这个概念不仅指生成模型，也包括表示模型。生成式 LLM 就是一种 Seq2Seq 的文本生成系统，补全或者说猜测下一个 Token, 所以生成模型又称补全模型
-(completion model), `OpenAI` V1 的 API 有一个是 `/v1/chat/completions`. 通过训练和微调可以做成指令模型 (instruct mode) 或对话模型(chat model).
+(completion model), `OpenAI` V1 的 API 有一个是 `/v1/chat/completions`. 通过训练和微调可以做成指令模型 (instruct model) 或对话模型(chat model).
 指令型模型，不仅能补全，而是试图回答问题。
 
 GPT-1 参数量 117M, GPT-2: 1.5B, GPT-3: 175B, 想想现在的非开源的 ChatGPT 5.5, Claude 4.7 的规模不知道会有多大了，好不容易在本地跑上一个
@@ -54,7 +54,7 @@ LLM 现在更多是指生成式模型，最初步的预训练通常不针对特�
 
 拿一个基座模型，针对具体任务进一步训练，能遵循指令，这叫微调，最花钱耗时的是基座模型的预训练. 基础模型和微调模型都属于预训练模型，这些名称有点乱。
 
-特别是模型参数的表示法，一到中文中反而让人糊涂了，比如 3.8B 的参数，硬是要说成 38 亿参数，这个没法和国际接轨了，在这种特定行业的述语应该用 3.8B。
+特别是模型参数的表示法，一到中文中反而让人糊涂了，比如 3.8B 的参数，硬是要说成 38 亿参数，这个没法和国际接轨了，在这种特定行业的术语应该用 3.8B。
 好吧，记住一个对应 10 亿一个 B，按这个关系转换。
 
 下面是要先开始上手模型的使用，还不急着教授如何训练一个基础模型。要用到 `Hugging Face` 上的一个模型，Python 环境，先安装如下依赖，用 `uv` 吧
@@ -122,7 +122,7 @@ print(output[0]["generated_text"])
 # output: [{'generated_text': ' Why did the chicken join the band? Because it had the drumsticks!'}]
 ```
 
-输出出为
+输出为
 
 > Why did the chicken join the band? Because it had the drumsticks!
 
@@ -130,14 +130,14 @@ print(output[0]["generated_text"])
 
 - return_full_text: False 时只返回生成的文本，不返回输入的文本
 - max_new_tokens: 允许模型生成的最大 Token 数
-- do_sample: 决定模型是否使用采用策略来选择下一个 Token, False 时选择概率最高的 Token, 就是那个 temperature 
+- do_sample: 决定模型是否采用策略来选择下一个 Token, False 时选择概率最高的 Token, 就是那个 temperature 
 
 模型分两大类，表示模型(仅编码, 如 BERT)与生成模型(仅解码, 如 GPT 系列)，这两类都被视为 LLM, 通常面对终端用户的是生成模型。
 
 #### 第二章: Token 和 Embedding
 
 `Tokens` 和 `Embeddings`, 这两个词翻译成中文都怪怪的, `词元`, `嵌入`, 还是用英文吧。`Token` 就是 LLM 的词汇，`Token` 数字化即
-`Embbedding`. Token embedding 一个著名的先驱就是 `word2vec`.
+`Embedding`. Token embedding 一个著名的先驱就是 `word2vec`.
 
 `Tokenization` 即通常的分词，[OpenAI Platform tokenizer](https://platform.openai.com/tokenizer)
 
@@ -187,7 +187,7 @@ Dear Sarah
 1. 词级分词: 这种分词很自然，按空格切开，在早期的 `word2vec` 等模型很常见，但对前后缀不同 Token, 例如 `play`, `playing`, `played` 等,
   词级分词会把它们当成不同的 Token, 导致词汇表过大, 模型难以学习到它们之间的关系.
 2. 子词级分词: 解决了上面的前后缀的问题，例如上面只要训练 `play`, 后缀 `ing`, `ed` 则可与多数动词组合, 而且还能创造新词。
-3. 字符级分词和字节级分词: play 按拆成 `p`, `l`, `a`, `y` 四个 Token, 或者按 unicode 拆成单个字节， 这就脱离的语义，不知在什么模型中用到
+3. 字符级分词和字节级分词: play 被拆成 `p`, `l`, `a`, `y` 四个 Token, 或者按 unicode 拆成单个字节， 这就脱离了语义，不知在什么模型中用到
 
 以下是不同分词器产生的效果比较
 
@@ -257,13 +257,13 @@ model/microsoft/Phi-3-mini-4k-in...   7.6G 13 hours ago   15 hours ago   main
 - `gpt2`, `Xenova/gpt-4`: 不认识的显示为问号，Token 前自带空格表示是否与前面相连。`gpt2` 一个 `tab` 对应一个 `token`, 
   而 `Xenova/gpt-4` 一个 `token` 可表示多个空白，比如适于生成 Python 代码. `gpt-4` 中有自己的 `elif` token
 
-注意一些特殊的 Token, 象 `[UNK]`: unknown, `[SEP]`: 段落分割, `[PAD]`: 填充，`[CLS]`: 分类，classification, `[MASK]`: 训练过程中用于隐藏
+注意一些特殊的 Token, 像 `[UNK]`: unknown, `[SEP]`: 段落分割, `[PAD]`: 填充，`[CLS]`: 分类，classification, `[MASK]`: 训练过程中用于隐藏
 Token，猜猜猜用的。不同分词器会有自己特殊 Token, 如 `Phi-3` 的 `<|user|>`, `<|system|>`, `<|assistant|>` 用于 ChatBot 的.
 
 分词中包含的 Token 是由三个主要因素决定的：分词方法，用于初始化分词器的参数, 以及训练分词器的目标数据所在的领域。分词方法最常用就是 `BPE`,
 分词器参数包括词表大小，特殊 Token, 大小写处理策略。
 
-Token Embedding, 词分好了，这样语言变成成 Token 序列了，要为每个 Token 找到最佳的数值表示，这样才能被计算。一个 Token 并不对应一个标量值，
+Token Embedding, 词分好了，这样语言变成 Token 序列了，要为每个 Token 找到最佳的数值表示，这样才能被计算。一个 Token 并不对应一个标量值，
 而变成一个向量，每个分量值就是权重值，开始随机初始化，训练模型就是调教这些权重值。
 
 测试 `Embedding`
@@ -301,7 +301,7 @@ BaseModelOutput(last_hidden_state=tensor([[[-3.4844,  0.0862, -0.1819,  ..., -0.
 torch.Size([1, 4, 384])
 ```
 
-`Hello world` 拆成 4 个 Token, 每个 Token 嵌入到一个包含 384 个数值的向量中(这种情景下 `嵌入` 的意义就表达出来的)。
+`Hello world` 拆成 4 个 Token, 每个 Token 嵌入到一个包含 384 个数值的向量中(这种情景下 `嵌入` 的意义就表达出来了)。
 
 `output[0]` 有三个维度，第一个维度是 batch(同时向模型发送多个句子), 第二个维度对应每一个 Token，第三个维度是每个 Token 的向量。
 
@@ -353,7 +353,7 @@ emperor    0.7736
 
 {{< bundle-image word2vec-skip-gram.png 613 >}}
 
-`word2vec` 是用滑动容器来训练一个词来预测它周围的词，最后也是把 Token 嵌入到一个向量中，最终训练的是不断的优化嵌入向量中的权重值，
+`word2vec` 是用滑动窗口来训练一个词来预测它周围的词，最后也是把 Token 嵌入到一个向量中，最终训练的是不断地优化嵌入向量中的权重值，
 用以预测两个向量之间是否具有某种关系。
 
 最后是一个训练歌曲推荐系统的实例，
@@ -460,7 +460,7 @@ model = Word2Vec(sentences=playlist, vector_size=32, window=20, min_count=1, wor
 ```
 
 训练的数据集就是 `playlist`, 所有歌的 ID 组成了一个词汇表(从 playlist 中抽取, 大小为 75261)，每个 ID(Token) 嵌入到一个维度为 32 的向量中，
-滑动容器大小为 20, 只关注与当前 ID(Token) 前后距离 20 以内的相关歌曲，四个 workers 进行并行训练， 
+滑动窗口大小为 20, 只关注与当前 ID(Token) 前后距离 20 以内的相关歌曲，四个 workers 进行并行训练， 
 
 训练后会产生一个形状为 (75261, 32) 的 `model.wv.vectors` 权重值，即模型参数，训练好了就能用余弦相似度匹配歌曲进行推荐了。向量索引与
 `Token` 之间的对应关系存储在  `model.wv.index_to_key` 和 `model.wv.key_to_index`.
@@ -471,4 +471,4 @@ SentencePiece) 要考虑的参数有词表大小，特殊 Token, 大小写处理
 可表示连续的几个空格，方便于编程代码的输出。
 
 在 LLM 之前, word2vec, GloVe 和 fastText 等词嵌入方法非常流行，现在为 LLM 的上下文相关的词嵌入所取代。除了词嵌入(Token Embeddings)，
-用于训练， 还有文本嵌入(Text Embeddings)，在 RAG 中使用。work2vec 算法依赖两个主要思想: skip-gram 模型和负采样。
+用于训练， 还有文本嵌入(Text Embeddings)，在 RAG 中使用。word2vec 算法依赖两个主要思想: skip-gram 模型和负采样。
