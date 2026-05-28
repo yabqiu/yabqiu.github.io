@@ -54,7 +54,7 @@ DatasetDict({
 3. 使用聚类模型(cluster model) 将降维后的向量进行聚类. k 均值聚类(k-means) 和基于密度的算法，如 HDBSCAN(Hierarchical Density-Based
    Spatial Clustering of Applications with Noise)，将使用 HDBSCAN, 它是  DBSCAN 的变体。
 
-单说一下降维，就是降维打击的降维，降维可以理解为一种压缩算法，例如三维空间中多点之间的远近关系，把它们降维到二维平面的梳密分布就一目了然了。
+单说一下降维，就是降维打击的降维，降维可以理解为一种压缩算法，例如三维空间中多点之间的远近关系，把它们降维到二维平面的疏密分布就一目了然了。
 降维并不是简单删除维度，而是要把多维信息压缩到低维向量中。
 
 下面来看完整的代码
@@ -89,7 +89,7 @@ print(len(set(clusters)))  # 156 个 cluster, cluster {0,1,2,3,...,153,154,-1}
 ```
 
 `embedding_model.encode(, device="mps")` 在 Apple M3 Pro(内存 36G) 下非常的慢，所以转到我的 4090 上运行，有近 100 倍的提升。
-得到的结果 `clusters` 是与数据集同等大小(44949)的的数组, 值就是对应的聚类标签(在 -1 ~ 154 之间)。也就是上面代码把这 44949 篇文章的摘要分到了
+得到的结果 `clusters` 是与数据集同等大小(44949)的数组, 值就是对应的聚类标签(在 -1 ~ 154 之间)。也就是上面代码把这 44949 篇文章的摘要分到了
 156 个类别当中，至于每个类型是关于什么就要人工来标注了。根据 `clusters` 中的索引与标签值可查看同类型的几篇文章概要。
 
 把嵌入向量降维到 2 维，分类后用 `matplotlib` 可生成一张图片
@@ -131,7 +131,7 @@ plt.savefig("cluster_chart.png", dpi=300, bbox_inches="tight", format="png", tra
 
 标签为 `-1` 的离群点用灰色表示。
 
-#### 从文聚类和主题建模
+#### 从文本聚类和主题建模
 
 前面实践了把 44949 篇文章摘要转成嵌入向量，降维后再分成 156 个类别，至于哪个类别具体是什么主题就不知道了，或者要查看类别人为标注。
 现在要扩展到主题建模，这一过程可以为每个聚类确定最具代表性的关键词(主题表示)，从而协助人工更准确定义类别名称。
@@ -171,7 +171,7 @@ topic_model = BERTopic(
 每个分类都提取出了最具代表性的关键字, 第一个主题标记为 `-1`, 就是无法归类, 被视为离群点(outliers), 可用 BERTopic 的 reduce_outliers()
 将离群点重新分配到主题中. 比如看到 Topic 为 0 主题是关于 语音识别 的文章.
 
-用 `topic_model.get_topic(topic_id)` 还能看到特定主题各关键字的评分, 由高到底排列. 有了这些关键字, 大致看下摘要内容就能为主题准确命名了.
+用 `topic_model.get_topic(topic_id)` 还能看到特定主题各关键字的评分, 由高到低排列. 有了这些关键字, 大致看下摘要内容就能为主题准确命名了.
 
 有多种可视化图可显示, 下图用代码展示成两种类型的图
 
@@ -253,8 +253,8 @@ topic_model.update_topics(abstracts, representation_model=representation_model)
 ```
 
 使用 `Ollama` 兼容的 `OpenAI` 的 API, 这里定义了一个提示词模板 `prompt`, `OpenAI(...)` 在应用 `prompt` 模版时会在 `[DOCUMENTS]`
-位置安放几篇(通常 4 篇) 最能代表这个主题的摘要,`[KEYWORDS]` 处替换为前面主题建模生成的关键了列表, 所以模板中的 `[DOCUMENTS]` 和
-`[KEYWORDS]` 的固定的写法. 如果不给 `OpenAI()` 函数指定 `prompt`, 它会使用自己默认的提示词模板(bertopic.representation._openai.DEFAULT_CHAT_PROMPT),
+位置安放几篇(通常 4 篇) 最能代表这个主题的摘要,`[KEYWORDS]` 处替换为前面主题建模生成的关键字列表, 所以模板中的 `[DOCUMENTS]` 和
+`[KEYWORDS]` 的固定写法. 如果不给 `OpenAI()` 函数指定 `prompt`, 它会使用自己默认的提示词模板(bertopic.representation._openai.DEFAULT_CHAT_PROMPT),
 所以 `prompt` 是可选的. 另外 `BERTopic` 可选择的模型还有 `llamacpp`, `langchain`(还是 0.x 版), `cohere`.
 
 提示词发送给生成模型, 生成模型回一个简短的标签名. 
@@ -279,7 +279,7 @@ topic_model.update_topics(abstracts, representation_model=representation_model)
 }
 ```
 
-有 `"stop": "\n"` 话, `Ollama` 的回复是空, 不能简单去掉 `stop` 字段(除非定制一个 Ollama representation 类),
+有 `"stop": "\n"` 的话, `Ollama` 的回复是空, 不能简单去掉 `stop` 字段(除非定制一个 Ollama representation 类),
 但可用 `generator_kwargs` 参数覆盖, 设置 `"stop": "xxxxx-or-any"` 后就能得到如下的完全自然语言的标签
 
 | Topic | Count | Name                                                                                    | Representation                                                                                                                                                        |
@@ -290,13 +290,13 @@ topic_model.update_topics(abstracts, representation_model=representation_model)
 | ...   | ...   | ...                                                                                     | ...                                                                                                                                                                   |
 | 152   | 51    | 152_Long-Context LLM Extension, Retrieval Augmentation, and Evaluation                  | [Long-Context LLM Extension, Retrieval Augmentation, and Evaluation]                                                                                                  |
 
-使用上了生成模型, 一般不能担心它不能给你生成一个适合人类阅读的标签, 即使难以归纳它也会发挥它的幻觉优势给你创造出来.
+使用上了生成模型, 一般不用担心它不能给你生成一个适合人类阅读的标签, 即使难以归纳它也会发挥它的幻觉优势给你创造出来.
 
 有这个列表就没必要再用图展示那些分类标签了.
 
 ##### 小结
 
-学习了生成模型和表示模型如何无监督(没有标注数据的情况下)的对文本进行分类, 对主题建模. 再次简单回顾一下文本聚类和主题建模的全过程
+学习了生成模型和表示模型如何无监督(没有标注数据的情况下)地对文本进行分类, 对主题建模. 再次简单回顾一下文本聚类和主题建模的全过程
 
-文本嵌入(用嵌入模型) -> 向量降维(用降维模型, 如 PCA 或 UMAP 方法) -> 进行聚类(用聚类模型, 如 K-Menas 或 HDBSCAN) -> 
+文本嵌入(用嵌入模型) -> 向量降维(用降维模型, 如 PCA 或 UMAP 方法) -> 进行聚类(用聚类模型, 如 K-Means 或 HDBSCAN) -> 
 主题建模(如 BERTopic) -> 表示模型或生成模型对主题名称求精.
