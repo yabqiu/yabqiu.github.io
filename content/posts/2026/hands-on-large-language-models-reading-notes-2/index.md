@@ -20,14 +20,14 @@ showLastmod: true
 lastmod:
 ---
 
-#### 第三章：LLM的内部机制
+#### 第三章：LLM 的内部机制
 
-这一章才本书的最重要的部分，一个支撑现在大语言模型的基石，那就是 Transformer 模型, 占据了本书约 12% 的篇幅。学完分词与词嵌入后，现在开始探究
+这一章才是本书的最重要的部分，一个支撑现在大语言模型的基石，那就是 Transformer 模型, 占据了本书约 12% 的篇幅。学完分词与词嵌入后，现在开始探究
 Transformer 模型的工作原理。我们把 `Transformer LLM` 看成是一个接收文本输入并生成响应的系统， 模型总是在预测下一个 Token, 每个 Token
 的生成都是模型的一次前向传播(forward pass). 在生成当前 Token 后，会将该生成的 Token 追加到输入序列中，作为下一次预测的输入(
 或者说调整下次生成的提示词)--这就是前向传播。
 
-这种使用生成的前一个 Token 又作为输入来生成下一个 Token 的模型被称为自回归模型(autoregressive model)。而 BERT 是自回归文本表示模型。
+这种使用生成的前一个 Token 又作为输入来生成下一个 Token 的模型被称为自回归模型(autoregressive model)。而 BERT 是双向(Bidirectional)编码模型。
 
 前向传播的组成, 分词器后就是由 `Transformer` 堆叠而成的神经网络，最后是一个 LM head, 它负责将 Transformer 块的输出转换为 Token 的概率分数。
 <!--more-->
@@ -69,7 +69,7 @@ output = pipe(messages)
 print(output[0]["generated_text"][-1]["content"])
 ```
 
-`LLM head` 也是一个简单的神经网络层，我们打印一下 `model` 就可以按顺序显示所有层
+`LM head` 也是一个简单的神经网络层，我们打印一下 `model` 就可以按顺序显示所有层
 
 ```python
 from transformers import AutoModelForCausalLM
@@ -115,7 +115,7 @@ Phi3ForCausalLM(
 
 - 最外层是 `model` 和 `lm_head`
 - `model` 内部是 `embed_tokens`(词汇表大小 32064, 向量维度 3072), 和 `layers`.
-- `layers` 是一个堆叠的 Transformer 解码器层，由 32 个 `Phi3DecoderLayer` 类型的块
+- `layers` 是一个堆叠的 Transformer 解码器层，由 32 个 `Phi3DecoderLayer` 类型的块组成
 - 每一个 Transformer 块包含一个注意力层(self_attn) 和一个前馈神经网络层(mlp-multilayer perceptron(多层感知器))
 - 最后 `lm_head` 收到一个大小为 3072 的向量，并输出一个大小等于模型词汇表大小的向量(32064)，即每个元素对应一个 Token Embedding 的概率分数。
 
@@ -157,7 +157,7 @@ print(word)
 
 每个 Token 经过 Transformer 块时是并行处理的，我们注意到左图第一次处理 Prompt 时，Self-Attention 计算做了最大的贡献，缓存了
 Embedding/Output vector 的缓存，即 KV Cache, 预测出第一个输出 Token(这里的 Dear), 随后该输出 Token 附加到 Prompt, 作同样的处理，
-但其他 Token 的计算都可从缓存中获得，实际上象是在只需要为新 Token 预测下一个 Token。因此也能感觉到生成第一个 Token 的艰难, 能进入到 LLM
+但其他 Token 的计算都可从缓存中获得，实际上像是在只需要为新 Token 预测下一个 Token。因此也能感觉到生成第一个 Token 的艰难, 能进入到 LLM
 的 Token 数目就是上下文窗口大小。
 
 测试是否启用 KV Cache 的生成时间差异
@@ -182,7 +182,7 @@ print(time.time() - time0)
 ##### Transformer 块的内部结构
 
 Transformer 模型的核心就是那些堆叠的 Transformer 块，原始 Transformer 论文中约为 6 个，现在许多 LLM 中超过 100 个，比如模型
-`microsoft/Phi-3-mini-4k-instruct` 有 32 层，块与块之间首层相连，是链式处理的。
+`microsoft/Phi-3-mini-4k-instruct` 有 32 层，块与块之间首尾相连，是链式处理的。
 
 每一个 Transformer 块又由自注意力层(Self-attention) 和 前馈神经网络层(Feedforward neural network) 两部分组成。
 
@@ -196,7 +196,7 @@ Transformer 模型的核心就是那些堆叠的 Transformer 块，原始 Transf
 时也会回头看之前输入的 Token 哪些权重高值得关注，哪里权重低可被忽略。注意力机制的引入使得 Transformer 模型能够捕捉长距离的依赖关系，
 理解上下文中的复杂关系。
 
-注意力反映到计算方式那就是 Transformer 的精髓，所以为什么叫做 "Attention Is All Your Need". 下面试着肤浅的理解一下注意力计算方式。
+注意力反映到计算方式那就是 Transformer 的精髓，这就是为什么叫做 "Attention Is All You Need". 下面试着肤浅的理解一下注意力计算方式。
 
 注意力的输入包括当前 Token 的向量嵌入与所有前序 Token 的向量嵌入，输出目标是为当前位置生成与前序 Token 相关的一个新的向量嵌入。
 
@@ -222,7 +222,7 @@ Llama 2 和 Llama 3 等模型又发展出了分组查询注意力(Grouped-Query 
 增效方式都是通过减小涉及的矩阵大小来提高大模型推理的可扩展性，多查询注意力在所有注意力头之间共享 Wk 和 Wv 矩阵，保持独立的 Wq 矩阵。
 分组查询注意力不是所有的注意力头共享一套 Wk 和 Wv, 但是使用少于注意力头数目的 Wk 和 Wv.
 
-Flash Attention 是一种广受欢迎的方法和实现，可以显著提升 GPU 上 Transformer LLM 的训 练和推理速度。它通过优化 GPU 共享内存
+Flash Attention 是一种广受欢迎的方法和实现，可以显著提升 GPU 上 Transformer LLM 的训练和推理速度。它通过优化 GPU 共享内存
 （GPU’s shared memory，SRAM）和高带宽内存（high bandwidth memory，HBM）之间的数据加载和迁移来加速注意力计算.
 
 ##### 位置嵌入: RoPE(Rotary Position Embedding)
@@ -234,11 +234,11 @@ Wk 把位置编码成旋转角度。
 #### 小结
 
 Transformer LLM 每次处理提示词时可并发，最后生成一个 Token, 新 Token 回归组成新的提示词再预测后面的 Token, 已处理的 Token 计算有 KV
-Cache 供后面重用，所以感觉上第一个 Token 很耗时，后面的 Token 更快
+Cache 供后面重用，所以感觉上第一个 Token 很耗时，后面的 Token 更快.
 
-Transformer LLM 三个核心组件，分词器，堆叠的 Transformer 块，和 LLM head
+Transformer LLM 有三个核心组件，分词器，堆叠的 Transformer 块，和 LM head
 
-提示词的最后一个 Token 会进入到 LLM head, 然后得到模型词汇表中每个 Token 的概率分数，解码策略选择一个输出下一个 Token, 解码策略不同对应不同的
+提示词的最后一个 Token 会进入到 LM head, 然后得到模型词汇表中每个 Token 的概率分数，解码策略选择一个输出下一个 Token, 解码策略不同对应不同的
 temperature, 新 Token 回归到提示词重复执行相同的过程称为 Forward pass.
 
 每一个 Transformer 块由自注意力和前馈神经网络两部分组成，自注意力又由多个注意力头组成，每个注意力头有独立的 Wq, Wk, Wv 矩阵，计算当前
