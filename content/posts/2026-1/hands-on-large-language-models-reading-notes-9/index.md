@@ -27,7 +27,7 @@ lastmod:
 [Build a Large Language Model (From Scratch)](https://www.manning.com/books/build-a-large-language-model-from-scratch)
 这本书，或者参考 Karpathy 的 [nanoGPT](https://github.com/karpathy/nanogpt) 项目。
 
-先开始从构建一个文本嵌入模型开始吧。嵌入模型 NLP 的基础，它可应用于多种场景, 如监督分类(supervised classification), 
+先从构建一个文本嵌入模型开始吧。嵌入模型是 NLP 的基础，它可应用于多种场景, 如监督分类(supervised classification), 
 无监督分类(unsupervised classification), 语义搜索等, 甚至为 ChatGPT 赋予记忆功能。
 
 嵌入模型的功能就是把非结构化的文本转换为数值表示的向量，这样才可计算，这一转换过程称为嵌入(embedding)。对输入进行嵌入通常由 LLM 执行，
@@ -42,9 +42,9 @@ lastmod:
 对比学习的基本理念是，向模型输入相似的和不相似的文档对作为示例，这是学习文档之间的相似性或差异性并构建相关模型的最佳方式。<!--more-->
 
 在自然语言处理领域，对比学习的一个框架是 sentence-transformers, 相应的技术是 SBERT(Sentence-BERT)，它减小了原始 BERT 的计算开销。在
-SBERT 之前句子嵌入通通用交叉编码器(cross-encoder) 架构，并结合 BERT 模型来实现，交叉编码器计算 n 个句子两两相似度，需要 n(n-1)/2 次计算。
+SBERT 之前句子嵌入通常使用交叉编码器(cross-encoder) 架构，并结合 BERT 模型来实现，交叉编码器计算 n 个句子两两相似度，需要 n(n-1)/2 次计算。
 
-SBERT 有一种更快的创建可进行语义比较的嵌入向量，采用双编码器的方式，并通过损失函数对句子嵌入进行优化，这种方法比交叉编码更快。
+SBERT 有一种更快地创建可进行语义比较的嵌入向量的方式，采用双编码器，并通过损失函数对句子嵌入进行优化，这种方法比交叉编码器更快。
 
 #### 构建嵌入模型
 
@@ -56,7 +56,7 @@ SBERT 有一种更快的创建可进行语义比较的嵌入向量，采用双�
 3. 中性(Neutral): "小明今天骑自行车去了图书馆" 和 "小明今天买了三斤肉" 的关系是中立的，两句向量距离应该适中，去图书馆与买肉没有关系
 
 我们将使用 GLUE(**G**eneral **L**anguage **U**nderstanding **E**valuation benchmark) 基准数据集来创建和微调嵌入模型。它包含了
-392,702 带在推理关系标注(蕴含, 矛盾, 中立)的句子对。我们将使用其中的 5 万对来训练模型，剩下的用来评估模型性能。
+392,702 带有推理关系标注(蕴含, 矛盾, 中立)的句子对。我们将使用其中的 5 万对来训练模型，剩下的用来评估模型性能。
 
 这还得开动我的 4090 来构建这样的嵌入模型了, 在有 4090 的 Linux 机器下准备
 
@@ -128,14 +128,15 @@ DatasetDict({
 
 ##### 训练模型
 
-实战开始了，通常我们可以选择一个现有的 sentence-transformers 模型进行微调，但这里将从头开始训练一个嵌入模型。
+实战开始了，通常我们可以选择一个现有的 sentence-transformers 模型进行微调，但这里将从头开始训练一个嵌入模型。下面也是基于一个预训练的嵌入模型(如
+`bert-base-uncased`) 训练的，为何还叫做从头开始训练呢？可能是因为 `bert-base-uncased` 只是一个通用的预训练模型，没有为相似度作优化。
 
 接着要确定两件事
 
 1. 确定一个用于嵌入单词的预训练模型，将使用不区分大小写版的 BERT 基座模型，用 `microsoft/mpnet-base` 作为基础嵌入模型也行
 2. 定义一个用于优化模型的损失函数(loss function), 将使用 softmax 损失函数
 
-需要依赖有
+所需依赖有
 
 ```shell
 pip install sentence_transformers datasets 'accelerate>=1.1.0' tqdm
@@ -180,7 +181,7 @@ evaluator = EmbeddingSimilarityEvaluator(
 # 定义训练参数
 args = SentenceTransformerTrainingArguments(
     output_dir="base_embedding_model",
-    num_train_epochs=1,              # 只训练一个 epoch(记元)
+    num_train_epochs=1,              # 只训练一个 epoch(轮次)
     per_device_train_batch_size=32,
     per_device_eval_batch_size=32,
     warmup_steps=100,                # 前 100 步学习率从 0 线性增长
@@ -254,7 +255,7 @@ drwxrwxr-x 2 yanbin yanbin 4.0K May 26 13:10 1_Pooling
 -rw-rw-r-- 1 yanbin yanbin 5.5K May 26 13:10 training_args.bin
 ```
 
-训练出的输出文件占 4.9G. 如果进行多轮(如 num_train_epochs=2) 训练， 那么增加更多的目录，如 `checkpoint-2000`, `checkpoint-2500` 等,
+训练出的输出文件占 4.9G. 如果进行多轮(如 num_train_epochs=2) 训练， 那么会增加更多的目录，如 `checkpoint-2000`, `checkpoint-2500` 等,
 所以每多一轮文件大小增加一倍。
 
 在执行 `trainer.train()` 前与后 `evaluator(embedding_model)` 的值分别为
@@ -275,14 +276,14 @@ drwxrwxr-x 2 yanbin yanbin 4.0K May 26 13:10 1_Pooling
 
 ##### 深入评估模型
 
-除了用 STSB 测试模型，在 GLUE(`nyu-mll/glue`) 基准数据集还包含多个用于评估数据。用于评估嵌入模型的基准还有很多，大规模文本嵌入基准(Massive
+除了用 STSB 测试模型，GLUE(`nyu-mll/glue`) 基准数据集还包含多个用于评估的数据集。用于评估嵌入模型的基准还有很多，大规模文本嵌入基准(Massive
 Text Embedding Benchmark, MTEB) 为此而生，MTEB 涵盖 8 个嵌入任务，涉及 58 个数据集和 112 种语言。
 
 8 个嵌入任务是
 
 1. Bitext Mining(双语文本挖掘), 代表数据集 BUCC, Tatoeba
 2. Classification(分类), 代表数据集 AmazonPolarity, Emotion, IMDB, ToxicConversations
-3. Clustering(聚类),代表数据集 ArxivS2S, RedditP2P, TwentyNewsgroup
+3. Clustering(聚类), 代表数据集 ArxivS2S, RedditP2P, TwentyNewsgroup
 4. Pair Classification(句对分类), 代表数据集：SprintDuplicateQuestions、TwitterSemEval2015
 5. Reranking(重排序), 代表数据集：AskUbuntuDupQuestions、SciDocsRR
 6. Retrieval(信息检索), 代表数据集：MSMARCO、NQ、HotpotQA、FEVER、TREC-COVID
@@ -308,14 +309,14 @@ Text Embedding Benchmark, MTEB) 为此而生，MTEB 涵盖 8 个嵌入任务，�
 余弦相似度损失函数常用于语义文本相似度任务，数值介于 0 和 1 之间，值越大越相似(cos(θ), 越接近 1, 夹角越小越相似, 不要与余弦距离搞混)。
 它的原理很简单——首先计算两段文本的两个嵌入向量之间的余弦相似度，然后将其与标注的相似度分数进行比较。
 
-将余弦相似度用于 NLI 数据集时，必须将标注的标签(0: 蕴含, 1: 中性, 2: 矛盾) 转换为相似度分数(1,0, 0).
+将余弦相似度用于 NLI 数据集时，必须将标注的标签(0: 蕴含, 1: 中性, 2: 矛盾) 转换为相似度分数(1, 0, 0).
 
-如果要把上面的训练嵌入模型的代码把损失函数从 softmax 损失函数改为余弦相似度损失函数，关键代码如下
+如果要将上面训练嵌入模型代码中的损失函数从 softmax 改为余弦相似度损失函数，关键代码如下
 
 ```python
 # 从 GLUE 加载的 MNLI 数据集转换 Label
 # 中性/矛盾 = 0, 蕴含=1
-mapping = {2: 0, 1:0, 0: 1}
+mapping = {2: 0, 1: 0, 0: 1}
 train_dataset = Dataset.from_dict({
     "sentence1": train_dataset["premise"],
     "sentence2": train_dataset["hypothesis"],
@@ -332,12 +333,12 @@ train_loss = losses.CosineSimilarityLoss(model=embedding_model)
 
 > {'pearson_cosine': 0.7250524707965853, 'spearman_cosine': 0.7289073126352569}
 
-效果看起来要好一些，训练后生成的目录大小同样为 4.9G, 看来训练数据和嵌入基础嵌入模型的规格决定了生成的文件大小。
+效果看起来要好一些，训练后生成的目录大小同样为 4.9G, 看来训练数据和基础嵌入模型的规格决定了生成的文件大小。
 
 在我们编写代码时可能注意到在 [sentence_transformers.sentence_transformer.losses](https://github.com/huggingface/sentence-transformers/tree/main/sentence_transformers/sentence_transformer/losses)
-在许多可选的损失函数, 如 TripletLoss, MSELoss, ContrastiveLoss, CoSENTLoss, AnglELoss, DistillKLDivLoss, MarginMSELoss 等等。
+中有许多可选的损失函数, 如 TripletLoss, MSELoss, ContrastiveLoss, CoSENTLoss, AnglELoss, DistillKLDivLoss, MarginMSELoss 等等。
 
-**多负例排序排序损失函数(MNR: Multiple Negatives Ranking)**
+**多负例排序损失函数(MNR: Multiple Negatives Ranking)**
 
 在 `sentence_transformers.sentence_transformer.losses` 中相关的函数有
 
@@ -472,6 +473,6 @@ embeddings.shape
 
 我们可以用刚训练出来的嵌入模型与选择的基础模型 `bert-base-uncased` 进行对比，它们生成的嵌入向量还是不一样的。
 
-想要训练一个好的嵌入模型首先要选择一个合适的基础模型，其实就是要好的用来训练的数据，还必须由人工构建的或作过良好标注数据，再就是选择一个恰当的损失函数实现。
+想要训练一个好的嵌入模型首先要选择一个合适的基础模型，其实就是要好的用来训练的数据，还必须由人工构建的或做过良好标注的数据，再就是选择一个恰当的损失函数实现。
 
 本章的前半部分的学习到此为止，后面部分是微调嵌入模型和无监督学习。
