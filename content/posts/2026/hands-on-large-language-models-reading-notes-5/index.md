@@ -63,8 +63,8 @@ Create a funny joke about chickens.<|end|>
 <|endoftext|>
 ```
 
-其中 `<|user|>`, `<|end|>`, 和 `<|endoftext|>` 是模型的特殊标记, 用于区分不同的角色和对话的结束. 虽然 `pipe.tokenizer.bos_token)`
-是 `<s>`, 但在 `pipe.tokenizer.chat_tempate` 这个 `Jinja2` 模板中已经不用 `<s>` 这个特殊 Token 了。
+其中 `<|user|>`, `<|end|>`, 和 `<|endoftext|>` 是模型的特殊标记, 用于区分不同的角色和对话的结束. 虽然 `pipe.tokenizer.bos_token`
+是 `<s>`, 但在 `pipe.tokenizer.chat_template` 这个 `Jinja2` 模板中已经不用 `<s>` 这个特殊 Token 了。
 
 这里的 `pipe.tokenizer.chat_template` 内容是
 
@@ -124,7 +124,7 @@ print(output[0]["generated_text"])
 ```
 
 `do_sample=False` 时不进行取样，我们前面知道 `LLM` 在每次预测下一个 Token 时会对整个语汇表中的每一个 Token 打分，`do_sample=False`
-时只取最高分的 Token, 这时候就不大会发挥模型的想像力。 在 `do_sample=False` 时上面代码每次都返回一样的
+时只取最高分的 Token, 这时候就不大会发挥模型的想象力。 在 `do_sample=False` 时上面代码每次都返回一样的
 
 > Why did the chicken join the band? Because it had the drumsticks!
 
@@ -141,7 +141,7 @@ Why don't chickens use computers? Because they already have their own "fowl" tec
 Why don't chickens use computers? Because they're afraid of the Wi-Fi!
 ```
 
-但是 `pipeline(..., do_sample=True)` 时调用 `pipe()` 函数设定 `templerature=0.1` 时又会产生 `do_sample=False` 的效果。
+但是 `pipeline(..., do_sample=True)` 时调用 `pipe()` 函数设定 `temperature=0.1` 时又会产生 `do_sample=False` 的效果。
 
 ```python
 from transformers import GenerationConfig
@@ -160,7 +160,7 @@ output = pipe(messages, generation_config=GenerationConfig(do_sample=True, tempe
 
 `GenerationConfig` 中的另两个参数
 
-- `top_p`(nucleus sampling), `top_p=0.1` 表示从高概率往下采样，直拉概率累积为 `0.1`, 然后从那些 `Token` 当中采用， `top_p=1` 的话会考虑所有的 Token。
+- `top_p`(nucleus sampling), `top_p=0.1` 表示从高概率往下采样，直到概率累积为 `0.1`, 然后从那些 `Token` 当中采用， `top_p=1` 的话会考虑所有的 Token。
 - `top_k`: 只考虑概率最多的 `k` 个 `Token`, `top_k=100` 的话只考虑头部的 100 个 `Token`. `top_k=0` 也没有报错，好像是最大值的效果
 
 #### 提示词工程(Prompt Engineering)
@@ -184,7 +184,7 @@ LLM 会更关注提示词的开头(primacy effect) 和结尾(recency effect)，�
 
 #### 高级提示工程
 
-提示词主要包含了指令，数据和输出指示器, 也不限于这三个组件，下面的提示词包含了多多组件
+提示词主要包含了指令，数据和输出指示器, 也不限于这三个组件，下面的提示词包含了多个组件
 
 - 角色定位: 你是干什么的
 - 指令: 当前的任务
@@ -215,7 +215,7 @@ pipe = pipeline(
 messages = [
     {"role": "user", "content": "树上有 9 只鸟，猎人开枪打死了一只，树上还剩几只鸟？"},
     {"role": "assistant", "content": "树上还剩 0 只鸟，因为枪声吓跑了其他的鸟。"},
-    {"role": "user", "content": "树上有 18 只鸟，开枪打死了两只，树上还剩几只鸟？回数一个数字，并解释原因"}
+    {"role": "user", "content": "树上有 18 只鸟，开枪打死了两只，树上还剩几只鸟？回答一个数字，并解释原因"}
 ]
 
 output = pipe(messages, generation_config=GenerationConfig(do_sample=False, max_new_tokens=500, max_length=None))
@@ -253,7 +253,7 @@ print(output[0]["generated_text"])
 
 `{'role': 'assistant', 'content'` 中 `</think>` 之前的内容都是思考过程，其他才是真正的回答。
 
-模型在思考的过程中也可能会作多个不同的推理，最后会选择一个模型自认为最合适的答案，但我也碰到过推理陷入死循环的情况，可适当的调整 `temperature`
+模型在思考的过程中也可能会做多个不同的推理，最后会选择一个模型自认为最合适的答案，但我也碰到过推理陷入死循环的情况，可适当地调整 `temperature`
 和 `top_p` 值来影响每个答案，以提高采样的多样性。
 
 除了思维链(Chain of Thought), 还有更复杂的思维树(Tree of Thought), 这时候模型会同时生成多个推理路径，最后选择一个最合适的答案。
@@ -311,7 +311,7 @@ Imagine three different experts are answering, this question. All experts will w
   就是用 LLM 对模型输出进行评估
 - 微调: 在包含预期输出的数据上对模型进行微调
 
-最后是一个使用 `llama-cpp-python` 指定 `response_format={"type": "json_object"}` 的例子。 很早以前有学过线 C++ 的 llama-cpp, 
+最后是一个使用 `llama-cpp-python` 指定 `response_format={"type": "json_object"}` 的例子。 很早以前有学过使用 C++ 的 llama-cpp, 
 [用 llama.cpp 体验 Meta 的 Llama AI 模型](/llama-cpp-with-meta-llama-ai-models), 这是第一次接触 LLM 模型时写的一篇日志。
 
 接下来用 `llama-cpp-python` 的例子, 安装的依赖是 `uv add llama-cpp-python`, 安装时会有一个相应平台的编译过程, 它用的是单文件的 GGUF
@@ -328,7 +328,7 @@ llm = Llama.from_pretrained(
     verbose=False
 )
 
-question = "Create a warrior with fields 'name', 'class', and 'level' for an RPG in JSON for mat."
+question = "Create a warrior with fields 'name', 'class', and 'level' for an RPG in JSON format."
 
 output = llm.create_chat_completion(
     messages=[{"role": "user", "content": question}],
