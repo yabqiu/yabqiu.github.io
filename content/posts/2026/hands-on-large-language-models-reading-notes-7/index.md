@@ -22,15 +22,15 @@ lastmod:
 
 #### 第八章：语义搜索与 RAG
 
-在 BERT 之前 Google 只是关键搜索，当你把程序的出错信息(特别是带有本地文件路径)往 Google 一贴，什么也搜索不出来，此时就能体现低高级程序员的不同水平。
-现在形势不同，自从 BERT(Pre-Training of Deep Bidirectional Transformers for Language Understanding) 发表(2018年) 数月后, 
+在 BERT 之前 Google 只是关键词搜索，当你把程序的出错信息(特别是带有本地文件路径)往 Google 一贴，什么也搜索不出来，此时就能体现低级和高级程序员的不同水平。
+现在形势不同，自从一篇 BERT 的论文(Pre-Training of Deep Bidirectional Transformers for Language Understanding) 发表(2018年) 数月后, 
 Google 把`BERT` 整合进它的搜索引擎中，特别是加上各种 AI 工具，从此程序员不用再为出错信息而交流了。这就是语义搜索(semantic search)的威力. 
 
-很早就听说 `RAG`(Retrieval-Augmented Generation) 过时了言论，然而实际学习 AI 时总也避不开 `RAG`. 因为微调模型的少， 再加上模型的上下文窗口太小，
+很早就听说过 `RAG`(Retrieval-Augmented Generation) 已过时的论调，然而实际学习 AI 时总也避不开 `RAG`. 因为微调模型的少， 再加上模型的上下文窗口太小，
 所以有了 `RAG`, 持 `RAG` 过时之说大概是因为模型支持的上下文不断增大，原本以 `RAG` 片段作为提示词一部分的内容可以全部塞进上下文窗口中，
 但对于长短期记忆和大量的资料库的检索，`RAG` 仍然有其存在的价值。
 
-语义搜索和 RAG 是否也可以集成到 Lucence, Solr, Elasticsearch 等搜索引擎中，以提升搜索的准确性和效率呢？
+语义搜索和 RAG 是否也可以集成到 Lucene, Solr, Elasticsearch 等搜索引擎中，以提升搜索的准确性和效率呢？
 
 语义搜索的几个概念和通常做法
 
@@ -47,14 +47,14 @@ Google 把`BERT` 整合进它的搜索引擎中，特别是加上各种 AI 工�
 - 无法精准匹配特定短语: 语义检索对精确短语匹配效果差，这类场景更适合关键词匹配。因此推荐使用混合搜索（语义搜索 + 关键词搜索）来弥补这一不足。
 - 跨领域性能下降: 模型在训练数据之外的专业领域（如法律、医疗）表现会显著退化，因为领域词汇和语义分布与训练数据差异较大
 
-生成嵌入向量前对文档如何分片是个技术活，以句子为单位分块，粒度太小，导致向量无法捕捉足够的上下文信息; 以段落为单位更优一些，如时段落太大可考虑细分;
+生成嵌入向量前对文档如何分片是个技术活，以句子为单位分块，粒度太小，导致向量无法捕捉足够的上下文信息; 以段落为单位更优一些，如果段落太大可考虑细分;
 块与块之间增加重叠部分，可有效的保留上下文信息; 甚至分块的时候也利用 LLM 实现动态智能分块。
 
 最近邻搜索算法，对于数千至万量级的向量，用 NumPy 即可高效完成这种计算，当处理百万级的向量时，建议采用 Annoy 或 FAISS 等最近邻(ANN: Approximate
 nearest neighbor), 可能要用到 GPU 加速。另一类解决方案是用到专门的向量数据库(如 Weaviate, Pinecone), 它们有索引，或其他的过滤条件来优化搜索。
 
 面向稠密检索时，对嵌入模型微调可显著提升 LLM 在特定任务中的表现，微调过程的目标是使这些查询的嵌入向量更接近目标句子的嵌入向量。同时，
-模型需要处理与句子无关的查询.
+微调中也需引入与查询无关的负样本，帮助模型区分相关与不相关内容.
 
 ##### RAG
 
@@ -111,7 +111,7 @@ question = "Income generated"
 prompt_tpl = """Relevant information:
 {context}
 
-Provide a concise answer the following question using the relevant information provided above:
+Provide a concise answer to the following question using the relevant information provided above:
 {question}
 """
 
@@ -156,7 +156,7 @@ llm.close()
 
 > 用户提问：“比较 NVIDIA 2020 年与 2023 年的财报。 ”
 
-LLM 知道要分别对 NVIDIA 2020 年周报和 NVIDIA 2023 年周报进行 RAG 查询，再对比
+LLM 知道要分别对 NVIDIA 2020 年财报和 NVIDIA 2023 年财报进行 RAG 查询，再对比
 
 - 多跳 RAG
 
