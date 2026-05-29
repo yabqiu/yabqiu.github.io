@@ -22,7 +22,7 @@ lastmod:
 
 #### 第七章：高级文本生成技术与工具
 
-在上一章中已经从 `AutoModelForCausalLM`, `AutoTokenizer`, `pipeline` 过渡到了稍为高那么一层的 `llama-cpp-python` 的使用，
+在上一章中已经从 `AutoModelForCausalLM`, `AutoTokenizer`, `pipeline` 过渡到了稍微高那么一层的 `llama-cpp-python` 的使用，
 这一章将继续学习 `LLM` 的使用, 到真正能训练，微调模型还远着呢。 其中大部分的内容都在学习 `LangChain` 的过程中有所掌握，包括记忆机制，
 智能体工具调用等，所以这方面的内容没有具体展开。
 
@@ -30,7 +30,7 @@ lastmod:
 
 1. 模型输入/输出：模型加载与调用, 用 llama-cpp-python 演示
 2. 记忆机制：增强模型的上下文记忆能力，查看 `LangChain` 短期记忆相关日志 [LangChain 核心组件之短期记忆](/langchain-core-component-short-term-memory/)
-3. 智能体系统：整合外部工具实现复杂行为，用 `LangChain` 1.0 后的 `create_agent()` 将会很非常简单
+3. 智能体系统：整合外部工具实现复杂行为，用 `LangChain` 1.0 后的 `create_agent()` 将会非常简单
 4. 链式架构：模块化方法与组件的衔接组合, 这是 `LangChain` 0.x 的架构，1.0 后不再使用链式架构
 
 本章进到 `LangChain` 的学习当中，本人对 `LangChain` 已经有了一定程度的了解，由于 `LangChain` 1.0 于 2025 年 10 月份才正式发布，
@@ -94,7 +94,7 @@ Hey yourself!<|end|>
 ```
 
 注意，不同的模型有不同的特殊 `Token`, 比如有些时候能看到 `<s>`, `<SEP>` 等。其实以后应该不会直接面对 `<|user|>`, `<|assistant|>` 这些关键字了，
-这个抽象已经在模型的服务层屏蔽了，如使用 `Ollama` 的服务 `http://localhost:11434` 时直接递 JSON 格式的数据.
+这个抽象已经在模型的服务层屏蔽了，如使用 `Ollama` 的服务 `http://localhost:11434` 时直接传递 JSON 格式的数据.
 
 看了一下用 `LangChain` 0.x 的 `Chain` 还真是麻烦
 
@@ -174,7 +174,7 @@ llm.tokenizer().decode(llm.input_ids)
 ```
 
 这是与 llama-cpp 模型的交互文本. 上面的 `llm` 中可以查看到不少有用的信息，例如 `llm.token_bos()` 为 `1`, `llm.token_eos` 为 `32000`,
-`llm.token_nl()` 是 `13`, 用 `llm.tokenizer().decode([1])` 解码它们分别是 `''`, `''`, 和 `\n`, `1` 和 `32000` 是一样的。
+`llm.token_nl()` 是 `13`, 用 `llm.tokenizer().decode([1])` 解码, 它们分别是 `''`, `''`, 和 `\n`, `1` 和 `32000` 是一样的。
 
 `llm` 还有 `generate()` 方法. `llm.metadata['tokenizer.chat_template']` 是它所用的模板
 
