@@ -620,7 +620,8 @@ The LLM
 下面是量化，微调，合并权重和验证模型的完整代码
 
 ```python
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, PreTrainedTokenizerBase, pipeline, GenerationConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import PreTrainedTokenizerBase, pipeline, GenerationConfig
 from datasets import load_dataset
 from peft import LoraConfig, prepare_model_for_kbit_training, get_peft_model
 from peft import AutoPeftModelForCausalLM
