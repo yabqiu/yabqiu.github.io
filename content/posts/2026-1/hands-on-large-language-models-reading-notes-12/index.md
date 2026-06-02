@@ -79,7 +79,7 @@ apple
 基础模型不听指令，也不会聊天，第一次微调的目标就是让模型能听从指令，能回答问题，进行对话，而不只是续写。微调过程中，基座模型的参数会更新，
 以更好的适应目标任务，如遵循指令。它主要是训练模型能基于用户输入预测一个 Token，既然叫监督微调，那就是要喂给它带标注的数据进行训练。
 
-一般模型名中带有 `-Instruct`, `Chat`, `-it` 这类后缀的就是经过指令微调的模型了，比如试一下 `Qwen2.5-3B-Instruct`.
+一般模型名中带有 `-Instruct`, `-Chat`, `-IT`, `-RLHF`, `-SFT` 这类后缀的就是经过指令微调的模型了，比如试一下 `Qwen2.5-3B-Instruct`.
 
 我们把上面代码中的 model 由 `Qwen/Qwen2.5-3B` 改为 `Qwen/Qwen2.5-3B-Instruct`, 然后运行同样的代码
 
@@ -286,14 +286,14 @@ tokenizer.pad_token = tokenizer.eos_token # 书中是 "<PAD>"，但 tokenizer �
 tokenizer.padding_side = "left"
 
 # 想要的话就保存量化后的模型
-tokenizer.save_pretrained("tinyllama-1.1b-4bit")
-model.save_pretrained("tinyllama-1.1b-4bit")
+tokenizer.save_pretrained("TinyLlama-1.1B-4bit")
+model.save_pretrained("TinyLlama-1.1B-4bit")
 ```
 
 量化后模型大小约 1G
 
 ```bash
-$ ls -lh tinyllama-1.1b-4bit
+$ ls -lh TinyLlama-1.1B-4bit
 total 981M
 -rw-rw-r-- 1 yanbin yanbin 1.2K Jun  1 10:47 config.json
 -rw-rw-r-- 1 yanbin yanbin  123 Jun  1 10:47 generation_config.json
@@ -346,7 +346,7 @@ tensor([[-0.0015, -0.0024, -0.0068,  ...,  0.0053, -0.0010, -0.0134],
 
 如果输入 `model` 就会发现该模型有 22 层 Transformer 块。
 
-当 model_name 为 `tinyllama-1.1b-4bit` 时, 读取本地量化后的版本，输出如下
+当 model_name 为 `TinyLlama-1.1B-4bit` 时, 读取本地量化后的版本，输出如下
 
 ```text
 model.embed_tokens.weight                                    torch.float32   (32000, 2048)
@@ -511,7 +511,7 @@ Offering separate science tracks would inspire students to explore science furth
 ##### 训练
 
 ```python
-output_dir = "tinyllama-1.1b-4bit-fine-tuned"
+output_dir = "TinyLlama-1.1B-4bit-fine-tuned"
 
 training_arguments = SFTConfig(
     output_dir=output_dir,
@@ -539,17 +539,17 @@ trainer = SFTTrainer(
 
 trainer.train()
 
-trainer.model.save_pretrained("tinyllama-1.1b-4bit-qlora")
-tokenizer.save_pretrained("tinyllama-1.1b-4bit-qlora")
+trainer.model.save_pretrained("TinyLlama-1.1B-4bit-qlora")
+tokenizer.save_pretrained("TinyLlama-1.1B-4bit-qlora")
 ```
 
 用 RTX 4090 十分钟就训练完成, 如果是使用全部的 23110 条 'test_sft' 记录，需要训练 54 分钟。训练应该要用它的 'train_sft' 数据集，其 207865
 条记录，如果耗时是线性的关系，那么训练就要花 12 个小时。
 
-训练完后生成 LoRA 的参数在目录 `tinyllama-1.1b-4bit-qlora` 中
+训练完后生成 LoRA 的参数在目录 `TinyLlama-1.1B-4bit-qlora` 中
 
 ```text
-ls -lh tinyllama-1.1b-4bit-qlora
+$ ls -lh TinyLlama-1.1B-4bit-qlora
 total 100M
 -rw-rw-r-- 1 yanbin yanbin 1.6K Jun  1 13:25 README.md
 -rw-rw-r-- 1 yanbin yanbin 1.2K Jun  1 13:25 adapter_config.json
@@ -568,20 +568,20 @@ total 100M
 from peft import AutoPeftModelForCausalLM
 
 model = AutoPeftModelForCausalLM.from_pretrained(
-    "tinyllama-1.1b-4bit-qlora",
+    "TinyLlama-1.1B-4bit-qlora",
     low_cpu_mem_usage=True,
     device_map="auto"
 )
 
 merged_model = model.merge_and_unload()
-merged_model.save_pretrained("tinyllama-1.1b-qlora-merged")
-tokenizer.save_pretrained("tinyllama-1.1b-qlora-merged")  # pipeline 能用的话还需要保存下 tokenizer
+merged_model.save_pretrained("TinyLlama-1.1B-sft")
+tokenizer.save_pretrained("TinyLlama-1.1B-sft")  # pipeline 能用的话还需要保存下 tokenizer
 ```
 
-合并保存后生成的目录 `tinyllama-1.1b-qlora-merged` 大小为 4.1G
+合并保存后生成的目录 `TinyLlama-1.1B-sft` 大小为 4.1G
 
 ```text
-ls -lh tinyllama-1.1b-qlora-merged
+ls -lh TinyLlama-1.1B-sft
 total 4.1G
 -rw-rw-r-- 1 yanbin yanbin  724 Jun  1 13:39 config.json
 -rw-rw-r-- 1 yanbin yanbin  123 Jun  1 13:39 generation_config.json
@@ -595,7 +595,7 @@ from transformers import pipeline, GenerationConfig
 
 pipe = pipeline(
     "text-generation",
-    model="tinyllama-1.1b-qlora-merged",
+    model="TinyLlama-1.1B-sft",
     return_full_text=False,
     device_map="cuda"
 )
@@ -654,8 +654,8 @@ tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
 tokenizer.pad_token = tokenizer.eos_token
 tokenizer.padding_side = "left"
 
-# tokenizer.save_pretrained("tinyllama-1.1b-4bit")
-# model.save_pretrained("tinyllama-1.1b-4bit")
+# tokenizer.save_pretrained("TinyLlama-1.1B-4bit")
+# model.save_pretrained("TinyLlama-1.1B-4bit")
 
 template_token = AutoTokenizer.from_pretrained("TinyLlama/TinyLlama-1.1B-Chat-v1.0")
 
@@ -687,7 +687,7 @@ peft_config = LoraConfig(
 model = prepare_model_for_kbit_training(model)  # model 是前面用 4 位量化后的模型
 #model = get_peft_model(model, peft_config)
 
-output_dir = "tinyllama-1.1b-4bit-qlora"
+output_dir = "TinyLlama-1.1B-4bit-fine-tuned"
 
 training_arguments = SFTConfig(
   output_dir=output_dir,
@@ -715,25 +715,28 @@ trainer = SFTTrainer(
 
 trainer.train()
 
-trainer.model.save_pretrained("tinyllama-1.1b-4bit-qlora")
-tokenizer.save_pretrained("tinyllama-1.1b-4bit-qlora")
+# LoRA 是一个 adapter, 只保存 LoRA 的权重, 并且在该目录中会有一个 adapter_config.json 文件，其中有 base_model 的信息
+# "base_model_name_or_path": "TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T",
+trainer.model.save_pretrained("TinyLlama-1.1B-4bit-qlora")
+tokenizer.save_pretrained("TinyLlama-1.1B-4bit-qlora")
 
 
 model = AutoPeftModelForCausalLM.from_pretrained(
-  "tinyllama-1.1b-4bit-qlora",
+  "TinyLlama-1.1B-4bit-qlora",
   low_cpu_mem_usage=True,
   device_map="auto"
 )
 
+# 由于在 TinyLlama-1.1B-4bit-qlora 关联了 base_model, 所以它知道 merge 到哪里
 merged_model = model.merge_and_unload()
-merged_model.save_pretrained(output_dir)
-tokenizer.save_pretrained(output_dir)  # pipeline 能用的话还需要保存下 tokenizer
+merged_model.save_pretrained("TinyLlama-1.1B-sft")
+tokenizer.save_pretrained("TinyLlama-1.1B-sft")  # pipeline 能用的话还需要保存下 tokenizer
 
 
 # 测试
 pipe = pipeline(
   "text-generation",
-  model=output_dir,
+  model="TinyLlama-1.1B-sft",
   return_full_text=False,
   device_map="cuda"
 )
