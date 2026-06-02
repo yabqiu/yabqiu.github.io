@@ -96,14 +96,14 @@ print(dpo_dataset)
 dpo_dataset["train"].to_pandas()
 ```
 
-```text
+{{< highlight-wrap text >}}
 DatasetDict({
     train: Dataset({
         features: ['system', 'input', 'chosen', 'rejected', 'generations', 'order', 'labelling_model', 'labelling_prompt', 'raw_labelling_response', 'rating', 'rationale', 'status', 'original_chosen', 'original_rejected', 'chosen_score', 'in_gsm8k_train'],
         num_rows: 12859
     })
 })
-```
+{{</ highlight-wrap >}}
 
 其中的数据通过调用 `gpt-4-1106-preview` 模型来生成的，输入 `input`, 有两个输出，`chosen` 和 `rejected`, `rating` 中分别是它们对应的分数，
 如 `[9.0, 8.0]`, `chosen_score` 选择了高分项作为偏好。
