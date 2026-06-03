@@ -15,7 +15,7 @@ tags:
   - Machine Learning
   - LLM
 comment: true
-codeMaxLines: 50
+codeMaxLines: 80
 showLastmod: true
 lastmod:
 ---
