@@ -3,7 +3,7 @@ title: "《从零构建大模型》阅读笔记(一)"
 url: /build-a-large-language-model-from-scratch-reading-notes-1/
 date: 2026-06-02T16:49:20-05:00
 featured: false
-draft: false
+draft: true
 type: post
 toc: false
 # menu: main
