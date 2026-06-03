@@ -37,7 +37,7 @@ lastmod:
 模型从大的功能分为
 
 1. 仅编码的表示模型(representation model)，如种种嵌入模型，都比较小的，约几百兆大小, 像 BERT(bidirectional encoder representations from Transformers)
-2. 生成模型(generative model),关注生成文本, 通常不会被训练用于生成嵌入, 像 GPT(Generative Pre-trained Transformer)<!--more-->
+2. 生成模型(generative model), 关注生成文本, 通常不会被训练用于生成嵌入, 像 GPT(Generative Pre-trained Transformer)<!--more-->
 
 LLM 这个概念不仅指生成模型，也包括表示模型。生成式 LLM 就是一种 Seq2Seq 的文本生成系统，补全或者说猜测下一个 Token, 所以生成模型又称补全模型
 (completion model), `OpenAI` V1 的 API 有一个是 `/v1/chat/completions`. 通过训练和微调可以做成指令模型 (instruct model) 或对话模型(chat model).
@@ -50,12 +50,13 @@ GPT-1 参数量 117M, GPT-2: 1.5B, GPT-3: 175B, 想想现在的非开源的 Chat
 
 2023 年 ChatGPT(GPT-3.5) 的发布被称为 `生成式 AI 元年`， 又叫做 `ChatGPT` 时刻，除了最广泛的 Transformer 架构外，也有别的如 `Mamba` 和 `RWKV`.
 
-LLM 现在更多是指生成式模型，最初步的预训练通常不针对特定的任务或应用，而仅用于预测下一个词，这样的模型称为基础模型或基座模型，这些模型通常不会遵循指令。
+LLM 现在更多是指生成式模型，最初步的预训练通常不针对特定的任务或应用，而仅用于预测下一个词，这样的模型称为基础模型(base model)或基座模型(foundation model),
+这些模型通常不会遵循指令。
 
-拿一个基座模型，针对具体任务进一步训练，能遵循指令，这叫微调，最花钱耗时的是基座模型的预训练. 基础模型和微调模型都属于预训练模型，这些名称有点乱。
+拿一个基座模型，针对具体任务进一步训练，使之能遵循指令，这叫微调，最花钱耗时的是基座模型的预训练. 基础模型和微调模型都属于预训练模型，这些名称有点乱。
 
 特别是模型参数的表示法，一到中文中反而让人糊涂了，比如 3.8B 的参数，硬是要说成 38 亿参数，这个没法和国际接轨了，在这种特定行业的术语应该用 3.8B。
-好吧，记住一个对应 10 亿一个 B，按这个关系转换。
+好吧，记住两个对应 10 亿一个 B，万亿是一个 T，按这个关系转换。
 
 下面是要先开始上手模型的使用，还不急着教授如何训练一个基础模型。要用到 `Hugging Face` 上的一个模型，Python 环境，先安装如下依赖，用 `uv` 吧
 
@@ -102,7 +103,7 @@ vocab_files_names: {'tokenizer_file': 'tokenizer.json', 'vocab_file': 'tokenizer
 model_max_length: 4096
 {{</ highlight-wrap >}}
 
-继续实现像 `LangChain` 的一个 `init_chat_model()`
+注意到该模型的后缀为 `-instruct`, 表示这是一个经过指令微调过的模型，它是能理解指令，进行对话的. 继续实现像 `LangChain` 的一个 `init_chat_model()`
 
 ```python
 generator = pipeline(
@@ -130,9 +131,9 @@ print(output[0]["generated_text"])
 
 - return_full_text: False 时只返回生成的文本，不返回输入的文本
 - max_new_tokens: 允许模型生成的最大 Token 数
-- do_sample: 决定模型是否采用策略来选择下一个 Token, False 时选择概率最高的 Token, 就是那个 temperature 
+- do_sample: 决定模型是否采用策略来选择下一个 Token, False 时选择概率最高的 Token, temperature 的创意值就是基于不同的采用策略来来选择下一个 Token 的。 
 
-模型分两大类，表示模型(仅编码, 如 BERT)与生成模型(仅解码, 如 GPT 系列)，这两类都被视为 LLM, 通常面对终端用户的是生成模型。
+模型分两大类，表示模型(仅编码, 如 BERT) 与生成模型(仅解码, 如 GPT 系列)，这两类都被视为 LLM, 通常面对终端用户的是生成模型。
 
 #### 第二章: Token 和 Embedding
 
@@ -156,14 +157,14 @@ print(tokenized.input_ids)
 generate_ouput = model.generate(
     input_ids=tokenized.input_ids,
     attention_mask=tokenized.attention_mask,
-    pad_token_id=tokenizer.eos_token_id,
+    pad_token_id=tokenizer.eos_token_id,  # 用 eos_token_id 来填充输入文本，是一个常用做法
     max_new_tokens=20
 )
 
 print(tokenizer.decode(generate_ouput[0]))
 ```
 
-每次执行都要重新加载 7.6GB 的模型到 macOS 的统一内存中，`LLM` 服务肯定不能这么干。看输出
+每次执行都要重新加载 7.6GB 的模型到 macOS 的统一内存中，`LLM` 作为服务的话肯定不能这么干(应只加载模型一次)。看输出
 
 {{< highlight-wrap text >}}
 ['▁Write', '▁an', '▁email', '▁apolog', 'izing', '▁to', '▁Sarah', '▁for', '▁the', '▁trag', 'ic', '▁gard', 'ing', '▁m', 'ish', 'ap', '.', '▁Exp', 'lain', '▁ho', '▁it', '▁happened', '.', '<|assistant|>']
@@ -263,8 +264,8 @@ Token，猜猜猜用的。不同分词器会有自己特殊 Token, 如 `Phi-3` �
 分词中包含的 Token 是由三个主要因素决定的：分词方法，用于初始化分词器的参数, 以及训练分词器的目标数据所在的领域。分词方法最常用就是 `BPE`,
 分词器参数包括词表大小，特殊 Token, 大小写处理策略。
 
-Token Embedding, 词分好了，这样语言变成 Token 序列了，要为每个 Token 找到最佳的数值表示，这样才能被计算。一个 Token 并不对应一个标量值，
-而变成一个向量，每个分量值就是权重值，开始随机初始化，训练模型就是调教这些权重值。
+Token Embedding, 词分好了，这样语言变成 Token 序列了，要为每个 Token 找到最佳的数值表示，这样才能被计算。一个 Token 并只不是对应一个标量值，
+还将映射为一个向量，每个分量值就是权重值，开始随机初始化，训练模型就是调教这些权重值。
 
 测试 `Embedding`
 

@@ -25,7 +25,7 @@ lastmod:
 这一章才是本书的最重要的部分，一个支撑现在大语言模型的基石，那就是 Transformer 模型, 占据了本书约 12% 的篇幅。学完分词与词嵌入后，现在开始探究
 Transformer 模型的工作原理。我们把 `Transformer LLM` 看成是一个接收文本输入并生成响应的系统， 模型总是在预测下一个 Token, 每个 Token
 的生成都是模型的一次前向传播(forward pass). 在生成当前 Token 后，会将该生成的 Token 追加到输入序列中，作为下一次预测的输入(
-或者说调整下次生成的提示词)--这就是前向传播。
+或者说调整下次生成的提示词), 如此循环往复，逐个生成 Token，直到完成整段响应——这种机制称为自回归(autoregressive) 生成。
 
 这种使用生成的前一个 Token 又作为输入来生成下一个 Token 的模型被称为自回归模型(autoregressive model)。而 BERT 是双向(Bidirectional)编码模型。
 
@@ -239,7 +239,7 @@ Cache 供后面重用，所以感觉上第一个 Token 很耗时，后面的 Tok
 Transformer LLM 有三个核心组件，分词器，堆叠的 Transformer 块，和 LM head
 
 提示词的最后一个 Token 会进入到 LM head, 然后得到模型词汇表中每个 Token 的概率分数，解码策略选择一个输出下一个 Token, 解码策略不同对应不同的
-temperature, 新 Token 回归到提示词重复执行相同的过程称为 Forward pass.
+temperature, 新 Token 回归到提示词重复执行相同的过程称为自回归(autoregressive) .
 
 每一个 Transformer 块由自注意力和前馈神经网络两部分组成，自注意力又由多个注意力头组成，每个注意力头有独立的 Wq, Wk, Wv 矩阵，计算当前
 Token 与前序 Token 的相关性评分。一般训练出来的模型 Wq, Wk, Wv 矩阵的套数是 Transformer 块数 * 注意力头数. 不同的注意力优化通过共享
