@@ -141,8 +141,8 @@ BERTopic 是一个高度模块化的文本聚类和主题建模框架, BERTopic 
 
 {{< bundle-image cluster-to-topic.png 550 >}}
 
-BERTopic 可以使用与聚类不同的嵌入模型, 当然也能用一样的, 下面我们在前面创建好了嵌入模型(embedding_model), 文本嵌入(text embeddings),
-降维模型(umap_model), 和聚类模型(hdbscan_model) 后由 BERTopic 来真正执行前面实际的降维, 聚类, 和创建主题的操作
+BERTopic 可以使用与聚类不同的嵌入模型, 当然也能用一样的, 下面我们在前面创建好了嵌入模型(`embedding_model`), 文本嵌入(`text embeddings`),
+降维模型(`umap_model`), 和聚类模型(`hdbscan_model`) 后由 BERTopic 来真正执行前面实际的降维, 聚类, 和创建主题的操作
 
 ```python
 from bertopic import BERTopic
@@ -195,7 +195,7 @@ topic_model.visualize_barchart(title=titles, n_words=10, autoscale=True, top_n_t
 {{< bundle-image documents-and-topics.png 1000 >}}
 {{< bundle-image barchart.png 600 >}}
 
-以上主题中的关键字没有考虑语义结构,BERTopic 还有微调的表示模型对主题进一步优化, 如 `KeyBERTInspired`, 这种表示模型可以叠加应用, 如下面的
+以上主题中的关键字没有考虑语义结构, BERTopic 还有微调的表示模型对主题进一步优化, 如 `KeyBERTInspired`, 这种表示模型可以叠加应用, 如下面的
 MMR 表示模型.
 
 ```python
@@ -284,11 +284,11 @@ topic_model.update_topics(abstracts, representation_model=representation_model)
 
 | Topic | Count | Name                                                                                    | Representation                                                                                                                                                        |
 |-------|-------|-----------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| -1    | 14252 | -1,14252,-1_Advanced Natural Language Processing (NLP) Techniques and Model Development | -1,14252,-1_Advanced Natural Language Processing (NLP) Techniques and Model Development,[Advanced Natural Language Processing (NLP) Techniques and Model Development] |
-| 0     | 2207  | 0_End-to-End Automatic Speech Recognition and Machine Translation                       | [End-to-End Automatic Speech Recognition and Machine Translation]                                                                                                     |
-| 1     | 1268  | 1_Biomedical Information Extraction from Clinical Notes and Records                     | [Biomedical Information Extraction from Clinical Notes and Records]                                                                                                   |
+| -1    | 14252 | -1,14252,-1`_`Advanced Natural Language Processing (NLP) Techniques and Model Development | -1,14252,-1`_`Advanced Natural Language Processing (NLP) Techniques and Model Development,[Advanced Natural Language Processing (NLP) Techniques and Model Development] |
+| 0     | 2207  | 0`_`End-to-End Automatic Speech Recognition and Machine Translation                       | [End-to-End Automatic Speech Recognition and Machine Translation]                                                                                                     |
+| 1     | 1268  | 1`_`Biomedical Information Extraction from Clinical Notes and Records                     | [Biomedical Information Extraction from Clinical Notes and Records]                                                                                                   |
 | ...   | ...   | ...                                                                                     | ...                                                                                                                                                                   |
-| 152   | 51    | 152_Long-Context LLM Extension, Retrieval Augmentation, and Evaluation                  | [Long-Context LLM Extension, Retrieval Augmentation, and Evaluation]                                                                                                  |
+| 152   | 51    | 152`_`Long-Context LLM Extension, Retrieval Augmentation, and Evaluation                  | [Long-Context LLM Extension, Retrieval Augmentation, and Evaluation]                                                                                                  |
 
 使用上了生成模型, 一般不用担心它不能给你生成一个适合人类阅读的标签, 即使难以归纳它也会发挥它的幻觉优势给你创造出来.
 
