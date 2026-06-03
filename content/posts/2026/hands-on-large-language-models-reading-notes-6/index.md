@@ -16,7 +16,7 @@ tags:
   - LLM
   - ReAct
 comment: true
-codeMaxLines: 50
+codeMaxLines: 120
 showLastmod: true
 lastmod:
 ---
