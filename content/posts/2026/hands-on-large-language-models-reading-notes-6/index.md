@@ -14,6 +14,7 @@ categories:
 tags: 
   - Machine Learning
   - LLM
+  - ReAct
 comment: true
 codeMaxLines: 50
 showLastmod: true
@@ -74,7 +75,7 @@ This response directly answers the user's question while maintaining a polite an
 
 `LangChain` 0.x 版本内部实现是 `Chain`, 而 `LangChain` 1.0 后内部是 `GraphState`. 
 
-所谓的提示词模板就是能把
+所谓的提示词模板就是能把人易于阅读的消息格式
 
 ```json
 [
@@ -83,7 +84,7 @@ This response directly answers the user's question while maintaining a polite an
 ]
 ```
 
-易于阅读的消息格式转换成
+转换成模型要求的带特殊 Token 表示的文本
 
 ```text
 <|user|>
