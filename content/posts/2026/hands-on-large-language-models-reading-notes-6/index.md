@@ -64,12 +64,12 @@ print(response)
 
 书中的例子输出为空白，而我的执行是有输出的
 
-````text
+{{< highlight-wrap text >}}
 <|assistant|> Hello Maarten! The answer to 1 + 1 is 2.
 ```
 
 This response directly answers the user's question while maintaining a polite and friendly tone, suitable for an introductory conversation.
-````
+{{</ highlight-wrap >}}
 
 但这个输出是有问题的，输出中不应该再看到模型的特殊 `Token`, `<|assistant|>`.
 
@@ -170,9 +170,9 @@ llm.tokenizer().decode(llm.input_ids)
 
 输出
 
-```text
+{{< highlight-wrap text >}}
 "<|user|> Hi! My name is Maarten. What is 1 + 1?<|assistant|> Hello Maarten! 1 + 1 equals 2. It's a basic arithmetic operation."
-```
+{{</ highlight-wrap >}}
 
 这是与 llama-cpp 模型的交互文本. 上面的 `llm` 中可以查看到不少有用的信息，例如 `llm.token_bos()` 为 `1`, `llm.token_eos` 为 `32000`,
 `llm.token_nl()` 是 `13`, 用 `llm.tokenizer().decode([1])` 解码, 它们分别是 `''`, `''`, 和 `\n`, `1` 和 `32000` 是一样的。
@@ -189,6 +189,26 @@ llm.tokenizer().decode(llm.input_ids)
 
 `bos_token` 为空字符串。在 HuggingFace 站点上也可以查看到模型相应的 `chat_template`, 如 [Phi-3-mini-4k-instruct-q4.gguf](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf)
 中的 `tokenizer.chat_template`; [google/gemma-4-E4B-it](https://huggingface.co/google/gemma-4-E4B-it/blob/main/chat_template.jinja).
+
+很好奇如果问题中有 `<|user|>`, `<|assistant|>` 这样的输入产生的模型会怎么处理。改变上面的输入为
+
+```python
+response = llm.create_chat_completion(messages=[
+    {"role": "user", "content": "$<|user|>$<|assistant|>$<|other|>$. What is 1 + 1? give a concise answer"}
+])
+
+print(llm.input_ids.tolist())
+llm.tokenizer().decode(llm.input_ids)
+```
+
+输出为
+
+{{< highlight-wrap text >}}
+[1, 32010, 395, 32010, 395, 32001, 395, 29966, 29989, 1228, 29989, 29958, 1504, 1724, 338, 29871, 29896, 718, 29871, 29896, 29973, 2367, 263, 3022, 895, 1234, 32007, 32001, 29871, 29896, 718, 29871, 29896, 15743, 29871, 29906, 29889, 0, 0, 0, 0, ...]
+'<|user|> $<|user|> $<|assistant|> $<|other|>$. What is 1 + 1? give a concise answer<|assistant|> 1 + 1 equals 2.'
+{{</ highlight-wrap >}}
+
+`llm.input_ids` 右边填充 0， 它的总长度为 4096. 从 decode 出的字符串看，最终提示启中似乎分辨不出 `<|user|>` 是用户的输入还是特殊的 Token(32010)。
 
 #### LLM 的记忆
 
@@ -328,7 +348,7 @@ llm.close()
 
 下面是代码执行结果
 
-```text
+{{< highlight-wrap text >}}
 Question: Where am I, and how about the weather there?
 
 --- step 1 ---
@@ -348,7 +368,7 @@ Thought: I have successfully retrieved the user's location (Chicago) and the wea
 Final Answer: You are in Chicago, and the weather there is sunny with a temperature of 25°C.
 
 === Final Answer: You are in Chicago, and the weather there is sunny with a temperature of 25°C. ===
-```
+{{</ highlight-wrap >}}
 
 输出中很清楚的输出每一步
 
