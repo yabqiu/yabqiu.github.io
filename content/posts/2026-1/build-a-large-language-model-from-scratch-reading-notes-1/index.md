@@ -1,9 +1,9 @@
 ---
 title: "《从零构建大模型》阅读笔记(一)"
 url: /build-a-large-language-model-from-scratch-reading-notes-1/
-date: 2026-06-04T01:49:20-05:00
+date: 2026-06-04T10:51:20-05:00
 featured: false
-draft: true
+draft: false
 type: post
 toc: false
 # menu: main
@@ -22,7 +22,7 @@ lastmod:
 
 读完《Hands-On Large Language Models》又回头重新看《Build a Large Language Model from Scratch》一书，阅读时零乱记点什么。
 
-大语言模型构建通常包括两个阶段: 预训练(pre-training)和微调(fine-tuning), 又时也把偏好调优当作一个单独阶段，其实也是一种形式的微调。
+大语言模型构建通常包括两个阶段: 预训练(pre-training)和微调(fine-tuning), 有时也把偏好调优当作一个单独阶段，其实也是一种形式的微调。
 预训练使用未标注的大量文本数据理解语言结构，即自监督学习，预训练生成的模型为基础模型(base/foundation model), 这能够完成文本预测任务。
 再经过指令微调或分类任务微调后就能回答问题或进行分类了。
 
@@ -35,10 +35,10 @@ GPT-3 基础模型预训练数据集为过滤后的 Common Crawl, WebText2, Book
 文本压缩后大小为 700G 左右。Llama 扩展了它的训练数据范围，包括 Arxiv 论文(92G)和 StackExchange 上的代码问答(78G)。训练基础模型成本极高，
 GPT-3 的预训练成本高达 460 万美元。<!--more-->
 
-词嵌入相关的概念有 BPE(byte pair encoding), word2vec. GPT-2 参数 117M, 词嵌入维度是 768, GPT-3 参数 175B, 它的词嵌入维度是 12,288。
+分词和嵌入相关的概念有 BPE(byte pair encoding), word2vec. GPT-2 参数 117M, 词嵌入维度是 768, GPT-3 参数 175B, 它的词嵌入维度是 12,288。
 
 简单实现一个分词，使用小说 "The Verdict" 的文本内容 [the-verdict.txt](https://raw.githubusercontent.com/rasbt/LLMs-from-scratch/main/ch02/01_main-chapter-code/the-verdict.txt)
-中的词汇创建一个分词器，不包含在其中的词标识为 "<unk>"
+中的词汇创建一个分词器，不包含在其中的词标识为 "<|unk|>".
 
 ```python
 import re
@@ -86,7 +86,7 @@ if __name__ == '__main__':
     print("decode: ", tokenizer.decode(ids))
 ```
 
-取 `the-verdict.txt` 中全部单词含标点符号，去重后排序，再加上两个特殊的 Token, `<|endoftext|>`, `<|unk|>`, 然后映射为列表中的索引
+取 `the-verdict.txt` 中全部单词含标点符号，去重后排序，再加上两个特殊的 Token, `<|endoftext|>`, `<|unk|>`, 然后映射为列表中的索引.
 
 执行结果
 
@@ -98,7 +98,7 @@ decode:  " It' s the last he painted, you know," Mrs. Gisburn said with pardonab
 `The Verdict` 中没有 `Hello`, 所以被标记为 `<|unk|>`. 在不同的大语言模型还会加入其他的特殊 Token，如
 
 - [BOS] Beginning Of Sequence: 标记文本的起点
-- [EOS] End Of Sequence: 标记文本的结束，类似 <|endoftext|>, 特别是用于连接多个不相关的文本，比如两篇不同一文章用 `[EOS]` 分隔开来
+- [EOS] End Of Sequence: 标记文本的结束，类似 <|endoftext|>, 特别是用于连接多个不相关的文本，比如两篇不同的文章用 `[EOS]` 分隔开来
 - [PAD] Padding: 当使用 batch size 大于 1 的批量数据训练 LLM 时，数据文本长度不一，用 `[PAD]` 填充匹配到最大的文本长度
 
 GPT 模型仅使用 `<|endoftext|>`, 它与 `[EOS]` 作用相似，此外 `<|endoftext|>` 也常用于文本填充，即作为 `[PAD]` 来用。GPT 分词器也不使用
@@ -150,7 +150,7 @@ you 明, how are you? <|endoftext|> In someunknownPlace.
 
 - 中文 `明` 拆成了三个 Token, 打印时没问题，单个 Token 解码后显示乱码
 - Token 自带空格，表示是否与前相连，如 `you`: 5832, ` you`: 345 是两个不同的 Token. 
-- <|endoftext|> Token 分配置到了一个最大的 Token ID, 用于训练 GPT-2, GPT-3, ChatGPT 的原始模型词表大小为 50257, 最后的 50256 即是 <|endoftext|>
+- <|endoftext|> 它被分配了一个最大的 Token ID, 比如用于训练 GPT-2, GPT-3, ChatGPT 的原始模型词表大小为 50257, 最后一个 ID 50256 即是 <|endoftext|>
 - BPE 碰到未知的单词，如 `someunknownPlace`, 会将其拆分成更小的子词甚至单个字符，所以它不需要特殊 Token <|unk|>
 - tokenizer(gpt2) 的一些信息，`eot_token`: 50256, `max_token_value`: 50256, `n_vocab`: 50257, `special_tokens_set`: {'<|endoftext|>'}
 
@@ -170,7 +170,7 @@ you 明, how are you? <|endoftext|> In someunknownPlace.
 | o200k_base  | 199999    | 200018          | 200019  | {'<\|endofprompt\|>', '<\|endoftext\|>'}                                                                                                                                                                                                                    |
 |o200k_harmony| 199999    | 201087          | 201088  | {'<\|call\|>', '<\|channel\|>', '<\|constrain\|>', '<\|endofprompt\|>', '<\|endoftext\|>', '<\|end\|>', '<\|message\|>', '<\|reserved_200000\|>', '<\|reserved_200001\|>', ... '<\|reserved_201087\|>', '<\|return\|>', '<\|startoftext\|>', '<\|start\|>'} |
 
-上表中 `p50k_base` `eot_token` 是 50256, 但词汇大小为 50281, 那么它们之间是什么, 用代码查看一下
+上表中 `p50k_base` 的 `eot_token` 是 50256, 但词汇大小为 50281, 那么它们之间是什么, 用代码查看一下
 
 ```python
 tokenizer = tiktoken.get_encoding("p50k_base")
@@ -190,17 +190,17 @@ for code in range(50256, 50281):
 50280:'                         '
 ```
 
-后面全部是不断增加的空格, 而 `o200k_harmony` 中有大量的保留 Token, 从 `<|reserved_200000|>'` 到 `<|reserved_201087|>`。
+后面全部是不断增加的空格, 而 `o200k_harmony` 中有大量的保留 Token, 从 `<|reserved_200000|>` 到 `<|reserved_201087|>`。
 
 #### 使用滑动窗口进行数据采样
 
-为了让模型能预测下一个 Token, 接下来准备训练模型的输入-目标对，这好像是一个对照学习一样
+为了让模型能预测下一个 Token, 接下来准备训练模型的输入-目标对，这和监督学习中的对照学习很类似
 
 {{< bundle-image training_dataset_pairs.png 719 >}}
 
-如上图，使用上下文为 4 滑动窗口，蓝色窗口生成一个 input, 红色窗口是右移一个 Token 产生相应的 target. 窗口大小，input 与 target 窗口(context), 
+如上图，使用上下文长度为 4 的滑动窗口，蓝色窗口生成一个 input, 红色窗口是右移一个 Token 产生相应的 target. 窗口大小，input 与 target 窗口(context), 
 偏移(步幅-stride) 是可以调整，stride 小的话，input 与 target 的重叠部分较大。这种从 input 到 target 的训练就可以用来训练预测下一个 Token.
-实际要的 input/target 对是转换为的数字 Token 列表, 在 PyTorch 中 input/target 存储为两个 Tensor 对。 
+实际要的 input/target 对是转换为数字 Token 列表, 在 PyTorch 中 input/target 存储为两个 Tensor 对。 
 
 下面是从 `the-verdict.txt` 中创建训练数据(dataloader)的完整代码
 
@@ -261,10 +261,10 @@ print(next(iter(dataloader)))
 ]
 ```
 
-对输出进行了格式化，这样一个批次可以送两套 input/target 对输入，对内存占用会更高，不仅是内存的影响，较小的批次大小还会导致在模型更新时产生更多的噪声。
-这里 max_length=4 也是为了演示，实际训练大语方模型时，输入大小通常不小于 256; stride(步幅)决定了重叠的大小，过多的重叠可能会增加模型的过拟合风险。
+对输出进行了格式化，这样一个批次可以包含两套 input/target 对，对内存占用会更高，不仅是内存的影响，较小的批次大小还会导致在模型更新时产生更多的噪声。
+这里 max_length=4 也是为了演示，实际训练大语言模型时，输入大小通常不小于 256; stride(步幅)决定了重叠的大小，过多的重叠可能会增加模型的过拟合风险。
 
-从  dataloader.dataset, 或 dataloader.sampler.datasource, dataloader.batch_sampler.sampler.data_source 下可以看到 input_ids
+从 dataloader.dataset, 或 dataloader.sampler.datasource, dataloader.batch_sampler.sampler.data_source 下可以看到 input_ids
 和 target_ids 这两个 tensor 列表对
 
 {{< bundle-image training_dataloader.png 703 >}}
@@ -276,7 +276,7 @@ print(next(iter(dataloader)))
 
 读到这里有点迷糊，向量空间是什么，Token 怎么嵌入到向量空间去，向量空间的每个维度的分向量是什么？下面以一个简单的例子来由浅入深地理解。
 
-假如我们有一张仅含 6 个单词的小型词汇表，并且想要创建的维度为 3 嵌入(BPE GPT-2 的词汇大小为 50,257, 嵌入维度是 768), 理解了小的再往大拓展。
+假如我们有一个仅含 6 个单词的小型词汇表，并且想要创建维度为 3 的嵌入(BPE GPT-2 的词汇大小为 50,257, 嵌入维度是 768), 理解了小的再往大拓展。
 
 ```python
 vocab_size = 6
@@ -303,15 +303,16 @@ tensor([[ 0.3374, -0.1778, -0.1690],
         [-2.8400, -0.7849, -1.4096]], requires_grad=True)
 ```
 
-以上矩阵每一行代表一个 Token, 每个 Token 用大小为 3 维的向量表示，每个维度代表某种特征。扩展为 GPT-2 的就是一个  50257 * 768 大小的矩阵。
+以上矩阵每一行代表一个 Token, 每个 Token 用大小为 3 维的向量表示，每个维度代表某种特征。扩展为 GPT-2 的就是一个 50257 x 768 大小的矩阵。
 
     注：有一种独热编码(one-hot encoding) 方式，比如用
 
-        [[1，0，0]，
-         [0, 1, 0]
+        [[1, 0, 0],
+         [0, 1, 0],
          [0, 0, 1]]
+    每行只有对应该 Token 索引的一位为 1，其余全为 0，用来唯一标识一个 Token。
 
-如果我们我多个 Token IDs, 从向量空间 6 x 3 中找出与其对应的三维嵌入向量
+如果我们有多个 Token IDs, 从向量空间 6 x 3 中找出与其对应的三维嵌入向量
 
 ```python
 embedding_layer(torch.tensor([2, 3, 2, 1]))
@@ -326,7 +327,7 @@ tensor([[ 1.2753, -0.2010, -0.1606],
         [ 0.9178,  1.5810,  1.3010]], grad_fn=<EmbeddingBackward0>)
 ```
 
-按照 [2, 3, 2, 1] 中表示的索引用 6 x 3 的矩阵中取出相应的行组成新的矩阵。
+按照 [2, 3, 2, 1] 中表示的索引从 6 x 3 的矩阵中取出相应的行组成新的矩阵。
 
 #### 编码单词位置信息
 
@@ -336,25 +337,25 @@ tensor([[ 1.2753, -0.2010, -0.1606],
 
 有两种位置信息嵌入策略，
 
-- 绝对位置嵌入(absolute positional embedding), 像 VIM 中设置 `set norelativenumber`, 绝对的位置编号 1,2,3,4...，
+- 绝对位置嵌入(absolute positional embedding), 像 Vim 中设置 `set norelativenumber`, 绝对的位置编号 1,2,3,4...，
   如正弦/余弦固定编码 (Sinusoidal PE)， 可学习位置编码(Learnable Positional Encoding)
-- 相对位置嵌入(relative positional embedding), 关注 Token 之间的相对位置或距离，像 VIM 中可设置 `set relativenumber`, 显示
+- 相对位置嵌入(relative positional embedding), 关注 Token 之间的相对位置或距离，像 Vim 中可设置 `set relativenumber`, 显示
   ...3,2,1,10,1,2,3...，如旋转位置编码 RoPE
 
-OpenAI 的 GPT 模型使用的是绝对位置嵌入，其中一种是可学习位置编码，先来它的实现原理
+GPT 模型使用的是可学习绝对位置嵌入，先来看它的实现原理
 
 {{< bundle-image embedding-position.png 645 >}}
 
-假如文本有四个重复的单词，转换成四个相同的 Token, 得到相同的 Token 嵌入 [1, 1, 1], 第一个向量加上位置嵌入 [1.1, 1.2, 1.3], 整数部分表示当前
-Token 的位置信息，小数部分表示向量内部各分量的位置信息，合起来 [2.1, 2.2, 2.3] 就表示了每一个分量在嵌入矩阵中的绝对信息。
+假如文本有四个重复的单词，转换成四个相同的 Token, 得到相同的 Token 嵌入 [1, 1, 1], 第一个向量加上位置嵌入 [1.1, 1.2, 1.3], 可以理解为点号前表示当前
+Token 的位置信息，点号后表示向量内部各分量的位置信息，合起来 [2.1, 2.2, 2.3] 就表示了每一个分量在嵌入矩阵中的绝对信息。
 
 这种方式需要预先初始化一个 (预训练最大长度 * 编码维度) 的矩阵作为位置向量，并把位置编码作为可训练参数，它的缺点是没有外推性，假如预训练的最大长度为
-512 的话，它多只能处理长度为 512 输入，再长就无法处理或者要进行截断。GPT 新版的模型或许有办法来突破输入长度限制。
+512 的话，它最多只能处理长度为 512 的输入，再长就无法处理或者要进行截断。GPT 新版的模型或许有办法来突破输入长度限制。
 
-正弦/余弦固定编码，又称三角位置编码(Trigonometric Positional Encoding) 一种很神奇的编码方式，它通过计算偶数维分量的正弦函数，
+正弦/余弦固定编码，又称三角位置编码(Trigonometric Positional Encoding), 是一种很神奇的编码方式，它通过计算偶数维分量的正弦函数，
 奇数维分量的余弦函数来计算出位置编码。
 
-RoPE(Rotary Position Embedding) 已成为现代大语方模型的位置编码事实上的标准, RoPE 通过旋转 Q、K 向量，使得 QKᵀ 点积自然包含两个 token
+RoPE(Rotary Position Embedding) 已成为现代大语言模型的位置编码事实上的标准, RoPE 通过旋转 Q、K 向量，使得 QKᵀ 点积自然包含两个 token
 的相对距离，不需要单独设计相对位置模块。
 
 跳过书中的可学习位置编码的实现细节，后面如果自己实现一个简单 GPT 的话将会采用 RoPE 相对编码方式。
