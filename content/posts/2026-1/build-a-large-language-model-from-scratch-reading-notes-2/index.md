@@ -1,9 +1,9 @@
 ---
 title: "《从零构建大模型》阅读笔记(二)"
 url: /build-a-large-language-model-from-scratch-reading-notes-2/
-date: 2026-06-04T12:36:20-05:00
+date: 2026-06-07T12:28:20-05:00
 featured: false
-draft: true
+draft: false
 type: post
 toc: false
 # menu: main
@@ -22,12 +22,12 @@ lastmod:
 
 来到第三章，关于注意力机制(attention mechanism), Transformer 可以说是由《Attention Is All You Need》这篇论文起的火，那 Attention
 几乎就是 Transformer, 也就是现代 LLM 的核心。在学习 Attention 之前先通过类比的方式理解一下什么是注意力机制，以及为什么取名为 Attention
-这个词
+这个词.
 
 当你读到一句话里某个词时，你的大脑不会孤立地看这个词，而是会"环顾四周"——看看其他词，决定哪些词对理解当前这个词最有帮助，然后把注意力集中在那些词上。
-LLM 的 Attention 机制，做的正是同一件事。而且通常看书时，多是翻看前面的部分，帮助当前的理解，找到故事的因果关系; 很少查阅后面的内容，
+LLM 的 Attention 机制，做的正是同一件事。而且通常看书时，多是翻看前面的部分，帮助当前的理解，找到故事的因果关系, 很少查阅后面的内容, 这就是因果注意力.
 
-本章将由浅入深的介绍以下 Attention 变化的原理和实现细节。
+本章将由浅入深的介绍以下 Attention 各种变体的原理和实现细节。
 
 - 简化的自注意力(Simplified self-attention)
 - 自注意力(Self-attention): 带有可训练权重的自注意力机制
@@ -36,13 +36,13 @@ LLM 的 Attention 机制，做的正是同一件事。而且通常看书时，�
 
 {{< bundle-image attentions.png 723 >}}
 
-`自注意`力机制允许输入序列中的每个位置关注同一序列中所有位置并权衡重要性，这是基于 Transformer 架构的当代大语言模型的关键组成部分, 
+`自注意力机制` 允许输入序列中的每个位置关注同一序列中所有位置并权衡重要性，这是基于 Transformer 架构的当代大语言模型的关键组成部分, 
 也是最具挑战性的部分之一。
 
 #### 没有可训练权重的简单自注意力
 
 假如我们有一行文本 `Your journey starts with one step` 以单词进行分词，并嵌入到如下 3 维向量空间中，我们将学习在自注意力机制中，
-为输入序列中的每个 token x<sup>(i)</sup> 如何计算相应的上下文向量 𝒛<sup>(i)</sup> 上下文向量(context vector).
+为输入序列中的每个 token {{<sup x "(i)">}} 如何计算相应的上下文向量(context vector) {{<sup 𝒛 "(i)">}}.
 
 {{< bundle-image simple-self-attention.png 1022 >}}
 
@@ -72,25 +72,25 @@ for i, x_i in enumerate(inputs):
 print(attn_scores_2)
 ```
 
-每个输入 Token 的向量与查询 Token 的向量进行点积操作的值即为相应的注意力分数
+每个输入 Token 的向量与查询 Token 的向量进行点积操作的值即为相应的注意力分数.
 
-  点积(dot products) 本质上就是两个向量相同位置的值相乘再求和，如 `0.43*0.55+0.15*0.87+0.89*0.66=0.9544`. 点积也是度量两个相似度的一种方式，
-  它表示是两个向量夹角的余弦值(方向和夹角，0 度是余弦值最大)和模长,，余弦值是点积越大，相似度越高。在自注意机制中，点积决定了序列中每个元素对其他元素的关注程序：
-  点积越大，两个元素之间的相似度和注意力分数就越高。
+  点积(dot products) 本质上就是两个向量相同位置的值相乘再求和，如 `0.43*0.55+0.15*0.87+0.89*0.66=0.9544`. 点积也是度量两个向量相似度的一种方式，
+  它表示两个向量夹角的余弦值(夹角为 0 度时余弦值最大，即方向相同时相似度最高)和模长, 点积越大，相似度越高。在自注意力机制中，
+  点积决定了序列中每个元素对其他元素的关注程度, 点积越大，两个元素之间的相似度和注意力分数就越高。
 
 ```text
 tensor([0.9544, 1.4950, 1.4754, 0.8434, 0.7070, 1.0865])
 ```
 
-注意到 x<sup>2</sup> 自己与自己算相似度的话应该是最相近的, 从以上的值看 `1.4950` 也确实是所有分数中最高的。
+注意到 {{<sup x 2>}} 自己与自己算相似度的话应该是最相近的, 从以上的值看 `1.4950` 也确实是所有分数中最高的。
 
 ##### 对注意力分数归一化(normalize) 为注意力权重
 
-这里归一化处理后得到相应的注意力权重，我们很容易被这个归一化(normalize)这个听起来高大上的词吓倒，归一化从字面上理解为把数值归到 [0,1] 区间去,
-或者把总和归为 1. 普通的归一化就是除以它们的总和，其就是把不在 [0,1] 之间的值转换为这个区间的值，俗称 `weight`. 比如两个人各有 6 和 4 个苹果，
-转换为 `weight` 就是分为别 6/(6+4)=0.6 和 4/(6+4)=0.4, 这两个值就在 [0,1] 之间了。
+这里归一化处理后得到相应的注意力权重，我们很容易被归一化(normalize)这个听起来高大上的词吓倒，归一化从字面上理解为把数值归到 [0,1] 区间去,
+或者把总和归为 1. 普通的归一化就是除以它们的总和，即把不在 [0,1] 之间的值转换为这个区间的值，俗称 `weight`. 比如两个人各有 6 和 4 个苹果，
+转换为 `weight` 就是分别为 6/(6+4)=0.6 和 4/(6+4)=0.4, 这两个值就在 [0,1] 之间了。
 
-前面算出的注意力分数有 [0,1] 区间外的值，如 1.4950, 1.4574, 1.0865, 下面作一个简单的归一化, 实际代码就是第一行
+前面算出的注意力分数有 [0,1] 区间外的值，如 1.4950, 1.4754, 1.0865, 下面作一个简单的归一化, 实际代码就是第一行
 
 ```python {hl_lines=1}
 attn_weights_2_tmp = attn_scores_2 / attn_scores_2.sum()
@@ -105,8 +105,8 @@ Attention weights: tensor([0.1455, 0.2278, 0.2249, 0.1285, 0.1077, 0.1656])
 Sum: tensor(1.0000)
 ```
 
-这种归一化有时叫 sum normalization 或  simplex projection, 而在实际应用中，特别是对于这种概率分布的情况，用 softmax 函数进行归一化更为常见，
-这种方法更好的处理了极值，并在训练期间提供了更有利的梯度特性。
+这种归一化有时叫 `sum normalization` 或 `simplex projection`, 而在实际应用中，特别是对于这种概率分布的情况，用 softmax 函数进行归一化更为常见，
+这种方法能更好地处理极值，并在训练期间提供更有利的梯度特性。
 
 ```python {hl_lines=1}
 attn_weights_2 = torch.softmax(attn_scores_2, dim=0)
@@ -157,12 +157,12 @@ print(context_vec_2)
 tensor([0.4419, 0.6515, 0.5683])
 ```
 
-上下文向量与嵌入向量的维度一样
+上下文向量与嵌入向量的维度是一样的.
 
-书中的这行代码 `query = inputs[1]` 可能会让人有点误解，其实单这一步与第二个 Token 的嵌入(inputs[1]) 是没有直接关系的，只是 `touch.zeros(query.shape)`
+书中的这行代码 `query = inputs[1]` 可能会让人有点误解，其实单这一步与第二个 Token 的嵌入(inputs[1]) 是没有直接关系的，只是 `torch.zeros(query.shape)`
 构造了与嵌入维度(3) 相同的一个向量. 不过循环中用到的 `attn_weights_2` 确实是 `inputs[1]` 与输入中的每一个 Token 计算出来的相应权重值。
 
-这里的例子是针对 x<sup>2</sup> 计算出相应的上下文向量 𝒛<sup>(2)</sup>, 用同样的方式可计算出其他所有的 𝒛<sup>(i)</sup> 值。
+这里的例子是针对 {{<sup x 2>}} 计算出相应的上下文向量 {{<sup 𝒛 "(2)">}}, 用同样的方式可计算出其他所有的 {{<sup 𝒛 "(i)">}} 值。
 
 下面是魔幻一样的 PyTorch 矩阵操作计算 attention 分数，权重，以及 context vector 的三行代码
 
@@ -174,7 +174,7 @@ all_context_vecs = attn_weights @ inputs # 加权求和得 context vector
 
 `@` 是矩阵乘法运算符, 矩阵乘法的规则是内维度相等，即 `[m X n] X [p X q]` 时要求 `n==p`.
 
-打印出以上三个矩阵的值，可以对比一下前面有关 x<sup>2</sup> 的计算结果，看看是否一致
+打印出以上三个矩阵的值，可以对比一下前面有关 {{<sup x 2>}} 的计算结果，看看是否一致
 
 ```python
 print(f"attention scores: \n{attn_scores}\n")
@@ -233,7 +233,7 @@ print(attn_scores)
 
 ##### 逐步计算注意力权重
 
-虽然是上一节介绍了简单注意力机制如何算得某一个输入 Token 的上下文向量(context vector), 计算的过程如下
+上一节介绍了简单注意力机制如何算得某一个输入 Token 的上下文向量(context vector), 计算的过程如下
 
 1. 计算 Token 之间的相似度分数(点积)
 2. 相似度分数归一化(softmax)
@@ -246,7 +246,7 @@ print(attn_scores)
 和 {{<sub W v>}} 就是引导着计算出更好的上下文向量，这也是训练的意义所在。 当然 LLM 还有更多的其他可训练参数，如 FFN 前馈网络层中的 
 W1, W2(有时还有 W3) 等。
 
-同样，便于说明我们只计算第二个 Token(journey) {{<sup X 2>}} 对应的上下文向量 {{<sup 𝒛 "(2)">}}
+同样，便于说明我们只计算第二个 Token(journey) {{<sup x 2>}} 对应的上下文向量 {{<sup 𝒛 "(2)">}}
 
 先定义几个变量，并为该 Attention 初始化相应的 `W_query`, `W_key`, `W_value`
 
@@ -314,7 +314,7 @@ key_2=tensor([0.4433, 1.1419], grad_fn=<SqueezeBackward4>)
 value_2=tensor([0.3951, 1.0037], grad_fn=<SqueezeBackward4>)
 ```
 
-以 `query_2 = x_2 @ W_query` 为例，这里把 {{<sup x "(2">}} 通过 `W_query` 投影到一个新的空间，从 3 维压缩到 2 维，生成 `query_2`
+以 `query_2 = x_2 @ W_query` 为例，这里把 {{<sup x "(2)">}} 通过 `W_query` 投影到一个新的空间，从 3 维压缩到 2 维，生成 `query_2`
 向量，即把当前 token 嵌入变换成有效的提问向量, `key_2` 和 `value_2` 的操作类似。
 
   在权重矩阵 **W** 中, "权重" 是 "权重参数" 的简称，表示在训练过程中优化的神经网络参数，这与注意力权重是不同的。
@@ -330,7 +330,7 @@ print(f"{keys.shape=}, {values.shape=}") # keys.shape=torch.Size([6, 2]), values
 
 成功地将所有 6 个 token 从三维空间映射到了二维(d_out=2) 嵌入空间.
 
-接下来计算注意力分数，这就回到了我们前面那个简单注意力机制的轨道上来了，可以想见，再后面就是 softmax 归一化和加权求和得到上下文向量了
+接下来计算注意力分数，这就回到了我们前面那个简单注意力机制的轨道上来了，可以想见，再后面就是 softmax 归一化和加权求和得到上下文向量了.
 
 计算单个 `query_2` 与 `keys_2` 的相似度分数，用点积的方式
 
@@ -347,7 +347,7 @@ attn_scores_2 = query_2 @ keys.T
 print(attn_scores_2)  # tensor([1.2705, 1.8524, 1.8111, 1.0795, 0.5577, 1.5440], grad_fn=<SqueezeBackward4>)
 ```
 
-第 2 个 `1.8524` 是一样的
+第 2 个 `1.8524` 是一样的.
 
 再将注意力分数归一为注意力权重
 
@@ -357,7 +357,7 @@ attn_weights_2 = torch.softmax(attn_scores_2 / d_k**0.5, dim=-1)
 print(attn_weights_2) # tensor([0.1500, 0.2264, 0.2199, 0.1311, 0.0906, 0.1820], grad_fn=<SoftmaxBackward0>)
 ```
 
-这里经过一次缩放注意力分数，通过将注意力分数除以键向量的嵌入维度的平方根来进行缩放
+这里经过一次缩放注意力分数，通过将注意力分数除以键向量的嵌入维度的平方根来进行缩放，可防止点积值过大导致 softmax 梯度消失.
 
 最后一步就是由注意力权重，针对值向量进行加权求和得到上下文向量
 
@@ -368,9 +368,112 @@ print(context_vector_2)  # tensor([0.3061, 0.8210], grad_fn=<SqueezeBackward4>)
 
 最后小结一下引入 {{<sub W q>}}, {{<sub W k>}}, 和 {{<sub W v>}} 这三个可训练权重矩阵后，计算上下文向量的过程如下
 
-1. 通过 {{<sub W q>}}, {{<sub W k>}}, 和 {{<sub W v>}} 算出当前 token 与所有其他 token 的 k, v 向量，以及与自己的 q 向量
-2. 由 q 向量计算与每个 token 的注意力分数
+1. 通过 {{<sub W k>}}, 和 {{<sub W v>}} 算出所有 token(包括自己) 的 k, v 向量，再用 {{<sub W q>}} 计算出当前 token 的 q 向量
+2. 由 q 向量计算与每个 token 的 k 向量的注意力分数
 3. 归一化注意力分数为注意力权重
 4. 注意力权重与每个 token 的 v 向量加权求和得到上下文向量
 
+自注意力包含的可训练权重矩阵 {{<sub W q>}}, {{<sub W k>}}, 和 {{<sub W v>}} 随着模型在训练中接触更多的数据，它会调整其中的权重参数，
+从而在第 1 步就影响到计算 q, k, v 向量值，最终影响上下文向量的值。
+
+另外, 目前常被提及的 KV Cache 指的就是通过 {{<sub W k>}}, 和 {{<sub W v>}} 计算出来的 k, v 向量的缓存，避免了在生成文本时每次都要重新计算
+k, v 向量，从而提高了推理效率。
+
 #### 把带有 Q, K, V 的自注意力实现为 Python 类
+
+前面逐步演示了如何通过三个可训练的矩阵来计算上下文向量，下面实现为 Python 类，有两个版本
+
+```python
+import torch
+import torch.nn as nn
+
+
+class SelfAttentionV1(nn.Module):
+
+    def __init__(self, d_in, d_out):
+        super().__init__()
+
+        # 创建注意力对象是创建三个 q, k, v 权重矩阵
+        self.W_query = nn.Parameter(torch.rand(d_in, d_out))
+        self.W_key = nn.Parameter(torch.rand(d_in, d_out))
+        self.W_value = nn.Parameter(torch.rand(d_in, d_out))
+
+    # 前向传播时调用
+    def forward(self, x):
+        keys = x @ self.W_key
+        queries = x @ self.W_query
+        values = x @ self.W_value
+
+        attn_cores = queries @ keys.T # 计算注意力分数
+        attn_weights = torch.softmax(attn_cores / keys.shape[-1] ** 0.5, dim=-1) # 归一化为注意力权重
+        context_vec = attn_weights @ values  # 加权求和得到上下文向量
+        return context_vec
+```
+
+这里直接使用了 `torch.nn.Module` 作为基类，当把输入传给注意力的时候，`nn.Module` 会自动调用前向传播方法 `forward()`, 计算出上下文向量。
+
+测试一下
+
+```python
+torch.manual_seed(123)
+sa_v1 = SelfAttentionV1(3, 2)
+print(sa_v1(inputs))
+```
+
+得到
+
+```text{hl_lines=2}
+tensor([[0.2996, 0.8053],
+        [0.3061, 0.8210],
+        [0.3058, 0.8203],
+        [0.2948, 0.7939],
+        [0.2927, 0.7891],
+        [0.2990, 0.8040]], grad_fn=<MmBackward0>)
+```
+
+第 2 个 token 的上下文向量是 `[0.3061, 0.8210]`，与前面分步算出来的是一样的。
+
+还可以使用 `PyTorch` 的 `nn.Linear` 层来进一步优化上一个 `SelfAttentionV1` 的实现，`nn.Linear` 提供了优化的权重初始化方案，
+从而有助于模型训练的稳定性和有效性。
+
+```python
+class SelfAttentionV2(nn.Module):
+
+    def __init__(self, d_in, d_out, qkv_bias=False):
+        super().__init__()
+        self.W_query = nn.Linear(d_in, d_out, bias=qkv_bias)
+        self.W_key = nn.Linear(d_in, d_out, bias=qkv_bias)
+        self.W_value = nn.Linear(d_in, d_out, bias=qkv_bias)
+
+    def forward(self, x):
+        # 线性层会自动进行矩阵乘法并添加偏置项（如果有的话）
+        keys = self.W_key(x)
+        queries = self.W_query(x)
+        values = self.W_value(x)
+
+        attn_cores = queries @ keys.T # 计算注意力分数
+        attn_weights = torch.softmax(attn_cores / keys.shape[-1] ** 0.5, dim=-1) # 归一化为注意力权重
+        context_vec = attn_weights @ values  # 加权求和得到上下文向量
+        return context_vec
+```
+
+`nn.Linear()` 初始化了不一样的权重值，所以在测试时会得到不一样的输出结果，上下文向量中分量值可以是负的。
+
+下面的内容将是因果注意力(causal attention) 和多头注意力(multi-head attention) 的实现细节，将在下一篇笔记本记载。
+
+#### 小结
+
+本文学习了两种注意力机制，简单注意力机制和带可训练参数的注意力机制, 下面再重复一遍它们的计算步骤，帮助加深理解
+
+从简单注意力机制中我们学习了注意力机制的目标是计算输入 Token 的上下文向量，其计算方式步骤是
+
+1. 计算 Token 之间的相似度分数(点积)
+2. 相似度分数归一化(softmax)
+3. 加权求和得到 context vector(和嵌入维度相同)
+
+注意力引入三个可训练权重矩阵({{<sub W q>}}, {{<sub W k>}}, 和 {{<sub W v>}}) 后，其计算上下文向量的步骤为
+
+1. 通过 {{<sub W k>}}, 和 {{<sub W v>}} 算出所有 token(包括自己) 的 k, v 向量，再用 {{<sub W q>}} 计算出当前 token 的 q 向量
+2. 由 q 向量计算与每个 token 的 k 向量的注意力分数
+3. 归一化注意力分数为注意力权重
+4. 注意力权重与每个 token 的 v 向量加权求和得到上下文向量
