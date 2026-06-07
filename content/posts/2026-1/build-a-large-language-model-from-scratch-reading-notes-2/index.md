@@ -1,5 +1,5 @@
 ---
-title: "《从零构建大模型》阅读笔记(二)"
+title: "《从零构建大模型》阅读笔记(二) - 自注意力"
 url: /build-a-large-language-model-from-scratch-reading-notes-2/
 date: 2026-06-07T12:28:20-05:00
 featured: false

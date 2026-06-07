@@ -1,5 +1,5 @@
 ---
-title: "《从零构建大模型》阅读笔记(一)"
+title: "《从零构建大模型》阅读笔记(一) - 分词和嵌入"
 url: /build-a-large-language-model-from-scratch-reading-notes-1/
 date: 2026-06-04T10:51:20-05:00
 featured: false
