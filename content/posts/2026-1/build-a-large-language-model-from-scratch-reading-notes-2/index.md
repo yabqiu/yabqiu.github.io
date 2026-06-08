@@ -406,7 +406,7 @@ class SelfAttentionV1(nn.Module):
 
         attn_cores = queries @ keys.T # 计算注意力分数
         attn_weights = torch.softmax(attn_cores / keys.shape[-1] ** 0.5, dim=-1) # 归一化为注意力权重
-        context_vec = attn_weights @ values  # 加权求和得到上下文向量
+        context_vec = attn_weights @ values  # 在值向量上加权求和得到上下文向量
         return context_vec
 ```
 
@@ -453,7 +453,7 @@ class SelfAttentionV2(nn.Module):
 
         attn_cores = queries @ keys.T # 计算注意力分数
         attn_weights = torch.softmax(attn_cores / keys.shape[-1] ** 0.5, dim=-1) # 归一化为注意力权重
-        context_vec = attn_weights @ values  # 加权求和得到上下文向量
+        context_vec = attn_weights @ values  # 在值向量上加权求和得到上下文向量
         return context_vec
 ```
 
