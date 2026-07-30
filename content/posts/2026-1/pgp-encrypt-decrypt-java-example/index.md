@@ -483,3 +483,66 @@ Decryption - Algorithm: 9, Session key: [-110, -37, -73, 93, -29, 56, -97, -38, 
 ```
 
 可以发现在解密时正确的还原出了用于加密的密钥，以及对数据加密时相应的算法。
+
+### 用 Python 还是简单的多
+
+用 Java 代码进行 PGP 加解密的过程比预想的明显示要复杂，我们不妨看看隔壁 Python 的类似实现
+
+如使用库 `python-gnupg`, 解密的代码如下
+
+```python
+import gnupg
+
+gpg = gnupg.GPG()
+
+with open("yanbin_private.asc", "r") as f:
+    gpg.import_keys(f.read())
+
+decrypted = gpg.decrypt("""
+-----BEGIN PGP MESSAGE-----
+Version: BCPG v1.85
+
+wV4DSSn5DI/7txwSAQdAopwN3hVpbGkJ4MmDHBEYQiD0HzM4b7ecy+hQTzqt8W8w
+jPgJnyQ70kVLurDz7Ccd10ncN+KTFBzGSayHnfAZeE2tdbqQFFQE6B1/0fSyNJQv
+0koBb7Eb9mhLrVMIK/1Txn0NEomAm8NAOm+6z0soft0RVbILZQPdDLkG9xvd/yOz
+El0AA85YvBE6Hf7etQWrVSBaxpzC9Auf5DTXkA==
+=FltD
+-----END PGP MESSAGE-----
+""", passphrase="password123")
+
+print(decrypted)
+```
+
+输出
+
+> Hello, World!
+
+加密的代码也很简单
+
+```python
+with open("yanbin_public.asc", "r") as f:
+    import_result = gpg.import_keys(f.read())
+
+status = gpg.encrypt(
+    "Hello World!",
+    recipients=import_result.fingerprints[0:],
+    always_trust=True
+)
+encrypted = status.data
+print(encrypted.decode())
+```
+
+输出为
+
+```text
+-----BEGIN PGP MESSAGE-----
+
+hF4DSSn5DI/7txwSAQdAMeC8iDHl5Es82WCmRsZL/tP74KFZY12/E/fXeWJWdS8w
+yeADHLp+KNBo2dt+LFzjSsfWPvTIwzVp2mA8gPxBYm0NSuf0rk0YbxpeLNSjcMzP
+1FEBCQIQwV3r9xxi35qxm1r+n6qpMPX9wSEPVccBt1SgbjByAKfsZRlBDkY3QSxy
+J/h5JtKNeHhM9xSz3LHcN0yCbAdA2Ci4NzdS/5LDk3tV/Pk=
+=Paj8
+-----END PGP MESSAGE-----
+```
+
+能用 Python 还是选择 Python 吧。
