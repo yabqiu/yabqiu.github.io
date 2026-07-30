@@ -1,6 +1,6 @@
 ---
-title: "PGP 加解密及 Java 代码演示"
-url: /pgp-encrypt-decrypt-java-example/
+title: "PGP 加解密及 Java/Python 代码演示"
+url: /pgp-encrypt-decrypt-java-python-example/
 date: 2026-07-30T14:40:20-05:00
 featured: false
 draft: false
