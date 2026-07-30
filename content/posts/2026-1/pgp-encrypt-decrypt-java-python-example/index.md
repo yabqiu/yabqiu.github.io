@@ -14,7 +14,7 @@ categories:
 tags: 
   - PGP
 comment: true
-codeMaxLines: 50
+codeMaxLines: 80
 showLastmod: true
 lastmod:
 ---
@@ -180,7 +180,8 @@ public class PgpEncryptor {
   }
 
   static byte[] encrypt(byte[] data) throws Exception {
-    InputStream publicKeyInputStream = Thread.currentThread().getContextClassLoader().getResourceAsStream("yanbin_public.asc");
+    InputStream publicKeyInputStream = Thread.currentThread().getContextClassLoader()
+            .getResourceAsStream("yanbin_public.asc");
     PGPPublicKeyRingCollection pgpPublicKeyRings = new PGPPublicKeyRingCollection(
             PGPUtil.getDecoderStream(publicKeyInputStream), new JcaKeyFingerprintCalculator());
     PGPPublicKey publicKey = null;
@@ -266,7 +267,8 @@ public class PgpDecryptor {
     }
 
     private static byte[] decrypt(byte[] data, String passphrase) throws Exception {
-        InputStream privateKeyInputStream = Thread.currentThread().getContextClassLoader().getResourceAsStream("yanbin_private.asc");
+        InputStream privateKeyInputStream = Thread.currentThread().getContextClassLoader()
+                .getResourceAsStream("yanbin_private.asc");
         PGPSecretKeyRingCollection secretKeyRings = new PGPSecretKeyRingCollection(
             PGPUtil.getDecoderStream(privateKeyInputStream),
             new JcaKeyFingerprintCalculator());
@@ -465,22 +467,24 @@ System.out.print(encrypt("Hello, World!".getBytes()));
 
 ```java
 encGen.setSessionKeyExtractionCallback(sessionKey ->
-    System.out.printf("Encryption - Algorithm: %s, Session key: %s%n", sessionKey.getAlgorithm(), Arrays.toString(sessionKey.getKey())));
+    System.out.printf("Encryption - Algorithm: %s, Session key: %s%n",
+        sessionKey.getAlgorithm(), Arrays.toString(sessionKey.getKey())));
 ```
 
 同时在 PgpDecryptor 类中加入代码
 
 ```java
 PGPSessionKey sessionKey = encData.getSessionKey(decryptorFactory);
-System.out.printf("Decryption - Algorithm: %s, Session key: %s%n", sessionKey.getAlgorithm(), Arrays.toString(sessionKey.getKey()));
+System.out.printf("Decryption - Algorithm: %s, Session key: %s%n",
+        sessionKey.getAlgorithm(), Arrays.toString(sessionKey.getKey()));
 ```
 
 而后我们执行 `PgpDecrptor` 就会一同输出
 
-```text
+{{< highlight-wrap text >}}
 Encryption - Algorithm: 9, Session key: [-110, -37, -73, 93, -29, 56, -97, -38, 37, -98, 32, 13, 123, -78, 9, 19, -8, -4, -55, -71, 97, 122, -111, 12, 94, 94, -118, -18, 78, -38, 48, 27]
 Decryption - Algorithm: 9, Session key: [-110, -37, -73, 93, -29, 56, -97, -38, 37, -98, 32, 13, 123, -78, 9, 19, -8, -4, -55, -71, 97, 122, -111, 12, 94, 94, -118, -18, 78, -38, 48, 27]
-```
+{{</ highlight-wrap>}}
 
 可以发现在解密时正确的还原出了用于加密的密钥，以及对数据加密时相应的算法。
 
