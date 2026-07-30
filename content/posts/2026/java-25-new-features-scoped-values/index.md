@@ -13,6 +13,7 @@ categories:
   - java
 tags:
   - java 25
+series: Java New Features
 comment: true
 codeMaxLines: 50
 showLastmod: true
