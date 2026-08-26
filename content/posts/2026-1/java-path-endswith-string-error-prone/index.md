@@ -40,10 +40,10 @@ try (Stream<Path> pathStream = Files.list(Paths.get("data"))) {
 ```java
 try (var pathStream = Files.list(Paths.get("data"))) {
     pathStream.filter(path -> path.endsWith(".xml"))
-    .forEach(System.out::println); // do something with the file 
+              .forEach(System.out::println); // do something with the file 
 } catch(IOException e) {
     //...
-    }
+}
 ```
 
 后来经过仔细的调试发现 filter 中 `path.endsWith(".xml")` 永远返回 `false`，产生这个 Bug 的主要原因是
