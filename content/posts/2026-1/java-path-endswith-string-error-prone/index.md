@@ -25,6 +25,8 @@ lastmod:
 try (Stream<Path> pathStream = Files.list(Paths.get("data"))) {
     pathStream.filter(path -> path.endsWith(".xml"))
               .forEach(System.out::println); // do something with the file 
+} catch(IOException e) {
+    //...
 }
 ```
 
@@ -33,7 +35,18 @@ try (Stream<Path> pathStream = Files.list(Paths.get("data"))) {
 
 这样的代码即使是让人工进行 review 也未必能发现有什么问题，遍历 `data` 目录下的文件，如果文件以 `.xml` 结尾就进行处理，很自然，正确啊。
 
-后来经过调试发现 filter 中 `path.endsWith(".xml")` 永远返回 `false`，产生这个 Bug 的主要原因是
+要是前面的代码中使用了 `var` 来修改 `pathStream` 就更不太可能在 Code Review 时发现问题，像
+
+```java
+try (var pathStream = Files.list(Paths.get("data"))) {
+    pathStream.filter(path -> path.endsWith(".xml"))
+    .forEach(System.out::println); // do something with the file 
+} catch(IOException e) {
+    //...
+    }
+```
+
+后来经过仔细的调试发现 filter 中 `path.endsWith(".xml")` 永远返回 `false`，产生这个 Bug 的主要原因是
 
 - 写代码时看到 `Path.endsWith(String)` 会想当然的主为会采用 `path.toString().endsWith(String)` 以字符串的方式来判断
 
@@ -87,6 +100,8 @@ JDK 引入 `Path.endsWith(String)` 这个方法确实能直接使用字符串作
 try (Stream<Path> pathStream = Files.list(Paths.get("data"))) {
     pathStream.filter(path -> path.toString().endsWith(".xml"))
               .forEach(System.out::println); // do something with the file 
+} catch(IOException e) {
+    //...
 }
 ```
 
