@@ -23,7 +23,7 @@ lastmod:
 
 ```java
 try (Stream<Path> pathStream = Files.list(Paths.get("data"))) {
-    pathStream.filter(path -> path.endsWith(".xml))
+    pathStream.filter(path -> path.endsWith(".xml"))
               .forEach(System.out::println); // do something with the file 
 }
 ```
