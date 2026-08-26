@@ -31,6 +31,8 @@ try (Stream<Path> pathStream = Files.list(Paths.get("data"))) {
 看起来很直截了当，filter 中对 path 用 `endsWith(String)` 方法过滤出所有以 `.xml` 结尾的文件，然而在目录中存在 `*.xml`
 文件的情况下却没有任何输出。假如测试时未该发现问题，在运行期大有可能当成是该目录中未找到任何以 `.xml` 结尾的文件而怀疑是数据问题。
 
+这样的代码即使是让人工进行 review 也未必能发现有什么问题，遍历 `data` 目录下的文件，如果文件以 `.xml` 结尾就进行处理，很自然，正确啊。
+
 后来经过调试发现 filter 中 `path.endsWith(".xml")` 永远返回 `false`，产生这个 Bug 的主要原因是
 
 - 写代码时看到 `Path.endsWith(String)` 会想当然的主为会采用 `path.toString().endsWith(String)` 以字符串的方式来判断
