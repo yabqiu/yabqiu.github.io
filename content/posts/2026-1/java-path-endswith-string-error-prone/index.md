@@ -35,7 +35,7 @@ try (Stream<Path> pathStream = Files.list(Paths.get("data"))) {
 
 这样的代码即使是让人工进行 review 也未必能发现有什么问题，遍历 `data` 目录下的文件，如果文件以 `.xml` 结尾就进行处理，很自然，正确啊。
 
-要是前面的代码中使用了 `var` 来修改 `pathStream` 就更不太可能在 Code Review 时发现问题，像
+要是前面的代码中使用了 `var` 来修改 `pathStream` 就更不太可能在 Code Review 时发现问题，像<!--more-->
 
 ```java
 try (var pathStream = Files.list(Paths.get("data"))) {
@@ -50,7 +50,7 @@ try (var pathStream = Files.list(Paths.get("data"))) {
 
 - 写代码时看到 `Path.endsWith(String)` 会想当然的主为会采用 `path.toString().endsWith(String)` 以字符串的方式来判断
 
-如果进一步验证的话就会发现<!--more-->
+如果进一步验证的话就会发现
 
 ```java
 Path.of("a/bc/hello.txt").endsWith(".txt"); // false
