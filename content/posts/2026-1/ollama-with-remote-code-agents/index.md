@@ -702,3 +702,5 @@ pi --provider ollama --model qwen3-coder:30b
 2. `Claude Code` 和 `Codex` 都可以独立的使用环境变量或配置文件的方式, 让它们连接远端的 `Ollama`
 3. `Copilot CLI` 可单独用环境变量配置, 用配置文件可以辅助设置, 但终也离开环境变量 `COPILOT_PROVIDER_BASE_URL`
 4. `OpenCode`(V2开始) 和 `Pi` 索性就取消了环境变量配置的方式使用远端的 `Ollama`, 只能用配置文件
+5. 各大编辑 Agent 还都在进化当中, 给给使用的带来一点选择上的焦虑, 不像 Java 的构建就是 Maven, IDE 最强是 `IntelliJ IDEA`, Rust
+   的构建工具非 `Cargo` 莫属那么简单.
